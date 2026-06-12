@@ -1,8 +1,6 @@
 # Supply-chain security
 
-Last verified: 2026-06-11
-
-Motivated by: operational policy, not an architectural decision — no ADR.
+Last verified: 2026-06-12
 
 | Dependency type | CVE defense | Zero-day defense |
 |---|---|---|

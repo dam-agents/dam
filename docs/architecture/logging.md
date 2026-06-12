@@ -1,11 +1,6 @@
 # Logging
 
-Last verified: 2026-06-01
-
-## Motivated by
-
-- [ADR-057 — Structured logging for the api-server](../adrs/057-structured-logging.md) — Pino, one JSON record per line on stdout, common levels, security audit trail as the first consumer
-- [ADR-048 — Usage tracking](../adrs/048-usage-tracking.md) — the pseudonymized analytics store the audit trail is deliberately kept separate from
+Last verified: 2026-06-12
 
 ## Overview
 

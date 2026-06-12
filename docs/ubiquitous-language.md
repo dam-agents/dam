@@ -10,14 +10,14 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 |------|-----------|
 | Infra State | State the Controller reconciles into running infrastructure. Stored in a ConfigMap with `spec.yaml` (api-server writer) and `status.yaml` (controller writer). |
 | Application State | State only the API Server reads and writes; the Controller never touches it. Stored in PostgreSQL. |
-| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract ([ADR-061](adrs/061-warm-pvc-pool.md)). |
-| Warm Pool | A controller-managed, leader-only background buffer of pre-provisioned, already-bound Spare workspace volumes, organized into per-size pools, that a newly created Agent claims at create time to skip first-start provisioning latency. Disabled by default ([ADR-061](adrs/061-warm-pvc-pool.md)). |
+| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract. |
+| Warm Pool | A controller-managed, leader-only background buffer of pre-provisioned, already-bound Spare workspace volumes, organized into per-size pools, that a newly created Agent claims at create time to skip first-start provisioning latency. Disabled by default. |
 | Spare | An unclaimed Workspace Volume in the Warm Pool — provisioned and bound, waiting to be claimed. Carries a pool label and an available marker, and deliberately **no** owning-Agent label, so the orphan-volume sweep ignores it. |
 | Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
 
 ## Agents (bounded context)
 
-Per [ADR-046](adrs/046-eliminate-instance.md), `Instance` is retired; the merged `Agent` carries definition, runtime state, and lifecycle.
+`Instance` is retired; the merged `Agent` carries definition, runtime state, and lifecycle.
 
 | Term | Definition |
 |------|-----------|
@@ -116,7 +116,7 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 | Last Applied Version | The agent's last *fully-applied* `version` — advances only when a settle completes with no driver failures. Reported on `hello` and `applyState` ack. Server rejects older state pushes (cross-replica race defense) and stamps events with `version <= appliedVersion` as dispatched |
 | Last Applied Hash | The agent's last *fully-applied* Contribution hash. Server skips retransmission of the state slice when it matches; a failing settle leaves it behind so the retry re-dispatches every contribution |
 | Apply Failures | The drivers that failed the most recent settle (`runtime_state_outbox.apply_failures`, a `DriverFailure[]`). Drives the background retry (capped by `apply_attempts`) and the per-kind notifications — failed / recovered, plus a terminal *gave-up* when a kind exhausts the retry cap. The failed/recovered/gave-up diff is computed under a row lock in `recordOutcome` so concurrent workers can't double-emit. A version bump clears them (stale by definition). Surfaced on the Agent as `contributionFailures` (the degraded badge). Empty ⇒ healthy |
-| Contributions Settled | The settlement fact "the agent has terminated reconciliation for the current desired Version" — true when `runtime_state_outbox.last_settled_version >= version` (or there is no outbox row, i.e. nothing to apply). Does *not* assert per-driver success: an agent is Settled with non-empty Apply Failures. Drives the background **retry** — the sweep re-dispatches any row that is not Settled, or is Settled-with-failures under the attempt cap. On this iteration it does **not** gate readiness: readiness is the controller-published `Ready` condition (ADR-059) and the apply worker dispatches only to a Ready agent (`isReady`). Gating readiness on settlement is deferred. |
+| Contributions Settled | The settlement fact "the agent has terminated reconciliation for the current desired Version" — true when `runtime_state_outbox.last_settled_version >= version` (or there is no outbox row, i.e. nothing to apply). Does *not* assert per-driver success: an agent is Settled with non-empty Apply Failures. Drives the background **retry** — the sweep re-dispatches any row that is not Settled, or is Settled-with-failures under the attempt cap. On this iteration it does **not** gate readiness: readiness is the controller-published `Ready` condition and the apply worker dispatches only to a Ready agent (`isReady`). Gating readiness on settlement is deferred. |
 
 ## Secrets (bounded context)
 

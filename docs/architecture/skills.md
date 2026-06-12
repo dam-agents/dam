@@ -1,21 +1,10 @@
 # Skills
 
-Last verified: 2026-06-05
-
-## Motivated by
-
-- [ADR-030 — Skills: connectable sources and install](../adrs/030-skills-marketplace.md) — Platform owns skill *transport*, not skill format; sources are external git repos, not a Platform-hosted catalog
-- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — the skill store lives in `platform-base`; per-agent Dockerfiles symlink the harness-native path onto it, so the manifest stays harness-agnostic
-- [ADR-052 — Unified runtime channel](../adrs/052-runtime-channel.md) — install rides `skill-ref` Contributions and the agent's runtime manifest owns the skill-ref driver's paths
-- [ADR-005 — Gateway pattern for credentials](../adrs/005-credential-gateway.md) — agent-runtime makes GitHub calls without holding credentials; the gateway pod injects `Authorization` on the wire from the owner's K8s Secret
-- [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition rules for agent pods
-- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy performs the credential swap
-- [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — Envoy lives in a paired gateway pod, not a sidecar
-- [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — skill *management* (install / uninstall / private scan / publish) wakes a hibernated agent through the shared `ensureReady` primitive rather than refusing
+Last verified: 2026-06-12
 
 ## Overview
 
-A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Platform does not interpret skills; it **transports** them between external git repositories and the per-agent PVC, where the harness reads them from configured paths.
+A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Platform does not interpret skills; it **transports** them between external git repositories and the per-agent PVC, where the harness reads them from configured paths. Sources are external git repos — there is no Platform-hosted catalog.
 
 The subsystem splits cleanly across two bounded contexts ([`tseng/vocabulary.md`](../../tseng/vocabulary.md)):
 
@@ -98,9 +87,9 @@ A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a su
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest ([ADR-052](../adrs/052-runtime-channel.md)). The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits platform-base's `/home/agent/.agents/skills/`.
+An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits platform-base's `/home/agent/.agents/skills/`.
 
-Each per-agent Dockerfile symlinks its harness-native dir (`.claude/skills`, `.pi/agent/skills`, `.bob/skills`) onto that canonical `.agents/skills/` store, so the harness reads from its own conventional path while the manifest stays harness-agnostic ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
+Each per-agent Dockerfile symlinks its harness-native dir (`.claude/skills`, `.pi/agent/skills`, `.bob/skills`) onto that canonical `.agents/skills/` store, so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
@@ -113,9 +102,9 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - The **Skill Source catalogue** — CRUD on user sources, merging in system seeds and template sources, dedupe and badge resolution.
 - The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
 - **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, walks for `SKILL.md`, parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no agent is running.
-- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the [ADR-032](../adrs/032-pod-reachability-primitive.md) `ensureReady` primitive (still requires an `agentId` to target).
-- **Install / uninstall orchestration** — wakes a hibernated agent ([ADR-032](../adrs/032-pod-reachability-primitive.md)) before recording the change, then upserts the `agent_skills` row and bumps the outbox; the [ADR-060](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
-- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), wakes a hibernated agent ([ADR-032](../adrs/032-pod-reachability-primitive.md)), calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
+- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the shared `ensureReady` primitive rather than refusing (still requires an `agentId` to target).
+- **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
+- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), wakes a hibernated agent, calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `agent_skill_publishes` rows.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Cleanup saga** — subscribes to `AgentDeleted` and deletes both `agent_skills` and `agent_skill_publishes` rows for the deleted agent. User-owned `skill_sources` are unaffected; they outlive any single agent.
@@ -136,7 +125,7 @@ Boot-time wiring runs `gh auth setup-git` once before the tRPC server starts, so
 
 Agent-runtime never holds a real GitHub token. The paired gateway pod performs the swap:
 
-1. The agent pod's `HTTPS_PROXY` is `http://<agent>-gateway:<envoy-port>` — the per-agent gateway Service DNS ([ADR-038](../adrs/038-paired-gateway-pod.md)). The agent pod's NetworkPolicy admits no other route to TCP 80/443, so credential injection is enforced by the cluster, not by the agent honoring an env var. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination on the gateway succeeds ([security-and-credentials](security-and-credentials.md)).
+1. The agent pod's `HTTPS_PROXY` is `http://<agent>-gateway:<envoy-port>` — the per-agent gateway Service DNS. The agent pod's NetworkPolicy admits no other route to TCP 80/443, so credential injection is enforced by the cluster, not by the agent honoring an env var. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination on the gateway succeeds ([security-and-credentials](security-and-credentials.md)).
 2. Envoy renders **three** host-specific filter chains for one GitHub OAuth Secret ([issue #219](https://github.com/dam-agents/dam/issues/219)). One Secret, three chains, three auth shapes; the Secret carries a per-host SDS file (`host-<sha8>.sds.yaml`) for each chain to read:
    - `api.github.com` — `Authorization: Bearer <token>` (REST/GraphQL API).
    - `github.com` — `Authorization: Basic base64("x-access-token:<token>")` (the HTTP Basic shape `git` over HTTPS expects, so private `git clone` / `git fetch` / `git push` work with no credential helper).
@@ -145,7 +134,7 @@ Agent-runtime never holds a real GitHub token. The paired gateway pod performs t
 
 If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
 
-Since credential env moved to the runtime channel (ADR-DRAFT), the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
+Since credential env moved to the runtime channel, the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
 
 The same path lets `git clone` of a private repo work without any credential being mounted into the agent pod.
 
@@ -213,7 +202,7 @@ GitHub errors (missing scope, repo not found) surface to agent-runtime as the up
 `skills.list(sourceId, agentId?)` resolves the source and dispatches:
 
 - **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No agent required.
-- **Anything else** → agent-runtime `skills.scan`. Requires an `agentId` (surfaces a clear error if missing) and **wakes a hibernated agent** via the [ADR-032](../adrs/032-pod-reachability-primitive.md) primitive before scanning.
+- **Anything else** → agent-runtime `skills.scan`. Requires an `agentId` (surfaces a clear error if missing) and **wakes a hibernated agent** via the shared `ensureReady` primitive before scanning.
 
 The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list.
 

@@ -2,19 +2,6 @@
 
 Last verified: 2026-06-12
 
-## Motivated by
-
-- [ADR-005 — Gateway pattern for credentials](../adrs/005-credential-gateway.md) — the agent never sees a real upstream token; a gateway injects them on the wire
-- [ADR-015 — Multi-user authentication via Keycloak](../adrs/015-multi-user-auth.md) — Keycloak is the IdP; resources are owner-labelled
-- [ADR-018 — Slack integration](../adrs/018-slack-integration.md) — identity linking and the per-Agent `allowedUsers` gate that decides who can drive a thread
-- [ADR-027 — Slack per-turn user impersonation](../adrs/027-slack-user-impersonation.md) — foreign repliers fork the Agent into a per-turn paired pod whose gateway mounts the replier's K8s credential Secrets
-- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy mints per-Agent leaf certs, MITMs egress, and injects credential headers
-- [ADR-035 — HITL ext_authz](../adrs/035-unified-hitl-ux.md) — Envoy gates credentialed egress through an api-server ext_authz call
-- [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with the credential boundary at the pod boundary
-- [ADR-041 — Istio ambient mesh](../adrs/041-istio-ambient-mesh.md) — SPIFFE identity on the gateway-originated hops (harness, ext-authz); the gateway-admission AuthorizationPolicy is retired by ADR-042
-- [ADR-042 — Agent egress is gated by NetworkPolicy; agent is not a mesh participant](../adrs/042-agent-egress-network-policy.md) — the agent → gateway hop is gated at the kernel by per-pair NetworkPolicy; the agent has no SPIFFE identity
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — per-Agent egress rules, allowed users, secret refs, and Envoy bootstrap all key on the Agent
-
 ## Overview
 
 Three rules carry the security model:
@@ -30,10 +17,10 @@ Three rules carry the security model:
    `platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
-   *kernel* by a per-pair NetworkPolicy ([ADR-042](../adrs/042-agent-egress-network-policy.md));
+   *kernel* by a per-pair NetworkPolicy;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
-   gateway pod's SPIFFE principal ([ADR-041](../adrs/041-istio-ambient-mesh.md)).
+   gateway pod's SPIFFE principal.
    The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:
    none`) so the kernel sees real destinations rather than HBONE
    tunnelled to ztunnel; its only admitted intra-cluster destination
@@ -43,7 +30,7 @@ Three rules carry the security model:
    AuthorizationPolicies enforce the gateway-originated boundary
    cryptographically: the api-server's harness waypoint ALLOWs the
    gateway principal to `/api/agents/<id>/*`; the per-Agent
-   ext-authz Service ALLOWs only the matching SA. Fork pairs (ADR-027)
+   ext-authz Service ALLOWs only the matching SA. Fork pairs
    get their **own** per-fork SA — distinct from the parent's — so a
    compromised fork can't impersonate the parent on the harness path;
    per-fork policies layer narrowly on top, admitting the fork's
@@ -93,27 +80,24 @@ other than its paired gateway. Enforcement is layered:
 
 - **Per-pair agent egress NetworkPolicy** (controller-rendered,
   `<id>-agent-egress`) is the sole gate on the agent → paired gateway
-  hop ([ADR-042](../adrs/042-agent-egress-network-policy.md)). The
-  agent pod opts out of ambient mesh, so the kernel sees real
+  hop. The agent pod opts out of ambient mesh, so the kernel sees real
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
-- **Gateway Envoy ext_authz** (ADR-035) gates everything the gateway
+- **Gateway Envoy ext_authz** gates everything the gateway
   forwards on behalf of the agent — external upstreams via the HITL
   rule model, and the harness path is special-cased to pass through.
   This is the destination-side egress gate; no NetworkPolicies on
   Postgres / Redis / Keycloak / the harness or ext-authz Services are
   needed because the agent has no admitted route to any of them.
-- **Mesh AuthorizationPolicy** (ADR-041) gates the gateway-originated
+- **Mesh AuthorizationPolicy** gates the gateway-originated
   hops by the gateway pod's SPIFFE principal: harness via the
   api-server's waypoint, ext-authz on the per-Agent Service. The
   agent has no SPIFFE identity in this model.
 
 The agent pod has no service account token
 (`automountServiceAccountToken: false`), and there is no co-located
-sidecar to share a network or PID namespace with. See
-[ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#threat-model)
-and [ADR-038 §Threat Model](../adrs/038-paired-gateway-pod.md#threat-model).
+sidecar to share a network or PID namespace with.
 
 ## Identity
 
@@ -251,9 +235,8 @@ On the wire:
    per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
    SNI + SAN-bound TLS validation). The agent's inner `Host` header has
    no influence on the upstream destination — the route-confusion
-   exfiltration path from
-   [ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#threat-model)
-   is structurally closed. Allow-only chains (path-rule promoted, no
+   exfiltration path is structurally closed. Allow-only chains
+   (path-rule promoted, no
    credential) keep using the dynamic forward proxy — they have no
    credential to misroute.
 4. The default chain (SNI miss) does TCP passthrough — the request reaches
@@ -272,20 +255,19 @@ chain with an ordered list of `credential_injector` filters; each step
 must use a unique header name, and steps marked with `queryParamName`
 get a follow-up Lua filter that moves the (bare, percent-encoded) value
 into the named URL query parameter and strips the carrier header so it
-never reaches the upstream. See
-[ADR-033 §Credential injection](../adrs/033-envoy-credential-gateway.md#credential-injection).
+never reaches the upstream.
 
 ## HITL ext_authz
 
 Each credentialed request goes through an ext_authz Check call against
-the api-server. ADR-041: identity is the **per-Agent ext-authz
+the api-server. Identity is the **per-Agent ext-authz
 Service** the gateway pod's Envoy was configured to dial
 (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service
 ALLOWs only the matching SA principal, so by the time a Check arrives
 the calling Agent is already proven cryptographically. The handler
 parses the Agent ID from the gRPC `:authority`, looks up the matching
 egress rule, and either allows the request, denies it, or holds it open
-while the user makes a verdict in the inbox (ADR-035).
+while the user makes a verdict in the inbox.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets
 403, no inbox prompt. The pod-IP resolver and the `x-platform-agent`
 header are gone.
@@ -295,18 +277,21 @@ filter on the catch-all chain sees SNI only.
 
 ## Per-turn fork pods (Slack foreign replier)
 
+Who may drive a thread at all is decided upstream: channel-side
+identities are linked to platform users, and the per-Agent
+`allowedUsers` gate admits or rejects each replier.
+
 When a user other than the Agent owner replies in a Slack thread,
 the api-server creates a Fork CR that the controller materialises
-into a per-turn paired pod set: a fork agent Job and a fork gateway Pod
-(ADR-038). The fork's gateway pod mounts the **replier's** K8s credential
+into a per-turn paired pod set: a fork agent Job and a fork gateway
+Pod. The fork's gateway pod mounts the **replier's** K8s credential
 Secrets — selected by `platform.ai/owner=<replier-sub>`, not the Agent
 owner's `sub`. The credential boundary is preserved: the fork pair runs
 the replier's credentials, never the parent Agent owner's. The fork
 agent's `agent-platform.ai/agent` label still points at the parent
 Agent so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
-Agent's pair. See [ADR-027](../adrs/027-slack-user-impersonation.md)
-and [ADR-038](../adrs/038-paired-gateway-pod.md).
+Agent's pair.
 
 ## Intra-cluster identity and admission
 
@@ -319,7 +304,7 @@ differ:
   only the *gateway* pod is a mesh participant — istiod stamps it with
   a SPIFFE workload cert. The agent pod opts out of ambient
   (`istio.io/dataplane-mode: none`) and carries no SPIFFE identity.
-  Fork pairs (ADR-027) get their **own** per-fork SA — distinct from
+  Fork pairs get their **own** per-fork SA — distinct from
   the parent's — paired with narrow per-fork AuthorizationPolicies, so
   a compromised fork cannot reach the parent's full
   `/api/agents/<parent>/*` surface. `automountServiceAccountToken`

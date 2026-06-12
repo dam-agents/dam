@@ -49,11 +49,11 @@ flowchart LR
   envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod ([ADR-038](adrs/038-paired-gateway-pod.md)), where Envoy injects credentials from K8s Secrets mounted on the gateway only. The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`. The agent pod has no service-account credentials and no upstream tokens of its own.
+The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only. The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`. The agent pod has no service-account credentials and no upstream tokens of its own.
 
 ## Subsystems
 
-Each page describes how the accepted ADRs are realized in the current system. ADRs own *why*; these pages own *how*.
+Each page is the authoritative, self-contained description of its subsystem — what it looks like today and why it is shaped that way.
 
 - [platform-topology](architecture/platform-topology.md) — the four long-lived components (controller, api-server, agent-runtime, ui), the protocols between them, and the K8s resource model.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions and forks.
@@ -77,6 +77,3 @@ Higher-level documents that frame *what* Platform is trying to be, separate from
 - [Multiplayer model](strategy/multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
 - [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Platform addresses today.
 
-## Decisions
-
-[ADR index](adrs/index.md) — every accepted, draft, and superseded architecture decision, owner-tagged. The subsystem pages above link to the ADRs that motivated each design.

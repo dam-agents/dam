@@ -1,16 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-11
-
-## Motivated by
-
-- [ADR-051 — Connections, Connection Templates, and Contributions: unified configuration model](../adrs/051-connections-and-contributions.md) — the domain shape that replaces the parallel OAuth-app and provider-preset registries
-- [ADR-052 — Unified runtime channel](../adrs/052-runtime-channel.md) — the wire protocol between api-server and agent-runtime; supersedes pod-files SSE (ADR-034) and trigger files (ADR-008)
-- [ADR-053 — Transactional outbox + worker](../adrs/053-runtime-outbox-worker.md) — how mutations decouple from agent reachability
-- [ADR-036 — Redis as a platform primitive](../adrs/036-redis-platform-primitive.md) — the signal-path substrate the worker wakes on
-- [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — the restricted port the agent reaches; per-kind event handlers live here
-- [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — established the `env` Contribution and user-wins precedence; its render-into-pod delivery is superseded below
-- [ADR-069 — Credential env via the runtime channel](../adrs/069-runtime-env-injection.md) — moves `env` delivery off the pod spec onto the runtime channel, injected at harness spawn; a grant change no longer rolls the agent pod
+Last verified: 2026-06-12
 
 ## Overview
 
@@ -38,7 +28,7 @@ flowchart LR
   rtRail -->|outbox row| channel
 ```
 
-After [ADR-069](../adrs/069-runtime-env-injection.md) there are two rails. `egress-allow` and `egress-inject` Contributions sync into Postgres `egress_rules` and are read live by Envoy ([ADR-035](../adrs/035-unified-hitl-ux.md)) — unchanged; `egress-inject` additionally carries a credential the gateway injects on the wire (mechanics in [security and credentials](security-and-credentials.md)). Everything else — `env` (formerly a controller-render/pod-roll rail, [ADR-040](../adrs/040-unified-secret-contributions.md)), `file`, `mcp-entry`, `skill-ref` — now travels the runtime channel and is what the rest of this page is about.
+There are two rails. `egress-allow` and `egress-inject` Contributions sync into Postgres `egress_rules` and are read live by Envoy; `egress-inject` additionally carries a credential the gateway injects on the wire (mechanics in [security and credentials](security-and-credentials.md)). Everything else — `env` (formerly a controller-render/pod-roll rail; moving it onto the runtime channel means a grant change no longer rolls the agent pod), `file`, `mcp-entry`, `skill-ref` — travels the runtime channel and is what the rest of this page is about.
 
 The runtime channel is two routes between api-server and agent-runtime, plus per-kind event handlers on the harness API:
 
@@ -107,7 +97,7 @@ The auth field carries credential-acquisition state (tokens, refresh schedules) 
 
 ### Contribution
 
-A typed unit a Connection emits when granted to an Agent. Discriminated union, extensible per [ADR-052's evolution rule](../adrs/052-runtime-channel.md):
+A typed unit a Connection emits when granted to an Agent. Discriminated union:
 
 ```ts
 type Contribution =
@@ -447,7 +437,7 @@ The worker handler reads agent running-state from an in-memory cache fed by the 
 
 ### Redis-down behavior
 
-Per ADR-036, Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
+Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
 
 ## Agent-side: drivers, manifest, event handlers
 
@@ -560,8 +550,8 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Postgres `runtime_state_outbox` | One row per agent | `agent_id`, `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
 | Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
 | Per-kind side-effect table column | New column joining the kind's side-effect row back to `runtime_events.id`, with a unique constraint | The dedupe key for per-kind redelivery. Each event kind's harness handler owns one. |
-| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability per ADR-036; Postgres outbox + cron sweep is the recovery path. |
-| Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today (ADR-035). Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
+| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
+| Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
 | Per-agent PVC `$HOME/.platform/runtime-env.json` | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot; read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |

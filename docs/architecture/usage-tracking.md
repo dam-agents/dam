@@ -1,12 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-05-22
-
-## Motivated by
-
-- [ADR-048 — Usage tracking: append-only activity log with pseudonymized identifiers](../adrs/048-usage-tracking.md) — Postgres-resident activity log, SQL views as the read interface, HMAC pseudonymization, inspector-role gating
-- [ADR-015 — Multi-user authentication via Keycloak](../adrs/015-multi-user-auth.md) — `sub`, `realm_access.roles`, and `azp` are the identity primitives the activity log records
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the K8s ↔ Postgres mirror is per Agent (formerly per Instance); event types and FKs use `agent_id`
+Last verified: 2026-06-12
 
 ## Overview
 
@@ -79,7 +73,7 @@ The subsystem owns:
 
 The subsystem reads from but does not own:
 
-- **Other Postgres tables** (`pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned — see ADR-055.)
+- **Other Postgres tables** (`pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned.)
 
 The subsystem produces no events of its own and exposes no domain operations to other modules — it is a sink for the event bus and a reader for SQL.
 
