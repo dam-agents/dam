@@ -67,15 +67,17 @@ If the UI suddenly can't log in or `cluster:install` hangs on the keycloak realm
 
 ## System Architecture (what this system is)
 
-Platform-specific. **Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.
+Platform-specific. **Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page. Do not infer the architecture from the code alone — the architecture pages are the source of truth.
+
+ADRs (`docs/adrs/`) are human-facing decision history and **off limits to agents**: never read them (reads are denied in settings) and never link or reference them in code or documentation. Creating new ADRs via the `/adr` skill is allowed.
 
 ## TypeScript Engineering (how to write TS here)
 
-Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc or ADR, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
+Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
 ## Database Migrations (`packages/db`)
 
-Tables/indexes/enums are **generated** from `schema.ts`; the `usage_*` reporting views are **hand-written** raw SQL (they aren't in `schema.ts`) (#739, [ADR-063](docs/adrs/063-hand-written-migrations.md)). Full workflow in [`packages/db/README.md`](packages/db/README.md).
+Tables/indexes/enums are **generated** from `schema.ts`; the `usage_*` reporting views are **hand-written** raw SQL (they aren't in `schema.ts`) (#739). Full workflow in [`packages/db/README.md`](packages/db/README.md).
 
 - **Table change**: edit `src/schema.ts` → `mise run db:generate` (writes the `.sql`, `_journal.json` entry, and snapshot — never hand-edit them) → add a top comment explaining *why*.
 - **View change**: `mise run db:new -- <name>` scaffolds the `.sql` + journal entry, then hand-write the `CREATE/DROP VIEW` SQL (dependency order; `--> statement-breakpoint` between statements).

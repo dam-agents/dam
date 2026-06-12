@@ -2,14 +2,16 @@
 name: adr
 description: >
   Tracks Architecture Decision Records (ADRs) in docs/adrs/.
-  Creates, lists, and updates ADRs following project conventions.
-  TRIGGER when: user wants to record, review, or update an architectural decision.
+  Creates and updates ADRs following project conventions.
+  TRIGGER when: user wants to record or update an architectural decision.
 argument-hint: "[what you'd like to do]"
 ---
 
 # ADR Tracking
 
 Manage Architecture Decision Records in `docs/adrs/`. Interpret `$ARGUMENTS` as natural language.
+
+ADRs are human-facing only. Agents cannot read `docs/adrs/` (reads are denied in settings) — never try to read existing ADRs or the index. Writing **new** files there is fine. Whatever you need from the existing records (next number, current content of an ADR being updated), ask the user for it.
 
 ## What an ADR is, and what it isn't
 
@@ -43,13 +45,15 @@ Ask the user for any missing information. You need at minimum: title, context, d
 If the decision is made → create `docs/adrs/NNN-short-title.md` with status `Accepted`.
 If the decision is open → create `docs/adrs/DRAFT-short-title.md` with status `Proposed`.
 
-Assign the next number by reading `docs/adrs/index.md`. Always update the index after creating a file.
+Ask the user for the next free number (they read it off `docs/adrs/index.md`). After creating the file, give the user the finished index row to paste into `docs/adrs/index.md` — you cannot edit the index yourself.
 
 ## Updating an ADR
 
 Valid status transitions: `Accepted`, `Deprecated`, `Superseded by ADR-NNN`.
 
-When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` and move the row from Drafts to Accepted in the index.
+You cannot read or edit existing ADR files. Ask the user to paste the current content, produce the updated version, and hand it back for them to apply along with any index changes.
+
+When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` (a `git mv` works without reading) and give the user the index row to move from Drafts to Accepted.
 
 ## Conventions
 
@@ -57,7 +61,7 @@ When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` a
 - **Drafts**: `DRAFT-short-title.md` — no number until accepted
 - **Owner**: the person accountable for the decision — drives it to resolution, revisits if context changes
 - File names: short kebab-case, 2-3 words max
-- Index: `docs/adrs/index.md` — always keep in sync
+- Index: `docs/adrs/index.md` — kept in sync by the user; supply ready-to-paste rows
 
 ## Template
 

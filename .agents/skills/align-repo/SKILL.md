@@ -140,7 +140,7 @@ One concise paragraph summarizing the meeting.
 | `ralph-it` | Picks the next user story from a PRD GitHub issue, implements it, and opens a PR | Repos that use GitHub issues for PRDs or have structured user stories |
 | `write-a-prd` | Interviews the user and writes a PRD, then submits it as a GitHub issue | Any repo that plans features via PRDs or GitHub issues |
 | `review-work` | Dispatches a code-reviewer subagent to review changes before pushing | Any repo where code quality reviews before push are desired |
-| `adr` | Creates, lists, and updates Architecture Decision Records in `docs/adrs/` | Repos that track architectural decisions or have a `docs/adrs/` directory |
+| `adr` | Creates and updates Architecture Decision Records in `docs/adrs/` | Repos that track architectural decisions or have a `docs/adrs/` directory |
 
 Install command: `npx skills add https://github.com/apocohq/skills --skill <skill-name> -a claude-code -y`
 

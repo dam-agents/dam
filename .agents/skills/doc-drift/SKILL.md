@@ -4,9 +4,8 @@ description: >
   Detect drift between code changes and architecture documentation under `docs/architecture/`.
   Inspects a PR, branch, or local diff against the project's documentation guidelines
   (`docs/guidelines/documentation-guidelines.md`) and flags places where architecture pages
-  no longer match the code — missing page updates, stale `Last verified:` dates, broken
-  `Motivated by:` lists on touched pages, missing pages for new subsystems, volatile content
-  leaking into pages. Scope is architecture docs only — vocabulary, ADR coverage, READMEs,
+  no longer match the code — missing page updates, stale `Last verified:` dates, missing
+  pages for new subsystems, volatile content or ADR references leaking into pages. Scope is architecture docs only — vocabulary, ADR coverage, READMEs,
   and other docs are out of scope. Triggers on phrases like "doc drift", "docs drift",
   "are the architecture docs in sync", "check documentation drift", "do the docs need
   updating", or "architecture documentation review". Also invocable via the `/doc-drift`
@@ -42,19 +41,13 @@ If a check would land outside `docs/architecture/`, drop it.
 
 The flow in this project is **ADR → Code → Drift**. ADRs are filed before work begins; code
 realizes them; docs trail the code. Drift is measured **code vs docs**, never **ADRs vs docs**.
+ADRs are human-facing only — agents cannot read `docs/adrs/` (denied in settings), so no check
+may depend on ADR content.
 
-Concretely:
-
-- An accepted ADR with no matching code change yet is **not drift**. Do not flag it — not as
-  drift, not as possible drift, not as an informational note, not as a "worth re-checking
-  later" aside. Drop it from the report entirely. The next run will catch it once code lands.
-- An accepted ADR whose realization is missing from an architecture page, but whose code
-  has not landed either, is **not drift**. Same rule: omit from the report.
-- Drift only exists when **code in the diff** changes subsystem behavior/responsibility and the
-  matching architecture page does not reflect that code.
-
-Anchor every check on something concrete in the diff. If the only evidence is "an ADR exists",
-ignore it — silently. Do not narrate the exclusion.
+Drift only exists when **code in the diff** changes subsystem behavior/responsibility and the
+matching architecture page does not reflect that code. Anchor every check on something concrete
+in the diff. If the only evidence is "an ADR exists", ignore it — silently. Do not narrate
+the exclusion.
 
 ## What this skill checks
 
@@ -66,10 +59,8 @@ Each check is grounded in code changes observed in the diff and lands inside
    PR. Subsystems are listed in [`docs/architecture.md`](../../../docs/architecture.md).
 2. **`Last verified:` staleness** — every architecture page edited in the diff must have its
    `Last verified: YYYY-MM-DD` header bumped to the PR date.
-3. **`Motivated by:` accuracy** — only when an architecture page is *already* being edited in
-   the diff: if the code change clearly realizes an additional ADR or removes the realization
-   of a listed one, the `Motivated by:` list on that same page should reflect it. Do **not**
-   flag this when the page is untouched — that's an ADR-vs-docs gap, not code-vs-docs drift.
+3. **ADR reference leak** — architecture pages must not link or reference ADRs (the guidelines
+   forbid it). If a page edited in the diff adds an ADR link or a `Motivated by:` list, flag it.
 4. **Volatile content leak** — if an architecture page was edited to *add* exact package names,
    file paths, Helm template tree, or library-level choices below framework level, that is
    drift toward volatility (the guidelines forbid it). Link out instead.

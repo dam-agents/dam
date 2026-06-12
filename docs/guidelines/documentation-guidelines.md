@@ -10,7 +10,7 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today. One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
-- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill.
+- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-facing only**: agents create them but never read them, and no code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
 
 ## Vocabulary
 
@@ -18,7 +18,7 @@ Use the ubiquitous language defined in [`tseng/vocabulary.md`](../../tseng/vocab
 
 ## Architecture Documentation Guidelines
 
-Architecture pages describe **how the accepted ADRs are realized in the current system**. ADRs own *why*; architecture pages own *how the decision is realized*. Make drift the harder path, not the default.
+Architecture pages are the **authoritative, self-contained description of the current system** — both what it looks like and enough of the *why* to work in it. They must stand alone: a reader never needs an ADR to understand a page, and pages never link to ADRs. Make drift the harder path, not the default.
 
 ### Structure
 
@@ -29,10 +29,9 @@ Architecture pages describe **how the accepted ADRs are realized in the current 
 
 ### Mandatory headers
 
-Each subsystem page starts with two headers directly under the title:
+Each subsystem page starts with one header directly under the title:
 
 - `Last verified: YYYY-MM-DD` — bumped whenever you edit the page. A date older than the last subsystem refactor is a smell.
-- `Motivated by:` — bulleted list of ADR links with a one-line hook each. Forward-only (no reverse backlinks added to ADRs).
 
 ### Content policy
 
@@ -40,7 +39,7 @@ Each subsystem page starts with two headers directly under the title:
 
 - **Include**: component roles, who-talks-to-whom, protocols, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
 - **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level.
-- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/), and ADRs).
+- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/)).
 
 ### Diagrams
 
@@ -52,7 +51,7 @@ Each subsystem page starts with two headers directly under the title:
 ### Links
 
 - Repo-relative, pointing to main (no SHA pins).
-- Each page links to the ADRs it realizes via the `Motivated by:` list.
+- Never link to ADRs.
 
 ### Drift rule
 

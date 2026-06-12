@@ -38,6 +38,9 @@
       "Bash(gh pr diff*)",
       "Bash(gh run list*)",
       "Bash(gh run view*)"
+    ],
+    "deny": [
+      "Read(docs/adrs/**)"
     ]
   },
   "enabledPlugins": {

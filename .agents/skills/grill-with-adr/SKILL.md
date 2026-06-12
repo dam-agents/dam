@@ -17,13 +17,14 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 ## Domain awareness
 
-During codebase exploration, also look for related ADRs and existing documentation:
+During codebase exploration, also look at existing documentation:
 
 ### File
 
 - `docs/architecture.md` — the main system architecture overview
 - `docs/ubiquitous-language.md` — the glossary of domain terms and their definitions.
-- `docs/adrs/` — the directory of ADRs
+
+Do not read `docs/adrs/` — ADRs are human-facing only and reads are denied. Architecture pages are the documented-decision source for the session.
 
 ## During the session
 
