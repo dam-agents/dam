@@ -84,6 +84,12 @@ other than its paired gateway. Enforcement is layered:
   destination IPs rather than HBONE tunnelled to ztunnel; the policy
   admits exactly DNS and the paired gateway pod's Envoy port. HBONE
   15008 is not admitted — the agent never speaks it.
+- **Agent ingress NetworkPolicy** (chart-rendered,
+  `agent-ingress-platform-only`) admits ingress to the agent port only
+  from the api-server (ACP/tRPC relay) and the controller (idle-checker
+  busy-probe). agent-runtime serves unauthenticated on the assumption
+  that this kernel gate is the auth boundary; kubelet probes are
+  node-originated and unaffected.
 - **Gateway Envoy ext_authz** gates everything the gateway
   forwards on behalf of the agent — external upstreams via the HITL
   rule model, and the harness path is special-cased to pass through.
@@ -323,6 +329,13 @@ differ:
   HBONE. Pair pinning is structural — the policy's pod-selector is
   the gateway pod itself, so a compromised agent has no admitted
   IP-and-port combination to reach anything else in the cluster.
+- **api-server / controller → agent** is gated at the kernel by the
+  chart-rendered `agent-ingress-platform-only` NetworkPolicy. The agent
+  port admits ingress only from api-server pods (ACP/tRPC relay — the
+  api-server has verified the user JWT and agent ownership before
+  forwarding) and controller pods (idle-checker busy-probe). Everything
+  else, gateway pods included, is dropped; the policy selects
+  `role=agent`, so fork pods are covered too.
 - **Gateway → api-server harness.** All agent egress (including the
   harness call) flows through the paired gateway pod's Envoy, so what
   reaches the mesh is gateway → harness. The harness Service is

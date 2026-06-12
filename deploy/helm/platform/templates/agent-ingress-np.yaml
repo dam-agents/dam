@@ -1,0 +1,42 @@
+{{- /*
+Ingress gate for agent pods: only the api-server (ACP/tRPC relay) and the
+controller (idle-checker busy-probe) may dial the agent port. agent-runtime
+serves unauthenticated on the assumption that this policy is the auth
+boundary (packages/agent-runtime/src/server.ts). Kubelet probes are
+node-originated and unaffected. Role-scoped to `agent`, so fork pods are
+covered and gateway pods are untouched.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-ingress-platform-only
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/managed-by: platform-helm
+    agent-platform.ai/role: agent
+spec:
+  podSelector:
+    matchLabels:
+      agent-platform.ai/role: agent
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+              app.kubernetes.io/instance: {{ .Release.Name }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8080

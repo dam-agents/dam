@@ -150,9 +150,10 @@ const CORS = {
 const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
 
 // The agent's NetworkPolicy admits ingress on this port only from the
-// api-server pod; the api-server has already verified the user JWT and
-// agent ownership before forwarding. So tRPC routes need no in-process
-// auth check — the kernel-level gate is the auth boundary.
+// api-server and controller pods; the api-server has already verified
+// the user JWT and agent ownership before forwarding. So tRPC routes
+// need no in-process auth check — the kernel-level gate is the auth
+// boundary.
 const trpcHandler = createHTTPHandler({
   router: appRouter,
   createContext: (): AgentRuntimeContext => ({
