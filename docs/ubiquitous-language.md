@@ -23,6 +23,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
 | Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A single ConfigMap whose `spec.yaml` (api-server writer) carries env, secret refs, allowed users, and `desiredState`, and whose `status.yaml` (controller writer) carries observed state. Optionally derived from a Template at create-time |
+| Sandbox | The user-facing name for an Agent across the redesigned UI (#892); "Agent" remains the domain/code term |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
 | Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an Agent: running or hibernated |

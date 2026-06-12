@@ -28,7 +28,7 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   await test.step("create the agent with the connection selected", async () => {
     const connectionId = await getConnectionId(api, connectionName);
 
-    await page.getByRole("button", { name: /add agent/i }).click();
+    await page.getByRole("button", { name: /create sandbox/i }).click();
     await page.getByText(harnessName, { exact: true }).click();
     await page.getByPlaceholder("my-agent").fill(agentName);
 

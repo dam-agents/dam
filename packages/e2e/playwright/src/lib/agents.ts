@@ -167,7 +167,8 @@ export function agentCardStatus(
   agentName: string,
   label: string,
 ): Locator {
-  return agentNameHeading(page, agentName)
-    .locator("..")
+  return page
+    .getByTestId("agent-row")
+    .filter({ has: agentNameHeading(page, agentName) })
     .getByText(label, { exact: true });
 }

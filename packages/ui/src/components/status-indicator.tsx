@@ -5,7 +5,7 @@ const stateLabel: Record<AgentDisplayState, string> = {
   starting: "Starting",
   preparing_workspace: "Preparing workspace",
   hibernating: "Hibernating",
-  hibernated: "Hibernated",
+  hibernated: "Hibernating",
   error: "Error",
 };
 
@@ -13,7 +13,7 @@ const badgeColors: Record<AgentDisplayState, string> = {
   running: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
   preparing_workspace: "bg-warning-light text-warning border-warning",
-  hibernating: "bg-warning-light text-warning border-warning",
+  hibernating: "bg-info-light text-info/50 border-info/25",
   hibernated: "bg-info-light text-info/50 border-info/25",
   error: "bg-danger-light text-danger border-danger",
 };
@@ -22,7 +22,7 @@ const dotColors: Record<AgentDisplayState, string> = {
   running: "bg-success",
   starting: "bg-warning anim-pulse",
   preparing_workspace: "bg-warning anim-pulse",
-  hibernating: "bg-warning anim-pulse",
+  hibernating: "bg-info/50 anim-pulse",
   hibernated: "bg-info/50",
   error: "bg-danger",
 };

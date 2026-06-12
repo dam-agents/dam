@@ -4,14 +4,7 @@ import {
   TrashCan as Trash2,
 } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { PROVIDER_PRESET_TYPES } from "api-server-api";
 import { useMemo, useState } from "react";
-
-// Templates managed by the legacy Providers view, hidden here so they aren't offered twice; `anthropic-oauth` rides the same card as the API-key variant.
-const LEGACY_PROVIDER_TEMPLATE_IDS = new Set<string>([
-  ...PROVIDER_PRESET_TYPES,
-  "anthropic-oauth",
-]);
 
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +13,7 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDeleteConnection, useStartOAuth } from "../api/mutations.js";
 import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
+import { PROVIDER_TEMPLATE_IDS } from "../lib/provider-templates.js";
 import { ConnectionIcon } from "./connection-icon.js";
 
 export function ConnectionTemplatesSection() {
@@ -39,7 +33,7 @@ export function ConnectionTemplatesSection() {
   };
 
   const visibleTemplates = (templates.data ?? []).filter(
-    (t) => !LEGACY_PROVIDER_TEMPLATE_IDS.has(t.id),
+    (t) => !PROVIDER_TEMPLATE_IDS.has(t.id),
   );
   const byCategory = groupByCategory(visibleTemplates);
   const iconByTemplateId = useMemo(() => {

@@ -1,21 +1,17 @@
-import {
-  Add as Plus,
-  Password as KeyRound,
-  Play,
-  Renew,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
+import type { AgentView, TemplateView } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
-import { ContributionFailuresBadge } from "../components/contribution-failures-badge.js";
+import { AgentRow } from "../components/agent-row.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import {
@@ -24,14 +20,21 @@ import {
 } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
+import {
+  sandboxSubtitle,
+  type SandboxSubtitleLookup,
+} from "../utils/sandbox-subtitle.js";
+
+// Stable fallback so `subtitleLookup`'s memo isn't defeated while the
+// templates query has no data yet.
+const NO_TEMPLATES: TemplateView[] = [];
 
 export function ListView() {
-  const { data: templates = [], refetch: refetchTemplates } = useTemplates();
-  const {
-    data: agentsData,
-    refetch: refetchAgents,
-    isSuccess: agentsLoaded,
-  } = useAgents();
+  const { data: templatesData } = useTemplates();
+  const templates = templatesData ?? NO_TEMPLATES;
+  const { data: agentsData } = useAgents();
+  const connections = useAppConnections();
+  const secrets = useSecrets();
   const agents = agentsData?.list ?? [];
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
@@ -48,7 +51,9 @@ export function ListView() {
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
-  const initialLoaded = agentsLoaded;
+  // Gate on data presence, not query success: a transient poll failure keeps
+  // the cached list rendered instead of flashing skeletons over it.
+  const initialLoaded = agentsData !== undefined;
   const busyAgent = createAgent.isPending;
 
   const restartingIds = useMemo(
@@ -56,157 +61,79 @@ export function ListView() {
     [restartingAgents],
   );
 
+  const subtitleLookup = useMemo<SandboxSubtitleLookup>(
+    () => ({
+      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
+      connectionTemplateIdById: new Map(
+        (connections.data ?? []).map((c) => [c.id, c.templateId]),
+      ),
+      secretTypeById: new Map((secrets.data ?? []).map((s) => [s.id, s.type])),
+    }),
+    [templates, connections.data, secrets.data],
+  );
+
   const configAgent = configAgentId
     ? (agents.find((a) => a.id === configAgentId) ?? null)
     : null;
 
+  const deleteSandbox = async (agent: AgentView) => {
+    const msg = (
+      <>
+        Delete sandbox{" "}
+        <strong className="text-foreground">"{agent.name}"</strong>? This will
+        also delete <strong>all persistent data</strong> and cannot be undone.
+      </>
+    );
+    if (!(await showConfirm(msg, "Delete Sandbox", { kind: "destructive" })))
+      return;
+    deleteAgent.mutate({ id: agent.id });
+  };
+
   return (
     <>
-      <div>
+      <div className="mx-auto w-full max-w-[666px]">
         {/* Page header */}
-        <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">
-            Agents
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+            Sandboxes
           </h1>
-          <div className="ml-auto flex items-center gap-2 md:gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                refetchTemplates();
-                refetchAgents();
-              }}
-              title="Refresh"
-            >
-              <Renew />
-            </Button>
-            <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>
-              <Plus /> <span className="hidden sm:inline">Add</span> Agent
-            </Button>
-          </div>
+          <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>
+            Create sandbox
+          </Button>
         </div>
 
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
-          <div className="flex flex-col gap-6">
-            <Card className="h-[88px] anim-pulse" />
-            <Card className="h-[88px] anim-pulse" />
-          </div>
+          <ListSkeleton rows={2} rowHeight={70} />
         )}
 
-        {/* Empty state — consistent placeholder when no agents exist */}
+        {/* Empty state — the header's Create sandbox button is the only CTA. */}
         {initialLoaded && agents.length === 0 && !busyAgent && (
-          <Card className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
-            No agents yet
+          <Card className="border border-border px-6 py-10 text-center text-[14px] text-muted-foreground anim-in">
+            No sandboxes yet
           </Card>
         )}
 
-        {/* One row per agent. */}
-        <div className="flex flex-col gap-6">
+        {/* One row per sandbox. */}
+        <div className="flex flex-col gap-3">
           {initialLoaded &&
-            agents.map((agent) => {
-              const display = resolveAgentDisplay(agent, restartingIds);
-              return (
-                <Card
-                  key={agent.id}
-                  onClick={() => selectAgent(agent.id)}
-                  className="overflow-hidden anim-in transition-shadow group cursor-pointer hover:not-has-[button:hover]:shadow-md"
-                >
-                  <div className="px-4 md:px-6 py-4 md:py-5">
-                    <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2 flex-wrap">
-                          <h2 className="text-[16px] md:text-[17px] font-bold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
-                            {agent.name}
-                          </h2>
-                          <StatusBadge state={display.state} />
-                          <ContributionFailuresBadge
-                            failures={agent.contributionFailures}
-                          />
-                        </div>
-                        {agent.description && (
-                          <p className="text-[13px] text-foreground/80">
-                            {agent.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div
-                        className="flex items-center gap-2 shrink-0 flex-wrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (display.powerAction === "start")
-                              wakeAgent.wake(agent.id);
-                            else if (display.powerAction === "restart")
-                              restartAgent(agent.id);
-                          }}
-                          disabled={display.powerAction === null}
-                          title={
-                            display.powerAction === "start"
-                              ? "Wake the hibernated agent"
-                              : "Restart the agent pod"
-                          }
-                        >
-                          {display.powerAction === "start" ? (
-                            <>
-                              <Play /> Start
-                            </>
-                          ) : (
-                            <>
-                              <Renew /> Restart
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setConfigAgentId(agent.id)}
-                          title="Configure agent credentials and env vars"
-                        >
-                          <KeyRound /> Configure
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={async () => {
-                            const msg = (
-                              <>
-                                Delete agent{" "}
-                                <strong className="text-foreground">
-                                  "{agent.name}"
-                                </strong>
-                                ? This will also delete{" "}
-                                <strong>all persistent data</strong> and cannot
-                                be undone.
-                              </>
-                            );
-                            if (
-                              !(await showConfirm(msg, "Delete Agent", {
-                                kind: "destructive",
-                              }))
-                            )
-                              return;
-                            deleteAgent.mutate({ id: agent.id });
-                          }}
-                          disabled={
-                            deleteAgent.isPending &&
-                            deleteAgent.variables?.id === agent.id
-                          }
-                          title="Delete agent"
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
+            agents.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                display={resolveAgentDisplay(agent, restartingIds)}
+                subtitle={sandboxSubtitle(agent, subtitleLookup)}
+                deletePending={
+                  deleteAgent.isPending &&
+                  deleteAgent.variables?.id === agent.id
+                }
+                onSelect={() => selectAgent(agent.id)}
+                onWake={() => wakeAgent.wake(agent.id)}
+                onRestart={() => restartAgent(agent.id)}
+                onConfigure={() => setConfigAgentId(agent.id)}
+                onDelete={() => void deleteSandbox(agent)}
+              />
+            ))}
         </div>
       </div>
 
