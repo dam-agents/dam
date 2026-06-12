@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-05-20
+Last verified: 2026-06-12
 
 ## System context
 
@@ -41,7 +41,6 @@ flowchart LR
   api-server -->|metadata| postgres
 
   controller -->|watch + status| k8s-api
-  controller -.exec triggers.-> agent-runtime
 
   agent-runtime -->|HTTPS_PROXY| envoy
   envoy -->|ext_authz Check| api-server

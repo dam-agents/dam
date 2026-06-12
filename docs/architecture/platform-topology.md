@@ -23,12 +23,11 @@ flowchart LR
   ui -->|ACP / WS| api-server
   api-server -->|ACP relay / WS| agent-runtime
   api-server -->|tRPC proxy| agent-runtime
-  agent-runtime -->|trigger POST / MCP| api-server
+  agent-runtime -->|hello / MCP| api-server
   agent-runtime -->|HTTPS_PROXY| gateway
   gateway -->|ext_authz Check| api-server
   api-server -->|REST| k8s-api
   controller -->|watch + status writes| k8s-api
-  controller -.exec trigger.-> agent-runtime
 ```
 
 ## Components
@@ -116,4 +115,4 @@ For each `Agent`, the controller reconciles **two paired StatefulSets** (agent +
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
 - **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway. See [security-and-credentials](security-and-credentials.md).
 - **SPIFFE identity per hop.** Three mesh hops, each gated by a per-agent Istio AuthorizationPolicy: (1) agent → gateway on the CONNECT proxy port, (2) gateway → harness via the waypoint (all agent egress traverses the paired gateway pod's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service. The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA. For long-lived pairs both pods share the per-agent SA, so the gateway hop is identity-equivalent to the agent. No app-layer header conveys identity.
-- **Atomic triggers.** Trigger files are delivered via write-temp + rename so the agent's trigger watcher never reads a partial file.
+- **Durable triggers.** Schedule fires are Postgres rows in the runtime outbox, delivered over the runtime channel only when the agent is Ready; an undelivered fire survives pod and api-server restarts until it settles or expires (see [connections](connections.md)).
