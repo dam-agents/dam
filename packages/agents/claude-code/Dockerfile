@@ -19,6 +19,10 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills
 
+# Claude Code reads system-level instructions from /etc/claude-code/CLAUDE.md;
+# point it at the cross-harness instructions baked into platform-base.
+RUN ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
+
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 USER 65532

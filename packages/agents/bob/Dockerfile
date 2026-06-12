@@ -16,6 +16,14 @@ COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
+# Bob discovers context files via context.fileName in the system-wide
+# defaults; point it at the cross-harness instructions from platform-base.
+# Merge rather than overwrite in case the installer seeded other defaults.
+RUN mkdir -p /etc/bobshell \
+    && [ -f /etc/bobshell/system-defaults.json ] || echo '{}' > /etc/bobshell/system-defaults.json \
+    && jq '.context.fileName = ["/etc/AGENTS.md"]' /etc/bobshell/system-defaults.json > /tmp/system-defaults.json \
+    && mv /tmp/system-defaults.json /etc/bobshell/system-defaults.json
+
 # bob reads skills from $HOME/.bob/skills; symlink onto the
 # cross-harness store at $HOME/.agents/skills so installs land once.
 RUN mkdir -p /app/working-dir/.bob \

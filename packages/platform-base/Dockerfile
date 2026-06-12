@@ -3,7 +3,7 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all
+RUN dnf install -y git tar gzip jq openssh-server catatonit && dnf clean all
 
 ARG NPM_VERSION=11.16.0
 RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
@@ -121,6 +121,30 @@ RUN chown -R 65532:0 /app
 # platform-outbound MCP server now goes through the standard "first use
 # allow" prompt until we re-derive the explicit allowlist for the v2 schema.
 RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json
+
+# Baseline CLI tools for agents. ripgrep and fd aren't in the base image's
+# dnf repos, so fetch pinned release binaries (musl/static where available).
+ARG TARGETARCH
+ARG RIPGREP_VERSION=15.1.0
+ARG FD_VERSION=10.4.2
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64) RG_TRIPLE=x86_64-unknown-linux-musl; FD_TRIPLE=x86_64-unknown-linux-musl ;; \
+      arm64) RG_TRIPLE=aarch64-unknown-linux-gnu; FD_TRIPLE=aarch64-unknown-linux-musl ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-${RG_TRIPLE}.tar.gz" \
+      | tar -xz -C /usr/local/bin --strip-components=1 "ripgrep-${RIPGREP_VERSION}-${RG_TRIPLE}/rg"; \
+    curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-${FD_TRIPLE}.tar.gz" \
+      | tar -xz -C /usr/local/bin --strip-components=1 "fd-v${FD_VERSION}-${FD_TRIPLE}/fd"
+
+# uv — Python package/environment manager, copied from the official image.
+COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
+
+# System-level agent instructions documenting the tools above. Each harness
+# image wires its own discovery mechanism to this file (symlink or setting)
+# in its derived Dockerfile.
+COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
 # Google Workspace CLI (`gws`) — baked into the base so every agent has it,
 # pinned to the latest stable release (no-downgrade policy).
