@@ -7,6 +7,7 @@ export const viewSchema = z.enum([
   "inbox",
   "agent-egress",
   "terms",
+  "sandbox-new",
   "v2-list",
   "v2-new",
   "v2-terminal",
@@ -36,6 +37,7 @@ export function viewToPath(
   if (view === "agent-egress" && agentId)
     return `/agents/${encodeURIComponent(agentId)}/egress`;
   if (view === "terms") return "/terms";
+  if (view === "sandbox-new") return "/sandboxes/new";
   if (view === "v2-list") return "/v2";
   if (view === "v2-new") return "/v2/new";
   if (view === "v2-terminal" && agentId)
@@ -62,6 +64,7 @@ export function pathToState(path: string): {
   }
   if (path === "/inbox") return { view: "inbox" };
   if (path === "/terms") return { view: "terms" };
+  if (path === "/sandboxes/new") return { view: "sandbox-new" };
   if (path === "/v2") return { view: "v2-list" };
   if (path === "/v2/new") return { view: "v2-new" };
   const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);

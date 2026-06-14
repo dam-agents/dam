@@ -45,6 +45,7 @@ export function ListView() {
   const wakeAgent = useWakeAgent();
 
   const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -97,7 +98,7 @@ export function ListView() {
           <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
             Sandboxes
           </h1>
-          <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>
+          <Button onClick={navigateToCreateSandbox} disabled={busyAgent}>
             Create sandbox
           </Button>
         </div>

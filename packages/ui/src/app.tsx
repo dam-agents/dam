@@ -9,6 +9,7 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
+import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
@@ -39,7 +40,8 @@ export default function App() {
 
   useEffect(() => {
     // The v2 wizard owns its own OAuth-return handling so it can rehydrate
-    // the in-progress sandbox before the params are stripped.
+    // the in-progress sandbox before the params are stripped. Sub-issue 03
+    // extends this guard to /sandboxes/new for the same reason.
     if (window.location.pathname.startsWith("/v2")) return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
@@ -83,6 +85,8 @@ export default function App() {
         });
       } else if (path === "/inbox") useStore.setState({ view: "inbox" });
       else if (path === "/terms") useStore.setState({ view: "terms" });
+      else if (path === "/sandboxes/new")
+        useStore.setState({ view: "sandbox-new", agentId: null });
       else if (path === "/v2")
         useStore.setState({ view: "v2-list", agentId: null });
       else if (path === "/v2/new")
@@ -139,17 +143,21 @@ export default function App() {
         <IconRail />
         <main className="relative z-10 flex-1 overflow-y-auto">
           <SetupProgressBar />
-          <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-            {view === "settings" ? (
-              <SettingsView />
-            ) : view === "inbox" ? (
-              <InboxView />
-            ) : view === "agent-egress" ? (
-              <AgentEgressView />
-            ) : (
-              <ListView />
-            )}
-          </div>
+          {view === "sandbox-new" ? (
+            <SandboxWizardView />
+          ) : (
+            <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              {view === "settings" ? (
+                <SettingsView />
+              ) : view === "inbox" ? (
+                <InboxView />
+              ) : view === "agent-egress" ? (
+                <AgentEgressView />
+              ) : (
+                <ListView />
+              )}
+            </div>
+          )}
         </main>
       </div>
       <DialogOverlay />

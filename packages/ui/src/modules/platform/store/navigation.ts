@@ -15,6 +15,7 @@ export interface NavigationSlice {
   /** Active sub-tab when `view === "settings"`. */
   settingsTab: SettingsTab;
   setView: (v: View) => void;
+  navigateToCreateSandbox: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToAgentEgress: (agentId: string) => void;
   openSandboxTerminal: (agentId: string) => void;
@@ -60,6 +61,10 @@ export const createNavigationSlice: StateCreator<
     if (v === "settings")
       set({ view: v, agentId: null, settingsTab: "account" });
     else set({ view: v, agentId: null });
+  },
+  navigateToCreateSandbox: () => {
+    history.pushState(null, "", viewToPath("sandbox-new"));
+    set({ view: "sandbox-new", agentId: null });
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";
