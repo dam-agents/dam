@@ -10,8 +10,8 @@ export function ConnectionsView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        External services and credentials available to your agents. Injected
-        into outbound HTTP requests — agents never see raw tokens.
+        Connections are the services and credentials your agents can reach —
+        injected into outbound HTTP requests, so agents never see raw tokens.
       </p>
 
       <ConnectionTemplatesSection />

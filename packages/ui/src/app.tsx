@@ -8,7 +8,6 @@ import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
-import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
 import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -103,12 +102,7 @@ export default function App() {
           view: "v2-terminal",
           agentId: decodeURIComponent(sandboxMatch[1]!),
         });
-      else if (path.startsWith("/agents/") && path.endsWith("/egress")) {
-        const id = decodeURIComponent(
-          path.slice("/agents/".length, -"/egress".length),
-        );
-        useStore.setState({ view: "agent-egress", agentId: id });
-      } else leaveChat();
+      else leaveChat();
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
     const path = window.location.pathname;
@@ -158,8 +152,6 @@ export default function App() {
                 <SettingsView />
               ) : view === "inbox" ? (
                 <InboxView />
-              ) : view === "agent-egress" ? (
-                <AgentEgressView />
               ) : view === "sandbox-settings" ? (
                 <SandboxSettingsView />
               ) : (

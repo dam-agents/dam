@@ -5,7 +5,6 @@ export const viewSchema = z.enum([
   "chat",
   "settings",
   "inbox",
-  "agent-egress",
   "terms",
   "sandbox-new",
   "sandbox-settings",
@@ -35,8 +34,6 @@ export function viewToPath(
       ? `/settings/${settingsTab}`
       : "/settings";
   if (view === "inbox") return "/inbox";
-  if (view === "agent-egress" && agentId)
-    return `/agents/${encodeURIComponent(agentId)}/egress`;
   if (view === "terms") return "/terms";
   if (view === "sandbox-new") return "/sandboxes/new";
   if (view === "sandbox-settings" && agentId)
@@ -81,12 +78,6 @@ export function pathToState(path: string): {
     return {
       view: "v2-terminal",
       agentId: decodeURIComponent(sandboxMatch[1]!),
-    };
-  const egressMatch = path.match(/^\/agents\/([^/]+)\/egress$/);
-  if (egressMatch)
-    return {
-      view: "agent-egress",
-      agentId: decodeURIComponent(egressMatch[1]!),
     };
   return { view: "list" };
 }

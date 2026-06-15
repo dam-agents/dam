@@ -10,14 +10,13 @@ import {
 
 export interface NavigationSlice {
   view: View;
-  /** Populated when `view` is `"agent-egress"` or `"sandbox-settings"`. */
+  /** Populated when `view === "sandbox-settings"`. */
   agentId: string | null;
   /** Active sub-tab when `view === "settings"`. */
   settingsTab: SettingsTab;
   setView: (v: View) => void;
   navigateToCreateSandbox: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
-  navigateToAgentEgress: (agentId: string) => void;
   navigateToSandboxSettings: (agentId: string) => void;
   openSandboxTerminal: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
@@ -75,10 +74,6 @@ export const createNavigationSlice: StateCreator<
       viewToPath("settings", null, null, settingsTab),
     );
     set({ view: "settings", settingsTab, agentId: null });
-  },
-  navigateToAgentEgress: (agentId) => {
-    history.pushState(null, "", viewToPath("agent-egress", null, agentId));
-    set({ view: "agent-egress", agentId });
   },
   navigateToSandboxSettings: (agentId) => {
     history.pushState(null, "", viewToPath("sandbox-settings", null, agentId));

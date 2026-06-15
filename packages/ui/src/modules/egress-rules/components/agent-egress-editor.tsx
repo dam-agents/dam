@@ -82,12 +82,12 @@ export interface ConnectionGrantPreview {
 
 /**
  * Renders the per-agent network access rules form + list. Embedded in the
- * configure-agent dialog (staged via `staged` controller — Save commits)
- * and in the standalone /agents/:id/egress route (live — every action
- * fires its mutation directly).
+ * sandbox settings page's Network access section (staged via the `staged`
+ * controller — Save commits the bundle). Without `staged` it falls back to
+ * live mode, where every action fires its mutation directly.
  *
  * `currentPreset` is the preset the server derives from the agent's rule
- * `source` column (via `useCurrentPreset` in the parent dialog) — the
+ * `source` column (via `useCurrentPreset` in the parent) — the
  * preset isn't stored on the agent spec; it's the projection of which
  * `preset:*` rows are present. It seeds the dropdown so the user sees
  * their existing choice instead of a hardcoded default. It's also what

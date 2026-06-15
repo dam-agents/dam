@@ -4,12 +4,17 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { useDeleteConnection } from "../../../connections/api/mutations.js";
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../../connections/api/queries.js";
+import {
+  ConnectionAction,
+  ConnectionCatalogRow,
+  ConnectionRow,
+} from "../../../connections/components/connection-row.js";
 import { TemplateCreateForm } from "../../../connections/forms/template-create-form.js";
+import { useDisconnectConnection } from "../../../connections/hooks/use-disconnect-connection.js";
 import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
@@ -19,7 +24,6 @@ import {
   saveSnapshot,
   type WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
-import { CatalogConnectionRow, MyConnectionRow } from "../connection-row.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
@@ -47,7 +51,7 @@ export function ConnectionsStep({
 }: Props) {
   const templatesQ = useConnectionTemplates();
   const connectionsQ = useAppConnections();
-  const del = useDeleteConnection();
+  const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
@@ -81,9 +85,8 @@ export function ConnectionsStep({
         : snapshot.connectionIds.filter((x) => x !== id),
     });
 
-  const disconnect = (id: string) => {
-    del.mutate({ id });
-    if (selected.has(id))
+  const disconnect = async (id: string, name: string) => {
+    if ((await confirmAndDelete(id, name)) && selected.has(id))
       update({ connectionIds: snapshot.connectionIds.filter((x) => x !== id) });
   };
 
@@ -113,17 +116,24 @@ export function ConnectionsStep({
           <WizardSectionLabel>My connections</WizardSectionLabel>
           <div className="flex flex-col gap-3">
             {connections.map((c) => (
-              <MyConnectionRow
+              <ConnectionRow
                 key={c.id}
                 title={templateById.get(c.templateId)?.name ?? c.templateId}
                 subtitle={c.name}
                 iconSlug={templateById.get(c.templateId)?.iconSlug}
-                active={c.status === "active"}
+                connected={c.status === "active"}
+                selectable
                 selected={selected.has(c.id)}
-                onToggle={(on) => toggle(c.id, on)}
-                onDisconnect={() => disconnect(c.id)}
+                onSelectedChange={(on) => toggle(c.id, on)}
                 testId={`connection-grant-${c.id}`}
-              />
+              >
+                <ConnectionAction
+                  label="Disconnect"
+                  tone="danger"
+                  onClick={() => void disconnect(c.id, c.name)}
+                  disabled={deletingId === c.id}
+                />
+              </ConnectionRow>
             ))}
           </div>
         </section>
@@ -137,7 +147,7 @@ export function ConnectionsStep({
             <WizardSectionLabel>{CATEGORY_LABEL[cat]}</WizardSectionLabel>
             <div className="flex flex-col gap-3">
               {list.map((t) => (
-                <CatalogConnectionRow
+                <ConnectionCatalogRow
                   key={t.id}
                   template={t}
                   onConnect={() => setCreating(t)}

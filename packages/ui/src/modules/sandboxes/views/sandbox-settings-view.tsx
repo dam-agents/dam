@@ -1,203 +1,74 @@
 import { ArrowLeft } from "@carbon/icons-react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+import { Controller } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { FormError } from "../../../components/form-error.js";
-import { useStore } from "../../../store.js";
-import { isProviderPresetType, type SecretView } from "../../../types.js";
-import {
-  useSetAgentAccess,
-  useUpdateAgent,
-} from "../../agents/api/mutations.js";
-import { useAgentAccess, useAgents } from "../../agents/api/queries.js";
-import { useSecrets } from "../../secrets/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
+import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { ConnectionsSection } from "../components/connections-section.js";
 import { ProviderSection } from "../components/provider-section.js";
 import { WizardSectionLabel } from "../components/wizard-section-label.js";
+import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
-const EMPTY_SECRETS: SecretView[] = [];
-
-// Matches the `Input` resting geometry (border, radius, height, padding) so a
-// read-only field sits flush with the editable Name field above it; muted fill
-// + text signal that it can't be edited.
+// Matches the `Input` resting geometry (border, radius, height, padding) so the
+// read-only Image field sits flush with the editable Name field above it; muted
+// fill + text signal that it can't be edited.
 const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground";
 
-const settingsSchema = z.object({ name: z.string().trim().min(1, "Required") });
-type SettingsValues = z.infer<typeof settingsSchema>;
-
 /**
- * Full-page settings for an existing sandbox (`/sandboxes/:id`), reached
- * from the Sandboxes list. Slice 01 covers the header — editable Name,
- * read-only Image, and the reused Provider picker — plus the staged-form
- * container and a single Save. The connections / network / environment
- * sections land in slice 02.
- *
- * Provider is just a granted provider-type secret: the baseline is the
- * provider secret already on the agent, and selecting another stages a
- * swap that Save commits via `setAgentAccess` while preserving every
- * non-provider grant.
+ * Full-page settings for an existing sandbox (`/sandboxes/:id`), reached from
+ * the Sandboxes list. One scrollable page over the whole configuration —
+ * editable Name, read-only Image, Provider picker, granted connections,
+ * network-access rules, and environment — staged behind one Save.
+ * {@link useSandboxSettingsForm} owns the staged-form logic; this view is its
+ * presentation.
  */
 export function SandboxSettingsView() {
-  const agentId = useStore((s) => s.agentId);
-  const setView = useStore((s) => s.setView);
+  const f = useSandboxSettingsForm();
 
-  const agentsQuery = useAgents();
-  const agent = useMemo(
-    () =>
-      agentId
-        ? (agentsQuery.data?.list.find((a) => a.id === agentId) ?? null)
-        : null,
-    [agentsQuery.data, agentId],
-  );
-
-  const secretsQuery = useSecrets();
-  const secrets = secretsQuery.data ?? EMPTY_SECRETS;
-  const { data: templates = [] } = useTemplates();
-  const accessQuery = useAgentAccess(agentId);
-
-  const updateAgent = useUpdateAgent();
-  const setAgentAccess = useSetAgentAccess();
-
-  const providerSecretIds = useMemo(
-    () =>
-      new Set(
-        secrets.filter((s) => isProviderPresetType(s.type)).map((s) => s.id),
-      ),
-    [secrets],
-  );
-
-  const { register, handleSubmit, reset, formState } = useForm<SettingsValues>({
-    resolver: zodResolver(settingsSchema),
-    mode: "onChange",
-    defaultValues: { name: "" },
-  });
-  const { errors, isDirty, dirtyFields, isSubmitting } = formState;
-  const saving = isSubmitting;
-
-  // Provider selection is staged outside RHF (it maps to a secret grant, not
-  // a form field). Baseline = the provider secret already granted to the
-  // agent; selecting another stages a swap.
-  const [ready, setReady] = useState(false);
-  const [baselineProviderSecretId, setBaselineProviderSecretId] = useState<
-    string | null
-  >(null);
-  const [selectedProviderSecretId, setSelectedProviderSecretId] = useState<
-    string | null
-  >(null);
-
-  // Re-baseline when navigating to a different sandbox without unmounting.
-  const baselinedRef = useRef(false);
-  useEffect(() => {
-    baselinedRef.current = false;
-    setReady(false);
-  }, [agentId]);
-
-  // Adopt the agent's persisted values as the dirty-tracking baseline once
-  // the agent, its access grants, and the secrets list have all resolved.
-  useEffect(() => {
-    if (baselinedRef.current) return;
-    if (!agent || !accessQuery.data || secretsQuery.data === undefined) return;
-    baselinedRef.current = true;
-    const provId =
-      accessQuery.data.secretIds.find((id) => providerSecretIds.has(id)) ??
-      null;
-    setBaselineProviderSecretId(provId);
-    setSelectedProviderSecretId(provId);
-    reset({ name: agent.name });
-    setReady(true);
-  }, [agent, accessQuery.data, secretsQuery.data, providerSecretIds, reset]);
-
-  const providerChanged = selectedProviderSecretId !== baselineProviderSecretId;
-  const dirty = isDirty || providerChanged;
-  const isSubmitDisabled = saving || !ready || !dirty;
-
-  const onSave = handleSubmit(async ({ name }) => {
-    if (!agentId || !dirty) return;
-    try {
-      if (providerChanged) {
-        // Swap the provider grant: drop any provider-type secret, add the
-        // selected one, and preserve every non-provider grant untouched.
-        const baselineSecretIds = accessQuery.data?.secretIds ?? [];
-        const preserved = baselineSecretIds.filter(
-          (id) => !providerSecretIds.has(id),
-        );
-        const secretIds = (
-          selectedProviderSecretId
-            ? [...new Set([...preserved, selectedProviderSecretId])]
-            : preserved
-        ).sort();
-        await setAgentAccess.mutateAsync({ agentId, secretIds });
-      }
-      if (dirtyFields.name) {
-        await updateAgent.mutateAsync({ id: agentId, name: name.trim() });
-      }
-      setBaselineProviderSecretId(selectedProviderSecretId);
-      reset({ name: name.trim() });
-    } catch {
-      // Mutation meta.errorToast surfaces the failure; stay on the page.
-    }
-  });
-
-  const goBack = () => {
-    if (
-      dirty &&
-      !window.confirm("Discard unsaved changes and leave this sandbox?")
-    )
-      return;
-    setView("list");
-  };
-
-  if (!agentId || (agentsQuery.data !== undefined && !agent)) {
+  if (f.status !== "ready" || !f.agent) {
     return (
       <div className="mx-auto w-full max-w-[666px]">
-        <BackLink onClick={goBack} />
-        <p className="mt-4 text-[13px] text-muted-foreground">
-          {agentId ? "Sandbox not found." : "No sandbox selected."}
-        </p>
+        <BackLink onClick={f.goBack} />
+        {f.status === "no-agent" && (
+          <p className="mt-4 text-[13px] text-muted-foreground">
+            No sandbox selected.
+          </p>
+        )}
+        {f.status === "not-found" && (
+          <p className="mt-4 text-[13px] text-muted-foreground">
+            Sandbox not found.
+          </p>
+        )}
       </div>
     );
   }
 
-  if (!agent) {
-    return (
-      <div className="mx-auto w-full max-w-[666px]">
-        <BackLink onClick={goBack} />
-      </div>
-    );
-  }
-
-  const templateName = agent.templateId
-    ? (templates.find((t) => t.id === agent.templateId)?.name ??
-      agent.templateId)
-    : null;
+  const { agent } = f;
 
   return (
     <div className="mx-auto w-full max-w-[666px]">
-      <BackLink onClick={goBack} />
+      <BackLink onClick={f.goBack} />
       <h1 className="mb-8 mt-2 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
         {agent.name}
       </h1>
 
       <section className="mb-8">
         <WizardSectionLabel>Name</WizardSectionLabel>
-        <Input disabled={saving} {...register("name")} />
-        <FormError message={errors.name?.message} />
+        <Input disabled={f.saving} {...f.register("name")} />
+        <FormError message={f.errors.name?.message} />
       </section>
 
       <section className="mb-8">
         <WizardSectionLabel>Image</WizardSectionLabel>
-        {/* Read-only: image/template are create-only — changing them would
-            mean delete+recreate, destroying the workspace PVC. Styled as a
-            disabled input so it reads as a non-editable field alongside Name. */}
+        {/* Read-only: image/template are create-only — changing them would mean
+            delete+recreate, destroying the workspace PVC. */}
         <div className={READ_ONLY_FIELD}>
           <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
-            {templateName ?? agent.image}
+            {f.templateName ?? agent.image}
           </span>
         </div>
         {agent.templateId && (
@@ -210,12 +81,10 @@ export function SandboxSettingsView() {
       <section className="mb-8">
         <WizardSectionLabel>Provider</WizardSectionLabel>
         <ProviderSection
-          selectedSecretId={selectedProviderSecretId}
-          onSelect={setSelectedProviderSecretId}
-          onProviderRemoved={(secretId) => {
-            if (selectedProviderSecretId === secretId)
-              setSelectedProviderSecretId(null);
-          }}
+          variant="dropdown"
+          selectedSecretId={f.selectedProviderSecretId}
+          onSelect={f.selectProvider}
+          onProviderRemoved={f.dropProviderGrant}
         />
         <p className="mt-3 text-[12px] text-muted-foreground">
           Changing the provider swaps this sandbox's model credential. A
@@ -224,9 +93,51 @@ export function SandboxSettingsView() {
         </p>
       </section>
 
-      <div className="flex justify-end pb-4">
-        <Button onClick={onSave} disabled={isSubmitDisabled}>
-          {saving ? "Saving…" : "Save"}
+      <ConnectionsSection
+        grantedIds={f.grantedAppIds}
+        onToggleGrant={f.toggleAppGrant}
+        oauthReturnView={`/sandboxes/${agent.id}`}
+      />
+
+      <section className="mb-8">
+        <WizardSectionLabel>Network access</WizardSectionLabel>
+        <AgentEgressEditor
+          agentId={agent.id}
+          currentPreset={f.currentPreset}
+          staged={f.egressStaged}
+        />
+      </section>
+
+      <section className="mb-8">
+        <WizardSectionLabel>Environment</WizardSectionLabel>
+        <Controller
+          control={f.control}
+          name="envVars"
+          render={({ field }) => (
+            <EnvTab
+              inherited={f.inheritedEnvs}
+              envVars={field.value}
+              setEnvVars={field.onChange}
+              saving={f.saving}
+            />
+          )}
+        />
+      </section>
+
+      <div className="flex items-center justify-end gap-3 pb-4">
+        {f.wildcardHostInScope && (
+          <span
+            role="alert"
+            className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
+            title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
+          >
+            <span aria-hidden="true">⚠</span>
+            Allow everything is on — narrow with deny rules or remove the
+            wildcard.
+          </span>
+        )}
+        <Button onClick={f.onSave} disabled={f.isSubmitDisabled}>
+          {f.saving ? "Saving…" : "Save"}
         </Button>
       </div>
     </div>
