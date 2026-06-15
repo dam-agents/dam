@@ -16,7 +16,6 @@ import {
   READY_REASON_HIBERNATED,
   VERSION,
 } from "./labels.js";
-import { generateK8sName } from "./configmap-mappers.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
 
@@ -155,8 +154,8 @@ export function assembleAgent(
 export function buildAgentObject(
   spec: Record<string, unknown>,
   owner: string,
+  name: string,
   templateId?: string,
-  name?: string,
 ): AgentObject {
   const labels: Record<string, string> = { [LABEL_OWNER]: owner };
   if (templateId) labels[LABEL_TEMPLATE_REF] = templateId;
@@ -165,7 +164,7 @@ export function buildAgentObject(
     apiVersion: SPEC_VERSION,
     kind: KIND_AGENT,
     metadata: {
-      name: name ?? generateK8sName("agent"),
+      name,
       labels,
       annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
     },

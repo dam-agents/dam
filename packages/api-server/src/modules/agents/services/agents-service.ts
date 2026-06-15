@@ -289,33 +289,26 @@ export function createAgentsService(deps: {
         });
       }
       const owner = deps.owner;
+      const agentId = generateK8sName("agent");
 
-      let pullSecretAgentId: string | undefined;
       if (input.registryCredential) {
-        pullSecretAgentId = generateK8sName("agent");
         await deps.registrySecretPort.create(
-          pullSecretAgentId,
+          agentId,
           owner,
           input.registryCredential,
         );
-        spec.imagePullSecretRef =
-          deps.registrySecretPort.secretName(pullSecretAgentId);
+        spec.imagePullSecretRef = deps.registrySecretPort.secretName(agentId);
       }
 
       // ADR-058: no desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
       let infra: InfraAgent;
       try {
-        infra = await deps.repo.create(
-          spec,
-          owner,
-          templateId,
-          pullSecretAgentId,
-        );
+        infra = await deps.repo.create(spec, owner, agentId, templateId);
       } catch (e) {
-        if (pullSecretAgentId) {
+        if (input.registryCredential) {
           try {
-            await deps.registrySecretPort.delete(pullSecretAgentId);
+            await deps.registrySecretPort.delete(agentId);
           } catch (cleanupErr) {
             securityLog("error", "agent.create.pull_secret_orphaned", {
               category: "resource",
