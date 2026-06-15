@@ -292,8 +292,10 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		})
 	}
 
-	// Image pull secrets — chart-only.
 	var pullSecrets []corev1.LocalObjectReference
+	if agentSpec.ImagePullSecretRef != "" {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: agentSpec.ImagePullSecretRef})
+	}
 	for _, n := range base.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
