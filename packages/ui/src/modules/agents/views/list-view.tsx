@@ -102,10 +102,8 @@ export function ListView() {
           </Button>
         </div>
 
-        {/* Skeleton during initial load — only when we expect agents */}
-        {!initialLoaded && agents.length > 0 && (
-          <ListSkeleton rows={2} rowHeight={70} />
-        )}
+        {/* Skeleton during the initial load, before the first fetch resolves. */}
+        {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
         {/* Empty state — the header's Create sandbox button is the only CTA. */}
         {initialLoaded && agents.length === 0 && !busyAgent && (
