@@ -16,7 +16,7 @@ export function IbmLitellmCard({ secret }: { secret?: SecretView }) {
   if (secret) {
     return (
       <IbmLitellmConnected
-        onRemove={() => actions.remove(secret.id, NAME)}
+        onRemove={() => actions.remove(secret.id)}
         onSave={({ value }) =>
           actions.update({
             id: secret.id,

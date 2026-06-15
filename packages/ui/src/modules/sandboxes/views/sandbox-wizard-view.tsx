@@ -7,6 +7,7 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { SandboxWizardShell } from "../components/sandbox-wizard-shell.js";
 import { StepHeader } from "../components/step-header.js";
 import { ImageStep } from "../components/steps/image-step.js";
+import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
 import type { WizardStep } from "../lib/wizard-snapshot.js";
 
@@ -55,11 +56,12 @@ export function SandboxWizardView() {
       )}
 
       {snapshot.step === 2 && (
-        <StepPlaceholder
-          step={2}
-          title="Setup your sandbox"
-          subtitle="Name your sandbox, choose a provider, and set network permissions."
-          onBack={() => goToStep(1)}
+        <SetupStep
+          name={snapshot.name}
+          providerSecretId={snapshot.providerSecretId}
+          egressPreset={snapshot.egressPreset}
+          update={update}
+          onContinue={() => update({ step: 3 })}
         />
       )}
 

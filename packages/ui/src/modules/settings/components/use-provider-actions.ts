@@ -32,14 +32,17 @@ export function useProviderActions() {
      *  Uses the destructive confirm variant — removing a provider breaks
      *  any agent currently using it, so the dialog leans on the
      *  destructive token to telegraph that. */
-    async remove(id: string, displayName: string) {
+    async remove(id: string, onRemoved?: () => void) {
       const ok = await showConfirm(
-        `Are you sure you want to remove ${displayName}? Any agent currently using this provider will no longer work as expected.`,
-        `Remove ${displayName}?`,
+        "Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected.",
+        "Remove Provider?",
         { kind: "destructive", confirmLabel: "Remove provider" },
       );
       if (!ok) return;
-      deleteSecret.mutate({ id });
+      deleteSecret.mutate(
+        { id },
+        onRemoved ? { onSuccess: () => onRemoved() } : undefined,
+      );
     },
 
     /** Create a new secret. If this is the user's first secret of any kind

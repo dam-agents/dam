@@ -14,7 +14,7 @@ export function OpenAICard({ secret }: { secret?: SecretView }) {
     return (
       <OpenAIConnected
         secret={secret}
-        onRemove={() => actions.remove(secret.id, NAME)}
+        onRemove={() => actions.remove(secret.id)}
         onSave={({ value }) => actions.update({ id: secret.id, value })}
       />
     );
