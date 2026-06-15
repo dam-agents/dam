@@ -9,6 +9,7 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
+import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -88,6 +89,11 @@ export default function App() {
       else if (path === "/terms") useStore.setState({ view: "terms" });
       else if (path === "/sandboxes/new")
         useStore.setState({ view: "sandbox-new", agentId: null });
+      else if (/^\/sandboxes\/[^/]+$/.test(path))
+        useStore.setState({
+          view: "sandbox-settings",
+          agentId: decodeURIComponent(path.slice("/sandboxes/".length)),
+        });
       else if (path === "/v2")
         useStore.setState({ view: "v2-list", agentId: null });
       else if (path === "/v2/new")
@@ -154,6 +160,8 @@ export default function App() {
                 <InboxView />
               ) : view === "agent-egress" ? (
                 <AgentEgressView />
+              ) : view === "sandbox-settings" ? (
+                <SandboxSettingsView />
               ) : (
                 <ListView />
               )}

@@ -1,19 +1,14 @@
 import { ArrowRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-import type { ProviderPresetType, SecretView } from "../../../../types.js";
-import { useSecrets } from "../../../secrets/api/queries.js";
-import { useProviderActions } from "../../../settings/components/use-provider-actions.js";
 import type {
   EgressPreset,
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
-import { ProviderConnectDialog } from "../provider-connect-dialog.js";
-import { ProviderRow } from "../provider-row.js";
+import { ProviderSection } from "../provider-section.js";
 import {
   type RegistryCredential,
   RegistryCredentialSection,
@@ -21,27 +16,6 @@ import {
 } from "../registry-credential-section.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
-
-const PROVIDER_ROWS: { type: ProviderPresetType; description: string }[] = [
-  {
-    type: "ibm-litellm",
-    description: "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
-  },
-  {
-    type: "bob",
-    description:
-      "IBM Bob Shell endpoint with twin-secret credential injection.",
-  },
-  {
-    type: "anthropic",
-    description:
-      "Claude Code, Claude SDK, and any Anthropic-compatible client.",
-  },
-  {
-    type: "openai",
-    description: "GPT-family models for Codex and OpenAI-compatible agents.",
-  },
-];
 
 const NETWORK_PRESETS: { value: EgressPreset; label: string; help: string }[] =
   [
@@ -83,33 +57,6 @@ export function SetupStep({
   update,
   onContinue,
 }: Props) {
-  const { data: secrets = [] } = useSecrets();
-  const providerActions = useProviderActions();
-  const [dialog, setDialog] = useState<{
-    provider: ProviderPresetType;
-    secret?: SecretView;
-  } | null>(null);
-
-  const secretByType = useMemo(
-    () => new Map(secrets.map((s) => [s.type, s])),
-    [secrets],
-  );
-
-  const removeKey = (secretId: string) =>
-    providerActions.remove(secretId, () => {
-      if (providerSecretId === secretId) update({ providerSecretId: null });
-    });
-
-  // Auto-select the first connected provider; only acts while empty so a
-  // just-connected one isn't nulled out during the secrets refetch.
-  useEffect(() => {
-    if (providerSecretId) return;
-    const firstConnected = PROVIDER_ROWS.map((r) =>
-      secretByType.get(r.type),
-    ).find(Boolean);
-    if (firstConnected) update({ providerSecretId: firstConnected.id });
-  }, [providerSecretId, secretByType, update]);
-
   const registryPartial =
     showRegistry &&
     registryFilledCount(registryCredential) > 0 &&
@@ -136,28 +83,15 @@ export function SetupStep({
 
       <section className="mb-8">
         <WizardSectionLabel>Provider</WizardSectionLabel>
-        <div className="flex flex-col gap-3">
-          {PROVIDER_ROWS.map((row) => {
-            const secret = secretByType.get(row.type);
-            return (
-              <ProviderRow
-                key={row.type}
-                type={row.type}
-                description={row.description}
-                secret={secret}
-                selected={!!secret && secret.id === providerSecretId}
-                onConnect={() => setDialog({ provider: row.type })}
-                onSelect={() =>
-                  secret && update({ providerSecretId: secret.id })
-                }
-                onEditKey={() =>
-                  secret && setDialog({ provider: row.type, secret })
-                }
-                onRemoveKey={() => secret && void removeKey(secret.id)}
-              />
-            );
-          })}
-        </div>
+        <ProviderSection
+          selectedSecretId={providerSecretId}
+          onSelect={(secretId) => update({ providerSecretId: secretId })}
+          onProviderRemoved={(secretId) => {
+            if (providerSecretId === secretId)
+              update({ providerSecretId: null });
+          }}
+          autoSelectFirst
+        />
       </section>
 
       <section className="mb-8">
@@ -188,18 +122,6 @@ export function SetupStep({
           Continue <ArrowRight size={16} />
         </Button>
       </div>
-
-      {dialog && (
-        <ProviderConnectDialog
-          provider={dialog.provider}
-          secret={dialog.secret}
-          onConnected={(secretId) => {
-            update({ providerSecretId: secretId });
-            setDialog(null);
-          }}
-          onClose={() => setDialog(null)}
-        />
-      )}
     </div>
   );
 }

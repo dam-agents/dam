@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,6 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
-import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
@@ -44,9 +43,10 @@ export function ListView() {
 
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const navigateToSandboxSettings = useStore(
+    (s) => s.navigateToSandboxSettings,
+  );
   const showConfirm = useStore((s) => s.showConfirm);
-
-  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
   // Gate on data presence, not query success: a transient poll failure keeps
   // the cached list rendered instead of flashing skeletons over it.
@@ -68,10 +68,6 @@ export function ListView() {
     [templates, connections.data, secrets.data],
   );
 
-  const configAgent = configAgentId
-    ? (agents.find((a) => a.id === configAgentId) ?? null)
-    : null;
-
   const deleteSandbox = async (agent: AgentView) => {
     const msg = (
       <>
@@ -86,55 +82,45 @@ export function ListView() {
   };
 
   return (
-    <>
-      <div className="mx-auto w-full max-w-[666px]">
-        {/* Page header */}
-        <div className="mb-8 flex items-center justify-between gap-3">
-          <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-            Sandboxes
-          </h1>
-          <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
-        </div>
-
-        {/* Skeleton during the initial load, before the first fetch resolves. */}
-        {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
-
-        {/* Empty state — the header's Create sandbox button is the only CTA. */}
-        {initialLoaded && agents.length === 0 && (
-          <Card className="border border-border px-6 py-10 text-center text-[14px] text-muted-foreground anim-in">
-            No sandboxes yet
-          </Card>
-        )}
-
-        {/* One row per sandbox. */}
-        <div className="flex flex-col gap-3">
-          {initialLoaded &&
-            agents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                display={resolveAgentDisplay(agent, restartingIds)}
-                subtitle={sandboxSubtitle(agent, subtitleLookup)}
-                deletePending={
-                  deleteAgent.isPending &&
-                  deleteAgent.variables?.id === agent.id
-                }
-                onSelect={() => selectAgent(agent.id)}
-                onWake={() => wakeAgent.wake(agent.id)}
-                onRestart={() => restartAgent(agent.id)}
-                onConfigure={() => setConfigAgentId(agent.id)}
-                onDelete={() => void deleteSandbox(agent)}
-              />
-            ))}
-        </div>
+    <div className="mx-auto w-full max-w-[666px]">
+      {/* Page header */}
+      <div className="mb-8 flex items-center justify-between gap-3">
+        <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+          Sandboxes
+        </h1>
+        <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
       </div>
 
-      {configAgent && (
-        <ConfigureAgentDialog
-          agent={configAgent}
-          onClose={() => setConfigAgentId(null)}
-        />
+      {/* Skeleton during the initial load, before the first fetch resolves. */}
+      {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
+
+      {/* Empty state — the header's Create sandbox button is the only CTA. */}
+      {initialLoaded && agents.length === 0 && (
+        <Card className="border border-border px-6 py-10 text-center text-[14px] text-muted-foreground anim-in">
+          No sandboxes yet
+        </Card>
       )}
-    </>
+
+      {/* One row per sandbox. */}
+      <div className="flex flex-col gap-3">
+        {initialLoaded &&
+          agents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              display={resolveAgentDisplay(agent, restartingIds)}
+              subtitle={sandboxSubtitle(agent, subtitleLookup)}
+              deletePending={
+                deleteAgent.isPending && deleteAgent.variables?.id === agent.id
+              }
+              onSelect={() => selectAgent(agent.id)}
+              onWake={() => wakeAgent.wake(agent.id)}
+              onRestart={() => restartAgent(agent.id)}
+              onConfigure={() => navigateToSandboxSettings(agent.id)}
+              onDelete={() => void deleteSandbox(agent)}
+            />
+          ))}
+      </div>
+    </div>
   );
 }
