@@ -52,6 +52,15 @@ type AgentSpec struct {
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 
+	// ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
+	// kubelet uses to pull the agent image from a private registry. Unlike
+	// SecretRef it is never projected into the agent container — only the
+	// kubelet consumes it at pod creation, so a foreign-replier fork can pull
+	// with it without ever seeing it. When set it takes precedence over the
+	// install-wide default pull secret, which is retained as a fallback.
+	// +optional
+	ImagePullSecretRef string `json:"imagePullSecretRef,omitempty"`
+
 	// GrantedSecretIDs are the credential Secret IDs granted to this agent's
 	// egress — intent written by the api-server. ADR-058 moved these from a
 	// ConfigMap annotation into spec, because they are reconciled by the

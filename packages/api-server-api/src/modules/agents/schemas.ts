@@ -24,6 +24,13 @@ export const agentCreateInputSchema = z
     description: z.string().optional(),
     env: z.array(envVarSchema).max(64).optional(),
     secretRef: z.string().optional(),
+    registryCredential: z
+      .object({
+        server: z.string().min(1),
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+      .optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
     // Optional: clone this public repo (optionally a branch/tag via `ref`) into
