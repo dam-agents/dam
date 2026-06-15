@@ -39,10 +39,11 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    // The v2 wizard owns its own OAuth-return handling so it can rehydrate
-    // the in-progress sandbox before the params are stripped. Sub-issue 03
-    // extends this guard to /sandboxes/new for the same reason.
-    if (window.location.pathname.startsWith("/v2")) return;
+    // The v2 wizard and the sandbox-creation wizard own their own OAuth-return
+    // handling so they can rehydrate the in-progress sandbox before the params
+    // are stripped.
+    const path = window.location.pathname;
+    if (path.startsWith("/v2") || path === "/sandboxes/new") return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;

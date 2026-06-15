@@ -5,7 +5,7 @@ import {
   type ConnectionTemplateView,
 } from "api-server-api";
 import { Check, Copy, ExternalLink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,16 +18,32 @@ import {
   DialogHeader,
   Modal,
 } from "../../../components/modal.js";
+import { queryClient } from "../../../query-client.js";
+import { trpc } from "../../../trpc.js";
 import { useCreateConnection } from "../api/mutations.js";
+import { useOAuthPopup } from "../hooks/use-oauth-popup.js";
 
 export function TemplateCreateForm({
   template,
   onCreated,
   onCancel,
+  oauthReturnView,
+  onOAuthRedirect,
+  popupOAuth,
 }: {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
   onCancel: () => void;
+  /** Full-page OAuth fallback return path. Defaults to Settings → Connections;
+   *  the sandbox wizard passes its own route so the in-progress wizard
+   *  survives the round-trip if the popup is blocked. */
+  oauthReturnView?: string;
+  /** Called with the new connection's id just before the full-page OAuth
+   *  redirect, so a caller can persist it synchronously before navigation. */
+  onOAuthRedirect?: (connectionId: string) => void;
+  /** Prefer a popup for OAuth (keeps the caller's page mounted); falls back to
+   *  a full-page redirect when the popup is blocked. */
+  popupOAuth?: boolean;
 }) {
   const create = useCreateConnection();
 
@@ -43,6 +59,22 @@ export function TemplateCreateForm({
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [authorizing, setAuthorizing] = useState(false);
+
+  // Connection awaiting popup authorization; the popup result handler selects
+  // it on success.
+  const pendingIdRef = useRef<string | null>(null);
+  const { open: openPopup, close: closePopup } = useOAuthPopup((result) => {
+    setAuthorizing(false);
+    if (result.ok && pendingIdRef.current) {
+      // The popup created + authorized the connection without a page reload, so
+      // refresh the list ourselves (the raw create call doesn't invalidate).
+      void queryClient.invalidateQueries({
+        queryKey: trpc.connections.list.queryKey(),
+      });
+      onCreated(pendingIdRef.current);
+    } else if (result.message) setError(result.message);
+    pendingIdRef.current = null;
+  });
 
   const needsOAuth = template.authKind === "oauth";
   const pending = create.isPending || authorizing;
@@ -147,13 +179,43 @@ export function TemplateCreateForm({
       return;
     }
     if (needsOAuth) {
+      // Preferred: popup — opened synchronously here so the browser doesn't
+      // block it, then navigated once the auth URL is known. Keeps the caller's
+      // page mounted, so an in-progress wizard is never lost.
+      const popup = popupOAuth ? openPopup() : null;
+      if (popup) {
+        setAuthorizing(true);
+        try {
+          const result = await api.connections.create.mutate(payload);
+          pendingIdRef.current = result.id;
+          const r = await api.connections.startOAuth.mutate({
+            connectionId: result.id,
+            popup: true,
+          });
+          popup.location.href = r.authUrl;
+        } catch (err) {
+          closePopup();
+          pendingIdRef.current = null;
+          setAuthorizing(false);
+          setError(err instanceof Error ? err.message : String(err));
+        }
+        return;
+      }
+
+      // Fallback: full-page redirect (popup blocked, or not requested).
       setAuthorizing(true);
       try {
         const result = await api.connections.create.mutate(payload);
         const r = await api.connections.startOAuth.mutate({
           connectionId: result.id,
+          ...(oauthReturnView ? { returnTo: oauthReturnView } : {}),
         });
-        sessionStorage.setItem("platform-return-view", "/settings/connections");
+        if (oauthReturnView) onOAuthRedirect?.(result.id);
+        else
+          sessionStorage.setItem(
+            "platform-return-view",
+            "/settings/connections",
+          );
         window.location.href = r.authUrl;
       } catch (err) {
         setAuthorizing(false);

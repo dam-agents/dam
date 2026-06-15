@@ -21,6 +21,11 @@ export const wizardSnapshotSchema = z.object({
   egressPreset: egressPresetSchema,
   // Step 3 — connections (filled in sub-issue 03).
   connectionIds: z.array(z.string()),
+  // Connection id mid-authorization, persisted so a full-page OAuth redirect
+  // can be reconciled (selected on success) when the wizard reloads. Defaulted
+  // so a snapshot written by an earlier build (without this field) still parses
+  // instead of resetting an in-progress wizard.
+  pendingConnectionId: z.string().nullable().default(null),
 });
 export type WizardSnapshot = z.infer<typeof wizardSnapshotSchema>;
 export type WizardStep = WizardSnapshot["step"];
@@ -33,6 +38,7 @@ export const EMPTY_SNAPSHOT: WizardSnapshot = {
   providerSecretId: null,
   egressPreset: "trusted",
   connectionIds: [],
+  pendingConnectionId: null,
 };
 
 export function loadSnapshot(): WizardSnapshot {
