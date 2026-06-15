@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build-keycloak-theme": "vite build && keycloakify build"
+  },
   "dependencies": {
     "@ibm/plex": "^6.4.1",
     "class-variance-authority": "^0.7.1",
