@@ -80,3 +80,4 @@ This directory contains ADRs for the Platform project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [047](047-api-keys-headless-auth.md) | API keys with scopes for headless CLI use | @xjacka |

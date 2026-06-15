@@ -55,7 +55,7 @@ flowchart LR
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
 - **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
-- **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
+- **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).

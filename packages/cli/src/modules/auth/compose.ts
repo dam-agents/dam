@@ -3,6 +3,13 @@ import type { CompatService, ConfigService } from "../cli/index.js";
 import { buildLoginCommand } from "./commands/login.js";
 import { buildLogoutCommand } from "./commands/logout.js";
 import { buildStatusCommand } from "./commands/status.js";
+import { buildTokenCreateCommand } from "./commands/token-create.js";
+import { buildTokenListCommand } from "./commands/token-list.js";
+import { buildTokenRevokeCommand } from "./commands/token-revoke.js";
+import {
+  createTrpcClient,
+  type TrpcClient,
+} from "../shared/trpc/trpc-client.js";
 import { createAuthConfigProbe } from "./infrastructure/auth-config-probe.js";
 import {
   createProcessAuthEnvReader,
@@ -140,6 +147,34 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
     }),
   );
   authParent.addCommand(buildStatusCommand({ authService }));
+
+  // `dam auth token` — API key management. The sub-tree reuses the
+  // shared tRPC client built on this module's own TokenProvider, so the auth
+  // module owns the wiring without taking a dependency on the package compose.
+  const buildTrpc: (host: string) => TrpcClient = (host) =>
+    createTrpcClient({ host, tokenProvider });
+  const tokenParent = new Command("token").description(
+    "Manage API keys for headless / CI use",
+  );
+  tokenParent.addCommand(
+    buildTokenCreateCommand({
+      configService: opts.configService,
+      buildTrpc,
+    }),
+  );
+  tokenParent.addCommand(
+    buildTokenListCommand({
+      configService: opts.configService,
+      buildTrpc,
+    }),
+  );
+  tokenParent.addCommand(
+    buildTokenRevokeCommand({
+      configService: opts.configService,
+      buildTrpc,
+    }),
+  );
+  authParent.addCommand(tokenParent);
 
   return {
     commands: [authParent],

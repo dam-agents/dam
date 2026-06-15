@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { useAppVersion } from "../api/queries.js";
@@ -21,6 +22,7 @@ const tabs: { id: SettingsTab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "providers", label: "Providers" },
   { id: "connections", label: "Connections" },
+  { id: "api-keys", label: "API keys" },
 ];
 
 const themeOptions = [
@@ -123,6 +125,8 @@ export function SettingsView() {
             </div>
           </div>
         )}
+
+        {activeTab === "api-keys" && <ApiKeysList />}
 
         {activeTab === "account" && (
           <div className="anim-in">

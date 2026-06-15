@@ -1,6 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
+  manageAgentsProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
+import {
   agentConnectSlackInputSchema,
   agentConnectTelegramInputSchema,
   agentCreateInputSchema,
@@ -32,54 +37,70 @@ function toView(agent: Agent) {
 }
 
 export const agentsRouter = t.router({
-  list: t.procedure.query(async ({ ctx }) => {
+  list: readAgentProcedure.query(async ({ ctx }) => {
     const agents = await ctx.agents.list();
-    return agents.map(toView);
+    // For agent-bound keys, narrow the listing to the bound set so callers
+    // don't see agents they couldn't operate on anyway.
+    const allowed =
+      ctx.user.agentIds === "*"
+        ? agents
+        : agents.filter((a) => ctx.user.agentIds.includes(a.id));
+    return allowed.map(toView);
   }),
 
-  get: t.procedure.input(agentGetInputSchema).query(async ({ ctx, input }) => {
-    const agent = await ctx.agents.get(input.id);
-    if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-    return toView(agent);
-  }),
+  get: readAgentProcedure
+    .input(agentGetInputSchema)
+    .query(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
+      const agent = await ctx.agents.get(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(agent);
+    }),
 
-  create: t.procedure
+  create: manageAgentsProcedure
     .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.create(input);
       return toView(agent);
     }),
 
-  update: t.procedure
+  update: manageAgentsProcedure
     .input(agentUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       const agent = await ctx.agents.update(input);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),
 
-  delete: t.procedure
+  delete: manageAgentsProcedure
     .input(agentDeleteInputSchema)
-    .mutation(({ ctx, input }) => ctx.agents.delete(input.id)),
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
+      return ctx.agents.delete(input.id);
+    }),
 
-  restart: t.procedure
+  restart: manageAgentsProcedure
     .input(agentRestartInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       const ok = await ctx.agents.restart(input.id);
       if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
     }),
 
-  wake: t.procedure
+  wake: manageAgentsProcedure
     .input(agentWakeInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       const agent = await ctx.agents.wake(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),
 
-  connectSlack: t.procedure
+  connectSlack: manageAgentsProcedure
     .input(agentConnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       if (!ctx.channels.available.slack)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -98,17 +119,19 @@ export const agentsRouter = t.router({
       }
     }),
 
-  disconnectSlack: t.procedure
+  disconnectSlack: manageAgentsProcedure
     .input(agentDisconnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       const agent = await ctx.agents.disconnectSlack(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),
 
-  connectTelegram: t.procedure
+  connectTelegram: manageAgentsProcedure
     .input(agentConnectTelegramInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       if (!ctx.channels.available.telegram)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -119,9 +142,10 @@ export const agentsRouter = t.router({
       return toView(agent);
     }),
 
-  disconnectTelegram: t.procedure
+  disconnectTelegram: manageAgentsProcedure
     .input(agentDisconnectTelegramInputSchema)
     .mutation(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
       const agent = await ctx.agents.disconnectTelegram(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
