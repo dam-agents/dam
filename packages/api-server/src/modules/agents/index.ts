@@ -9,6 +9,10 @@ export {
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
 export {
+  createAgentRegistrySecretPort,
+  type AgentRegistrySecretPort,
+} from "./infrastructure/agent-registry-secret-port.js";
+export {
   createKeycloakUserDirectory,
   type KeycloakUserDirectory,
 } from "./infrastructure/keycloak-user-directory.js";

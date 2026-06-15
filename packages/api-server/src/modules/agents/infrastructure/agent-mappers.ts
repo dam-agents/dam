@@ -156,6 +156,7 @@ export function buildAgentObject(
   spec: Record<string, unknown>,
   owner: string,
   templateId?: string,
+  name?: string,
 ): AgentObject {
   const labels: Record<string, string> = { [LABEL_OWNER]: owner };
   if (templateId) labels[LABEL_TEMPLATE_REF] = templateId;
@@ -164,7 +165,7 @@ export function buildAgentObject(
     apiVersion: SPEC_VERSION,
     kind: KIND_AGENT,
     metadata: {
-      name: generateK8sName("agent"),
+      name: name ?? generateK8sName("agent"),
       labels,
       annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
     },

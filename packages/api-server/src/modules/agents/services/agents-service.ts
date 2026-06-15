@@ -33,6 +33,8 @@ import {
   assembleSpecFromTemplate,
   assembleSpecFromImage,
 } from "../domain/spec-assembly.js";
+import { generateK8sName } from "../infrastructure/configmap-mappers.js";
+import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
@@ -87,6 +89,7 @@ export function createAgentsService(deps: {
   /** Run after a successful K8s delete. Each module that owns per-agent
    *  Postgres state contributes one hook. */
   cleanupHooks?: readonly AgentCleanupHook[];
+  registrySecretPort?: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
   /** Single-shot create: seeds spec grant fields before first render, then
@@ -279,10 +282,53 @@ export function createAgentsService(deps: {
           spec.grantedConnectionIds = g.grantedConnectionIds;
       }
 
+      const owner = deps.owner ?? "";
+
+      let pullSecretAgentId: string | undefined;
+      if (input.registryCredential) {
+        if (!deps.registrySecretPort) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "registry credential not supported in this composition",
+          });
+        }
+        pullSecretAgentId = generateK8sName("agent");
+        await deps.registrySecretPort.create(
+          pullSecretAgentId,
+          owner,
+          input.registryCredential,
+        );
+        spec.imagePullSecretRef =
+          deps.registrySecretPort.secretName(pullSecretAgentId);
+      }
+
       // ADR-058: no desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
-      const owner = deps.owner ?? "";
-      const infra = await deps.repo.create(spec, owner, templateId);
+      let infra: InfraAgent;
+      try {
+        infra = await deps.repo.create(
+          spec,
+          owner,
+          templateId,
+          pullSecretAgentId,
+        );
+      } catch (e) {
+        if (pullSecretAgentId && deps.registrySecretPort) {
+          try {
+            await deps.registrySecretPort.delete(pullSecretAgentId);
+          } catch (cleanupErr) {
+            securityLog("error", "agent.create.pull_secret_orphaned", {
+              category: "resource",
+              actor: owner || null,
+              actorKind: "user",
+              result: "failure",
+              reason:
+                cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+            });
+          }
+        }
+        throw e;
+      }
 
       const emails = input.allowedUserEmails ?? [];
       if (emails.length > 0) {
@@ -346,6 +392,7 @@ export function createAgentsService(deps: {
           egressPreset: input.egressPreset ?? "trusted",
           allowedUserCount: emails.length,
           secretRefSet: input.secretRef !== undefined,
+          registryCredentialSet: input.registryCredential !== undefined,
           envKeys: (input.env ?? []).map((e) => e.name),
         },
       });

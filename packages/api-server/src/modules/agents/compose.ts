@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
 import {
@@ -70,6 +71,7 @@ export function composeAgentsModule(deps: {
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s);
+  const registrySecretPort = createAgentRegistrySecretPort(k8s);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
   // Postgres queries that already accept an empty-string owner-filter
   // (channels/allowed_users repos) treat "" as "match all" — keep that.
@@ -81,6 +83,7 @@ export function composeAgentsModule(deps: {
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
+      registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
       grantProvisioner: deps.grantProvisioner,

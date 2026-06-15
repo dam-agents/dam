@@ -8,6 +8,7 @@ import {
 import {
   composeAgentsModule,
   createAgentsRepository,
+  createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
   startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
@@ -362,9 +363,13 @@ deliverySweeper.start();
 // module's adapter clears its own table; failures log + continue. The
 // orphan-sweeper saga catches anything missed (replica died mid-delete,
 // hook threw, etc.).
+const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
+const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
+  (agentId: string) => registrySecretPort.delete(agentId),
 ];
 
 // Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
@@ -372,7 +377,7 @@ const agentCleanupHooks = [
 // cleanup. Runs on every replica — DELETEs are idempotent, the random
 // initial-delay jitter spreads scans out.
 const agentArtifactsSweeper = createAgentArtifactsSweeper({
-  k8s: createAgentsK8sClient(api, config.namespace),
+  k8s: agentsCleanupK8s,
   sources: [
     {
       name: "egress-rules",
@@ -383,6 +388,11 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       name: "pending-approvals",
       listAgentIds: () => listPendingApprovalAgentIds(db),
       cleanup: agentCleanupHooks[1]!,
+    },
+    {
+      name: "registry-pull-secrets",
+      listAgentIds: () => registrySecretPort.listAgentIds(),
+      cleanup: agentCleanupHooks[2]!,
     },
   ],
   intervalMs: 30 * 60_000,

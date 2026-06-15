@@ -23,6 +23,12 @@ export const TYPE_AGENT = "agent";
 export const TYPE_SCHEDULE = "agent-schedule";
 export const TYPE_CHANNEL_SECRET = "channel-secret";
 
+// ---- Agent-scoped registry pull-secret labels ----
+export const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
+export const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
+export const MANAGED_BY_API_SERVER = "api-server";
+export const SECRET_TYPE_REGISTRY_PULL = "registry-pull";
+
 // ---- ConfigMap data keys ----
 export const SPEC_KEY = "spec.yaml";
 export const STATUS_KEY = "status.yaml";
