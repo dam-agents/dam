@@ -1,4 +1,5 @@
 import { t } from "../../trpc.js";
+import { readAgentProcedure } from "../../auth-procedures.js";
 import type { Repo, RepoView } from "./types.js";
 
 function toView(repo: Repo): RepoView {
@@ -8,7 +9,7 @@ function toView(repo: Repo): RepoView {
 }
 
 export const reposRouter = t.router({
-  list: t.procedure.query(async ({ ctx }) => {
+  list: readAgentProcedure.query(async ({ ctx }) => {
     const repos = await ctx.repos.list();
     return repos.map(toView);
   }),

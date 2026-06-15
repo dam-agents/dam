@@ -178,6 +178,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "platform.fullname" . }}-apiserver-activity
                   key: ACTIVITY_HMAC_KEY
+            - name: API_KEY_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-apiserver-apikeys
+                  key: API_KEY_HMAC_KEY
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"

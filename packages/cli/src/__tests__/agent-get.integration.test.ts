@@ -8,7 +8,20 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
-import type { Agent, AgentsService, ApiContext } from "api-server-api";
+import {
+  ALL_SCOPES,
+  type Agent,
+  type AgentsService,
+  type ApiContext,
+  type UserIdentity,
+} from "api-server-api";
+
+const FIXTURE_USER: UserIdentity = {
+  sub: "fixture-user",
+  preferredUsername: "fixture-user",
+  scopes: ALL_SCOPES,
+  agentIds: "*",
+};
 
 const exec = promisify(execFile);
 
@@ -48,15 +61,18 @@ async function startFixture(opts: {
     get: opts.get ?? (async () => null),
   };
 
-  const ctx = new Proxy({ agents } as Record<string, unknown>, {
-    get(target, prop) {
-      if (prop in target) return target[prop as string];
-      if (prop === "then") return undefined;
-      throw new Error(
-        `fake api-server: unexpected ctx access: ${String(prop)}`,
-      );
+  const ctx = new Proxy(
+    { agents, user: FIXTURE_USER } as Record<string, unknown>,
+    {
+      get(target, prop) {
+        if (prop in target) return target[prop as string];
+        if (prop === "then") return undefined;
+        throw new Error(
+          `fake api-server: unexpected ctx access: ${String(prop)}`,
+        );
+      },
     },
-  }) as unknown as ApiContext;
+  ) as unknown as ApiContext;
 
   const server: Server = createServer(async (req, res) => {
     if (req.url === "/api/version") {

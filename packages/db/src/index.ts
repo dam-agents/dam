@@ -19,6 +19,7 @@ export {
   activityEvents,
   actorRoles,
   termsAcceptances,
+  apiKeys,
 } from "./schema.js";
 export {
   eq,

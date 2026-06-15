@@ -1,4 +1,5 @@
 import type { AgentsService } from "./modules/agents/types.js";
+import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
@@ -15,6 +16,16 @@ import type { TermsService } from "./modules/terms/types.js";
 export interface UserIdentity {
   sub: string;
   preferredUsername: string;
+  /** Effective scopes granted to this principal for the current request.
+   *  Keycloak-authenticated users carry all scopes; API-key principals
+   *  carry the scopes recorded on the key intersected with the owner's
+   *  current effective permissions. */
+  scopes: readonly Scope[];
+  /** Agent allowlist. `"*"` means every agent owned by `sub`. */
+  agentIds: readonly string[] | "*";
+  /** Set when the principal was authenticated via an API key. Procedures
+   *  that manage API keys themselves MUST reject when this is set. */
+  keyId?: string;
 }
 
 export interface ApiContext {
@@ -31,6 +42,7 @@ export interface ApiContext {
   files: FilesService;
   terms: TermsService;
   e2e: E2eService;
+  apiKeys: ApiKeysService;
   user: UserIdentity;
   e2eEnabled: boolean;
 }

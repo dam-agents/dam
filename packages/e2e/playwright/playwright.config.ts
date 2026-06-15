@@ -49,5 +49,14 @@ export default defineConfig({
       dependencies: ["messages"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      // Pure-API authorization matrix — mints its own JWT via getAccessToken
+      // and never touches the browser session, so no storageState. Depends on
+      // auth only to gate on a healthy cluster before running.
+      name: "api-keys",
+      testMatch: /06-.*\.spec\.ts$/,
+      dependencies: ["auth"],
+      use: { ...devices["Desktop Chrome"] },
+    },
   ],
 });

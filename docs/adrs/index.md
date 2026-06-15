@@ -74,6 +74,7 @@ This directory contains ADRs for the Platform project.
 | [067](067-local-model-gateway.md)             | Local model gateway fronts custom Anthropic upstreams for claude-code | @Tomas2D |
 | [068](068-operator-applied-crds.md)           | Frozen shared CRDs — operator-applied schema upgrades | @jezekra1 |
 | [069](069-runtime-env-injection.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
+| [070](070-api-keys-headless-auth.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
 
 ## Drafts
 

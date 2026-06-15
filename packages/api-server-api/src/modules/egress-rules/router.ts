@@ -1,5 +1,10 @@
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
+  manageAgentsProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
+import {
   egressRuleApplyPresetInputSchema,
   egressRuleCreateInputSchema,
   egressRuleCurrentPresetInputSchema,
@@ -9,31 +14,39 @@ import {
 } from "./schemas.js";
 
 export const egressRulesRouter = t.router({
-  listForAgent: t.procedure
+  listForAgent: readAgentProcedure
     .input(egressRuleListForAgentInputSchema)
-    .query(({ ctx, input }) => ctx.egressRules.listForAgent(input.agentId)),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.egressRules.listForAgent(input.agentId);
+    }),
 
-  currentPreset: t.procedure
+  currentPreset: readAgentProcedure
     .input(egressRuleCurrentPresetInputSchema)
-    .query(({ ctx, input }) => ctx.egressRules.currentPreset(input.agentId)),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.egressRules.currentPreset(input.agentId);
+    }),
 
-  create: t.procedure
+  create: manageAgentsProcedure
     .input(egressRuleCreateInputSchema)
     .mutation(({ ctx, input }) => ctx.egressRules.create(input)),
 
-  update: t.procedure
+  update: manageAgentsProcedure
     .input(egressRuleUpdateInputSchema)
     .mutation(({ ctx, input }) => ctx.egressRules.update(input)),
 
-  revoke: t.procedure
+  revoke: manageAgentsProcedure
     .input(egressRuleRevokeInputSchema)
     .mutation(({ ctx, input }) => ctx.egressRules.revoke(input.id)),
 
-  applyPreset: t.procedure
+  applyPreset: manageAgentsProcedure
     .input(egressRuleApplyPresetInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.egressRules.applyPreset(input.agentId, input.preset),
     ),
 
-  trustedHosts: t.procedure.query(({ ctx }) => ctx.egressRules.trustedHosts()),
+  trustedHosts: readAgentProcedure.query(({ ctx }) =>
+    ctx.egressRules.trustedHosts(),
+  ),
 });

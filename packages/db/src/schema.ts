@@ -418,3 +418,27 @@ export const schedules = pgTable(
       .where(sql`${table.enabled} = true`),
   ],
 );
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    name: text("name").notNull(),
+    hash: text("hash").notNull(),
+    scopes: text("scopes").array().notNull(),
+    agentIds: text("agent_ids").array(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("api_keys_hash_idx").on(table.hash),
+    index("api_keys_owner_idx")
+      .on(table.ownerSub)
+      .where(sql`${table.revokedAt} IS NULL`),
+  ],
+);

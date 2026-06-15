@@ -377,6 +377,13 @@ apiServer:
     # must remain stable. Provide your own (≥32 chars) for cross-cluster
     # consistency or compliance audit trails.
     hmacKey: ""
+  # -- API keys for headless / CI use.
+  apiKeys:
+    # -- HMAC pepper for at-rest API-key token digests. Leave empty to have
+    # the chart generate and persist one in a Secret; rotating it invalidates
+    # every existing API key, so it must remain stable. Provide your own
+    # (≥32 chars) for cross-cluster consistency.
+    hmacKey: ""
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's

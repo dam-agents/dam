@@ -1,5 +1,12 @@
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
+  manageAgentsProcedure,
+  manageCredentialsProcedure,
+  readAgentProcedure,
+  readCredentialsProcedure,
+} from "../../auth-procedures.js";
+import {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
   connectionGetAgentConnectionsInputSchema,
@@ -9,23 +16,26 @@ import {
 } from "./schemas.js";
 
 export const connectionsRouter = t.router({
-  listTemplates: t.procedure.query(({ ctx }) =>
+  // Global connection catalog + lifecycle — credentials:* scopes.
+  listTemplates: readCredentialsProcedure.query(({ ctx }) =>
     ctx.connections.listTemplates(),
   ),
 
-  list: t.procedure.query(({ ctx }) => ctx.connections.listConnections()),
+  list: readCredentialsProcedure.query(({ ctx }) =>
+    ctx.connections.listConnections(),
+  ),
 
-  get: t.procedure
+  get: readCredentialsProcedure
     .input(connectionIdInputSchema)
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
 
-  create: t.procedure
+  create: manageCredentialsProcedure
     .input(connectionCreateInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.createFromTemplate(input).then((id) => ({ id })),
     ),
 
-  startOAuth: t.procedure
+  startOAuth: manageCredentialsProcedure
     .input(connectionStartOAuthInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.startOAuth(input.connectionId, {
@@ -34,21 +44,25 @@ export const connectionsRouter = t.router({
       }),
     ),
 
-  discoverMcp: t.procedure
+  discoverMcp: manageCredentialsProcedure
     .input(connectionDiscoverMcpInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.discoverMcp(input)),
 
-  delete: t.procedure
+  delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
 
-  getAgentConnections: t.procedure
+  // Per-agent grant linkage is agent configuration: reading it needs an agent
+  // scope; assigning is agents:manage (the agent is the resource being
+  // configured, not the connection itself).
+  getAgentConnections: readAgentProcedure
     .input(connectionGetAgentConnectionsInputSchema)
-    .query(({ ctx, input }) =>
-      ctx.connections.getAgentConnections(input.agentId),
-    ),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.connections.getAgentConnections(input.agentId);
+    }),
 
-  setAgentConnections: t.procedure
+  setAgentConnections: manageAgentsProcedure
     .input(connectionSetAgentConnectionsInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.setAgentConnections(input.agentId, input.connectionIds),

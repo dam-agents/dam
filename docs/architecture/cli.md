@@ -53,7 +53,17 @@ The `auth` module exposes a single application service — **`TokenProvider`** �
 
 Concurrent writes to the auth store are not coordinated in v1. The store mutates `auth.toml` via read-merge-rename: the rename is atomic, but the surrounding sequence is not, so two `dam` processes that overlap (e.g. an interactive `dam auth login --server foo` running while a `TokenProvider` refresh for `bar` fires in another terminal) can each persist their own merged snapshot, and the later rename silently reverts the other host's entry. The failure surfaces later as an unexpected `session-expired` prompt — recoverable with `dam auth login`, but on a host the user may not remember touching. Same-host concurrent refreshes cost at most one forced re-login. A proper fix (per-host files or cross-process locking) is deferred — v1 targets solo, single-terminal use.
 
-For headless / CI use, set `DAM_TOKEN=<bearer>` — the CLI uses it verbatim and bypasses `auth.toml`. There is no `--token` flag (avoids leaking tokens into shell history and `ps`).
+For headless / CI use, set `DAM_TOKEN=<bearer>` — the CLI uses it verbatim and bypasses `auth.toml`. There is no `--token` flag (avoids leaking tokens into shell history and `ps`). The variable accepts either a Keycloak access token or a Platform API key (`pk_…` prefix); the CLI does not branch — the server's bearer middleware dispatches by prefix.
+
+### API keys (`dam auth token`)
+
+`dam auth token` is the sub-tree that mints, lists, and revokes API keys. Three commands:
+
+- **`dam auth token create --name <name> [--scope agents:read|agents:operate|agents:manage|credentials:read|credentials:manage…] [--agent <agent-id>…] [--expires <iso>] [--json]`** — calls `apiKeys.create` against the active host. The server returns the plaintext token *once*; by default the CLI prints it on stderr (so a `> file` redirect doesn't silently capture it) along with the cannot-be-recovered warning, and under `--json` emits the token on stdout inside the JSON payload for scripted capture. Default scope is `agents:operate`; default agent binding is `*` (every agent the owner owns now and in future). `agents:manage` keys must be unrestricted — the wildcard binding is required (per-agent management downscoping is a future refinement). API-key principals cannot mint other API keys — the management surface rejects them server-side.
+- **`dam auth token list [--json]`** — emits id, name, scopes, agent binding, expiry, and last-used timestamp for every non-revoked key the caller owns. Plaintext is never displayed.
+- **`dam auth token revoke <id>`** — soft-deletes by stamping `revoked_at`. The key is rejected on the very next request — the validator filters revoked rows at lookup time.
+
+The sub-tree composes inside `auth/compose.ts` using the same TokenProvider the rest of the CLI consumes, with the same precedence: a `DAM_TOKEN` value wins over the stored interactive credentials. Minting with a `DAM_TOKEN`-supplied API key still fails — the server's management surface rejects API-key principals — but it fails server-side by design, not because the CLI filters the credential.
 
 ## Agent addressing
 

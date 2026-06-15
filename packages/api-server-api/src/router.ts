@@ -1,5 +1,6 @@
 import { t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
+import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
@@ -27,6 +28,7 @@ export const appRouter = t.router({
   files: filesRouter,
   terms: termsRouter,
   e2e: e2eRouter,
+  apiKeys: apiKeysRouter,
 });
 
 export type AppRouter = typeof appRouter;

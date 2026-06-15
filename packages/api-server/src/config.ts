@@ -60,6 +60,10 @@ const configSchema = z.object({
    *  Must be stable across restarts — rotating it orphans every existing
    *  row. The Helm chart auto-generates and persists this in a Secret. */
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
+  /** HMAC pepper for at-rest API-key token digests. Must be stable across
+   *  restarts — rotating it invalidates every existing key. The Helm chart
+   *  auto-generates and persists this in a Secret, mirroring ACTIVITY_HMAC_KEY. */
+  apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
   uiBaseUrl: z.url().default("http://localhost:4444"),
   keycloakUrl: z.url().default("http://platform-keycloak:8080"),
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
@@ -173,6 +177,7 @@ export function loadConfig(): Config {
     e2eEnabled: process.env.E2E_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
+    apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
     uiBaseUrl: process.env.UI_BASE_URL,
     keycloakUrl: process.env.KEYCLOAK_URL,
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,

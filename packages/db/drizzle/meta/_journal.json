@@ -15,6 +15,13 @@
       "when": 1776084226453,
       "tag": "0001_usage_views",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781512361632,
+      "tag": "0002_marvelous_dragon_man",
+      "breakpoints": true
     }
   ]
 }

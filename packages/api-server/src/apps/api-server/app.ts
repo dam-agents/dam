@@ -9,6 +9,7 @@ import type {
   AuthConfig,
   Brand,
   E2eService,
+  Scope,
   TermsService,
   UserIdentity,
 } from "api-server-api";
@@ -61,6 +62,7 @@ import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
 } from "./../../modules/connections/compose.js";
+import { composeApiKeysModule } from "./../../modules/api-keys/index.js";
 import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
 import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
@@ -201,15 +203,29 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     clientSecret: config.keycloakApiClientSecret,
   });
 
-  const auth = createAuth({
-    issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
-    jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
-    audience: config.keycloakApiAudience,
-    requiredRole: config.keycloakRequiredRole,
-    uiClientId: config.keycloakClientId,
-    cliClientId: config.keycloakCliClientId,
-    coreRole: config.keycloakInspectorRole,
+  const apiKeysModule = composeApiKeysModule({
+    db,
+    hmacKey: config.apiKeyHmacKey,
+    isAgentOwnedBy: (agentId, ownerSub) =>
+      agentsRepo.isOwnedBy(agentId, ownerSub),
+    ownerDirectory: userDirectory,
   });
+
+  const auth = createAuth(
+    {
+      issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+      jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+      audience: config.keycloakApiAudience,
+      requiredRole: config.keycloakRequiredRole,
+      uiClientId: config.keycloakClientId,
+      cliClientId: config.keycloakCliClientId,
+      coreRole: config.keycloakInspectorRole,
+    },
+    {
+      verifyApiKey: apiKeysModule.validator,
+      verifyOwnerActive: apiKeysModule.verifyOwnerActive,
+    },
+  );
 
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
@@ -345,6 +361,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     return agentsRepo.isOwnedBy(agentId, owner);
   }
 
+  /** Binding check for non-tRPC surfaces (in-pod relay, WS upgrade,
+   *  import proxy). Returns true when the principal may operate `agentId`. */
+  function hasAgentBinding(user: UserIdentity, agentId: string): boolean {
+    return user.agentIds === "*" || user.agentIds.includes(agentId);
+  }
+
+  /** Scope guard for non-tRPC surfaces. tRPC routers use the
+   *  procedure builders in api-server-api/auth-procedures.ts. */
+  function hasScope(user: UserIdentity, scope: Scope): boolean {
+    return user.scopes.includes(scope);
+  }
+
   app.all("/api/agents/:id/trpc/*", async (c) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
@@ -362,6 +390,24 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         detail: { surface: "trpc-proxy" },
       });
       return c.json({ error: "not found" }, 404);
+    }
+    // The in-pod relay is the most powerful surface in the system (ACP
+    // frames, pod-files, terminal). Require `agents:operate` + per-key agent
+    // binding before forwarding to the agent-runtime.
+    if (!hasScope(user, "agents:operate")) {
+      return c.json(
+        { error: "forbidden", message: "Requires agents:operate" },
+        403,
+      );
+    }
+    if (!hasAgentBinding(user, agentId)) {
+      return c.json(
+        {
+          error: "forbidden",
+          message: `API key is not bound to agent ${agentId}`,
+        },
+        403,
+      );
     }
 
     // No Bearer swap needed: ownership is verified above, and the agent
@@ -443,6 +489,24 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         detail: { surface: "import" },
       });
       return c.json({ error: "not found" }, 404);
+    }
+    // Pod-files (incl. `dam import`) is `agents:operate` — the agent itself
+    // can write the same paths during a run, so import is not a new
+    // capability for an agents:operate principal.
+    if (!hasScope(user, "agents:operate")) {
+      return c.json(
+        { error: "forbidden", message: "Requires agents:operate" },
+        403,
+      );
+    }
+    if (!hasAgentBinding(user, agentId)) {
+      return c.json(
+        {
+          error: "forbidden",
+          message: `API key is not bound to agent ${agentId}`,
+        },
+        403,
+      );
     }
     // Hard byte ceiling at the proxy boundary. Requires Content-Length so
     // a chunked-encoding client can't slip past the cap; we additionally
@@ -686,6 +750,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { service: approvals } = composeApprovalsService({
       db,
       ownerSub: user.sub,
+      agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db),
@@ -693,6 +758,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       wrapperFrameSender,
     });
     const files = composeFilesModule(api, config.namespace, user.sub);
+    const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -712,6 +778,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         files,
         terms,
         e2e,
+        apiKeys,
         user,
         e2eEnabled: config.e2eEnabled,
       }),
@@ -855,6 +922,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         detail: { relay: relayKind },
       });
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    // ACP and terminal WebSocket attachment is `agents:operate` plus per-key
+    // agent binding. Without these checks, an exfiltrated key bound to one
+    // agent could speak ACP to any owned agent.
+    if (!hasScope(user, "agents:operate") || !hasAgentBinding(user, agentId)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       socket.destroy();
       return;
     }
