@@ -29,6 +29,7 @@ export interface CreateAgentInput {
   secretIds?: string[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
+  registryCredential?: { server: string; username: string; password: string };
   /** Optional: clone this public repo (optionally a branch/tag) into the working
    *  dir once, shortly after first start (a one-shot `workspace-seed` event).
    *  Flows to `agents.create`. */

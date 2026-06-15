@@ -38,6 +38,7 @@ import {
   addAgentSchema,
   type AddAgentValues,
 } from "../forms/add-agent-schema.js";
+import { RegistryCredentialFields } from "./registry-credential-fields.js";
 
 type Step = "pick" | "configure";
 
@@ -73,6 +74,7 @@ export function AddAgentDialog({
     secretIds?: string[];
     appConnectionIds?: string[];
     egressPreset?: EgressPreset;
+    registryCredential?: { server: string; username: string; password: string };
     gitRepo?: { url: string; ref?: string };
     importEntries?: BundleEntry[];
     importRawBundle?: File;
@@ -119,6 +121,7 @@ export function AddAgentDialog({
       selSecrets: [],
       selApps: [],
       egressPreset: "trusted",
+      registryCredential: { server: "", username: "", password: "" },
     },
   });
   const { errors, isSubmitting, isValid } = formState;
@@ -154,6 +157,13 @@ export function AddAgentDialog({
       : [...current, id].sort();
     setValue("selApps", next, { shouldDirty: true });
   };
+
+  const clearRegistryCredential = () =>
+    setValue(
+      "registryCredential",
+      { server: "", username: "", password: "" },
+      { shouldValidate: true },
+    );
 
   const selSecrets = watch("selSecrets");
   const selApps = watch("selApps");
@@ -207,6 +217,9 @@ export function AddAgentDialog({
     // Await background walks here, not on drop — isSubmitting keeps the button busy meanwhile.
     const importEntries =
       initSource === INIT_LOCAL ? await importPicker.resolveEntries() : [];
+    const reg = values.registryCredential;
+    const registryCredential =
+      !selectedTemplate && reg.server ? reg : undefined;
     // ADR-040: env contributions from granted secrets/apps are merged at
     // pod-render time by the controller. Don't pre-stamp them onto the
     // agent spec.
@@ -227,6 +240,7 @@ export function AddAgentDialog({
       secretIds: values.selSecrets,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
       egressPreset: values.egressPreset,
+      registryCredential,
       gitRepo: selectedRepo
         ? { url: selectedRepo.url, ref: selectedRepo.ref }
         : undefined,
@@ -343,6 +357,14 @@ export function AddAgentDialog({
             <FormField label="Description">
               <Input placeholder="Optional" {...register("description")} />
             </FormField>
+
+            {!selectedTemplate && (
+              <RegistryCredentialFields
+                register={register}
+                errors={errors.registryCredential}
+                onCollapse={clearRegistryCredential}
+              />
+            )}
 
             <fieldset className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
