@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import type {
   Connection,
   ConnectionAuthConfig,
@@ -182,9 +183,20 @@ async function applyGitHubIdentity(
       actorKind: "user",
       target: conn.id,
       result: "failure",
-      detail: { error: err instanceof Error ? err.message : String(err) },
+      detail: githubIdentityErrorDetail(err),
     });
   }
+}
+
+function githubIdentityErrorDetail(err: unknown): Record<string, unknown> {
+  if (err instanceof ZodError) {
+    return {
+      error: "ZodError",
+      fields: err.issues.map((i) => i.path.join(".")),
+    };
+  }
+  if (err instanceof Error) return { error: err.name, message: err.message };
+  return { error: String(err) };
 }
 
 async function buildProvider(

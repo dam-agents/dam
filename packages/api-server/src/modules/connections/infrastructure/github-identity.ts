@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const USER_LOOKUP_TIMEOUT_MS = 10_000;
+
 export interface GitHubIdentity {
   name: string;
   email: string;
@@ -18,6 +20,7 @@ export async function resolveGitHubIdentity(
 ): Promise<GitHubIdentity> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const res = await fetchImpl("https://api.github.com/user", {
+    signal: AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/vnd.github+json",
