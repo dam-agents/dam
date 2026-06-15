@@ -3,12 +3,6 @@ import type { GitHubIdentity } from "../infrastructure/github-identity.js";
 
 export const GITCONFIG_PATH = "$HOME/.gitconfig";
 
-/**
- * A `~/.gitconfig` `[user]` section authoring the agent's commits as the
- * connected account. `section-marker` is the only remove-safe mode that works
- * for `ini` — the file driver's `ini` parser returns a raw string, so a
- * `key-targeted` merge would corrupt the file.
- */
 export function buildGitconfigContribution(
   identity: GitHubIdentity,
 ): Contribution {
@@ -16,15 +10,13 @@ export function buildGitconfigContribution(
     kind: "file",
     path: GITCONFIG_PATH,
     format: "ini",
+    // section-marker is the only remove-safe mode for ini: the file driver's
+    // ini parser returns a raw string, so key-targeted would corrupt the file.
     mergeMode: "section-marker",
     content: { user: { name: identity.name, email: identity.email } },
   };
 }
 
-/**
- * Replaces any prior platform gitconfig contribution with a fresh one so
- * re-auth doesn't accumulate duplicates in the stored array.
- */
 export function upsertGitconfigContribution(
   existing: Contribution[],
   identity: GitHubIdentity,

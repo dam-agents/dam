@@ -9,12 +9,14 @@ import {
 } from "../../modules/connections/services/oauth-flow.js";
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import { sanitizeReturnTo } from "../../modules/connections/domain/oauth-callback-url.js";
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface OAuthCallbackDeps {
   db: Db;
   secretStore: SecretStore;
   engine: OAuthEngine;
   templates: ConnectionTemplateRegistry;
+  runtimeMutator: RuntimeMutator;
   uiBaseUrl: string;
 }
 
@@ -68,6 +70,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       repo: createConnectionsRepository(deps.db),
       templates: deps.templates,
       secretStore: deps.secretStore,
+      runtimeMutator: deps.runtimeMutator,
       ownerId: peeked.ctx.ownerId,
       callbackUrl: "",
     });

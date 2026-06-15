@@ -293,6 +293,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       secretStore: secretStores.default(),
       engine: connectionsBoot.oauthEngine,
       templates: connectionsBoot.templates,
+      runtimeMutator,
       uiBaseUrl: config.uiBaseUrl,
     }),
   );

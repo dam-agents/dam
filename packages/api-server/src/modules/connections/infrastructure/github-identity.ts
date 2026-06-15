@@ -12,13 +12,6 @@ const userSchema = z.object({
   email: z.string().nullable(),
 });
 
-/**
- * Resolves the identity of the account a GitHub access token belongs to, for
- * authoring the agent's git commits. `email` is the account's *public profile*
- * email when the user has published one (`GET /user` only ever exposes that),
- * otherwise the `{id}+{login}` no-reply — so a private primary address is never
- * pulled into commit history.
- */
 export async function resolveGitHubIdentity(
   accessToken: string,
   opts: { fetchImpl?: typeof fetch } = {},
@@ -36,6 +29,7 @@ export async function resolveGitHubIdentity(
     throw new Error(`GitHub GET /user failed: ${res.status} ${res.statusText}`);
   }
   const user = userSchema.parse(await res.json());
+  // No-reply fallback keeps a private primary email out of commit history.
   return {
     name: user.name ?? user.login,
     email: user.email ?? `${user.id}+${user.login}@users.noreply.github.com`,
