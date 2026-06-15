@@ -17,8 +17,7 @@ import { ProviderRow } from "../provider-row.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
-// Provider order + row copy per Figma 152:5986. Descriptions aren't in the
-// PROVIDERS metadata, so they live here.
+// Row descriptions aren't in the PROVIDERS metadata, so they live here.
 const PROVIDER_ROWS: { type: ProviderPresetType; description: string }[] = [
   {
     type: "ibm-litellm",
@@ -91,9 +90,8 @@ export function SetupStep({
       if (providerSecretId === secretId) update({ providerSecretId: null });
     });
 
-  // Auto-select the first already-connected provider when none is chosen yet.
-  // Only acts while the selection is empty — never clears a chosen id, so a
-  // just-connected provider can't be nulled out during the secrets refetch.
+  // Auto-select the first connected provider; only acts while empty so a
+  // just-connected one isn't nulled out during the secrets refetch.
   useEffect(() => {
     if (providerSecretId) return;
     const firstConnected = PROVIDER_ROWS.map((r) =>

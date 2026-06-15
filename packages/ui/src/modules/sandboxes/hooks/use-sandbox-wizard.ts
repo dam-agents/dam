@@ -14,11 +14,7 @@ export interface SandboxWizard {
   reset: () => void;
 }
 
-/**
- * Snapshot-backed wizard state. Every mutation persists to sessionStorage so
- * the in-progress sandbox survives the step-3 OAuth redirect; `reset` clears
- * both the in-memory state and the snapshot once the sandbox is created.
- */
+/** Wizard state mirrored to sessionStorage so it survives the OAuth redirect. */
 export function useSandboxWizard(): SandboxWizard {
   const [snapshot, setSnapshot] = useState<WizardSnapshot>(loadSnapshot);
 

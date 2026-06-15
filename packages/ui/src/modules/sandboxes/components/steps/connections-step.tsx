@@ -19,7 +19,6 @@ import { CatalogConnectionRow, MyConnectionRow } from "../connection-row.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
-// Stable fallback so the memos below aren't defeated before the query loads.
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 
 const CATEGORY_ORDER = ["app", "mcp", "other"] as const;
@@ -86,8 +85,7 @@ export function ConnectionsStep({
     update({ connectionIds: [...new Set([...snapshot.connectionIds, id])] });
   };
 
-  // Persist synchronously before the form's full-page OAuth redirect so the
-  // returning wizard can reconcile (select) the connection.
+  // Persist synchronously before the full-page OAuth redirect leaves the page.
   const onOAuthRedirect = (id: string) =>
     saveSnapshot({
       ...snapshot,

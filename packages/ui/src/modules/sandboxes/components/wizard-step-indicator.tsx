@@ -10,16 +10,10 @@ const STEPS = [
 
 interface Props {
   step: WizardStep;
-  /** Annotation appended to the Image step once an image is chosen, e.g. "(Claude Code)". */
   imageLabel: string | null;
   onNavigate: (step: WizardStep) => void;
 }
 
-/**
- * Persistent step indicator: a vertical list on desktop, a compact horizontal
- * row on narrow viewports. Already-visited steps are clickable to go back;
- * upcoming steps are inert.
- */
 export function WizardStepIndicator({ step, imageLabel, onNavigate }: Props) {
   return (
     <nav
@@ -62,8 +56,7 @@ function StepItem({
         "rounded-md px-3 py-2 text-left text-[15px] transition-colors",
         state === "active" && "bg-muted font-medium text-foreground",
         state === "visited" && "text-foreground hover:bg-muted/60",
-        // Upcoming steps use the lighter brand muted-text token (Cool Gray 40),
-        // not shadcn's darker `muted-foreground`, to match the design.
+        // Lighter brand muted token, not shadcn's darker muted-foreground.
         state === "upcoming" && "cursor-default text-text-muted",
       )}
     >

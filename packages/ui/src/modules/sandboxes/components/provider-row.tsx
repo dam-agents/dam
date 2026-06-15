@@ -28,12 +28,6 @@ interface Props {
   onRemoveKey: () => void;
 }
 
-/**
- * One provider row in Step 2 (states per Figma "Interaction details"). An
- * unconnected provider is a hover-able row that opens the connect dialog; a
- * connected one shows a "Connected" pill, becomes selectable (dark border when
- * picked), and carries a ⋮ menu to disconnect.
- */
 export function ProviderRow({
   type,
   description,

@@ -2,19 +2,15 @@ import { useCallback, useEffect, useRef } from "react";
 
 export interface OAuthPopupResult {
   ok: boolean;
-  /** Provider/flow message, or a cancellation note. Undefined on success. */
   message?: string;
 }
 
 const POPUP_FEATURES = "popup,width=640,height=760";
 
 /**
- * Drives a popup-based OAuth flow. `open()` synchronously opens a blank popup
- * (so the browser doesn't block it), and the caller navigates it to the auth
- * URL once available. The result arrives via a postMessage from the
- * same-origin callback page; a dismissed popup is detected by polling `closed`.
- * `open()` returns null when the popup is blocked, so the caller can fall back
- * to a full-page redirect.
+ * Popup-based OAuth. `open()` opens a blank popup synchronously (so it isn't
+ * blocked) and returns null if it was; the result arrives via same-origin
+ * postMessage, with a `closed` poll catching a dismissed popup.
  */
 export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   const popupRef = useRef<Window | null>(null);

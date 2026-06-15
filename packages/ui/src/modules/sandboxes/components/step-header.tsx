@@ -6,7 +6,6 @@ interface Props {
   subtitle: string;
 }
 
-/** "STEP n OF 3" eyebrow + title + subtitle, shared by every wizard step. */
 export function StepHeader({ step, title, subtitle }: Props) {
   return (
     <div className="mb-8">

@@ -9,10 +9,9 @@ import type { AgentView, TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
+import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
-import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import {
   useRestartAgent,
@@ -39,23 +38,19 @@ export function ListView() {
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
 
-  const createAgent = useCreateAgent();
   const deleteAgent = useDeleteAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
 
-  const [showAddAgent, setShowAddAgent] = useState(false);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
   // Gate on data presence, not query success: a transient poll failure keeps
   // the cached list rendered instead of flashing skeletons over it.
   const initialLoaded = agentsData !== undefined;
-  const busyAgent = createAgent.isPending;
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -98,16 +93,14 @@ export function ListView() {
           <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
             Sandboxes
           </h1>
-          <Button onClick={navigateToCreateSandbox} disabled={busyAgent}>
-            Create sandbox
-          </Button>
+          <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
         </div>
 
         {/* Skeleton during the initial load, before the first fetch resolves. */}
         {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
         {/* Empty state — the header's Create sandbox button is the only CTA. */}
-        {initialLoaded && agents.length === 0 && !busyAgent && (
+        {initialLoaded && agents.length === 0 && (
           <Card className="border border-border px-6 py-10 text-center text-[14px] text-muted-foreground anim-in">
             No sandboxes yet
           </Card>
@@ -136,20 +129,6 @@ export function ListView() {
         </div>
       </div>
 
-      {showAddAgent && (
-        <AddAgentDialog
-          templates={templates}
-          onSubmit={async (input) => {
-            setShowAddAgent(false);
-            await createAgent.mutateAsync(input);
-          }}
-          onCancel={() => setShowAddAgent(false)}
-          onGoToProviders={() => {
-            setShowAddAgent(false);
-            navigateToSettings("providers");
-          }}
-        />
-      )}
       {configAgent && (
         <ConfigureAgentDialog
           agent={configAgent}

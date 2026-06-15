@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 
-/** A catalogue template (Apps / MCP servers / Other) — click to add. */
 export function CatalogConnectionRow({
   template,
   onConnect,
@@ -42,7 +41,6 @@ export function CatalogConnectionRow({
   );
 }
 
-/** An already-configured connection — a checkbox grants it to the sandbox. */
 export function MyConnectionRow({
   title,
   subtitle,

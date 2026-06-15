@@ -5,26 +5,16 @@ const SNAPSHOT_KEY = "platform-sandbox-wizard";
 export const egressPresetSchema = z.enum(["none", "trusted", "all"]);
 export type EgressPreset = z.infer<typeof egressPresetSchema>;
 
-/**
- * Persisted wizard state. Holds only ids and pick-state so the wizard can
- * survive the full-page OAuth redirect in step 3 — never any secret value.
- * Every step's fields exist from the outset; later steps only fill them.
- */
+/** Persisted wizard state — ids and pick-state only, never secret values. */
 export const wizardSnapshotSchema = z.object({
   step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  // Step 1 — image: exactly one of these is set.
   templateId: z.string().nullable(),
   customImage: z.string(),
-  // Step 2 — setup (filled in sub-issue 02).
   name: z.string(),
   providerSecretId: z.string().nullable(),
   egressPreset: egressPresetSchema,
-  // Step 3 — connections (filled in sub-issue 03).
   connectionIds: z.array(z.string()),
-  // Connection id mid-authorization, persisted so a full-page OAuth redirect
-  // can be reconciled (selected on success) when the wizard reloads. Defaulted
-  // so a snapshot written by an earlier build (without this field) still parses
-  // instead of resetting an in-progress wizard.
+  // Defaulted so a snapshot written by an earlier build still parses.
   pendingConnectionId: z.string().nullable().default(null),
 });
 export type WizardSnapshot = z.infer<typeof wizardSnapshotSchema>;

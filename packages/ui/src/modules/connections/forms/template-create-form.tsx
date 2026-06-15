@@ -34,15 +34,11 @@ export function TemplateCreateForm({
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
   onCancel: () => void;
-  /** Full-page OAuth fallback return path. Defaults to Settings → Connections;
-   *  the sandbox wizard passes its own route so the in-progress wizard
-   *  survives the round-trip if the popup is blocked. */
+  /** Full-page OAuth return path; defaults to Settings → Connections. */
   oauthReturnView?: string;
-  /** Called with the new connection's id just before the full-page OAuth
-   *  redirect, so a caller can persist it synchronously before navigation. */
+  /** Called with the new connection's id just before a full-page OAuth redirect. */
   onOAuthRedirect?: (connectionId: string) => void;
-  /** Prefer a popup for OAuth (keeps the caller's page mounted); falls back to
-   *  a full-page redirect when the popup is blocked. */
+  /** Prefer a popup for OAuth (full-page redirect when blocked). */
   popupOAuth?: boolean;
 }) {
   const create = useCreateConnection();
@@ -60,14 +56,11 @@ export function TemplateCreateForm({
   const [error, setError] = useState<string | null>(null);
   const [authorizing, setAuthorizing] = useState(false);
 
-  // Connection awaiting popup authorization; the popup result handler selects
-  // it on success.
   const pendingIdRef = useRef<string | null>(null);
   const { open: openPopup, close: closePopup } = useOAuthPopup((result) => {
     setAuthorizing(false);
     if (result.ok && pendingIdRef.current) {
-      // The popup created + authorized the connection without a page reload, so
-      // refresh the list ourselves (the raw create call doesn't invalidate).
+      // No page reload happened, so refresh the list ourselves.
       void queryClient.invalidateQueries({
         queryKey: trpc.connections.list.queryKey(),
       });
@@ -179,9 +172,7 @@ export function TemplateCreateForm({
       return;
     }
     if (needsOAuth) {
-      // Preferred: popup — opened synchronously here so the browser doesn't
-      // block it, then navigated once the auth URL is known. Keeps the caller's
-      // page mounted, so an in-progress wizard is never lost.
+      // Open the popup synchronously (or it gets blocked); navigate it below.
       const popup = popupOAuth ? openPopup() : null;
       if (popup) {
         setAuthorizing(true);

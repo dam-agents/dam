@@ -24,21 +24,14 @@ import { OpenAIForm } from "../../settings/components/openai/form.js";
 
 interface Props {
   provider: ProviderPresetType;
-  /** When present the dialog edits this credential ("Edit key") instead of
-   *  creating a new one ("Connect"). */
+  /** When present, edits this credential ("Edit key") instead of creating one. */
   secret?: SecretView;
-  /** Called with the credential's id once connected or replaced. */
   onConnected: (secretId: string) => void;
   onClose: () => void;
 }
 
-/**
- * Wraps a Settings provider `form.tsx` in a modal. Saving goes straight
- * through the secret mutations — not `useProviderActions`, whose
- * first-credential `setView("list")` would eject the user from the wizard —
- * so we keep the user in place and capture the credential's id for the
- * snapshot.
- */
+// Saves via the secret mutations directly, not useProviderActions, whose
+// first-credential setView("list") would eject the user from the wizard.
 export function ProviderConnectDialog({
   provider,
   secret,
@@ -48,9 +41,6 @@ export function ProviderConnectDialog({
   const createSecret = useCreateSecret();
   const updateSecret = useUpdateSecret();
 
-  // One persist path for both Connect (create) and Edit key (update): each
-  // provider branch builds the same create-shaped input; we route by whether
-  // an existing credential is being edited.
   const persist = async (input: SecretCreateInput) => {
     if (secret) {
       await updateSecret.mutateAsync({

@@ -12,8 +12,6 @@ import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
 import { loadSnapshot, type WizardStep } from "../lib/wizard-snapshot.js";
 
-// Stable fallback so `templateList`'s memo isn't defeated while the
-// templates query has no data yet.
 const NO_TEMPLATES: TemplateView[] = [];
 
 export function SandboxWizardView() {
@@ -32,9 +30,8 @@ export function SandboxWizardView() {
     return null;
   }, [snapshot.templateId, snapshot.customImage, templateList]);
 
-  // Reconcile a returning OAuth round-trip before the generic app.tsx handler
-  // runs (which skips /sandboxes/new): select the connection on success, drop
-  // it on failure, then strip the query params.
+  // Own the OAuth return here (app.tsx skips /sandboxes/new): select the
+  // connection on success, drop it on failure, then strip the query params.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
@@ -85,8 +82,7 @@ export function SandboxWizardView() {
       reset();
       selectAgent(agent.id);
     } catch {
-      // The create mutation surfaces its own error toast; stay on Step 3 with
-      // the wizard state intact so the user can retry.
+      // Mutation surfaces its own error toast; stay on Step 3 to retry.
     }
   };
 

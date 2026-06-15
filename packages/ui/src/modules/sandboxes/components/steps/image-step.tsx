@@ -13,7 +13,6 @@ interface Props {
   loading: boolean;
   selectedTemplateId: string | null;
   customImage: string;
-  /** Pre-built cards select-and-advance in one click (no separate Continue). */
   onPickTemplate: (templateId: string) => void;
   onCustomImageChange: (value: string) => void;
   onContinueWithCustom: () => void;

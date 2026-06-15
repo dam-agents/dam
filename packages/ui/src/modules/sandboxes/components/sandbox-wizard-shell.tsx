@@ -10,11 +10,6 @@ interface Props {
   children: ReactNode;
 }
 
-/**
- * Lays out the persistent step indicator beside the active step's content.
- * Rendered full-width inside the icon-rail shell's <main>, so it owns its own
- * max-width and padding rather than the default content wrapper.
- */
 export function SandboxWizardShell({
   step,
   imageLabel,
