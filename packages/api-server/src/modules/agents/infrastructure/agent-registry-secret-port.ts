@@ -26,7 +26,7 @@ export interface AgentRegistrySecretPort {
   listAgentIds(): Promise<string[]>;
 }
 
-export function buildDockerConfigJson(cred: RegistryCredential): string {
+function buildDockerConfigJson(cred: RegistryCredential): string {
   const auth = Buffer.from(`${cred.username}:${cred.password}`).toString(
     "base64",
   );
