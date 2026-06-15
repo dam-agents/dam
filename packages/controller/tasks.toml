@@ -61,7 +61,9 @@ for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" "$legacy"); do
     status=1
   fi
 done
-gen_annotation='.metadata.annotations["agent-platform.ai/crd-schema-generation"] // "0"'
+# Schema-generation bumps are enforced per-PR by controller:check:crd-schema-generation
+# (baseline = origin/main, not a release tag) so a schema change can't slip
+# through against a v* tag that predates the CRDs.
 for f in "$crds"/*.yaml; do
   base="$baseline:$crds/$(basename "$f")"
   if ! git cat-file -e "$base" 2>/dev/null; then
@@ -75,9 +77,51 @@ for f in "$crds"/*.yaml; do
     echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
     status=1
   fi
-  if [ "$(git show "$base" | yq '.spec')" != "$(yq '.spec' "$f")" ] \
-    && [ "$(yq "$gen_annotation" "$f")" -le "$(git show "$base" | yq "$gen_annotation")" ]; then
-    echo "crd-compat: $f schema changed since $baseline without a crd-schema-generation bump (ADR-068)" >&2
+done
+exit $status
+'''
+
+# ADR-068: any CRD .spec change must bump agent-platform.ai/crd-schema-generation.
+# Baseline is the origin/main merge-base, so every PR that touches a schema must
+# bump (not just the first since a release); an unresolvable baseline is a hard
+# error, never a silent skip (a v* tag predating the CRDs is how #932 slipped through).
+["controller:check:crd-schema-generation"]
+dir = "{{config_root}}"
+sources = ["deploy/helm/platform/crds/*.yaml"]
+usage = 'flag "--baseline <ref>" help="Git ref to compare against (default: origin/main merge-base)"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_baseline:-}" ]; then
+  base_ref="$usage_baseline"
+elif base_ref=$(git merge-base HEAD origin/main 2>/dev/null); then
+  :
+elif base_ref=$(git merge-base HEAD main 2>/dev/null); then
+  :
+else
+  echo "crd-generation: cannot resolve a baseline (no origin/main or main reachable); pass --baseline <ref>" >&2
+  exit 1
+fi
+if ! git rev-parse -q --verify "$base_ref^{commit}" >/dev/null; then
+  echo "crd-generation: baseline ref '$base_ref' does not resolve to a commit" >&2
+  exit 1
+fi
+crds=deploy/helm/platform/crds
+gen='.metadata.annotations["agent-platform.ai/crd-schema-generation"] // "0"'
+status=0
+for f in "$crds"/*.yaml; do
+  base="$base_ref:$crds/$(basename "$f")"
+  if ! git cat-file -e "$base" 2>/dev/null; then
+    echo "crd-generation: $(basename "$f") is new since $base_ref — no prior schema to compare"
+    continue
+  fi
+  if [ "$(git show "$base" | yq '.spec')" = "$(yq '.spec' "$f")" ]; then
+    continue
+  fi
+  new_gen=$(yq "$gen" "$f")
+  old_gen=$(git show "$base" | yq "$gen")
+  if [ "$new_gen" -le "$old_gen" ]; then
+    echo "crd-generation: $(basename "$f") .spec changed vs $base_ref but agent-platform.ai/crd-schema-generation is still $new_gen (was $old_gen) — bump the constant in api/v1/schema_generation.go and its +kubebuilder:metadata:annotations marker, then run mise run controller:generate (ADR-068)" >&2
     status=1
   fi
 done
