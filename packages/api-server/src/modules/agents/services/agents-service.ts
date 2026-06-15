@@ -89,7 +89,7 @@ export function createAgentsService(deps: {
   /** Run after a successful K8s delete. Each module that owns per-agent
    *  Postgres state contributes one hook. */
   cleanupHooks?: readonly AgentCleanupHook[];
-  registrySecretPort?: AgentRegistrySecretPort;
+  registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
   /** Single-shot create: seeds spec grant fields before first render, then
@@ -286,12 +286,6 @@ export function createAgentsService(deps: {
 
       let pullSecretAgentId: string | undefined;
       if (input.registryCredential) {
-        if (!deps.registrySecretPort) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "registry credential not supported in this composition",
-          });
-        }
         pullSecretAgentId = generateK8sName("agent");
         await deps.registrySecretPort.create(
           pullSecretAgentId,
@@ -313,7 +307,7 @@ export function createAgentsService(deps: {
           pullSecretAgentId,
         );
       } catch (e) {
-        if (pullSecretAgentId && deps.registrySecretPort) {
+        if (pullSecretAgentId) {
           try {
             await deps.registrySecretPort.delete(pullSecretAgentId);
           } catch (cleanupErr) {
