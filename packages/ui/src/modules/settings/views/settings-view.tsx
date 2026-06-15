@@ -4,6 +4,7 @@ import {
   Logout as LogOut,
   Screen as Monitor,
 } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +12,10 @@ import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import {
+  isShowInternalConnectionsEnabled,
+  setShowInternalConnections,
+} from "../../connections/internal-only.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { useAppVersion } from "../api/queries.js";
@@ -52,6 +57,18 @@ export function SettingsView() {
   const setView = useStore((s) => s.setView);
   const user = getUser();
   const { data: appVersion } = useAppVersion();
+  const [versionTaps, setVersionTaps] = useState(0);
+
+  // Hidden: five taps on the version string flips the internal-only
+  // connections catalog (same toggle as the platformConnections devtools helper).
+  const onVersionTap = () => {
+    if (versionTaps + 1 < 5) {
+      setVersionTaps(versionTaps + 1);
+      return;
+    }
+    setShowInternalConnections(!isShowInternalConnectionsEnabled());
+    window.location.reload();
+  };
 
   return (
     <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
@@ -164,7 +181,10 @@ export function SettingsView() {
             </div>
 
             {appVersion && (
-              <div className="mt-6 text-[12px] text-muted-foreground break-all">
+              <div
+                onClick={onVersionTap}
+                className="mt-6 text-[12px] text-muted-foreground break-all select-none"
+              >
                 Version {appVersion}
               </div>
             )}

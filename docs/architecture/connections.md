@@ -77,7 +77,7 @@ Beyond the auth credential, a template may declare optional **config inputs** â€
 
 #### Internal-only templates
 
-Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered, not Connections already created. Testers reveal the full catalog by running `platformConnections.showInternal()` in the browser devtools console.
+Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered (on both the Connections settings page and the sandbox creation wizard), not Connections already created. Testers reveal the full catalog by running `platformConnections.showInternal()` in the browser devtools console, or by tapping the version string on the settings page five times.
 
 ### Connection
 
