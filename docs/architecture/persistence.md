@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-12
+Last verified: 2026-06-15
 
 ## Overview
 
@@ -68,7 +68,7 @@ Resources the controller reconciles are Kubernetes CRDs under the `agent-platfor
 
 | Kind | What it declares | `spec` writer | `status` writer |
 |---|---|---|---|
-| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
+| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
 | `Fork` | Forked run: parent Agent ref + overrides | api-server | controller |
 
 Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
@@ -122,6 +122,8 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion. Once claimed, a spare follows the PVC column above.
+
+An Agent created on a private custom image carries an agent-scoped image-pull Secret that follows the Agent itself: the api-server writes it at create and removes it on delete (a delete-time cleanup hook, with a label-scoped orphan sweep as backstop). This is the opposite of the owner-scoped credential Secrets the gateway injects for egress, which are reusable across an owner's Agents and outlive any single one. The mechanism and trust boundary live on [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 ## Security boundary
 

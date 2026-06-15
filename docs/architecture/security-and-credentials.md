@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-06-12
+Last verified: 2026-06-15
 
 ## Overview
 
@@ -217,6 +217,44 @@ The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
 Only the gateway pod mounts the Secret; the agent pod does not. See
 [`packages/api-server/src/modules/connections/infrastructure/`](../../packages/api-server/src/modules/connections/infrastructure/) and
 [`packages/api-server/src/modules/secrets/infrastructure/k8s-secrets-port.ts`](../../packages/api-server/src/modules/secrets/infrastructure/k8s-secrets-port.ts).
+
+## Image pull credentials
+
+Pulling the agent's container image from a private registry uses a
+**structurally separate** credential class from the egress credentials
+above. It does not ride the Envoy path at all:
+
+- **The kubelet consumes it, not Envoy.** It is a
+  `kubernetes.io/dockerconfigjson` Secret referenced from the pod spec's
+  `imagePullSecrets`; the kubelet reads it at pod creation to authenticate
+  the image pull. It is never mounted into the gateway pod and never
+  projected into the agent container — like egress credentials, the agent
+  never holds the bytes, but here that is a property of *where the Secret
+  is consumed* rather than of Envoy injection. A foreign-replier fork
+  pulls the parent's private image with it without ever seeing it.
+- **Scope is the Agent, not the owner.** Egress credentials are
+  owner-scoped and reusable across every Agent that owner runs; a pull
+  credential is agent-scoped — one Secret per Agent (still carrying the
+  creator's `agent-platform.ai/owner` for tenancy), created with the Agent and
+  torn down with it. There is no cross-agent reuse.
+- **Per-agent precedence over the install-wide default.** An operator may
+  configure an install-wide default pull secret applied to every agent
+  pod. When an Agent carries its own pull-secret ref the controller lists
+  it *first* on the pod's `imagePullSecrets`, ahead of the install-wide
+  default, which is retained as a fallback — override, not replace. The
+  same ordering applies to fork Jobs.
+
+The api-server builds the Secret from structured `{server, username,
+password}` input and writes it before the Agent record, rolling it back if
+that create fails. Teardown is a delete-time cleanup hook with a
+label-scoped orphan sweep as backstop; lifetime detail lives on
+[persistence](persistence.md). The credential is validated only at pull
+time — a bad credential surfaces as an image-pull failure on the pod, not
+a create-time error.
+
+Scope is long-lived static credentials (registry PAT, robot account, basic
+auth, a GCP Artifact Registry JSON key as the password). Short-lived or
+dynamically-minted registry tokens (e.g. ECR) are out of scope.
 
 ## Envoy credential injection
 

@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-12
+Last verified: 2026-06-15
 
 ## Overview
 
@@ -23,6 +23,7 @@ sequenceDiagram
 
   Note over U,K: Create — UI only
   U->>API: create agent
+  API->>K: write pull Secret<br/>(if registry credential)
   API->>K: write Agent CR (spec)
   C->>K: reconcile<br/>Secret + StatefulSet(replicas=0) + Service + NetworkPolicy
 
@@ -54,6 +55,8 @@ sequenceDiagram
 ### Create
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, secret refs, and allowed users. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
+
+When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller then lists that Secret first on the pod's `imagePullSecrets`, ahead of any install-wide default. The kubelet consumes it to pull the image — it never enters the pod, and a stuck pull surfaces as an image-pull failure on the pod rather than a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
 
@@ -148,11 +151,11 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions are agent-owned files on the PVC and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the per-channel credential Secrets it wrote.
+The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions are agent-owned files on the PVC and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades.
 
 ## Forks
 
-Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md).
+Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
 
