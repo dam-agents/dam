@@ -282,7 +282,13 @@ export function createAgentsService(deps: {
           spec.grantedConnectionIds = g.grantedConnectionIds;
       }
 
-      const owner = deps.owner ?? "";
+      if (deps.owner === undefined) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "creating an agent requires an owner",
+        });
+      }
+      const owner = deps.owner;
 
       let pullSecretAgentId: string | undefined;
       if (input.registryCredential) {
