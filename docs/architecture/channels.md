@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-06-12
+Last verified: 2026-06-15
 
 ## Overview
 
@@ -187,7 +187,7 @@ sequenceDiagram
 
 What the agent sees:
 
-- **Two tools** are registered on the per-Agent MCP server: `describe_channel` returns the authorized chats (DMs / threads / groups) for a given channel type, and `send_channel_message` posts text to a chat. The agent picks the channel by argument (`slack` or `telegram`); `chatId` addresses a specific chat, or omitting it uses the worker's last-active chat.
+- **Two tools** are registered on the per-Agent MCP server: `describe_channel` returns the authorized chats (DMs / threads / groups) for a given channel type, and `send_channel_message` posts text to a chat. The agent picks the channel by argument (`slack` or `telegram`); `chatId` addresses a specific chat. Omitting `chatId` resolves per channel type: Telegram posts to the worker's last-active thread (error if none); Slack posts to the single channel bound to the Agent, and rejects a `chatId` that isn't that bound channel.
 - **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
 - **Bidirectional channel.** If a channel is connected to an Agent, every session on that Agent can post — interactive sessions and scheduled sessions alike. There is no per-session outbound flag.
 
