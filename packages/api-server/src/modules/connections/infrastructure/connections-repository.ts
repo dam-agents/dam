@@ -33,6 +33,8 @@ export interface ConnectionsRepository {
 
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
 
+  updateContributions(id: string, contributions: Contribution[]): Promise<void>;
+
   delete(id: string, ownerId: string): Promise<void>;
 
   grant(connectionId: string, agentId: string): Promise<void>;
@@ -112,6 +114,13 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
       await db
         .update(connectionsTable)
         .set({ auth, updatedAt: new Date() })
+        .where(eq(connectionsTable.id, id));
+    },
+
+    async updateContributions(id, contributions): Promise<void> {
+      await db
+        .update(connectionsTable)
+        .set({ contributions, updatedAt: new Date() })
         .where(eq(connectionsTable.id, id));
     },
 
