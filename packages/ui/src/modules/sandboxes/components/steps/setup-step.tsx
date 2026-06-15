@@ -17,7 +17,6 @@ import { ProviderRow } from "../provider-row.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
-// Row descriptions aren't in the PROVIDERS metadata, so they live here.
 const PROVIDER_ROWS: { type: ProviderPresetType; description: string }[] = [
   {
     type: "ibm-litellm",

@@ -56,7 +56,6 @@ function StepItem({
         "rounded-md px-3 py-2 text-left text-[15px] transition-colors",
         state === "active" && "bg-muted font-medium text-foreground",
         state === "visited" && "text-foreground hover:bg-muted/60",
-        // Lighter brand muted token, not shadcn's darker muted-foreground.
         state === "upcoming" && "cursor-default text-text-muted",
       )}
     >

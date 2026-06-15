@@ -7,11 +7,8 @@ export interface OAuthPopupResult {
 
 const POPUP_FEATURES = "popup,width=640,height=760";
 
-/**
- * Popup-based OAuth. `open()` opens a blank popup synchronously (so it isn't
- * blocked) and returns null if it was; the result arrives via same-origin
- * postMessage, with a `closed` poll catching a dismissed popup.
- */
+/** `open()` opens a popup synchronously, returning null if it was blocked;
+ *  the result arrives via same-origin postMessage. */
 export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   const popupRef = useRef<Window | null>(null);
   const pollRef = useRef<number | null>(null);

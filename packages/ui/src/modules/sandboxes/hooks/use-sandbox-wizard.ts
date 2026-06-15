@@ -14,7 +14,6 @@ export interface SandboxWizard {
   reset: () => void;
 }
 
-/** Wizard state mirrored to sessionStorage so it survives the OAuth redirect. */
 export function useSandboxWizard(): SandboxWizard {
   const [snapshot, setSnapshot] = useState<WizardSnapshot>(loadSnapshot);
 

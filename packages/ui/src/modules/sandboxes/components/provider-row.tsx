@@ -19,7 +19,6 @@ import { CardIcon } from "../../settings/components/shared/card-icon.js";
 interface Props {
   type: ProviderPresetType;
   description: string;
-  /** The user's existing credential for this provider, if any. */
   secret: SecretView | undefined;
   selected: boolean;
   onConnect: () => void;

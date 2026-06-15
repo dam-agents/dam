@@ -24,7 +24,6 @@ import { OpenAIForm } from "../../settings/components/openai/form.js";
 
 interface Props {
   provider: ProviderPresetType;
-  /** When present, edits this credential ("Edit key") instead of creating one. */
   secret?: SecretView;
   onConnected: (secretId: string) => void;
   onClose: () => void;
