@@ -1,8 +1,7 @@
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 
-// Realm alias of the IBM SSO IDP (w3id). The deployed instance configures
-// its OIDC provider under this exact alias; matching it lights up the
-// IBM-logo affordance on the button.
+import { BASE_URL } from "../../kc.gen";
+
 const IBM_SSO_ALIAS = "w3id";
 
 interface SocialProvider {
@@ -14,10 +13,9 @@ interface SocialProvider {
 
 interface Props {
   provider: SocialProvider;
-  resourcesPath: string;
 }
 
-export function SocialProviderButton({ provider, resourcesPath }: Props) {
+export function SocialProviderButton({ provider }: Props) {
   const isIbm =
     provider.alias === IBM_SSO_ALIAS ||
     provider.iconClasses?.includes(IBM_SSO_ALIAS);
@@ -30,7 +28,7 @@ export function SocialProviderButton({ provider, resourcesPath }: Props) {
     >
       {isIbm && (
         <img
-          src={`${resourcesPath}/ibm-logo.svg`}
+          src={`${BASE_URL}ibm-logo.svg`}
           alt=""
           className="h-2.5 w-auto shrink-0"
         />

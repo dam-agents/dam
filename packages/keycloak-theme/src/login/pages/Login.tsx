@@ -122,11 +122,7 @@ export default function Login(
 
             <div className="space-y-2">
               {social.providers.map((p) => (
-                <SocialProviderButton
-                  key={p.alias}
-                  provider={p}
-                  resourcesPath={url.resourcesPath}
-                />
+                <SocialProviderButton key={p.alias} provider={p} />
               ))}
             </div>
           </>
