@@ -10,6 +10,10 @@ import {
   useConnectionTemplates,
 } from "../../../connections/api/queries.js";
 import { TemplateCreateForm } from "../../../connections/forms/template-create-form.js";
+import {
+  filterOfferedTemplates,
+  isShowInternalConnectionsEnabled,
+} from "../../../connections/internal-only.js";
 import { PROVIDER_TEMPLATE_IDS } from "../../../connections/lib/provider-templates.js";
 import {
   saveSnapshot,
@@ -54,16 +58,19 @@ export function ConnectionsStep({
     [allTemplates],
   );
 
+  const showInternal = isShowInternalConnectionsEnabled();
+
   const byCategory = useMemo(() => {
+    const offered = filterOfferedTemplates(allTemplates, showInternal);
     const m = new Map<string, ConnectionTemplateView[]>();
-    for (const t of allTemplates) {
+    for (const t of offered) {
       if (PROVIDER_TEMPLATE_IDS.has(t.id)) continue;
       const list = m.get(t.category) ?? [];
       list.push(t);
       m.set(t.category, list);
     }
     return m;
-  }, [allTemplates]);
+  }, [allTemplates, showInternal]);
 
   const selected = new Set(snapshot.connectionIds);
 
