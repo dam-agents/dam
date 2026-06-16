@@ -10,11 +10,13 @@ import {
 import { cn } from "@/lib/utils";
 
 import {
+  bobPinsFromEnvMappings,
   type ProviderPresetType,
   PROVIDERS,
   type SecretView,
 } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
+import { detectMode, MODES } from "./anthropic/modes.js";
 import { CardIcon } from "./card-icon.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { ProviderRow } from "./provider-row.js";
@@ -43,6 +45,21 @@ export const PROVIDER_ROWS: {
     description: "GPT-family models for Codex and OpenAI-compatible agents.",
   },
 ];
+
+function connectedSubtitle(
+  type: ProviderPresetType,
+  secret: SecretView,
+): string | undefined {
+  if (type === "anthropic") {
+    const mode = detectMode(secret.envMappings?.[0]?.envName);
+    return `Set up with ${MODES[mode].label}`;
+  }
+  if (type === "bob") {
+    const pins = bobPinsFromEnvMappings(secret.envMappings);
+    return pins.model ? `Model: ${pins.model}` : "Default model";
+  }
+  return undefined;
+}
 
 interface Props {
   selectedSecretId?: string | null;
@@ -108,6 +125,9 @@ export function ProviderSection({
                 key={row.type}
                 type={row.type}
                 description={row.description}
+                subtitle={
+                  secret ? connectedSubtitle(row.type, secret) : undefined
+                }
                 secret={secret}
                 selectable={!manage}
                 selected={!!secret && secret.id === selectedSecretId}

@@ -19,6 +19,7 @@ import { CardIcon } from "./card-icon.js";
 interface Props {
   type: ProviderPresetType;
   description: string;
+  subtitle?: string;
   secret: SecretView | undefined;
   selected: boolean;
   selectable?: boolean;
@@ -31,6 +32,7 @@ interface Props {
 export function ProviderRow({
   type,
   description,
+  subtitle,
   secret,
   selected,
   selectable = true,
@@ -60,7 +62,11 @@ export function ProviderRow({
   const info = (
     <>
       <CardIcon provider={type} />
-      <ProviderText name={name} description={description} connected />
+      <ProviderText
+        name={name}
+        description={subtitle ?? description}
+        connected
+      />
     </>
   );
 
