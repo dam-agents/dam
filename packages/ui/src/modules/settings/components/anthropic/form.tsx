@@ -1,15 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Copy, X } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
-import { CardIcon } from "../shared/card-icon.js";
-import { IconButton } from "../shared/icon-button.js";
+import { ProviderFormShell } from "../shared/provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
@@ -92,83 +90,72 @@ export function AnthropicForm({
   };
 
   return (
-    <Card className="anim-in">
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
-        <div className="flex items-center gap-3">
-          <CardIcon provider="anthropic" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-foreground">
-              Anthropic
-            </div>
-            <div className="text-[12px] text-muted-foreground">
-              {isEdit
-                ? "Pick mode and paste a new credential to replace the existing one."
-                : "Required for Claude Code agents. Pick the mode that matches your credential."}
-            </div>
-          </div>
-          {onCancel && (
-            <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
-              <X size={13} />
-            </IconButton>
-          )}
-        </div>
+    <ProviderFormShell
+      provider="anthropic"
+      title="Anthropic"
+      description={
+        isEdit
+          ? "Pick mode and paste a new credential to replace the existing one."
+          : "Required for Claude Code agents. Pick the mode that matches your credential."
+      }
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    >
+      <Controller
+        control={control}
+        name="mode"
+        render={({ field }) => (
+          <ModeToggle mode={field.value} onChange={field.onChange} />
+        )}
+      />
 
-        <Controller
-          control={control}
-          name="mode"
-          render={({ field }) => (
-            <ModeToggle mode={field.value} onChange={field.onChange} />
-          )}
+      {mode === "oauth" && <QuickSetupHint />}
+
+      <div className="flex gap-3">
+        <Input
+          type="password"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder={MODES[mode].placeholder}
+          {...register("value")}
         />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={test}
+          disabled={submitDisabled}
+          title="Verify the credential with Anthropic"
+          className="shrink-0"
+        >
+          {testing ? "..." : "Test"}
+        </Button>
+        <Button type="submit" disabled={submitDisabled} className="shrink-0">
+          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+        </Button>
+      </div>
 
-        {mode === "oauth" && <QuickSetupHint />}
-
-        <div className="flex gap-3">
-          <Input
-            type="password"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
-            placeholder={MODES[mode].placeholder}
-            {...register("value")}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={test}
-            disabled={submitDisabled}
-            title="Verify the credential with Anthropic"
-            className="shrink-0"
-          >
-            {testing ? "..." : "Test"}
-          </Button>
-          <Button type="submit" disabled={submitDisabled} className="shrink-0">
-            {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
-          </Button>
-        </div>
-
-        {/* Mismatch errors live on the value field; "Required" is suppressed
-            until the user actually types so the form doesn't yell on first paint. */}
-        {errors.value &&
-          value.length > 0 &&
-          errors.value.message !== "Required" && (
-            <div className="text-[12px] font-medium text-destructive">
-              {errors.value.message}
-            </div>
-          )}
-        {!errors.value && testResult?.ok && (
-          <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
-            <Check size={13} /> Credential is valid.
-          </div>
-        )}
-        {!errors.value && testResult && !testResult.ok && (
+      {/* Mismatch errors live on the value field; "Required" is suppressed
+          until the user actually types so the form doesn't yell on first paint. */}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
           <div className="text-[12px] font-medium text-destructive">
-            {testResult.message}
+            {errors.value.message}
           </div>
         )}
-      </form>
-    </Card>
+      {!errors.value && testResult?.ok && (
+        <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
+          <Check size={13} /> Credential is valid.
+        </div>
+      )}
+      {!errors.value && testResult && !testResult.ok && (
+        <div className="text-[12px] font-medium text-destructive">
+          {testResult.message}
+        </div>
+      )}
+    </ProviderFormShell>
   );
 }
 

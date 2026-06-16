@@ -1,15 +1,12 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-import { CardIcon } from "../shared/card-icon.js";
-import { IconButton } from "../shared/icon-button.js";
+import { ProviderFormShell } from "../shared/provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const KEY_GUIDE_URL =
@@ -55,67 +52,51 @@ export function IbmLitellmForm({
   });
 
   return (
-    <Card className="anim-in">
-      <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6">
-        <div className="flex items-center gap-3">
-          <CardIcon provider="ibm-litellm" size="lg" />
-          <div className="flex-1 min-w-0">
-            <div className="text-[18px] font-bold text-foreground">
-              IBM LiteLLM ETE Proxy
-            </div>
-            <div className="text-[14px] text-muted-foreground">
-              {isEdit
-                ? "Paste a new token to replace the existing one."
-                : "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS."}
-            </div>
-          </div>
-          {onCancel && (
-            <IconButton
-              onClick={onCancel}
-              title="Cancel"
-              hoverTone="neutral"
-              className="self-start"
-            >
-              <X size={13} />
-            </IconButton>
-          )}
+    <ProviderFormShell
+      provider="ibm-litellm"
+      title="IBM LiteLLM ETE Proxy"
+      description={
+        isEdit
+          ? "Paste a new token to replace the existing one."
+          : "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS."
+      }
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    >
+      <a
+        href={KEY_GUIDE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary hover:bg-muted"
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[14px] font-bold text-foreground">
+            Need an API key?
+          </span>
+          <span className="text-[14px] text-muted-foreground">
+            Follow the guide and generate your LiteLLM token
+          </span>
         </div>
+        <Launch
+          size={16}
+          className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
+        />
+      </a>
 
-        <a
-          href={KEY_GUIDE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary hover:bg-muted"
-        >
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[14px] font-bold text-foreground">
-              Need an API key?
-            </span>
-            <span className="text-[14px] text-muted-foreground">
-              Follow the guide and generate your LiteLLM token
-            </span>
-          </div>
-          <Launch
-            size={16}
-            className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
-          />
-        </a>
-
-        <div className="flex gap-3">
-          <Input
-            type="password"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
-            placeholder={MODES["api-key"].placeholder}
-            {...register("value")}
-          />
-          <Button type="submit" disabled={submitDisabled} className="shrink-0">
-            {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
-          </Button>
-        </div>
-      </form>
-    </Card>
+      <div className="flex gap-3">
+        <Input
+          type="password"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder={MODES["api-key"].placeholder}
+          {...register("value")}
+        />
+        <Button type="submit" disabled={submitDisabled} className="shrink-0">
+          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+        </Button>
+      </div>
+    </ProviderFormShell>
   );
 }
