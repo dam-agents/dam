@@ -46,6 +46,8 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   await test.step("pick the mock image", async () => {
     await page.getByRole("button", { name: /create sandbox/i }).click();
     await page.getByText(harnessName, { exact: true }).click();
+    // The image step now only selects on click; advance with its Continue button.
+    await page.getByRole("button", { name: /continue/i }).click();
   });
 
   await test.step("name the sandbox and connect a provider", async () => {
