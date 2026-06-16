@@ -66,6 +66,9 @@ export function ImageStep({
             value={customImage}
             selected={customImage.trim().length > 0}
             onChange={onCustomImageChange}
+            onSubmit={() => {
+              if (canContinue) onContinue();
+            }}
           />
         </CardList>
       </section>
@@ -114,10 +117,12 @@ function CustomImageCard({
   value,
   selected,
   onChange,
+  onSubmit,
 }: {
   value: string;
   selected: boolean;
   onChange: (value: string) => void;
+  onSubmit: () => void;
 }) {
   return (
     <div
@@ -142,6 +147,9 @@ function CustomImageCard({
         <Input
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onSubmit();
+          }}
           placeholder="ghcr.io/org/agent:latest"
           variant="monospace"
         />
