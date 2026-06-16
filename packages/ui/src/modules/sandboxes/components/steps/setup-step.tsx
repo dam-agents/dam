@@ -75,6 +75,7 @@ export function SetupStep({
       <section className="mb-8">
         <WizardSectionLabel>Name</WizardSectionLabel>
         <Input
+          autoFocus
           value={name}
           onChange={(event) => update({ name: event.target.value })}
           placeholder="my-sandbox"
