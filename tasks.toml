@@ -512,7 +512,14 @@ set +x
 echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
 
 bump_branch="bump/v$next_version"
+bump_namespace="${bump_branch%%/*}"
 set -x
+if git show-ref --verify --quiet "refs/heads/$bump_namespace"; then
+  git branch -D "$bump_namespace"
+fi
+if git ls-remote --exit-code --heads origin "$bump_namespace" >/dev/null 2>&1; then
+  git push origin --delete "$bump_namespace"
+fi
 git checkout -B "$bump_branch" main
 {{ mise_bin }} run release:set-version "$next_version"
 git push --force --set-upstream origin "$bump_branch"
