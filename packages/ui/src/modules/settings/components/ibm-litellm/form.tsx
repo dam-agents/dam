@@ -1,3 +1,4 @@
+import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -10,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { CardIcon } from "../shared/card-icon.js";
 import { IconButton } from "../shared/icon-button.js";
 import { MODES, stripWhitespace } from "./modes.js";
+
+const KEY_GUIDE_URL =
+  "https://pages.github.ibm.com/dam-agents/docs/guides/litellm-key/";
 
 const ibmLitellmCredentialSchema = z
   .object({ value: z.string() })
@@ -52,25 +56,50 @@ export function IbmLitellmForm({
 
   return (
     <Card className="anim-in">
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
+      <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6">
         <div className="flex items-center gap-3">
-          <CardIcon provider="ibm-litellm" />
+          <CardIcon provider="ibm-litellm" size="lg" />
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-foreground">
+            <div className="text-[18px] font-bold text-foreground">
               IBM LiteLLM ETE Proxy
             </div>
-            <div className="text-[12px] text-muted-foreground">
+            <div className="text-[14px] text-muted-foreground">
               {isEdit
                 ? "Paste a new token to replace the existing one."
-                : "Routes Claude Code and pi-agent through IBM's internal LiteLLM proxy. Paste your LiteLLM API token."}
+                : "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS."}
             </div>
           </div>
           {onCancel && (
-            <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
+            <IconButton
+              onClick={onCancel}
+              title="Cancel"
+              hoverTone="neutral"
+              className="self-start"
+            >
               <X size={13} />
             </IconButton>
           )}
         </div>
+
+        <a
+          href={KEY_GUIDE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary hover:bg-muted"
+        >
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[14px] font-bold text-foreground">
+              Need an API key?
+            </span>
+            <span className="text-[14px] text-muted-foreground">
+              Follow the guide and generate your LiteLLM token
+            </span>
+          </div>
+          <Launch
+            size={16}
+            className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
+          />
+        </a>
 
         <div className="flex gap-3">
           <Input

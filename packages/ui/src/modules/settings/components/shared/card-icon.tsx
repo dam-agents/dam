@@ -43,31 +43,43 @@ const STYLES: Record<
   },
 };
 
+const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
+  anthropic: "!w-8 !h-8",
+  openai: "!w-8 !h-8",
+  "ibm-litellm": "!text-[40px]",
+  bob: "!w-10 !h-10",
+};
+
 export function CardIcon({
   provider,
   size = "md",
 }: {
   provider: ProviderPresetType;
-  /** "md" = 40×40 (default, used in provider cards). "sm" = 28×28
-   *  (compact use inside dropdown rows / inline labels). The brand mark
-   *  inside scales proportionally so it stays centered. */
-  size?: "md" | "sm";
+  /** "lg" = 68×68 (provider connect modal header). "md" = 40×40 (default,
+   *  used in provider cards). "sm" = 28×28 (compact use inside dropdown rows /
+   *  inline labels). The brand mark inside scales proportionally so it stays
+   *  centered. */
+  size?: "lg" | "md" | "sm";
 }) {
   const style = STYLES[provider];
   const Icon = style.Icon;
-  const small = size === "sm";
   return (
     <div
       className={cn(
         "shrink-0 rounded-lg flex items-center justify-center",
-        small ? "w-7 h-7" : "w-10 h-10",
+        size === "lg"
+          ? "w-[68px] h-[68px]"
+          : size === "sm"
+            ? "w-7 h-7"
+            : "w-10 h-10",
         style.bg,
       )}
     >
       <Icon
         className={cn(
           style.iconClass,
-          small &&
+          size === "lg" && LARGE_ICON_CLASS[provider],
+          size === "sm" &&
             (provider === "ibm-litellm" ? "!text-[16px]" : "!w-3.5 !h-3.5"),
         )}
       />

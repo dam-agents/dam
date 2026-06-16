@@ -55,7 +55,7 @@ export function ProviderConnectDialog({
   };
 
   return (
-    <Modal widthClass="w-[480px]">
+    <Modal widthClass="w-[505px]">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {provider === "anthropic" && (
           <AnthropicForm

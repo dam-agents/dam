@@ -13,11 +13,13 @@ export function IconButton({
   onClick,
   title,
   hoverTone,
+  className,
   children,
 }: {
   onClick: () => void | Promise<void>;
   title: string;
   hoverTone: "accent" | "danger" | "neutral";
+  className?: string;
   children: ReactNode;
 }) {
   const tone =
@@ -33,7 +35,7 @@ export function IconButton({
       size="icon"
       onClick={onClick}
       title={title}
-      className={cn("h-7 w-7", tone)}
+      className={cn("h-7 w-7", tone, className)}
     >
       {children}
     </Button>
