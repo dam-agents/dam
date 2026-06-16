@@ -7,11 +7,7 @@ export async function preflightTermsGate(): Promise<boolean> {
       api.terms.current.query(),
       api.terms.latestAcceptance.query(),
     ]);
-    if (!latest || latest.version !== current.version) {
-      window.location.replace("/terms");
-      return false;
-    }
-    return true;
+    return !!latest && latest.version === current.version;
   } catch {
     return true;
   }

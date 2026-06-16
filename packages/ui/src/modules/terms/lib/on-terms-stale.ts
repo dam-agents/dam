@@ -1,8 +1,13 @@
 let redirecting = false;
+let termsStale = false;
 
-export function onTermsStale() {
-  if (redirecting) return;
-  if (window.location.pathname === "/terms") return;
+export function isTermsStale(): boolean {
+  return termsStale;
+}
+
+export function onTermsStale(): void {
+  termsStale = true;
+  if (redirecting || window.location.pathname === "/terms") return;
   redirecting = true;
   window.location.assign("/terms");
 }

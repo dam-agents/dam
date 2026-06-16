@@ -13,6 +13,7 @@ import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
+import { useStore } from "./store.js";
 
 async function main() {
   // Brand fetch is unauthenticated and runs in parallel with auth init so the
@@ -21,7 +22,10 @@ async function main() {
   const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return; // Redirecting to Keycloak, don't render
 
-  if (!(await preflightTermsGate())) return;
+  if (!(await preflightTermsGate())) {
+    window.history.replaceState({}, "", "/terms");
+    useStore.setState({ view: "terms" });
+  }
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

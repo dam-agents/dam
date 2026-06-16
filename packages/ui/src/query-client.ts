@@ -8,6 +8,7 @@ import {
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { emitToast } from "./lib/toast.js";
+import { isTermsStale } from "./modules/terms/lib/on-terms-stale.js";
 
 declare module "@tanstack/react-query" {
   interface Register {
@@ -35,7 +36,8 @@ export const queryClient = new QueryClient({
       if (
         !toast ||
         notifiedOutages.has(query) ||
-        getApiHealthSnapshot() === "reconnecting"
+        getApiHealthSnapshot() === "reconnecting" ||
+        isTermsStale()
       )
         return;
       notifiedOutages.add(query);
@@ -54,7 +56,7 @@ export const queryClient = new QueryClient({
         );
       },
       onError: (error, _vars, _ctx, mutation) => {
-        if (getApiHealthSnapshot() === "reconnecting") return;
+        if (getApiHealthSnapshot() === "reconnecting" || isTermsStale()) return;
         const title = mutation.meta?.errorToast;
         const detail =
           error instanceof Error && error.message ? error.message : "";

@@ -24,10 +24,17 @@ export function TermsView() {
 
   const doc = document.data;
   const acceptedCurrent = latest.data?.version === doc.version;
+  const isStaleReaccept = !!latest.data && latest.data.version !== doc.version;
 
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
       <h1 className="text-2xl font-semibold mb-2">Terms of Use</h1>
+      {isStaleReaccept && (
+        <p className="text-sm text-muted-foreground mb-4">
+          The Terms of Use have been updated — please review and accept to
+          continue.
+        </p>
+      )}
       <TermsMeta version={doc.version} accepted={latest.data} />
       <Markdown>{doc.text}</Markdown>
       <div className="mt-8 flex gap-3 items-center">
@@ -58,7 +65,7 @@ function TermsMeta({
 }) {
   const isCurrent = accepted?.version === version;
   return (
-    <div className="text-sm text-muted mb-6">
+    <div className="text-sm text-muted-foreground mb-6">
       Version <code>{version}</code>
       {isCurrent && accepted && (
         <>
@@ -101,7 +108,9 @@ function CenteredMessage({
 }) {
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
-      <div className={tone === "error" ? "text-red-600" : "text-muted"}>
+      <div
+        className={tone === "error" ? "text-red-600" : "text-muted-foreground"}
+      >
         {children}
       </div>
     </div>

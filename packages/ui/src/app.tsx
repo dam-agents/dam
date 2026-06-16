@@ -20,9 +20,6 @@ export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
 
-  useAgentCrashToasts();
-  useFirstRunRedirect();
-
   // Apply theme on mount + listen for system preference changes
   useEffect(() => {
     const apply = () => {
@@ -38,6 +35,16 @@ export default function App() {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, [theme]);
+
+  if (view === "terms") return <TermsView />;
+  return <MainApp />;
+}
+
+function MainApp() {
+  const view = useStore((s) => s.view);
+
+  useAgentCrashToasts();
+  useFirstRunRedirect();
 
   useEffect(() => {
     // The v2 wizard and the sandbox-creation wizard own their own OAuth-return
@@ -128,13 +135,6 @@ export default function App() {
         <ChatView />
         <DialogOverlay />
         <ConnectionBanner />
-      </>
-    );
-
-  if (view === "terms")
-    return (
-      <>
-        <TermsView />
       </>
     );
 
