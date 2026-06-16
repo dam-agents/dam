@@ -18,6 +18,7 @@ import {
   isShowInternalConnectionsEnabled,
 } from "../../connections/internal-only.js";
 import { PROVIDER_TEMPLATE_IDS } from "../../connections/lib/provider-templates.js";
+import { CardList } from "./card-list.js";
 import { WizardSectionLabel } from "./wizard-section-label.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
@@ -72,7 +73,7 @@ export function ConnectionsSection({
       <section className="mb-8">
         <WizardSectionLabel>My connections</WizardSectionLabel>
         {connections.length > 0 ? (
-          <div className="flex flex-col gap-3">
+          <CardList>
             {connections.map((c) => (
               <ConnectionRow
                 key={c.id}
@@ -92,7 +93,7 @@ export function ConnectionsSection({
                 />
               </ConnectionRow>
             ))}
-          </div>
+          </CardList>
         ) : (
           <p className="text-[13px] text-muted-foreground">
             No connections yet.
@@ -101,7 +102,7 @@ export function ConnectionsSection({
         <button
           type="button"
           onClick={() => setShowCatalog((v) => !v)}
-          className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+          className="mt-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
         >
           {showCatalog ? "Show less" : "Show all"}
           {showCatalog ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -115,7 +116,7 @@ export function ConnectionsSection({
           return (
             <section key={cat} className="mb-8">
               <WizardSectionLabel>{CATEGORY_LABEL[cat]}</WizardSectionLabel>
-              <div className="flex flex-col gap-3">
+              <CardList>
                 {list.map((t) => (
                   <ConnectionCatalogRow
                     key={t.id}
@@ -123,7 +124,7 @@ export function ConnectionsSection({
                     onConnect={() => setCreating(t)}
                   />
                 ))}
-              </div>
+              </CardList>
             </section>
           );
         })}

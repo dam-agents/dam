@@ -1,5 +1,7 @@
 import { AlertTriangle, KeyRound, Lock } from "lucide-react";
 
+import { SectionLabel } from "@/components/ui/section-label";
+
 import { EnvVarsEditor } from "../../../../components/env-vars-editor.js";
 import type { EnvVar } from "../../../../types.js";
 
@@ -45,8 +47,8 @@ export function EnvTab({
 }) {
   const warnings = shadowWarnings(envVars, inherited);
   return (
-    <>
-      <p className="text-[12px] text-text-muted">
+    <div className="flex flex-col gap-6">
+      <p className="text-[14px] text-muted-foreground">
         Applied to every instance of this agent. Restart the instance pod to
         pick up changes.
       </p>
@@ -54,12 +56,7 @@ export function EnvTab({
       {inherited.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-              Inherited
-            </span>
-            <span className="text-[10px] text-text-muted">
-              · managed elsewhere
-            </span>
+            <SectionLabel>Inherited</SectionLabel>
           </div>
           <div className="flex flex-col gap-1">
             {inherited.map((e, i) => (
@@ -70,9 +67,7 @@ export function EnvTab({
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-          Custom
-        </span>
+        <SectionLabel>Custom</SectionLabel>
         {warnings.length > 0 && (
           <div className="flex flex-col gap-1 rounded-md border-2 border-warning bg-warning-light px-3 py-2 text-[12px]">
             <div className="flex items-center gap-2 text-warning">
@@ -97,7 +92,7 @@ export function EnvTab({
           disabled={saving}
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -110,9 +105,9 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         ? entry.source.secretName
         : entry.source.appLabel;
   return (
-    <div className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]">
+    <div className="group flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px]">
       <span
-        className={`shrink-0 ${isSystem ? "text-text-muted" : "text-accent"}`}
+        className={`shrink-0 ${isSystem && "text-text-muted"}`}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
         {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
@@ -122,13 +117,13 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
       </span>
       <span className="text-text-muted">=</span>
       <span
-        className="font-mono text-text-muted truncate flex-1"
+        className="font-mono text-muted-foreground truncate flex-1"
         title={entry.value}
       >
         {entry.value}
       </span>
       {!isSystem && (
-        <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">
+        <span className="text-[14px] text-muted-foreground italic truncate max-w-[160px]">
           {sourceName}
         </span>
       )}

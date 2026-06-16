@@ -9,6 +9,7 @@ import type {
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
+import { FormField } from "../form-field.js";
 import { ProviderSection } from "../provider-section.js";
 import {
   type RegistryCredential,
@@ -75,14 +76,14 @@ export function SetupStep({
 
       <section className="mb-8">
         <WizardSectionLabel>Name</WizardSectionLabel>
-        <div className="md:-ml-3">
+        <FormField>
           <Input
             autoFocus
             value={name}
             onChange={(event) => update({ name: event.target.value })}
             placeholder="my-sandbox"
           />
-        </div>
+        </FormField>
       </section>
 
       <section className="mb-8">

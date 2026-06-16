@@ -155,7 +155,7 @@ function ProviderDropdown({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-10 w-full items-center gap-3 rounded-md border border-input bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/30"
+          className="flex h-10 w-full items-center gap-3 rounded-md border border-input bg-background px-4 text-sm text-foreground transition-colors hover:bg-muted/30"
         >
           {selected ? (
             <>

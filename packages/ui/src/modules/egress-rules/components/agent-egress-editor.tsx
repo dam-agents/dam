@@ -233,7 +233,7 @@ export function AgentEgressEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[12px] text-muted-foreground leading-relaxed max-w-prose">
+      <p className="text-[14px] text-muted-foreground max-w-prose">
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
@@ -286,7 +286,7 @@ export function AgentEgressEditor({
               onChange={(e) => setDraft({ ...draft, host: e.target.value })}
               onKeyDown={onInputKeyDown}
               placeholder="api.anthropic.com"
-              className="h-7 text-[12px]"
+              size="xs"
             />
           </Field>
           <Field label="Method" widthClass="w-[100px]">
@@ -317,7 +317,8 @@ export function AgentEgressEditor({
               }
               onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
-              className="h-7 text-[12px] font-mono"
+              size="xs"
+              variant="monospace"
             />
           </Field>
           <Field label="Verdict" widthClass="w-[100px]">
@@ -341,6 +342,7 @@ export function AgentEgressEditor({
             className="h-7 text-[11px]"
             onClick={onAddRule}
             disabled={!canAdd}
+            variant="outline"
           >
             <Plus size={11} /> Add rule
           </Button>

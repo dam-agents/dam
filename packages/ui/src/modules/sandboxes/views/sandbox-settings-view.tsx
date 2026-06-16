@@ -8,12 +8,13 @@ import { FormError } from "../../../components/form-error.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { ConnectionsSection } from "../components/connections-section.js";
+import { FormField } from "../components/form-field.js";
 import { ProviderSection } from "../components/provider-section.js";
 import { WizardSectionLabel } from "../components/wizard-section-label.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
 const READ_ONLY_FIELD =
-  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground";
+  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
 
 export function SandboxSettingsView() {
   const f = useSandboxSettingsForm();
@@ -41,13 +42,15 @@ export function SandboxSettingsView() {
   return (
     <div className="mx-auto w-full max-w-[666px]">
       <BackLink onClick={f.goBack} />
-      <h1 className="mb-8 mt-2 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+      <h1 className="mb-8 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
         {agent.name}
       </h1>
 
       <section className="mb-8">
         <WizardSectionLabel>Name</WizardSectionLabel>
-        <Input disabled={f.saving} {...f.register("name")} />
+        <FormField>
+          <Input disabled={f.saving} {...f.register("name")} />
+        </FormField>
         <FormError message={f.errors.name?.message} />
       </section>
 
@@ -55,11 +58,13 @@ export function SandboxSettingsView() {
         <WizardSectionLabel>Image</WizardSectionLabel>
         {/* Read-only: image/template are create-only — changing them would mean
             delete+recreate, destroying the workspace PVC. */}
-        <div className={READ_ONLY_FIELD}>
-          <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
-            {f.templateName ?? agent.image}
-          </span>
-        </div>
+        <FormField>
+          <div className={READ_ONLY_FIELD}>
+            <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
+              {f.templateName ?? agent.image}
+            </span>
+          </div>
+        </FormField>
         {agent.templateId && (
           <p className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
             {agent.image}
@@ -69,12 +74,14 @@ export function SandboxSettingsView() {
 
       <section className="mb-8">
         <WizardSectionLabel>Provider</WizardSectionLabel>
-        <ProviderSection
-          variant="dropdown"
-          selectedSecretId={f.selectedProviderSecretId}
-          onSelect={f.selectProvider}
-          onProviderRemoved={f.dropProviderGrant}
-        />
+        <FormField>
+          <ProviderSection
+            variant="dropdown"
+            selectedSecretId={f.selectedProviderSecretId}
+            onSelect={f.selectProvider}
+            onProviderRemoved={f.dropProviderGrant}
+          />
+        </FormField>
         <p className="mt-3 text-[12px] text-muted-foreground">
           Changing the provider swaps this sandbox's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
@@ -90,27 +97,31 @@ export function SandboxSettingsView() {
 
       <section className="mb-8">
         <WizardSectionLabel>Network access</WizardSectionLabel>
-        <AgentEgressEditor
-          agentId={agent.id}
-          currentPreset={f.currentPreset}
-          staged={f.egressStaged}
-        />
+        <FormField className="rounded-lg border border-border p-4">
+          <AgentEgressEditor
+            agentId={agent.id}
+            currentPreset={f.currentPreset}
+            staged={f.egressStaged}
+          />
+        </FormField>
       </section>
 
       <section className="mb-8">
         <WizardSectionLabel>Environment</WizardSectionLabel>
-        <Controller
-          control={f.control}
-          name="envVars"
-          render={({ field }) => (
-            <EnvTab
-              inherited={f.inheritedEnvs}
-              envVars={field.value}
-              setEnvVars={field.onChange}
-              saving={f.saving}
-            />
-          )}
-        />
+        <FormField className="rounded-lg border border-border p-4">
+          <Controller
+            control={f.control}
+            name="envVars"
+            render={({ field }) => (
+              <EnvTab
+                inherited={f.inheritedEnvs}
+                envVars={field.value}
+                setEnvVars={field.onChange}
+                saving={f.saving}
+              />
+            )}
+          />
+        </FormField>
       </section>
 
       <div className="flex items-center justify-end gap-3 pb-4">
@@ -139,9 +150,9 @@ function BackLink({ onClick }: { onClick: () => void }) {
       variant="ghost"
       size="sm"
       onClick={onClick}
-      className="-ml-2 h-auto self-start px-2 py-1 text-[12px] text-muted-foreground hover:text-foreground"
+      className="-ml-2 h-auto self-start px-2 py-1 text-[16px] leading-[22.75px] text-muted-foreground hover:text-foreground font-normal"
     >
-      <ArrowLeft size={12} /> Back to Sandboxes
+      <ArrowLeft size={16} /> Back to Sandboxes
     </Button>
   );
 }
