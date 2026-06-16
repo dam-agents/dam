@@ -277,7 +277,7 @@ function commentSyntax(format: FileFormat): string {
   }
 }
 
-function setNested(
+export function setNested(
   obj: Record<string, unknown>,
   segs: string[],
   value: unknown,
@@ -289,6 +289,28 @@ function setNested(
     cur = cur[s] as Record<string, unknown>;
   }
   cur[segs[segs.length - 1]!] = value;
+}
+
+// Deletes the leaf at `segs`, leaving sibling keys intact, and prunes any
+// ancestor object that our deletion leaves empty (so removing
+// `permissions.defaultMode` from `{ permissions: { defaultMode } }` drops the
+// whole `permissions` key, but keeps it if the user has other keys under it).
+// No-op if any segment along the way is missing.
+export function deleteNested(
+  obj: Record<string, unknown>,
+  segs: string[],
+): void {
+  if (segs.length === 0) return;
+  const [head, ...rest] = segs as [string, ...string[]];
+  if (rest.length === 0) {
+    delete obj[head];
+    return;
+  }
+  const child = obj[head];
+  if (!child || typeof child !== "object") return;
+  const childObj = child as Record<string, unknown>;
+  deleteNested(childObj, rest);
+  if (Object.keys(childObj).length === 0) delete obj[head];
 }
 
 function stripTrailingSep(p: string): string {

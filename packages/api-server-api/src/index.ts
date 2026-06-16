@@ -24,6 +24,18 @@ export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
 
 export type {
+  AgentSettings,
+  AgentSettingsInput,
+  AgentSettingsService,
+  AgentSettingsView,
+} from "./modules/agent-settings/types.js";
+export {
+  agentConfigOptionsSchema,
+  agentSettingsSchema,
+  agentSettingsViewSchema,
+} from "./modules/agent-settings/schemas.js";
+
+export type {
   Agent,
   AgentSpec,
   AgentState,

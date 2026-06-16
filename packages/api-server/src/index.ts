@@ -22,6 +22,10 @@ import {
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
+import {
+  createAgentSettingsRepository,
+  startAgentSettingsCleanupSaga,
+} from "./modules/agent-settings/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { stripStaleModelPins } from "./modules/secrets/infrastructure/strip-stale-model-pins.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
@@ -175,6 +179,9 @@ const channelCleanupSub = startChannelCleanupSaga(
 );
 const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
   createAgentSkillsRepository(db).deleteByAgent(agentId),
+);
+const agentSettingsCleanupSub = startAgentSettingsCleanupSaga((agentId) =>
+  createAgentSettingsRepository(db).deleteByAgent(agentId),
 );
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
@@ -516,6 +523,7 @@ async function shutdown() {
   channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
+  agentSettingsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onChannelTurnRelayedSub.unsubscribe();
   usage.stop();

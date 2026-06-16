@@ -634,7 +634,6 @@ export function ChatView() {
                     <SessionConfigBar
                       ensureConnection={ensureConnection}
                       engagedSessionIdRef={engagedSessionIdRef}
-                      agentId={selectedAgent ?? ""}
                     />
                   )
                 }

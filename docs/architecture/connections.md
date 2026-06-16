@@ -107,6 +107,7 @@ A typed unit a Connection emits when granted to an Agent — a discriminated uni
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
 - **`mcp-entry`** — an MCP server to expose to the harness.
 - **`skill-ref`** — a skill source to install at a pinned version.
+- **`harness-config`** — the per-agent **session default** (model, mode, and an open bag of ACP config options) chosen in the UI Config panel, not a Connection output. Its shape mirrors ACP session config; the driver owns the field → file/keyPath mapping, so it stays harness-agnostic. At most one per agent; omitted when nothing is set, so the driver removes any keys it previously wrote.
 
 Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)). Exact per-kind fields live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
@@ -199,6 +200,7 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
 | `mcp-entry` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver dispatches to harness-specific path. |
 | `skill-ref` | Runtime channel `applyState` (state slice) | Sub-second push; per-version installer | Driver wraps existing skill-fetch helpers. |
+| `harness-config` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver maps each logical field (model/mode/configOption) to a keyPath in the harness's config file; picked up at next session start. |
 
 The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-allow` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
 
@@ -468,6 +470,7 @@ Custom contribution impl names may not collide with built-in names (`file`, `ski
 |---|---|---|
 | `file` | `file` kind directly, and `mcp-entry` via composition | Format (`yaml`/`json`/`text`/`ini`) × MergeMode (`overwrite`/`section-marker`/`key-targeted`/`yaml-fill-if-missing`). The matrix is the substrate for all file-shaped writes. |
 | `skill-install` | `skill-ref` kind | Wraps the existing skill-fetch helpers; resolves source URL, fetches at version through the gateway, materializes into configured skill paths, removes vanished skills on snapshot reconciliation. |
+| `harness-config` | `harness-config` kind | JSON only. Binding declares the target `file` and a `keys` map that mirrors the ACP config shape — `model`, `mode`, and a `configOptions` map keyed by ACP config id — each pointing at a dot-path in the file. Reconstructs the file preserving user keys, sets desired values, removes ones it previously wrote that are no longer desired. Unmapped fields/options are skipped. Harnesses whose config isn't JSON bind a custom impl. |
 
 ### Driver reconciliation
 

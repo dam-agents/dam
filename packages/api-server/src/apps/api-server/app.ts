@@ -26,6 +26,7 @@ import {
   createKeycloakUserDirectory,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
+import { composeAgentSettingsModule } from "../../modules/agent-settings/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
@@ -737,6 +738,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       runtimeMutator,
       templatesRepo,
     );
+    const { service: agentSettings } = composeAgentSettingsModule({
+      db,
+      runtimeMutator,
+      isOwnedAgent,
+    });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
     const { service: egressRules } = composeEgressRulesModule({
@@ -768,6 +774,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         templates,
         repos: reposService,
         agents,
+        agentSettings,
         schedules,
         secrets,
         channels: { available: channelManager.availableChannels() },

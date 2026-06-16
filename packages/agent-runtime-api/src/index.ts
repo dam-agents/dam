@@ -62,6 +62,7 @@ export {
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,
+  harnessConfigContribution,
   triggerEvent,
   triggerEventPayload,
   stateSlice,

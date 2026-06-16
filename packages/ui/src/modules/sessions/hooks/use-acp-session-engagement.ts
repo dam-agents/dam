@@ -18,9 +18,10 @@ import { optimisticInsertSession } from "../api/queries.js";
  * relay on first `session/prompt` (option B). The UI never writes session
  * rows itself.
  *
- * Either way, the response is forwarded to `captureSessionConfig` (cache +
- * localStorage) and `applySavedPreferences` (replays the user's per-agent
- * mode/model/option prefs onto the new session).
+ * Either way, the response is forwarded to `captureSessionConfig` (which mirrors
+ * the harness's advertised options into the store + catalog cache). The session
+ * starts from the harness's own config (which already reflects the persisted
+ * per-agent default written to its config file) — the UI replays nothing.
  *
  * `engagedSessionIdRef` is the source of truth for "the session this live
  * conn is currently bound to". The orchestrator's WS close handler and
@@ -29,11 +30,6 @@ import { optimisticInsertSession } from "../api/queries.js";
 export function useAcpSessionEngagement(
   selectedAgent: string | null,
   captureSessionConfig: (response: SessionConfigPayload) => void,
-  applySavedPreferences: (
-    conn: ClientSideConnection,
-    sid: string,
-    sessionResponse: SessionConfigPayload,
-  ) => Promise<void>,
 ): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
   engage: (conn: ClientSideConnection) => Promise<void>;
@@ -58,7 +54,6 @@ export function useAcpSessionEngagement(
         });
         captureSessionConfig(resp);
         engagedSessionIdRef.current = sid;
-        await applySavedPreferences(conn, sid, resp);
       } else {
         // Stamp platform metadata (ADR-055) so the session records as a regular
         // chat session rather than decoding as terminal-by-default.
@@ -74,16 +69,9 @@ export function useAcpSessionEngagement(
         engagedSessionIdRef.current = s.sessionId;
         addLog("session", { sessionId: s.sessionId });
         optimisticInsertSession(selectedAgent, s.sessionId, SessionMode.Chat);
-        await applySavedPreferences(conn, s.sessionId, s);
       }
     },
-    [
-      selectedAgent,
-      captureSessionConfig,
-      applySavedPreferences,
-      setSessionId,
-      addLog,
-    ],
+    [selectedAgent, captureSessionConfig, setSessionId, addLog],
   );
 
   const clear = useCallback(() => {

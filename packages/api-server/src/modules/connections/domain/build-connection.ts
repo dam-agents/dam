@@ -184,6 +184,7 @@ function substituteHostInContribution(
     case "file":
     case "mcp-entry":
     case "skill-ref":
+    case "harness-config":
       return c;
   }
 }

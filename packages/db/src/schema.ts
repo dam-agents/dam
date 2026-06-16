@@ -189,6 +189,25 @@ export const agentSkills = pgTable(
   ],
 );
 
+/** Per-agent harness session defaults chosen in the Config panel, mirroring the
+ *  ACP config shape: `model`, `mode`, and `config_options` (a configId -> value
+ *  map that includes the `thought_level` option). model/mode are nullable; a
+ *  harness that doesn't expose an axis leaves it null/empty. One row per agent.
+ *  The state-builder emits these as a `harness-config` contribution that the
+ *  agent-runtime reconciles into the harness's own config file. This is
+ *  Application State, not derived from K8s: it must survive pod restarts and
+ *  apply to scheduled/headless turns, so it lives in Postgres rather than on the
+ *  agent CR. */
+export const agentSettings = pgTable("agent_settings", {
+  agentId: text("agent_id").primaryKey(),
+  model: text("model"),
+  mode: text("mode"),
+  configOptions: jsonb("config_options"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 /** Append-only log of semantically-meaningful platform activity (auth, channel turns).
  *  `actor_sub` is HMAC-SHA256(keycloak_sub, ACTIVITY_HMAC_KEY) — pseudonymized
  *  (not anonymized) at the storage boundary; same key joins to actor_roles and

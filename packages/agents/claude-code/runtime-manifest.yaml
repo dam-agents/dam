@@ -1,0 +1,44 @@
+# Claude Code runtime manifest. Mirrors platform-base and adds the
+# `harness-config` driver, which writes the agent's persistent model/mode
+# default into Claude Code's own settings file ($HOME/.claude/settings.json).
+# This binding lives here rather than in platform-base because the file path
+# and key layout are Claude-specific — codex (TOML) and pi-agent
+# ($HOME/.pi/agent/settings.json) read elsewhere, so they must not advertise
+# this capability with Claude's path.
+#
+# Keep the other drivers in sync with platform-base/runtime-manifest.yaml until
+# the manifest schema supports inheritance.
+manifestVersion: 1
+
+drivers:
+  env:
+    impl: env
+
+  file:
+    impl: file
+
+  mcp-entry:
+    impl: mcp-entry
+    path: "$HOME/.mcp.json"
+    keyPath: mcpServers
+
+  skill-ref:
+    impl: skill-install
+    paths:
+      - "$HOME/.agents/skills"
+
+  # `harness-config` kind — persistent per-agent session defaults reconciled
+  # into Claude Code's user settings file. `keys` mirrors the ACP config shape
+  # (model / mode / configOptions) and maps each to its dot-path in
+  # settings.json; anything unmapped is skipped by the driver. The
+  # `thought_level` config option (ACP category) is read by Claude as
+  # `effortLevel`. configOptions keys are ACP config ids — must match what the
+  # adapter advertises.
+  harness-config:
+    impl: harness-config
+    file: "$HOME/.claude/settings.json"
+    keys:
+      model: "model"
+      mode: "permissions.defaultMode"
+      configOptions:
+        thought_level: "effortLevel"

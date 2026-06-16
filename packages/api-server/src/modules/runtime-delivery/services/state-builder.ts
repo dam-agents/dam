@@ -1,10 +1,12 @@
 import {
   eq,
   type Db,
+  agentSettings,
   agentSkills,
   connectionGrants,
   connections as connectionsTable,
 } from "db";
+import { agentConfigOptionsSchema } from "api-server-api";
 import {
   contribution as contributionSchema,
   event as eventSchema,
@@ -53,13 +55,20 @@ export function createStateBuilder(deps: {
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [granted, skills, secretEnv] = await Promise.all([
+      const [granted, skills, harnessConfig, secretEnv] = await Promise.all([
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
+        readHarnessConfigContributions(deps.db, agentId),
         deps.secretEnv.forAgent(agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      const rawContribs = [...builtin, ...granted, ...skills, ...secretEnv];
+      const rawContribs = [
+        ...builtin,
+        ...granted,
+        ...skills,
+        ...harnessConfig,
+        ...secretEnv,
+      ];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
@@ -122,6 +131,39 @@ async function readSkillRefContributions(
       version: r.version,
     }),
   );
+}
+
+/** The agent's persistent harness defaults, as a single `harness-config`
+ *  contribution. Omitted entirely when nothing is set, so the driver removes
+ *  any keys it previously wrote. */
+async function readHarnessConfigContributions(
+  db: Db,
+  agentId: string,
+): Promise<Contribution[]> {
+  const [row] = await db
+    .select({
+      model: agentSettings.model,
+      mode: agentSettings.mode,
+      configOptions: agentSettings.configOptions,
+    })
+    .from(agentSettings)
+    .where(eq(agentSettings.agentId, agentId));
+  if (!row) return [];
+
+  const parsedOptions = agentConfigOptionsSchema.safeParse(row.configOptions);
+  const configOptions = parsedOptions.success ? parsedOptions.data : {};
+  const hasOptions = Object.keys(configOptions).length > 0;
+
+  if (row.model === null && row.mode === null && !hasOptions) return [];
+
+  return [
+    {
+      kind: "harness-config",
+      ...(row.model !== null ? { model: row.model } : {}),
+      ...(row.mode !== null ? { mode: row.mode } : {}),
+      ...(hasOptions ? { configOptions } : {}),
+    },
+  ];
 }
 
 function toEvent(row: PendingEventRow): Event | null {

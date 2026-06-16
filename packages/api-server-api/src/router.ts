@@ -1,4 +1,5 @@
 import { t } from "./trpc.js";
+import { agentSettingsRouter } from "./modules/agent-settings/router.js";
 import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
@@ -18,6 +19,7 @@ export const appRouter = t.router({
   templates: templatesRouter,
   repos: reposRouter,
   agents: agentsRouter,
+  agentSettings: agentSettingsRouter,
   schedules: schedulesRouter,
   secrets: secretsRouter,
   channels: channelsRouter,

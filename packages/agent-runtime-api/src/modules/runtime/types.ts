@@ -7,6 +7,7 @@ export const contributionKind = z.enum([
   "file",
   "mcp-entry",
   "skill-ref",
+  "harness-config",
 ]);
 export type ContributionKind = z.infer<typeof contributionKind>;
 
@@ -76,6 +77,22 @@ export const skillRefContribution = z.object({
   version: z.string().min(1),
 });
 
+// Persistent per-agent harness session config, reconciled into the harness's
+// own config file by the manifest-bound `harness-config` driver. The shape
+// mirrors ACP session config: `model` is a modelId, `mode` is a modeId, and
+// `configOptions` maps an ACP configId (e.g. the `thought_level` option) to its
+// select value or boolean. The driver owns the field/option → file-keyPath
+// mapping, so this contribution stays harness-agnostic. Every field is optional
+// — a harness that doesn't expose one simply omits it.
+export const harnessConfigContribution = z.object({
+  kind: z.literal("harness-config"),
+  model: z.string().min(1).optional(),
+  mode: z.string().min(1).optional(),
+  configOptions: z
+    .record(z.string().min(1), z.union([z.string(), z.boolean()]))
+    .optional(),
+});
+
 export const contribution = z.discriminatedUnion("kind", [
   envContribution,
   egressAllowContribution,
@@ -83,6 +100,7 @@ export const contribution = z.discriminatedUnion("kind", [
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,
+  harnessConfigContribution,
 ]);
 export type Contribution = z.infer<typeof contribution>;
 

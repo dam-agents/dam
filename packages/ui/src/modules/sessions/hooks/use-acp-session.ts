@@ -46,8 +46,11 @@ export function useAcpSession(
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
-  const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
-    useAcpConfigCache(selectedAgent, sessionId, agentOperable);
+  const { captureSessionConfig, handleConfigUpdate } = useAcpConfigCache(
+    selectedAgent,
+    sessionId,
+    agentOperable,
+  );
 
   const { loadHistory } = useAcpHistory(
     selectedAgent,
@@ -59,11 +62,7 @@ export function useAcpSession(
     engagedSessionIdRef,
     engage,
     clear: clearEngagement,
-  } = useAcpSessionEngagement(
-    selectedAgent,
-    captureSessionConfig,
-    applySavedPreferences,
-  );
+  } = useAcpSessionEngagement(selectedAgent, captureSessionConfig);
 
   const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
 

@@ -1,3 +1,4 @@
+import type { AgentSettingsService } from "./modules/agent-settings/types.js";
 import type { AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
@@ -32,6 +33,7 @@ export interface ApiContext {
   templates: TemplatesService;
   repos: ReposService;
   agents: AgentsService;
+  agentSettings: AgentSettingsService;
   schedules: SchedulesService;
   secrets: SecretsService;
   channels: ChannelsService;

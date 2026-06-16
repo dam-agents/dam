@@ -11,38 +11,6 @@ import { createPortal } from "react-dom";
 import { runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
 
-function prefKey(agentId: string, key: string) {
-  return `platform-pref:${agentId}:${key}`;
-}
-
-function savePreference(agentId: string, key: string, value: string) {
-  try {
-    localStorage.setItem(prefKey(agentId, key), value);
-  } catch {}
-}
-
-export function getSavedPreferences(agentId: string): {
-  model?: string;
-  mode?: string;
-  config: Record<string, string>;
-} {
-  const prefix = `platform-pref:${agentId}:config:`;
-  const config: Record<string, string> = {};
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(prefix)) {
-        config[key.slice(prefix.length)] = localStorage.getItem(key)!;
-      }
-    }
-  } catch {}
-  return {
-    model: localStorage.getItem(prefKey(agentId, "model")) ?? undefined,
-    mode: localStorage.getItem(prefKey(agentId, "mode")) ?? undefined,
-    config,
-  };
-}
-
 /**
  * Inline session config controls: mode label + popover for modes, config options, and model.
  * All dynamically driven from ACP session state — renders nothing if the agent doesn't report capabilities.
@@ -55,11 +23,9 @@ export function getSavedPreferences(agentId: string): {
 export function SessionConfigBar({
   ensureConnection,
   engagedSessionIdRef,
-  agentId,
 }: {
   ensureConnection: () => Promise<ClientSideConnection | null>;
   engagedSessionIdRef: React.RefObject<string | null>;
-  agentId: string;
 }) {
   const modes = useStore((s) => s.sessionModes);
   const models = useStore((s) => s.sessionModels);
@@ -130,12 +96,13 @@ export function SessionConfigBar({
     setOpen(true);
   };
 
-  // Optimistic mode change: update store immediately, persist, send in background.
+  // Optimistic mode change: update the store immediately, send to the live
+  // session in the background. This overrides the configured default for this
+  // session only — the persisted default lives in agent settings, not here.
   // Re-applies after ensureConnection since captureSessionConfig may overwrite.
   const setMode = (modeId: string) => {
     if (!modes) return;
     setSessionModes({ ...modes, currentModeId: modeId });
-    savePreference(agentId, "mode", modeId);
     runAction(async () => {
       const conn = await ensureConnection();
       // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
@@ -156,7 +123,6 @@ export function SessionConfigBar({
       return;
     }
     setSessionModels({ ...models, currentModelId: modelId });
-    savePreference(agentId, "model", modelId);
     runAction(async () => {
       const conn = await ensureConnection();
       // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
@@ -170,7 +136,7 @@ export function SessionConfigBar({
     }, "Couldn't change model");
   };
 
-  // Config option: optimistic, persist, fire-and-forget
+  // Config option: optimistic, session-only, fire-and-forget
   const setConfigOption = (
     opt: SessionConfigOption,
     value: boolean | string,
@@ -180,7 +146,6 @@ export function SessionConfigBar({
       return { ...o, currentValue: value } as SessionConfigOption;
     });
     setSessionConfigOptions(updated);
-    savePreference(agentId, `config:${opt.id}`, String(value));
 
     runAction(async () => {
       const conn = await ensureConnection();

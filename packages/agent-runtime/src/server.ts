@@ -35,6 +35,7 @@ import {
   createEnvPlugin,
   createEnvStateStore,
   createFilePlugin,
+  createHarnessConfigPlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
 } from "./modules/runtime-channel/index.js";
@@ -129,6 +130,7 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createFilePlugin(),
     createMcpEntryPlugin(),
+    createHarnessConfigPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
 });

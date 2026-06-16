@@ -7,6 +7,7 @@ export {
   telegramThreads,
   skillSources,
   agentSkills,
+  agentSettings,
   agentSkillPublishes,
   egressRules,
   pendingApprovals,

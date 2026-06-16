@@ -1,7 +1,3 @@
-import type {
-  ClientSideConnection,
-  SessionConfigOption,
-} from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useEffect } from "react";
 
@@ -12,10 +8,6 @@ import {
   type SessionConfigPayload,
   sessionConfigPayloadSchema,
 } from "../../acp/types.js";
-import {
-  flattenSelectOptions,
-  getSavedPreferences,
-} from "../components/session-config-popover.js";
 
 const cachedConfigKey = (agentId: string) =>
   `platform-cached-config:${agentId}`;
@@ -26,24 +18,19 @@ export interface AcpConfigCache {
   /** Apply incremental ACP `current_mode_update` / `config_option_update`
    *  notifications to the store. */
   handleConfigUpdate: (update: AcpUpdate) => void;
-  /** Replay the user's saved per-agent preferences into a freshly-created
-   *  session — sets model/mode and forwards each config option. */
-  applySavedPreferences: (
-    conn: ClientSideConnection,
-    sid: string,
-    sessionResponse: SessionConfigPayload,
-  ) => Promise<void>;
 }
 
 /**
- * Owns the per-agent config cache: store mirror, localStorage persistence,
- * and the throwaway-session bootstrap that hydrates the cache when a fresh
- * UI loads on a running agent with no live session yet.
+ * Owns the per-agent config *catalog*: the store mirror of what options the
+ * harness advertises (modes / models / config options), a localStorage cache of
+ * that catalog, and the throwaway-session bootstrap that hydrates it when a
+ * fresh UI loads on a running agent with no live session yet.
  *
- * Returns three callbacks the orchestrator weaves into the connection
- * lifecycle: `captureSessionConfig` after newSession/loadSession,
- * `handleConfigUpdate` from the streaming handler, and `applySavedPreferences`
- * once a new session is up.
+ * It deliberately does NOT persist the user's chosen values. The per-session
+ * picker applies choices to the live ACP session only; the persistent per-agent
+ * default lives server-side (agent settings). What's cached here is just the
+ * set of available options, so the Config panel and popover can render before a
+ * session exists.
  */
 export function useAcpConfigCache(
   selectedAgent: string | null,
@@ -88,119 +75,15 @@ export function useAcpConfigCache(
     [setSessionModes, setSessionConfigOptions],
   );
 
-  const applySavedPreferences = useCallback(
-    async (
-      conn: ClientSideConnection,
-      sid: string,
-      sessionResponse: SessionConfigPayload,
-    ) => {
-      if (!selectedAgent) return;
-      const prefs = getSavedPreferences(selectedAgent);
-      const calls: Promise<unknown>[] = [];
-      if (
-        prefs.model &&
-        sessionResponse.models?.availableModels.some(
-          (m) => m.modelId === prefs.model,
-        )
-      ) {
-        calls.push(
-          conn
-            .unstable_setSessionModel({ sessionId: sid, modelId: prefs.model })
-            .catch(() => {}),
-        );
-        setSessionModels({
-          ...sessionResponse.models,
-          currentModelId: prefs.model,
-        });
-      }
-      // Newer adapters expose the model as a `category: "model"` config
-      // option instead of the legacy session-model state — forward the saved
-      // model preference through that channel (unless the config loop below
-      // already carries a value for it).
-      if (prefs.model && !sessionResponse.models) {
-        const modelOpt = sessionResponse.configOptions?.find(
-          (o): o is Extract<SessionConfigOption, { type: "select" }> =>
-            o.category === "model" && o.type === "select",
-        );
-        if (
-          modelOpt &&
-          prefs.config[modelOpt.id] === undefined &&
-          flattenSelectOptions(modelOpt.options).some(
-            (o) => o.value === prefs.model,
-          )
-        ) {
-          calls.push(
-            conn
-              .setSessionConfigOption({
-                sessionId: sid,
-                configId: modelOpt.id,
-                value: prefs.model,
-              })
-              .catch(() => {}),
-          );
-        }
-      }
-      if (
-        prefs.mode &&
-        sessionResponse.modes?.availableModes.some((m) => m.id === prefs.mode)
-      ) {
-        calls.push(
-          conn
-            .setSessionMode({ sessionId: sid, modeId: prefs.mode })
-            .catch(() => {}),
-        );
-        setSessionModes({
-          ...sessionResponse.modes,
-          currentModeId: prefs.mode,
-        });
-      }
-      for (const [configId, value] of Object.entries(prefs.config)) {
-        const opt = sessionResponse.configOptions?.find(
-          (o) => o.id === configId,
-        );
-        if (!opt) continue;
-        const req =
-          opt.type === "boolean"
-            ? {
-                sessionId: sid,
-                configId,
-                type: "boolean" as const,
-                value: value === "true",
-              }
-            : { sessionId: sid, configId, value };
-        calls.push(conn.setSessionConfigOption(req).catch(() => {}));
-      }
-      if (calls.length) await Promise.all(calls);
-    },
-    [selectedAgent, setSessionModes, setSessionModels],
-  );
-
-  // Hydrate from localStorage cache, or fetch via a throwaway session if the
-  // cache is empty and the agent is running. Skipped while a real session
+  // Hydrate the catalog from localStorage, or fetch via a throwaway session if
+  // the cache is empty and the agent is running. Skipped while a real session
   // is active — that path captures config via captureSessionConfig.
   useEffect(() => {
     if (!selectedAgent || sessionId) return;
-    const prefs = getSavedPreferences(selectedAgent);
 
     const applyConfig = (data: SessionConfigPayload) => {
-      if (data.modes) {
-        const modes = { ...data.modes };
-        if (
-          prefs.mode &&
-          modes.availableModes?.some((m) => m.id === prefs.mode)
-        )
-          modes.currentModeId = prefs.mode;
-        setSessionModes(modes);
-      }
-      if (data.models) {
-        const models = { ...data.models };
-        if (
-          prefs.model &&
-          models.availableModels?.some((m) => m.modelId === prefs.model)
-        )
-          models.currentModelId = prefs.model;
-        setSessionModels(models);
-      }
+      if (data.modes) setSessionModes(data.modes);
+      if (data.models) setSessionModels(data.models);
       if (data.configOptions?.length)
         setSessionConfigOptions(data.configOptions);
     };
@@ -284,5 +167,5 @@ export function useAcpConfigCache(
     setSessionConfigOptions,
   ]);
 
-  return { captureSessionConfig, handleConfigUpdate, applySavedPreferences };
+  return { captureSessionConfig, handleConfigUpdate };
 }

@@ -27,6 +27,9 @@ function keyFor(c: Contribution): string {
       return `mcp-entry:${c.name}`;
     case "skill-ref":
       return `skill-ref:${c.name}@${c.version}@${c.sourceUrl}`;
+    case "harness-config":
+      // Singleton per agent — a constant key collapses any duplicates.
+      return "harness-config";
   }
 }
 
