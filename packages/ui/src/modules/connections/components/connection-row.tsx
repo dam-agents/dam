@@ -6,16 +6,6 @@ import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "./connection-icon.js";
 
-/**
- * The canonical connection-row family, shared across every surface that lists
- * connections — the create wizard, the sandbox settings page, and Settings →
- * Connections. Each surface supplies its own right-side action(s) via the
- * action slot and, where relevant, a select checkbox; the layout stays
- * identical so the three screens read as one component (the Figma "Connection"
- * states: unconnected → Connect, connected → Disconnect, +/- a select check).
- */
-
-/** A catalog template row: icon, name, description, and a Connect action. */
 export function ConnectionCatalogRow({
   template,
   onConnect,
@@ -52,7 +42,6 @@ export function ConnectionCatalogRow({
   );
 }
 
-/** Right-aligned text action used on connection rows (Connect / Disconnect). */
 export function ConnectionAction({
   label,
   tone = "default",
@@ -79,15 +68,6 @@ export function ConnectionAction({
   );
 }
 
-/**
- * An existing-connection row. Two modes:
- *  - **selectable** (wizard + sandbox settings): the whole card is a button
- *    that toggles whether the connection is granted to this sandbox; a check
- *    box on the left reflects the state.
- *  - **action** (Settings → Connections): not a toggle — the caller supplies
- *    explicit right-side action(s) (Connect / Disconnect / install) via the
- *    slot, since that surface manages connections globally.
- */
 export function ConnectionRow({
   title,
   subtitle,
@@ -102,16 +82,12 @@ export function ConnectionRow({
   title: string;
   subtitle: string;
   iconSlug: string | undefined;
-  /** Live connection status; drives the badge. Omit for rows that have no
-   *  live status. */
   status?: AppConnectionView["status"];
-  /** Render as a whole-card grant toggle (wizard + sandbox settings). */
   selectable?: boolean;
   selected?: boolean;
   onSelectedChange?: (on: boolean) => void;
   /** Test hook for e2e (e.g. `connection-grant-<id>`); set on the card. */
   testId?: string;
-  /** Right-side action(s) for the non-selectable (management) variant. */
   children?: ReactNode;
 }) {
   const info = (
@@ -141,8 +117,6 @@ export function ConnectionRow({
       )}
     >
       {selectable ? (
-        // The grant toggle covers everything except the action(s) on the
-        // right, so most of the card is clickable without swallowing them.
         <button
           type="button"
           onClick={() => onSelectedChange?.(!selected)}
@@ -161,9 +135,6 @@ export function ConnectionRow({
   );
 }
 
-/** Status badge: green "Connected" for an active connection, muted
- *  "Authorizing…" while OAuth is mid-flight (mirrors AppStatusPill's pending
- *  tone). Every other status renders nothing. */
 function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
   if (status === "active")
     return (
@@ -180,8 +151,6 @@ function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
   return null;
 }
 
-/** Visual-only checkbox for the whole-card selectable row (the row's button
- *  owns the click, so this must not be interactive). */
 function SelectIndicator({ selected }: { selected: boolean }) {
   return (
     <span

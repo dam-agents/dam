@@ -10,9 +10,7 @@ import {
 
 export interface NavigationSlice {
   view: View;
-  /** Populated when `view === "sandbox-settings"`. */
   agentId: string | null;
-  /** Active sub-tab when `view === "settings"`. */
   settingsTab: SettingsTab;
   setView: (v: View) => void;
   navigateToCreateSandbox: () => void;

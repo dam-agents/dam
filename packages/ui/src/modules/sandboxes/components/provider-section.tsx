@@ -44,29 +44,13 @@ export const PROVIDER_ROWS: {
 ];
 
 interface Props {
-  /** The currently selected provider secret, or null when none is chosen. */
   selectedSecretId: string | null;
   onSelect: (secretId: string) => void;
-  /** Fired after a provider credential is removed, so the parent can clear
-   *  its selection if the removed secret was the selected one. Only the
-   *  stacked variant exposes a remove action. */
   onProviderRemoved?: (secretId: string) => void;
-  /** Auto-pick the first connected provider while nothing is selected
-   *  (wizard onboarding). Off by default: on the settings page an empty
-   *  selection is a real state, and auto-picking would fake a dirty edit. */
   autoSelectFirst?: boolean;
-  /** `"stacked"` (wizard) lists every provider as a card with connect / edit
-   *  / remove. `"dropdown"` (settings) is a compact select that expands to
-   *  the same list — matching the settings frame. */
   variant?: "stacked" | "dropdown";
 }
 
-/**
- * The provider picker shared by the create wizard's Setup step and the
- * sandbox settings page. Single source for `PROVIDER_ROWS`, the connect /
- * edit / remove wiring, and the connect dialog. Provider credentials are
- * key-entry (no OAuth), so there is no redirect to survive here.
- */
 export function ProviderSection({
   selectedSecretId,
   onSelect,
@@ -96,8 +80,6 @@ export function ProviderSection({
     if (firstConnected) onSelect(firstConnected.id);
   }, [autoSelectFirst, selectedSecretId, secretByType, onSelect]);
 
-  // Selecting a connected provider picks it; selecting an unconnected one
-  // opens the connect dialog (you can't grant a provider with no credential).
   const pick = (type: ProviderPresetType) => {
     const secret = secretByType.get(type);
     if (secret) onSelect(secret.id);

@@ -59,14 +59,6 @@ export type SandboxSettingsStatus =
   | "not-found"
   | "ready";
 
-/**
- * Owns all the non-visual logic of the sandbox settings page: the staged RHF
- * form, the provider-secret swap, connection-grant toggles, the staged
- * network-access controller, the grant-derived previews the network and
- * environment sections consume, and the ordered Save. The view binds the
- * returned values to JSX. Extracting the shared connection-state pieces across
- * the wizard and this page is deferred to #896.
- */
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);

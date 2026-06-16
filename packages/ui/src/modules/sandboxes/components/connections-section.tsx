@@ -31,24 +31,11 @@ const CATEGORY_LABEL: Record<(typeof CATEGORY_ORDER)[number], string> = {
 };
 
 interface Props {
-  /** Connection ids granted to this sandbox (staged). */
   grantedIds: ReadonlySet<string>;
-  /** Toggle the staged grant. No server write — Save commits the bundle. */
   onToggleGrant: (id: string, on: boolean) => void;
-  /** Return path if popup OAuth is blocked and falls back to a full-page
-   *  redirect (which loses staged edits — an accepted #895 limitation). */
   oauthReturnView: string;
 }
 
-/**
- * "My connections" + catalog groups (Apps / MCP servers / Other) for the
- * sandbox settings page — the same select-to-grant experience as the create
- * wizard. "My connections" lists every connection the user has; the checkbox
- * (whole row) grants/revokes it for *this* sandbox (staged). New connections
- * are added from the template catalog behind "Show all". Deleting a connection
- * is global and lives in Settings → Connections. Provider-template connections
- * are excluded (the header's Provider picker owns those).
- */
 export function ConnectionsSection({
   grantedIds,
   onToggleGrant,
@@ -68,7 +55,6 @@ export function ConnectionsSection({
     [allTemplates],
   );
 
-  // Internal-only connections (Slack, Google, …) stay hidden unless revealed.
   const showInternal = isShowInternalConnectionsEnabled();
   const byCategory = useMemo(() => {
     const m = new Map<string, ConnectionTemplateView[]>();
@@ -112,8 +98,6 @@ export function ConnectionsSection({
             No connections yet.
           </p>
         )}
-        {/* The full template catalog is long; keep it behind "Show all" so the
-            default view stays the user's existing connections. */}
         <button
           type="button"
           onClick={() => setShowCatalog((v) => !v)}

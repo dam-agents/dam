@@ -12,20 +12,9 @@ import { ProviderSection } from "../components/provider-section.js";
 import { WizardSectionLabel } from "../components/wizard-section-label.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
-// Matches the `Input` resting geometry (border, radius, height, padding) so the
-// read-only Image field sits flush with the editable Name field above it; muted
-// fill + text signal that it can't be edited.
 const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground";
 
-/**
- * Full-page settings for an existing sandbox (`/sandboxes/:id`), reached from
- * the Sandboxes list. One scrollable page over the whole configuration —
- * editable Name, read-only Image, Provider picker, granted connections,
- * network-access rules, and environment — staged behind one Save.
- * {@link useSandboxSettingsForm} owns the staged-form logic; this view is its
- * presentation.
- */
 export function SandboxSettingsView() {
   const f = useSandboxSettingsForm();
 

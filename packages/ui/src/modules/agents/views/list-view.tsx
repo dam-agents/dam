@@ -83,9 +83,6 @@ export function ListView() {
 
   return (
     <div className="mx-auto w-full max-w-[666px]">
-      {/* Page header — the Create button lives here once sandboxes exist; on
-          the empty list it moves into the empty-state card to avoid two
-          identical CTAs on one screen. */}
       <div className="mb-8 flex items-center justify-between gap-3">
         <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
           Sandboxes
@@ -95,11 +92,8 @@ export function ListView() {
         )}
       </div>
 
-      {/* Skeleton during the initial load, before the first fetch resolves. */}
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-      {/* Empty state — modest prompt + its own Create CTA, since a first-run
-          blank account also lands here after backing out of the wizard. */}
       {initialLoaded && agents.length === 0 && (
         <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
           <h2 className="text-[16px] font-semibold text-foreground">
@@ -114,7 +108,6 @@ export function ListView() {
         </Card>
       )}
 
-      {/* One row per sandbox. */}
       <div className="flex flex-col gap-3">
         {initialLoaded &&
           agents.map((agent) => (
