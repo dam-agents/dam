@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type EgressPreset, isProtectedAgentEnvName } from "api-server-api";
+import { isProtectedAgentEnvName } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import {
   allEnvVarsValid,
   sanitizeEnvVars,
 } from "../../../components/env-vars-editor.js";
+import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
 import { isProviderPresetType, type SecretView } from "../../../types.js";
 import {
@@ -31,12 +32,10 @@ import {
   useCurrentPreset,
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
-import type {
-  PendingAdd,
-  StagedNetworkAccessController,
-} from "../../egress-rules/components/agent-egress-editor.js";
+import type { StagedNetworkAccessController } from "../../egress-rules/components/agent-egress-editor.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 const EMPTY_SECRETS: SecretView[] = [];
 
@@ -124,22 +123,16 @@ export function useSandboxSettingsForm() {
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
   const saving = isSubmitting;
 
-  // Network-access edits live outside RHF (none map to a schema field). Save
-  // commits them alongside the rest; leaving discards.
-  const [stagedPreset, setStagedPreset] = useState<EgressPreset | null>(null);
-  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const [pendingAdds, setPendingAdds] = useState<readonly PendingAdd[]>([]);
+  // Network-access edits live outside RHF (none map to a schema field); this
+  // subhook stages them and self-resets on sandbox switch. Save commits them
+  // alongside the rest; leaving discards.
+  const net = useStagedNetworkAccess(agentId);
 
   const [formReady, setFormReady] = useState(false);
   const baselinedRef = useRef(false);
   useEffect(() => {
     baselinedRef.current = false;
     setFormReady(false);
-    setStagedPreset(null);
-    setPendingDeletes(new Set());
-    setPendingAdds([]);
   }, [agentId]);
 
   // Adopt the agent's persisted values as the dirty-tracking baseline once the
@@ -275,34 +268,21 @@ export function useSandboxSettingsForm() {
     return m;
   }, [secrets, apps]);
 
-  const networkAccessDirty =
-    stagedPreset !== null || pendingDeletes.size > 0 || pendingAdds.length > 0;
-  const dirty = isDirty || networkAccessDirty;
+  const dirty = isDirty || net.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
 
-  const togglePendingDelete = (id: string) =>
-    setPendingDeletes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const appendPendingAdd = (draft: Omit<PendingAdd, "tempId">) =>
-    setPendingAdds((prev) => [
-      ...prev,
-      { ...draft, tempId: crypto.randomUUID() },
-    ]);
-  const removePendingAdd = (tempId: string) =>
-    setPendingAdds((prev) => prev.filter((a) => a.tempId !== tempId));
+  // Browser-level guard (tab close, refresh, URL nav); `goBack` covers in-app
+  // navigation.
+  useUnsavedGuard(dirty);
 
   const egressStaged: StagedNetworkAccessController = {
-    preset: stagedPreset,
-    setPreset: setStagedPreset,
-    pendingDeletes,
-    togglePendingDelete,
-    pendingAdds,
-    appendPendingAdd,
-    removePendingAdd,
+    preset: net.stagedPreset,
+    setPreset: net.setStagedPreset,
+    pendingDeletes: net.pendingDeletes,
+    togglePendingDelete: net.togglePendingDelete,
+    pendingAdds: net.pendingAdds,
+    appendPendingAdd: net.appendPendingAdd,
+    removePendingAdd: net.removePendingAdd,
     pendingConnectionGrants,
     pendingConnectionRevokes,
     connectionLabels,
@@ -314,7 +294,7 @@ export function useSandboxSettingsForm() {
     // aborts before anything commits. This view stays mounted (unlike the
     // old modal), so a mid-save abort would otherwise leave already-committed
     // fields shown as unsaved.
-    const restartingHosts = pendingAdds
+    const restartingHosts = net.pendingAdds
       .filter((a) => a.method !== "*" || a.pathPattern !== "*")
       .map((a) => a.host);
     if (
@@ -341,8 +321,8 @@ export function useSandboxSettingsForm() {
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         });
       }
-      if (stagedPreset !== null) {
-        await applyPreset.mutateAsync({ agentId, preset: stagedPreset });
+      if (net.stagedPreset !== null) {
+        await applyPreset.mutateAsync({ agentId, preset: net.stagedPreset });
       }
       if (dirtyFields.assignedAppIds) {
         await setAgentConnections.mutateAsync({
@@ -350,8 +330,8 @@ export function useSandboxSettingsForm() {
           connectionIds: values.assignedAppIds,
         });
       }
-      for (const id of pendingDeletes) await revokeRule.mutateAsync({ id });
-      for (const add of pendingAdds) {
+      for (const id of net.pendingDeletes) await revokeRule.mutateAsync({ id });
+      for (const add of net.pendingAdds) {
         await createRule.mutateAsync({
           agentId,
           host: add.host,
@@ -360,9 +340,7 @@ export function useSandboxSettingsForm() {
           verdict: add.verdict,
         });
       }
-      setStagedPreset(null);
-      setPendingDeletes(new Set());
-      setPendingAdds([]);
+      net.reset();
       reset({
         name: values.name.trim(),
         assigned: values.assigned,
@@ -417,9 +395,11 @@ export function useSandboxSettingsForm() {
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:
-      pendingAdds.some((a) => a.host.trim() === "*") ||
-      egressRules.some((r) => r.host === "*" && !pendingDeletes.has(r.id)) ||
-      (stagedPreset ?? currentPreset) === "all",
+      net.pendingAdds.some((a) => a.host.trim() === "*") ||
+      egressRules.some(
+        (r) => r.host === "*" && !net.pendingDeletes.has(r.id),
+      ) ||
+      (net.stagedPreset ?? currentPreset) === "all",
     onSave,
   };
 }

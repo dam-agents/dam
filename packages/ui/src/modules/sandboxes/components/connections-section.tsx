@@ -61,8 +61,7 @@ export function ConnectionsSection({
   const [showCatalog, setShowCatalog] = useState(false);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = (connectionsQ.data ??
-    NO_CONNECTIONS) as unknown as ConnectionView[];
+  const connections = connectionsQ.data ?? NO_CONNECTIONS;
 
   const templateById = useMemo(
     () => new Map(allTemplates.map((t) => [t.id, t])),

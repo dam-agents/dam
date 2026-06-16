@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
+import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import {
@@ -20,7 +21,6 @@ import {
   type FileContent,
   useFileWriteMutation,
 } from "../api/queries.js";
-import { useUnsavedGuard } from "../hooks/use-unsaved-guard.js";
 import { CodeEditor } from "./code-editor.js";
 
 interface Props {
