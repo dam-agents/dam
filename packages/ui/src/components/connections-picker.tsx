@@ -12,7 +12,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
-import { AnthropicIcon } from "../modules/settings/components/brand-icons.js";
 import type { SecretView } from "../types.js";
 import {
   isMcpSecret,
@@ -20,6 +19,7 @@ import {
   mcpHostnameFromSecretName,
 } from "../types.js";
 import { AppStatusPill } from "./app-status-pill.js";
+import { AnthropicIcon } from "./brand-icons.js";
 
 /**
  * One row in the picker's "OAuth Apps" subsection. Joins the

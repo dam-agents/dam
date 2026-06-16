@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { ProviderFormShell } from "../shared/provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const KEY_GUIDE_URL =

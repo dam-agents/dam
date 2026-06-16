@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
-import { ProviderFormShell } from "../shared/provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const bobCredentialSchema = z

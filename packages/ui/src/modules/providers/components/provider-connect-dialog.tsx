@@ -13,14 +13,11 @@ import {
   useCreateSecret,
   useUpdateSecret,
 } from "../../secrets/api/mutations.js";
-import { AnthropicForm } from "../../settings/components/anthropic/form.js";
-import {
-  detectMode,
-  MODES,
-} from "../../settings/components/anthropic/modes.js";
-import { BobForm } from "../../settings/components/bob/form.js";
-import { IbmLitellmForm } from "../../settings/components/ibm-litellm/form.js";
-import { OpenAIForm } from "../../settings/components/openai/form.js";
+import { AnthropicForm } from "./anthropic/form.js";
+import { detectMode, MODES } from "./anthropic/modes.js";
+import { BobForm } from "./bob/form.js";
+import { IbmLitellmForm } from "./ibm-litellm/form.js";
+import { OpenAIForm } from "./openai/form.js";
 
 interface Props {
   provider: ProviderPresetType;

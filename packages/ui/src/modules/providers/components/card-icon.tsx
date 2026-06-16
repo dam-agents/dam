@@ -1,9 +1,13 @@
 import { Bee } from "@carbon/icons-react";
 
+import {
+  AnthropicIcon,
+  LiteLLMIcon,
+  OpenAIIcon,
+} from "@/components/brand-icons";
 import { cn } from "@/lib/utils";
 
-import type { ProviderPresetType } from "../../../../types.js";
-import { AnthropicIcon, LiteLLMIcon, OpenAIIcon } from "../brand-icons.js";
+import type { ProviderPresetType } from "../../../types.js";
 
 /**
  * Per-provider brand mark — a small (40×40) tile with the provider's

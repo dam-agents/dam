@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 import {
   type ProviderPresetType,
@@ -14,11 +15,10 @@ import {
   type SecretView,
 } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
-import { CardIcon } from "../../settings/components/shared/card-icon.js";
-import { useProviderActions } from "../../settings/components/use-provider-actions.js";
-import { CardList } from "./card-list.js";
+import { CardIcon } from "./card-icon.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { ProviderRow } from "./provider-row.js";
+import { useProviderActions } from "./use-provider-actions.js";
 
 export const PROVIDER_ROWS: {
   type: ProviderPresetType;
@@ -45,19 +45,23 @@ export const PROVIDER_ROWS: {
 ];
 
 interface Props {
-  selectedSecretId: string | null;
-  onSelect: (secretId: string) => void;
+  selectedSecretId?: string | null;
+  onSelect?: (secretId: string) => void;
   onProviderRemoved?: (secretId: string) => void;
   autoSelectFirst?: boolean;
   variant?: "stacked" | "dropdown";
+  manage?: boolean;
+  listClassName?: string;
 }
 
 export function ProviderSection({
-  selectedSecretId,
+  selectedSecretId = null,
   onSelect,
   onProviderRemoved,
   autoSelectFirst = false,
   variant = "stacked",
+  manage = false,
+  listClassName,
 }: Props) {
   const { data: secrets = [] } = useSecrets();
   const providerActions = useProviderActions();
@@ -78,12 +82,12 @@ export function ProviderSection({
     const firstConnected = PROVIDER_ROWS.map((r) =>
       secretByType.get(r.type),
     ).find(Boolean);
-    if (firstConnected) onSelect(firstConnected.id);
+    if (firstConnected) onSelect?.(firstConnected.id);
   }, [autoSelectFirst, selectedSecretId, secretByType, onSelect]);
 
   const pick = (type: ProviderPresetType) => {
     const secret = secretByType.get(type);
-    if (secret) onSelect(secret.id);
+    if (secret) onSelect?.(secret.id);
     else setDialog({ provider: type });
   };
 
@@ -96,7 +100,7 @@ export function ProviderSection({
           onPick={pick}
         />
       ) : (
-        <CardList>
+        <div className={cn("flex flex-col gap-3", listClassName)}>
           {PROVIDER_ROWS.map((row) => {
             const secret = secretByType.get(row.type);
             return (
@@ -105,9 +109,10 @@ export function ProviderSection({
                 type={row.type}
                 description={row.description}
                 secret={secret}
+                selectable={!manage}
                 selected={!!secret && secret.id === selectedSecretId}
                 onConnect={() => setDialog({ provider: row.type })}
-                onSelect={() => secret && onSelect(secret.id)}
+                onSelect={() => secret && onSelect?.(secret.id)}
                 onEditKey={() =>
                   secret && setDialog({ provider: row.type, secret })
                 }
@@ -120,7 +125,7 @@ export function ProviderSection({
               />
             );
           })}
-        </CardList>
+        </div>
       )}
 
       {dialog && (
@@ -128,7 +133,7 @@ export function ProviderSection({
           provider={dialog.provider}
           secret={dialog.secret}
           onConnected={(secretId) => {
-            onSelect(secretId);
+            onSelect?.(secretId);
             setDialog(null);
           }}
           onClose={() => setDialog(null)}

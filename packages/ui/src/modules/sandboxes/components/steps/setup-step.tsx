@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { ProviderSection } from "../../../providers/components/provider-section.js";
 import type {
   EgressPreset,
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
 import { FormField } from "../form-field.js";
-import { ProviderSection } from "../provider-section.js";
 import {
   type RegistryCredential,
   RegistryCredentialSection,
@@ -96,6 +96,7 @@ export function SetupStep({
               update({ providerSecretId: null });
           }}
           autoSelectFirst
+          listClassName="md:-ml-4"
         />
       </section>
 
@@ -161,7 +162,9 @@ function NetworkPresetRow({
         )}
       />
       <div>
-        <p className="text-[16px] font-medium text-foreground">{label}</p>
+        <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+          {label}
+        </p>
         <p className="text-[14px] text-muted-foreground">{help}</p>
       </div>
     </button>

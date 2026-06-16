@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
-import { ProviderFormShell } from "../shared/provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,

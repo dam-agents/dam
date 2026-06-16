@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { PROVIDERS } from "../../../../types.js";
-import { ProviderFormShell } from "../shared/provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
 
 const OPENAI_DISPLAY_NAME = PROVIDERS.openai.displayName;

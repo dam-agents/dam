@@ -3,7 +3,7 @@ import type { FormEventHandler, ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 
-import type { ProviderPresetType } from "../../../../types.js";
+import type { ProviderPresetType } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
 import { IconButton } from "./icon-button.js";
 

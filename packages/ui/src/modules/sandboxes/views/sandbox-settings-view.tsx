@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { FormError } from "../../../components/form-error.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { ProviderSection } from "../../providers/components/provider-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { FormField } from "../components/form-field.js";
-import { ProviderSection } from "../components/provider-section.js";
 import { WizardSectionLabel } from "../components/wizard-section-label.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 

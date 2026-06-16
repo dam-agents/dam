@@ -14,13 +14,14 @@ import {
   PROVIDERS,
   type SecretView,
 } from "../../../types.js";
-import { CardIcon } from "../../settings/components/shared/card-icon.js";
+import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
   description: string;
   secret: SecretView | undefined;
   selected: boolean;
+  selectable?: boolean;
   onConnect: () => void;
   onSelect: () => void;
   onEditKey: () => void;
@@ -32,6 +33,7 @@ export function ProviderRow({
   description,
   secret,
   selected,
+  selectable = true,
   onConnect,
   onSelect,
   onEditKey,
@@ -55,22 +57,34 @@ export function ProviderRow({
     );
   }
 
+  const info = (
+    <>
+      <CardIcon provider={type} />
+      <ProviderText name={name} description={description} connected />
+    </>
+  );
+
   return (
     <div
       className={cn(
         "flex items-center gap-1 rounded-lg border bg-card pr-2 transition-colors",
-        selected ? "border-foreground" : "border-border",
+        selectable && selected ? "border-foreground" : "border-border",
       )}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-pressed={selected}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-muted/30"
-      >
-        <CardIcon provider={type} />
-        <ProviderText name={name} description={description} connected />
-      </button>
+      {selectable ? (
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-muted/30"
+        >
+          {info}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
+          {info}
+        </div>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-sm" title="Provider actions">
