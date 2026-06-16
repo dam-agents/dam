@@ -59,7 +59,8 @@ test("connection injects the credential (env placeholder + egress after Envoy)",
         {
           timeout: 120_000,
           intervals: [3_000],
-          message: "httpbin did not echo the injected credential after Envoy",
+          message:
+            "echo endpoint did not return the injected credential after Envoy",
         },
       )
       .toContain(sentinel);
