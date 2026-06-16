@@ -8,6 +8,7 @@ import type {
   EgressPreset,
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
+import { CardList } from "../card-list.js";
 import { ProviderSection } from "../provider-section.js";
 import {
   type RegistryCredential,
@@ -97,7 +98,7 @@ export function SetupStep({
 
       <section className="mb-8">
         <WizardSectionLabel>Network access</WizardSectionLabel>
-        <div className="flex flex-col gap-3">
+        <CardList>
           {NETWORK_PRESETS.map((preset) => (
             <NetworkPresetRow
               key={preset.value}
@@ -107,7 +108,7 @@ export function SetupStep({
               onSelect={() => update({ egressPreset: preset.value })}
             />
           ))}
-        </div>
+        </CardList>
       </section>
 
       {showRegistry && (

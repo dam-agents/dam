@@ -16,6 +16,7 @@ import {
 import { useSecrets } from "../../secrets/api/queries.js";
 import { CardIcon } from "../../settings/components/shared/card-icon.js";
 import { useProviderActions } from "../../settings/components/use-provider-actions.js";
+import { CardList } from "./card-list.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { ProviderRow } from "./provider-row.js";
 
@@ -95,7 +96,7 @@ export function ProviderSection({
           onPick={pick}
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <CardList>
           {PROVIDER_ROWS.map((row) => {
             const secret = secretByType.get(row.type);
             return (
@@ -119,7 +120,7 @@ export function ProviderSection({
               />
             );
           })}
-        </div>
+        </CardList>
       )}
 
       {dialog && (

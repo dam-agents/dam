@@ -68,7 +68,7 @@ export function DialogHeader({ children, className }: DialogRegionProps) {
   return (
     <div
       id={labelId}
-      className={`px-5 md:px-7 pt-5 md:pt-7 pb-4 border-b-2 border-border-light ${className ?? ""}`}
+      className={`px-5 md:px-7 pt-5 md:pt-7 pb-4 border-border-light ${className ?? ""}`}
     >
       {children}
     </div>
@@ -96,7 +96,7 @@ export function DialogBody({ children, className }: DialogRegionProps) {
 export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
-      className={`px-5 md:px-7 py-4 border-t-2 border-border-light flex items-center justify-end gap-3 ${className ?? ""}`}
+      className={`px-5 md:px-7 py-4 flex items-center justify-end gap-3 ${className ?? ""}`}
     >
       {children}
     </div>

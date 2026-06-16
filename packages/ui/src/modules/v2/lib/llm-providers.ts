@@ -23,7 +23,7 @@ export interface LlmProvider {
   verifyEnvName?: AnthropicVerifyEnv;
 }
 
-export const LLM_PROVIDERS: readonly LlmProvider[] = [
+const LLM_PROVIDERS: readonly LlmProvider[] = [
   {
     id: "anthropic-oauth",
     label: "Anthropic OAuth",

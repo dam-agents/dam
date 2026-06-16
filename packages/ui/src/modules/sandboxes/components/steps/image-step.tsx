@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { TemplateView } from "../../../../types.js";
+import { CardList } from "../card-list.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
@@ -37,11 +38,11 @@ export function ImageStep({
 
       <section className="mb-8">
         <WizardSectionLabel>Pick a pre-built image</WizardSectionLabel>
-        {loading ? (
-          <ListSkeleton rows={4} rowHeight={64} />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {templates.map((template) => (
+        <CardList>
+          {loading ? (
+            <ListSkeleton rows={4} rowHeight={64} />
+          ) : (
+            templates.map((template) => (
               <ImageCard
                 key={template.id}
                 name={template.name}
@@ -49,19 +50,21 @@ export function ImageStep({
                 selected={template.id === selectedTemplateId}
                 onSelect={() => onPickTemplate(template.id)}
               />
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </CardList>
       </section>
 
       <section>
         <WizardSectionLabel>Or bring your own image</WizardSectionLabel>
-        <CustomImageCard
-          value={customImage}
-          selected={customImage.trim().length > 0}
-          onChange={onCustomImageChange}
-          onContinue={onContinueWithCustom}
-        />
+        <CardList>
+          <CustomImageCard
+            value={customImage}
+            selected={customImage.trim().length > 0}
+            onChange={onCustomImageChange}
+            onContinue={onContinueWithCustom}
+          />
+        </CardList>
       </section>
     </div>
   );
@@ -139,7 +142,7 @@ function CustomImageCard({
           placeholder="ghcr.io/org/agent:latest"
           variant="monospace"
         />
-        <Button onClick={onContinue} disabled={!canContinue}>
+        <Button onClick={onContinue} disabled={!canContinue} variant="outline">
           Continue
         </Button>
       </div>

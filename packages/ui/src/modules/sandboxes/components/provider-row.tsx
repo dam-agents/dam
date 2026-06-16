@@ -44,7 +44,7 @@ export function ProviderRow({
       <button
         type="button"
         onClick={onConnect}
-        className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
