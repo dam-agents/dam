@@ -148,7 +148,8 @@ export function ConnectionRow({
         <button
           type="button"
           onClick={() => onSelectedChange?.(!selected)}
-          aria-pressed={selected}
+          role="checkbox"
+          aria-checked={selected}
           className="-my-3 flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
         >
           <SelectIndicator selected={selected} />
