@@ -75,12 +75,14 @@ export function SetupStep({
 
       <section className="mb-8">
         <WizardSectionLabel>Name</WizardSectionLabel>
-        <Input
-          autoFocus
-          value={name}
-          onChange={(event) => update({ name: event.target.value })}
-          placeholder="my-sandbox"
-        />
+        <div className="md:-ml-3">
+          <Input
+            autoFocus
+            value={name}
+            onChange={(event) => update({ name: event.target.value })}
+            placeholder="my-sandbox"
+          />
+        </div>
       </section>
 
       <section className="mb-8">
@@ -158,8 +160,8 @@ function NetworkPresetRow({
         )}
       />
       <div>
-        <p className="text-[14px] font-medium text-foreground">{label}</p>
-        <p className="text-[12px] text-muted-foreground">{help}</p>
+        <p className="text-[16px] font-medium text-foreground">{label}</p>
+        <p className="text-[14px] text-muted-foreground">{help}</p>
       </div>
     </button>
   );
