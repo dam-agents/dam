@@ -1,5 +1,4 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
