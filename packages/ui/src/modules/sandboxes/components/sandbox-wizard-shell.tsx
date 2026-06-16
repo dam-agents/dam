@@ -5,6 +5,7 @@ import { WizardStepIndicator } from "./wizard-step-indicator.js";
 
 interface Props {
   step: WizardStep;
+  maxStep: WizardStep;
   imageLabel: string | null;
   onNavigate: (step: WizardStep) => void;
   children: ReactNode;
@@ -12,6 +13,7 @@ interface Props {
 
 export function SandboxWizardShell({
   step,
+  maxStep,
   imageLabel,
   onNavigate,
   children,
@@ -21,6 +23,7 @@ export function SandboxWizardShell({
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <WizardStepIndicator
           step={step}
+          maxStep={maxStep}
           imageLabel={imageLabel}
           onNavigate={onNavigate}
         />

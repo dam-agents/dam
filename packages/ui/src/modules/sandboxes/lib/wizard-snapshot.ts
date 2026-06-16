@@ -8,6 +8,7 @@ export type EgressPreset = z.infer<typeof egressPresetSchema>;
 /** Persisted wizard state — ids and pick-state only, never secret values. */
 export const wizardSnapshotSchema = z.object({
   step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  maxStep: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
   templateId: z.string().nullable(),
   customImage: z.string(),
   name: z.string(),
@@ -22,6 +23,7 @@ export type WizardStep = WizardSnapshot["step"];
 
 export const EMPTY_SNAPSHOT: WizardSnapshot = {
   step: 1,
+  maxStep: 1,
   templateId: null,
   customImage: "",
   name: "",
@@ -36,7 +38,11 @@ export function loadSnapshot(): WizardSnapshot {
   if (!raw) return EMPTY_SNAPSHOT;
   try {
     const parsed = wizardSnapshotSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : EMPTY_SNAPSHOT;
+    if (!parsed.success) return EMPTY_SNAPSHOT;
+    return {
+      ...parsed.data,
+      maxStep: Math.max(parsed.data.maxStep, parsed.data.step) as WizardStep,
+    };
   } catch {
     return EMPTY_SNAPSHOT;
   }

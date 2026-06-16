@@ -113,6 +113,7 @@ export function SandboxWizardView() {
   return (
     <SandboxWizardShell
       step={snapshot.step}
+      maxStep={snapshot.maxStep || snapshot.step}
       imageLabel={imageLabel}
       onNavigate={goToStep}
     >

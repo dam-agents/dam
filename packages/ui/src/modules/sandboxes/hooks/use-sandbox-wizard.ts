@@ -20,6 +20,12 @@ export function useSandboxWizard(): SandboxWizard {
   const update = useCallback((patch: Partial<WizardSnapshot>) => {
     setSnapshot((prev) => {
       const next = { ...prev, ...patch };
+      if (patch.step !== undefined) {
+        next.maxStep = Math.max(
+          prev.maxStep || prev.step,
+          patch.step,
+        ) as WizardSnapshot["step"];
+      }
       saveSnapshot(next);
       return next;
     });

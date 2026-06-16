@@ -10,11 +10,17 @@ const STEPS = [
 
 interface Props {
   step: WizardStep;
+  maxStep: WizardStep;
   imageLabel: string | null;
   onNavigate: (step: WizardStep) => void;
 }
 
-export function WizardStepIndicator({ step, imageLabel, onNavigate }: Props) {
+export function WizardStepIndicator({
+  step,
+  maxStep,
+  imageLabel,
+  onNavigate,
+}: Props) {
   return (
     <nav
       aria-label="Wizard steps"
@@ -26,7 +32,11 @@ export function WizardStepIndicator({ step, imageLabel, onNavigate }: Props) {
           label={item.label}
           annotation={item.n === 1 ? imageLabel : null}
           state={
-            item.n === step ? "active" : item.n < step ? "visited" : "upcoming"
+            item.n === step
+              ? "active"
+              : item.n <= maxStep
+                ? "visited"
+                : "upcoming"
           }
           onClick={() => onNavigate(item.n as WizardStep)}
         />
