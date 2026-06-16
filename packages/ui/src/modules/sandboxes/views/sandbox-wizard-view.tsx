@@ -1,10 +1,14 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { TemplateView } from "../../../types.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import {
+  EMPTY_REGISTRY_CREDENTIAL,
+  registryFilledCount,
+} from "../components/registry-credential-section.js";
 import { SandboxWizardShell } from "../components/sandbox-wizard-shell.js";
 import { ConnectionsStep } from "../components/steps/connections-step.js";
 import { ImageStep } from "../components/steps/image-step.js";
@@ -20,6 +24,14 @@ export function SandboxWizardView() {
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
   const templateList = templates ?? NO_TEMPLATES;
+
+  // Pull credentials are secret, so they live here as ephemeral state — never
+  // in the wizard snapshot, which is persisted to sessionStorage.
+  const [registryCredential, setRegistryCredential] = useState(
+    EMPTY_REGISTRY_CREDENTIAL,
+  );
+  const isCustomImage =
+    !snapshot.templateId && snapshot.customImage.trim().length > 0;
 
   const imageLabel = useMemo(() => {
     if (snapshot.templateId)
@@ -65,6 +77,8 @@ export function SandboxWizardView() {
 
   const finish = async () => {
     const image = snapshot.customImage.trim();
+    const useRegistry =
+      !!image && registryFilledCount(registryCredential) === 3;
     try {
       const agent = await createAgent.mutateAsync({
         name: snapshot.name.trim(),
@@ -78,8 +92,18 @@ export function SandboxWizardView() {
         ...(snapshot.connectionIds.length
           ? { appConnectionIds: snapshot.connectionIds }
           : {}),
+        ...(useRegistry
+          ? {
+              registryCredential: {
+                server: registryCredential.server.trim(),
+                username: registryCredential.username.trim(),
+                password: registryCredential.password,
+              },
+            }
+          : {}),
       });
       reset();
+      setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       selectAgent(agent.id);
     } catch {
       // Mutation surfaces its own error toast; stay on Step 3 to retry.
@@ -115,6 +139,9 @@ export function SandboxWizardView() {
           name={snapshot.name}
           providerSecretId={snapshot.providerSecretId}
           egressPreset={snapshot.egressPreset}
+          showRegistry={isCustomImage}
+          registryCredential={registryCredential}
+          onRegistryChange={setRegistryCredential}
           update={update}
           onContinue={() => update({ step: 3 })}
         />

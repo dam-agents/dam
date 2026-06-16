@@ -23,7 +23,7 @@ controller:
     base:
       storageClass: platform-rwx
     templateDefaults:
-      imagePullPolicy: Never
+      imagePullPolicy: IfNotPresent
 
 nfsProvisioner:
   enabled: true

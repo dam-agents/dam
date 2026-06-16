@@ -14,6 +14,11 @@ import type {
 } from "../../lib/wizard-snapshot.js";
 import { ProviderConnectDialog } from "../provider-connect-dialog.js";
 import { ProviderRow } from "../provider-row.js";
+import {
+  type RegistryCredential,
+  RegistryCredentialSection,
+  registryFilledCount,
+} from "../registry-credential-section.js";
 import { StepHeader } from "../step-header.js";
 import { WizardSectionLabel } from "../wizard-section-label.js";
 
@@ -61,6 +66,9 @@ interface Props {
   name: string;
   providerSecretId: string | null;
   egressPreset: EgressPreset;
+  showRegistry: boolean;
+  registryCredential: RegistryCredential;
+  onRegistryChange: (value: RegistryCredential) => void;
   update: (patch: Partial<WizardSnapshot>) => void;
   onContinue: () => void;
 }
@@ -69,6 +77,9 @@ export function SetupStep({
   name,
   providerSecretId,
   egressPreset,
+  showRegistry,
+  registryCredential,
+  onRegistryChange,
   update,
   onContinue,
 }: Props) {
@@ -99,7 +110,12 @@ export function SetupStep({
     if (firstConnected) update({ providerSecretId: firstConnected.id });
   }, [providerSecretId, secretByType, update]);
 
-  const canContinue = name.trim().length > 0 && providerSecretId !== null;
+  const registryPartial =
+    showRegistry &&
+    registryFilledCount(registryCredential) > 0 &&
+    registryFilledCount(registryCredential) < 3;
+  const canContinue =
+    name.trim().length > 0 && providerSecretId !== null && !registryPartial;
 
   return (
     <div>
@@ -158,6 +174,14 @@ export function SetupStep({
           ))}
         </div>
       </section>
+
+      {showRegistry && (
+        <RegistryCredentialSection
+          value={registryCredential}
+          onChange={onRegistryChange}
+          partial={registryPartial}
+        />
+      )}
 
       <div className="flex justify-end">
         <Button onClick={onContinue} disabled={!canContinue}>
