@@ -1,6 +1,7 @@
 import { AlertTriangle, KeyRound, Lock } from "lucide-react";
 
 import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { EnvVarsEditor } from "../../../../components/env-vars-editor.js";
 import type { EnvVar } from "../../../../types.js";
@@ -107,7 +108,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
   return (
     <div className="group flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px]">
       <span
-        className={`shrink-0 ${isSystem && "text-text-muted"}`}
+        className={cn("shrink-0", isSystem && "text-text-muted")}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
         {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
