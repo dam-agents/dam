@@ -43,6 +43,12 @@ const STYLES: Record<
   },
 };
 
+const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
+  lg: "w-[68px] h-[68px]",
+  md: "w-10 h-10",
+  sm: "w-7 h-7",
+};
+
 const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
   anthropic: "!w-8 !h-8",
   openai: "!w-8 !h-8",
@@ -67,11 +73,7 @@ export function CardIcon({
     <div
       className={cn(
         "shrink-0 rounded-lg flex items-center justify-center",
-        size === "lg"
-          ? "w-[68px] h-[68px]"
-          : size === "sm"
-            ? "w-7 h-7"
-            : "w-10 h-10",
+        TILE_SIZE_CLASS[size],
         style.bg,
       )}
     >
