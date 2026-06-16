@@ -83,21 +83,34 @@ export function ListView() {
 
   return (
     <div className="mx-auto w-full max-w-[666px]">
-      {/* Page header */}
+      {/* Page header — the Create button lives here once sandboxes exist; on
+          the empty list it moves into the empty-state card to avoid two
+          identical CTAs on one screen. */}
       <div className="mb-8 flex items-center justify-between gap-3">
         <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
           Sandboxes
         </h1>
-        <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+        {agents.length > 0 && (
+          <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+        )}
       </div>
 
       {/* Skeleton during the initial load, before the first fetch resolves. */}
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-      {/* Empty state — the header's Create sandbox button is the only CTA. */}
+      {/* Empty state — modest prompt + its own Create CTA, since a first-run
+          blank account also lands here after backing out of the wizard. */}
       {initialLoaded && agents.length === 0 && (
-        <Card className="border border-border px-6 py-10 text-center text-[14px] text-muted-foreground anim-in">
-          No sandboxes yet
+        <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
+          <h2 className="text-[16px] font-semibold text-foreground">
+            No sandboxes yet
+          </h2>
+          <p className="text-[14px] text-muted-foreground">
+            Create your first sandbox to get started.
+          </p>
+          <Button className="mt-1" onClick={navigateToCreateSandbox}>
+            Create sandbox
+          </Button>
         </Card>
       )}
 

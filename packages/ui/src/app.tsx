@@ -3,11 +3,11 @@ import { useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
-import { SetupProgressBar } from "./components/setup-progress-bar.js";
 import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -21,6 +21,7 @@ export default function App() {
   const theme = useStore((s) => s.theme);
 
   useAgentCrashToasts();
+  useFirstRunRedirect();
 
   // Apply theme on mount + listen for system preference changes
   useEffect(() => {
@@ -143,7 +144,6 @@ export default function App() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-10 flex-1 overflow-y-auto">
-          <SetupProgressBar />
           {view === "sandbox-new" ? (
             <SandboxWizardView />
           ) : (
