@@ -149,6 +149,18 @@ function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
         Authorizing…
       </span>
     );
+  if (status === "expired")
+    return (
+      <span className="rounded-full bg-danger-light px-2.5 py-0.5 text-[12px] font-normal text-danger">
+        Expired
+      </span>
+    );
+  if (status === "disconnected")
+    return (
+      <span className="rounded-full bg-muted px-2.5 py-0.5 text-[12px] font-normal text-muted-foreground">
+        Disconnected
+      </span>
+    );
   return null;
 }
 
