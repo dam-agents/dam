@@ -33,6 +33,12 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   });
 
   await test.step("open app", async () => {
+    // Suppress first-run auto-routing — a blank account (providers cleared
+    // above) would otherwise skip the list and land in the wizard, breaking
+    // the "Create sandbox" flow below.
+    await page.addInitScript(() =>
+      sessionStorage.setItem("platform-first-run-routed", "1"),
+    );
     await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
