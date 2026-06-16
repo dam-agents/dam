@@ -17,6 +17,7 @@ export function ConnectionCatalogRow({
     <button
       type="button"
       onClick={onConnect}
+      data-testid={`connection-template-${template.id}`}
       className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
     >
       <ConnectionIcon
