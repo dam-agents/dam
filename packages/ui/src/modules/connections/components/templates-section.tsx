@@ -79,7 +79,7 @@ export function ConnectionTemplatesSection() {
                 title={templateById.get(c.templateId)?.name ?? c.templateId}
                 subtitle={c.name}
                 iconSlug={templateById.get(c.templateId)?.iconSlug}
-                connected={c.status === "active"}
+                status={c.status}
               >
                 <ConnectionActions
                   connection={c}

@@ -1,4 +1,4 @@
-import type { ConnectionTemplateView } from "api-server-api";
+import type { AppConnectionView, ConnectionTemplateView } from "api-server-api";
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -92,7 +92,7 @@ export function ConnectionRow({
   title,
   subtitle,
   iconSlug,
-  connected,
+  status,
   selectable = false,
   selected = false,
   onSelectedChange,
@@ -102,7 +102,9 @@ export function ConnectionRow({
   title: string;
   subtitle: string;
   iconSlug: string | undefined;
-  connected: boolean;
+  /** Live connection status; drives the badge. Omit for rows that have no
+   *  live status. */
+  status?: AppConnectionView["status"];
   /** Render as a whole-card grant toggle (wizard + sandbox settings). */
   selectable?: boolean;
   selected?: boolean;
@@ -123,11 +125,7 @@ export function ConnectionRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="text-[14px] font-semibold text-foreground">{title}</p>
-          {connected && (
-            <span className="rounded-full bg-success-light px-2 py-0.5 text-[11px] font-medium text-success">
-              Connected
-            </span>
-          )}
+          <StatusBadge status={status} />
         </div>
         <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p>
       </div>
@@ -161,6 +159,25 @@ export function ConnectionRow({
       {children}
     </div>
   );
+}
+
+/** Status badge: green "Connected" for an active connection, muted
+ *  "Authorizing…" while OAuth is mid-flight (mirrors AppStatusPill's pending
+ *  tone). Every other status renders nothing. */
+function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
+  if (status === "active")
+    return (
+      <span className="rounded-full bg-success-light px-2 py-0.5 text-[11px] font-medium text-success">
+        Connected
+      </span>
+    );
+  if (status === "pending")
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        Authorizing…
+      </span>
+    );
+  return null;
 }
 
 /** Visual-only checkbox for the whole-card selectable row (the row's button

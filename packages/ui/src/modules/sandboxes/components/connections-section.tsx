@@ -93,7 +93,7 @@ export function ConnectionsSection({
                 title={templateById.get(c.templateId)?.name ?? c.templateId}
                 subtitle={c.name}
                 iconSlug={templateById.get(c.templateId)?.iconSlug}
-                connected={c.status === "active"}
+                status={c.status}
                 selectable
                 selected={grantedIds.has(c.id)}
                 onSelectedChange={(on) => onToggleGrant(c.id, on)}
