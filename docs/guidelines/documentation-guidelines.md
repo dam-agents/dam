@@ -35,11 +35,14 @@ Each subsystem page starts with one header directly under the title:
 
 ### Content policy
 
-**Durable content only.** Architecture pages outlive refactors; volatile facts rot.
+**Durable content only.** Architecture pages outlive refactors; volatile facts rot. Write at the altitude of architecture — roles, decisions, couplings, and contracts — in the project's [ubiquitous language](#vocabulary), not at the altitude of the code. If a sentence would break when someone renames a field, reorders a function's arguments, or adds an optional property, it is pitched too low — raise it until it describes the *meaning*, not the *shape*.
 
-- **Include**: component roles, who-talks-to-whom, protocols, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
-- **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level.
+- **Include**: component roles, who-talks-to-whom, protocols *and what their messages mean*, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
+- **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level, and **code-level shape** — type signatures, field names, function arguments, enum members. Name the concept in domain vocabulary, not the symbol in the code.
+- **Describe protocols semantically.** A protocol belongs on the page; its literal type signature does not. Say what is exchanged and what each outcome *means* — e.g. "`applyState` returns either *applied* (with any per-driver failures) or *stale*" — then link out to the contract package as the field-level source of truth. Do not transcribe the type; a reader who needs exact fields follows the link, and the page never drifts when those fields change.
 - **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/)).
+
+Shared vocabulary is what makes this safe: because [code names concepts in the same ubiquitous language the docs use](#vocabulary), speaking abstractly is not vaguer than the code — it is the same concept, named once, at the level that survives.
 
 ### Diagrams
 

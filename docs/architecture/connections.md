@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-12
+Last verified: 2026-06-16
 
 ## Overview
 
@@ -93,47 +93,30 @@ interface Connection {
   auth: AuthConfig;
   contributions: Contribution[];
 }
-
-type AuthConfig =
-  | { kind: "oauth"; clientId: string; refreshTokenRef: SecretRef; accessToken: SecretRef; scopes: string[]; ... }
-  | { kind: "header"; valueRef: SecretRef; headerName: string; valueFormat: string }
-  | { kind: "none" };
 ```
 
-The auth field carries credential-acquisition state (tokens, refresh schedules) separately from contributions, because credentials have their own lifecycle.
+The `auth` field carries credential-acquisition state in one of three modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
 ### Contribution
 
-A typed unit a Connection emits when granted to an Agent. Discriminated union:
+A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. Six kinds today:
 
-```ts
-type Contribution =
-  | { kind: "env";           name: string; placeholder: string }
-  | { kind: "egress-allow";  host: string; pathPattern?: string }
-  | { kind: "egress-inject"; host: string; pathPattern?: string; headerName: string; valueFormat: string; encoding?: "basic-x-access-token" }
-  | { kind: "file";          path: string; format: "yaml"|"json"|"text"|"ini"; mergeMode: MergeMode; content: unknown }
-  | { kind: "mcp-entry";     name: string; url: string; headers?: Record<string,string> }
-  | { kind: "skill-ref";     sourceUrl: string; name: string; version: string };
-```
+- **`env`** — an environment variable the harness merges in at spawn, carrying a credential placeholder rather than the secret itself.
+- **`egress-allow`** — permission to reach a host (optionally path-scoped).
+- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter.
+- **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
+- **`mcp-entry`** — an MCP server to expose to the harness.
+- **`skill-ref`** — a skill source to install at a pinned version.
 
-Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)).
+Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)). Exact per-kind fields live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries), a `kind`, a `payload` (kind-specific), the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
-
-```ts
-type Event = { id: string; version: number; expiresAt: string } & (
-  | { kind: "trigger"; payload: { scheduleId: string; task: string;
-      sessionMode?: "continuous" | "fresh"; mcpServers?: unknown[] } }
-  | { kind: "schedule-reset"; payload: { scheduleId: string } }
-  | { kind: "workspace-seed"; payload: { url: string; ref?: string } }
-);
-```
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), and **workspace-seed** (clone a repo into the workspace). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 The `id` is the dedupe key. Redelivery is caught agent-side: the event loop settles without re-firing when the event's `version` is already covered by the applied cursor or its dedupe key already ran at the same or a later fire timestamp (tracked in the agent's local state store), and locally expires anything past its ttl.
 
-All event kinds are built-in to every agent: the agent advertises the full set in its `hello` capabilities, single-sourced from the schema enum. Manifest capabilities filter contribution kinds, not event kinds.
+All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events.
 
 ## Example Connections
 
@@ -149,7 +132,7 @@ All event kinds are built-in to every agent: the agent advertises the full set i
     "kind": "oauth",
     "clientId": "Iv1.…",
     "refreshTokenRef": { "secretName": "platform-secret-conn-7a8b", "key": "refresh_token" },
-    "accessToken":     { "secretName": "platform-secret-conn-7a8b", "key": "access_token" },
+    "accessTokenRef":  { "secretName": "platform-secret-conn-7a8b", "key": "access_token" },
     "scopes": ["repo", "read:user", "user:email"]
   },
   "contributions": [
@@ -247,29 +230,20 @@ sequenceDiagram
   loop per event in order
     RT->>RT: per-kind handler — does the work, dedup via local state store
   end
-  RT-->>WK: appliedVersion, appliedHash
-  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to appliedVersion
+  RT-->>WK: apply outcome (cursor, settled events, failures)
+  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to applied cursor
 ```
 
 ### `applyState` — state and events delivery (server → agent)
 
-Carries `version`, the **full desired state** in `state`, and the **currently pending events** in `events`. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
+The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
 
-```ts
-runtime.v1.applyState({
-  version: number;                  // top-level cursor — per-agent monotonic
-  state: {
-    contributions: Contribution[];  // full snapshot, post-capability-filter
-    hash: string;                   // deterministic hash over contributions
-  };
-  events: Event[];                  // ordered; each carries its own version
-}) => {
-  appliedVersion: number;           // single ack marker for the whole payload
-  appliedHash: string;
-}
-```
+The reply is a discriminated outcome, not a bare ack:
 
-Concurrent dispatches from different replicas race naturally; the agent's `lastAppliedVersion` rejects older versions, last-version-wins. The hash is recorded on the agent's outbox row for the periodic sweep to compare against.
+- **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload.
+- **stale** — the agent's contributions were already at or beyond the requested version, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
+
+Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 ### `hello` — agent → api-server catch-up
 
@@ -421,7 +395,7 @@ flowchart TD
   check -->|"no (plain)"| defer
   check -->|"no (hello-triggered)"| retry
   check -->|yes| compute --> dispatch
-  dispatch -->|appliedVersion, appliedHash| stamp --> ok
+  dispatch -->|apply outcome| stamp --> ok
   dispatch -->|error| fail
 ```
 
@@ -446,7 +420,7 @@ Redis is the signal path; BullMQ stores job state in Redis with relaxed durabili
 
 ### The manifest
 
-Every agent image ships a `runtime-manifest.yaml` declaring (1) which impl handles each Contribution kind, (2) capabilities for advertisement on `hello`, (3) any custom impls registered by harness-specific code. Validated against a versioned schema at agent-runtime boot — fail-fast on malformed manifest.
+Every agent image ships a `runtime-manifest.yaml` declaring which impl handles each Contribution kind, plus any custom impls registered by harness-specific code. The kinds advertised on `hello` are derived from this (contribution kinds from the driver keys; event kinds are the built-in set), not declared separately. Validated against a versioned schema at agent-runtime boot — fail-fast on malformed manifest.
 
 ```yaml
 # packages/agents/example-agent/runtime-manifest.yaml
@@ -464,10 +438,6 @@ drivers:
     paths: ["$HOME/.claude/skills"]
   file:
     impl: file                                # built-in; per-Contribution params on the wire
-
-capabilities:
-  contributions: [file, mcp-entry, skill-ref]
-  events: [trigger]
 ```
 
 A harness that needs custom code declares it explicitly in the manifest under `extensions.impls`:
@@ -486,11 +456,9 @@ extensions:
     - name: codex-mcp-with-sighup
       module: "/usr/local/share/dam-runtime/codex-overrides.mjs"
       export: "codexMcpReloadImpl"
-
-capabilities:
-  contributions: [file, mcp-entry, skill-ref]
-  events: [trigger]
 ```
+
+The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block. The kinds an agent advertises on `hello` are derived at runtime — contribution kinds from the `drivers` keys, event kinds from the built-in set (every agent supports all event kinds).
 
 Custom contribution impl names may not collide with built-in names (`file`, `skill-install`, …) — registration rejects collision; runtime-channel boot fails loud. Event handlers are built-in per kind and not user-pluggable.
 
@@ -559,7 +527,7 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
-| Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot ([`packages/agent-runtime/src/modules/runtime-channel/`](../../packages/agent-runtime/src/modules/runtime-channel/)); read by the harness/terminal spawn paths. |
+| Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
 | Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
