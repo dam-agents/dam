@@ -18,13 +18,13 @@ export function ConnectionCatalogRow({
       type="button"
       onClick={onConnect}
       data-testid={`connection-template-${template.id}`}
-      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+      className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
     >
       <ConnectionIcon
         iconSlug={template.iconSlug}
         alt={template.name}
         size={16}
-        className="shrink-0 text-foreground/80"
+        className="mt-1 shrink-0 text-foreground/80"
       />
       <div className="min-w-0 flex-1">
         <p className="text-[16px] font-medium text-foreground">
@@ -97,7 +97,7 @@ export function ConnectionRow({
         iconSlug={iconSlug}
         alt={title}
         size={16}
-        className="shrink-0 text-foreground/80"
+        className="mt-1 shrink-0 text-foreground/80"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -113,7 +113,7 @@ export function ConnectionRow({
     <div
       data-testid={testId}
       className={cn(
-        "flex items-center gap-3 rounded-lg border bg-card p-4",
+        "flex items-start gap-3 rounded-lg border bg-card p-4",
         selectable && selected ? "border-foreground" : "border-border",
       )}
     >
@@ -123,7 +123,7 @@ export function ConnectionRow({
           onClick={() => onSelectedChange?.(!selected)}
           role="checkbox"
           aria-checked={selected}
-          className="-my-4 flex min-w-0 flex-1 items-center gap-3 py-4 text-left"
+          className="-my-4 flex min-w-0 flex-1 items-start gap-3 py-4 text-left"
         >
           <SelectIndicator selected={selected} />
           {info}
@@ -169,7 +169,7 @@ function SelectIndicator({ selected }: { selected: boolean }) {
     <span
       aria-hidden="true"
       className={cn(
-        "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+        "mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
         selected
           ? "border-foreground bg-foreground text-background"
           : "border-input",
