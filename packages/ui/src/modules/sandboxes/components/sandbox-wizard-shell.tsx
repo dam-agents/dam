@@ -17,7 +17,7 @@ export function SandboxWizardShell({
   children,
 }: Props) {
   return (
-    <div className="mx-auto w-full max-w-[920px] px-4 py-6 md:px-8 md:py-12">
+    <div className="mx-auto w-full max-w-[920px] px-4 pt-6 pb-24 md:px-8 md:py-12">
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <WizardStepIndicator
           step={step}
