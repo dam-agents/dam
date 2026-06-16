@@ -388,7 +388,7 @@ export function ChatView() {
             onClick={handleBack}
           >
             <ArrowLeft size={14} />
-            <span className="hidden md:inline">Agents</span>
+            <span className="hidden md:inline">Sandboxes</span>
           </button>
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">

@@ -74,7 +74,7 @@ function OverlayFrame({
         className="absolute left-4 top-3 flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
       >
         <ArrowLeft size={14} />
-        Agents
+        Sandboxes
       </button>
       <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         {children}
