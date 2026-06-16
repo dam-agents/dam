@@ -84,17 +84,15 @@ function ImageCard({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "w-full rounded-lg border px-4 py-3 text-left transition-colors",
+        "w-full rounded-lg border p-4 text-left transition-colors",
         selected
           ? "border-foreground bg-muted/60"
           : "border-border bg-card hover:bg-muted/40",
       )}
     >
-      <p className="text-[15px] font-semibold text-foreground">{name}</p>
+      <p className="text-[16px] font-semibold text-foreground">{name}</p>
       {description && (
-        <p className="mt-0.5 text-[13px] text-muted-foreground">
-          {description}
-        </p>
+        <p className="mt-1 text-[14px] text-muted-foreground">{description}</p>
       )}
     </button>
   );
@@ -120,7 +118,7 @@ function CustomImageCard({
       )}
     >
       <div className="flex items-center gap-2">
-        <p className="text-[15px] font-semibold text-foreground">Custom</p>
+        <p className="text-[16px] font-semibold text-foreground">Custom</p>
         <Badge
           variant="outline"
           className="border-transparent bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
@@ -128,7 +126,7 @@ function CustomImageCard({
           Advanced
         </Badge>
       </div>
-      <p className="mt-0.5 text-[13px] text-muted-foreground">
+      <p className="mt-1 text-[14px] text-muted-foreground">
         Bring your own ACP-compatible image
       </p>
       <div className="mt-3 flex items-center gap-2">

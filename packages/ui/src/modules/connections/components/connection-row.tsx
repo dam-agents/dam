@@ -27,25 +27,25 @@ export function ConnectionCatalogRow({
     <button
       type="button"
       onClick={onConnect}
-      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
+      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
     >
       <ConnectionIcon
         iconSlug={template.iconSlug}
         alt={template.name}
-        size={18}
+        size={16}
         className="shrink-0 text-foreground/80"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-semibold text-foreground">
+        <p className="text-[16px] font-medium text-foreground">
           {template.name}
         </p>
         {template.description && (
-          <p className="text-[12px] text-muted-foreground">
+          <p className="text-[14px] text-muted-foreground">
             {template.description}
           </p>
         )}
       </div>
-      <span className="shrink-0 text-[13px] font-medium text-foreground">
+      <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
         Connect
       </span>
     </button>
@@ -70,8 +70,8 @@ export function ConnectionAction({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "shrink-0 text-[13px] font-medium hover:underline disabled:opacity-50",
-        tone === "danger" ? "text-danger" : "text-foreground",
+        "shrink-0 text-[14px] font-normal hover:underline disabled:opacity-50",
+        tone === "danger" ? "text-danger" : "text-muted-foreground",
       )}
     >
       {label}
@@ -119,15 +119,15 @@ export function ConnectionRow({
       <ConnectionIcon
         iconSlug={iconSlug}
         alt={title}
-        size={18}
+        size={16}
         className="shrink-0 text-foreground/80"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="text-[14px] font-semibold text-foreground">{title}</p>
+          <p className="text-[16px] font-medium text-foreground">{title}</p>
           <StatusBadge status={status} />
         </div>
-        <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p>
+        <p className="truncate text-[14px] text-muted-foreground">{subtitle}</p>
       </div>
     </>
   );
@@ -136,7 +136,7 @@ export function ConnectionRow({
     <div
       data-testid={testId}
       className={cn(
-        "flex items-center gap-3 rounded-lg border bg-card px-4 py-3",
+        "flex items-center gap-3 rounded-lg border bg-card p-4",
         selectable && selected ? "border-foreground" : "border-border",
       )}
     >
@@ -148,7 +148,7 @@ export function ConnectionRow({
           onClick={() => onSelectedChange?.(!selected)}
           role="checkbox"
           aria-checked={selected}
-          className="-my-3 flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+          className="-my-4 flex min-w-0 flex-1 items-center gap-3 py-4 text-left"
         >
           <SelectIndicator selected={selected} />
           {info}
@@ -167,13 +167,13 @@ export function ConnectionRow({
 function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
   if (status === "active")
     return (
-      <span className="rounded-full bg-success-light px-2 py-0.5 text-[11px] font-medium text-success">
+      <span className="rounded-full bg-success-light px-2.5 py-0.5 text-[12px] font-normal text-success">
         Connected
       </span>
     );
   if (status === "pending")
     return (
-      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      <span className="rounded-full bg-muted px-2.5 py-0.5 text-[12px] font-normal text-muted-foreground">
         Authorizing…
       </span>
     );

@@ -44,11 +44,11 @@ export function ProviderRow({
       <button
         type="button"
         onClick={onConnect}
-        className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
-        <span className="shrink-0 text-[13px] font-medium text-foreground">
+        <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
           Connect
         </span>
       </button>
@@ -66,7 +66,7 @@ export function ProviderRow({
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/30"
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-muted/30"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} connected />
@@ -100,14 +100,14 @@ function ProviderText({
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
-        <p className="text-[14px] font-semibold text-foreground">{name}</p>
+        <p className="text-[16px] font-medium text-foreground">{name}</p>
         {connected && (
-          <span className="rounded-full bg-success-light px-2 py-0.5 text-[11px] font-medium text-success">
+          <span className="rounded-full bg-success-light px-2.5 py-0.5 text-[12px] font-normal text-success">
             Connected
           </span>
         )}
       </div>
-      <p className="text-[12px] text-muted-foreground">{description}</p>
+      <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>
   );
 }
