@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import {
   useApplyEgressPreset,
@@ -242,9 +243,7 @@ export function AgentEgressEditor({
 
       <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {stagedMode ? "Preset" : "Apply preset"}
-          </span>
+          <SectionLabel>{stagedMode ? "Preset" : "Apply preset"}</SectionLabel>
           <select
             value={dropdownValue}
             onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
@@ -269,7 +268,7 @@ export function AgentEgressEditor({
             Apply
           </Button>
         )}
-        <p className="basis-full text-[11px] text-muted-foreground">
+        <p className="basis-full text-[14px] text-muted-foreground">
           {stagedMode
             ? presetPending
               ? `Save will replace existing preset rules with "${staged.preset}". Manual and connection-derived rules are preserved.`
@@ -444,9 +443,7 @@ function Field({
 }) {
   return (
     <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
+      <SectionLabel>{label}</SectionLabel>
       {children}
     </label>
   );

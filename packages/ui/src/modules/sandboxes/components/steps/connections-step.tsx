@@ -160,19 +160,8 @@ export function ConnectionsStep({
       })}
 
       <div className="flex justify-end gap-3">
-        {selected.size === 0 && (
-          <Button variant="outline" onClick={onFinish} disabled={finishing}>
-            Skip this step
-          </Button>
-        )}
         <Button onClick={onFinish} disabled={finishing}>
-          {selected.size > 0 ? (
-            "Create sandbox"
-          ) : (
-            <>
-              Continue <ArrowRight size={16} />
-            </>
-          )}
+          Create sandbox
         </Button>
       </div>
 
