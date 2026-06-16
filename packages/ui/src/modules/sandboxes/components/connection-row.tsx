@@ -49,6 +49,7 @@ export function MyConnectionRow({
   selected,
   onToggle,
   onDisconnect,
+  testId,
 }: {
   title: string;
   subtitle: string;
@@ -57,9 +58,11 @@ export function MyConnectionRow({
   selected: boolean;
   onToggle: (on: boolean) => void;
   onDisconnect: () => void;
+  testId?: string;
 }) {
   return (
     <div
+      data-testid={testId}
       className={cn(
         "flex items-center gap-3 rounded-lg border bg-card px-4 py-3",
         selected ? "border-foreground" : "border-border",

@@ -122,6 +122,7 @@ export function ConnectionsStep({
                 selected={selected.has(c.id)}
                 onToggle={(on) => toggle(c.id, on)}
                 onDisconnect={() => disconnect(c.id)}
+                testId={`connection-grant-${c.id}`}
               />
             ))}
           </div>
