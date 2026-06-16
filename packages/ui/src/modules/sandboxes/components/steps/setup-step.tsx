@@ -147,7 +147,7 @@ function NetworkPresetRow({
       className={cn(
         "flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors",
         selected
-          ? "border-foreground bg-muted/50"
+          ? "border-foreground bg-card"
           : "border-border bg-card hover:bg-muted/30",
       )}
     >

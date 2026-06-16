@@ -123,14 +123,12 @@ export function SandboxWizardView() {
           selectedTemplateId={snapshot.templateId}
           customImage={snapshot.customImage}
           onPickTemplate={(templateId) =>
-            update({ templateId, customImage: "", step: 2 })
+            update({ templateId, customImage: "" })
           }
           onCustomImageChange={(customImage) =>
             update({ customImage, templateId: null })
           }
-          onContinueWithCustom={() => {
-            if (snapshot.customImage.trim()) update({ step: 2 });
-          }}
+          onContinue={() => update({ step: 2 })}
         />
       )}
 

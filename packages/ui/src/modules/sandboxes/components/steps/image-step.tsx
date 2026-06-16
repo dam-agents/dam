@@ -1,3 +1,5 @@
+import { ArrowRight } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +18,7 @@ interface Props {
   customImage: string;
   onPickTemplate: (templateId: string) => void;
   onCustomImageChange: (value: string) => void;
-  onContinueWithCustom: () => void;
+  onContinue: () => void;
 }
 
 export function ImageStep({
@@ -26,8 +28,10 @@ export function ImageStep({
   customImage,
   onPickTemplate,
   onCustomImageChange,
-  onContinueWithCustom,
+  onContinue,
 }: Props) {
+  const canContinue =
+    selectedTemplateId !== null || customImage.trim().length > 0;
   return (
     <div>
       <StepHeader
@@ -55,17 +59,22 @@ export function ImageStep({
         </CardList>
       </section>
 
-      <section>
+      <section className="mb-8">
         <WizardSectionLabel>Or bring your own image</WizardSectionLabel>
         <CardList>
           <CustomImageCard
             value={customImage}
             selected={customImage.trim().length > 0}
             onChange={onCustomImageChange}
-            onContinue={onContinueWithCustom}
           />
         </CardList>
       </section>
+
+      <div className="flex justify-end">
+        <Button onClick={onContinue} disabled={!canContinue}>
+          Continue <ArrowRight size={16} />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -105,14 +114,11 @@ function CustomImageCard({
   value,
   selected,
   onChange,
-  onContinue,
 }: {
   value: string;
   selected: boolean;
   onChange: (value: string) => void;
-  onContinue: () => void;
 }) {
-  const canContinue = value.trim().length > 0;
   return (
     <div
       className={cn(
@@ -132,19 +138,13 @@ function CustomImageCard({
       <p className="mt-1 text-[14px] text-muted-foreground">
         Bring your own ACP-compatible image
       </p>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3">
         <Input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && canContinue) onContinue();
-          }}
           placeholder="ghcr.io/org/agent:latest"
           variant="monospace"
         />
-        <Button onClick={onContinue} disabled={!canContinue} variant="outline">
-          Continue
-        </Button>
       </div>
     </div>
   );
