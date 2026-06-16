@@ -94,7 +94,9 @@ export function SettingsView() {
       <div className="flex-1 min-w-0">
         {activeTab === "appearance" && (
           <div className="anim-in">
-            <h2 className="text-[18px] font-bold mb-1">Appearance</h2>
+            <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+              Appearance
+            </h2>
             <p className="text-[14px] text-foreground/80 mb-6">
               Customize the look and feel of the interface.
             </p>
@@ -143,11 +145,16 @@ export function SettingsView() {
 
         {activeTab === "account" && (
           <div className="anim-in">
-            <h2 className="text-[18px] font-bold mb-1">Account</h2>
+            <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+              Account
+            </h2>
             <p className="text-[14px] text-foreground/80 mb-6">
               Manage your account and session.
             </p>
 
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Profile
+            </p>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
                 {(user?.profile.preferred_username ??

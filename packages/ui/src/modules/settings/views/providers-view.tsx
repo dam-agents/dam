@@ -24,7 +24,7 @@ export function ProvidersView() {
   return (
     <div className="w-full max-w-2xl">
       <header className="flex items-center gap-3 mb-8">
-        <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">
+        <h1 className="text-[24px] md:text-[28px] font-semibold tracking-[-0.65px] text-foreground">
           Providers
         </h1>
         <Button
@@ -41,7 +41,7 @@ export function ProvidersView() {
       </header>
 
       <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
-        API keys for the AI harnesses that power your agents.
+        Agents need an API key from a provider to reach a model.
       </p>
 
       <section className="mb-8 flex flex-col gap-4">
