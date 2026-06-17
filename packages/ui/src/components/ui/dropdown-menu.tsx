@@ -29,14 +29,14 @@ const DropdownMenuContent = React.forwardRef<
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 const dropdownMenuItemVariants = cva(
-  "flex h-9 w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 text-sm font-medium outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+  "flex h-9 w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 text-[14px] outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
   {
     variants: {
       tone: {
         default:
           "data-[highlighted]:bg-muted data-[highlighted]:text-foreground",
         danger:
-          "data-[highlighted]:bg-danger-light data-[highlighted]:text-danger",
+          "data-[highlighted]:bg-danger-light data-[highlighted]:text-danger text-danger",
       },
     },
     defaultVariants: { tone: "default" },

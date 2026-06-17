@@ -83,7 +83,7 @@ export function SettingsView() {
             className={cn(
               "px-3 py-2 text-[14px] font-medium rounded-lg text-left transition-colors",
               activeTab === tab.id
-                ? "text-primary bg-primary/10"
+                ? "text-primary bg-muted"
                 : "text-foreground/80 hover:text-foreground hover:bg-muted",
             )}
           >

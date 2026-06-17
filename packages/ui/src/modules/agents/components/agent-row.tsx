@@ -6,6 +6,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -77,6 +78,7 @@ export function AgentRow({
               <DropdownMenuItem onSelect={onConfigure}>
                 Configure
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 tone="danger"
                 disabled={deletePending}

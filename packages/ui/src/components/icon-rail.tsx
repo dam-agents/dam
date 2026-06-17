@@ -55,7 +55,7 @@ export function IconRail() {
   return (
     <>
       <nav
-        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r shrink-0"
+        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card shrink-0"
         data-testid="app-sidebar"
       >
         <div className="flex items-center justify-center h-14">
@@ -92,7 +92,7 @@ function RailItem({ label, icon: Icon, active, badge, navigate }: Destination) {
       className={cn(
         "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
         active
-          ? "text-primary bg-primary/10"
+          ? "text-primary bg-muted"
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
