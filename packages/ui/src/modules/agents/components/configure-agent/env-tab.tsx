@@ -116,7 +116,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
       <span className="font-mono font-semibold text-text truncate">
         {entry.name}
       </span>
-      <span className="text-text-muted">=</span>
+      <span className="text-muted-foreground">=</span>
       <span
         className="font-mono text-muted-foreground truncate flex-1"
         title={entry.value}
@@ -124,7 +124,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         {entry.value}
       </span>
       {!isSystem && (
-        <span className="text-[14px] text-muted-foreground italic truncate max-w-[160px]">
+        <span className="text-[12px] text-muted-foreground truncate max-w-[160px]">
           {sourceName}
         </span>
       )}
