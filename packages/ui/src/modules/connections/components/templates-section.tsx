@@ -16,6 +16,7 @@ import {
   ConnectionCatalogRow,
   ConnectionRow,
 } from "./connection-row.js";
+import { GithubAppInstallLink } from "./github-app-install-link.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 const NO_CONNECTIONS: ConnectionView[] = [];
@@ -152,19 +153,9 @@ function ConnectionActions({
       />
     );
   }
-  const installUrl = githubAppInstallUrl(connection);
   return (
     <div className="flex shrink-0 items-center gap-4">
-      {installUrl && connection.status === "active" && (
-        <a
-          href={installUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-[13px] font-medium text-foreground hover:underline"
-        >
-          Install on GitHub
-        </a>
-      )}
+      <GithubAppInstallLink connection={connection} />
       <ConnectionAction
         label="Disconnect"
         tone="danger"
@@ -181,14 +172,4 @@ function SectionLabel({ children }: { children: ReactNode }) {
       {children}
     </p>
   );
-}
-
-function githubAppInstallUrl(connection: ConnectionView): string | null {
-  if (!connection.appSlug) return null;
-  const host =
-    connection.templateId === "github-enterprise"
-      ? (connection.host ?? null)
-      : "github.com";
-  if (!host) return null;
-  return `https://${host}/apps/${connection.appSlug}/installations/new`;
 }
