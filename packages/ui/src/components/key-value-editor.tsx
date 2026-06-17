@@ -58,6 +58,7 @@ export function KeyValueEditor({
           <div key={i} className="flex items-start gap-2">
             <div className="flex-1 flex flex-col gap-1">
               <Input
+                size="sm"
                 className={`font-mono ${invalid ? "border-destructive" : ""}`}
                 placeholder={keyPlaceholder}
                 value={row.key}
@@ -73,6 +74,7 @@ export function KeyValueEditor({
               )}
             </div>
             <Input
+              size="sm"
               className="flex-1 font-mono"
               placeholder={valuePlaceholder}
               value={row.value}
@@ -82,10 +84,11 @@ export function KeyValueEditor({
             <Button
               type="button"
               variant="outline"
-              size="icon"
+              tone="danger"
+              size="icon-sm"
               onClick={() => remove(i)}
               disabled={disabled}
-              className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive"
+              className="shrink-0 text-muted-foreground"
               title="Remove"
             >
               <X size={13} />
