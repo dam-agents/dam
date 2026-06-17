@@ -2,6 +2,8 @@ import type { ApiKeyView } from "api-server-api";
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { useRevokeApiKey } from "../api/mutations.js";
 import { useApiKeys } from "../api/queries.js";
 import { ApiKeyRow } from "./api-key-row.js";
@@ -28,12 +30,7 @@ export function ApiKeysList() {
     <div className="anim-in">
       <div className="flex items-start justify-between mb-1">
         <h2 className="text-[18px] font-bold">API Keys</h2>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg bg-accent text-white hover:bg-accent-hover"
-        >
-          Create key
-        </button>
+        <Button onClick={() => setCreateOpen(true)}>Create key</Button>
       </div>
       <p className="text-[14px] text-text-secondary mb-6">
         Long-lived tokens for headless / CI use. Pass the value as a bearer
