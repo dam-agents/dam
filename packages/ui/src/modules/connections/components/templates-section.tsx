@@ -155,10 +155,7 @@ function ConnectionActions({
   }
   return (
     <div className="flex shrink-0 items-center gap-4">
-      <GithubAppInstallLink
-        connection={connection}
-        className="text-[13px] font-medium"
-      />
+      <GithubAppInstallLink connection={connection} />
       <ConnectionAction
         label="Disconnect"
         tone="danger"
