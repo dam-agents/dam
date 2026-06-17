@@ -87,7 +87,7 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
                 <span className="block">Agents</span>
                 <span className="block">Massively</span>
               </h2>
-              <p className="text-muted-foreground text-xl leading-relaxed">
+              <p className="text-muted-foreground text-xl leading-relaxed text-pretty">
                 Run agent harnesses like Claude Code headless in the cloud, on a
                 schedule, connected to your tools — without exposing your
                 tokens.
