@@ -63,6 +63,7 @@ Each of these is expanded in a reference file. Severity in brackets.
 - [CRITICAL] Organize by **domain modules**, not technical layers. New code goes in `src/modules/{domain}/` with `api/`, `components/`, `hooks/`, `types.ts`. See `references/project-structure.md`.
 - [HIGH] File naming: pick one convention for the project and stick with it. Don't mix `PascalCase.tsx` and `kebab-case.tsx` in the same codebase.
 - [MODERATE] Subcomponent layout: **sibling files** when a parent has < 10 related children; **nested folder** (`parent-name/`) when more.
+- [HIGH] A generic, domain-agnostic primitive (the `Button`/`Input`/`Switch` kind) doesn't belong hand-rolled inline in a feature file. When you spot one, **flag it for the user** — promoting it to the shared primitives folder is a human judgment call, not an automatic move. See `references/project-structure.md`.
 
 ### Components
 - [CRITICAL] A component that does more than one thing is too big. Files approaching **~300 lines** are a strong trigger to split — not a hard cap, but a warning that responsibilities probably aren't separated. See `references/components.md`.
