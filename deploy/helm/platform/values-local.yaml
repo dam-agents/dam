@@ -98,6 +98,10 @@ agentTemplates:
   # buildkit to direct egress: the controller routes all other traffic
   # through the paired gateway, which can't proxy raw TCP (buildkit) or the
   # IP-literal inner API.
+  #
+  # No `init:` — init containers get only HOME (no HTTPS_PROXY / CA), so a
+  # git clone there can't reach github. Run `dev-bootstrap` (on PATH) at
+  # session start inside the main container, which has the proxy + CA.
   - name: dev-agent
     enabled: true
     description: "DAM-in-DAM dev loop (build + deploy into the inner cluster)"
@@ -105,7 +109,6 @@ agentTemplates:
       repository: platform-dev-agent
       tag: latest
     storageSize: "10Gi"
-    init: dev-bootstrap
     env:
       - name: NO_PROXY
         value: "192.168.5.2"
