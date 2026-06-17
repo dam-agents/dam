@@ -8,9 +8,6 @@ export const viewSchema = z.enum([
   "terms",
   "sandbox-new",
   "sandbox-settings",
-  "v2-list",
-  "v2-new",
-  "v2-terminal",
 ]);
 export type View = z.infer<typeof viewSchema>;
 
@@ -39,10 +36,6 @@ export function viewToPath(
   if (view === "sandbox-new") return "/sandboxes/new";
   if (view === "sandbox-settings" && agentId)
     return `/sandboxes/${encodeURIComponent(agentId)}`;
-  if (view === "v2-list") return "/v2";
-  if (view === "v2-new") return "/v2/new";
-  if (view === "v2-terminal" && agentId)
-    return `/v2/${encodeURIComponent(agentId)}`;
   return "/";
 }
 
@@ -71,14 +64,6 @@ export function pathToState(path: string): {
     return {
       view: "sandbox-settings",
       agentId: decodeURIComponent(sandboxSettingsMatch[1]!),
-    };
-  if (path === "/v2") return { view: "v2-list" };
-  if (path === "/v2/new") return { view: "v2-new" };
-  const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
-  if (sandboxMatch)
-    return {
-      view: "v2-terminal",
-      agentId: decodeURIComponent(sandboxMatch[1]!),
     };
   return { view: "list" };
 }

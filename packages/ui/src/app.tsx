@@ -13,7 +13,6 @@ import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
-import { V2App } from "./modules/v2/views/v2-app.js";
 import { pathToState, useStore } from "./store.js";
 
 export default function App() {
@@ -47,11 +46,10 @@ function MainApp() {
   useFirstRunRedirect();
 
   useEffect(() => {
-    // The v2 wizard and the sandbox-creation wizard own their own OAuth-return
-    // handling so they can rehydrate the in-progress sandbox before the params
-    // are stripped.
+    // The sandbox-creation wizard owns its own OAuth-return handling so it can
+    // rehydrate the in-progress sandbox before the params are stripped.
     const path = window.location.pathname;
-    if (path.startsWith("/v2") || path === "/sandboxes/new") return;
+    if (path === "/sandboxes/new") return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -83,7 +81,6 @@ function MainApp() {
     };
     const onPopState = () => {
       const path = window.location.pathname;
-      const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
       if (path.startsWith("/chat/"))
         enterChat(decodeURIComponent(path.slice(6)));
       else if (path === "/settings" || path.startsWith("/settings/")) {
@@ -101,15 +98,6 @@ function MainApp() {
           view: "sandbox-settings",
           agentId: decodeURIComponent(path.slice("/sandboxes/".length)),
         });
-      else if (path === "/v2")
-        useStore.setState({ view: "v2-list", agentId: null });
-      else if (path === "/v2/new")
-        useStore.setState({ view: "v2-new", agentId: null });
-      else if (sandboxMatch && path !== "/v2/new")
-        useStore.setState({
-          view: "v2-terminal",
-          agentId: decodeURIComponent(sandboxMatch[1]!),
-        });
       else leaveChat();
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
@@ -118,15 +106,6 @@ function MainApp() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
-
-  // v2 sandbox surface is shell-less (no sidebar / mobile nav)
-  if (view === "v2-list" || view === "v2-new" || view === "v2-terminal")
-    return (
-      <>
-        <V2App />
-        <DialogOverlay />
-      </>
-    );
 
   // Chat view is full-screen (has its own layout)
   if (view === "chat")

@@ -16,7 +16,6 @@ export interface NavigationSlice {
   navigateToCreateSandbox: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxSettings: (agentId: string) => void;
-  openSandboxTerminal: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
   showMobilePanel: boolean;
@@ -76,10 +75,6 @@ export const createNavigationSlice: StateCreator<
   navigateToSandboxSettings: (agentId) => {
     history.pushState(null, "", viewToPath("sandbox-settings", null, agentId));
     set({ view: "sandbox-settings", agentId });
-  },
-  openSandboxTerminal: (agentId) => {
-    history.pushState(null, "", viewToPath("v2-terminal", null, agentId));
-    set({ view: "v2-terminal", agentId });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
