@@ -67,7 +67,7 @@ export function IbmLitellmForm({
         href={KEY_GUIDE_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary"
+        className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
       >
         <div className="flex flex-col gap-0.5">
           <span className="text-[14px] font-bold text-foreground">
