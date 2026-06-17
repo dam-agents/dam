@@ -93,7 +93,7 @@ function BusyIndicator() {
 }
 
 interface ChatInputProps {
-  textareaRef: RefObject<HTMLTextAreaElement>;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
