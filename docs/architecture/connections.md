@@ -99,7 +99,7 @@ The `auth` field carries credential-acquisition state in one of three modes: **O
 
 ### Contribution
 
-A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. Six kinds today:
+A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. The kinds today:
 
 - **`env`** — an environment variable the harness merges in at spawn, carrying a credential placeholder rather than the secret itself.
 - **`egress-allow`** — permission to reach a host (optionally path-scoped).
