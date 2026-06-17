@@ -1,0 +1,117 @@
+# Lima VM template for the INNER platform k3s cluster (DAM-in-DAM, dam-kt9).
+#
+# This is the target an agent pod (running in the OUTER cluster) builds into and
+# deploys to. It differs from lima-k3s.yaml in three ways:
+#   1. k3s API on 16444 (not 16443) + tls-san 192.168.5.2 so the outer agent pod
+#      can reach it through the lima host gateway without a cert mismatch.
+#   2. /etc/rancher/k3s/registries.yaml mirrors the shared image hostname
+#      `inner-registry:25000` to the in-cluster registry on the node loopback, so
+#      push (from the outer agent) and pull (this node) agree on one image ref.
+#   3. Host port forwards for the API, registry, and buildkit endpoints, all to
+#      host loopback (reachable from outer pods via 192.168.5.2 — validated).
+#
+# Host ports (26444/25000/21234/24445) sit in a high free range so they never
+# clobber the outer VM's forwards (which already include 16443/16444/4444/4445).
+
+images:
+  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img
+    arch: aarch64
+  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
+    arch: x86_64
+
+cpus: 4
+memory: 8GiB
+disk: 200GiB
+
+containerd:
+  system: false
+  user: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -e
+      echo "[inner-provision] Installing nfs-common (required for platform-rwx NFS mounts)..."
+      DEBIAN_FRONTEND=noninteractive apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+      echo "[inner-provision] mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
+      mkdir -p /etc/rancher/k3s
+      cat > /etc/rancher/k3s/config.yaml << 'EOF'
+      kubelet-arg:
+        - "container-log-max-size=10Mi"
+        - "container-log-max-files=3"
+      EOF
+      # Shared-hostname registry mirror (k3d-style): both the outer agent (push)
+      # and this node (pull) reference images as inner-registry:5000/...; the node
+      # rewrites that to the in-cluster registry exposed on loopback:5000.
+      cat > /etc/rancher/k3s/registries.yaml << 'EOF'
+      mirrors:
+        "inner-registry:25000":
+          endpoint:
+            - "http://127.0.0.1:25000"
+      configs:
+        "127.0.0.1:25000":
+          tls:
+            insecure_skip_verify: true
+      EOF
+      if [ ! -d /var/lib/rancher/k3s ]; then
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16444 --tls-san 192.168.5.2" sh -
+      fi
+      mkdir -p /var/lib/rancher/k3s/server/manifests
+      cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: traefik
+        namespace: kube-system
+      spec:
+        valuesContent: |
+          ports:
+            platform:
+              port: 4445
+              expose:
+                default: true
+              exposedPort: 4445
+              protocol: TCP
+      EOF
+
+probes:
+  - mode: readiness
+    description: k3s is ready
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 30s bash -c "until test -f /etc/rancher/k3s/k3s.yaml; do sleep 3; done"; then
+        echo >&2 "k3s is not running yet"
+        exit 1
+      fi
+
+copyToHost:
+  - guest: /etc/rancher/k3s/k3s.yaml
+    host: "{{.Dir}}/copied-from-guest/kubeconfig.yaml"
+    deleteOnStop: true
+
+# Host ports deliberately offset from the defaults: the OUTER VM's guest-agent
+# auto-forwards its own guest 127.0.0.1 listeners to same-numbered host ports and
+# already squats 16444/4445/5000, so the inner VM forwards to a high free range
+# (26444/25000/21234) that the outer VM never touches. The image-name port equals
+# the registry host-forward port (25000) because buildctl derives the push target
+# from the ref — hence the shared hostname inner-registry:25000.
+portForwards:
+  - guestPort: 16444
+    hostPort: 26444
+  - guestPort: 25000
+    hostPort: 25000
+  - guestPort: 1234
+    hostPort: 21234
+  - guestPort: 4445
+    hostPort: 24445
+  - guestIP: 0.0.0.0
+    proto: any
+    ignore: true
+
+message: |
+  Inner k3s ready (DAM-in-DAM target).
+  KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml
+  API on host :26444, registry on host :25000, buildkit on host :21234.

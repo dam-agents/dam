@@ -1,0 +1,97 @@
+# Build plane for the INNER cluster (DAM-in-DAM, dam-kt9).
+#
+# registry: holds images the outer agent builds; exposed on the node loopback
+#   (hostPort 5000) so registries.yaml's inner-registry:5000 mirror resolves it,
+#   and forwarded to host :5000 so the outer agent can push.
+# buildkitd: OCI worker (the supported config — the containerd-worker direct-to-
+#   store path fails the RUN executor when buildkitd runs as a pod). Listens on
+#   tcp :1234 (hostPort + host forward) so the outer agent runs buildctl as a
+#   thin client; the privileged daemon lives here, where privilege is acceptable.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dam-inner
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: dam-inner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      # hostNetwork (not hostPort): lima's guest-agent forwards real listening
+      # sockets, but hostPort is CNI iptables DNAT with no socket, so lima never
+      # sees it. hostNetwork binds the node's 0.0.0.0:5000 directly, which lima
+      # then forwards to the host, and which registries.yaml reaches at 127.0.0.1:5000.
+      hostNetwork: true
+      containers:
+        - name: registry
+          image: registry:2
+          env:
+            # Listen on the same port the shared image name uses (25000), so the
+            # ref inner-registry:25000 resolves identically for the outer agent
+            # (via the host gateway), this node (registries.yaml mirror), and
+            # buildkitd (hostAlias -> 127.0.0.1). host :5000 is taken on macOS.
+            - name: REGISTRY_HTTP_ADDR
+              value: ":25000"
+          ports:
+            - containerPort: 25000
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/dam-inner-registry
+            type: DirectoryOrCreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildkitd
+  namespace: dam-inner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: buildkitd
+  template:
+    metadata:
+      labels:
+        app: buildkitd
+    spec:
+      hostNetwork: true
+      # buildkitd performs the push (not the client), so the shared name must
+      # resolve here too: inner-registry -> the node loopback where the registry
+      # listens. The outer agent only talks to buildkitd's :1234; it never
+      # resolves inner-registry itself.
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - inner-registry
+      containers:
+        - name: buildkitd
+          image: moby/buildkit:latest
+          args:
+            - --addr=tcp://0.0.0.0:1234
+          ports:
+            - containerPort: 1234
+          securityContext:
+            privileged: true
+          readinessProbe:
+            exec:
+              command: ["buildctl", "--addr", "tcp://127.0.0.1:1234", "debug", "workers"]
+            initialDelaySeconds: 3
+            periodSeconds: 5

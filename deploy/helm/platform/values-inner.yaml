@@ -1,0 +1,110 @@
+# DAM-in-DAM (dam-kt9): images are built by the outer agent via buildkit and
+# pushed to the inner cluster's registry, then pulled by the inner node. Unlike
+# values-local.yaml (Never + local containerd side-load), every ref points at the
+# shared registry hostname and uses Always so a rebuild+push is picked up on the
+# next pod start.
+#
+# Used via: helm ... -f values-inner.yaml  (after -f values-local.yaml so these win)
+
+ui:
+  image:
+    repository: inner-registry:25000/platform-ui
+    tag: latest
+    pullPolicy: Always
+
+apiServer:
+  image:
+    repository: inner-registry:25000/platform-api-server
+    tag: latest
+    pullPolicy: Always
+
+controller:
+  image:
+    repository: inner-registry:25000/platform-controller
+    tag: latest
+    pullPolicy: Always
+  logLevel: debug
+  agent:
+    base:
+      storageClass: platform-rwx
+    templateDefaults:
+      imagePullPolicy: Always
+
+nfsProvisioner:
+  enabled: true
+
+agentTemplates:
+  - name: claude-code
+    enabled: true
+    description: "Default Claude Code agent"
+    image:
+      repository: inner-registry:25000/platform-claude-code
+      tag: latest
+    storageSize: "5Gi"
+
+  - name: codex
+    enabled: false
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: inner-registry:25000/platform-codex
+      tag: latest
+    storageSize: "5Gi"
+
+  - name: pi-agent
+    enabled: false
+    description: "Pi coding agent with multi-LLM support"
+    image:
+      repository: inner-registry:25000/platform-pi-agent
+      tag: latest
+    storageSize: "2Gi"
+
+  - name: bob
+    enabled: false
+    description: "Bob shell agent"
+    image:
+      repository: inner-registry:25000/platform-bob
+      tag: latest
+    storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  - name: mock
+    enabled: true
+    description: "Scripted mock agent (E2E test fixture)"
+    image:
+      repository: inner-registry:25000/platform-mock
+      tag: latest
+    storageSize: "1Gi"
+    env:
+      - name: MOCK_DEFAULT_REPLY
+        value: "Hello from the mock agent."
+
+ingress:
+  catchAllAppHost: true
+
+keycloak:
+  admin:
+    password: admin
+  image:
+    repository: inner-registry:25000/platform-keycloak
+    tag: latest
+    pullPolicy: Always
+  testUser:
+    enabled: true
+    username: dev
+    password: dev
+  extraRedirectUris:
+    - "*"
+  extraWebOrigins:
+    - "*"
+  log:
+    consoleOutput: "default"
+
+terms:
+  version: dev
+  text: "Dev placeholder Terms of Use. See ADR-047."

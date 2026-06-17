@@ -484,6 +484,66 @@ run = '''
 exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
 '''
 
+# -- DAM-in-DAM inner cluster (dam-kt9) --
+#
+# The INNER cluster is the target an agent pod in the OUTER cluster builds into
+# and deploys to. This task only provisions the VM and the build plane (registry
+# + buildkitd); cert-manager/Istio/helm come later via cluster:install in
+# external-kubeconfig mode (dam-o3w). Lima-only — the inner cluster is never the
+# sandbox host, so there is no IS_SANDBOX branch.
+["cluster:inner:install"]
+description = "Provision the inner DAM cluster VM (platform-k3s-inner) and stand up its build plane (registry + buildkitd). DAM-in-DAM (dam-kt9)."
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+LIMA_INSTANCE="platform-k3s-inner"
+LIMA_TEMPLATE="deploy/lima-k3s-inner.yaml"
+BUILD_PLANE="deploy/inner/buildkit-registry.yaml"
+
+# 1. Provision / start the inner VM (mirrors cluster:install step 1).
+if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+  echo "Creating inner k3s VM ($LIMA_INSTANCE)..."
+  limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+fi
+STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
+if [ "$STATUS" != "Running" ]; then
+  echo "Starting inner k3s VM..."
+  limactl start "$LIMA_INSTANCE"
+fi
+
+# All kubectl runs guest-side via `limactl shell ... sudo k3s kubectl`. The
+# copied-out kubeconfig points at 127.0.0.1:16444, but on the host that port is
+# the OUTER VM's auto-forwarded API (different CA) — talking to it fails with a
+# cert error and would hit the wrong cluster. The guest's own k3s kubeconfig has
+# no such collision. (Outer pods reach this API at 192.168.5.2:26444; the host
+# forward is 127.0.0.1:26444.)
+INNER_KUBECTL=(limactl shell "$LIMA_INSTANCE" sudo k3s kubectl)
+
+# 2. Wait for k3s to be ready.
+echo "Waiting for inner k3s to be ready..."
+for _ in $(seq 1 60); do "${INNER_KUBECTL[@]}" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+"${INNER_KUBECTL[@]}" wait --for=condition=Ready node --all --timeout=120s
+
+# 3. Apply the build plane (registry + buildkitd), piped guest-side.
+echo "Applying build plane (registry + buildkitd)..."
+"${INNER_KUBECTL[@]}" apply -f - < "$BUILD_PLANE"
+
+# 4. Wait for the build plane to come up.
+echo "Waiting for build plane to be ready..."
+"${INNER_KUBECTL[@]}" -n dam-inner rollout status deploy/registry --timeout=120s
+"${INNER_KUBECTL[@]}" -n dam-inner rollout status deploy/buildkitd --timeout=120s
+
+echo ""
+echo "=== Inner build plane ready ==="
+echo "API:      127.0.0.1:26444 (host) / 192.168.5.2:26444 (from outer pods)"
+echo "Registry: 127.0.0.1:25000  (push images as inner-registry:25000/...)"
+echo "Buildkit: 127.0.0.1:21234  / 192.168.5.2:21234 (from outer pods)"
+echo ""
+"${INNER_KUBECTL[@]}" -n dam-inner get pods
+'''
+
 ["cluster:build-apiserver"]
 description = "Build and load API server image into k3s, restart apiserver pod"
 depends = ["api-server:image"]
