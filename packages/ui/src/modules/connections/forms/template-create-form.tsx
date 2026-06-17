@@ -9,6 +9,7 @@ import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 import { api } from "../../../api.js";
 import {
@@ -459,38 +460,6 @@ function PresetSummary({ input }: { input: ConnectionTemplateInput }) {
       </p>
     );
   return null;
-}
-
-function Switch({
-  checked,
-  onCheckedChange,
-  testId,
-  label,
-}: {
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-  testId?: string;
-  label?: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      data-testid={testId}
-      onClick={() => onCheckedChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
-        checked ? "bg-primary" : "bg-input"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
-        }`}
-      />
-    </button>
-  );
 }
 
 function LabeledInput({
