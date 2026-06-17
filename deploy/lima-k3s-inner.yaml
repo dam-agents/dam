@@ -7,8 +7,8 @@
 #   2. /etc/rancher/k3s/registries.yaml mirrors the shared image hostname
 #      `inner-registry:25000` to the in-cluster registry on the node loopback, so
 #      push (from the outer agent) and pull (this node) agree on one image ref.
-#   3. Host port forwards for the API, registry, and buildkit endpoints, all to
-#      host loopback (reachable from outer pods via 192.168.5.2 — validated).
+#   3. Host port forwards for the API, registry, and buildkit endpoints bound on
+#      0.0.0.0 so outer pods can reach them via the lima host gateway (192.168.5.2).
 #
 # Host ports (26444/25000/21234/24445) sit in a high free range so they never
 # clobber the outer VM's forwards (which already include 16443/16444/4444/4445).
@@ -98,15 +98,23 @@ copyToHost:
 # (26444/25000/21234) that the outer VM never touches. The image-name port equals
 # the registry host-forward port (25000) because buildctl derives the push target
 # from the ref — hence the shared hostname inner-registry:25000.
+#
+# hostIP: 0.0.0.0 is required so the forwarded ports bind on all host interfaces,
+# including 192.168.5.2 (the lima host gateway). Without it lima defaults to
+# 127.0.0.1, which is unreachable from outer agent pods.
 portForwards:
   - guestPort: 16444
     hostPort: 26444
+    hostIP: "0.0.0.0"
   - guestPort: 25000
     hostPort: 25000
+    hostIP: "0.0.0.0"
   - guestPort: 1234
     hostPort: 21234
+    hostIP: "0.0.0.0"
   - guestPort: 4445
     hostPort: 24445
+    hostIP: "0.0.0.0"
   - guestIP: 0.0.0.0
     proto: any
     ignore: true
