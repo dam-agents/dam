@@ -5,7 +5,7 @@ import {
   Settings,
 } from "@carbon/icons-react";
 
-import { DamSquareLogo, DamSquareLogoDark } from "@/components/brand-logo";
+import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -58,11 +58,10 @@ export function IconRail() {
         className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r shrink-0"
         data-testid="app-sidebar"
       >
-        <div className="flex items-center justify-center h-14">
-          <DamSquareLogo className="h-8 w-8 block dark:hidden" />
-          <DamSquareLogoDark className="h-8 w-8 hidden dark:block" />
+        <div className="flex items-center justify-center pt-2">
+          <BrandLogo />
         </div>
-        <div className="flex flex-col items-center gap-1 mt-2">
+        <div className="flex flex-col items-center gap-1">
           <RailItem {...home} />
         </div>
         <div className="flex-1" />
