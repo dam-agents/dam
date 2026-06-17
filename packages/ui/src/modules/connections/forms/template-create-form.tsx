@@ -8,7 +8,6 @@ import { Check, Copy, ExternalLink } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 
 import { api } from "../../../api.js";
@@ -52,7 +51,7 @@ export function TemplateCreateForm({
     }
     return init;
   });
-  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [overrideDefaults, setOverrideDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authorizing, setAuthorizing] = useState(false);
 
@@ -93,12 +92,11 @@ export function TemplateCreateForm({
   const f = (k: string): string => fields[k] ?? "";
   const setF = (k: string, v: string) =>
     setFields((prev) => ({ ...prev, [k]: v }));
-  const isOverriding = (k: string): boolean => overrides[k] === true;
 
   const submittedValue = (k: string): string | undefined => {
     const input = inputsByName.get(k);
     if (!input) return undefined;
-    if (input.state === "overridable" && !isOverriding(k)) return undefined;
+    if (input.state === "overridable" && !overrideDefaults) return undefined;
     const v = f(k).trim();
     return v.length > 0 ? v : undefined;
   };
@@ -277,12 +275,10 @@ export function TemplateCreateForm({
             <OverridableSection
               inputs={overridable}
               fields={fields}
-              overrides={overrides}
+              overriding={overrideDefaults}
               fromFamily={credentialsFromFamily}
               setF={setF}
-              setOverride={(k, v) =>
-                setOverrides((prev) => ({ ...prev, [k]: v }))
-              }
+              setOverriding={setOverrideDefaults}
             />
           )}
 
@@ -390,72 +386,110 @@ function OAuthAppHint({
 function OverridableSection({
   inputs,
   fields,
-  overrides,
+  overriding,
   fromFamily,
   setF,
-  setOverride,
+  setOverriding,
 }: {
   inputs: ConnectionTemplateInput[];
   fields: Record<string, string>;
-  overrides: Record<string, boolean>;
+  overriding: boolean;
   fromFamily?: boolean;
   setF: (k: string, v: string) => void;
-  setOverride: (k: string, v: boolean) => void;
+  setOverriding: (v: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // A single toggle flips the whole overridable group: the fields only make
+  // sense overridden together (your own app means all of its credentials, not
+  // a mix of presets and custom values), so we don't expose them per-field.
   return (
     <div className="rounded-lg border border-dashed border-border p-3">
-      <button
-        type="button"
-        className="text-[12px] font-semibold text-foreground/80 hover:text-foreground"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {expanded ? "▼" : "▶"} Customize defaults ({inputs.length})
-      </button>
-      <p className="text-[11px] text-muted-foreground mt-1">
-        {fromFamily
-          ? "Reused from another connection you've already set up. Leave as-is to share the same app, or override to use a different one."
-          : "These values are pre-configured by your administrator. Leave as-is to use the defaults."}
-      </p>
-      {expanded && (
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <span className="text-[12px] font-semibold text-foreground/80 block">
+            Customize defaults
+          </span>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {fromFamily
+              ? "Reused from another connection you've already set up. Leave off to share the same app, or turn on to use your own."
+              : "These values are pre-configured by your administrator. Leave off to use the defaults, or turn on to supply your own."}
+          </p>
+        </div>
+        <Switch
+          checked={overriding}
+          onCheckedChange={setOverriding}
+          testId="override-defaults-toggle"
+          label="Customize defaults"
+        />
+      </div>
+      {overriding ? (
         <div className="mt-3 flex flex-col gap-3">
-          {inputs.map((input) => {
-            const overriding = overrides[input.name] === true;
-            return (
-              <div key={input.name}>
-                <label className="flex items-center gap-2 mb-1">
-                  <Checkbox
-                    checked={overriding}
-                    onCheckedChange={(c) => setOverride(input.name, c === true)}
-                  />
-                  <span className="text-[12px] font-semibold text-foreground/80">
-                    Override {labelFor(input.name).toLowerCase()}
-                  </span>
-                </label>
-                {!overriding && input.presetValue && (
-                  <p className="text-[11px] font-mono text-muted-foreground pl-6">
-                    Preset: {input.presetValue}
-                  </p>
-                )}
-                {!overriding && !input.presetValue && input.secret && (
-                  <p className="text-[11px] text-muted-foreground pl-6">
-                    Preset value hidden.
-                  </p>
-                )}
-                {overriding && (
-                  <Input
-                    type={input.secret ? "password" : "text"}
-                    placeholder={placeholderFor(input.name)}
-                    value={fields[input.name] ?? ""}
-                    onChange={(e) => setF(input.name, e.target.value)}
-                  />
-                )}
-              </div>
-            );
-          })}
+          {inputs.map((input) => (
+            <LabeledInput
+              key={input.name}
+              label={input.label ?? labelFor(input.name)}
+              placeholder={placeholderFor(input.name)}
+              type={input.secret ? "password" : "text"}
+              value={fields[input.name] ?? ""}
+              onChange={(v) => setF(input.name, v)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-1.5">
+          {inputs.map((input) => (
+            <PresetSummary key={input.name} input={input} />
+          ))}
         </div>
       )}
     </div>
+  );
+}
+
+function PresetSummary({ input }: { input: ConnectionTemplateInput }) {
+  if (input.presetValue)
+    return (
+      <p className="text-[11px] font-mono text-muted-foreground">
+        {labelFor(input.name)}: {input.presetValue}
+      </p>
+    );
+  if (input.secret)
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        {labelFor(input.name)}: preset value hidden.
+      </p>
+    );
+  return null;
+}
+
+function Switch({
+  checked,
+  onCheckedChange,
+  testId,
+  label,
+}: {
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  testId?: string;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testId}
+      onClick={() => onCheckedChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
+        checked ? "bg-primary" : "bg-input"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+          checked ? "translate-x-4" : "translate-x-0.5"
+        }`}
+      />
+    </button>
   );
 }
 
