@@ -3,6 +3,7 @@ import { Controller } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { FormError } from "../../../components/form-error.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
@@ -10,7 +11,6 @@ import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-ed
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { FormField } from "../components/form-field.js";
-import { WizardSectionLabel } from "../components/wizard-section-label.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
 const READ_ONLY_FIELD =
@@ -47,7 +47,7 @@ export function SandboxSettingsView() {
       </h1>
 
       <section className="mb-8">
-        <WizardSectionLabel>Name</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">Name</SectionLabel>
         <FormField>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
@@ -55,7 +55,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <WizardSectionLabel>Image</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">Image</SectionLabel>
         {/* Read-only: image/template are create-only — changing them would mean
             delete+recreate, destroying the workspace PVC. */}
         <FormField>
@@ -73,7 +73,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <WizardSectionLabel>Provider</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">Provider</SectionLabel>
         <ProviderSection
           variant="collapsible"
           listClassName="md:-ml-4"
@@ -95,7 +95,7 @@ export function SandboxSettingsView() {
       />
 
       <section className="mb-8">
-        <WizardSectionLabel>Network access</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">Network access</SectionLabel>
         <FormField className="rounded-lg border border-border p-4">
           <AgentEgressEditor
             agentId={agent.id}
@@ -106,7 +106,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <WizardSectionLabel>Environment</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">Environment</SectionLabel>
         <FormField className="rounded-lg border border-border p-4">
           <Controller
             control={f.control}

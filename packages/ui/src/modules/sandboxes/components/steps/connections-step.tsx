@@ -2,6 +2,7 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import {
   useAppConnections,
@@ -26,7 +27,6 @@ import {
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
 import { StepHeader } from "../step-header.js";
-import { WizardSectionLabel } from "../wizard-section-label.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 
@@ -114,7 +114,7 @@ export function ConnectionsStep({
 
       {connections.length > 0 && (
         <section className="mb-8">
-          <WizardSectionLabel>My connections</WizardSectionLabel>
+          <SectionLabel className="mb-3 block">My connections</SectionLabel>
           <CardList>
             {connections.map((c) => (
               <ConnectionRow
@@ -148,7 +148,9 @@ export function ConnectionsStep({
         if (list.length === 0) return null;
         return (
           <section key={cat} className="mb-8">
-            <WizardSectionLabel>{CATEGORY_LABEL[cat]}</WizardSectionLabel>
+            <SectionLabel className="mb-3 block">
+              {CATEGORY_LABEL[cat]}
+            </SectionLabel>
             <CardList>
               {list.map((t) => (
                 <ConnectionCatalogRow

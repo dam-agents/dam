@@ -2,6 +2,8 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { SectionLabel } from "@/components/ui/section-label";
+
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -19,7 +21,6 @@ import {
 } from "../../connections/internal-only.js";
 import { PROVIDER_TEMPLATE_IDS } from "../../connections/lib/provider-templates.js";
 import { CardList } from "./card-list.js";
-import { WizardSectionLabel } from "./wizard-section-label.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 const NO_CONNECTIONS: ConnectionView[] = [];
@@ -71,7 +72,7 @@ export function ConnectionsSection({
   return (
     <>
       <section className="mb-8">
-        <WizardSectionLabel>My connections</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">My connections</SectionLabel>
         {connections.length > 0 ? (
           <CardList>
             {connections.map((c) => (
@@ -115,7 +116,9 @@ export function ConnectionsSection({
           if (list.length === 0) return null;
           return (
             <section key={cat} className="mb-8">
-              <WizardSectionLabel>{CATEGORY_LABEL[cat]}</WizardSectionLabel>
+              <SectionLabel className="mb-3 block">
+                {CATEGORY_LABEL[cat]}
+              </SectionLabel>
               <CardList>
                 {list.map((t) => (
                   <ConnectionCatalogRow

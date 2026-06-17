@@ -1,5 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStartOAuth } from "../api/mutations.js";
@@ -71,7 +73,7 @@ export function ConnectionTemplatesSection() {
 
       {!loading && conns.length > 0 && (
         <div className="mb-8">
-          <SectionLabel>My connections</SectionLabel>
+          <SectionLabel className="mb-3 block">My connections</SectionLabel>
           <div className="flex flex-col gap-3">
             {conns.map((c) => (
               <ConnectionRow
@@ -104,7 +106,9 @@ export function ConnectionTemplatesSection() {
             if (list.length === 0) return null;
             return (
               <div key={cat}>
-                <SectionLabel>{CATEGORY_LABEL[cat]}</SectionLabel>
+                <SectionLabel className="mb-3 block">
+                  {CATEGORY_LABEL[cat]}
+                </SectionLabel>
                 <div className="flex flex-col gap-3">
                   {list.map((t) => (
                     <ConnectionCatalogRow
@@ -163,13 +167,5 @@ function ConnectionActions({
         disabled={deleting}
       />
     </div>
-  );
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-      {children}
-    </p>
   );
 }

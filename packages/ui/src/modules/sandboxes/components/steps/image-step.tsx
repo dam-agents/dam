@@ -3,13 +3,13 @@ import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { TemplateView } from "../../../../types.js";
 import { CardList } from "../card-list.js";
 import { StepHeader } from "../step-header.js";
-import { WizardSectionLabel } from "../wizard-section-label.js";
 
 interface Props {
   templates: TemplateView[];
@@ -41,7 +41,9 @@ export function ImageStep({
       />
 
       <section className="mb-8">
-        <WizardSectionLabel>Pick a pre-built image</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">
+          Pick a pre-built image
+        </SectionLabel>
         <CardList>
           {loading ? (
             <ListSkeleton rows={4} rowHeight={64} />
@@ -60,7 +62,9 @@ export function ImageStep({
       </section>
 
       <section className="mb-8">
-        <WizardSectionLabel>Or bring your own image</WizardSectionLabel>
+        <SectionLabel className="mb-3 block">
+          Or bring your own image
+        </SectionLabel>
         <CardList>
           <CustomImageCard
             value={customImage}
