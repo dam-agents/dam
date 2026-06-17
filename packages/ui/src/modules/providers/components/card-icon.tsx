@@ -1,7 +1,6 @@
-import { Bee } from "@carbon/icons-react";
-
 import {
   AnthropicIcon,
+  BobIcon,
   LiteLLMIcon,
   OpenAIIcon,
 } from "@/components/brand-icons";
@@ -14,7 +13,9 @@ import type { ProviderPresetType } from "../../../types.js";
  * canonical logo and brand color. Used in connected/edit/wizard chrome
  * across the four provider cards. The {@link ProviderPresetType} key
  * picks both the icon and the background tint, so adding a new preset
- * is a single new entry below.
+ * is a single new entry below. Bob ships its own complete tile (white
+ * background, border, rounded corners), so it sits on a transparent
+ * wrapper and fills it.
  */
 const STYLES: Record<
   ProviderPresetType,
@@ -40,10 +41,9 @@ const STYLES: Record<
     iconClass: "text-[24px] leading-none",
   },
   bob: {
-    // Carbon's Bee glyph (IBM BeeAI mascot) on a warm amber tile.
-    Icon: Bee,
-    bg: "bg-[#FBBF24]",
-    iconClass: "w-6 h-6 text-[#1F2937]",
+    Icon: BobIcon,
+    bg: "",
+    iconClass: "w-full h-full",
   },
 };
 
@@ -57,7 +57,7 @@ const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
   anthropic: "!w-8 !h-8",
   openai: "!w-8 !h-8",
   "ibm-litellm": "!text-[40px]",
-  bob: "!w-10 !h-10",
+  bob: "",
 };
 
 export function CardIcon({
@@ -86,6 +86,7 @@ export function CardIcon({
           style.iconClass,
           size === "lg" && LARGE_ICON_CLASS[provider],
           size === "sm" &&
+            provider !== "bob" &&
             (provider === "ibm-litellm" ? "!text-[16px]" : "!w-3.5 !h-3.5"),
         )}
       />
