@@ -197,9 +197,9 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
     },
 
     async listDistinctGrantAgentIds(): Promise<string[]> {
-      const rows = (await db
+      const rows = await db
         .selectDistinct({ agentId: connectionGrantsTable.agentId })
-        .from(connectionGrantsTable)) as { agentId: string }[];
+        .from(connectionGrantsTable);
       return rows.map((r) => r.agentId);
     },
   };

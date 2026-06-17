@@ -194,7 +194,14 @@ export function createConnectionsService(deps: {
 
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
-        const allOwnerConnectionIds = new Set(ownerConnsAfter.map((c) => c.id));
+        // The fan-out's egress sweep only revokes rules whose source id is in
+        // this owned set; `id` is already gone from `ownerConnsAfter`, so keep
+        // it here or the deleted connection's egress-allow rows would leak onto
+        // every affected agent.
+        const allOwnerConnectionIds = new Set([
+          ...ownerConnsAfter.map((c) => c.id),
+          id,
+        ]);
         for (const agentId of affectedAgents) {
           try {
             const grantedConnections =
