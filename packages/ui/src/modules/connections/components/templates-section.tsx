@@ -10,6 +10,7 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../internal-only.js";
+import { githubAppInstallUrl } from "../lib/github-app-install-url.js";
 import { PROVIDER_TEMPLATE_IDS } from "../lib/provider-templates.js";
 import {
   ConnectionAction,
@@ -181,14 +182,4 @@ function SectionLabel({ children }: { children: ReactNode }) {
       {children}
     </p>
   );
-}
-
-function githubAppInstallUrl(connection: ConnectionView): string | null {
-  if (!connection.appSlug) return null;
-  const host =
-    connection.templateId === "github-enterprise"
-      ? (connection.host ?? null)
-      : "github.com";
-  if (!host) return null;
-  return `https://${host}/apps/${connection.appSlug}/installations/new`;
 }
