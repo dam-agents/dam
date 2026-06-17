@@ -17,8 +17,9 @@ import (
 const iptablesInitContainerName = "egress-lockdown"
 
 // buildIptablesInitContainer pins the agent pod's OUTPUT chain to
-// "loopback + ESTABLISHED + paired gateway only". Returns nil when the
-// feature is off, the image is unset, or the gateway IP isn't known yet.
+// "loopback + ESTABLISHED + paired gateway (+ chart-defined ExtraEgress)
+// only". Returns nil when the feature is off, the image is unset, or the
+// gateway IP isn't known yet.
 //
 // Targets the SIG Release `registry.k8s.io/build-image/distroless-iptables`
 // image, which ships both `iptables-nft` and `iptables-legacy`. We
@@ -48,6 +49,19 @@ func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *co
 	// both backends are unusable: defense-in-depth is the whole point of
 	// this container, so the pod must not silently fall back to
 	// NetworkPolicy-only.
+	// Chart-defined ExtraEgress opens direct IPv4 egress to specific
+	// CIDR:port pairs, bypassing the gateway (the DAM-in-DAM dev loop's
+	// inner API + buildkit). These ACCEPTs must mirror the per-pair
+	// NetworkPolicy's extra rules (BuildAgentEgressNetworkPolicy) — both
+	// layers gate the same hop, so a rule in one without the other still
+	// drops. Empty in production. IPv6 stays drop-all (inner is IPv4).
+	extraRules := ""
+	for _, peer := range cfg.AgentBase.ExtraEgress {
+		for _, p := range peer.Ports {
+			extraRules += fmt.Sprintf("\"$IPT\" -A OUTPUT -d %s -p tcp --dport %d -j ACCEPT\n", peer.CIDR, p)
+		}
+	}
+
 	script := `set -eu
 echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
 if iptables-nft -nL OUTPUT >/dev/null 2>&1; then
@@ -64,11 +78,11 @@ echo "egress-lockdown: backend=$IPT"
 "$IPT" -A OUTPUT -o lo -j ACCEPT
 "$IPT" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 "$IPT" -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
-"$IPT" -A OUTPUT -j DROP
+` + extraRules + `"$IPT" -A OUTPUT -j DROP
 "$IP6T" -A OUTPUT -o lo -j ACCEPT
 "$IP6T" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 "$IP6T" -A OUTPUT -j DROP
-echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
+echo "egress-lockdown: gateway + extra-egress IPv4 ACCEPT, IPv6 drop applied"
 `
 
 	// Needs root + NET_ADMIN/NET_RAW for the netfilter ops. K8s/containerd

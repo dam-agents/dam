@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -102,6 +103,31 @@ func TestBuildIptablesInitContainer_AllowListScript(t *testing.T) {
 	assert.Contains(t, script, `"$IP6T" -A OUTPUT -o lo -j ACCEPT`, "IPv6 loopback must be admitted")
 	assert.Contains(t, script, `"$IP6T" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT`)
 	assert.Contains(t, script, `"$IP6T" -A OUTPUT -j DROP`, "IPv6 terminal catch-all DROP")
+}
+
+// Chart-defined ExtraEgress adds IPv4 ACCEPTs (one per CIDR×port) that must
+// mirror the per-pair NetworkPolicy and land BEFORE the terminal DROP —
+// the DAM-in-DAM dev loop reaching the inner API + buildkit. Both
+// enforcement layers gate the same hop, so a rule in one without the other
+// still drops.
+func TestBuildIptablesInitContainer_ExtraEgress(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
+	cfg.AgentBase.ExtraEgress = []config.EgressPeer{
+		{CIDR: "192.168.5.2/32", Ports: []int{26444, 21234}},
+	}
+	ic := buildIptablesInitContainer(&cfg, "10.96.42.42")
+	require.NotNil(t, ic)
+	script := ic.Command[2]
+
+	api := `"$IPT" -A OUTPUT -d 192.168.5.2/32 -p tcp --dport 26444 -j ACCEPT`
+	buildkit := `"$IPT" -A OUTPUT -d 192.168.5.2/32 -p tcp --dport 21234 -j ACCEPT`
+	assert.Contains(t, script, api, "inner API CIDR:port must be admitted")
+	assert.Contains(t, script, buildkit, "inner buildkit CIDR:port must be admitted")
+
+	// Ordering is load-bearing: an ACCEPT after the terminal DROP never matches.
+	assert.Less(t, strings.Index(script, api), strings.Index(script, `"$IPT" -A OUTPUT -j DROP`),
+		"extra-egress ACCEPT must precede the terminal DROP")
 }
 
 // PoC: with `iptablesInit.enabled: true` the egress-lockdown init container
