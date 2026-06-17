@@ -1,6 +1,6 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
-import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver";
+import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
 const stateLabel: Record<AgentDisplayState, string> = {
   running: "Running",
@@ -29,10 +29,8 @@ export function StatusBadge({
   colorClasses,
 }: {
   state?: AgentDisplayState;
-  size?: "sm" | "md";
   label?: string;
   colorClasses?: string;
-  dotColorClasses?: string;
 }) {
   const resolvedLabel = label ?? (state ? stateLabel[state] : "");
   if (colorClasses) {

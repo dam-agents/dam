@@ -127,7 +127,6 @@ export function AgentUnavailableOverlay({
           <StatusBadge
             label="Reconnecting"
             colorClasses="bg-warning-light text-warning border-warning"
-            dotColorClasses="bg-warning anim-pulse"
           />
         </div>
         <p className="max-w-105 text-[14px] text-text-secondary">

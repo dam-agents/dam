@@ -719,28 +719,21 @@ function ChatHeaderStatus({
     <>
       {busy ? (
         <StatusBadge
-          size="sm"
           label="Busy"
           colorClasses="bg-accent-light text-accent border-accent"
-          dotColorClasses="bg-accent anim-pulse"
         />
       ) : (
-        <StatusBadge size="sm" state={agent?.state ?? "starting"} />
+        <StatusBadge state={agent?.state ?? "starting"} />
       )}
       {reconnecting && (
         <StatusBadge
-          size="sm"
           label="Reconnecting"
           colorClasses="bg-warning-light text-warning border-warning"
-          dotColorClasses="bg-warning anim-pulse"
         />
       )}
-      <ImportInProgressBadge size="sm" agentId={selectedAgent} />
+      <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (
-        <ContributionFailuresBadge
-          size="sm"
-          failures={agent.contributionFailures}
-        />
+        <ContributionFailuresBadge failures={agent.contributionFailures} />
       )}
     </>
   );
