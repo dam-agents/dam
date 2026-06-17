@@ -54,7 +54,7 @@ esac
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart --external-kubeconfig=PATH"
 depends = ["controller:image", "api-server:image", "ui:image", "keycloak-theme:image"]
 dir = "{{config_root}}"
 raw = true
@@ -68,6 +68,7 @@ HELM_VALUES=""
 HELM_EXTRA_ARGS=()
 NO_RESTART=false
 DEV_VALUES="deploy/helm/platform/values-dev.yaml"
+EXTERNAL_KUBECONFIG=""
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
@@ -75,13 +76,29 @@ for arg in "$@"; do
     --helm-values=*) HELM_VALUES="${arg#--helm-values=}" ;;
     --set=*) HELM_EXTRA_ARGS+=("$arg") ;;
     --no-restart) NO_RESTART=true ;;
+    --external-kubeconfig=*) EXTERNAL_KUBECONFIG="${arg#--external-kubeconfig=}" ;;
   esac
 done
+
+# External-kubeconfig mode (dam-o3w): target an already-running cluster (the inner
+# DAM cluster). Skip every VM/sandbox step — provisioning, k3s log-rotation, the
+# btrfs probe, the image-store prune — they all shell into lima/the sandbox host.
+# Force SKIP_IMAGE_LOAD (images come from the inner registry, pushed by
+# `inner:build`, not the local containerd) and layer values-inner so its registry
+# refs + Always pull policy win. The caller sets SKIP_IMAGE_BUILD when there's no
+# Docker daemon (the dev-agent pod); the depends: image tasks honor it.
+EXTERNAL=false
+INNER_VALUES=""
+if [ -n "$EXTERNAL_KUBECONFIG" ]; then
+  EXTERNAL=true
+  SKIP_IMAGE_LOAD=1
+  INNER_VALUES="deploy/helm/platform/values-inner.yaml"
+fi
 
 # Resolve the optional personal overlay (values-dev.yaml, gitignored) up front so
 # the agent render in step 3 sees the same values the install uses. Committed dev
 # defaults (terms.*, keycloak admin) live in values-local.yaml.
-if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
+if [ "$EXTERNAL" != true ] && [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
   HELM_VALUES="$DEV_VALUES"
   echo "Using dev overrides: $DEV_VALUES"
 fi
@@ -92,7 +109,10 @@ AGENT_VALUE_FLAGS=()
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # 1. Provision cluster and set KUBECONFIG
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$EXTERNAL" = true ]; then
+  echo "Targeting external cluster via kubeconfig: $EXTERNAL_KUBECONFIG"
+  KUBECONFIG="$EXTERNAL_KUBECONFIG"
+elif [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   if [ ! -d /var/lib/rancher/k3s ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
@@ -150,7 +170,9 @@ K3S_CONFIG_YAML='kubelet-arg:
   - "container-log-max-size=10Mi"
   - "container-log-max-files=3"
 '
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$EXTERNAL" = true ]; then
+  echo "Skipping k3s log-rotation config (external cluster owns its k3s config)"
+elif [ -n "${IS_SANDBOX:-}" ]; then
   if ! sudo grep -q container-log-max-size /etc/rancher/k3s/config.yaml 2>/dev/null; then
     echo "Configuring k3s container log rotation (issue #244)..."
     sudo mkdir -p /etc/rancher/k3s
@@ -409,7 +431,9 @@ fi
 # against a btrfs export (userspace ganesha hits ENOSYS on handle-based
 # syscalls). Switch to the cluster's default RWO local-path instead.
 # ext4/xfs hosts (lima Ubuntu and most production storage) are unaffected.
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$EXTERNAL" = true ]; then
+  ROOT_FSTYPE=""  # can't probe an external node's fs from here; assume the standard RWX path
+elif [ -n "${IS_SANDBOX:-}" ]; then
   ROOT_FSTYPE=$(df -T / 2>/dev/null | awk 'NR==2 {print $2}')
 else
   ROOT_FSTYPE=$(limactl shell "$LIMA_INSTANCE" df -T / 2>/dev/null | awk 'NR==2 {print $2}')
@@ -437,7 +461,7 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60
 # --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
-helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml ${INNER_VALUES:+-f "$INNER_VALUES"} --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
@@ -460,12 +484,16 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --a
 # `<none>:<none>`. Drop only those — `crictl rmi --prune` would also wipe
 # tagged-but-unpinned images like the agent ones we just loaded (no
 # instance pods exist yet to pin them).
-echo "Pruning dangling images..."
-PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
-if [ -n "${IS_SANDBOX:-}" ]; then
-  bash -c "$PRUNE_DANGLING"
+if [ "$EXTERNAL" = true ]; then
+  echo "Skipping image prune (external cluster manages its own image store)"
 else
-  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+  echo "Pruning dangling images..."
+  PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    bash -c "$PRUNE_DANGLING"
+  else
+    limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+  fi
 fi
 
 echo ""
@@ -542,6 +570,80 @@ echo "Registry: 127.0.0.1:25000  (push images as inner-registry:25000/...)"
 echo "Buildkit: 127.0.0.1:21234  / 192.168.5.2:21234 (from outer pods)"
 echo ""
 "${INNER_KUBECTL[@]}" -n dam-inner get pods
+'''
+
+# Build every Platform image straight into the inner registry via the inner
+# cluster's buildkitd — no local Docker daemon. The client (buildctl) ships the
+# build context over TCP; buildkitd builds and pushes. This replaces the outer
+# loop's `docker build` + `docker save` + `k3s ctr images import` with a single
+# push-to-registry per component (values-inner points every ref at the registry).
+["inner:build"]
+description = "Build all Platform images via the inner buildkitd (no Docker daemon) and push to the inner registry. DAM-in-DAM (dam-kt9). BUILDKIT_HOST overrides the daemon address (default tcp://127.0.0.1:21234; outer agent pods use tcp://192.168.5.2:21234)."
+dir = "{{config_root}}"
+depends = ["keycloak-theme:build"]
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+# buildctl talks to the inner buildkitd over TCP; the daemon does the push
+# (resolving inner-registry -> 127.0.0.1 via its hostAlias), so the client needs
+# neither Docker nor registry DNS. Default to the host forward; an outer agent pod
+# exports BUILDKIT_HOST=tcp://192.168.5.2:21234.
+: "${BUILDKIT_HOST:=tcp://127.0.0.1:21234}"
+export BUILDKIT_HOST
+REGISTRY="inner-registry:25000"
+BASE_REF="$REGISTRY/platform-base:latest"
+
+# buildctl is a host prerequisite (like docker/kubectl — not mise-managed); the
+# dev-agent image bundles it, on a dev box install moby/buildkit (e.g. `brew
+# install buildkit`).
+if ! command -v buildctl >/dev/null 2>&1; then
+  echo "FATAL: buildctl not found on PATH. Install moby/buildkit (brew install buildkit)." >&2
+  exit 1
+fi
+
+echo "buildkitd: $BUILDKIT_HOST  ->  registry: $REGISTRY"
+buildctl debug workers >/dev/null  # fail fast if the daemon is unreachable
+
+# build <image-name> <context-dir> <dockerfile-dir> [BUILD_ARG=value ...]
+# Pushes $REGISTRY/<image-name>:latest. registry.insecure=true covers the push
+# over plain HTTP; the FROM-pull insecurity is handled by buildkitd.toml in the
+# build plane (deploy/inner/buildkit-registry.yaml).
+build() {
+  local name="$1" context="$2" dfdir="$3"; shift 3
+  local opts=()
+  local a
+  for a in "$@"; do opts+=(--opt "build-arg:$a"); done
+  echo ">>> building $name"
+  buildctl build \
+    --frontend dockerfile.v0 \
+    --local context="$context" \
+    --local dockerfile="$dfdir" \
+    --opt filename=Dockerfile \
+    "${opts[@]}" \
+    --output "type=image,name=$REGISTRY/$name:latest,push=true,registry.insecure=true"
+}
+
+# platform-base FIRST — the agent images do `FROM ${BASE_IMAGE}` and pull it back
+# from the registry, so it has to exist there before they build.
+build platform-base        .                           packages/platform-base
+
+# Core components: own base images (Red Hat UBI / keycloak), root or package
+# context — mirrors the *:image tasks (api-server, ui, controller, keycloak).
+build platform-api-server  .                           packages/api-server
+build platform-ui          .                           packages/ui
+build platform-controller  packages/controller         packages/controller
+build platform-keycloak    .                           packages/keycloak-theme
+
+# Agents: FROM the platform-base we just pushed. This covers values-inner's
+# enabled templates (claude-code + mock); add codex / pi-agent / bob here when
+# enabling them in values-inner.
+build platform-claude-code packages/agents/claude-code packages/agents/claude-code BASE_IMAGE="$BASE_REF"
+build platform-mock        .                           packages/e2e/agents/mock     BASE_IMAGE="$BASE_REF"
+
+echo ""
+echo "=== All images pushed to $REGISTRY ==="
+echo "Deploy with: SKIP_IMAGE_BUILD=1 mise run cluster:install --external-kubeconfig=<inner kubeconfig>"
 '''
 
 ["cluster:build-apiserver"]

@@ -55,6 +55,21 @@ spec:
             path: /var/lib/dam-inner-registry
             type: DirectoryOrCreate
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buildkitd-config
+  namespace: dam-inner
+data:
+  # The agent images (FROM ${BASE_IMAGE}=inner-registry:25000/platform-base) make
+  # buildkitd PULL from the inner registry, which is plain HTTP on the node
+  # loopback (hostAlias inner-registry -> 127.0.0.1). buildkitd defaults to HTTPS,
+  # so without this the FROM resolve fails. (Push insecurity is handled per-build
+  # by the output's registry.insecure=true; pulls need daemon config.)
+  buildkitd.toml: |
+    [registry."inner-registry:25000"]
+      http = true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -86,6 +101,7 @@ spec:
           image: moby/buildkit:latest
           args:
             - --addr=tcp://0.0.0.0:1234
+            - --config=/etc/buildkit/buildkitd.toml
           ports:
             - containerPort: 1234
           securityContext:
@@ -95,3 +111,10 @@ spec:
               command: ["buildctl", "--addr", "tcp://127.0.0.1:1234", "debug", "workers"]
             initialDelaySeconds: 3
             periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/buildkit
+      volumes:
+        - name: config
+          configMap:
+            name: buildkitd-config
