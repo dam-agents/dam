@@ -9,6 +9,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../brand.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
 import { useStore } from "../store.js";
 
@@ -59,7 +60,15 @@ export function IconRail() {
         data-testid="app-sidebar"
       >
         <div className="flex items-center justify-center pt-2">
-          <BrandLogo />
+          <button
+            type="button"
+            onClick={home.navigate}
+            title={getBrand().name}
+            aria-label={getBrand().name}
+            className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <BrandLogo />
+          </button>
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...home} />
