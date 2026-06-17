@@ -1,7 +1,12 @@
-import type { AppConnectionView, ConnectionTemplateView } from "api-server-api";
+import type {
+  AppConnectionView,
+  ConnectionStatus,
+  ConnectionTemplateView,
+} from "api-server-api";
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "./connection-icon.js";
@@ -136,32 +141,20 @@ export function ConnectionRow({
   );
 }
 
+const STATUS_BADGE: Record<
+  ConnectionStatus,
+  { label: string; variant: BadgeProps["variant"] }
+> = {
+  active: { label: "Connected", variant: "success" },
+  pending: { label: "Authorizing…", variant: "muted" },
+  expired: { label: "Expired", variant: "danger" },
+  disconnected: { label: "Disconnected", variant: "muted" },
+};
+
 function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
-  if (status === "active")
-    return (
-      <span className="rounded-full bg-success-light px-2.5 py-0.5 text-[12px] font-normal text-success">
-        Connected
-      </span>
-    );
-  if (status === "pending")
-    return (
-      <span className="rounded-full bg-muted px-2.5 py-0.5 text-[12px] font-normal text-muted-foreground">
-        Authorizing…
-      </span>
-    );
-  if (status === "expired")
-    return (
-      <span className="rounded-full bg-danger-light px-2.5 py-0.5 text-[12px] font-normal text-danger">
-        Expired
-      </span>
-    );
-  if (status === "disconnected")
-    return (
-      <span className="rounded-full bg-muted px-2.5 py-0.5 text-[12px] font-normal text-muted-foreground">
-        Disconnected
-      </span>
-    );
-  return null;
+  if (!status) return null;
+  const { label, variant } = STATUS_BADGE[status];
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function SelectIndicator({ selected }: { selected: boolean }) {
