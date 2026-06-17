@@ -80,7 +80,7 @@ export function ProviderSection({
   manage = false,
   listClassName,
 }: Props) {
-  const { data: secrets = [] } = useSecrets();
+  const { data: secrets = [], isPending } = useSecrets();
   const providerActions = useProviderActions();
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
@@ -118,33 +118,37 @@ export function ProviderSection({
         />
       ) : (
         <div className={cn("flex flex-col gap-3", listClassName)}>
-          {PROVIDER_ROWS.map((row) => {
-            const secret = secretByType.get(row.type);
-            return (
-              <ProviderRow
-                key={row.type}
-                type={row.type}
-                description={row.description}
-                subtitle={
-                  secret ? connectedSubtitle(row.type, secret) : undefined
-                }
-                secret={secret}
-                selectable={!manage}
-                selected={!!secret && secret.id === selectedSecretId}
-                onConnect={() => setDialog({ provider: row.type })}
-                onSelect={() => secret && onSelect?.(secret.id)}
-                onEditKey={() =>
-                  secret && setDialog({ provider: row.type, secret })
-                }
-                onRemoveKey={() =>
-                  secret &&
-                  void providerActions.remove(secret.id, () =>
-                    onProviderRemoved?.(secret.id),
-                  )
-                }
-              />
-            );
-          })}
+          {isPending
+            ? PROVIDER_ROWS.map((row) => (
+                <ProviderRow.Skeleton key={row.type} />
+              ))
+            : PROVIDER_ROWS.map((row) => {
+                const secret = secretByType.get(row.type);
+                return (
+                  <ProviderRow
+                    key={row.type}
+                    type={row.type}
+                    description={row.description}
+                    subtitle={
+                      secret ? connectedSubtitle(row.type, secret) : undefined
+                    }
+                    secret={secret}
+                    selectable={!manage}
+                    selected={!!secret && secret.id === selectedSecretId}
+                    onConnect={() => setDialog({ provider: row.type })}
+                    onSelect={() => secret && onSelect?.(secret.id)}
+                    onEditKey={() =>
+                      secret && setDialog({ provider: row.type, secret })
+                    }
+                    onRemoveKey={() =>
+                      secret &&
+                      void providerActions.remove(secret.id, () =>
+                        onProviderRemoved?.(secret.id),
+                      )
+                    }
+                  />
+                );
+              })}
         </div>
       )}
 

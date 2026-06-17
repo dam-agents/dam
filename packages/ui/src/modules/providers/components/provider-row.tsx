@@ -108,6 +108,12 @@ export function ProviderRow({
   );
 }
 
+ProviderRow.Skeleton = function ProviderRowSkeleton() {
+  return (
+    <div className="h-[72px] rounded-lg border border-border bg-card anim-pulse" />
+  );
+};
+
 function ProviderText({
   name,
   description,
