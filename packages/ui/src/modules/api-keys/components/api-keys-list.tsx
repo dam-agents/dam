@@ -28,24 +28,27 @@ export function ApiKeysList() {
 
   return (
     <div className="anim-in">
-      <div className="flex items-start justify-between mb-1">
-        <h2 className="text-[18px] font-bold">API Keys</h2>
-        <Button onClick={() => setCreateOpen(true)}>Create key</Button>
-      </div>
-      <p className="text-[14px] text-text-secondary mb-6">
+      <h2 className="text-[18px] font-bold mb-1">API Keys</h2>
+      <p className="text-[14px] text-muted-foreground mb-4">
         Long-lived tokens for headless / CI use. Pass the value as a bearer
         credential when calling the API. Plaintext is shown once on creation and
         never recoverable.
       </p>
 
-      {isLoading && <p className="text-[13px] text-text-muted">Loading…</p>}
+      <div className="flex justify-end mb-4">
+        <Button onClick={() => setCreateOpen(true)}>Create key</Button>
+      </div>
+
+      {isLoading && (
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
+      )}
 
       {isError && (
         <div className="p-4 rounded-xl border-2 border-danger-light bg-danger-light">
           <p className="text-[13px] text-danger font-semibold mb-1">
             Couldn't load API keys
           </p>
-          <p className="text-[12px] text-text-secondary">
+          <p className="text-[12px] text-muted-foreground">
             The server returned an error. Try again or check your network
             connection.
           </p>
@@ -53,9 +56,9 @@ export function ApiKeysList() {
       )}
 
       {!isLoading && !isError && keys && keys.length === 0 && (
-        <div className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-dashed border-border-light bg-surface">
-          <KeyRound size={32} className="text-text-muted" />
-          <p className="text-[13px] text-text-secondary">
+        <div className="flex flex-col items-center gap-3 p-8 rounded-xl border border-dashed border-border bg-card">
+          <KeyRound size={32} className="text-muted-foreground" />
+          <p className="text-[13px] text-muted-foreground">
             No API keys yet. Create one to authenticate the CLI without a
             browser.
           </p>

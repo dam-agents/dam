@@ -1,3 +1,5 @@
+import { SectionLabel } from "@/components/ui/section-label";
+
 import { cn } from "../../../../lib/utils.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
 
@@ -25,10 +27,8 @@ export function AgentBindingField({
 
   return (
     <div className="mb-4">
-      <span className="text-[13px] font-semibold block mb-1.5">
-        Agent access
-      </span>
-      <p className="text-[12px] text-text-muted mb-2">
+      <SectionLabel className="mb-1 block">Agent access</SectionLabel>
+      <p className="text-[12px] text-muted-foreground mb-2">
         {lockedToAll ? (
           <>
             <code>agents:manage</code> keys must cover every agent — per-agent
@@ -59,7 +59,7 @@ export function AgentBindingField({
       {effectiveMode === "specific" && (
         <div className="mt-2 ml-6 space-y-1.5">
           {agents.length === 0 ? (
-            <p className="text-[12px] text-text-muted">
+            <p className="text-[12px] text-muted-foreground">
               You have no agents yet — create one first, or choose “All agents”.
             </p>
           ) : (
@@ -104,7 +104,7 @@ function BindingModeOption({
         "flex items-start gap-2 p-2 rounded-lg",
         disabled
           ? "opacity-50 cursor-not-allowed"
-          : "hover:bg-surface-raised cursor-pointer",
+          : "hover:bg-muted/40 cursor-pointer",
       )}
     >
       <input
@@ -116,7 +116,7 @@ function BindingModeOption({
       />
       <div className="flex-1">
         <span className="text-[13px] font-semibold">{label}</span>
-        <span className="text-[12px] text-text-secondary block">
+        <span className="text-[12px] text-muted-foreground block">
           {description}
         </span>
       </div>

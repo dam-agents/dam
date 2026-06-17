@@ -1,6 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import {
   DialogBody,
   DialogFooter,
@@ -37,28 +39,30 @@ export function RevealToken({ plaintext, onClose }: Props) {
         <h2 className="text-[18px] font-bold">Save this token now</h2>
       </DialogHeader>
       <DialogBody>
-        <p className="text-[13px] text-text-secondary mb-4">
+        <p className="text-[13px] text-muted-foreground mb-4">
           This is the only time the token will be shown. If you lose it, revoke
           this key and create a new one.
         </p>
-        <div className="flex items-stretch gap-2 p-3 rounded-lg bg-surface-raised border border-border-light font-mono text-[12px]">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border font-mono text-[12px]">
           <code className="flex-1 break-all">{plaintext}</code>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={handleCopy}
             aria-label={
               copyState === "copied"
                 ? "Copied to clipboard"
                 : "Copy to clipboard"
             }
-            className="shrink-0 px-2 py-1 rounded hover:bg-surface text-text-secondary"
+            className="shrink-0 text-muted-foreground"
           >
             {copyState === "copied" ? (
               <Check size={16} aria-hidden />
             ) : (
               <Copy size={16} aria-hidden />
             )}
-          </button>
+          </Button>
         </div>
         {copyState === "failed" && (
           <p className="text-[12px] text-danger mt-2">
@@ -66,19 +70,15 @@ export function RevealToken({ plaintext, onClose }: Props) {
             manually.
           </p>
         )}
-        <p className="text-[12px] text-text-muted mt-3">
+        <p className="text-[12px] text-muted-foreground mt-3">
           Use as the bearer credential when calling the API. See the CLI
           documentation for the exact environment variable name.
         </p>
       </DialogBody>
       <DialogFooter>
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg bg-accent text-white hover:bg-accent-hover"
-        >
+        <Button type="button" onClick={onClose}>
           Done
-        </button>
+        </Button>
       </DialogFooter>
     </>
   );

@@ -1,6 +1,10 @@
 import { AGENT_SCOPES, CREDENTIAL_SCOPES, type Scope } from "api-server-api";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
+
 import {
   DialogBody,
   DialogFooter,
@@ -81,32 +85,32 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
         <h2 className="text-[18px] font-bold">Create API key</h2>
       </DialogHeader>
       <DialogBody>
-        <label className="block mb-4">
-          <span className="text-[13px] font-semibold block mb-1.5">Name</span>
-          <input
+        <div className="mb-4">
+          <SectionLabel className="mb-1 block">Name</SectionLabel>
+          <Input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. CI release pipeline"
             autoFocus
             maxLength={100}
-            className="w-full px-3 py-2 text-[14px] rounded-lg border-2 border-border-light bg-surface focus:border-accent outline-none"
+            aria-label="Name"
           />
-        </label>
+        </div>
 
         <div className="mb-4">
-          <span className="text-[13px] font-semibold block mb-1.5">Scopes</span>
-          <p className="text-[12px] text-text-muted mb-2">
+          <SectionLabel className="mb-1 block">Scopes</SectionLabel>
+          <p className="text-[12px] text-muted-foreground mb-2">
             Pick the narrowest scope that satisfies your use case. An
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4 rounded-lg border border-border p-4">
             {SCOPE_GROUPS.map((group) => (
               <div key={group.label}>
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-text-muted block mb-1">
+                <SectionLabel className="mb-1.5 block">
                   {group.label}
-                </span>
+                </SectionLabel>
                 <div className="space-y-2">
                   {group.scopes.map((scope) => (
                     <ScopeOption
@@ -133,20 +137,12 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
         )}
       </DialogBody>
       <DialogFooter>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg text-text-secondary hover:bg-surface-raised"
-        >
+        <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={submitDisabled}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-        >
+        </Button>
+        <Button type="submit" disabled={submitDisabled}>
           {createApiKey.isPending ? "Creating…" : "Create"}
-        </button>
+        </Button>
       </DialogFooter>
     </form>
   );
@@ -160,7 +156,7 @@ interface ScopeOptionProps {
 
 function ScopeOption({ scope, checked, onToggle }: ScopeOptionProps) {
   return (
-    <label className="flex items-start gap-2 p-2 rounded-lg hover:bg-surface-raised cursor-pointer">
+    <label className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 cursor-pointer">
       <input
         type="checkbox"
         checked={checked}
@@ -169,7 +165,7 @@ function ScopeOption({ scope, checked, onToggle }: ScopeOptionProps) {
       />
       <div className="flex-1">
         <code className="text-[13px] font-semibold">{scope}</code>
-        <span className="text-[12px] text-text-secondary block">
+        <span className="text-[12px] text-muted-foreground block">
           {scopeDescription(scope)}
         </span>
       </div>

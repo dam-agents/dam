@@ -1,5 +1,7 @@
 import type { ApiKeyView } from "api-server-api";
 
+import { Button } from "@/components/ui/button";
+
 import {
   DialogBody,
   DialogFooter,
@@ -26,31 +28,28 @@ export function ConfirmRevokeDialog({
         <h2 className="text-[18px] font-bold">Revoke API key?</h2>
       </DialogHeader>
       <DialogBody>
-        <p className="text-[13px] text-text-secondary mb-2">
-          The key <span className="font-semibold text-text">{apiKey.name}</span>{" "}
-          (<code className="text-[12px]">{apiKey.id}</code>) will stop working
+        <p className="text-[13px] text-muted-foreground mb-2">
+          The key{" "}
+          <span className="font-semibold text-foreground">{apiKey.name}</span> (
+          <code className="text-[12px]">{apiKey.id}</code>) will stop working
           immediately on every running CLI and integration that uses it.
         </p>
-        <p className="text-[13px] text-text-secondary">
+        <p className="text-[13px] text-muted-foreground">
           This cannot be undone — to restore access, create a new key.
         </p>
       </DialogBody>
       <DialogFooter>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg text-text-secondary hover:bg-surface-raised"
-        >
+        <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="destructive"
           onClick={onConfirm}
           disabled={pending}
-          className="px-3 py-1.5 text-[13px] font-semibold rounded-lg bg-danger text-white hover:bg-danger/90 disabled:opacity-50"
         >
           {pending ? "Revoking…" : "Revoke"}
-        </button>
+        </Button>
       </DialogFooter>
     </Modal>
   );
