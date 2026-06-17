@@ -83,6 +83,24 @@ type AgentBase struct {
 	// agent's main container on egress NetworkPolicy being verifiably
 	// enforced. Used where IptablesInit can't run.
 	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
+
+	// ExtraEgress adds chart-defined IP-CIDR allowances to every agent's
+	// per-pair egress NetworkPolicy, on top of the paired gateway. These
+	// bypass the gateway's L7 ext_authz gate, so they are operator policy
+	// (chart-only) for cluster-integration destinations the gateway can't
+	// proxy. Empty in production; the DAM-in-DAM dev loop (dam-kt9) sets it
+	// so agents reach the inner cluster's Kubernetes API and buildkit daemon
+	// across the lima host gateway.
+	ExtraEgress []EgressPeer `json:"extraEgress,omitempty"`
+}
+
+// EgressPeer is a chart-defined IP-CIDR + TCP-port egress allowance added
+// verbatim to every agent's per-pair NetworkPolicy. It bypasses the paired
+// gateway, so it is operator policy used for destinations the gateway can't
+// proxy (e.g. a raw TCP buildkit daemon).
+type EgressPeer struct {
+	CIDR  string `json:"cidr"`
+	Ports []int  `json:"ports,omitempty"`
 }
 
 type AgentIptablesInit struct {

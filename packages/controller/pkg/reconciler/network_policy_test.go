@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 // Per-pair NP admits exactly the paired gateway on the Envoy port —
@@ -78,6 +80,32 @@ func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
 				"egress rule %d must not admit HBONE 15008", i)
 		}
 	}
+}
+
+// Chart-defined ExtraEgress (AgentBase) appends IP-CIDR allowances on top
+// of the gateway rule — the DAM-in-DAM dev loop reaches the inner cluster's
+// API (26444) + buildkit (21234) across the lima host gateway. Empty in
+// production, so the gateway-only invariant above still holds by default.
+func TestBuildAgentEgressNetworkPolicy_ExtraEgress(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.ExtraEgress = []config.EgressPeer{
+		{CIDR: "192.168.5.2/32", Ports: []int{26444, 21234}},
+	}
+	np := BuildAgentEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))
+
+	require.Len(t, np.Spec.Egress, 2, "paired gateway rule + one extra-egress peer")
+
+	extra := np.Spec.Egress[1]
+	require.Len(t, extra.To, 1)
+	require.NotNil(t, extra.To[0].IPBlock, "extra egress is an IP-CIDR peer, not a pod selector")
+	assert.Nil(t, extra.To[0].PodSelector)
+	assert.Equal(t, "192.168.5.2/32", extra.To[0].IPBlock.CIDR)
+
+	require.Len(t, extra.Ports, 2)
+	assert.Equal(t, int32(26444), extra.Ports[0].Port.IntVal)
+	assert.Equal(t, int32(21234), extra.Ports[1].Port.IntVal)
+	require.NotNil(t, extra.Ports[0].Protocol)
+	assert.Equal(t, corev1.ProtocolTCP, *extra.Ports[0].Protocol)
 }
 
 // Label-managed-by lets operators bulk-list controller-managed NPs and

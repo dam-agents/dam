@@ -572,6 +572,15 @@ controller:
       # Gated by top-level `probes.enabled`.
       probes: {}
 
+      # Extra IP-CIDR egress allowances added to every agent's per-pair
+      # NetworkPolicy, on top of the paired gateway. These bypass the
+      # gateway's L7 ext_authz gate, so they are operator policy for
+      # cluster-integration destinations the gateway can't proxy (raw TCP).
+      # Empty in production. The DAM-in-DAM dev loop sets it in
+      # values-local.yaml to reach the inner cluster's API + buildkit.
+      # Each entry: {cidr: "<ip>/<prefix>", ports: [<int>, ...]}.
+      extraEgress: []
+
       # ━━━ SECURITY DEFAULTS — DO NOT CHANGE WITHOUT REVIEW ━━━
       # These ship the cluster-enforced sandbox boundary the platform relies on.
       # Relaxing them gives the agent container privileges that bypass the

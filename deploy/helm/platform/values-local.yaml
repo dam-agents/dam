@@ -22,6 +22,13 @@ controller:
   agent:
     base:
       storageClass: platform-rwx
+      # DAM-in-DAM (dam-kt9): let agents reach the inner cluster's Kubernetes
+      # API (26444) and buildkit daemon (21234) across the lima host gateway.
+      # Install-wide — every agent gets the allowance; harmless when no inner
+      # VM is running (nothing listens on those ports).
+      extraEgress:
+        - cidr: 192.168.5.2/32
+          ports: [26444, 21234]
     templateDefaults:
       imagePullPolicy: IfNotPresent
 
@@ -82,6 +89,30 @@ agentTemplates:
     env:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
+
+  # DAM-in-DAM dev loop (dam-kt9). Runs in THIS (outer) cluster; rebuilds
+  # platform images via the inner cluster's buildkit and deploys them into
+  # the inner cluster. On for local dev — cluster:install builds
+  # platform-dev-agent; the build+deploy loop additionally needs the inner VM
+  # plus the extraEgress allowance above. NO_PROXY pins the inner API +
+  # buildkit to direct egress: the controller routes all other traffic
+  # through the paired gateway, which can't proxy raw TCP (buildkit) or the
+  # IP-literal inner API.
+  - name: dev-agent
+    enabled: true
+    description: "DAM-in-DAM dev loop (build + deploy into the inner cluster)"
+    image:
+      repository: platform-dev-agent
+      tag: latest
+    storageSize: "10Gi"
+    init: dev-bootstrap
+    env:
+      - name: NO_PROXY
+        value: "192.168.5.2"
+      - name: no_proxy
+        value: "192.168.5.2"
+      - name: REPO_REF
+        value: "feat/dam-in-dam"
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable

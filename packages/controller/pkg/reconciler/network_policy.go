@@ -21,6 +21,11 @@ import (
 // chart-rendered namespace-scope deny-all baseline, the agent's only
 // admitted destination is its paired gateway. All other egress —
 // external, harness, ext-authz — flows through the gateway (ADR-035).
+//
+// AgentBase.ExtraEgress adds chart-defined IP-CIDR allowances on top of
+// the gateway rule, for cluster-integration destinations the gateway can't
+// proxy (the DAM-in-DAM dev loop's inner API + buildkit). Empty in
+// production.
 
 // BuildAgentEgressNetworkPolicy renders the per-pair egress NP for the
 // agent pod of `pairKey`. Long-lived pairs use the instance name;
@@ -49,6 +54,21 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 			{Protocol: &tcp, Port: &envoyPort},
 		},
 	}}
+
+	// Chart-defined extra egress (operator policy, ADR-038). Each peer is a
+	// raw IP-CIDR + TCP ports the agent may reach directly, bypassing the
+	// gateway. Empty unless an install opts in (e.g. DAM-in-DAM).
+	for _, peer := range cfg.AgentBase.ExtraEgress {
+		ports := make([]networkingv1.NetworkPolicyPort, 0, len(peer.Ports))
+		for _, p := range peer.Ports {
+			port := intstr.FromInt(p)
+			ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
+		}
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: peer.CIDR}}},
+			Ports: ports,
+		})
+	}
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
