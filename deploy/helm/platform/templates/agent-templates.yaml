@@ -37,6 +37,9 @@ data:
     {{- with $tmpl.storageSize }}
     storageSize: {{ . | quote }}
     {{- end }}
+    {{- if $tmpl.imagePullSecret }}
+    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $tmpl.name | quote }}
+    {{- end }}
     {{- with $tmpl.resources }}
     resources:
       {{- toYaml . | nindent 6 }}

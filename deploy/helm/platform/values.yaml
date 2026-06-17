@@ -732,6 +732,23 @@ controller:
 # override the chart-wide default for agents created from this template.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+#
+# To predefine an *experimental external agent* (a private-registry image users
+# just pick from the template list, with no manual "Private registry" entry),
+# add an entry with `imagePullSecret`:
+#
+#   - name: bugstone
+#     enabled: true
+#     description: "Experimental DAM bug-hunting agent"
+#     image:
+#       repository: icr.io/dam-agents/bugstone
+#       tag: ""
+#     storageSize: "5Gi"
+#     imagePullSecret:                 # renders a dockerconfigjson Secret in agentNamespace
+#       server: icr.io
+#       username: iamapikey
+#       password: "<registry-api-key>" # keep out of plaintext values in prod (sealed/SOPS/external secret)
+#
 agentTemplates:
   - name: claude-code
     enabled: true

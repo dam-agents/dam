@@ -38,6 +38,11 @@ export interface TemplateSpec {
   /** Overrides `controller.agent.templateDefaults.imagePullPolicy` for
    *  instances created from this template. Empty = inherit. */
   imagePullPolicy?: string;
+  /** Names a kubernetes.io/dockerconfigjson Secret in the agent namespace,
+   *  pre-created by the chart for templates pulling from a private registry.
+   *  Carried onto the agent spec so the pod pulls without the user supplying
+   *  registry credentials. Empty = none. */
+  imagePullSecretRef?: string;
   /** Overrides `controller.agent.templateDefaults.storageSize` for the
    *  persistent home mount. Per-mount `size` (if set) wins over this. */
   storageSize?: string;

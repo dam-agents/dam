@@ -39,6 +39,11 @@ export const templateSpecSchema = z
     env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
+    // Names a kubernetes.io/dockerconfigjson Secret in the agent namespace,
+    // pre-created by the chart for templates that pull from a private registry
+    // (e.g. experimental external agents). Carried onto the agent spec so the
+    // pod can pull the image without the user entering registry credentials.
+    imagePullSecretRef: z.string().optional(),
     storageSize: z.string().optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })

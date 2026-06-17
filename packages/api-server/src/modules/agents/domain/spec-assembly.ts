@@ -16,6 +16,7 @@ export function assembleSpecFromTemplate(
     env: tmplSpec.env,
     resources: tmplSpec.resources,
     imagePullPolicy: tmplSpec.imagePullPolicy,
+    imagePullSecretRef: tmplSpec.imagePullSecretRef,
     storageSize: tmplSpec.storageSize,
   };
 }
