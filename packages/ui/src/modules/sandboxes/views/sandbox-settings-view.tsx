@@ -74,14 +74,13 @@ export function SandboxSettingsView() {
 
       <section className="mb-8">
         <WizardSectionLabel>Provider</WizardSectionLabel>
-        <FormField>
-          <ProviderSection
-            variant="dropdown"
-            selectedSecretId={f.selectedProviderSecretId}
-            onSelect={f.selectProvider}
-            onProviderRemoved={f.dropProviderGrant}
-          />
-        </FormField>
+        <ProviderSection
+          variant="collapsible"
+          listClassName="md:-ml-4"
+          selectedSecretId={f.selectedProviderSecretId}
+          onSelect={f.selectProvider}
+          onProviderRemoved={f.dropProviderGrant}
+        />
         <p className="mt-3 text-[12px] text-muted-foreground">
           Changing the provider swaps this sandbox's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
