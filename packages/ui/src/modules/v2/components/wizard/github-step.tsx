@@ -4,6 +4,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { api } from "../../../../api.js";
+import { githubAppInstallUrl } from "../../../connections/lib/github-app-install-url.js";
 import {
   type GithubMode,
   useGithubConnect,
@@ -45,6 +46,11 @@ export function GithubStep({
     null,
   );
   const pendingTargetRef = useRef<Target | null>(null);
+
+  const installUrlFor = (mode: GithubMode, host: string): string | null => {
+    const existing = findExisting(mode, host);
+    return existing ? githubAppInstallUrl(existing) : null;
+  };
 
   const { open: openPopup, close: closePopup } = useOAuthPopup((result) => {
     const target = pendingTargetRef.current;
@@ -150,6 +156,7 @@ export function GithubStep({
           title="GitHub"
           description="Read + write repos, issues, and PRs on github.com."
           connected={snapshot.githubAuthorized && !!snapshot.githubConnectionId}
+          installUrl={installUrlFor("github", "")}
           authorizing={authorizingTarget === "github"}
           disabled={authorizingTarget !== null}
           onAuthorize={() => connect("github")}
@@ -172,6 +179,7 @@ export function GithubStep({
           description="Connect a self-hosted GitHub Enterprise host."
           connected={snapshot.gheAuthorized && !!snapshot.gheConnectionId}
           connectedLabel={`Connected to ${snapshot.gheHost}.`}
+          installUrl={installUrlFor("github-enterprise", snapshot.gheHost)}
           authorizing={authorizingTarget === "ghe"}
           disabled={authorizingTarget !== null}
           onAuthorize={() => connect("ghe")}
@@ -226,6 +234,7 @@ function ConnectionCard({
   description,
   connected,
   connectedLabel = "Connected to GitHub.",
+  installUrl,
   authorizing,
   disabled,
   onAuthorize,
@@ -236,6 +245,7 @@ function ConnectionCard({
   description: string;
   connected: boolean;
   connectedLabel?: string;
+  installUrl?: string | null;
   authorizing: boolean;
   disabled: boolean;
   onAuthorize: () => void;
@@ -250,6 +260,16 @@ function ConnectionCard({
         {connected ? (
           <div className="flex items-center gap-2 text-[13px] text-success">
             <Check size={15} /> {connectedLabel}
+            {installUrl && (
+              <a
+                href={installUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="ml-1 font-medium text-foreground hover:underline"
+              >
+                Install on GitHub
+              </a>
+            )}
             <button
               type="button"
               onClick={onChange}
