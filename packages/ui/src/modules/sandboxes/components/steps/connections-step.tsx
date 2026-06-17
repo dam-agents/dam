@@ -13,6 +13,7 @@ import {
   ConnectionCatalogRow,
   ConnectionRow,
 } from "../../../connections/components/connection-row.js";
+import { GithubAppInstallLink } from "../../../connections/components/github-app-install-link.js";
 import { TemplateCreateForm } from "../../../connections/forms/template-create-form.js";
 import { useDisconnectConnection } from "../../../connections/hooks/use-disconnect-connection.js";
 import {
@@ -128,12 +129,15 @@ export function ConnectionsStep({
                 onSelectedChange={(on) => toggle(c.id, on)}
                 testId={`connection-grant-${c.id}`}
               >
-                <ConnectionAction
-                  label="Disconnect"
-                  tone="danger"
-                  onClick={() => void disconnect(c.id, c.name)}
-                  disabled={deletingId === c.id}
-                />
+                <div className="flex shrink-0 items-center gap-4">
+                  <GithubAppInstallLink connection={c} />
+                  <ConnectionAction
+                    label="Disconnect"
+                    tone="danger"
+                    onClick={() => void disconnect(c.id, c.name)}
+                    disabled={deletingId === c.id}
+                  />
+                </div>
               </ConnectionRow>
             ))}
           </CardList>

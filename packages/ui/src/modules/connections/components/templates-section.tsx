@@ -10,13 +10,13 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../internal-only.js";
-import { githubAppInstallUrl } from "../lib/github-app-install-url.js";
 import { PROVIDER_TEMPLATE_IDS } from "../lib/provider-templates.js";
 import {
   ConnectionAction,
   ConnectionCatalogRow,
   ConnectionRow,
 } from "./connection-row.js";
+import { GithubAppInstallLink } from "./github-app-install-link.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 const NO_CONNECTIONS: ConnectionView[] = [];
@@ -153,19 +153,12 @@ function ConnectionActions({
       />
     );
   }
-  const installUrl = githubAppInstallUrl(connection);
   return (
     <div className="flex shrink-0 items-center gap-4">
-      {installUrl && connection.status === "active" && (
-        <a
-          href={installUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-[13px] font-medium text-foreground hover:underline"
-        >
-          Install on GitHub
-        </a>
-      )}
+      <GithubAppInstallLink
+        connection={connection}
+        className="text-[13px] font-medium"
+      />
       <ConnectionAction
         label="Disconnect"
         tone="danger"
