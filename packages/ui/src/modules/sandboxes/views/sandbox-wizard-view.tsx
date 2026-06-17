@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -14,6 +14,7 @@ import { ConnectionsStep } from "../components/steps/connections-step.js";
 import { ImageStep } from "../components/steps/image-step.js";
 import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
+import { generateSandboxName } from "../lib/sandbox-name.js";
 import { loadSnapshot, type WizardStep } from "../lib/wizard-snapshot.js";
 
 const NO_TEMPLATES: TemplateView[] = [];
@@ -72,6 +73,13 @@ export function SandboxWizardView() {
         });
     }
   }, [update]);
+
+  useLayoutEffect(() => {
+    if (snapshot.step === 2 && !snapshot.name.trim()) {
+      update({ name: generateSandboxName() });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot.step]);
 
   const goToStep = (step: WizardStep) => update({ step });
 
