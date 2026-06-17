@@ -1,11 +1,9 @@
 import { Renew } from "@carbon/icons-react";
 
-import { GoogleIcon } from "@/components/brand-icons";
 import { Button } from "@/components/ui/button";
 
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { useSecrets } from "../../secrets/api/queries.js";
-import { ComingSoonCard } from "../components/coming-soon-card.js";
 
 export function ProvidersView() {
   const { refetch, isFetching } = useSecrets();
@@ -35,19 +33,6 @@ export function ProvidersView() {
 
       <section className="mb-8">
         <ProviderSection manage />
-      </section>
-
-      <section>
-        <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-4">
-          Coming Soon
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ComingSoonCard
-            name="Google"
-            description="Powers Gemini CLI agents"
-            icon={<GoogleIcon className="w-5 h-5" />}
-          />
-        </div>
       </section>
     </div>
   );
