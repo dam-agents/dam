@@ -21,7 +21,7 @@ export function useSchedules(agentId: string | null) {
 }
 
 /** A schedule's sessions, read straight off the owning agent over ACP and
- *  filtered by `scheduleId` (ADR-055) — the server has no session list. */
+ *  filtered by `scheduleId` — the server has no session list. */
 export function useScheduleSessions(
   agentId: string | null,
   scheduleId: string | null,

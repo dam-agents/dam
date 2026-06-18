@@ -65,7 +65,7 @@ func main() {
 	defer cancel()
 
 	// Fail fast on every replica, before leader election — a stale CRD schema
-	// would otherwise have this build's writes silently pruned (ADR-068).
+	// would otherwise have this build's writes silently pruned.
 	if err := crdcheck.Assert(ctx, dynClient); err != nil {
 		slog.Error("CRD schema check failed", "error", err)
 		os.Exit(1)
@@ -112,13 +112,13 @@ func setupLogger() {
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
-	// Agents and Forks are custom resources (ADR-058) — watched via dynamic
+	// Agents and Forks are custom resources — watched via dynamic
 	// informers off a shared factory.
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
 	forkInformer := dynFactory.ForResource(reconciler.ForksGVR)
 
-	// Pod informer (ADR-059): pod readiness transitions re-enqueue the owning
+	// Pod informer: pod readiness transitions re-enqueue the owning
 	// agent so its Ready conditions are recomputed. Separate factory — it pins a
 	// pod label selector the CR factory can't carry.
 	podFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -287,7 +287,7 @@ func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterfa
 
 // enqueuePodOwner re-enqueues the Agent that owns a pod (via the
 // agent-platform.ai/agent label) when the pod's readiness may have changed, so
-// the reconciler recomputes its Ready conditions (ADR-059). Fork pods carry
+// the reconciler recomputes its Ready conditions. Fork pods carry
 // the parent agent's label; re-reconciling the parent is harmless (idempotent).
 func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
 	pod, ok := obj.(*corev1.Pod)

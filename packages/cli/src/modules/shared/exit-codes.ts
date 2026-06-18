@@ -20,7 +20,7 @@ export const EXIT_AGENT_NOT_RESOLVED = 5;
 export const EXIT_RULE_NOT_FOUND = 6;
 
 /** Skills management verb couldn't reach the agent's pod — it's in an error
- *  state, or the wake-to-ready primitive (ADR-032) timed out. */
+ *  state, or the wake-to-ready primitive timed out. */
 export const EXIT_AGENT_NOT_REACHABLE = 7;
 
 /** Approval verb against an id that is unknown or already settled — the

@@ -1,7 +1,7 @@
 /**
  * Per-agent grants stored as fields on the Agent custom resource spec
- * (`grantedSecretIds` / `grantedConnectionIds`) — ADR-058 moved them off
- * ConfigMap annotations into spec, because they define what the agent can
+ * (`grantedSecretIds` / `grantedConnectionIds`) — they live in spec rather
+ * than ConfigMap annotations, because they define what the agent can
  * reach and the controller intersects them with the owner's credential
  * Secret list before mounting into the gateway.
  *
@@ -36,8 +36,7 @@ export interface AgentGrantsPort {
   setConnectionGrants(agentId: string, ids: string[]): Promise<void>;
   /**
    * List every owned agent that has the given secret in its granted set.
-   * Used by `secrets-service.update` to fan out edits to granted agents
-   * (ADR-040).
+   * Used by `secrets-service.update` to fan out edits to granted agents.
    */
   listAgentsGrantedSecret(secretId: string): Promise<GrantedAgentSummary[]>;
 }

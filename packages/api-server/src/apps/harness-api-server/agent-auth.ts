@@ -14,7 +14,7 @@ export interface AgentIdentity {
 /**
  * Resolve the calling agent from the URL `:id`.
  *
- * ADR-041: identity is enforced at the Istio waypoint via a per-agent
+ * Identity is enforced at the Istio waypoint via a per-agent
  * AuthorizationPolicy that ALLOWs only principal `<td>/ns/<agent-ns>/sa/<id>`
  * to path `/api/agents/<id>/*`. By the time a request reaches this handler
  * the URL `:id` is already authenticated — the application does not parse

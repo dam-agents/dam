@@ -72,8 +72,7 @@ spec:
         - name: redis
           image: {{ .Values.redis.image }}
           # AOF appendfsync everysec — relaxed durability matches the platform
-          # rule that Redis is allowed to lose recent ephemeral data on restart
-          # (see ADR-036).
+          # rule that Redis is allowed to lose recent ephemeral data on restart.
           command: ["sh", "-c"]
           args:
             - 'exec valkey-server --appendonly yes --appendfsync everysec --requirepass "$REDIS_PASSWORD"'

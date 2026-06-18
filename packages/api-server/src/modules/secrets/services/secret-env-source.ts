@@ -6,7 +6,7 @@ import {
 } from "../../agents/infrastructure/labels.js";
 import { createK8sSecretsPort } from "../infrastructure/k8s-secrets-port.js";
 
-/** `env` contributions for an agent's granted standalone secrets (ADR-040). */
+/** `env` contributions for an agent's granted standalone secrets. */
 export function createSecretEnvSource(deps: { k8sClient: K8sClient }): {
   forAgent(agentId: string): Promise<Contribution[]>;
 } {

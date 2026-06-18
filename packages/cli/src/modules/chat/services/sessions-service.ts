@@ -5,7 +5,7 @@ import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import type { AcpSessionClient } from "../infrastructure/acp-session-client.js";
 
 /** How `dam chat` picks the terminal session to attach to. Owned by the CLI:
- *  ADR-055 removed the server-side session store, so strategy resolution is a
+ *  there is no server-side session store, so strategy resolution is a
  *  client-side computation over the agent's live ACP session list. */
 export type TerminalStrategy =
   | { kind: "new" }

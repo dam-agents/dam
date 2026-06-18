@@ -1999,7 +1999,7 @@ describe("createAcpRuntime", () => {
   });
 });
 
-// ── ADR-055: platform `_meta` round-trip ──
+// ── platform `_meta` round-trip ──
 
 function makeFakeStore(): {
   store: SessionMetadataStore;
@@ -2051,7 +2051,7 @@ function lastSent(c: { sent: string[] }): any {
   return JSON.parse(c.sent[c.sent.length - 1]);
 }
 
-describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
+describe("createAcpRuntime — platform _meta round-trip", () => {
   it("captures _meta.platform on session/new and strips it before forwarding", () => {
     const fa = makeFakeAgent();
     const { store, sessions } = makeFakeStore();

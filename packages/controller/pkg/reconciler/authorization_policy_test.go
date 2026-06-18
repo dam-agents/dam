@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ADR-041 + ADR-027: per-fork harness policy admits the fork SA only to
+// Per-fork harness policy admits the fork SA only to
 // `/api/agents/<parent>/mcp` — NOT the parent's full
 // `/api/agents/<parent>/*` surface. This is the credential boundary
 // for forks: a compromised fork cannot reach pod-files SSE,
@@ -37,7 +37,7 @@ func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
 		"fork must reach ONLY the parent's MCP endpoint — not pod-files, not /internal/trigger")
 }
 
-// ADR-041 + ADR-027: per-fork ext-authz policy admits the fork SA to the
+// Per-fork ext-authz policy admits the fork SA to the
 // PARENT's per-instance ext-authz Service. The parent owner's HITL rules
 // stay the gate; the fork's gateway then injects the replier's
 // credential on the wire.
@@ -63,7 +63,7 @@ func TestBuildForkExtAuthzAuthorizationPolicy_TargetsParentService(t *testing.T)
 		"fork-extauthz policy admits the FORK's SA, not the parent's")
 }
 
-// ADR-041: harness policy targets the api-server's waypoint Gateway via
+// Harness policy targets the api-server's waypoint Gateway via
 // targetRefs (Gateway-API CRD), ALLOWs the SA principal to a path-prefix
 // keyed on the URL `:id`. Lives in the release ns alongside the waypoint.
 func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
@@ -89,7 +89,7 @@ func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
 		"harness policy must scope to /api/agents/<id>/* — the URL :id is the SPIFFE-bound identity")
 }
 
-// ADR-041: ext-authz policy targets the per-instance ext-authz Service
+// Ext-authz policy targets the per-instance ext-authz Service
 // (one per instance, named via cfg.ExtAuthzServiceName), ALLOWs only the
 // matching SA principal — no header check, no host match needed since
 // the Service itself is per-instance.

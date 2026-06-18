@@ -1,7 +1,7 @@
 /**
  * Generic helpers for the agents module. (Agents/forks are custom resources
- * and templates are file-mounted now — ADR-058 — and readiness comes from the
- * controller's Ready condition, ADR-059 — so the former ConfigMap and pod
+ * and templates are file-mounted now, and readiness comes from the
+ * controller's Ready condition — so the former ConfigMap and pod
  * helpers are gone.)
  */
 import crypto from "node:crypto";

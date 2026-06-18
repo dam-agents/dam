@@ -4,7 +4,7 @@
  * `agent-platform.ai/host-pattern` annotation that the controller consumes when
  * extending the cert SAN list and rendering an MITM-only filter chain.
  *
- * See ADR-035 §"L4 → L7 promotion": when the user adds a
+ * L4 → L7 promotion: when the user adds a
  * path-specific egress rule on a host that has no credentialed connection,
  * the host needs MITM so the L7 ext_authz handler can see method/path. The
  * allow-only Secret is the controller's signal to render that chain.

@@ -34,7 +34,7 @@ func TestBuildForkAgentJob_BasicShape(t *testing.T) {
 	assert.Equal(t, "agent-fork-job", job.Labels["agent-platform.ai/type"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/fork-id"])
 	// `agent` label references the parent — for resolver / ext_authz
-	// identity. `pair` is the fork's own name — for ADR-038 NetworkPolicy
+	// identity. `pair` is the fork's own name — for NetworkPolicy
 	// scoping.
 	assert.Equal(t, "my-agent", job.Labels["agent-platform.ai/agent"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/pair"])
@@ -103,7 +103,7 @@ func TestBuildForkAgentJob_MountsAgentPVC_NotVolumeClaimTemplate(t *testing.T) {
 	assert.Nil(t, persistentVol.EmptyDir)
 }
 
-// ADR-046: the merged Agent CM carries env + secretRef directly; the fork
+// The merged Agent CM carries env + secretRef directly; the fork
 // inherits them transitively through the AgentSpec.
 func TestBuildForkAgentJob_InheritsAgentEnvAndSecretRef(t *testing.T) {
 	// testAgent already carries Env=[ACP_PORT=8080] from the test fixture;
@@ -130,7 +130,7 @@ func envMap(envs []corev1.EnvVar) map[string]string {
 }
 
 func TestBuildForkAgentJob_NoSidecar(t *testing.T) {
-	// ADR-038: agent and gateway are paired pods, not co-located. Fork
+	// Agent and gateway are paired pods, not co-located. Fork
 	// agents have only one container.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
 	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, configMapOwnerRef(testForkOwnerCM), secrets, "10.96.42.42")
@@ -156,7 +156,7 @@ func TestBuildForkAgentJob_NoCredentialMountsOnAgent(t *testing.T) {
 
 	for _, v := range job.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "cred-platform-cred-",
-			"fork agent pod must not mount credential Secrets (ADR-038)")
+			"fork agent pod must not mount credential Secrets")
 		assert.NotEqual(t, "envoy-bootstrap", v.Name,
 			"fork agent must not mount the Envoy bootstrap CM")
 		assert.NotEqual(t, "envoy-tls", v.Name,

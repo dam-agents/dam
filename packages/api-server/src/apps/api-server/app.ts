@@ -148,7 +148,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
-  // Templates are file-mounted config loaded once at boot (ADR-058); shared
+  // Templates are file-mounted config loaded once at boot; shared
   // across requests rather than re-read from K8s on each tRPC call.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   // gitRepos catalog — same boot-loaded, file-mounted pattern as templates.
@@ -442,7 +442,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // File import — bundle is a tar (or tar.gz) inside multipart/form-data;
   // we wake the pod via the reachability primitive and stream the body
   // straight to agent-runtime, which lands it under `<homeDir>/work`
-  // with top-level replace semantics. See docs/adrs/045-file-import.md.
+  // with top-level replace semantics.
   //
   // The proxy uses node:http directly (NOT undici fetch). undici buffers
   // arbitrary-sized request bodies in memory even with `duplex: "half"`,

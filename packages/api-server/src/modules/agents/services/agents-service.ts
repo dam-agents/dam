@@ -45,8 +45,8 @@ import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
 /**
- * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
- * (ADR-035). Declared locally so the agents module doesn't import across
+ * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.
+ * Declared locally so the agents module doesn't import across
  * module boundaries; the egress-rules module's adapter structurally
  * satisfies this shape.
  */
@@ -300,7 +300,7 @@ export function createAgentsService(deps: {
         spec.imagePullSecretRef = deps.registrySecretPort.secretName(agentId);
       }
 
-      // ADR-058: no desiredState — a freshly-created agent runs (recent
+      // No desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
       let infra: InfraAgent;
       try {
@@ -517,7 +517,7 @@ export function createAgentsService(deps: {
       }
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
-      // ADR-058: wake is an unconditional activity poke; the reconciler scales
+      // Wake is an unconditional activity poke; the reconciler scales
       // the pair up in response.
       securityLog("info", "agent.wake", {
         category: "privileged",

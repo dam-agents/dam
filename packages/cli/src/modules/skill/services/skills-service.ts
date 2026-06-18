@@ -111,7 +111,7 @@ export interface SkillsService {
 
   /** skills.publish — opens a GitHub PR for a standalone skill. Keys on the
    *  source `id` (unlike install/uninstall, which key on the git URL). The
-   *  pod is woken server-side (ADR-032); the CLI surfaces only the residual
+   *  pod is woken server-side; the CLI surfaces only the residual
    *  failures. */
   publish(input: {
     agentId: string;

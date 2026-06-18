@@ -1,5 +1,5 @@
 // Package crdcheck asserts at startup that the cluster's CRDs are at least as
-// new as the schema this controller was built against (ADR-068). Environment
+// new as the schema this controller was built against. Environment
 // deploys never upgrade the shared CRDs, so a release can run ahead of the
 // cluster schema — admission would then silently prune its writes; failing
 // loud here is the designed alternative.
@@ -22,7 +22,7 @@ var crdGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version:
 
 // Assert returns an error when a platform CRD is missing or its
 // schema-generation annotation is older than this build's; the remedy is the
-// operator-run CRD upgrade in the ops repository (ADR-068).
+// operator-run CRD upgrade in the ops repository.
 func Assert(ctx context.Context, client dynamic.Interface) error {
 	required := map[string]int{
 		"agents." + apiv1.GroupVersion.Group: apiv1.AgentSchemaGeneration,
@@ -31,14 +31,14 @@ func Assert(ctx context.Context, client dynamic.Interface) error {
 	for name, want := range required {
 		crd, err := client.Resource(crdGVR).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
-			return fmt.Errorf("CRD %s is not installed — install the chart CRDs before starting the controller (ADR-068)", name)
+			return fmt.Errorf("CRD %s is not installed — install the chart CRDs before starting the controller", name)
 		}
 		if err != nil {
 			return fmt.Errorf("reading CRD %s: %w", name, err)
 		}
 		got, _ := strconv.Atoi(crd.GetAnnotations()[apiv1.SchemaGenerationAnnotation])
 		if got < want {
-			return fmt.Errorf("CRD %s is at schema generation %d but this controller requires %d — run the operator CRD upgrade before deploying this release (ADR-068)", name, got, want)
+			return fmt.Errorf("CRD %s is at schema generation %d but this controller requires %d — run the operator CRD upgrade before deploying this release", name, got, want)
 		}
 	}
 	return nil

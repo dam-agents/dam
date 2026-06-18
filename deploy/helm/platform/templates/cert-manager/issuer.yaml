@@ -1,7 +1,7 @@
 {{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
 {{/*
-Cluster issuers backing the experimental Envoy credential-injector path
-(ADR-033). The bootstrap issuer signs the platform-mitm-ca Certificate; the CA
+Cluster issuers backing the experimental Envoy credential-injector path.
+The bootstrap issuer signs the platform-mitm-ca Certificate; the CA
 issuer then signs per-agent leaf certs that Envoy uses to terminate the
 agent's TLS for credential injection.
 

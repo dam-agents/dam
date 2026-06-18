@@ -12,7 +12,7 @@ let cachedAuthConfig: AuthConfig | null = null;
  * The Keycloak theme runs on a different host than the UI so it can't read
  * localStorage directly. We hand the current preference off as an OIDC
  * extra query param (`kc_theme`); the theme picks it up pre-hydration and
- * applies `.dark` on <html> without a light/dark flash. See ADR-054.
+ * applies `.dark` on <html> without a light/dark flash.
  */
 function signinExtraParams(): Record<string, string> {
   return { kc_theme: readStoredTheme() };

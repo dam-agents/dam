@@ -19,7 +19,7 @@ import {
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
 
-/** The agent-platform.ai/v1 Agent custom resource (ADR-058). The api-server
+/** The agent-platform.ai/v1 Agent custom resource. The api-server
  *  writes spec + grant fields; the controller owns the status subresource. */
 export interface AgentObject extends KubeObject {
   spec?: Record<string, unknown>;
@@ -35,14 +35,14 @@ interface AgentStatusObject {
 }
 
 /** The observed Agent, read off the custom resource. State is derived purely
- *  from the controller-published conditions (ADR-058/059): no desiredState, and
+ *  from the controller-published conditions: no desiredState, and
  *  the non-authoritative status phase is not consumed. */
 export interface InfraAgent {
   id: string;
   name: string;
   templateId?: string;
   spec: AgentSpec;
-  /** The authoritative Ready condition (ADR-059): Ready = AgentPodReady ∧
+  /** The authoritative Ready condition: Ready = AgentPodReady ∧
    *  GatewayPodReady. False until the controller publishes it. */
   ready: boolean;
   /** Intentionally scaled to zero — Ready=False with the Hibernated reason.
@@ -55,7 +55,7 @@ export interface InfraAgent {
 }
 
 /** Map the controller's conditions to the public-facing AgentState. Mostly
- *  condition-driven (ADR-059); `preparingWorkspace` (a pending workspace-seed
+ *  condition-driven; `preparingWorkspace` (a pending workspace-seed
  *  clone) refines a Ready agent into the not-yet-usable phase. */
 export function computeAgentState(
   infra: InfraAgent,
@@ -68,7 +68,7 @@ export function computeAgentState(
   return "starting";
 }
 
-/** The status of the controller-published `Ready` condition (ADR-059), or
+/** The status of the controller-published `Ready` condition, or
  *  undefined when the controller has not published it yet (mid-create /
  *  pre-first-reconcile). Absent or False means not ready — there is no probe. */
 export function readyConditionStatus(
@@ -102,8 +102,8 @@ export function agentIsOwnedBy(obj: KubeObject, owner: string): boolean {
 
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
-  // obj.spec is the generated AgentSpecCR (K8s validated it at admission,
-  // ADR-058) and is the public spec as-is — the grants are api-server-written
+  // obj.spec is the generated AgentSpecCR (K8s validated it at admission)
+  // and is the public spec as-is — the grants are api-server-written
   // intent, not controller status, so they stay. Only guarantee name (the CR
   // marks it optional; fall back to the resource id).
   const crSpec = (obj.spec ?? {}) as AgentSpecCR;

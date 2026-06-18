@@ -107,7 +107,7 @@ export function startAuditLogSaga(): Subscription {
 
   on<ForeignReplyReceived>(EventType.ForeignReplyReceived, (e) =>
     // The single most security-relevant channel action: a NON-owner driving
-    // someone else's agent under their own credentials (ADR-027). Project
+    // someone else's agent under their own credentials. Project
     // fields explicitly — e.prompt MUST NOT be logged.
     securityLog("info", "channel.foreign_turn.begin", {
       category: "channel",

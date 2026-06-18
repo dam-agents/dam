@@ -12,15 +12,15 @@ export interface K8sClient {
   /** The namespace this client is scoped to (i.e. where agent pods live). */
   readonly namespace: string;
 
-  // Agents/forks are custom resources and templates are file-mounted now
-  // (ADR-058), so the api-server makes no ConfigMap calls — none are exposed.
+  // Agents/forks are custom resources and templates are file-mounted now,
+  // so the api-server makes no ConfigMap calls — none are exposed.
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
   createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
   replaceSecret(name: string, body: k8s.V1Secret): Promise<k8s.V1Secret>;
   deleteSecret(name: string): Promise<void>;
 
-  // agent-platform.ai/v1 custom resources (ADR-058). `plural` selects the
+  // agent-platform.ai/v1 custom resources. `plural` selects the
   // resource (e.g. "agents"); the group/version are the platform's.
   getCustomObject(plural: string, name: string): Promise<KubeObject | null>;
   listCustomObjects(
@@ -52,7 +52,7 @@ export interface KubeObject {
   status?: unknown;
 }
 
-// The platform's custom-resource group/version (ADR-058). Kept here so the
+// The platform's custom-resource group/version. Kept here so the
 // generic CR methods stay caller-agnostic about coordinates.
 const CR_GROUP = "agent-platform.ai";
 const CR_VERSION = "v1";
@@ -186,7 +186,7 @@ export function createApi(namespace: string) {
   kc.loadFromDefault();
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
-    // Injected into the fork orchestrator (ADR-058) so it stays unit-testable
+    // Injected into the fork orchestrator so it stays unit-testable
     // with a fake. The agents K8sClient builds its own CustomObjectsApi
     // internally — it's faked in tests, so it needs no injected client.
     customObjects: kc.makeApiClient(k8s.CustomObjectsApi),

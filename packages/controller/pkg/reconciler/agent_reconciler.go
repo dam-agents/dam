@@ -24,7 +24,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// AgentReconciler renders an Agent custom resource (ADR-058) into its agent +
+// AgentReconciler renders an Agent custom resource into its agent +
 // gateway StatefulSets, Services, per-agent SA / ext-authz / AuthorizationPolicies
 // and egress NetworkPolicy, and publishes observed state on the status subresource.
 type AgentReconciler struct {
@@ -44,8 +44,8 @@ func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconcile
 	return r
 }
 
-// Reconcile renders the Agent's resources and publishes its status conditions
-// (ADR-058/059). The controller is the sole status writer; the api-server routes
+// Reconcile renders the Agent's resources and publishes its status conditions.
+// The controller is the sole status writer; the api-server routes
 // on Ready and surfaces the Reconciled message as the agent's error. Reconciled
 // ("last render accepted") and readiness ("pods running") are orthogonal —
 // Ready=True with Reconciled=False is valid (running pods stay routable while a
@@ -70,11 +70,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	timer := newReconcileTimer("agent", name)
 	defer timer.done()
 
-	// ADR-058: K8s validated the spec at admission, so the controller trusts
+	// K8s validated the spec at admission, so the controller trusts
 	// the typed resource — no app-layer re-parse or re-validation.
 	//
 	// The `agent-platform.ai/owner` label scopes credential Secret discovery;
-	// grants are read from spec (ADR-058 moved them off annotations).
+	// grants are read from spec (they were moved off annotations).
 	owner := agent.Labels["agent-platform.ai/owner"]
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner,
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
@@ -109,7 +109,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("leafCert")
 
-	// ADR-041: per-agent SA must exist before the agent + gateway pods
+	// Per-agent SA must exist before the agent + gateway pods
 	// start (kubelet rejects pod scheduling on a missing SA, and Istio
 	// stamps the SPIFFE workload cert from it).
 	if err := r.ensureServiceAccount(ctx, name, ownerRef); err != nil {
@@ -117,7 +117,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("serviceAccount")
 
-	// ADR-041: per-agent ext-authz Service in the release namespace —
+	// Per-agent ext-authz Service in the release namespace —
 	// the gateway pod's Envoy bootstrap dials this Service for HITL
 	// approvals, and the per-agent AuthorizationPolicy below pins it
 	// to the matching SA principal.
@@ -143,25 +143,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// Per-pair agent egress NetworkPolicy. Agent pods opt out of ambient
 	// mesh, so kernel NP is the only thing gating agent egress; it admits
 	// DNS and the paired gateway pod's Envoy port, nothing else. The
-	// gateway's Envoy ext_authz filter (ADR-035) gates which destinations
+	// gateway's Envoy ext_authz filter gates which destinations
 	// the agent's HTTPS_PROXY traffic reaches past the gateway.
 	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("egressNetworkPolicy")
 
-	// ADR-058: run state is activity-driven — there is no desiredState. The
+	// Run state is activity-driven — there is no desiredState. The
 	// reconciler scales *up* when recent activity says the agent should run;
 	// scale-*down* is the idle checker's probe-gated job, so a reconcile
 	// triggered for any other reason can never hibernate a busy agent.
 	running := shouldRun(agent.Annotations, r.config.AgentBase.IdleTimeout.AsDuration(), time.Now().UTC())
 
-	// ADR-038: paired pods, rendered as a unit. Render the gateway first
+	// Paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
-	// starts dialing it. ADR-041: pair-key NetworkPolicies are gone —
+	// starts dialing it. Pair-key NetworkPolicies are gone —
 	// pair isolation is now enforced by the per-agent AuthorizationPolicy
 	// on the gateway Service (mesh-level, cryptographic).
-	// ADR-058: an api-server-set roll-rev annotation requests a rolling
+	// An api-server-set roll-rev annotation requests a rolling
 	// restart. Stamp it into both pod templates so bumping it rolls the pair
 	// (UI restart button, grant changes) without a spec/status write.
 	rollRev := agent.Annotations[annRollRev]
@@ -219,7 +219,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("agentStatefulSet")
 
-	// ADR-058: the reconciler only scales up; scale-down and the Hibernated
+	// The reconciler only scales up; scale-down and the Hibernated
 	// readiness reason are the idle checker's job. So readiness is published
 	// only for a running agent — but rendering succeeded either way, so an idle
 	// agent still records Reconciled rather than keeping a stale error.
@@ -234,18 +234,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 }
 
 // publishReadiness observes the agent + gateway StatefulSet rollouts and
-// publishes the readiness conditions (ADR-059). Ready = AgentPodReady ∧
+// publishes the readiness conditions. Ready = AgentPodReady ∧
 // GatewayPodReady — the agent cannot make credentialed egress without its
 // gateway, so both are required. The pod informer re-enqueues the agent on pod
 // transitions, so this runs again as pods come up and Phase advances Pending →
-// Running. The api-server routes on ConditionReady (superseding ADR-032's
+// Running. The api-server routes on ConditionReady (superseding the earlier
 // pod-only live check).
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	gen := agent.Generation
 	// Readiness reflects the StatefulSet's *observed rollout*, not any intent
 	// marker: a pod counts only when it's Ready AND on the latest revision the
-	// StatefulSet has rolled out (ADR-059). This is correct regardless of who
+	// StatefulSet has rolled out. This is correct regardless of who
 	// changed the Agent (api-server, kubectl, GitOps) or how (roll-rev, spec
 	// edit, credential set) — every change to the rendered template bumps the
 	// StatefulSet revision, so a still-Ready pod on a superseded revision reads
@@ -664,7 +664,7 @@ func (r *AgentReconciler) SetBackoffExceeded(ctx context.Context, name string, a
 }
 
 // stampRollRev writes the roll-rev value into a StatefulSet's pod-template
-// annotations (ADR-058). A changed value diverges the template, so the
+// annotations. A changed value diverges the template, so the
 // StatefulSet rolls its pod; an empty value is left unset so untouched agents
 // don't churn. applyStatefulSet propagates the template, so this reaches
 // already-running pairs too.
@@ -679,7 +679,7 @@ func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
 }
 
 // applyStatefulSet creates or updates a StatefulSet, owning its replica count
-// per the activity-driven model (ADR-058). When `running` is true it scales the
+// per the activity-driven model. When `running` is true it scales the
 // StatefulSet to 1; when false it *preserves* the existing replica count rather
 // than forcing 0 — so the reconciler can wake an agent but never hibernates
 // one. Scale-down is the idle checker's probe-gated responsibility.

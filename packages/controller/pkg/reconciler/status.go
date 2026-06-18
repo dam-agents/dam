@@ -15,8 +15,8 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// updateAgentStatus read-modify-writes the Agent's status subresource (ADR-058
-// / ADR-059). `mutate` receives the current observed status and adjusts it in
+// updateAgentStatus read-modify-writes the Agent's status subresource.
+// `mutate` receives the current observed status and adjusts it in
 // place — typically via setStatusCondition for conditions plus direct Phase /
 // ObservedGeneration assignment. The write is skipped when the mutation is a
 // no-op, which is load-bearing: the controller watches Agents, so an
@@ -70,7 +70,7 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 	})
 }
 
-// writeForkStatus overwrites the Fork's status subresource (ADR-058). Forks
+// writeForkStatus overwrites the Fork's status subresource. Forks
 // carry no conditions, so this is a whole-status replace; the no-op guard keeps
 // an unchanged observation from re-triggering reconcile (the controller watches
 // Forks).

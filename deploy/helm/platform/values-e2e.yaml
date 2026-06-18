@@ -1,4 +1,4 @@
-# E2E test cluster overlay (ADR-056). Layered on top of values-local.yaml
+# E2E test cluster overlay. Layered on top of values-local.yaml
 # by `mise run e2e`. Flips the e2e.enabled gate so the api-server registers
 # its control tRPC namespace and the mock harness becomes drivable from
 # Playwright. values-local.yaml already enables `keycloak.testUser` (dev/dev).

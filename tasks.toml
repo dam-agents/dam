@@ -163,7 +163,7 @@ else
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
-# 1. Delete agents + forks (now custom resources — ADR-058) so the controller
+# 1. Delete agents + forks (now custom resources) so the controller
 # stops reconciling them, plus the remaining durable ConfigMaps, then sweep the
 # StatefulSets/pods it owns and the PVCs k8s retains (StatefulSet
 # volumeClaimTemplates are never GC'd with their owner). Templates are

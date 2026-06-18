@@ -27,9 +27,9 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 rules:
-  # ADR-058: the reconciled resources are agent-platform.ai/v1 Agent + Fork
+  # the reconciled resources are agent-platform.ai/v1 Agent + Fork
   # custom resources. The controller watches them and is the sole writer of
-  # their status subresource (ADR-059); the api-server owns spec.
+  # their status subresource; the api-server owns spec.
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents", "forks"]
     verbs: ["get", "list", "watch"]
@@ -40,7 +40,7 @@ rules:
   # Services, …) are owner-refed to the Agent/Fork CR with blockOwnerDeletion.
   # K8s admission only permits that if the creator can update the owner's
   # finalizers, so the controller needs the agents/forks finalizers subresource.
-  # (Pre-ADR-058 the children were owned by the agent ConfigMap, hence the old
+  # (Previously the children were owned by the agent ConfigMap, hence the old
   # configmaps/finalizers grant — now dead.)
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents/finalizers", "forks/finalizers"]
@@ -53,13 +53,13 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # ADR-041: per-agent ServiceAccounts give the agent + gateway pods
+  # per-agent ServiceAccounts give the agent + gateway pods
   # their SPIFFE workload identity. Owner-refed to the agent CM; K8s
   # GC reaps them on agent deletion.
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # ADR-041: per-agent Istio AuthorizationPolicies (gateway admission,
+  # per-agent Istio AuthorizationPolicies (gateway admission,
   # harness path-prefix at the waypoint, ext-authz Service principal).
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
@@ -95,7 +95,7 @@ rules:
     resources: ["storageclasses"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    # Per-fork gateway Pod (ADR-038): the fork's paired gateway is a bare
+    # Per-fork gateway Pod: the fork's paired gateway is a bare
     # Pod, not a StatefulSet, so the controller needs full CRUD on pods
     # in the agent namespace to bring it up and tear it down with the
     # fork Job. Owner-refed to the fork ConfigMap.
@@ -113,7 +113,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- end }}
 ---
-# CRDs are cluster-scoped, so the startup schema assert (ADR-068) needs a
+# CRDs are cluster-scoped, so the startup schema assert needs a
 # ClusterRole even under otherwise namespace-scoped RBAC; resourceNames limits
 # it to read-only access on the two platform CRDs.
 apiVersion: rbac.authorization.k8s.io/v1

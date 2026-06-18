@@ -21,7 +21,7 @@ export interface ExtAuthzGrpcAppDeps {
   gate: ExtAuthzGate;
   /** Helm release name + agent namespace, used to parse instance ID
    *  from the per-instance ext-authz Service hostname Envoy dialled.
-   *  ADR-041: identity is derived from the destination Service the
+   *  Identity is derived from the destination Service the
    *  gateway pod's Envoy was configured to dial. The Istio
    *  AuthorizationPolicy on each per-instance Service ensures only the
    *  matching SA principal can reach it, so the destination Service IS
@@ -36,7 +36,7 @@ export interface ExtAuthzGrpcAppDeps {
  * delegates to the same `ExtAuthzGate` the HTTP path uses — single
  * decider, two transports.
  *
- * ADR-041: instance identity is derived from the gRPC `:authority` of the
+ * Instance identity is derived from the gRPC `:authority` of the
  * per-instance ext-authz Service (`<release>-extauthz-<id>`). The
  * AuthorizationPolicy on that Service ALLOWs only the matching SA
  * principal — by the time a request reaches this handler, the gateway
@@ -58,7 +58,7 @@ export async function startExtAuthzGrpcApp(
   const impl: AuthorizationServer = {
     check: async (call, callback) => {
       try {
-        // ADR-041: extract instance ID from the gRPC :authority — i.e. the
+        // Extract instance ID from the gRPC :authority — i.e. the
         // per-instance ext-authz Service hostname Envoy dialled. grpc-js
         // exposes :authority via the public `getHost()` on ServerSurfaceCall;
         // pseudo-headers are NOT in `call.metadata`. Fail closed if the

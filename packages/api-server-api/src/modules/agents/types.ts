@@ -43,11 +43,11 @@ export type AgentState =
   | "error";
 
 // The public projection of the Agent CR spec: the generated AgentSpecCR (the
-// Go-authored CRD is the single source, ADR-058) with name guaranteed (the CRD
+// Go-authored CRD is the single source) with name guaranteed (the CRD
 // marks it optional). Layer A fields (security context, scheduling, pod
 // metadata) are chart-only and never in the CRD spec, so they're absent here
-// too (ADR-042). The connection/secret grants are api-server-written spec
-// intent (ADR-058), so they belong in the spec.
+// too. The connection/secret grants are api-server-written spec
+// intent, so they belong in the spec.
 export type AgentSpec = AgentSpecCR & { name: string };
 
 export interface Agent {
@@ -94,7 +94,7 @@ export interface AgentsService {
    * from hibernation if needed. Idempotent; single-flight per id; bumps
    * `agent-platform.ai/last-activity` on every success. Channel adapters
    * and any server-side caller that needs to talk to the agent must await
-   * this before connecting. See ADR-032.
+   * this before connecting.
    */
   ensureReady: (id: string) => Promise<void>;
   connectSlack: (

@@ -40,7 +40,7 @@ export interface StateBuilder {
   ): Promise<StatePayload>;
 }
 
-/** `env` contributions for an agent's granted standalone secrets (secrets module, ADR-040). */
+/** `env` contributions for an agent's granted standalone secrets (secrets module). */
 export interface SecretEnvSource {
   forAgent(agentId: string): Promise<Contribution[]>;
 }

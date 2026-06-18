@@ -42,12 +42,12 @@ func applyForkParentPVCs(job *batchv1.Job, parentPVCs map[string]string) {
 }
 
 // BuildForkAgentJob constructs the agent half of the per-turn paired pod
-// pair (ADR-038). The fork agent runs the harness; egress credential
+// pair. The fork agent runs the harness; egress credential
 // injection happens in the paired fork gateway pod, reached via HTTPS_PROXY.
 //
 // `credentialSecrets` are the replier's `(owner=foreignSub, connection=*)`
 // K8s Secrets — the instance owner's Secrets must NOT appear here. They mount
-// only on the paired gateway pod (ADR-027 + ADR-038). The agent container
+// only on the paired gateway pod. The agent container
 // itself sees no Secret bytes.
 //
 // Forks deliberately do NOT receive `PLATFORM_POD_FILES_EVENTS_URL`, so the
@@ -86,9 +86,9 @@ func BuildForkAgentJob(
 		// `agent-platform.ai/agent` references the *parent* agent for
 		// fork pods — the pod-IP resolver and ext_authz identity flow
 		// through that label, so traffic from the fork resolves under the
-		// parent's egress rules (ADR-027).
+		// parent's egress rules.
 		ForkLabelAgentRef: forkSpec.AgentName,
-		// Pair key + role for ADR-038 NetworkPolicy / Service scoping.
+		// Pair key + role for NetworkPolicy / Service scoping.
 		// Using the fork name as the pair key isolates the fork from the
 		// parent agent's pair: fork agent only reaches fork gateway,
 		// never the parent's gateway.
@@ -98,7 +98,7 @@ func BuildForkAgentJob(
 	// Fork agent opts out of ambient mesh, mirroring the long-lived agent
 	// shape. NetworkPolicy at the kernel is the boundary; the fork gateway
 	// pod remains a mesh participant for SPIFFE-keyed harness + ext-authz
-	// admission via the per-fork AuthorizationPolicies (ADR-041, ADR-027).
+	// admission via the per-fork AuthorizationPolicies.
 	podLabels := map[string]string{}
 	for k, v := range labels {
 		podLabels[k] = v
@@ -132,7 +132,7 @@ func BuildForkAgentJob(
 	// Placeholder credential envs from the replier's K8s Secrets — same
 	// purpose as the long-lived shape: satisfy the harness's is-env-set
 	// check; the gateway's Envoy overwrites the header on the wire.
-	// ADR-046: the merged AgentSpec carries the only user-owned env layer.
+	// The merged AgentSpec carries the only user-owned env layer.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -175,7 +175,7 @@ func BuildForkAgentJob(
 
 	// CA cert volume — projected from the per-fork cert-manager-issued leaf
 	// Secret (single-key projection). The leaf private key (tls.key) lives
-	// only on the paired gateway pod (ADR-038).
+	// only on the paired gateway pod.
 	if len(credentialSecrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
@@ -287,7 +287,7 @@ func BuildForkAgentJob(
 
 	podSpec := corev1.PodSpec{
 		// Fork agent opts out of ambient (no SPIFFE on the agent
-		// half). ADR-027: the per-fork SA still scopes credential
+		// half). The per-fork SA still scopes credential
 		// reads at the controller level — fork's gateway pod mounts
 		// the replier's Secrets, never the parent's. Harness identity
 		// flows through the fork *gateway*'s SPIFFE principal

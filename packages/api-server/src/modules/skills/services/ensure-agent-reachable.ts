@@ -8,7 +8,7 @@ import {
 /**
  * Make an agent's pod reachable for a skills-management call, or fail clearly.
  * Fast-fails on a known error state (waking is hopeless); otherwise wakes via
- * the ADR-032 reachability primitive and maps its timeout/error into a clean
+ * the reachability primitive and maps its timeout/error into a clean
  * TRPCError so the caller never sees a raw Error and never hangs. Returns the
  * fetched agent so callers that need the spec (e.g. publish → skillPaths) skip
  * a second get.

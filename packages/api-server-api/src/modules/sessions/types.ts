@@ -17,7 +17,7 @@ export enum SessionMode {
 export const sessionModeSchema = z.enum(SessionMode);
 
 /**
- * Sessions are agent-owned (ADR-055): the UI and channel workers read, create,
+ * Sessions are agent-owned: the UI and channel workers read, create,
  * and mutate them directly over ACP, decoding this view from `_meta.platform`.
  * The server has no session service — the one schedule-scoped mutation (reset)
  * lives on the schedules service.

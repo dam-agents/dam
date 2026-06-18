@@ -28,9 +28,9 @@ import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 /** Platform-reserved paths under the working directory. The controller writes
- *  trigger payloads to `.triggers/` (ADR-008) and uses `.initialized` as a
+ *  trigger payloads to `.triggers/` and uses `.initialized` as a
  *  setup marker; user reads/writes against either would break agent lifecycle.
- *  See ADR-050. Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
+ *  Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
 const RESERVED = new Set([".triggers", ".initialized"]);
 
 /** Fallback check for binary content when magic-byte detection fails. Null bytes in the first 8 KB are a reliable signal. */

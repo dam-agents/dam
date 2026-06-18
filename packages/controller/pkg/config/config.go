@@ -54,9 +54,8 @@ type Config struct {
 	// (gRPC). Both Envoy filters use the same endpoint:
 	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
 	//   - Network filter on the catch-all chain (L4 — SNI only)
-	// (ADR-035).
 	//
-	// ADR-041: the host is per-instance (one Service per instance, named
+	// The host is per-instance (one Service per instance, named
 	// `<release>-extauthz-<id>`, gated by AuthorizationPolicy to that
 	// instance's SA principal). The gateway pod's Envoy bootstrap is
 	// templated with its instance's per-instance ext-authz Service URL —
@@ -219,7 +218,7 @@ func (w *WarmPool) validate() error {
 }
 
 // APIServerURL is the harness Service URL, used by agent-runtime to dial
-// MCP / pod-files / trigger endpoints. ADR-041: this points at the
+// MCP / pod-files / trigger endpoints. This points at the
 // `-apiserver-harness` Service which carries the istio.io/use-waypoint
 // label; in-mesh dials route through the waypoint where per-instance
 // AuthorizationPolicies enforce principal == URL `:id`.
@@ -236,8 +235,8 @@ func (c *Config) ExtAuthzServiceName(instanceID string) string {
 }
 
 // ExtAuthzHostFor returns the FQDN of the per-instance ext-authz Service
-// for `instanceID`. Used to template the gateway pod's Envoy bootstrap
-// (ADR-041). The Service is gated by an AuthorizationPolicy keyed on
+// for `instanceID`. Used to template the gateway pod's Envoy bootstrap.
+// The Service is gated by an AuthorizationPolicy keyed on
 // the same SA principal, so a gateway pod can only successfully dial
 // the Service for its own instance.
 func (c *Config) ExtAuthzHostFor(instanceID string) string {

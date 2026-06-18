@@ -32,9 +32,9 @@ export interface PublishServiceDeps {
 
 /**
  * Publish orchestrator — thin proxy. Validates that the user owns the
- * instance + source and wakes a hibernated agent (ADR-032), then delegates
+ * instance + source and wakes a hibernated agent, then delegates
  * everything else to agent-runtime (which goes through the in-pod Envoy
- * sidecar's credential injector for the GitHub token swap, ADR-033).
+ * sidecar's credential injector for the GitHub token swap).
  *
  * Upstream gateway errors (app_not_connected / access_restricted) get
  * re-thrown as tRPC errors with the `connect_url` / `manage_url` carried

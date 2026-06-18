@@ -3,7 +3,7 @@ package reconciler
 import "time"
 
 // Activity annotations the api-server stamps on an Agent. They are the only
-// inputs to the run/hibernate decision now that desiredState is gone (ADR-058).
+// inputs to the run/hibernate decision now that desiredState is gone.
 const (
 	annActiveSession = "agent-platform.ai/active-session"
 	annLastActivity  = "agent-platform.ai/last-activity"

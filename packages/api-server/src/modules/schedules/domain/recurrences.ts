@@ -56,7 +56,7 @@ export function validateHasVisibleOccurrence(
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   if (spec.type === "cron") {
     try {
-      // Legacy cron schedules are UTC by contract (ADR-031).
+      // Legacy cron schedules are UTC by contract.
       const cron = CronExpressionParser.parse(spec.cron, {
         currentDate: from,
         tz: "UTC",

@@ -1,5 +1,5 @@
 /** K8s label keys and well-known values used across the agents module.
- *  Per ADR-046, Instance and Agent merged into Agent. The previous
+ *  Instance and Agent merged into Agent. The previous
  *  agent-instance type and agent-platform.ai/agent label are gone. */
 
 // ---- Label keys ----
@@ -11,7 +11,7 @@ export const LABEL_CHANNEL_TYPE = "agent-platform.ai/channel-type";
 export const LABEL_SYSTEM = "agent-platform.ai/system";
 export const LABEL_CREATED_BY = "agent-platform.ai/created-by";
 
-// Per-pod role within an agent pair (ADR-038). Distinguishes the agent
+// Per-pod role within an agent pair. Distinguishes the agent
 // pod from the paired gateway (Envoy) pod that mounts credentials.
 export const LABEL_ROLE = "agent-platform.ai/role";
 export const ROLE_AGENT = "agent";
@@ -33,7 +33,7 @@ export const SECRET_TYPE_REGISTRY_PULL = "registry-pull";
 export const SPEC_KEY = "spec.yaml";
 export const STATUS_KEY = "status.yaml";
 
-// ---- agent-platform.ai/v1 Agent custom resource coordinates (ADR-058) ----
+// ---- agent-platform.ai/v1 Agent custom resource coordinates ----
 export const GROUP = "agent-platform.ai";
 export const VERSION = "v1";
 export const AGENTS_PLURAL = "agents";
@@ -43,7 +43,7 @@ export const KIND_AGENT = "Agent";
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 
-// Roll trigger (ADR-058 A3). The api-server bumps this annotation on the Agent
+// Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status
 // write. Used by the UI restart button and to force a pod re-render when a
@@ -54,5 +54,5 @@ export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
 // Reason the controller stamps on the Ready condition when it hibernates an
 // agent (scales to zero). Lets the api-server tell "hibernated" from "starting"
 // — both report Ready=False — from conditions alone. Mirrors the controller
-// constant (ADR-059).
+// constant.
 export const READY_REASON_HIBERNATED = "Hibernated";

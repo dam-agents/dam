@@ -1,7 +1,7 @@
 /**
  * Periodic orphan reaper for per-agent Postgres state.
  *
- * The agent identity lives in K8s Agent custom resources (ADR-058); rules and
+ * The agent identity lives in K8s Agent custom resources; rules and
  * approvals live in Postgres keyed by `agent_id`. There's no cross-store
  * foreign key, and `agents.delete` runs the cleanup hooks best-effort.
  * Anything those hooks miss (replica died mid-delete, hook threw, manual

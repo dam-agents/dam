@@ -12,7 +12,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// fakeGetter implements AgentGetter for tests (ADR-058: agents are CRs).
+// fakeGetter implements AgentGetter for tests (agents are CRs).
 type fakeGetter struct {
 	agents map[string]*apiv1.Agent
 }

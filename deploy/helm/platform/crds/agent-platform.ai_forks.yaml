@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "1"
+    agent-platform.ai/crd-schema-generation: "2"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: forks.agent-platform.ai
@@ -30,7 +30,7 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: Fork is a per-turn impersonation run derived from an Agent (ADR-046).
+        description: Fork is a per-turn impersonation run derived from an Agent.
         properties:
           apiVersion:
             description: |-
@@ -51,8 +51,8 @@ spec:
             type: object
           spec:
             description: |-
-              ForkSpec is the per-turn ephemeral runtime that derives from an Agent
-              (ADR-046: Forks survived the Instance/Agent collapse). The parent Agent's
+              ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
+              Forks survived the Instance/Agent collapse. The parent Agent's
               egress surface scopes what the fork can reach. The api-server is the sole
               writer.
             properties:

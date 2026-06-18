@@ -26,7 +26,7 @@ func portInt32(p int) int32 {
 	return int32(p)
 }
 
-// ADR-038 paired-pod labels. `LabelPair` identifies the two pods of a single
+// Paired-pod labels. `LabelPair` identifies the two pods of a single
 // agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
 //
 // Pair scope is *per orchestration unit*, not per agent: long-lived agents
@@ -35,10 +35,10 @@ func portInt32(p int) int32 {
 // The `LabelAgent` label still identifies the parent agent for ext_authz /
 // pod-IP resolver purposes — for long-lived pods it equals the pair key,
 // for fork pods it points at the parent agent so traffic resolves under
-// the parent's egress rules (ADR-027).
+// the parent's egress rules.
 const (
-	// LabelAgent points at the durable Agent ConfigMap. After ADR-046
-	// collapsed Instance into Agent, this replaces the former
+	// LabelAgent points at the durable Agent ConfigMap. After Instance was
+	// collapsed into Agent, this replaces the former
 	// `agent-platform.ai/agent` label.
 	LabelAgent  = "agent-platform.ai/agent"
 	LabelPair   = "agent-platform.ai/pair"
@@ -62,7 +62,7 @@ const (
 )
 
 // annRollRev is an api-server-set annotation on the Agent that requests a
-// rolling restart of the pair (ADR-058). The controller stamps its value into
+// rolling restart of the pair. The controller stamps its value into
 // both pod templates, so bumping it rolls the agent + gateway without any
 // spec/status write — this is how the UI restart button and credential-grant
 // changes force a fresh pod. It is complementary to the gateway's
@@ -77,8 +77,8 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
 
-// BuildAgentStatefulSet renders the agent half of the paired pod set
-// (ADR-038). The agent container holds zero credentials; egress credential
+// BuildAgentStatefulSet renders the agent half of the paired pod set.
+// The agent container holds zero credentials; egress credential
 // injection happens in the paired gateway pod, reached via HTTPS_PROXY.
 //
 // The template is independent of the granted set: it always mounts the leaf
@@ -89,12 +89,12 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // used directly as the HTTPS_PROXY target. The caller requeues when
 // it's not yet assigned.
 //
-// ADR-046: there is no separate InstanceSpec anymore — the merged AgentSpec
+// There is no separate InstanceSpec anymore — the merged AgentSpec
 // carries `SecretRef` and the single user-owned env list.
 //
 // Replicas are set to 1 here (the running default) but are owned by the
 // reconciler's applyStatefulSet, which scales up on activity and defers
-// scale-down to the idle checker (ADR-058: run state is activity-driven, not a
+// scale-down to the idle checker (run state is activity-driven, not a
 // stored desiredState).
 func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
@@ -133,7 +133,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	// identity in this model; mesh-keyed AuthorizationPolicy on the gateway
 	// pod is gone (NP is the gate). The paired gateway pod remains a mesh
 	// participant — its SPIFFE principal still gates gateway → harness and
-	// gateway → ext-authz hops (ADR-041).
+	// gateway → ext-authz hops.
 	podLabels := map[string]string{}
 	for k, v := range labels {
 		podLabels[k] = v
@@ -149,7 +149,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
 	// harness API — cross the paired gateway pod.
 	//
-	// ADR-041: identity for harness traffic comes from the gateway pod's
+	// Identity for harness traffic comes from the gateway pod's
 	// SPIFFE principal (gateway runs as the per-instance SA). When the
 	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
 	// the connection with the gateway's principal, and the waypoint
@@ -232,7 +232,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	// ca.crt only (the tls.key stays on the gateway) — the only platform data
-	// the agent mounts (ADR-038). The leaf is always issued, so this Secret
+	// the agent mounts. The leaf is always issued, so this Secret
 	// always exists and the volume never flips with the granted set.
 	volumes = append(volumes, corev1.Volume{
 		Name: "ca-cert",
@@ -301,7 +301,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	// Startup + readiness hit /healthz every 1s so wake-up and ready
-	// transitions surface near-instantly (ADR-059 routes on PodReady).
+	// transitions surface near-instantly (readiness routing keys on PodReady).
 	// Liveness stays 10s — it only needs to catch a hung process, not
 	// drive routing. startup FailureThreshold=120 → ~2 min of runway,
 	// enough for a cold pull of a large agent image.
@@ -353,9 +353,9 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		VolumeMounts:    volumeMounts,
 	}}
 
-	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
+	// Threat model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
-	// paired-pod split (ADR-038) the agent and gateway are different pods
+	// paired-pod split the agent and gateway are different pods
 	// so process-namespace sharing is structurally moot, but we keep
 	// `false` explicit for clarity.
 	falseVal := false
@@ -373,7 +373,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		// SPIFFE workload identity. The per-instance SA still scopes
 		// Secret access at the controller level —
 		// `automountServiceAccountToken: false` keeps the SA token
-		// off-pod (ADR-033 threat model).
+		// off-pod (threat model).
 		ServiceAccountName:            name,
 		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,

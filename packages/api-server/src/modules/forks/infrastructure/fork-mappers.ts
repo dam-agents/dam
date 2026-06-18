@@ -10,7 +10,7 @@ import {
   VERSION,
 } from "./labels.js";
 
-/** The agent-platform.ai/v1 Fork custom resource (ADR-058). The api-server
+/** The agent-platform.ai/v1 Fork custom resource. The api-server
  *  writes spec; the controller owns the status subresource. */
 export interface ForkObject {
   apiVersion: string;

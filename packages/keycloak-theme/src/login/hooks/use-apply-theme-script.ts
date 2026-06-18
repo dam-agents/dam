@@ -11,7 +11,7 @@ const URL_PARAM = "kc_theme";
 const VALID = ["light", "dark", "system"] as const;
 
 /**
- * Cross-domain dark-mode handoff (ADR-054).
+ * Cross-domain dark-mode handoff.
  *
  * The dam UI runs on a different host than Keycloak, so localStorage is not
  * shared. When the UI redirects to Keycloak it appends ?kc_theme=...; this

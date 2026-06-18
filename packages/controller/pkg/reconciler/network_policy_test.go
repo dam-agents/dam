@@ -22,7 +22,7 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	assert.Equal(t, "my-instance", np.OwnerReferences[0].Name)
 
 	// Selector pins to this pair's agent pod — gateway pod is
-	// unaffected (ADR-035 gates its egress at L7 ext_authz).
+	// unaffected (its egress is gated at L7 ext_authz).
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
@@ -43,7 +43,7 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	assert.Equal(t, corev1.ProtocolTCP, *gwRule.Ports[0].Protocol)
 }
 
-// Fork pair: same shape, keyed on the fork name (ADR-027 isolation).
+// Fork pair: same shape, keyed on the fork name (fork isolation).
 func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, configMapOwnerRef(testForkOwnerCM))
 
@@ -51,7 +51,7 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	assert.Equal(t, "fork-abc", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
-	// Gateway peer must scope to the fork's own gateway (ADR-027).
+	// Gateway peer must scope to the fork's own gateway.
 	gwRule := np.Spec.Egress[0]
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],

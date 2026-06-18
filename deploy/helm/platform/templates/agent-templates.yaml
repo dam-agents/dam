@@ -1,5 +1,5 @@
 {{/*
-Agent templates (ADR-058). One ConfigMap in the RELEASE namespace with a
+Agent templates. One ConfigMap in the RELEASE namespace with a
 `<name>.yaml` data key per enabled `.Values.agentTemplates` entry. It is
 mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
 boot — the api-server no longer reads templates dynamically via the K8s API,

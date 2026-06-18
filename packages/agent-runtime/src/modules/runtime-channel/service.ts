@@ -48,7 +48,7 @@ export function createRuntimeChannelService(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
 
-    // Contributions are caught up, but events carry their own version — still apply them (ADR-060).
+    // Contributions are caught up, but events carry their own version — still apply them.
     if (input.version <= local.lastAppliedVersion) {
       deps.log(
         `[applyState] contributions stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; events only`,
@@ -76,7 +76,7 @@ export function createRuntimeChannelService(
       deps.log(`[applyState] hash unchanged; skipping dispatch`);
     }
 
-    // Events apply in the same pass, independent of contribution outcome (ADR-060).
+    // Events apply in the same pass, independent of contribution outcome.
     const settledEvents = await processEvents(
       input.events,
       handlers,

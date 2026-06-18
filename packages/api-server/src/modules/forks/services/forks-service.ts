@@ -89,7 +89,7 @@ export function createForksService(deps: {
       const forkId = generateForkId();
 
       // The controller picks up the replier's K8s Secrets at render
-      // time via foreignSub-labelled selectors (ADR-033).
+      // time via foreignSub-labelled selectors.
       const fork = createFork({
         forkId,
         replyId: input.replyId,

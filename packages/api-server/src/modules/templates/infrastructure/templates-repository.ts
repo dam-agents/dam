@@ -13,7 +13,7 @@ export interface TemplatesRepository {
 }
 
 /**
- * Templates are chart-shipped config mounted as `<id>.yaml` files (ADR-058);
+ * Templates are chart-shipped config mounted as `<id>.yaml` files;
  * they change only on helm upgrade (which restarts the pod), so load them once
  * at construction rather than per-request. No user-owned templates (isOwned is
  * always false); an empty/missing `dir` yields an empty catalogue.

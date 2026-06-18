@@ -220,7 +220,7 @@ export function ChatView() {
         : SessionMode.Terminal;
 
     // Blank chat → terminal: spawn a fresh terminal session with no
-    // confirmation. The PTY creates it (ADR-055) — no server registration; it
+    // confirmation. The PTY creates it — no server registration; it
     // surfaces in session/list with no `_meta` and decodes as terminal.
     if (!sessionId && messages.length === 0) {
       if (target === SessionMode.Terminal) {

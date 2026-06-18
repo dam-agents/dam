@@ -241,7 +241,7 @@ func buildPoolPVC(cfg *config.Config, poolKey string) *corev1.PersistentVolumeCl
 			// A claimed spare becomes the agent's workspace PVC, so its access
 			// mode must match live agents' — inherit the single AgentBase value
 			// rather than a pool-specific knob that could drift (must be RWX so
-			// forks co-mount; ADR-027).
+			// forks co-mount).
 			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(cfg.AgentBase.AccessMode)},
 			StorageClassName: &sc,
 			Resources: corev1.VolumeResourceRequirements{

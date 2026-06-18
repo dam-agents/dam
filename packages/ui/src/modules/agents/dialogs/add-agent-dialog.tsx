@@ -220,7 +220,7 @@ export function AddAgentDialog({
     const reg = values.registryCredential;
     const registryCredential =
       !selectedTemplate && reg.server ? reg : undefined;
-    // ADR-040: env contributions from granted secrets/apps are merged at
+    // Env contributions from granted secrets/apps are merged at
     // pod-render time by the controller. Don't pre-stamp them onto the
     // agent spec.
     onSubmit({

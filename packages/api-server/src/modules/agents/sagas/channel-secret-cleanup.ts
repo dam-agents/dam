@@ -1,6 +1,6 @@
 /**
  * Reacts to AgentDeleted — deletes the agent's per-channel credential Secrets.
- * PVCs are the controller's job (ADR-058), not the api-server's.
+ * PVCs are the controller's job, not the api-server's.
  */
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";

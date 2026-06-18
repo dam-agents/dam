@@ -27,7 +27,7 @@ func idleCheckerCfg(timeout time.Duration) *config.Config {
 }
 
 // idleAgentCR builds an Agent CR carrying activity annotations — the only
-// inputs the idle checker reads (ADR-058).
+// inputs the idle checker reads.
 func idleAgentCR(name, lastActivity string, annotations map[string]string) *apiv1.Agent {
 	if annotations == nil {
 		annotations = map[string]string{}
@@ -141,7 +141,7 @@ func TestIdleChecker_SkipsNoLastActivity(t *testing.T) {
 func TestIdleChecker_SkipsBusyAgent(t *testing.T) {
 	// An idle-by-activity agent that the pod probe reports BUSY (active
 	// session/trigger/terminal) must not be hibernated — this guard is the
-	// reason scale-down lives in the idle checker, not the reconciler (ADR-058).
+	// reason scale-down lives in the idle checker, not the reconciler.
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("busy-agent", staleTime, nil)
 	ss := agentStatefulSet("busy-agent", 1)

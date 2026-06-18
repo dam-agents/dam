@@ -1,6 +1,6 @@
 // Package v1 defines the agent-platform.ai/v1 API types the platform
 // controller reconciles: Agent and Fork. These custom resources supersede the
-// labeled-ConfigMap resource model of ADR-006 (see ADR-058). The api-server is
+// earlier labeled-ConfigMap resource model. The api-server is
 // the sole writer of each resource's spec; the controller is the sole writer of
 // its status subresource.
 //

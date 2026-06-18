@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ADR-041: per-instance SA shape — name == instance ID, lives in agent ns,
+// Per-instance SA shape — name == instance ID, lives in agent ns,
 // AutomountServiceAccountToken explicitly false, owner-refed to the
 // instance ConfigMap so K8s GC reaps it on instance delete.
 func TestBuildServiceAccount_Shape(t *testing.T) {
@@ -25,9 +25,9 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 	assert.Equal(t, testOwnerCM.UID, sa.OwnerReferences[0].UID)
 }
 
-// ADR-041: the SA name is whatever the caller passes — long-lived pairs
+// The SA name is whatever the caller passes — long-lived pairs
 // pass the instance name, forks pass the fork name (forks have their own
-// per-fork SA, see ADR-027 + authorization_policy.go). This test pins the
+// per-fork SA, see authorization_policy.go). This test pins the
 // contract: name == argument, no implicit transformation.
 func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	for _, id := range []string{"abc", "instance-with-dashes", "x"} {
@@ -36,7 +36,7 @@ func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	}
 }
 
-// ADR-041: idempotent reconcile — labels and AutomountServiceAccountToken
+// Idempotent reconcile — labels and AutomountServiceAccountToken
 // must heal on drift (e.g. a pre-existing SA from a prior install or
 // manual creation). Without this, a drifted SA silently bypasses the
 // owner-ref + token guarantees.

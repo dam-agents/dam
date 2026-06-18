@@ -9,7 +9,7 @@ const scheduleSessionModeSchema = z.enum(["continuous", "fresh"]);
 // Quiet-hours window: inclusive start, exclusive end, in the schedule's
 // timezone. endTime < startTime is valid and denotes a crosses-midnight
 // window (e.g. 22:00–06:00) — the controller evaluates these as
-// [start, 24:00) ∪ [00:00, end). See ADR-031 for semantics.
+// [start, 24:00) ∪ [00:00, end).
 export const quietWindowSchema = z
   .object({
     startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM required"),

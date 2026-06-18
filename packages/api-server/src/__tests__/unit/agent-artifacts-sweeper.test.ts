@@ -5,7 +5,7 @@ import type {
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
 
-// Live agents are Agent custom resources now (ADR-058), listed via
+// Live agents are Agent custom resources now, listed via
 // listCustomObjects — not ConfigMaps.
 function fakeK8s(liveAgents: string[]): K8sClient {
   return {

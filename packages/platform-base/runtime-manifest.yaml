@@ -1,7 +1,7 @@
 # Default runtime-manifest.yaml for platform-base. Concrete agent images
 # may override (by COPY-ing a different file at workspace/runtime-manifest.yaml).
 #
-# See docs/architecture/connections.md and ADR-052 for the schema.
+# See docs/architecture/connections.md for the schema.
 # Capabilities are derived from the `drivers` map at boot — the agent
 # advertises whichever Contribution kinds are bound here on `hello`.
 manifestVersion: 1

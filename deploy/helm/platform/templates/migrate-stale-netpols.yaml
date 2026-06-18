@@ -1,7 +1,7 @@
 {{- /*
 Pre-upgrade clean-ups, all no-ops on a fresh install:
 
-1. Delete pre-ADR-041 pair-key NetworkPolicies. The old controller wrote
+1. Delete legacy pair-key NetworkPolicies. The old controller wrote
    `<id>-egress` / `<id>-gateway-egress` policies in the agent namespace
    without the `agent-platform.ai/managed-by=platform-controller` label.
    Once the agent namespace flips to ambient, ztunnel encapsulates
@@ -118,12 +118,12 @@ spec:
               set -eo pipefail
               ns={{ .Values.agentNamespace | quote }}
 
-              # 1. Pre-ADR-041 pair-key NetworkPolicies. Restricted to NPs
+              # 1. Legacy pair-key NetworkPolicies. Restricted to NPs
               #    that lack `agent-platform.ai/managed-by` — current-shape
               #    `<id>-agent-egress` carries both `pair` and `managed-by`,
               #    so this selector leaves them alone.
               np_count=$(kubectl -n "$ns" get networkpolicy -l 'agent-platform.ai/pair,!agent-platform.ai/managed-by' -o name 2>/dev/null | wc -l | tr -d ' ')
-              echo "migration: deleting $np_count pre-ADR-041 NetworkPolicy(s) in $ns"
+              echo "migration: deleting $np_count legacy NetworkPolicy(s) in $ns"
               if [ "$np_count" != "0" ]; then
                 kubectl -n "$ns" delete networkpolicy -l 'agent-platform.ai/pair,!agent-platform.ai/managed-by' --ignore-not-found
               fi

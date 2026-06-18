@@ -74,7 +74,7 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "home-agent",
-			"gateway must not mount the workspace PVC (ADR-038)")
+			"gateway must not mount the workspace PVC")
 		assert.NotEqual(t, "ca-cert", v.Name,
 			"ca-cert is the agent-side projection; gateway holds the full leaf Secret")
 	}
@@ -97,7 +97,7 @@ func TestBuildGatewayService(t *testing.T) {
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
 
-// ADR-041: TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
+// TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
 // removed — pair-key NetworkPolicies are gone, replaced by per-instance
 // mesh AuthorizationPolicies (covered in authorization_policy_test.go).
 
@@ -108,7 +108,7 @@ func TestBuildForkGatewayPod_Labels(t *testing.T) {
 	assert.Equal(t, "fork-abc-gateway", pod.Name)
 	// Instance label points at the PARENT instance — ext_authz identity
 	// flows through this label, and forks inherit the parent's egress
-	// rules (ADR-027).
+	// rules.
 	assert.Equal(t, "parent-instance", pod.Labels["agent-platform.ai/agent"])
 	// Pair key is the fork name — the fork pair is structurally isolated
 	// from the parent instance pair.
@@ -133,8 +133,7 @@ func TestBuildForkGatewayService(t *testing.T) {
 // NetworkPolicy selectors and the api-server's pod-IP resolver depend on.
 // The TS side has a mirror test in
 // `packages/api-server/src/__tests__/unit/label-contract.test.ts`. Drift
-// between the two would silently break the credential boundary
-// (ADR-038 §Threat Model).
+// between the two would silently break the credential boundary.
 func TestLabelContract(t *testing.T) {
 	assert.Equal(t, "agent-platform.ai/agent", LabelAgent)
 	assert.Equal(t, "agent-platform.ai/pair", LabelPair)

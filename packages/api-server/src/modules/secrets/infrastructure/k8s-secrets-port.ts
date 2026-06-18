@@ -1,7 +1,7 @@
 /**
  * K8s storage for user-typed secrets (generic + Anthropic).
  *
- * The Envoy credential-injector sidecar (ADR-033) reads credentials from files
+ * The Envoy credential-injector sidecar reads credentials from files
  * mounted into the sidecar container. The Controller renders those mounts from
  * K8s Secrets labelled with the owner's sub. This port writes those Secrets so
  * newly-created secrets land in K8s for the sidecar to discover.
@@ -71,7 +71,7 @@ export function resolveInjection(
   authMode: AuthMode | undefined,
   injectionConfig: InjectionConfig | undefined,
 ): { headerName: string; valueFormat: string } {
-  // Explicit `injectionConfig` wins over preset — twins (ADR-044) share `type`
+  // Explicit `injectionConfig` wins over preset — twins share `type`
   // with the primary but carry their own header from `extraInjections`.
   if (injectionConfig?.headerName) {
     return {

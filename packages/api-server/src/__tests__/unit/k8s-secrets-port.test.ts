@@ -538,7 +538,7 @@ describe("createK8sSecretsPort.updateSecret", () => {
   });
 
   it("returns before/after stored views so callers can diff render-affecting fields", async () => {
-    // ADR-040 fanout decides which side-effects to run by diffing before
+    // Fanout decides which side-effects to run by diffing before
     // and after. The port surfaces both so the service avoids a redundant
     // read.
     const { client } = fakeClient();

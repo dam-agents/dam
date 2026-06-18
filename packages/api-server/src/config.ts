@@ -22,7 +22,7 @@ const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
-  /** Helm release name. ADR-041: required at startup — used to parse
+  /** Helm release name. Required at startup — used to parse
    *  instance ID out of the per-instance ext-authz Service hostname
    *  (`<release>-extauthz-<id>`) the gateway pod's Envoy was configured
    *  to dial. A wrong/missing value produces an `expectedPrefix` that
@@ -113,11 +113,11 @@ const configSchema = z.object({
    *  the CLI side when the local CLI is behind the current server). */
   minClientCliVersion: z.string().optional(),
   /** Path to a newline-delimited file of hosts seeded by the `trusted` egress
-   *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
+   *  preset. Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
   /** Directory of chart-shipped agent templates, mounted from a Helm-managed
-   *  ConfigMap (ADR-058). One `<id>.yaml` per template. The api-server loads
+   *  ConfigMap. One `<id>.yaml` per template. The api-server loads
    *  them once at boot — templates are declarative config that only changes on
    *  a helm upgrade, which restarts the pod. Empty/missing → no templates. */
   agentTemplatesPath: z.string().default(""),

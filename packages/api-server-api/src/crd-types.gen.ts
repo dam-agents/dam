@@ -2,11 +2,11 @@
 
 /**
  * AgentSpec is the desired state of an Agent — the sole durable per-agent
- * resource after ADR-046 collapsed Instance into Agent. The api-server is the
+ * resource after Instance was collapsed into Agent. The api-server is the
  * sole writer.
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
- * but observed status the controller derives from activity (ADR-058). Security
+ * but observed status the controller derives from activity. Security
  * context and scheduling are chart-only (config.AgentBase) and cannot be set
  * here by design.
  */
@@ -34,8 +34,8 @@ export interface AgentSpecCR {
   grantedConnectionIds?: string[];
   /**
    * GrantedSecretIDs are the credential Secret IDs granted to this agent's
-   * egress — intent written by the api-server. ADR-058 moved these from a
-   * ConfigMap annotation into spec, because they are reconciled by the
+   * egress — intent written by the api-server. These live in spec rather
+   * than a ConfigMap annotation, because they are reconciled by the
    * controller into the credential set mounted on the gateway.
    */
   grantedSecretIds?: string[];
@@ -107,8 +107,8 @@ export interface AgentSpecCR {
 }
 
 /**
- * ForkSpec is the per-turn ephemeral runtime that derives from an Agent
- * (ADR-046: Forks survived the Instance/Agent collapse). The parent Agent's
+ * ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
+ * Forks survived the Instance/Agent collapse. The parent Agent's
  * egress surface scopes what the fork can reach. The api-server is the sole
  * writer.
  */

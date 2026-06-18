@@ -43,7 +43,7 @@ var testConfig = &config.Config{
 	AgentProbesEnabled: true,
 }
 
-// testAgent carries the merged Agent fields (ADR-046): image/mounts/env
+// testAgent carries the merged Agent fields: image/mounts/env
 // from the former AgentSpec PLUS the runtime fields (DesiredState,
 // SecretRef) that used to live on the retired InstanceSpec. Most tests
 // inherit "running" — hibernation-specific tests override with a local
@@ -94,7 +94,7 @@ func credSecret(name, host string) corev1.Secret {
 // --- Agent StatefulSet tests ---
 
 func TestBuildAgentStatefulSet_Running(t *testing.T) {
-	// ADR-046: env + secretRef live on the merged AgentSpec — extend a
+	// Env + secretRef live on the merged AgentSpec — extend a
 	// copy of testAgent rather than carrying a separate InstanceSpec.
 	agent := *testAgent
 	agent.Env = append([]types.EnvVar{}, testAgent.Env...)
@@ -124,7 +124,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.NotContains(t, ss.Spec.Selector.MatchLabels, "istio.io/dataplane-mode",
 		"selector must remain minimal so ambient enrolment can be flipped without selector churn")
 
-	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod (ADR-038)")
+	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod")
 	c := ss.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "agent", c.Name)
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", c.Image)
@@ -180,7 +180,7 @@ func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_DefaultsToRunningReplicas(t *testing.T) {
-	// Replicas are owned by the reconciler's applyStatefulSet (ADR-058): the
+	// Replicas are owned by the reconciler's applyStatefulSet: the
 	// builder always renders the running default of 1. Hibernation scales the
 	// live StatefulSet to zero — it is not a property of the rendered spec.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
@@ -282,7 +282,7 @@ func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_NoCredentialMountsOnAgent(t *testing.T) {
-	// ADR-038: the agent's only platform-issued data is the CA cert (ca.crt
+	// The agent's only platform-issued data is the CA cert (ca.crt
 	// projection of the leaf). No credential Secrets, no bootstrap CM, no tls.key.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
 
@@ -326,7 +326,7 @@ func TestBuildAgentService(t *testing.T) {
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// ADR-041: per-instance pair-key NetworkPolicy is gone (mesh
+// Per-instance pair-key NetworkPolicy is gone (mesh
 // AuthorizationPolicy handles pair isolation cryptographically). The
 // previous TestBuildAgentNetworkPolicy is no longer applicable.
 
@@ -368,7 +368,7 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
 	yaml := cm.Data["envoy.yaml"]
-	// ADR-038: gateway listener binds 0.0.0.0; reach is gated by NetworkPolicy.
+	// Gateway listener binds 0.0.0.0; reach is gated by NetworkPolicy.
 	assert.Contains(t, yaml, "0.0.0.0")
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")

@@ -26,7 +26,7 @@ export interface SkillSourceSeed {
   gitUrl: string;
 }
 
-// Per ADR-042, an agent template's spec.yaml carries Layer B + C fields.
+// An agent template's spec.yaml carries Layer B + C fields.
 // Layer A (security context, scheduling, cluster details) is chart-only and
 // intentionally absent from this surface — operators set it via Helm values.
 export interface TemplateSpec {

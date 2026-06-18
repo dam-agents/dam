@@ -10,7 +10,7 @@ import (
 	v1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// Spec shapes are aliases of the api/v1 CRD types (ADR-058): each is authored
+// Spec shapes are aliases of the api/v1 CRD types: each is authored
 // Go-first under api/v1 and consumed here, so there is a single definition. The
 // controller reads these directly off the typed custom resources; status lives
 // on the CR status subresource (api/v1.AgentStatus / api/v1.ForkStatus), so

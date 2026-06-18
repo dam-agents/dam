@@ -20,7 +20,7 @@ import (
 // destinations, not ztunnel-redirected ones. Combined with the
 // chart-rendered namespace-scope deny-all baseline, the agent's only
 // admitted destination is its paired gateway. All other egress —
-// external, harness, ext-authz — flows through the gateway (ADR-035).
+// external, harness, ext-authz — flows through the gateway.
 
 // BuildAgentEgressNetworkPolicy renders the per-pair egress NP for the
 // agent pod of `pairKey`. Long-lived pairs use the instance name;

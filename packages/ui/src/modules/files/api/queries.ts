@@ -56,7 +56,7 @@ function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
 }
 
 /** Subscribe to one directory's slice of the batched poll. The sorted paths
- *  set is part of the key (ADR-049), so an expand/collapse swaps to a new
+ *  set is part of the key, so an expand/collapse swaps to a new
  *  entry and React Query refetches without any explicit invalidation. Returns null
  *  until the slice is present; null is the right answer for "the user just
  *  expanded this dir and the next poll hasn't arrived yet". */

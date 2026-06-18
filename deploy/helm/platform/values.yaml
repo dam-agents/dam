@@ -38,7 +38,6 @@ brand:
 # required; the chart refuses to install when either is unset. Bump
 # `terms.version` on every material change to re-prompt every user; the
 # server records `sha256(text)` on each Acceptance row as proof binding.
-# See ADR-047.
 terms:
   # Markdown content rendered at /terms and on the login page. Supply via
   # `helm install --set-file terms.text=./TERMS.md`.
@@ -92,7 +91,7 @@ imagePullSecrets: []
 probes:
   enabled: true
 
-# -- Istio ambient mesh settings (ADR-041). Istio is a hard prerequisite of
+# -- Istio ambient mesh settings. Istio is a hard prerequisite of
 # this chart — `validate-istio.yaml` fails install if the mesh is missing.
 # `mise run cluster:install` provisions Istio out-of-band (mirroring how
 # cert-manager is treated). There is no `enabled: false` mode; an
@@ -144,9 +143,9 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
-# -- Shared Redis instance (ADR-036).
+# -- Shared Redis instance.
 # Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
-# wake-ups (ADR-035). Persistence uses AOF with `everysec`; the
+# wake-ups. Persistence uses AOF with `everysec`; the
 # platform tolerates losing recent ephemeral data on restart (Postgres remains
 # the source of truth for anything durable).
 redis:
@@ -166,7 +165,7 @@ redis:
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
-  # The Keycloak image is a first-party build (ADR-054) that bakes the
+  # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
   # version is pinned in `packages/keycloak-theme/Dockerfile`.
   image:
@@ -359,8 +358,8 @@ apiServer:
   # denials/failures, or `error` to silence the trail. There is no separate
   # audit on/off switch — visibility is governed here as usual.
   logLevel: info
-  # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate
-  # (ADR-035). Single endpoint: Envoy's HTTP filter (L7,
+  # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate.
+  # Single endpoint: Envoy's HTTP filter (L7,
   # TLS-terminated chains) and network filter (L4, catch-all chain) both
   # call this port; the handler reads whichever attributes are populated.
   # Cluster-internal only; never routed via ingress.
@@ -394,8 +393,8 @@ apiServer:
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
-  # next retry. Default 30 minutes (ADR-035). Per-CLI read
-  # timeouts are an external ceiling — see ADR §Timeouts.
+  # next retry. Default 30 minutes. Per-CLI read
+  # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
 
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
@@ -411,7 +410,7 @@ apiServer:
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
   # if the CLI is behind the current server version). Set this to retire a
-  # known-broken older client. See ADR-039 §"server-advertised compatibility floor".
+  # known-broken older client.
   minClientCliVersion: ""
 
   # -- Ingress NetworkPolicy for the api-server pod.
@@ -423,7 +422,7 @@ apiServer:
   networkPolicy:
     enabled: true
 
-  # -- Hosts seeded into the `trusted` egress preset (ADR-035).
+  # -- Hosts seeded into the `trusted` egress preset.
   # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
   # row when an agent is created with `egressPreset: trusted`. Values are
   # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
@@ -575,8 +574,8 @@ controller:
       # ━━━ SECURITY DEFAULTS — DO NOT CHANGE WITHOUT REVIEW ━━━
       # These ship the cluster-enforced sandbox boundary the platform relies on.
       # Relaxing them gives the agent container privileges that bypass the
-      # paired-pod credential split (ADR-038) and the L7 ext_authz gate
-      # (ADR-035). Agent ConfigMaps cannot set these — chart-only by design.
+      # paired-pod credential split and the L7 ext_authz gate.
+      # Agent ConfigMaps cannot set these — chart-only by design.
       # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
       podSecurityContext:
         runAsUser: 65532
@@ -690,7 +689,7 @@ controller:
     #  - size: "5Gi"
     #    target: 2
   replicas: 1
-  # -- Image for the Envoy credential-injector sidecar (ADR-033).
+  # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
   # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
@@ -798,7 +797,7 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
-  # Test-only mock agent (ADR-056). Scripted ACP emitter; receives prompts
+  # Test-only mock agent. Scripted ACP emitter; receives prompts
   # into an in-pod buffer and emits a pre-set sequence of session/update
   # frames in response. Default off — flipped on by the e2e/local install.
   - name: mock
@@ -809,7 +808,7 @@ agentTemplates:
       tag: ""
     storageSize: "1Gi"
 
-# -- E2E test affordances (ADR-056). Gated test-only surface: the api-server
+# -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
 # the existing ACP relay. Default off — flipped on by the e2e/local install.
 e2e:

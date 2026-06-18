@@ -155,7 +155,7 @@ type WarmPool struct {
 	// AgentBase.StorageClass, whose bundled NFS class is WaitForFirstConsumer —
 	// under which a pre-created PVC would stay Pending and save nothing. The
 	// access mode is NOT configured here: a claimed spare becomes the agent's
-	// workspace PVC, so it must match AgentBase.AccessMode (RWX per ADR-027 so
+	// workspace PVC, so it must match AgentBase.AccessMode (RWX so
 	// per-turn fork pods can co-mount); the pool inherits that single value.
 	StorageClass string `json:"storageClass,omitempty"`
 	// ReplenishInterval is how often the manager reconciles inventory toward

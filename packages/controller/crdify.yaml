@@ -1,0 +1,8 @@
+# crdify check config for controller:check:crd-backwards-compatibility.
+# Description text is documentation, never cluster-breaking, and any .spec
+# change (descriptions included) is already gated per-PR by
+# controller:check:crd-schema-generation. So description diffs are advisory
+# here, not a backwards-compatibility failure.
+validations:
+  - name: description
+    enforcement: None

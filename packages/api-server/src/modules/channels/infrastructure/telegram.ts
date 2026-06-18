@@ -132,7 +132,7 @@ export function createTelegramWorker(
   const lastThread = new Map<string, Thread>();
 
   // The thread's session carries this threadId in `_meta.platform.threadTs`
-  // (ADR-055) — resolved off the agent, no server store.
+  // — resolved off the agent, no server store.
   async function findThreadSession(instanceName: string, threadId: string) {
     const acp = createAcpClient({ namespace, instanceName });
     const sessions = await acp.listSessions().catch((err) => {

@@ -79,7 +79,7 @@ export function composeConnectionsForOwner(opts: {
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
-      // ADR-058: connection grants live in the Agent spec.
+      // Connection grants live in the Agent spec.
       await opts.agentsRepo.patchSpec(agentId, {
         grantedConnectionIds: connectionIds,
       });

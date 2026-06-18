@@ -46,7 +46,7 @@ func setupForkReconciler(t *testing.T, agents map[string]*apiv1.Agent, fork *api
 		AgentProbesEnabled: true,
 	}
 	// The Fork CR is seeded into the dynamic fake — the reconciler writes its
-	// status subresource there (ADR-058). Agents are resolved via the getter.
+	// status subresource there. Agents are resolved via the getter.
 	var dynObjs []runtime.Object
 	if fork != nil {
 		u, err := forkToUnstructured(fork)

@@ -7,7 +7,7 @@ declare const process: { env: Record<string, string | undefined> };
 
 // Each spec is activated only when ${envPrefix}_URL and ${envPrefix}_MODEL are
 // set on the pod. Auth is injected on the wire by the Envoy sidecar's
-// credential_injector filter (ADR-033); the apiKey here only exists to satisfy
+// credential_injector filter; the apiKey here only exists to satisfy
 // pi-acp's per-session auth gate (reads models.json.apiKey + auth.json).
 
 type ProviderSpec = {

@@ -58,7 +58,7 @@ export interface AcpSessionInfo {
   sessionId: string;
   title?: string | null;
   updatedAt?: string | null;
-  /** Platform metadata round-tripped via `_meta.platform` (ADR-055); null for
+  /** Platform metadata round-tripped via `_meta.platform`; null for
    * harness-internally-minted sessions (e.g. TUI `/clear`). */
   platform?: PlatformSessionMeta | null;
 }
@@ -83,7 +83,7 @@ type SessionAttach =
   | { onSessionCreated: (sessionId: string) => Promise<void> };
 
 /** Resume an existing session, or start a new one stamping `_meta.platform`
- *  so the agent records it (ADR-055) — no server-side persist needed. */
+ *  so the agent records it — no server-side persist needed. */
 export type SendPromptOpts = (
   | { resumeSessionId: string }
   | { platformMeta?: PlatformSessionMeta }

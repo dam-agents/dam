@@ -1,6 +1,6 @@
 /**
  * Public surface of the `auth` module. The narrow seam other modules in
- * this package consume. ADR-039's CLI carve-out re-opens `index.ts` per
+ * this package consume. The CLI carve-out re-opens `index.ts` per
  * module — only application-service interfaces and the error variants
  * their signatures reference leak. No factories, no concrete services,
  * no domain values, no infrastructure adapters.

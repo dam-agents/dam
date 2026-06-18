@@ -117,9 +117,7 @@ await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
 const { db, sql } = createDb(config.databaseUrl, dbTls);
 
 if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
+  throw new Error("REDIS_URL is required (Redis is a platform primitive)");
 const bullConnection = createBullConnection(
   config.redisUrl,
   config.redisPassword ?? undefined,
@@ -333,7 +331,7 @@ const channelManager = createChannelManager({
   channelSecretStore,
 });
 
-// Seed list for the `trusted` egress preset (ADR-035).
+// Seed list for the `trusted` egress preset.
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
@@ -500,7 +498,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
-// ADR-041: instance identity for ext-authz now flows from the per-instance
+// Instance identity for ext-authz now flows from the per-instance
 // ext-authz Service the gateway pod's Envoy was configured to dial,
 // cryptographically pinned by the AuthorizationPolicy on each per-instance
 // Service. The pod-IP resolver and `x-platform-instance` header are gone.

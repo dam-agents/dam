@@ -55,7 +55,7 @@ export function createTerminalRelay(
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
 
-    // Session mode is agent-owned metadata (ADR-055); the PTY runs the harness
+    // Session mode is agent-owned metadata; the PTY runs the harness
     // TUI against this session id regardless. The UI confirms the mode switch.
 
     wss.handleUpgrade(req, socket, head, (client) => {

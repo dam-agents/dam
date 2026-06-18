@@ -20,7 +20,7 @@ interface ListedSession {
 }
 
 /**
- * Decode an ACP-listed session into a SessionView (ADR-055). A session with no
+ * Decode an ACP-listed session into a SessionView. A session with no
  * `_meta.platform` is harness-minted (e.g. a terminal/`/clear` session) and
  * defaults to terminal; an ACP-created session carries a (possibly empty)
  * entry and defaults to chat.
@@ -68,8 +68,8 @@ export async function listAgentSessions(
   return withConnection(agentId, async (conn) => {
     const r = await conn.listSessions({ cwd: "." });
     // Harness `session/list` order is unspecified; sort newest-first to keep
-    // the prior DB-backed `ORDER BY created_at DESC` sidebar ordering (ADR-055
-    // dropped the server store that used to guarantee it).
+    // the prior DB-backed `ORDER BY created_at DESC` sidebar ordering (the
+    // server store that used to guarantee it was dropped).
     return (r.sessions ?? [])
       .map((s) => toSessionView(agentId, s as unknown as ListedSession))
       .sort((a, b) =>
@@ -87,7 +87,7 @@ export async function deleteAgentSession(
   );
 }
 
-/** Mode is metadata (ADR-055): a `session/resume` carrying
+/** Mode is metadata: a `session/resume` carrying
  *  `_meta.platform.mode` updates the stored entry via the runtime intercept. */
 export async function setSessionMode(
   agentId: string,

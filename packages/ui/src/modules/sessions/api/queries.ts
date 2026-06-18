@@ -45,7 +45,7 @@ export function optimisticInsertSession(
 }
 
 /**
- * Sessions list, read straight off the agent over ACP `session/list` (ADR-055)
+ * Sessions list, read straight off the agent over ACP `session/list`
  * and decoded from `_meta.platform`. Schedule sessions are excluded from the
  * main list; channel sessions are included only when asked. Pass
  * `enabled: false` (e.g. while the agent is waking) to keep the query in cache

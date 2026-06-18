@@ -85,7 +85,7 @@ export interface AcpRuntimeDeps {
   warmStartTimeoutMs?: number;
   /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
-  /** Owns the `_meta.platform.*` round-trip (ADR-055); skipped when omitted. */
+  /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
 }
 
@@ -585,7 +585,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const old = agent;
     if (!old || agentExited) return;
     deps.log?.("recycling harness to apply env change");
-    // Close code 1011 matches a real agent exit; clients reconnect and resume (ADR-055).
+    // Close code 1011 matches a real agent exit; clients reconnect and resume.
     for (const channel of engagedSessions.keys())
       channel.close(1011, "agent recycled for env change");
     engagedSessions.clear();
@@ -1039,7 +1039,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
-      // `platform/deleteSession` ExtRequest (ADR-055): soft delete — tombstone
+      // `platform/deleteSession` ExtRequest: soft delete — tombstone
       // in the metadata store so `session/list` enrichment hides it even while
       // the harness still lists the on-disk JSONL. Answered synthetically; the
       // vanilla harness has no delete capability, so it never forwards.
@@ -1067,7 +1067,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       //             but reach no client. On completion, all resume waiters
       //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
-        // setMode (ADR-055): a resume may carry `_meta.platform` (e.g. a new
+        // setMode: a resume may carry `_meta.platform` (e.g. a new
         // mode) — merge it into the stored entry, preserving fields it omits.
         const incomingMeta = extractPlatformMeta(frame);
         if (incomingMeta && deps.sessionMetadata) {

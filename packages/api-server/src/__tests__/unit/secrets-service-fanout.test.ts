@@ -145,7 +145,7 @@ describe("PROVIDERS registry shape", () => {
   });
 });
 
-describe("secrets-service.create — Anthropic envMappings default (ADR-040)", () => {
+describe("secrets-service.create — Anthropic envMappings default", () => {
   it("defaults to ANTHROPIC_API_KEY mapping for api-key value", async () => {
     const { port, created } = makePort([]);
     const { port: grants } = makeGrants();
@@ -278,7 +278,7 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
   });
 });
 
-describe("secrets-service.update — fanout (ADR-040)", () => {
+describe("secrets-service.update — fanout", () => {
   function setup(opts: {
     secret: K8sStoredSecret;
     granted?: GrantedAgentSummary[];

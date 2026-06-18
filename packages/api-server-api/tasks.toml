@@ -33,7 +33,7 @@ depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
 
 ["api-server-api:gen:crd-types"]
-description = "Regenerate the Agent + Fork CR spec TS types from the controller's CRDs (ADR-058). AgentSpec derives from AgentSpecCR and buildForkObject is typed against ForkSpecCR, so the Go-authored types are the single source."
+description = "Regenerate the Agent + Fork CR spec TS types from the controller's CRDs. AgentSpec derives from AgentSpecCR and buildForkObject is typed against ForkSpecCR, so the Go-authored types are the single source."
 dir = "{{config_root}}/packages/api-server-api"
 # Chain: api/v1/*.go --(controller:generate)--> CRD yaml --(here)--> crd-types.gen.ts
 depends = ["controller:generate", "common:setup:pnpm"]
@@ -46,7 +46,7 @@ outputs = ["src/crd-types.gen.ts"]
 run = "bash scripts/gen-crd-types.sh {{config_root}} src/crd-types.gen.ts"
 
 ["api-server-api:check:gen"]
-description = "Fail if the committed CRD types are stale vs the committed CRDs (ADR-058 drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
+description = "Fail if the committed CRD types are stale vs the committed CRDs (drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
 dir = "{{config_root}}/packages/api-server-api"
 depends = ["common:setup:pnpm"]
 sources = [

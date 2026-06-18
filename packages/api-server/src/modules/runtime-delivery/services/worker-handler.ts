@@ -8,7 +8,7 @@ import type { DriverFailure } from "api-server-api";
 import { emit, EventType } from "../../../events.js";
 
 export interface IsAgentRunning {
-  /** True when the agent is Ready (controller-published condition, ADR-059) — the apply may land. */
+  /** True when the agent is Ready (controller-published condition) — the apply may land. */
   isRunning(agentId: string): Promise<boolean>;
 }
 
@@ -31,7 +31,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
 
-    // Not Ready (ADR-059): hello-triggered jobs re-check on a tight cadence until Ready; others defer to the sweep.
+    // Not Ready: hello-triggered jobs re-check on a tight cadence until Ready; others defer to the sweep.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
       if (opts?.retryUntilReady) {
         throw new Error(`${agentId}: not Ready yet — retrying until Ready`);

@@ -5,7 +5,7 @@ import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
 /**
- * Sessions are agent-owned (ADR-055): there is no server session store. The CLI
+ * Sessions are agent-owned: there is no server session store. The CLI
  * reads and mutates them directly over the api-server's ACP relay WebSocket,
  * exactly like the UI and channel workers — listing decodes `_meta.platform`,
  * and a mode change rides `session/resume` with `_meta.platform.mode`.
@@ -69,7 +69,7 @@ function acpUrl(host: string, agentId: string, token: string): string {
   return `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/acp?token=${encodeURIComponent(token)}`;
 }
 
-/** Decode an ACP-listed session into a SessionView (ADR-055): no `_meta.platform`
+/** Decode an ACP-listed session into a SessionView: no `_meta.platform`
  *  marks a harness-minted session (e.g. terminal/`/clear`) and defaults to
  *  terminal; an ACP-created session carries a (possibly empty) entry and
  *  defaults to chat. */
@@ -168,7 +168,7 @@ export interface AcpSessionClient {
    *  connection / RPC failure (the caller maps it to a transport error). */
   list(agentId: string): Promise<SessionView[]>;
   /** Persist a session's mode via `session/resume` carrying
-   *  `_meta.platform.mode` — the runtime intercept merges it (ADR-055). */
+   *  `_meta.platform.mode` — the runtime intercept merges it. */
   setMode(agentId: string, sessionId: string, mode: SessionMode): Promise<void>;
 }
 

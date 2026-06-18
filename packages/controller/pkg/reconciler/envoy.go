@@ -22,7 +22,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Envoy sidecar wiring for the experimental credential-injector path (ADR-033).
+// Envoy sidecar wiring for the experimental credential-injector path.
 //
 // Scope of #337: Envoy proxies all egress for the agent container. Per-Secret
 // routes inject a credential under the configured header for the matching host.
@@ -48,7 +48,7 @@ const (
 	envoyInjectionHostsAnn = "agent-platform.ai/injection-hosts"
 	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
 	// user-typed credential Secret. Authoritative source for the env vars
-	// the agent harness needs as placeholders (ADR-041). Connection-type
+	// the agent harness needs as placeholders. Connection-type
 	// Secrets do not write this annotation today and fall through to the
 	// hardcoded mapping in `credentialEnvVars` below.
 	envoyEnvMappingsAnn        = "agent-platform.ai/env-mappings"
@@ -92,7 +92,7 @@ type envoyCredential struct {
 // envoyHostChain is one TLS-terminating filter chain. `Credentials` is
 // the per-Secret injection list applied to every request through the
 // chain, in deterministic order (Secrets are name-sorted upstream). Empty
-// `Credentials` is the allow-only / MITM-only flavor (ADR-035): the host
+// `Credentials` is the allow-only / MITM-only flavor: the host
 // has at least one path-specific egress_rule but no attached credential —
 // we still terminate TLS for the gate but skip credential_injector.
 type envoyHostChain struct {
@@ -109,8 +109,7 @@ type envoyHostChain struct {
 	// Name of the per-chain STRICT_DNS upstream cluster used when the
 	// chain has at least one credential. Pinned to `Host:443` with
 	// SAN-bound TLS validation so the agent's Host header cannot
-	// redirect the credentialed body to an attacker-controlled upstream
-	// (ADR-033 §Threat Model).
+	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
 }
 
@@ -125,7 +124,7 @@ func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
 const envoySecretTypeAllowOnly = "allow-only"
 
 // listAgentCredentialSecrets returns the owner's credential Secrets filtered
-// by the agent's grants. ADR-058 moved grants from ConfigMap annotations into
+// by the agent's grants. Grants moved from ConfigMap annotations into
 // the Agent spec (grantedSecretIds / grantedConnectionIds); they arrive here as
 // the typed slices off that spec. See `filterByGrants` for the semantics.
 func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
@@ -173,7 +172,7 @@ func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnection
 		}
 	}
 
-	// ADR-041: a granted-id that doesn't resolve to an owner-owned Secret
+	// A granted-id that doesn't resolve to an owner-owned Secret
 	// silently contributes nothing (parse-tolerant fallback). Operators need
 	// a signal so the missing-env mode is diagnosable; emit one log line per
 	// reconcile naming the unresolved ids.
@@ -476,7 +475,7 @@ func hostShort(host string) string {
 
 // Bootstrap template — TLS-intercepting CONNECT proxy.
 //
-// Topology (ADR-038):
+// Topology:
 //   1. The agent points HTTP(S)_PROXY at the paired gateway pod's Service DNS
 //      (e.g. `<instance>-gateway:<port>`). The listener binds 0.0.0.0 inside
 //      the gateway pod; reach is gated by NetworkPolicy, not bind address.
@@ -490,7 +489,7 @@ func hostShort(host string) string {
 //      forwards to a per-credential STRICT_DNS cluster pinned to the
 //      credential's host. The agent's inner Host header has no influence on
 //      routing — Envoy's destination is fixed in config — so the
-//      route-confusion exfiltration path called out in ADR-033 §Threat Model
+//      route-confusion exfiltration path in the threat model
 //      is structurally closed. Allow-only chains (path-rule promoted, no
 //      credential) keep using dynamic_forward_proxy_https; they have no
 //      credential to misroute.
@@ -541,7 +540,7 @@ static_resources:
                       headers:
                         - name: ":path"
                           string_match: { exact: "{{ $.HealthPath }}" }
-                  # Gate plain-HTTP egress (ADR-035). The
+                  # Gate plain-HTTP egress. The
                   # CONNECT route disables this via per-route config — TLS
                   # tunnels are gated downstream (per-host L7 chain or
                   # SNI-miss L4 catch-all). Without this filter, plain
@@ -554,13 +553,13 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                          # ADR-041: pin :authority to the per-instance
+                          # Pin :authority to the per-instance
                           # ext-authz Service hostname. Without this,
                           # Envoy's default :authority is the cluster
                           # name and the api-server cannot derive
                           # instance ID from it.
                           authority: "{{ $.ExtAuthzHost }}"
-                        # ADR-041: instance identity is conveyed by the
+                        # Instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials, cryptographically
                         # pinned by the AuthorizationPolicy on that
@@ -620,7 +619,7 @@ static_resources:
                         # :authority so this route only applies to
                         # api-server-bound calls; everything else falls
                         # through to the egress fallthrough below.
-                        # ADR-041: identity is conveyed by the SPIFFE
+                        # Identity is conveyed by the SPIFFE
                         # peer principal that ztunnel applies when
                         # encapsulating outbound traffic — the gateway
                         # pod runs as the per-instance SA, and the
@@ -681,7 +680,7 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
                 http_filters:
-                  # HITL gate (ADR-035). gRPC ext_authz to the
+                  # HITL gate. gRPC ext_authz to the
                   # api-server's single auth endpoint — same Check RPC used
                   # by the L4 catch-all chain below. Rules match short-circuit
                   # ALLOW/DENY; misses persist a pending row and hold the
@@ -695,13 +694,13 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                          # ADR-041: pin :authority to the per-instance
+                          # Pin :authority to the per-instance
                           # ext-authz Service hostname. Without this,
                           # Envoy's default :authority is the cluster
                           # name and the api-server cannot derive
                           # instance ID from it.
                           authority: "{{ $.ExtAuthzHost }}"
-                        # ADR-041: instance identity is conveyed by the
+                        # Instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials.
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
@@ -854,7 +853,7 @@ static_resources:
                 grpc_service:
                   envoy_grpc:
                     cluster_name: ext_authz_cluster
-                    # ADR-041: pin :authority to the per-instance
+                    # Pin :authority to the per-instance
                     # ext-authz Service hostname (see HCM ext_authz
                     # block above for rationale).
                     authority: "{{ $.ExtAuthzHost }}"
@@ -918,7 +917,7 @@ static_resources:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
 
-    # Plain-HTTP forward cluster (ADR-035). Used by the
+    # Plain-HTTP forward cluster. Used by the
     # outer HCM's fallthrough route to forward proxied non-CONNECT
     # requests after the HCM's L7 ext_authz applies the same
     # path/method rules used on TLS-terminated chains. No TLS —
@@ -1027,16 +1026,16 @@ static_resources:
 
 // envoyListenAddress is the bind address for the gateway pod's outer listener.
 // 0.0.0.0 — reach is gated by the gateway pod's NetworkPolicy (ingress admitted
-// only from the paired agent pod), not the bind address. ADR-038.
+// only from the paired agent pod), not the bind address.
 const envoyListenAddress = "0.0.0.0"
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
 //
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials (ADR-041). For long-lived pairs this equals the
+// the gateway dials. For long-lived pairs this equals the
 // instance name; for forks it is the parent instance's ID — fork pods
-// run as their *own* per-fork SA (ADR-027), but the parent owner's HITL
+// run as their *own* per-fork SA, but the parent owner's HITL
 // rules should gate fork egress, so the fork's gateway dials the parent's
 // per-instance ext-authz Service. The fork SA is admitted there via a
 // separate per-fork AuthorizationPolicy (`BuildForkExtAuthzAuthorizationPolicy`).
@@ -1049,8 +1048,8 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	// :authority value the harness Service is reached on. The agent
-	// builds harness URLs from cfg.HarnessServerURL (`<rel>-apiserver-harness`
-	// per ADR-041), so the Host/:authority includes the port. We match on
+	// builds harness URLs from cfg.HarnessServerURL (`<rel>-apiserver-harness`),
+	// so the Host/:authority includes the port. We match on
 	// this exact string so the harness route is scoped to api-server
 	// traffic only — fall-through goes through the regular egress paths.
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
@@ -1095,7 +1094,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 // Envoy bootstrap YAML for an instance.
 //
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials (ADR-041). Long-lived pairs pass `instanceName` for
+// the gateway dials. Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
 func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets)
@@ -1118,7 +1117,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *
 // bootstrap ConfigMap, per-Secret credential files, and the cert-manager-issued
 // TLS leaf used to terminate the agent's intercepted TLS. None of these are
 // referenced from the agent pod — the credential boundary lives at the pod
-// boundary (ADR-038).
+// boundary.
 func envoyVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name: envoyBootstrapVolume,
@@ -1196,7 +1195,7 @@ func envoySecretsRev(secrets []corev1.Secret) string {
 // envoyContainer returns the gateway pod's Envoy container spec. Drops all caps,
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
 // credential Secrets. Used as the sole non-init container of the paired
-// gateway pod (ADR-038).
+// gateway pod.
 func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Container {
 	mounts := []corev1.VolumeMount{{
 		Name:      envoyBootstrapVolume,

@@ -85,7 +85,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		agent := &agents.Items[i]
 		name := agent.GetName()
 		// Active by activity annotations → not an idle candidate. This is the
-		// exact decision the reconciler uses to scale up (ADR-058), so the two
+		// exact decision the reconciler uses to scale up, so the two
 		// can never disagree about whether an agent is idle.
 		if shouldRun(agent.GetAnnotations(), timeout, now) {
 			continue
@@ -141,7 +141,7 @@ func (c *IdleChecker) podIsBusy(agentName string) bool {
 
 // hibernate scales an agent's paired StatefulSets (agent + gateway, both
 // labelled LabelAgent=name) to zero and records the Hibernated phase on the
-// Agent status subresource. ADR-058: the idle checker is the sole scale-down
+// Agent status subresource. The idle checker is the sole scale-down
 // authority and never writes spec — run state is derived from activity, not a
 // stored desiredState. Idempotent: a StatefulSet already at zero is left
 // untouched.
@@ -174,7 +174,7 @@ func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
 	return updateAgentStatus(ctx, c.dynamic, c.config.Namespace, name, func(s *apiv1.AgentStatus) {
 		// Pods are gone, so the agent is not routable until woken — reflect that
 		// on Ready (the api-server's routing signal). The Hibernated reason lets
-		// consumers tell this from a still-starting agent (ADR-059).
+		// consumers tell this from a still-starting agent.
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)

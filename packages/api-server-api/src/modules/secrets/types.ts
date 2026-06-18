@@ -152,7 +152,7 @@ export interface ProviderPresetMode {
   /** Override the default `Authorization: Bearer {value}` injection.
    *  Set for Anthropic api-key mode (`x-api-key`); omit elsewhere. */
   injection?: InjectionConfig;
-  /** Twin K8s Secret per entry; lifecycle cascaded by service. See ADR-044. */
+  /** Twin K8s Secret per entry; lifecycle cascaded by service. */
   extraInjections?: readonly InjectionConfig[];
 }
 

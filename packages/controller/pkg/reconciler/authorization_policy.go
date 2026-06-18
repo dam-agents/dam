@@ -30,7 +30,7 @@ import (
 // `<id>-agent-egress` NetworkPolicy at the kernel layer, not by mesh AuthZ
 // — see network_policy.go.
 //
-// Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
+// Forks get their **own** per-fork SA — distinct from the parent —
 // paired with two release-namespace policies that scope the fork narrowly
 // to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
 // fork SA only to `/api/agents/<parent>/mcp`, and
@@ -147,7 +147,7 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 // BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
 // **narrow** path under the parent agent — `/api/agents/<parent>/mcp`
 // only, not the parent's full `/api/agents/<parent>/*` surface. This
-// preserves the ADR-027 trust boundary: a compromised fork (i.e. a
+// preserves the fork trust boundary: a compromised fork (i.e. a
 // compromised foreign replier) cannot reach pod-files SSE,
 // `/internal/trigger`, or any future per-agent harness endpoint scoped
 // to the parent. Lives in the release namespace alongside the parent's

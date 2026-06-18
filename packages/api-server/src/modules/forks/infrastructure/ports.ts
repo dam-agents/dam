@@ -8,7 +8,7 @@ export type OrchestratorCreateError =
 export interface ForkOrchestratorPort {
   /**
    * Write the fork ConfigMap. The controller resolves the replier's K8s
-   * credential Secrets at render time using `spec.foreignSub` (ADR-033).
+   * credential Secrets at render time using `spec.foreignSub`.
    */
   createFork(args: {
     forkId: string;

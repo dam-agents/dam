@@ -583,8 +583,8 @@ function googleService(
       // The Google Workspace CLI (`gws`, baked into platform-base) reads this
       // env var as its OAuth access token. Granting any Google connection
       // stamps the sentinel here; the egress-inject contribution below then
-      // has Envoy swap it for the real Bearer token on *.googleapis.com calls
-      // (ADR-033). Same name across all Google services — first-granted-wins.
+      // has Envoy swap it for the real Bearer token on *.googleapis.com calls.
+      // Same name across all Google services — first-granted-wins.
       {
         kind: "env",
         name: "GOOGLE_WORKSPACE_CLI_TOKEN",

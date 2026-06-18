@@ -6,7 +6,7 @@ import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js
 export interface TriggerImpl {
   handle(payload: TriggerEventPayload): Promise<void>;
   /** Clear a schedule's continuous-session binding so the next fire starts
-   *  fresh (ADR-055 reset). */
+   *  fresh. */
   reset(scheduleId: string): void;
 }
 

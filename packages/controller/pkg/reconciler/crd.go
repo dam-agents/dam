@@ -11,7 +11,7 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// GVRs / GVKs for the reconciled custom resources (ADR-058). Agents are the
+// GVRs / GVKs for the reconciled custom resources. Agents are the
 // durable per-agent resource the controller watches; the fork GVR is declared
 // here for the (forthcoming) fork cutover but agents are the only CR the
 // controller reconciles today.

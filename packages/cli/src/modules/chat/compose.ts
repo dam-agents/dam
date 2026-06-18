@@ -20,7 +20,7 @@ export function composeChatModule({
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
 }): { commands: ReadonlyArray<Command> } {
-  // Sessions are agent-owned (ADR-055): the port talks ACP to the agent over
+  // Sessions are agent-owned: the port talks ACP to the agent over
   // the api-server relay, not tRPC.
   const buildSessionsPort = (host: string, token: string) =>
     createSessionsPort({ acp: createAcpSessionClient({ host, token }) });

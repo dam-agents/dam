@@ -69,7 +69,7 @@ describe("telegram oauth callback", () => {
     exchangeCodeForTokens.mockReset();
   });
 
-  // Regression for the terms-of-use gate (ADR-047): the inbound gate calls
+  // Regression for the terms-of-use gate: the inbound gate calls
   // isTermsAccepted(authorizedBy), which is keyed on the Keycloak sub. The
   // callback must persist the sub — persisting the Telegram user ID would make
   // the gate block every message regardless of UI acceptance.

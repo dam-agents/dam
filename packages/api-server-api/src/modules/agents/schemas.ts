@@ -71,4 +71,4 @@ export const agentConnectTelegramInputSchema = z.object({
 
 // The Agent CR spec shape is the generated AgentSpecCR (crd-types.gen.ts, from
 // the controller's CRD); the public AgentSpec (types.ts) derives from it. K8s
-// validates it at admission (ADR-058), so there's no Zod re-validation here.
+// validates it at admission, so there's no Zod re-validation here.

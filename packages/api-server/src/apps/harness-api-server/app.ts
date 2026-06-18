@@ -39,7 +39,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
-  // Boot-loaded, file-mounted templates (ADR-058), shared across requests.
+  // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
 
   const app = createHarnessRouter({

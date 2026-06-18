@@ -5,7 +5,7 @@ export const ruleVerdictSchema = z.enum(["allow", "deny"]);
 // Used both by egress-rules procedures (applyPreset) and by
 // agents.create (transient bulk-seed selector at agent creation; the
 // preset is not stored on the agent spec — the seeded rules' `source`
-// is the truth). See ADR-035.
+// is the truth).
 export const egressPresetSchema = z.enum(["none", "trusted", "all"]);
 
 export const egressRuleListForAgentInputSchema = z.object({

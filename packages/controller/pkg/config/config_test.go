@@ -38,7 +38,7 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
 	// AgentHome falls through from AGENT_HOME (with its env-var default).
 	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
-	// ADR-041: ext-authz host is per-instance (no shared default).
+	// ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 
@@ -76,7 +76,7 @@ func TestLoadFromEnv_RejectsMissingContainerSecurityContext(t *testing.T) {
 	assert.Contains(t, err.Error(), "containerSecurityContext")
 }
 
-// ADR-041: per-instance ext-authz host derives from release name +
+// Per-instance ext-authz host derives from release name +
 // instance ID + release namespace.
 func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 	setEnv(t, map[string]string{
@@ -89,7 +89,7 @@ func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 	assert.Equal(t, "my-release-extauthz-abc.custom-ns.svc.cluster.local", cfg.ExtAuthzHostFor("abc"))
 }
 
-// ADR-041: principal string follows SPIFFE shape `<td>/ns/<ns>/sa/<sa>`,
+// Principal string follows SPIFFE shape `<td>/ns/<ns>/sa/<sa>`,
 // matching how istiod stamps workload certs.
 func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	setEnv(t, map[string]string{

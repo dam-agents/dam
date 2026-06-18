@@ -178,7 +178,7 @@ else
   echo "cert-manager already installed"
 fi
 
-# 2b. Install Istio ambient + Gateway-API CRDs (required by ADR-041).
+# 2b. Install Istio ambient + Gateway-API CRDs (required).
 # Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
 # and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
 # floor for ambient L7 with locked-down waypoint HCM.
@@ -359,7 +359,7 @@ else
   # Build (and below, load) only the templates enabled in the effective rendered
   # values (--set/--helm-values honored). Capture first so a failed render aborts
   # rather than silently building none. Templates are one ConfigMap keyed by
-  # "<name>.yaml" (ADR-058); emit "<name>.yaml\t<image>" per data entry.
+  # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry.
   AGENTS_RENDERED=$(helm template platform deploy/helm/platform \
       -f deploy/helm/platform/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
@@ -370,7 +370,7 @@ else
   AGENT_IMAGES=()
   while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
-    name="${name%.yaml}" # data keys are "<name>.yaml" (ADR-058 single CM)
+    name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
     if [ -d "packages/agents/$name" ]; then
       [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
       AGENT_TASKS+=("agents:$name:image")
@@ -424,7 +424,7 @@ if [ "$ROOT_FSTYPE" = "btrfs" ]; then
 fi
 
 echo "Installing/upgrading Platform chart..."
-# Helm never upgrades the chart's crds/ on an existing release (ADR-068) — on
+# Helm never upgrades the chart's crds/ on an existing release — on
 # this single-env local cluster the freeze has no value, so apply them directly.
 # The explicit Established wait keeps the helm install below race-free even if
 # the chart ever grows a CR instance (today it deliberately ships none).
@@ -610,7 +610,7 @@ else
 fi
 
 # Rebuild only the agents the cluster has deployed — their entries in the
-# agent-templates ConfigMap (ADR-058: one CM keyed by "<name>.yaml"). Capture
+# agent-templates ConfigMap (one CM keyed by "<name>.yaml"). Capture
 # first so a kubectl failure aborts rather than looking like "nothing deployed".
 DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
   | yq -r '.items[] | select(.metadata.name | test("-agent-templates$"))
@@ -621,7 +621,7 @@ AGENT_TASKS=()
 AGENT_IMAGES=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
-  name="${name%.yaml}" # data keys are "<name>.yaml" (ADR-058 single CM)
+  name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
   if [ -d "packages/agents/$name" ]; then
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
     AGENT_TASKS+=("agents:$name:image")

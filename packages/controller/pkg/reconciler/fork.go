@@ -55,11 +55,11 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	timer := newReconcileTimer("fork", forkName)
 	defer timer.done()
 
-	// ADR-058: K8s validated the spec at admission, so the controller trusts
+	// K8s validated the spec at admission, so the controller trusts
 	// the typed resource — no app-layer re-parse.
 	forkSpec := &fork.Spec
 
-	// ADR-046: the fork derives from a single Agent that carries both
+	// The fork derives from a single Agent that carries both
 	// definition and runtime fields. Resolve it directly.
 	parentAgent, agentSpec, err := r.resolver.Resolve(forkSpec.AgentName)
 	if err != nil {
@@ -74,8 +74,8 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 
 	// Load the replier's K8s credential Secrets and render the per-fork
 	// bootstrap ConfigMap + leaf certificate. Secrets are scoped to
-	// `foreignSub` — the parent owner's secrets must NOT appear here
-	// (ADR-033 §"Fork-Job pods follow the replier"). The per-fork
+	// `foreignSub` — the parent owner's secrets must NOT appear here.
+	// The per-fork
 	// bootstrap/leaf names are derived from `forkName`, so the resources
 	// are owned by the fork ConfigMap and GC'd with it.
 	credentialSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, forkSpec.ForeignSub)
@@ -99,7 +99,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 	timer.mark("envoyBootstrap")
 
-	// ADR-041: per-fork ServiceAccount in the agent namespace. Forks get
+	// Per-fork ServiceAccount in the agent namespace. Forks get
 	// their OWN identity (not the parent's) so a compromised fork cannot
 	// reach the parent's full `/api/agents/<parent>/*` surface — only
 	// the narrow paths the per-fork harness AuthorizationPolicy below
@@ -110,7 +110,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 	timer.mark("serviceAccount")
 
-	// ADR-027: per-fork harness policy admits the fork SA only to
+	// Per-fork harness policy admits the fork SA only to
 	// `/api/agents/<parent>/mcp` (not the parent's full surface), and
 	// the per-fork ext-authz policy admits the fork SA to the parent's
 	// per-agent ext-authz Service so the parent owner's HITL rules
@@ -131,9 +131,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 	timer.mark("authzAndNetpol")
 
-	// ADR-038: paired gateway pod for the fork. Render the gateway-side
+	// Paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
-	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
+	// agent Job's pod starts dialing it. Pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
 	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
@@ -442,7 +442,7 @@ func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.Con
 }
 
 // applyAuthorizationPolicy mirrors `AgentReconciler.applyAuthorizationPolicy`
-// for fork-scoped policies (per-fork gateway admission, ADR-041).
+// for fork-scoped policies (per-fork gateway admission).
 func (r *ForkReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
 	if r.dynamic == nil {
 		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")

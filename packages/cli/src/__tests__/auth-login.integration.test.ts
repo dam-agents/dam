@@ -109,7 +109,7 @@ async function followRedirects(
 }
 
 // The deployed Keycloak uses the first-party Keycloakify SPA login theme
-// (ADR-054, packages/keycloak-theme). It serves an HTML shell with an
+// (packages/keycloak-theme). It serves an HTML shell with an
 // embedded `const kcContext = {...}` object and renders the login/consent
 // forms client-side — there is no server-rendered `<form action=...>`. The
 // POST targets, however, are unchanged Keycloak endpoints carried in

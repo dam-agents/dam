@@ -4,8 +4,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ForkSpec is the per-turn ephemeral runtime that derives from an Agent
-// (ADR-046: Forks survived the Instance/Agent collapse). The parent Agent's
+// ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
+// Forks survived the Instance/Agent collapse. The parent Agent's
 // egress surface scopes what the fork can reach. The api-server is the sole
 // writer.
 type ForkSpec struct {
@@ -54,12 +54,12 @@ type ForkStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=1
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Agent",type=string,JSONPath=`.spec.agentName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Fork is a per-turn impersonation run derived from an Agent (ADR-046).
+// Fork is a per-turn impersonation run derived from an Agent.
 type Fork struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -247,7 +247,7 @@ async function runCreate(
   const githubPat = await pickGithubPat(trpc, cleanup);
 
   // --- Step 5: agents.create ----------------------------------------
-  // Per ADR-046, Agent absorbs Instance: a single agents.create call
+  // Agent absorbs Instance: a single agents.create call
   // provisions the runnable resource. Stage 1 discriminates by TRPCError
   // code. Definitive rejections (ROLLBACK_CODES) mean the resource was
   // never created, so deleting what *we* created is safe; ambiguous

@@ -110,8 +110,8 @@ keycloak:
   log:
     consoleOutput: "default"
 
-# terms.* are required by the chart validators (ADR-047). Dev placeholder so a
+# terms.* are required by the chart validators. Dev placeholder so a
 # local install renders and installs without extra flags.
 terms:
   version: dev
-  text: "Dev placeholder Terms of Use. See ADR-047."
+  text: "Dev placeholder Terms of Use."

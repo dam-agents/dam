@@ -97,10 +97,10 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 // credentialed chains forward to a per-credential static cluster pinned to
 // the credential's host with SAN-bound upstream TLS validation; the agent's
 // inner Host header has no influence on routing. The route-confusion
-// exfiltration path called out in ADR-033 §Threat Model is structurally
+// exfiltration path in the threat model is structurally
 // closed by these properties — the assertions below are the regression spec.
 
-// ADR-041: ExtAuthzHost is no longer a flat config field — it is computed
+// ExtAuthzHost is no longer a flat config field — it is computed
 // per-instance via cfg.ExtAuthzHostFor(<id>) using ReleaseName + ReleaseNamespace.
 var bootstrapTestCfg = &config.Config{
 	Namespace:           "agents",
@@ -291,7 +291,7 @@ func envByName(envs []corev1.EnvVar) map[string]string {
 }
 
 func TestCredentialEnvVars_ReadsEnvMappingsAnnotation(t *testing.T) {
-	// ADR-041: the secret's `env-mappings` annotation is the source of truth
+	// The secret's `env-mappings` annotation is the source of truth
 	// — controller emits exactly the listed envs with their placeholders.
 	got := credentialEnvVars([]corev1.Secret{
 		secretWithEnvMappings(
@@ -309,7 +309,7 @@ func TestCredentialEnvVars_ReadsEnvMappingsAnnotation(t *testing.T) {
 func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
 	// Two granted secrets contributing the same env name. Owner secret list
 	// is lex-sorted by Name (`listOwnerCredentialSecrets`), so the lex-
-	// smallest one wins via the inner dedup. ADR-041 §Precedence.
+	// smallest one wins via the inner dedup.
 	got := credentialEnvVars([]corev1.Secret{
 		secretWithEnvMappings(
 			"platform-cred-aaa",
@@ -329,7 +329,7 @@ func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
 
 func TestCredentialEnvVars_MalformedJSONFallsBackToLegacySwitch(t *testing.T) {
 	// Parse-tolerant fallback: malformed JSON should not hide the canonical
-	// Anthropic env. Hand-edited Secrets and pre-ADR-041 fixtures rely on
+	// Anthropic env. Hand-edited Secrets and legacy fixtures rely on
 	// this path.
 	s := ownerSecret("platform-cred-aaa", "anthropic", "")
 	s.Annotations[envoyAuthModeAnn] = "api-key"
@@ -441,7 +441,7 @@ func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 
 func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
 	// Anthropic Secret carrying an explicit annotation overrides what the
-	// legacy auth-mode switch would have produced. Tests the ADR-041 path
+	// legacy auth-mode switch would have produced. Tests the annotation-driven path
 	// for the typical UI-created Anthropic secret.
 	got := credentialEnvVars([]corev1.Secret{
 		secretWithEnvMappings(

@@ -6,7 +6,7 @@ import type {
 } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 
-/** ADR-058: an agent is a single custom resource; grants live in its spec
+/** An agent is a single custom resource; grants live in its spec
  *  (`grantedSecretIds` / `grantedConnectionIds`). */
 function agentObj(
   name: string,

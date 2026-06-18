@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Generate the Agent + Fork CR spec TypeScript types from the controller's CRDs
-# (ADR-058). Shared by api-server-api:gen:crd-types (writes the committed file)
+# Generate the Agent + Fork CR spec TypeScript types from the controller's CRDs.
+# Shared by api-server-api:gen:crd-types (writes the committed file)
 # and api-server-api:check:gen (writes a temp file, then diffs) so the drift
 # gate never rewrites the committed file that tsc consumers read.
 #

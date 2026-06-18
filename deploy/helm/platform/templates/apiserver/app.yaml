@@ -1,7 +1,7 @@
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
-# Public Service. ADR-041: carries only the public HTTP/tRPC port; harness
+# Public Service. Carries only the public HTTP/tRPC port; harness
 # moves to the -harness Service (waypoint-fronted) and ext-authz moves to
 # per-agent Services rendered by the controller. This Service therefore
 # never carries the istio.io/use-waypoint label — browser traffic continues
@@ -25,7 +25,7 @@ spec:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
 ---
-# Harness Service (ADR-041). The `istio.io/use-waypoint` LABEL (NOT
+# Harness Service. The `istio.io/use-waypoint` LABEL (NOT
 # annotation — Istio 1.21+ silently ignores the annotation form) routes
 # inbound traffic via the waypoint Gateway declared in waypoint.yaml. The
 # waypoint terminates HBONE and applies per-agent AuthorizationPolicies
@@ -74,7 +74,7 @@ spec:
   template:
     metadata:
       annotations:
-        # The api-server loads the mounted agent-templates once at boot (ADR-058),
+        # The api-server loads the mounted agent-templates once at boot,
         # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
         # the pod when the rendered templates change, making `helm upgrade` of a
         # template take effect instead of serving stale ones until the next restart.
@@ -130,7 +130,7 @@ spec:
             {{- end }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
-            # ADR-041: api-server parses agent ID out of the per-agent
+            # api-server parses agent ID out of the per-agent
             # ext-authz Service hostname Envoy dialled. The release name is
             # the prefix.
             - name: PLATFORM_RELEASE_NAME
@@ -277,7 +277,7 @@ spec:
             {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
-            # ADR-058: agent templates are mounted from a ConfigMap and loaded
+            # agent templates are mounted from a ConfigMap and loaded
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
               value: /etc/platform/agent-templates
@@ -319,7 +319,7 @@ spec:
               subPath: trusted-hosts
               readOnly: true
             # Whole-ConfigMap mount (no subPath): each `<id>.yaml` data key
-            # surfaces as a file the api-server loads at boot (ADR-058).
+            # surfaces as a file the api-server loads at boot.
             - name: git-repos
               mountPath: /etc/platform/git-repos
               readOnly: true

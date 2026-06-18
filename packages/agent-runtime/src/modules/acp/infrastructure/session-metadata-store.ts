@@ -36,7 +36,7 @@ export interface SessionMetadataStore {
   get(sessionId: string): SessionMetaEntry | undefined;
   set(sessionId: string, meta: PlatformSessionMeta): void;
   all(): Record<string, SessionMetaEntry>;
-  /** Soft delete (ADR-055): drop the entry and remember the id so list
+  /** Soft delete: drop the entry and remember the id so list
    *  enrichment filters it out even while the harness still lists the JSONL. */
   tombstone(sessionId: string): void;
   isTombstoned(sessionId: string): boolean;

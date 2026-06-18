@@ -226,7 +226,7 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
 
-            // Dumb proxy (ADR-007/055): the agent owns session existence; the
+            // Dumb proxy: the agent owns session existence; the
             // server learns of sessions via session/list, not by writing here.
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);

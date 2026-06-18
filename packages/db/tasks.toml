@@ -46,7 +46,7 @@ run = "pnpm exec drizzle-kit migrate"
 
 # Scaffold a HAND-WRITTEN migration file + journal entry — for the reporting
 # views, which aren't in schema.ts so db:generate can't emit them. Table changes
-# use db:generate, not this. Usage: mise run db:new -- <name>  (see ADR-063)
+# use db:generate, not this. Usage: mise run db:new -- <name>
 #
 # Wraps `drizzle-kit generate --custom`: it scaffolds the empty .sql, the journal
 # entry, AND a snapshot (a copy of the latest — a hand-written view migration
@@ -65,7 +65,7 @@ pnpm exec drizzle-kit generate --custom --name "$slug"
 echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
 '''
 
-# Guard (ADR-063): assert every schema.ts change has been generated into a
+# Guard: assert every schema.ts change has been generated into a
 # migration. Diffs schema.ts against the committed snapshots inside a throwaway
 # copy of drizzle/ — if `generate` would add a migration, the schema changed
 # without `mise run db:generate`. Pure files, no database, so it runs in `mise

@@ -7,7 +7,7 @@ import {
 describe("buildExtAuthzSynthFrame", () => {
   // Regression guard: a missing JSON-RPC `id` flips the frame to a notification
   // and the ACP SDK routes it through `extNotification` instead of the request
-  // handler, so the live-UI inbox prompt never fires (ADR-035 §"Inbox").
+  // handler, so the live-UI inbox prompt never fires.
   it("emits a JSON-RPC request (with `id`), not a notification", () => {
     const frame = JSON.parse(
       buildExtAuthzSynthFrame({

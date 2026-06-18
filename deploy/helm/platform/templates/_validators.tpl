@@ -43,13 +43,12 @@ comment.
 Terms of Use are non-optional — the api-server gate refuses every
 authenticated route until each user has accepted the current version.
 A missing text or version would lock out every account at first request.
-See ADR-047.
 */}}
 {{- define "platform.validate.termsRequired" -}}
 {{- if not (.Values.terms.text | default "" | trim) -}}
-{{- fail "terms.text is required. Supply via `helm install --set-file terms.text=./TERMS.md`. See ADR-047." -}}
+{{- fail "terms.text is required. Supply via `helm install --set-file terms.text=./TERMS.md`." -}}
 {{- end -}}
 {{- if not (.Values.terms.version | default "" | trim) -}}
-{{- fail "terms.version is required. Bump on material text changes to re-prompt every user. See ADR-047." -}}
+{{- fail "terms.version is required. Bump on material text changes to re-prompt every user." -}}
 {{- end -}}
 {{- end -}}

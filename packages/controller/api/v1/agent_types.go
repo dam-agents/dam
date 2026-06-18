@@ -5,11 +5,11 @@ import (
 )
 
 // AgentSpec is the desired state of an Agent — the sole durable per-agent
-// resource after ADR-046 collapsed Instance into Agent. The api-server is the
+// resource after Instance was collapsed into Agent. The api-server is the
 // sole writer.
 //
 // There is no desiredState field: running-vs-hibernated is not stored intent
-// but observed status the controller derives from activity (ADR-058). Security
+// but observed status the controller derives from activity. Security
 // context and scheduling are chart-only (config.AgentBase) and cannot be set
 // here by design.
 type AgentSpec struct {
@@ -62,8 +62,8 @@ type AgentSpec struct {
 	ImagePullSecretRef string `json:"imagePullSecretRef,omitempty"`
 
 	// GrantedSecretIDs are the credential Secret IDs granted to this agent's
-	// egress — intent written by the api-server. ADR-058 moved these from a
-	// ConfigMap annotation into spec, because they are reconciled by the
+	// egress — intent written by the api-server. These live in spec rather
+	// than a ConfigMap annotation, because they are reconciled by the
 	// controller into the credential set mounted on the gateway.
 	// +optional
 	GrantedSecretIDs []string `json:"grantedSecretIds,omitempty"`
@@ -74,12 +74,12 @@ type AgentSpec struct {
 
 // Condition types on an Agent's status. Conditions are the source of truth for
 // operational state; the api-server routes on ConditionReady. There is no phase
-// field — the conditions are the only status the api-server reads (ADR-059).
+// field — the conditions are the only status the api-server reads.
 const (
 	// ConditionReady is the agent's overall readiness — the intersection of
 	// the agent and gateway pod readiness. The api-server treats this as the
 	// authoritative "can I route to this agent?" signal (supersedes the
-	// agent-pod-only live check of ADR-032).
+	// earlier agent-pod-only live check).
 	ConditionReady = "Ready"
 	// ConditionAgentPodReady mirrors the agent pod's observed Ready condition.
 	ConditionAgentPodReady = "AgentPodReady"
@@ -94,7 +94,7 @@ const (
 
 // ReasonHibernated is stamped on the readiness conditions when the idle checker
 // scales an agent to zero. It lets a consumer tell a hibernated agent (idle,
-// scaled down) from one still starting — both report Ready=False (ADR-059).
+// scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
 // AgentStatus is the observed state of an Agent. The controller is the sole
@@ -144,14 +144,14 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=3
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Agent is the durable, owned, runnable resource — definition, runtime state,
-// and lifecycle in one custom resource (ADR-046, ADR-058).
+// and lifecycle in one custom resource.
 type Agent struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

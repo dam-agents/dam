@@ -44,15 +44,15 @@ export interface AgentsRepository {
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
   /** Resolve an agent CR to its identity. Used by the ext_authz hot path
-   *  to look up egress rules and credit pending approvals. After ADR-046
-   *  the agent is its own resource, so `agentId === id`. */
+   *  to look up egress rules and credit pending approvals. The agent is
+   *  its own resource, so `agentId === id`. */
   resolveIdentity(
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   clearActiveSessions(): Promise<number>;
   wakeIfHibernated(id: string): Promise<boolean>;
-  /** Authoritative reachability (ADR-059): the controller's Ready condition
+  /** Authoritative reachability: the controller's Ready condition
    *  (`AgentPodReady ∧ GatewayPodReady`). Absent or False ⇒ not ready; the
    *  api-server never reads pods. */
   isReady(id: string): Promise<boolean>;
@@ -129,7 +129,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return false;
       if (owner && !agentIsOwnedBy(obj, owner)) return false;
-      // ADR-058 A3: bump roll-rev. The controller stamps it into both pod
+      // Bump roll-rev. The controller stamps it into both pod
       // templates, rolling the pair — no pod-template annotation dance, no
       // direct pod deletion.
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -141,7 +141,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     async wake(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      // ADR-058: waking is an activity poke — bump last-activity so the
+      // Waking is an activity poke — bump last-activity so the
       // reconciler scales the pair up. There is no desiredState to flip.
       await bumpLastActivity(id);
       const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
@@ -188,15 +188,15 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     async wakeIfHibernated(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return false;
-      // Unconditional activity poke (ADR-058); waking an already-running
+      // Unconditional activity poke; waking an already-running
       // agent simply keeps it warm.
       await bumpLastActivity(id);
       return true;
     },
 
     async isReady(id) {
-      // The controller-published Ready condition is the sole authority
-      // (ADR-059). Absent (not yet reconciled) or False ⇒ not ready — the
+      // The controller-published Ready condition is the sole authority.
+      // Absent (not yet reconciled) or False ⇒ not ready — the
       // api-server never inspects pods directly.
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       return obj !== null && readyConditionStatus(obj) === "True";

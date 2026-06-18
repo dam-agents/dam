@@ -5,7 +5,7 @@ sources = ["go.mod", "go.sum"]
 
 # Regenerate deepcopy methods and CRD manifests from the api/ Go types
 # (controller-gen). Run after editing any type under api/. CRDs land in the
-# Helm chart's crds/ directory (ADR-068).
+# Helm chart's crds/ directory.
 ["controller:generate"]
 dir = "{{config_root}}/packages/controller"
 run = """
@@ -53,7 +53,8 @@ if ! git rev-parse -q --verify "$baseline^{commit}" >/dev/null; then
   exit 1
 fi
 crds=deploy/helm/platform/crds
-legacy=deploy/helm/platform/files/crds # pre-ADR-068 location at older baselines
+legacy=deploy/helm/platform/files/crds # legacy location at older baselines
+config=packages/controller/crdify.yaml # downgrades description-only diffs to advisory
 status=0
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" "$legacy"); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
@@ -73,7 +74,7 @@ for f in "$crds"/*.yaml; do
     echo "crd-compat: $f is new since $baseline — skipped"
     continue
   fi
-  if ! crdify "git://${base%%:*}?path=${base#*:}" "file://$f"; then
+  if ! crdify --config "$config" "git://${base%%:*}?path=${base#*:}" "file://$f"; then
     echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
     status=1
   fi
@@ -81,7 +82,7 @@ done
 exit $status
 '''
 
-# ADR-068: any CRD .spec change must bump agent-platform.ai/crd-schema-generation.
+# any CRD .spec change must bump agent-platform.ai/crd-schema-generation.
 # Baseline is the origin/main merge-base, so every PR that touches a schema must
 # bump (not just the first since a release); an unresolvable baseline is a hard
 # error, never a silent skip (a v* tag predating the CRDs is how #932 slipped through).
@@ -121,7 +122,7 @@ for f in "$crds"/*.yaml; do
   new_gen=$(yq "$gen" "$f")
   old_gen=$(git show "$base" | yq "$gen")
   if [ "$new_gen" -le "$old_gen" ]; then
-    echo "crd-generation: $(basename "$f") .spec changed vs $base_ref but agent-platform.ai/crd-schema-generation is still $new_gen (was $old_gen) — bump the constant in api/v1/schema_generation.go and its +kubebuilder:metadata:annotations marker, then run mise run controller:generate (ADR-068)" >&2
+    echo "crd-generation: $(basename "$f") .spec changed vs $base_ref but agent-platform.ai/crd-schema-generation is still $new_gen (was $old_gen) — bump the constant in api/v1/schema_generation.go and its +kubebuilder:metadata:annotations marker, then run mise run controller:generate" >&2
     status=1
   fi
 done

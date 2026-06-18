@@ -42,7 +42,7 @@ interface InternalSecretCreate {
 /**
  * Default env-var bundle for a provider preset+mode, sourced from the
  * registry. Returns `undefined` for generic secrets (the user declares
- * their own env). ADR-040: keeps non-UI clients (CLI, scripts) from
+ * their own env). Keeps non-UI clients (CLI, scripts) from
  * producing secrets the controller can't merge into agent pod env.
  */
 function registryEnvMappings(
@@ -140,7 +140,7 @@ function buildHostGrantsMap(
 }
 
 /**
- * Sync port for connection-derived egress rules (ADR-035).
+ * Sync port for connection-derived egress rules.
  * The secrets module owns the per-agent grant list; this port reconciles
  * `egress_rules` with that list whenever it changes. Optional dep — non-
  * cluster contexts (tests) skip the side effect.

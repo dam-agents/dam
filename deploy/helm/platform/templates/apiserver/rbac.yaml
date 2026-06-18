@@ -20,9 +20,9 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
-  # No configmaps/pods: the api-server reads neither anywhere (ADR-058 —
-  # agents/forks are CRs, templates are file-mounted; ADR-059 — reachability is
-  # the Agent's Ready condition).
+  # No configmaps/pods: the api-server reads neither anywhere —
+  # agents/forks are CRs, templates are file-mounted, and reachability is
+  # the Agent's Ready condition.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
@@ -54,19 +54,19 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
-  # ADR-058: the api-server is the sole writer of the Agent + Fork custom
+  # the api-server is the sole writer of the Agent + Fork custom
   # resource spec (create/patch/delete); the controller owns their status.
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents", "forks"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Secrets for credentials. ConfigMaps are gone from the api-server's API
-  # surface (ADR-058): agents/forks are CRs and the chart-shipped templates
+  # surface: agents/forks are CRs and the chart-shipped templates
   # are mounted as files, loaded at boot — not read via the K8s API.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # No persistentvolumeclaims: the controller owns the PVC lifecycle (ADR-058).
-  # No pods: reachability is the Agent's Ready condition (ADR-059), and restart
+  # No persistentvolumeclaims: the controller owns the PVC lifecycle.
+  # No pods: reachability is the Agent's Ready condition, and restart
   # is a roll-rev annotation patch — the api-server never reads pods.
 ---
 apiVersion: rbac.authorization.k8s.io/v1

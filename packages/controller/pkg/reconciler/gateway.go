@@ -9,7 +9,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Paired gateway pod (ADR-038). The gateway runs Envoy and is the only
+// Paired gateway pod. The gateway runs Envoy and is the only
 // pod the paired agent can reach for TCP 80/443. Credential Secrets, the
 // leaf TLS Secret, and the Envoy bootstrap ConfigMap mount here only —
 // the agent pod has no path to Secret material.
@@ -56,7 +56,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 	gracePeriod := gatewayTerminationGracePeriod
 
 	annotations := map[string]string{
-		// Roll trigger (ADR-035): hash of the Secret set driving the Envoy
+		// Roll trigger: hash of the Secret set driving the Envoy
 		// bootstrap. When the api-server adds an allow-only Secret to promote
 		// a host onto L7, the hash changes, the pod template diverges, and
 		// the gateway StatefulSet rolls so Envoy picks up the new chain set
@@ -91,7 +91,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 			Replicas:    &replicas,
 			ServiceName: gatewayName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
-			// Single-replica pair (ADR-038): there is no "graceful rolling"
+			// Single-replica pair: there is no "graceful rolling"
 			// to preserve. Default StatefulSet rollouts wait for the existing
 			// pod to be Ready before replacing it, which deadlocks if the
 			// pod is in CrashLoopBackOff (e.g. when the bootstrap CM was
@@ -149,11 +149,11 @@ func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.O
 // BuildForkGatewayPod renders the gateway pod for a fork. Forks use a bare
 // Pod (not a StatefulSet) — there is exactly one fork pod ever, and the
 // owner reference on the fork ConfigMap GCs the Pod when the fork CM is
-// deleted (ADR-038).
+// deleted.
 //
 // `parentAgentID` flows into the `agent-platform.ai/agent` label so
 // ext_authz Check calls from this gateway resolve under the parent
-// agent's egress rules (ADR-027). The pair key is the fork's own name
+// agent's egress rules. The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent agent's pair.
 func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
@@ -178,7 +178,7 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.PodSpec{
-			// ADR-027: fork gateway pod runs as the per-fork SA (its own
+			// Fork gateway pod runs as the per-fork SA (its own
 			// identity, NOT the parent's). The fork *agent* opts out of
 			// ambient (no SPIFFE on that pod), so this gateway SA is the
 			// SPIFFE principal both per-fork harness and per-fork

@@ -77,13 +77,12 @@ export const telegramThreads = pgTable(
  * Egress rules — per-agent, owner-scoped via the agent CM. A rule keyed on
  * (agent_id, host, method, path_pattern) applies to the agent's pod and
  * any forks it spawns (mirrors the scoping of connector envs and
- * Secret-volume mounts; see ADR-024 / ADR-033 / ADR-046).
+ * Secret-volume mounts).
  *
  * `source` records the row's origin — `manual`, `inbox`, `connection:<id>`,
  * `preset:trusted`, `preset:all`. User edits flip the source to `manual` so
- * later connection revokes/preset reseeds don't touch the row. See
- * ADR-035 §"Single rules table, mirroring the env-injection
- * pattern".
+ * later connection revokes/preset reseeds don't touch the row. A single
+ * rules table mirrors the env-injection pattern.
  */
 export const egressRules = pgTable(
   "egress_rules",
@@ -148,7 +147,7 @@ export const pendingApprovals = pgTable(
   ],
 );
 
-// Sessions are agent-owned (ADR-055): the agent's on-disk store is the source
+// Sessions are agent-owned: the agent's on-disk store is the source
 // of truth, surfaced over ACP `_meta`. The server keeps no session table.
 
 export const skillSources = pgTable(
@@ -237,7 +236,7 @@ export const actorRoles = pgTable("actor_roles", {
     .notNull(),
 });
 
-/** Postgres mirror of K8s agent ConfigMaps (ADR-046) — kept here so SQL views
+/** Postgres mirror of K8s agent ConfigMaps — kept here so SQL views
  *  and cross-table joins can resolve agent ownership without a CM round-trip.
  *  Populated by the persist-agents saga (on AgentCreated/Deleted) plus a
  *  startup bootstrap that backfills agents pre-dating the saga.

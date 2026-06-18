@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "2"
+    agent-platform.ai/crd-schema-generation: "3"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -38,7 +38,7 @@ spec:
       openAPIV3Schema:
         description: |-
           Agent is the durable, owned, runnable resource — definition, runtime state,
-          and lifecycle in one custom resource (ADR-046, ADR-058).
+          and lifecycle in one custom resource.
         properties:
           apiVersion:
             description: |-
@@ -60,11 +60,11 @@ spec:
           spec:
             description: |-
               AgentSpec is the desired state of an Agent — the sole durable per-agent
-              resource after ADR-046 collapsed Instance into Agent. The api-server is the
+              resource after Instance was collapsed into Agent. The api-server is the
               sole writer.
 
               There is no desiredState field: running-vs-hibernated is not stored intent
-              but observed status the controller derives from activity (ADR-058). Security
+              but observed status the controller derives from activity. Security
               context and scheduling are chart-only (config.AgentBase) and cannot be set
               here by design.
             properties:
@@ -101,8 +101,8 @@ spec:
               grantedSecretIds:
                 description: |-
                   GrantedSecretIDs are the credential Secret IDs granted to this agent's
-                  egress — intent written by the api-server. ADR-058 moved these from a
-                  ConfigMap annotation into spec, because they are reconciled by the
+                  egress — intent written by the api-server. These live in spec rather
+                  than a ConfigMap annotation, because they are reconciled by the
                   controller into the credential set mounted on the gateway.
                 items:
                   type: string

@@ -113,11 +113,11 @@ mounts:
 	assert.Contains(t, err.Error(), "valid K8s quantity")
 }
 
-// --- Agent runtime fields (ADR-046) ---
+// --- Agent runtime fields ---
 
 // ParseAgentSpec must accept the merged runtime fields (env, secretRef) that
 // formerly lived on InstanceSpec. Legacy fields the CRD dropped (version,
-// desiredState) are tolerated in the YAML and ignored (ADR-058).
+// desiredState) are tolerated in the YAML and ignored.
 func TestParseAgentSpec_RuntimeFields(t *testing.T) {
 	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest

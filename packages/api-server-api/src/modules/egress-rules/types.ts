@@ -26,7 +26,7 @@ export type EgressPreset = z.infer<typeof egressPresetSchema>;
  * Origin of a rule row. User edits/deletes flip non-`manual` rows to
  * `manual` so later connection revokes / preset reseeds don't undo a
  * deliberate user decision. The UI reads non-`manual` sources to render the
- * "(was from …)" annotation. See ADR-035.
+ * "(was from …)" annotation.
  */
 export type EgressRuleSource =
   | "manual"

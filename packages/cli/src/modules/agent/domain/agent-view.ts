@@ -1,8 +1,8 @@
 import type { ChannelConfig, EnvVar, AgentState } from "api-server-api";
 
 /**
- * Wire shape the api-server's `agents.*` router emits via `toView`. Per
- * ADR-046 the canonical `Agent` interface nests definition fields under
+ * Wire shape the api-server's `agents.*` router emits via `toView`. The
+ * canonical `Agent` interface nests definition fields under
  * `spec`, but the router intentionally returns a flattened view so older
  * consumers don't have to re-thread through `spec`. The CLI consumes the
  * router's wire shape, so this is the type it reasons about.

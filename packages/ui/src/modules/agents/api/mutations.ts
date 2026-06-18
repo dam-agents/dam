@@ -46,7 +46,7 @@ export interface CreateAgentInput {
 
 /**
  * Create-agent orchestrates: create agent, optional file import, set agent
- * access, set app connections. Per ADR-046 the agent is now a single CM
+ * access, set app connections. The agent is now a single CM
  * (no separate instance create) — `agents.create` returns the full Agent
  * including runtime state.
  */
@@ -225,7 +225,7 @@ export function useSetAgentConnections() {
     ...trpc.connections.setAgentConnections.mutationOptions(),
     meta: {
       // Server-side `setAgentConnections` syncs `connection:<id>` egress
-      // rules per granted provider's API hosts (ADR-035).
+      // rules per granted provider's API hosts.
       // Refetch the editor's view alongside the grants query.
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),

@@ -64,7 +64,7 @@ export function createTelegramOAuthRoutes(deps: {
     // Store the Keycloak sub (not the Telegram user ID) as `authorizedBy`:
     // the inbound terms-of-use gate looks this value up via isTermsAccepted(),
     // which is keyed on the Keycloak sub. Storing the Telegram ID here would
-    // make the gate block every message regardless of UI acceptance (ADR-047).
+    // make the gate block every message regardless of UI acceptance.
     await deps.threads.authorize(
       pending.instanceName,
       pending.threadId,
