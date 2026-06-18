@@ -410,6 +410,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       );
     }
 
+    try {
+      await agentsRepo.ensureReady(agentId);
+    } catch (err) {
+      process.stderr.write(
+        `[trpc-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
+      );
+      return c.json({ error: "agent unreachable" }, 502);
+    }
+
     // No Bearer swap needed: ownership is verified above, and the agent
     // pod's NetworkPolicy admits ingress only from the api-server pod —
     // the kernel-level gate is the auth boundary on this hop.
