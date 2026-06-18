@@ -14,6 +14,17 @@ const userSchema = z.object({
   email: z.string().nullable(),
 });
 
+// Drop control chars (incl. CR/LF) so a display name can't inject extra
+// ~/.gitconfig sections when serialized into the [user] block.
+function sanitizeName(name: string): string {
+  return [...name]
+    .filter((c) => {
+      const code = c.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("");
+}
+
 export async function resolveGitHubIdentity(
   accessToken: string,
   opts: { fetchImpl?: typeof fetch } = {},
@@ -34,7 +45,7 @@ export async function resolveGitHubIdentity(
   const user = userSchema.parse(await res.json());
   // No-reply fallback keeps a private primary email out of commit history.
   return {
-    name: user.name ?? user.login,
+    name: sanitizeName(user.name ?? user.login),
     email: user.email ?? `${user.id}+${user.login}@users.noreply.github.com`,
   };
 }
