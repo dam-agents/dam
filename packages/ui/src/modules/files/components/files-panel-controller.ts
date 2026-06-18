@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
 import { useDirSnapshot, useFileContentQuery } from "../api/queries.js";
@@ -180,7 +181,14 @@ export function useFilesPanelController({
           if (!isDir) onOpenFile(path, { edit: true });
           return;
         case "download":
-          if (!isDir && selectedAgent) void downloadFileAt(selectedAgent, path);
+          if (!isDir && selectedAgent) {
+            void downloadFileAt(selectedAgent, path).catch(() =>
+              emitToast({
+                kind: "error",
+                message: `Couldn't download ${path}`,
+              }),
+            );
+          }
           return;
         case "new-file":
           if (isDir) startNewIn("file", path);
