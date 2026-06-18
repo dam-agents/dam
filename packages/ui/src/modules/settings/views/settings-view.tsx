@@ -157,7 +157,7 @@ export function SettingsView() {
               Manage your account and session.
             </p>
 
-            <SectionLabel className="mb-3 block">Profile</SectionLabel>
+            <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
                 {(user?.profile.preferred_username ??

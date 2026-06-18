@@ -114,7 +114,7 @@ export function ConnectionsStep({
 
       {connections.length > 0 && (
         <section className="mb-8">
-          <SectionLabel className="mb-3 block">My connections</SectionLabel>
+          <SectionLabel spaced>My connections</SectionLabel>
           <CardList>
             {connections.map((c) => (
               <ConnectionRow
@@ -148,9 +148,7 @@ export function ConnectionsStep({
         if (list.length === 0) return null;
         return (
           <section key={cat} className="mb-8">
-            <SectionLabel className="mb-3 block">
-              {CATEGORY_LABEL[cat]}
-            </SectionLabel>
+            <SectionLabel spaced>{CATEGORY_LABEL[cat]}</SectionLabel>
             <CardList>
               {list.map((t) => (
                 <ConnectionCatalogRow

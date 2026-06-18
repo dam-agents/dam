@@ -41,9 +41,7 @@ export function ImageStep({
       />
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">
-          Pick a pre-built image
-        </SectionLabel>
+        <SectionLabel spaced>Pick a pre-built image</SectionLabel>
         <CardList>
           {loading ? (
             <ListSkeleton rows={4} rowHeight={64} />
@@ -62,9 +60,7 @@ export function ImageStep({
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">
-          Or bring your own image
-        </SectionLabel>
+        <SectionLabel spaced>Or bring your own image</SectionLabel>
         <CardList>
           <CustomImageCard
             value={customImage}

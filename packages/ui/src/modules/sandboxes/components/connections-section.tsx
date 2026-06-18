@@ -72,7 +72,7 @@ export function ConnectionsSection({
   return (
     <>
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">My connections</SectionLabel>
+        <SectionLabel spaced>My connections</SectionLabel>
         {connections.length > 0 ? (
           <CardList>
             {connections.map((c) => (
@@ -116,9 +116,7 @@ export function ConnectionsSection({
           if (list.length === 0) return null;
           return (
             <section key={cat} className="mb-8">
-              <SectionLabel className="mb-3 block">
-                {CATEGORY_LABEL[cat]}
-              </SectionLabel>
+              <SectionLabel spaced>{CATEGORY_LABEL[cat]}</SectionLabel>
               <CardList>
                 {list.map((t) => (
                   <ConnectionCatalogRow

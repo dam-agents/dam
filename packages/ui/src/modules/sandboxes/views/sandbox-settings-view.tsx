@@ -47,7 +47,7 @@ export function SandboxSettingsView() {
       </h1>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Name</SectionLabel>
+        <SectionLabel spaced>Name</SectionLabel>
         <FormField>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
@@ -55,7 +55,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Image</SectionLabel>
+        <SectionLabel spaced>Image</SectionLabel>
         {/* Read-only: image/template are create-only — changing them would mean
             delete+recreate, destroying the workspace PVC. */}
         <FormField>
@@ -73,7 +73,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Provider</SectionLabel>
+        <SectionLabel spaced>Provider</SectionLabel>
         <ProviderSection
           variant="collapsible"
           listClassName="md:-ml-4"
@@ -95,7 +95,7 @@ export function SandboxSettingsView() {
       />
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Network access</SectionLabel>
+        <SectionLabel spaced>Network access</SectionLabel>
         <FormField className="rounded-lg border border-border p-4">
           <AgentEgressEditor
             agentId={agent.id}
@@ -106,7 +106,7 @@ export function SandboxSettingsView() {
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Environment</SectionLabel>
+        <SectionLabel spaced>Environment</SectionLabel>
         <FormField className="rounded-lg border border-border p-4">
           <Controller
             control={f.control}

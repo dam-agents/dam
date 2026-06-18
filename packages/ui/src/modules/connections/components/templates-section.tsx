@@ -73,7 +73,7 @@ export function ConnectionTemplatesSection() {
 
       {!loading && conns.length > 0 && (
         <div className="mb-8">
-          <SectionLabel className="mb-3 block">My connections</SectionLabel>
+          <SectionLabel spaced>My connections</SectionLabel>
           <div className="flex flex-col gap-3">
             {conns.map((c) => (
               <ConnectionRow
@@ -106,9 +106,7 @@ export function ConnectionTemplatesSection() {
             if (list.length === 0) return null;
             return (
               <div key={cat}>
-                <SectionLabel className="mb-3 block">
-                  {CATEGORY_LABEL[cat]}
-                </SectionLabel>
+                <SectionLabel spaced>{CATEGORY_LABEL[cat]}</SectionLabel>
                 <div className="flex flex-col gap-3">
                   {list.map((t) => (
                     <ConnectionCatalogRow

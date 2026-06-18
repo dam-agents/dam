@@ -75,7 +75,7 @@ export function SetupStep({
       />
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Name</SectionLabel>
+        <SectionLabel spaced>Name</SectionLabel>
         <FormField>
           <Input
             autoFocus
@@ -87,7 +87,7 @@ export function SetupStep({
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Provider</SectionLabel>
+        <SectionLabel spaced>Provider</SectionLabel>
         <ProviderSection
           selectedSecretId={providerSecretId}
           onSelect={(secretId) => update({ providerSecretId: secretId })}
@@ -101,7 +101,7 @@ export function SetupStep({
       </section>
 
       <section className="mb-8">
-        <SectionLabel className="mb-3 block">Network access</SectionLabel>
+        <SectionLabel spaced>Network access</SectionLabel>
         <CardList>
           {NETWORK_PRESETS.map((preset) => (
             <NetworkPresetRow
