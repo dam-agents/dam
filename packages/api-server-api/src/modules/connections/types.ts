@@ -141,6 +141,8 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
+  update(id: string, value: string): Promise<void>;
+
   deleteConnection(id: string): Promise<void>;
 
   getAgentConnections(agentId: string): Promise<AgentConnections>;

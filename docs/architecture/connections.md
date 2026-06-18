@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-16
+Last verified: 2026-06-18
 
 ## Overview
 
@@ -96,6 +96,8 @@ interface Connection {
 ```
 
 The `auth` field carries credential-acquisition state in one of three modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
+
+A header connection's stored credential can be **updated in place** — the value-rotation counterpart to OAuth refresh. The update re-bakes the connection's SDS files from its existing contributions and the new value and rewrites them, together with the credential, onto the same per-Connection Secret. It touches only the secret store: the connection's identity, contributions, and all its agent grants are preserved, and because the live value is read gateway-side via Envoy SDS (the `env` contribution carries only a placeholder), no Agent-spec patch or pod roll is needed. OAuth connections rotate through their refresh flow instead, not this path.
 
 ### Contribution
 

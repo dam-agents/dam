@@ -166,6 +166,32 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
+    async update(id: string, value: string): Promise<void> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (conn.auth.kind !== "header") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only header-credential connections support value update",
+        });
+      }
+
+      const sdsFields = buildConnectionSdsFields(conn.contributions, value);
+      await deps.secretStore.putFields(conn.auth.valueRef, {
+        value,
+        ...sdsFields,
+      });
+
+      securityLog("info", "connection.update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: { templateId: conn.templateId, authKind: conn.auth.kind },
+      });
+    },
+
     async deleteConnection(id: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;

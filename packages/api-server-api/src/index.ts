@@ -171,8 +171,12 @@ export {
   connectionGetAgentConnectionsInputSchema,
   connectionNameSchema,
   connectionSetAgentConnectionsInputSchema,
+  connectionUpdateInputSchema,
 } from "./modules/connections/schemas.js";
-export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
+export type {
+  ConnectionCreateInput,
+  ConnectionUpdateInput,
+} from "./modules/connections/schemas.js";
 
 export {
   SessionType,
