@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { ConfigService } from "../../cli/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { printTrpcError } from "../../shared/trpc/print.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -31,9 +32,7 @@ export function buildTokenRevokeCommand(deps: TokenRevokeCommandDeps): Command {
         await trpc.apiKeys.revoke.mutate({ id });
         process.stdout.write(`✓ Revoked ${id}\n`);
       } catch (err) {
-        process.stderr.write(
-          `error: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
+        printTrpcError(err, resolved.value.server);
         process.exit(EXIT_RUNTIME_FAILURE);
       }
     });

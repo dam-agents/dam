@@ -2,6 +2,7 @@ import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import {
   AuthRequiredAtTransportError,
+  ForbiddenAtTransportError,
   TermsStaleAtTransportError,
 } from "./trpc-client.js";
 
@@ -11,6 +12,7 @@ export function classifyTrpcError(
   let cursor: unknown = e;
   for (let depth = 0; cursor && depth < 8; depth++) {
     if (cursor instanceof TermsStaleAtTransportError) throw cursor;
+    if (cursor instanceof ForbiddenAtTransportError) throw cursor;
     if (cursor instanceof AuthRequiredAtTransportError)
       return err({ kind: "auth-required", reason: cursor.message });
     cursor = (cursor as { cause?: unknown }).cause;

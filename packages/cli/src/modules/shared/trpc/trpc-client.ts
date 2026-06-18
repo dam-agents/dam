@@ -22,6 +22,14 @@ export class TermsStaleAtTransportError extends Error {
   }
 }
 
+export class ForbiddenAtTransportError extends Error {
+  readonly kind = "forbidden" as const;
+  constructor(public readonly detail: string) {
+    super(detail || "access denied");
+    this.name = "ForbiddenAtTransportError";
+  }
+}
+
 function buildAuthHeaders(deps: {
   host: string;
   tokenProvider: TokenProvider;
@@ -49,22 +57,39 @@ function buildAuthHeaders(deps: {
   };
 }
 
-function wrapFetchWithTermsGate(
+function wrapFetchWithServerGates(
   host: string,
   baseFetch?: typeof fetch,
 ): typeof fetch {
   const inner = baseFetch ?? fetch;
   return (async (input, init) => {
     const response = await inner(input, init);
-    if (response.status === 412) {
+    if (
+      response.status === 401 ||
+      response.status === 403 ||
+      response.status === 412
+    ) {
       const clone = response.clone();
       try {
-        const body = (await clone.json()) as { error?: string };
-        if (body.error === "terms_stale") {
+        const body = (await clone.json()) as {
+          error?: string;
+          message?: string;
+        };
+        if (body.error === "terms_stale")
           throw new TermsStaleAtTransportError(host);
-        }
+        if (body.error === "unauthorized")
+          throw new AuthRequiredAtTransportError(`session expired for ${host}`);
+        if (body.error === "forbidden")
+          throw new ForbiddenAtTransportError(
+            typeof body.message === "string" ? body.message : "",
+          );
       } catch (err) {
-        if (err instanceof TermsStaleAtTransportError) throw err;
+        if (
+          err instanceof TermsStaleAtTransportError ||
+          err instanceof AuthRequiredAtTransportError ||
+          err instanceof ForbiddenAtTransportError
+        )
+          throw err;
       }
     }
     return response;
@@ -80,7 +105,7 @@ export function createTrpcClient(deps: {
     links: [
       httpBatchLink({
         url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
-        fetch: wrapFetchWithTermsGate(deps.host, deps.fetch),
+        fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
         headers: buildAuthHeaders(deps),
       }),
     ],
@@ -98,7 +123,7 @@ export function createAgentTrpcClient(deps: {
     links: [
       httpBatchLink({
         url: base,
-        fetch: wrapFetchWithTermsGate(deps.host, deps.fetch),
+        fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
         headers: buildAuthHeaders(deps),
       }),
     ],
