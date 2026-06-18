@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { isRequest, parseFrame, type JsonRpcId } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
-import { recordPrompt } from "./control-service.js";
+import { recordPrompt, type ProxyFetch } from "./control-service.js";
 import type { AcpChannel, WorkspaceWriter } from "./ports.js";
+
+const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
   state: MockState;
   workspace: WorkspaceWriter;
+  proxyFetch: ProxyFetch;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   newSessionId?: () => string;
@@ -85,6 +88,13 @@ export function startAcpService(deps: AcpServiceDeps): void {
       prompt: promptPayload,
     });
 
+    const fetchUrl = FETCH_DIRECTIVE.exec(promptText(promptPayload))?.[1];
+    if (fetchUrl) {
+      await replyWithFetch(sid, fetchUrl);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
     for (const file of deps.state.scriptFiles) {
       await deps.workspace.writeFile(file.path, file.content);
     }
@@ -98,6 +108,23 @@ export function startAcpService(deps: AcpServiceDeps): void {
     }
 
     respond(id, { stopReason: deps.state.scriptStopReason });
+  }
+
+  async function replyWithFetch(sid: string, url: string): Promise<void> {
+    let text: string;
+    try {
+      const { status, body } = await deps.proxyFetch({ url });
+      text = `[fetch ${status}] ${body}`;
+    } catch (err) {
+      text = `[fetch error] ${err instanceof Error ? err.message : String(err)}`;
+    }
+    notify("session/update", {
+      sessionId: sid,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      },
+    });
   }
 
   function respondInitialize(id: JsonRpcId): void {
@@ -124,4 +151,16 @@ function extractSessionId(params: unknown): string | null {
   if (!params || typeof params !== "object") return null;
   const sid = (params as { sessionId?: unknown }).sessionId;
   return typeof sid === "string" ? sid : null;
+}
+
+function promptText(payload: unknown): string {
+  if (typeof payload === "string") return payload;
+  if (!Array.isArray(payload)) return "";
+  return payload
+    .map((block) =>
+      block && typeof block === "object" && "text" in block
+        ? String((block as { text?: unknown }).text ?? "")
+        : "",
+    )
+    .join("\n");
 }

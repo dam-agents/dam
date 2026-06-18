@@ -14,9 +14,10 @@ export interface ScriptedMockComposition {
 
 export function composeScriptedMock(): ScriptedMockComposition {
   const state = createInitialState();
+  const proxyFetch = createProxyFetch();
   const scriptedMock = createScriptedMockService({
     state,
-    proxyFetch: createProxyFetch(),
+    proxyFetch,
   });
   const stdio = createStdioChannel();
 
@@ -42,6 +43,7 @@ export function composeScriptedMock(): ScriptedMockComposition {
     channel: acpChannel,
     state,
     workspace: createWorkspaceWriter(process.cwd()),
+    proxyFetch,
   });
 
   return { scriptedMock };
