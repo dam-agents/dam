@@ -10,7 +10,6 @@ const (
 	SchemaGenerationAnnotation = "agent-platform.ai/crd-schema-generation"
 
 	// Agent gen 2: imagePullSecretRef added to AgentSpec (#930/#932).
-	// Agent gen 3 / Fork gen 2: doc-comment descriptions revised; no field change.
-	AgentSchemaGeneration = 3
-	ForkSchemaGeneration  = 2
+	AgentSchemaGeneration = 2
+	ForkSchemaGeneration  = 1
 )

@@ -82,7 +82,10 @@ done
 exit $status
 '''
 
-# any CRD .spec change must bump agent-platform.ai/crd-schema-generation.
+# any functional CRD .spec change must bump agent-platform.ai/crd-schema-generation.
+# Descriptions are stripped before comparing: the generation gate (crdcheck.Assert)
+# only guards against admission pruning writes for fields an older live CRD lacks,
+# which doc-only edits never cause — so a description change must not force a bump.
 # Baseline is the origin/main merge-base, so every PR that touches a schema must
 # bump (not just the first since a release); an unresolvable baseline is a hard
 # error, never a silent skip (a v* tag predating the CRDs is how #932 slipped through).
@@ -109,6 +112,7 @@ if ! git rev-parse -q --verify "$base_ref^{commit}" >/dev/null; then
 fi
 crds=deploy/helm/platform/crds
 gen='.metadata.annotations["agent-platform.ai/crd-schema-generation"] // "0"'
+spec='.spec | del(.. | .description?)' # descriptions are docs, not a functional schema change
 status=0
 for f in "$crds"/*.yaml; do
   base="$base_ref:$crds/$(basename "$f")"
@@ -116,7 +120,7 @@ for f in "$crds"/*.yaml; do
     echo "crd-generation: $(basename "$f") is new since $base_ref — no prior schema to compare"
     continue
   fi
-  if [ "$(git show "$base" | yq '.spec')" = "$(yq '.spec' "$f")" ]; then
+  if [ "$(git show "$base" | yq "$spec")" = "$(yq "$spec" "$f")" ]; then
     continue
   fi
   new_gen=$(yq "$gen" "$f")
