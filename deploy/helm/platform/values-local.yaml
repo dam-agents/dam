@@ -72,6 +72,16 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: llm-wiki
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "AI-curated wiki that documents GitHub repos (LLM-Wiki pattern)"
+    image:
+      repository: platform-llm-wiki
+      tag: latest
+    storageSize: "5Gi"
+
   - name: mock
     enabled: true
     description: "Scripted mock agent (E2E test fixture)"

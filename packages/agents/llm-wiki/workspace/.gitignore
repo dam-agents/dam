@@ -1,0 +1,12 @@
+# The wiki repo is rooted at $HOME/work (Claude's cwd), which also holds harness
+# state (.claude.json, .mcp.json, .gitconfig), node_modules, and the read-only
+# source clones. Whitelist wiki content only: ignore everything at the root, then
+# re-include the files and directories we maintain.
+/*
+!/.gitignore
+!/CLAUDE.md
+!/wiki.config.json
+!/index.md
+!/log.md
+!/pages/
+!/scripts/

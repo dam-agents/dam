@@ -673,6 +673,59 @@ fi
 echo "Done. Agent pods will restart with new image."
 '''
 
+["cluster:build-llm-wiki"]
+description = "Rebuild only the llm-wiki agent image, load into k3s, restart its agent pods"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+
+image="platform-llm-wiki:latest"
+{{ mise_bin }} run agents:llm-wiki:image
+
+echo "Loading into k3s..."
+tar="/tmp/platform-llm-wiki-image.tar"
+docker save "$image" -o "$tar"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  sudo k3s ctr images import "$tar"
+else
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+# Restart only the pods running this image — leave other agents' sessions alone.
+# Pods carry no template label, so match on the container image instead.
+echo "Restarting llm-wiki agent pods..."
+PODS=$(kubectl --kubeconfig="$KUBECONFIG" get pods -n platform-agents \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].image}{"\n"}{end}' \
+  | awk -F'\t' '$2 ~ /platform-llm-wiki:latest/ {print $1}')
+if [ -n "$PODS" ]; then
+  kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents $PODS 2>/dev/null || true
+else
+  echo "No running llm-wiki pods — create an agent from the llm-wiki template to test."
+fi
+
+# Prune dangling layers: the old `:latest` SHA just lost its tag to the freshly
+# imported one. Only <none> images — never `crictl rmi --prune`, which would
+# wipe just-loaded unpinned images when no pods reference them (issue #244).
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo "Done. llm-wiki image rebuilt and loaded."
+'''
+
 ["cluster:build-keycloak"]
 description = "Build and load keycloak image into k3s, restart keycloak pod"
 depends = ["keycloak-theme:image"]
