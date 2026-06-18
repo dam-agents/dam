@@ -631,33 +631,32 @@ async function addOrReplaceProvider(
       if (isCancel(value)) return cancelAndCleanup(trpc, cleanup);
 
       const templateId = templateIdForProvider(type, value);
-      if (templateId === existingOfType.templateId) {
-        try {
-          await trpc.connections.update.mutate({
-            id: existingOfType.id,
-            value,
-          });
-          return {
-            routing: { kind: "connection", id: existingOfType.id },
-            name: existingOfType.name,
-            type,
-          };
-        } catch (e) {
-          log.error(`Failed to replace credential: ${errorReason(e)}`);
-          continue;
-        }
+      if (templateId !== existingOfType.templateId) {
+        const have =
+          existingOfType.templateId === "anthropic-oauth"
+            ? "an OAuth token"
+            : "an API key";
+        const got =
+          templateId === "anthropic-oauth" ? "an OAuth token" : "an API key";
+        log.error(
+          `This connection expects ${have}, but that looks like ${got}. Paste a matching credential, or disconnect it and add a new one to switch.`,
+        );
+        continue;
       }
-      // Value implies the other Anthropic template (different header/
-      // contributions); a value-only update would inject it wrong.
-      const created = await createProviderConnection(
-        trpc,
-        cleanup,
-        type,
-        templateId,
-        value,
-      );
-      if (created) return created;
-      continue;
+      try {
+        await trpc.connections.update.mutate({
+          id: existingOfType.id,
+          value,
+        });
+        return {
+          routing: { kind: "connection", id: existingOfType.id },
+          name: existingOfType.name,
+          type,
+        };
+      } catch (e) {
+        log.error(`Failed to replace credential: ${errorReason(e)}`);
+        continue;
+      }
     }
 
     const value = await password({
