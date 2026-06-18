@@ -1,7 +1,8 @@
 import { Cable, KeyRound, Server } from "lucide-react";
 
+import { GithubIcon } from "@/components/brand-icons";
+
 const SVG_BY_SLUG = new Set([
-  "github",
   "github-enterprise",
   "gmail",
   "google-admin",
@@ -31,6 +32,16 @@ interface Props {
 }
 
 export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
+  if (iconSlug === "github") {
+    return (
+      <GithubIcon
+        width={size}
+        height={size}
+        aria-label={alt}
+        className={`block ${className ?? ""}`.trim()}
+      />
+    );
+  }
   if (iconSlug && SVG_BY_SLUG.has(iconSlug)) {
     return (
       <img
