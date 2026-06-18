@@ -12,6 +12,7 @@ import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildRevokeCommand } from "./commands/revoke.js";
 import { buildTemplatesCommand } from "./commands/templates.js";
+import { buildUpdateCommand } from "./commands/update.js";
 import {
   createConnectionService,
   type ConnectionService,
@@ -69,6 +70,13 @@ export function composeConnectionModule(
   );
   parent.addCommand(
     buildDisconnectCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createConnectionService: createService,
+    }),
+  );
+  parent.addCommand(
+    buildUpdateCommand({
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,
