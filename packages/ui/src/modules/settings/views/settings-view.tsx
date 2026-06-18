@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
@@ -156,9 +157,7 @@ export function SettingsView() {
               Manage your account and session.
             </p>
 
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Profile
-            </p>
+            <SectionLabel className="mb-3 block">Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
                 {(user?.profile.preferred_username ??
