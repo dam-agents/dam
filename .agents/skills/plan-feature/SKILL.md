@@ -16,7 +16,7 @@ permanent docs. Write them to disk, but **never `git add` or commit them, and ne
 `implement-feature`, consumes them and cleans them up at the end.
 
 A sub-issue is "self-contained" in the sense that **README + that sub-issue together** give a
-fresh agent (plus the linked issue/ADR) everything needed to implement the slice cold. Shared
+fresh agent (plus the linked issue) everything needed to implement the slice cold. Shared
 context lives once in the README; each sub-issue carries only what is specific to it.
 
 ## Steps
@@ -24,9 +24,6 @@ context lives once in the README; each sub-issue carries only what is specific t
 ### 1. Gather context
 
 - Fetch the issue with `gh` (accept a URL or a number). Read the title, body, and discussion.
-- If the issue links an ADR, read it. Don't write ADRs here — if the work hinges on an
-  undocumented, hard-to-reverse decision, the grill step (below) is where it surfaces and an ADR
-  gets filed.
 - Read the relevant architecture page(s) under [`docs/architecture/`](../../../docs/architecture/),
   starting from [`docs/architecture.md`](../../../docs/architecture.md). The docs are the source
   of truth for *why* the system is shaped the way it is.
@@ -40,7 +37,7 @@ before step 3. Create nothing under `docs/plan/` until then — no decomposition
 files.** This holds even when the plan feels obvious: a short session confirming shared
 understanding is the floor, never a step to skip.
 
-Invoke `/grill-with-adr` to run it — that skill is the canonical procedure. But the gate does
+Invoke `/grill-me` to run it — that skill is the canonical procedure. But the gate does
 **not** depend on the nested call landing: if it doesn't fire, run the session yourself, one
 question at a time, recommending an answer to each. Either way the session must:
 
@@ -49,8 +46,6 @@ question at a time, recommending an answer to each. Either way the session must:
   there.
 - Challenge the plan's vocabulary against [`docs/ubiquitous-language.md`](../../../docs/ubiquitous-language.md),
   sharpen fuzzy terms to canonical ones, and cross-reference claims against the code.
-- File or amend an ADR (via `/adr`) — sparingly, only when a decision is hard to reverse,
-  surprising without context, and the result of a real trade-off.
 
 **Exit condition:** every branch of the decision tree is resolved and the user confirms they're
 satisfied. Only then proceed to step 3.
@@ -101,7 +96,6 @@ step.
 > Working plan — uncommitted, temporary. Delete once the feature ships.
 
 **Issue:** <link>
-**ADR:** <link, or "none">
 
 ## Goal
 
