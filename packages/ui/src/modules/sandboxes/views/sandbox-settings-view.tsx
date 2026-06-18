@@ -77,7 +77,7 @@ export function SandboxSettingsView() {
         <ProviderSection
           variant="collapsible"
           listClassName="md:-ml-4"
-          selectedSecretId={f.selectedProviderSecretId}
+          selected={f.selectedProvider}
           onSelect={f.selectProvider}
           onProviderRemoved={f.dropProviderGrant}
         />

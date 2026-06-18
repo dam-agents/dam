@@ -94,12 +94,20 @@ export function SandboxWizardView() {
           ? { image }
           : { templateId: snapshot.templateId ?? undefined }),
         egressPreset: snapshot.egressPreset,
-        ...(snapshot.providerSecretId
-          ? { secretIds: [snapshot.providerSecretId] }
+        ...(snapshot.providerRef?.source === "secret"
+          ? { secretIds: [snapshot.providerRef.id] }
           : {}),
-        ...(snapshot.connectionIds.length
-          ? { appConnectionIds: snapshot.connectionIds }
-          : {}),
+        ...(() => {
+          // Provider connections and catalog connections both grant via
+          // appConnectionIds.
+          const ids = [
+            ...snapshot.connectionIds,
+            ...(snapshot.providerRef?.source === "connection"
+              ? [snapshot.providerRef.id]
+              : []),
+          ];
+          return ids.length ? { appConnectionIds: ids } : {};
+        })(),
         ...(useRegistry
           ? {
               registryCredential: {
@@ -144,7 +152,7 @@ export function SandboxWizardView() {
       {snapshot.step === 2 && (
         <SetupStep
           name={snapshot.name}
-          providerSecretId={snapshot.providerSecretId}
+          providerRef={snapshot.providerRef}
           egressPreset={snapshot.egressPreset}
           showRegistry={isCustomImage}
           registryCredential={registryCredential}

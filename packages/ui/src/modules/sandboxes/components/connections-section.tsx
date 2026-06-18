@@ -50,7 +50,11 @@ export function ConnectionsSection({
   const [showCatalog, setShowCatalog] = useState(false);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = connectionsQ.data ?? NO_CONNECTIONS;
+  // Provider connections are managed in the Provider section above; keep them
+  // out of the generic list so they aren't offered twice.
+  const connections = (connectionsQ.data ?? NO_CONNECTIONS).filter(
+    (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  );
 
   const templateById = useMemo(
     () => new Map(allTemplates.map((t) => [t.id, t])),

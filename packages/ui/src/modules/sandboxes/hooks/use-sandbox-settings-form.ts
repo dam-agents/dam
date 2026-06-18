@@ -23,6 +23,7 @@ import {
 } from "../../agents/api/queries.js";
 import type { InheritedEnv } from "../../agents/components/configure-agent/env-tab.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { providerPresetForTemplateId } from "../../connections/lib/provider-templates.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -33,6 +34,7 @@ import {
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
 import type { StagedNetworkAccessController } from "../../egress-rules/components/agent-egress-editor.js";
+import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
@@ -94,6 +96,15 @@ export function useSandboxSettingsForm() {
         secrets.filter((s) => isProviderPresetType(s.type)).map((s) => s.id),
       ),
     [secrets],
+  );
+  const providerAppIds = useMemo(
+    () =>
+      new Set(
+        apps
+          .filter((a) => providerPresetForTemplateId(a.templateId) !== null)
+          .map((a) => a.id),
+      ),
+    [apps],
   );
 
   const userInitialEnv = useMemo(
@@ -161,23 +172,62 @@ export function useSandboxSettingsForm() {
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  const selectedProviderSecretId = useMemo(
-    () => assigned.find((id) => providerSecretIds.has(id)) ?? null,
-    [assigned, providerSecretIds],
-  );
+  // A provider can be a connection (assignedAppIds) or a legacy secret
+  // (assigned); prefer the connection.
+  const selectedProvider = useMemo<ProviderRef | null>(() => {
+    const connId = assignedAppIds.find((id) => providerAppIds.has(id));
+    if (connId) return { source: "connection", id: connId };
+    const secretId = assigned.find((id) => providerSecretIds.has(id));
+    if (secretId) return { source: "secret", id: secretId };
+    return null;
+  }, [assignedAppIds, providerAppIds, assigned, providerSecretIds]);
 
-  // Provider selection swaps the provider-type secret in `assigned`, leaving
-  // every other grant intact.
-  const selectProvider = (secretId: string) =>
-    setValue(
-      "assigned",
-      [...assigned.filter((id) => !providerSecretIds.has(id)), secretId].sort(),
-      { shouldDirty: true, shouldValidate: true },
-    );
-  const dropProviderGrant = (secretId: string) =>
-    setValue("assigned", assigned.filter((id) => id !== secretId).sort(), {
-      shouldDirty: true,
-    });
+  // Selecting a provider swaps it in its own rail and clears any provider on
+  // the other rail, so an agent never carries two providers at once.
+  const selectProvider = (ref: ProviderRef) => {
+    if (ref.source === "connection") {
+      setValue(
+        "assignedAppIds",
+        [
+          ...new Set([
+            ...assignedAppIds.filter((id) => !providerAppIds.has(id)),
+            ref.id,
+          ]),
+        ].sort(),
+        { shouldDirty: true },
+      );
+      if (assigned.some((id) => providerSecretIds.has(id)))
+        setValue(
+          "assigned",
+          assigned.filter((id) => !providerSecretIds.has(id)).sort(),
+          { shouldDirty: true, shouldValidate: true },
+        );
+    } else {
+      setValue(
+        "assigned",
+        [...assigned.filter((id) => !providerSecretIds.has(id)), ref.id].sort(),
+        { shouldDirty: true, shouldValidate: true },
+      );
+      if (assignedAppIds.some((id) => providerAppIds.has(id)))
+        setValue(
+          "assignedAppIds",
+          assignedAppIds.filter((id) => !providerAppIds.has(id)).sort(),
+          { shouldDirty: true },
+        );
+    }
+  };
+  const dropProviderGrant = (ref: ProviderRef) => {
+    if (ref.source === "connection")
+      setValue(
+        "assignedAppIds",
+        assignedAppIds.filter((id) => id !== ref.id).sort(),
+        { shouldDirty: true },
+      );
+    else
+      setValue("assigned", assigned.filter((id) => id !== ref.id).sort(), {
+        shouldDirty: true,
+      });
+  };
   const toggleAppGrant = (id: string, on: boolean) =>
     setValue(
       "assignedAppIds",
@@ -387,7 +437,7 @@ export function useSandboxSettingsForm() {
     control,
     errors,
     saving,
-    selectedProviderSecretId,
+    selectedProvider,
     selectProvider,
     dropProviderGrant,
     grantedAppIds: appIdsSet,

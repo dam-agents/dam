@@ -16,3 +16,9 @@ export function providerTemplateDisplayName(templateId: string): string | null {
   const presetId = PRESET_BY_TEMPLATE_ID.get(templateId);
   return presetId ? PROVIDERS[presetId].displayName : null;
 }
+
+export function providerPresetForTemplateId(
+  templateId: string,
+): ProviderPresetType | null {
+  return PRESET_BY_TEMPLATE_ID.get(templateId) ?? null;
+}
