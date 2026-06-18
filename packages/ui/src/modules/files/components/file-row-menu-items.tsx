@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 
 export type FileRowMenuAction =
   | "edit"
+  | "download"
   | "new-file"
   | "new-folder"
   | "upload-here"
@@ -40,7 +41,10 @@ export function FileRowMenuItems({
           </Item>
         </>
       ) : (
-        <Item onSelect={() => onAction("edit")}>Edit</Item>
+        <>
+          <Item onSelect={() => onAction("edit")}>Edit</Item>
+          <Item onSelect={() => onAction("download")}>Download</Item>
+        </>
       )}
       <Item onSelect={() => onAction("rename")}>Rename</Item>
       <Item tone="danger" onSelect={() => onAction("delete")}>

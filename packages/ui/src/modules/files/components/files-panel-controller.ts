@@ -16,6 +16,7 @@ import {
   type FileEntryKind,
   useFileMutations,
 } from "../hooks/use-file-mutations.js";
+import { downloadFileAt } from "../lib/download.js";
 import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
 export interface PendingNew {
@@ -178,6 +179,9 @@ export function useFilesPanelController({
         case "edit":
           if (!isDir) onOpenFile(path, { edit: true });
           return;
+        case "download":
+          if (!isDir && selectedAgent) void downloadFileAt(selectedAgent, path);
+          return;
         case "new-file":
           if (isDir) startNewIn("file", path);
           return;
@@ -196,7 +200,7 @@ export function useFilesPanelController({
           return;
       }
     },
-    [onOpenFile, startNewIn, openFilePickerFor, deleteEntry],
+    [selectedAgent, onOpenFile, startNewIn, openFilePickerFor, deleteEntry],
   );
 
   const handleCommitRename = useCallback(

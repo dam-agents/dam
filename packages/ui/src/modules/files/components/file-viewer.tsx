@@ -21,6 +21,7 @@ import {
   type FileContent,
   useFileWriteMutation,
 } from "../api/queries.js";
+import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { CodeEditor } from "./code-editor.js";
 
 interface Props {
@@ -51,13 +52,6 @@ function hexDump(base64: string): string {
   if (raw.length > maxBytes)
     lines.push(`... ${raw.length - maxBytes} more bytes`);
   return lines.join("\n");
-}
-
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const raw = atob(base64);
-  const bytes = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-  return new Blob([bytes], { type: mimeType });
 }
 
 function isImageMime(mime: string | undefined): boolean {
@@ -178,18 +172,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     return () => URL.revokeObjectURL(url);
   }, [content, isPdf]);
 
-  const downloadFile = useCallback(() => {
-    if (!content) return;
-    const downloadName = path.split("/").pop() ?? "download";
-    const blob = binary
-      ? base64ToBlob(content, mime ?? "application/octet-stream")
-      : new Blob([content], { type: mime ?? "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = downloadName;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [path, content, binary, mime]);
+  const downloadFile = useCallback(() => downloadFileContent(file), [file]);
 
   const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
