@@ -17,7 +17,7 @@ export function useFileTree(selectedAgent: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
 
   const openFileHandler = useCallback(
-    async (path: string) => {
+    async (path: string, opts?: { edit?: boolean }) => {
       if (!selectedAgent) return;
       if (openFilePath === path) {
         if (openFileDirty) {
@@ -41,7 +41,7 @@ export function useFileTree(selectedAgent: string | null) {
         // Pre-warm the content cache before switching the viewer so the UI
         // doesn't flash empty while the poll-driven subscription catches up.
         await fetchFileContent(selectedAgent, path);
-        setOpenFilePath(path);
+        setOpenFilePath(path, opts);
         setRightTab("files");
       } catch (err) {
         emitToast({

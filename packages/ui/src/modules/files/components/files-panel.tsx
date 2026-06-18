@@ -10,13 +10,14 @@ import { InlineNameRow } from "./inline-name-row.js";
 export function FilesPanel({
   onOpenFile,
 }: {
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const controller = useFilesPanelController({ onOpenFile });
 
   if (controller.openFile) {
     return (
       <FileViewer
+        key={controller.openFile.path}
         file={controller.openFile}
         onClose={controller.closeFile}
         onOpenFile={onOpenFile}

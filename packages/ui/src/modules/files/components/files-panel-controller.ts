@@ -32,7 +32,7 @@ export interface FilesPanelContextValue {
   pendingNew: PendingNew | null;
   renamingPath: string | null;
   dragTargetPath: string | null;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
   onToggleDir: (path: string) => void;
   onCommitRename: (from: string, nextName: string) => void;
   onCancelRename: () => void;
@@ -71,7 +71,7 @@ function hasDirectoryItem(items: DataTransferItemList): boolean {
 export function useFilesPanelController({
   onOpenFile,
 }: {
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
@@ -175,6 +175,9 @@ export function useFilesPanelController({
     (action: FileRowMenuAction, path: string, type: "file" | "dir") => {
       const isDir = type === "dir";
       switch (action) {
+        case "edit":
+          if (!isDir) onOpenFile(path, { edit: true });
+          return;
         case "new-file":
           if (isDir) startNewIn("file", path);
           return;
@@ -193,7 +196,7 @@ export function useFilesPanelController({
           return;
       }
     },
-    [startNewIn, openFilePickerFor, deleteEntry],
+    [onOpenFile, startNewIn, openFilePickerFor, deleteEntry],
   );
 
   const handleCommitRename = useCallback(

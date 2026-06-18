@@ -77,10 +77,11 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showConfirm = useStore((s) => s.showConfirm);
+  const openFileEdit = useStore((s) => s.openFileEdit);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(editable && openFileEdit);
   const [draft, setDraft] = useState(content);
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
     file.mtimeMs,

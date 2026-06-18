@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 
 export type FileRowMenuAction =
+  | "edit"
   | "new-file"
   | "new-folder"
   | "upload-here"
@@ -30,7 +31,7 @@ export function FileRowMenuItems({
 }) {
   return (
     <>
-      {isDir && (
+      {isDir ? (
         <>
           <Item onSelect={() => onAction("new-file")}>New file…</Item>
           <Item onSelect={() => onAction("new-folder")}>New folder…</Item>
@@ -38,6 +39,8 @@ export function FileRowMenuItems({
             Upload files here…
           </Item>
         </>
+      ) : (
+        <Item onSelect={() => onAction("edit")}>Edit</Item>
       )}
       <Item onSelect={() => onAction("rename")}>Rename</Item>
       <Item tone="danger" onSelect={() => onAction("delete")}>
