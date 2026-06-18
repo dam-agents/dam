@@ -1,7 +1,7 @@
 {
   "name": "@dam-agents/cli",
   "author": "IBM Corp.",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://github.com/dam-agents/dam/tree/main/packages/cli#readme",
