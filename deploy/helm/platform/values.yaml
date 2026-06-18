@@ -732,6 +732,10 @@ controller:
 # override the chart-wide default for agents created from this template.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
+# `category` groups the entry in the creation wizard's Step 1: "harness"
+# (base coding harnesses; the default when omitted) or "preconfigured"
+# (curated workload images, e.g. Bugstone). `experimental: true` badges the
+# image as alpha in the wizard.
 #
 # To predefine an *experimental external agent* (a private-registry image users
 # just pick from the template list, with no manual "Private registry" entry),
@@ -739,6 +743,8 @@ controller:
 #
 #   - name: bugstone
 #     enabled: true
+#     category: preconfigured
+#     experimental: true
 #     description: "Experimental DAM bug-hunting agent"
 #     image:
 #       repository: icr.io/dam-agents/bugstone

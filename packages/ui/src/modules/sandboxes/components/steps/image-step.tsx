@@ -32,6 +32,10 @@ export function ImageStep({
 }: Props) {
   const canContinue =
     selectedTemplateId !== null || customImage.trim().length > 0;
+  const harnessImages = templates.filter((t) => t.category === "harness");
+  const preconfiguredImages = templates.filter(
+    (t) => t.category === "preconfigured",
+  );
   return (
     <div>
       <StepHeader
@@ -41,16 +45,17 @@ export function ImageStep({
       />
 
       <section className="mb-8">
-        <SectionLabel spaced>Pick a pre-built image</SectionLabel>
+        <SectionLabel spaced>Harness Images</SectionLabel>
         <CardList>
           {loading ? (
             <ListSkeleton rows={4} rowHeight={64} />
           ) : (
-            templates.map((template) => (
+            harnessImages.map((template) => (
               <ImageCard
                 key={template.id}
                 name={template.name}
                 description={template.description}
+                experimental={template.experimental}
                 selected={template.id === selectedTemplateId}
                 onSelect={() => onPickTemplate(template.id)}
               />
@@ -59,8 +64,26 @@ export function ImageStep({
         </CardList>
       </section>
 
+      {!loading && preconfiguredImages.length > 0 && (
+        <section className="mb-8">
+          <SectionLabel spaced>Pre-configured Images</SectionLabel>
+          <CardList>
+            {preconfiguredImages.map((template) => (
+              <ImageCard
+                key={template.id}
+                name={template.name}
+                description={template.description}
+                experimental={template.experimental}
+                selected={template.id === selectedTemplateId}
+                onSelect={() => onPickTemplate(template.id)}
+              />
+            ))}
+          </CardList>
+        </section>
+      )}
+
       <section className="mb-8">
-        <SectionLabel spaced>Or bring your own image</SectionLabel>
+        <SectionLabel spaced>Custom Image</SectionLabel>
         <CardList>
           <CustomImageCard
             value={customImage}
@@ -85,11 +108,13 @@ export function ImageStep({
 function ImageCard({
   name,
   description,
+  experimental,
   selected,
   onSelect,
 }: {
   name: string;
   description?: string;
+  experimental?: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -105,7 +130,17 @@ function ImageCard({
           : "border-border bg-card hover:bg-muted/40",
       )}
     >
-      <p className="text-[16px] font-semibold text-foreground">{name}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-[16px] font-semibold text-foreground">{name}</p>
+        {experimental && (
+          <Badge
+            variant="outline"
+            className="border-transparent bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          >
+            Alpha
+          </Badge>
+        )}
+      </div>
       {description && (
         <p className="mt-1 text-[14px] text-muted-foreground">{description}</p>
       )}

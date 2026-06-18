@@ -98,6 +98,8 @@ export interface TemplateView {
   name: string;
   image: string;
   description?: string;
+  category: "harness" | "preconfigured";
+  experimental: boolean;
 }
 
 export type AgentState =

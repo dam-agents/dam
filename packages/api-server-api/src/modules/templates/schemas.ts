@@ -29,11 +29,17 @@ export const skillSourceSeedSchema = z.object({
   gitUrl: z.string(),
 });
 
+export const templateCategorySchema = z
+  .enum(["harness", "preconfigured"])
+  .default("harness");
+
 export const templateSpecSchema = z
   .object({
     version: z.string(),
     image: z.string(),
     description: z.string().optional(),
+    category: templateCategorySchema,
+    experimental: z.boolean().optional(),
     mounts: z.array(mountSchema).optional(),
     init: z.string().optional(),
     env: z.array(envVarConfigMapSchema).optional(),

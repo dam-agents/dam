@@ -16,6 +16,8 @@ export interface Resources {
 
 export const SPEC_VERSION = "agent-platform.ai/v1";
 
+export type TemplateCategory = "harness" | "preconfigured";
+
 /** A {name, gitUrl} pair declared by the helm values (platform-wide) or by a
  *  template (per-agent). The same shape flows through every layer — helm
  *  values, rendered ConfigMap, TypeScript and Go types. */
@@ -31,6 +33,8 @@ export interface TemplateSpec {
   version: string;
   image: string;
   description?: string;
+  category?: TemplateCategory;
+  experimental?: boolean;
   mounts?: Mount[];
   init?: string;
   env?: EnvVar[];

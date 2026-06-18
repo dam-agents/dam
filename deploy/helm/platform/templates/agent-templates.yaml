@@ -31,6 +31,12 @@ data:
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
     agentHome: {{ $home | quote }}
+    {{- with $tmpl.category }}
+    category: {{ . | quote }}
+    {{- end }}
+    {{- if $tmpl.experimental }}
+    experimental: true
+    {{- end }}
     {{- with $tmpl.image.pullPolicy }}
     imagePullPolicy: {{ . | quote }}
     {{- end }}
