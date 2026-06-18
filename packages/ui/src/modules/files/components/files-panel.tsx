@@ -1,5 +1,4 @@
 import { DirContents } from "./dir-contents.js";
-import { FileRowMenu } from "./file-row-menu.js";
 import { FileViewer } from "./file-viewer.js";
 import {
   FilesPanelContext,
@@ -78,15 +77,6 @@ export function FilesPanel({
           )}
           <DirContents path="" depth={0} />
         </FilesPanelContext.Provider>
-      )}
-      {controller.menu && (
-        <FileRowMenu
-          isDir={controller.menu.type === "dir"}
-          x={controller.menu.x}
-          y={controller.menu.y}
-          onClose={controller.closeMenu}
-          onAction={controller.handleMenuAction}
-        />
       )}
       {controller.showPanelOverlay && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">

@@ -16,18 +16,11 @@ import {
   type FileEntryKind,
   useFileMutations,
 } from "../hooks/use-file-mutations.js";
-import type { FileRowMenuAction } from "./file-row-menu.js";
+import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
 export interface PendingNew {
   kind: FileEntryKind;
   dir: string;
-}
-
-export interface MenuState {
-  path: string;
-  type: "file" | "dir";
-  x: number;
-  y: number;
 }
 
 /** Internal panel state + handlers shared with every `<DirContents>` and
@@ -39,18 +32,16 @@ export interface FilesPanelContextValue {
   pendingNew: PendingNew | null;
   renamingPath: string | null;
   dragTargetPath: string | null;
-  menu: MenuState | null;
   onOpenFile: (path: string) => void;
   onToggleDir: (path: string) => void;
   onCommitRename: (from: string, nextName: string) => void;
   onCancelRename: () => void;
   onCommitNew: (rawName: string) => void;
   onCancelNew: () => void;
-  onRequestMenu: (
+  onAction: (
+    action: FileRowMenuAction,
     path: string,
     type: "file" | "dir",
-    x: number,
-    y: number,
   ) => void;
   onRowDragEnter: (targetDir: string) => void;
   onRowDragLeave: (targetDir: string) => void;
@@ -117,7 +108,6 @@ export function useFilesPanelController({
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
   const [panelDragActive, setPanelDragActive] = useState(false);
   const [dragTargetPath, setDragTargetPath] = useState<string | null>(null);
-  const [menu, setMenu] = useState<MenuState | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -181,17 +171,8 @@ export function useFilesPanelController({
     [uploadFiles],
   );
 
-  const handleRequestMenu = useCallback(
-    (path: string, type: "file" | "dir", x: number, y: number) => {
-      setMenu((prev) => (prev?.path === path ? null : { path, type, x, y }));
-    },
-    [],
-  );
-
-  const handleMenuAction = useCallback(
-    (action: FileRowMenuAction) => {
-      if (!menu) return;
-      const { path, type } = menu;
+  const handleAction = useCallback(
+    (action: FileRowMenuAction, path: string, type: "file" | "dir") => {
       const isDir = type === "dir";
       switch (action) {
         case "new-file":
@@ -212,7 +193,7 @@ export function useFilesPanelController({
           return;
       }
     },
-    [menu, startNewIn, openFilePickerFor, deleteEntry],
+    [startNewIn, openFilePickerFor, deleteEntry],
   );
 
   const handleCommitRename = useCallback(
@@ -235,7 +216,6 @@ export function useFilesPanelController({
 
   const handleCancelRename = useCallback(() => setRenamingPath(null), []);
   const handleCancelNew = useCallback(() => setPendingNew(null), []);
-  const closeMenu = useCallback(() => setMenu(null), []);
   const closeFile = useCallback(() => setOpenFilePath(null), [setOpenFilePath]);
 
   const handleFileInputChange = useCallback(
@@ -314,14 +294,13 @@ export function useFilesPanelController({
             pendingNew,
             renamingPath,
             dragTargetPath,
-            menu,
             onOpenFile,
             onToggleDir: handleToggleDir,
             onCommitRename: handleCommitRename,
             onCancelRename: handleCancelRename,
             onCommitNew: handleCommitNew,
             onCancelNew: handleCancelNew,
-            onRequestMenu: handleRequestMenu,
+            onAction: handleAction,
             onRowDragEnter: handleRowDragEnter,
             onRowDragLeave: handleRowDragLeave,
             onRowDrop: handleRowDrop,
@@ -333,14 +312,13 @@ export function useFilesPanelController({
       pendingNew,
       renamingPath,
       dragTargetPath,
-      menu,
       onOpenFile,
       handleToggleDir,
       handleCommitRename,
       handleCancelRename,
       handleCommitNew,
       handleCancelNew,
-      handleRequestMenu,
+      handleAction,
       handleRowDragEnter,
       handleRowDragLeave,
       handleRowDrop,
@@ -360,18 +338,15 @@ export function useFilesPanelController({
     ctxValue,
     openFile,
     pendingNew,
-    menu,
     rootIsLoadedEmpty,
     showPanelOverlay,
     isUploading,
     fileInputRef,
     folderInputRef,
     closeFile,
-    closeMenu,
     startNewIn,
     openFilePickerFor,
     openFolderPicker,
-    handleMenuAction,
     handleCommitNew,
     handleCancelNew,
     handleFileInputChange,

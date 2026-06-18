@@ -42,7 +42,6 @@ export function DirEntryRow({ entry, parentPath, depth }: Props) {
           isDot={entry.name.startsWith(".")}
           isCollapsed={isDir && !isExpanded}
           dropActive={isDir && panel.dragTargetPath === fullPath}
-          menuActive={panel.menu?.path === fullPath}
         />
       )}
       {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
