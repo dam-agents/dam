@@ -21,6 +21,7 @@ import {
   upsertChannel,
   deleteChannelByType,
   deleteChannelsByAgentIds,
+  findBySlackChannelId,
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
@@ -98,6 +99,7 @@ export function composeAgentsModule(deps: {
           upsertChannelTx(tx, owner, agentId, channel),
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
       },
+      findSlackChannelBinding: findBySlackChannelId(deps.db),
       channelSecretStore: deps.channelSecretStore,
       listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
       listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
