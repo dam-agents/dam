@@ -143,11 +143,11 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// 32 MB upload headroom: file-uploads go through files.upload as base64
+// 70 MB upload headroom: file-uploads go through files.upload as base64
 // (≈1.34× overhead) plus JSON wrapping. The server-side FilesService caps
-// decoded payloads at 10 MB, so this is purely a transport-layer guard that
+// decoded payloads at 50 MB, so this is purely a transport-layer guard that
 // prevents partial reads before the service-level check kicks in.
-const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
+const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 // The agent's NetworkPolicy admits ingress on this port only from the
 // api-server and controller pods; the api-server has already verified

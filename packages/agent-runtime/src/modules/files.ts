@@ -23,9 +23,9 @@ import { err, ok } from "agent-runtime-api";
 import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
 
 // Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
-// is JSON-base64 — ~10 MB fits well below the 32 MB tRPC body ceiling.
+// is JSON-base64 — ~50 MB fits well below the 70 MB tRPC body ceiling.
 // Larger transfers want a streaming endpoint, not this surface.
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 /** Platform-reserved paths under the working directory. The controller writes
  *  trigger payloads to `.triggers/` and uses `.initialized` as a

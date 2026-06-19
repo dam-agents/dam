@@ -230,7 +230,7 @@ export function useFileDeleteMutation(agentId: string | null) {
 // Client-side pre-flight cap so oversized uploads fail in the UI before
 // hitting the wire. Server-side enforcement lives in agent-runtime and
 // surfaces as PAYLOAD_TOO_LARGE — this value can drift up to but not past it.
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const MESSAGE_UPLOAD_ROOT = ".uploads";
 
