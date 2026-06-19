@@ -27,7 +27,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentView } from "../domain/agent-view.js";
 import { validateAgentName } from "./create-helpers.js";
-import { formatTransportError } from "./errors.js";
+import { formatTransportError } from "../../shared/trpc/print.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";

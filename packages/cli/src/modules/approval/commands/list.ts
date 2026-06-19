@@ -6,8 +6,8 @@ import { createAgentResolver } from "../../agent/index.js";
 import {
   exitCodeForResolveError,
   printResolveError,
-  printServiceError,
 } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,

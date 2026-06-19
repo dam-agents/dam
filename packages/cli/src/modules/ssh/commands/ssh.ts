@@ -7,8 +7,8 @@ import type { EgressService } from "../../egress/index.js";
 import {
   exitCodeForResolveError,
   printResolveError,
-  printServiceError,
 } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   resolveActiveHost,
   resolveHostFromConfig,

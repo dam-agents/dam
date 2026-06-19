@@ -6,7 +6,7 @@ import {
   type ConnectionTemplateView,
   connectionNameSchema,
 } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {

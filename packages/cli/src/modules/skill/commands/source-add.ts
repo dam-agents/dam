@@ -1,7 +1,7 @@
 import { isCancel, text } from "@clack/prompts";
 import { Command } from "commander";
 import { skillCreateSourceInputSchema } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,

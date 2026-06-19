@@ -3,13 +3,7 @@ import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_RUNTIME_FAILURE,
 } from "../../shared/exit-codes.js";
-import {
-  formatTransportError,
-  printServiceFailure,
-} from "../../shared/trpc/print.js";
-
-export { formatTransportError };
-export { printServiceFailure as printServiceError };
+import { printServiceError } from "../../shared/trpc/print.js";
 
 export function exitCodeForResolveError(error: ResolveError): number {
   return error.kind === "not-found" || error.kind === "ambiguous"
@@ -35,7 +29,7 @@ export function printResolveError(error: ResolveError, host: string): void {
       return;
     case "auth-required":
     case "transport":
-      printServiceFailure(error, host);
+      printServiceError(error, host);
       return;
   }
 }

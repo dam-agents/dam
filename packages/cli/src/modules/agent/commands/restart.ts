@@ -7,12 +7,11 @@ import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
+import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import {
-  exitCodeForResolveError,
   formatTransportError,
-  printResolveError,
   printServiceError,
-} from "./errors.js";
+} from "../../shared/trpc/print.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_BELOW_FLOOR,

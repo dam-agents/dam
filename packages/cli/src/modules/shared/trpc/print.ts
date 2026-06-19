@@ -6,7 +6,7 @@ export function formatTransportError(reason: string, host: string): string {
   return `cannot reach server \`${host}\`: ${reason}`;
 }
 
-export function printServiceFailure(
+export function printServiceError(
   error: TransportError | AuthRequiredError,
   host: string,
 ): void {
@@ -30,5 +30,5 @@ export function printTrpcError(e: unknown, host: string): void {
     process.stderr.write(`error: ${r.error.reason}\n`);
     return;
   }
-  printServiceFailure(r.error, host);
+  printServiceError(r.error, host);
 }
