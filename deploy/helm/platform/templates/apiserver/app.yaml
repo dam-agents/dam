@@ -60,6 +60,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.apiServer) | nindent 2 }}
 spec:
   replicas: 1
   strategy:
@@ -73,16 +74,17 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
-      annotations:
-        # The api-server loads the mounted agent-templates once at boot,
-        # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
-        # the pod when the rendered templates change, making `helm upgrade` of a
-        # template take effect instead of serving stale ones until the next restart.
-        checksum/agent-templates: {{ include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum }}
-        checksum/git-repos: {{ include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum }}
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
+      # The api-server loads the mounted agent-templates once at boot,
+      # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
+      # the pod when the rendered templates change, making `helm upgrade` of a
+      # template take effect instead of serving stale ones until the next restart.
+      {{- $checksums := dict
+            "checksum/agent-templates" (include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum)
+            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}

@@ -28,6 +28,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.keycloak) | nindent 2 }}
 spec:
   replicas: 1
   strategy:
@@ -41,7 +42,7 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
-      annotations: {}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.keycloak) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       initContainers:

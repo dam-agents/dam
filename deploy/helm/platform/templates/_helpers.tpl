@@ -56,6 +56,48 @@ imagePullSecrets:
 {{- end }}
 
 {{/*
+podAnnotations — merged pod-template annotations for a workload. This is the
+hook OpenTelemetry auto-instrumentation and similar injection operators key
+off of. Precedence, highest first: chart-internal (e.g. config checksums that
+must survive so a `helm upgrade` rolls the pod) > per-component
+(`<component>.podAnnotations`) > chart-wide (`.Values.commonPodAnnotations`).
+Renders an `annotations:` block, or nothing when the merged map is empty.
+
+Usage:
+  {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
+  - root:      root context ($), for the chart-wide defaults
+  - component: component values subtree (may define `.podAnnotations`); optional
+  - internal:  chart-managed annotations that must always render; optional
+*/}}
+{{- define "platform.podAnnotations" -}}
+{{- $component := .component | default dict -}}
+{{- $internal := .internal | default dict -}}
+{{- $merged := merge (deepCopy $internal) ($component.podAnnotations | default dict) (.root.Values.commonPodAnnotations | default dict) -}}
+{{- with $merged }}
+annotations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
+annotations — merged workload object-metadata annotations (on the
+Deployment/StatefulSet/Job itself). Precedence, highest first: chart-internal
+(e.g. Helm hook directives) > per-component (`<component>.annotations`) >
+chart-wide (`.Values.commonAnnotations`). Renders an `annotations:` block, or
+nothing when the merged map is empty. Same `dict` arguments as
+`platform.podAnnotations`, reading `.annotations` instead of `.podAnnotations`.
+*/}}
+{{- define "platform.annotations" -}}
+{{- $component := .component | default dict -}}
+{{- $internal := .internal | default dict -}}
+{{- $merged := merge (deepCopy $internal) ($component.annotations | default dict) (.root.Values.commonAnnotations | default dict) -}}
+{{- with $merged }}
+annotations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
 nameList — comma-separated .name values from a list of objects.
 Usage: {{ include "platform.nameList" .Values.someList }}
 */}}

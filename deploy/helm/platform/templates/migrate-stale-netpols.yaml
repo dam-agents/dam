@@ -92,10 +92,11 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-  annotations:
-    helm.sh/hook: pre-upgrade
-    helm.sh/hook-weight: "1"
-    helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+  {{- $hooks := dict
+        "helm.sh/hook" "pre-upgrade"
+        "helm.sh/hook-weight" "1"
+        "helm.sh/hook-delete-policy" "hook-succeeded,before-hook-creation" }}
+  {{- include "platform.annotations" (dict "root" $ "internal" $hooks) | nindent 2 }}
 spec:
   backoffLimit: 1
   ttlSecondsAfterFinished: 300
@@ -103,6 +104,7 @@ spec:
     metadata:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
+      {{- include "platform.podAnnotations" (dict "root" $) | nindent 6 }}
     spec:
       serviceAccountName: {{ $jobName }}
       restartPolicy: OnFailure

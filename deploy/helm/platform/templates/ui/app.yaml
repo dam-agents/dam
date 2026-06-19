@@ -74,6 +74,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: ui
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.ui) | nindent 2 }}
 spec:
   replicas: 1
   selector:
@@ -85,8 +86,8 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: ui
-      annotations:
-        checksum/nginx-config: {{ toYaml .Values.ui | sha256sum }}
+      {{- $checksums := dict "checksum/nginx-config" (toYaml .Values.ui | sha256sum) }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.ui "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       containers:

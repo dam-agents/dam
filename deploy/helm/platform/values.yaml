@@ -82,6 +82,20 @@ urls:
 #     - name: my-registry-secret
 imagePullSecrets: []
 
+# -- Annotations added to every chart-managed workload (Deployments,
+# StatefulSets and the setup/migration Jobs). Use for cluster-wide policy or
+# tooling that targets workload objects. Per-component `annotations` override
+# these on collision; chart-internal annotations (e.g. Helm hooks) always win.
+commonAnnotations: {}
+
+# -- Annotations added to the pod template of every chart-managed workload.
+# This is what injection operators read — e.g. set
+# `instrumentation.opentelemetry.io/inject-sdk: "true"` here to opt the whole
+# platform into OpenTelemetry auto-instrumentation. Per-component
+# `podAnnotations` override these; chart-internal annotations (config
+# checksums) always win.
+commonPodAnnotations: {}
+
 # -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
 # postgres, redis) AND controller-managed agent / fork pods. Set
 # `enabled: false` to drop all readiness/liveness/startup probes — escape
@@ -129,6 +143,10 @@ openshift:
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:
   enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
   user: platform
   # password is auto-generated if not set
@@ -150,6 +168,10 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image: registry.access.redhat.com/hi/valkey:9.0
   port: 6379
   storage: 1Gi
@@ -165,6 +187,10 @@ redis:
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
   # version is pinned in `packages/keycloak-theme/Dockerfile`.
@@ -330,6 +356,10 @@ ingress:
 
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/ui
     tag: "" # defaults to appVersion
@@ -345,6 +375,10 @@ ui:
 
 # -- API Server
 apiServer:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/api-server
     tag: ""
@@ -526,6 +560,12 @@ apiServer:
 
 # -- Controller (Go reconciler + scheduler)
 controller:
+  # -- Extra annotations for the controller Deployment object / its pod
+  # template (merged over commonAnnotations / commonPodAnnotations). These
+  # apply to the controller pod itself, not the agent pods it launches (those
+  # have their own knobs under controller.agent).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/controller
     tag: ""

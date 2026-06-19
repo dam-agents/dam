@@ -49,6 +49,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.postgres) | nindent 2 }}
 spec:
   serviceName: {{ $pgName }}
   replicas: 1
@@ -61,6 +62,7 @@ spec:
       labels:
         app.kubernetes.io/component: postgres
         app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.postgres) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       containers:
