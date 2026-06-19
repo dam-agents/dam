@@ -75,12 +75,17 @@ Keep it complete: every page appears exactly once, and every line resolves.
 
 ## log.md
 
-Append-only operations log, newest entry last. One entry per maintenance action:
+Chronological, append-only record of what happened and when — every ingest, lint,
+query, and onboard. Newest entry last; never rewrite past entries. One entry per
+maintenance action, each starting with a consistent prefix:
 
 `## [YYYY-MM-DD] <onboard|ingest|lint|query> | <subject>`
 
 Record what changed (pages added/refreshed, contradictions resolved, watermarks
-advanced). The log is the audit trail; never rewrite past entries.
+advanced). The consistent prefix keeps the log parseable with plain unix tools —
+`grep "^## \[" log.md | tail -5` gives the last five entries. Read the tail at the
+start of a run to understand what's been done recently; append with shell
+redirection (`>> log.md`), never by loading the file into context to edit it.
 
 ## Discipline
 

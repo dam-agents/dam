@@ -1,5 +1,6 @@
 # Wiki log
 
-Append-only operations log, newest entry last. Entry format:
+Chronological, append-only log of what happened and when. Newest entry last.
+Entry format:
 
 `## [YYYY-MM-DD] <onboard|ingest|lint|query> | <subject>`
