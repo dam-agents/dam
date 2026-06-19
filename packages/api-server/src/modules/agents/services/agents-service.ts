@@ -146,7 +146,12 @@ export function createAgentsService(deps: {
     );
     const missing = resolved.filter((r) => r.sub === null).map((r) => r.email);
     if (missing.length > 0) {
-      throw new Error(`User not found in Keycloak: ${missing.join(", ")}`);
+      // Bad input, not a server fault — surface as BAD_REQUEST so clients
+      // (CLI/UI) can report it as an input error rather than a 500.
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `User not found: ${missing.join(", ")}`,
+      });
     }
     return resolved.map((r) => r.sub!);
   }
