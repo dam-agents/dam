@@ -1,0 +1,124 @@
+import { Command } from "commander";
+import { z } from "zod";
+import type { AgentService } from "../../agent/index.js";
+import {
+  createAgentResolver,
+  mergeAllowedUserEmails,
+} from "../../agent/index.js";
+import {
+  exitCodeForResolveError,
+  printResolveError,
+  printServiceError,
+} from "../../agent/commands/errors.js";
+import type { CompatService, ConfigService } from "../../cli/index.js";
+import {
+  EXIT_AGENT_NOT_RESOLVED,
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+
+const collect = (v: string, acc: string[]): string[] => [...acc, v];
+const emailSchema = z.email();
+
+export function buildAllowCommand(deps: {
+  compatService: CompatService;
+  configService: ConfigService;
+  createAgentService: (host: string) => AgentService;
+}): Command {
+  return new Command("allow")
+    .description(
+      "Add one or more users to an Agent's allowed-user list (gates Slack drivers)",
+    )
+    .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
+    .option(
+      "--user <email>",
+      "user email to allow (repeatable)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
+    .option("--json", "emit { ok, agentId, allowedUserEmails } as JSON")
+    .addHelpText(
+      "after",
+      "\nExamples:\n" +
+        "  dam channel allow my-agent --user teammate@example.com\n" +
+        "  dam channel allow my-agent --user a@x.com --user b@y.com\n",
+    )
+    .action(
+      async (
+        ref: string,
+        opts: { user: string[]; server?: string; json?: boolean },
+      ) => {
+        const users = opts.user;
+        if (users.length === 0) {
+          process.stderr.write("error: pass at least one --user <email>\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        const invalid = users.filter((u) => !emailSchema.safeParse(u).success);
+        if (invalid.length > 0) {
+          process.stderr.write(
+            `error: invalid email(s): ${invalid.join(", ")}\n`,
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+
+        const host = await resolveActiveHost(deps, {
+          flag: opts.server ? { server: opts.server } : undefined,
+          exitCodes: {
+            runtimeFailure: EXIT_RUNTIME_FAILURE,
+            belowFloor: EXIT_BELOW_FLOOR,
+          },
+        });
+
+        const svc = deps.createAgentService(host);
+        const resolver = createAgentResolver({ agentService: svc });
+        const resolved = await resolver.resolve(ref);
+        if (!resolved.ok) {
+          printResolveError(resolved.error, host);
+          process.exit(exitCodeForResolveError(resolved.error));
+        }
+
+        const merged = mergeAllowedUserEmails(
+          resolved.value.allowedUserEmails,
+          {
+            add: users,
+          },
+        );
+        const res = await svc.updateAllowedUserEmails(
+          resolved.value.id,
+          merged,
+        );
+        if (!res.ok) {
+          if (res.error.kind === "invalid-input") {
+            process.stderr.write(`error: ${res.error.message}\n`);
+            process.exit(EXIT_INVALID_INPUT);
+          }
+          if (res.error.kind === "not-found") {
+            process.stderr.write(
+              `error: no agent with id \`${resolved.value.id}\`\n`,
+            );
+            process.exit(EXIT_AGENT_NOT_RESOLVED);
+          }
+          printServiceError(res.error, host);
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+
+        if (opts.json) {
+          process.stdout.write(
+            `${JSON.stringify({ ok: true, agentId: resolved.value.id, allowedUserEmails: res.value.allowedUserEmails })}\n`,
+          );
+        } else {
+          process.stdout.write(
+            `✓ Allowed ${users.length} user(s) on ${resolved.value.name}. Agent now has ${res.value.allowedUserEmails.length} allowed user(s).\n`,
+          );
+        }
+        process.exit(EXIT_SUCCESS);
+      },
+    );
+}

@@ -29,6 +29,7 @@ function makeService(
     get: vi.fn(async () => getResult()),
     deleteAgent: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
+    updateAllowedUserEmails: vi.fn(async () => ok(makeAgent())),
   };
 }
 

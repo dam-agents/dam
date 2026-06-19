@@ -6,7 +6,9 @@ import {
   createTrpcClient,
   type TrpcClient,
 } from "../shared/trpc/trpc-client.js";
+import { buildAllowCommand } from "./commands/allow.js";
 import { buildAvailableCommand } from "./commands/available.js";
+import { buildDisallowCommand } from "./commands/disallow.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildSlackConnectCommand } from "./commands/slack-connect.js";
 import { buildSlackDisconnectCommand } from "./commands/slack-disconnect.js";
@@ -79,6 +81,16 @@ export function composeChannelModule(
   telegram.addCommand(buildTelegramConnectCommand(agentScoped));
   telegram.addCommand(buildTelegramDisconnectCommand(agentScoped));
   parent.addCommand(telegram);
+
+  // allow/disallow touch only the Agent's allowedUserEmails field, so they need
+  // the resolver + AgentService but no ChannelService.
+  const allowScoped = {
+    compatService: opts.compatService,
+    configService: opts.configService,
+    createAgentService: opts.createAgentService,
+  };
+  parent.addCommand(buildAllowCommand(allowScoped));
+  parent.addCommand(buildDisallowCommand(allowScoped));
 
   return { commands: [parent], exports: { createService } };
 }
