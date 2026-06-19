@@ -17,7 +17,7 @@ overrides:
   tar@<7.5.16: 7.5.16
   ws@<8.21.0: 8.21.0
 
-packageExtensionsChecksum: sha256-MiHZ3mgtOUb60KfpkAkui5ad/9eLmcQda0MiZKaTRqA=
+packageExtensionsChecksum: sha256-KXxfPliwb3WV55jn5M9k5ASbQFftfqDqY9Khs8D9TbE=
 
 importers:
 
@@ -453,7 +453,7 @@ importers:
         version: 2.1.1
       keycloakify:
         specifier: ^11.15.3
-        version: 11.15.3
+        version: 11.15.3(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -4668,6 +4668,16 @@ packages:
   keycloakify@11.15.3:
     resolution: {integrity: sha512-iB8kQELuZ3eqAJsKht3974VZQWss0BydzvELS3uefNKRMZA8ZBq3hsGelL8t3Yt0zZ7wS+Ijavi5VgC9poVcvw==}
     hasBin: true
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: '*'
+      react-dom: '*'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -10740,9 +10750,14 @@ snapshots:
 
   jwt-decode@4.0.0: {}
 
-  keycloakify@11.15.3:
+  keycloakify@11.15.3(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
       tsafe: 1.8.12
+    optionalDependencies:
+      '@types/react': 18.3.28
+      '@types/react-dom': 18.3.7(@types/react@18.3.28)
 
   keyv@4.5.4:
     dependencies:
