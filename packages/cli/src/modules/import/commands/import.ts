@@ -7,6 +7,7 @@ import {
   exitCodeForResolveError,
   printResolveError,
 } from "../../agent/commands/errors.js";
+import { formatAuthRejection } from "../../shared/auth-message.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm } from "../../shared/prompt.js";
 import {
@@ -169,8 +170,7 @@ async function uploadAndReport(args: {
         e.kind === "not-logged-in"
           ? `not logged in to ${e.host}`
           : `session expired for ${e.host}`;
-      process.stderr.write(`error: not authenticated: ${reason}\n`);
-      process.stderr.write("hint: run `dam auth login` first\n");
+      process.stderr.write(formatAuthRejection(reason));
     } else {
       process.stderr.write(`error: ${e.reason}\n`);
     }
@@ -224,10 +224,7 @@ async function uploadAndReport(args: {
   const serverMessage = extractServerError(body) ?? res.statusText;
   switch (res.status) {
     case 401:
-      process.stderr.write(
-        `error: not authenticated: ${serverMessage}\n` +
-          `       run "dam auth login" first\n`,
-      );
+      process.stderr.write(formatAuthRejection(serverMessage));
       return EXIT_RUNTIME_FAILURE;
     case 404:
       process.stderr.write("error: agent no longer exists\n");
