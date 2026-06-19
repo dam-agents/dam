@@ -96,9 +96,6 @@ export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
   SecretType,
-  ProviderPreset,
-  ProviderPresetMode,
-  ProviderPresetType,
   SecretView,
   SecretCreateInput,
   SecretCreateGithubPatInput,
@@ -108,10 +105,15 @@ export type {
   SecretUpdateInput,
   AgentAccess,
   SecretsService,
+} from "./modules/secrets/types.js";
+export type {
+  ProviderPreset,
+  ProviderPresetMode,
+  ProviderPresetType,
   EnvMapping,
   InjectionConfig,
   BobModelPins,
-} from "./modules/secrets/types.js";
+} from "./modules/connections/providers.js";
 export {
   secretCreateGithubPatInputSchema,
   secretCreateInputSchema,
@@ -123,9 +125,9 @@ export {
   secretUpdateInputSchema,
 } from "./modules/secrets/schemas.js";
 export { ENV_NAME_RE } from "./modules/shared.js";
+export { isValidEnvName } from "./modules/secrets/types.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
-  isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
   isProviderPresetType,
@@ -135,7 +137,10 @@ export {
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
   BOB_HOST,
-} from "./modules/secrets/types.js";
+  PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
+  templateIdForProvider,
+} from "./modules/connections/providers.js";
 export { hostPatternSchema } from "./modules/secrets/schemas.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";

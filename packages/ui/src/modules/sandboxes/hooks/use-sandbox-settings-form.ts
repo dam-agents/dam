@@ -1,5 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { isProtectedAgentEnvName } from "api-server-api";
+import {
+  isProtectedAgentEnvName,
+  providerTypeForTemplateId,
+} from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -23,7 +26,6 @@ import {
 } from "../../agents/api/queries.js";
 import type { InheritedEnv } from "../../agents/components/configure-agent/env-tab.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { providerPresetForTemplateId } from "../../connections/lib/provider-templates.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -101,7 +103,7 @@ export function useSandboxSettingsForm() {
     () =>
       new Set(
         apps
-          .filter((a) => providerPresetForTemplateId(a.templateId) !== null)
+          .filter((a) => providerTypeForTemplateId(a.templateId) !== null)
           .map((a) => a.id),
       ),
     [apps],

@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  type ConnectionTemplateView,
+  type ConnectionView,
+  PROVIDER_TEMPLATE_IDS,
+} from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +24,6 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../../../connections/internal-only.js";
-import { PROVIDER_TEMPLATE_IDS } from "../../../connections/lib/provider-templates.js";
 import {
   saveSnapshot,
   type WizardSnapshot,

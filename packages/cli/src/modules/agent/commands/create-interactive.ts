@@ -14,7 +14,13 @@ import { Command } from "commander";
 import {
   agentCreateInputSchema,
   type ConnectionView,
+  isProviderPresetType,
+  PROVIDER_PRESET_TYPES,
+  PROVIDER_TEMPLATE_IDS,
   PROVIDERS,
+  type ProviderPresetType,
+  providerTypeForTemplateId,
+  templateIdForProvider,
 } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
@@ -37,15 +43,11 @@ import {
   groupGithubPats,
   type GithubPatPair,
 } from "../lib/group-github-pats.js";
-import {
-  type CliProviderType,
-  GITHUB_PAT_TEMPLATE_ID,
-  PROVIDER_TEMPLATE_IDS,
-  providerTypeForTemplateId,
-  templateIdForProvider,
-} from "../../connection/domain/provider-templates.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
+
+// Not a model provider, so it lives outside the shared registry.
+const GITHUB_PAT_TEMPLATE_ID = "github-pat";
 
 // Connection names must be lowercase-kebab (DB-enforced).
 const CONNECTION_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -489,17 +491,13 @@ interface ExistingProviderConn {
   id: string;
   name: string;
   templateId: string;
-  type: CliProviderType;
+  type: ProviderPresetType;
 }
 
 interface ExistingProviderSecret {
   id: string;
   name: string;
-  type: CliProviderType;
-}
-
-function isCliProviderSecretType(type: string): type is CliProviderType {
-  return type === "anthropic" || type === "ibm-litellm" || type === "openai";
+  type: ProviderPresetType;
 }
 
 /**
@@ -534,8 +532,8 @@ async function pickProvider(
 
   const existingConns = providerConns(conns);
   const existingSecrets: ExistingProviderSecret[] = secrets
-    .filter((s): s is typeof s & { type: CliProviderType } =>
-      isCliProviderSecretType(s.type),
+    .filter((s): s is typeof s & { type: ProviderPresetType } =>
+      isProviderPresetType(s.type),
     )
     .map((s) => ({ id: s.id, name: s.name, type: s.type }));
 
@@ -601,13 +599,12 @@ async function addOrReplaceProvider(
   // Loops on server-side create/update failures — re-types the type prompt
   // rather than preserving prior input; the prompts are short.
   while (true) {
-    const type = await select<CliProviderType>({
+    const type = await select<ProviderPresetType>({
       message: "Provider type",
-      options: [
-        { value: "anthropic", label: "Anthropic" },
-        { value: "ibm-litellm", label: "IBM LiteLLM" },
-        { value: "openai", label: "OpenAI" },
-      ],
+      options: PROVIDER_PRESET_TYPES.map((t) => ({
+        value: t,
+        label: PROVIDERS[t].displayName,
+      })),
     });
     if (isCancel(type)) return cancelAndCleanup(trpc, cleanup);
 
@@ -735,7 +732,7 @@ async function createConnectionWithRename(
 async function createProviderConnection(
   trpc: TrpcClient,
   cleanup: Cleanup,
-  type: CliProviderType,
+  type: ProviderPresetType,
   templateId: string,
   value: string,
 ): Promise<ProviderSelection | null> {

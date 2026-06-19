@@ -97,9 +97,8 @@ export function ProviderConnectDialog({
               persist({
                 value,
                 createInput: {
-                  templateId:
-                    mode === "oauth" ? "anthropic-oauth" : "anthropic",
-                  name: mode === "oauth" ? "anthropic-oauth" : "anthropic",
+                  templateId: MODES[mode].templateId,
+                  name: MODES[mode].templateId,
                   authKind: "header",
                   value,
                 },

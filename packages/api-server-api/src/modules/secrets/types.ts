@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { ENV_NAME_RE } from "../shared.js";
+import type { EnvMapping, InjectionConfig } from "../connections/providers.js";
 import type {
   secretCreateGithubPatInputSchema,
   secretCreateInputSchema,
@@ -14,258 +15,8 @@ export type SecretType =
   | "bob"
   | "generic";
 
-/**
- * SecretTypes that have a {@link PROVIDERS} registry entry — the providers
- * rendered as cards in the Providers view. The registry is constrained
- * against this union so adding a new provider means widening this type
- * AND adding a {@link PROVIDERS} entry; TypeScript will fail if either
- * half is missing.
- */
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
-
-/**
- * Declares a pod env var to inject into every agent instance that has access
- * to this secret. `placeholder` is the literal value written into the env
- * (typically "dummy-placeholder") — the Envoy sidecar's credential_injector
- * filter rewrites it to the real credential on outbound requests matching
- * the secret's host pattern.
- */
-export interface EnvMapping {
-  envName: string;
-  placeholder: string;
-}
-
-export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
-
 export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);
-}
-
-/**
- * How the Envoy sidecar injects a generic secret into matching outbound
- * requests. `valueFormat` may reference the literal token `{value}`;
- * defaults to `{value}` when omitted.
- *
- * When `queryParamName` is set, a per-route Lua filter runs after the
- * Envoy credential_injector and moves the (bare) credential from the
- * `headerName` header into the URL query parameter named `queryParamName`,
- * then strips the header before the request leaves the sidecar. Use this
- * for upstreams that read the credential from the URL rather than a
- * header (e.g. APIs that accept `?key=<value>`). The `headerName` is an
- * internal-only transport in this mode — pick a name that won't collide
- * with another credential's injection on the same host (the controller
- * drops collisions to avoid `credential_injector overwrite` clobbering).
- *
- * To inject the same credential into BOTH a header AND a URL parameter
- * on the same endpoint, create two Secrets with the same host pattern —
- * one header-only, one with `queryParamName`.
- */
-export interface InjectionConfig {
-  headerName: string;
-  valueFormat?: string;
-  queryParamName?: string;
-}
-
-export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
-const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
-
-export function ibmLitellmEnvMappings(): EnvMapping[] {
-  return [
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    { envName: "OPENAI_PROXY_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_PROXY_MODEL", placeholder: "aws/claude-opus-4-8" },
-    { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
-    { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
-    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-  ];
-}
-
-export interface BobModelPins {
-  model?: string;
-  agentId?: string;
-  teamId?: string;
-  maxCoins?: string;
-  chatMode?: string;
-}
-
-// Bob CLI silently downgrades to the legacy `prod.ibm-bob-staging` backend
-// when BOBSHELL_API_KEY starts with `sk-`/`pk-`; the placeholder must not.
-export const BOB_HOST = "api.us-east.bob.ibm.com";
-const BOB_PLACEHOLDER = "dummy-placeholder";
-
-export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
-  const out: EnvMapping[] = [
-    { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
-  ];
-  const push = (envName: string, value?: string) => {
-    const trimmed = value?.trim();
-    if (trimmed) out.push({ envName, placeholder: trimmed });
-  };
-  push("BOB_SHELL_MODEL", pins.model);
-  push("BOB_INSTANCE_ID", pins.agentId);
-  push("BOB_TEAM_ID", pins.teamId);
-  push("BOB_MAX_COINS", pins.maxCoins);
-  push("BOB_CHAT_MODE", pins.chatMode);
-  return out;
-}
-
-export function bobPinsFromEnvMappings(
-  envMappings: readonly EnvMapping[] | undefined,
-): BobModelPins {
-  const lookup = (name: string) =>
-    envMappings?.find((m) => m.envName === name)?.placeholder;
-  const pins: BobModelPins = {};
-  const model = lookup("BOB_SHELL_MODEL");
-  const agentId = lookup("BOB_INSTANCE_ID");
-  const teamId = lookup("BOB_TEAM_ID");
-  const maxCoins = lookup("BOB_MAX_COINS");
-  const chatMode = lookup("BOB_CHAT_MODE");
-  if (model) pins.model = model;
-  if (agentId) pins.agentId = agentId;
-  if (teamId) pins.teamId = teamId;
-  if (maxCoins) pins.maxCoins = maxCoins;
-  if (chatMode) pins.chatMode = chatMode;
-  return pins;
-}
-
-export const BOB_CHAT_MODES = ["plan", "code", "advanced", "ask"] as const;
-
-/**
- * One auth mode of a provider preset. Most presets have exactly one mode
- * (a Bearer API key); Anthropic has two (oauth + api-key) which differ in
- * both env-var name and Envoy injection header.
- */
-export interface ProviderPresetMode {
-  /** Stable mode key. Stored as the `auth-mode` annotation on the K8s
-   *  Secret so reads can recover which mode was selected. */
-  key: string;
-  /** UI label for the mode toggle. */
-  label: string;
-  /** Default env-var bundle. Forms with dynamic configuration (IBM LiteLLM
-   *  model overrides) compute a custom bundle and pass it as `envMappings`
-   *  to `create()`; this is what `create()` falls back to otherwise. */
-  defaultEnvMappings: EnvMapping[];
-  /** Override the default `Authorization: Bearer {value}` injection.
-   *  Set for Anthropic api-key mode (`x-api-key`); omit elsewhere. */
-  injection?: InjectionConfig;
-  /** Twin K8s Secret per entry; lifecycle cascaded by service. */
-  extraInjections?: readonly InjectionConfig[];
-}
-
-/**
- * Provider preset — a fixed (host, path, env-bundle) tuple surfaced as a
- * card in the Providers view. Replaces the per-provider scattered
- * constants. Add a new provider by adding one entry to {@link PROVIDERS}.
- */
-export interface ProviderPreset {
-  /** SecretType literal — the canonical id of this preset. */
-  id: ProviderPresetType;
-  /** Human-readable name for cards, toasts, and the connections picker. */
-  displayName: string;
-  /** Envoy host pattern. Also drives the per-instance leaf-cert SAN list. */
-  hostPattern: string;
-  /** Path scope for injection. Omit for whole-host coverage. */
-  pathPattern?: string;
-  /** Auth modes. Length 1 for IBM LiteLLM and OpenAI; length 2 for Anthropic. */
-  modes: readonly ProviderPresetMode[];
-}
-
-export const PROVIDERS = {
-  anthropic: {
-    id: "anthropic",
-    displayName: "Anthropic",
-    hostPattern: "api.anthropic.com",
-    modes: [
-      {
-        key: "oauth",
-        label: "OAuth Token",
-        // Claude Code SDK reads CLAUDE_CODE_OAUTH_TOKEN; sends Bearer.
-        defaultEnvMappings: [
-          {
-            envName: "CLAUDE_CODE_OAUTH_TOKEN",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
-      },
-      {
-        key: "api-key",
-        label: "API Key",
-        // @anthropic-ai/sdk reads ANTHROPIC_API_KEY; sends x-api-key.
-        defaultEnvMappings: [
-          {
-            envName: "ANTHROPIC_API_KEY",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
-        injection: { headerName: "x-api-key", valueFormat: "{value}" },
-      },
-    ],
-  },
-  "ibm-litellm": {
-    id: "ibm-litellm",
-    displayName: "IBM LiteLLM ETE Proxy",
-    hostPattern: IBM_LITELLM_HOST,
-    modes: [
-      {
-        key: "api-key",
-        label: "API Token",
-        defaultEnvMappings: ibmLitellmEnvMappings(),
-      },
-    ],
-  },
-  openai: {
-    id: "openai",
-    displayName: "OpenAI",
-    hostPattern: "api.openai.com",
-    // OpenAI's API lives under /v1/*; scoping injection to that path keeps
-    // status pages and other host endpoints from getting a spurious
-    // Authorization header.
-    pathPattern: "/v1/*",
-    modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        defaultEnvMappings: [
-          { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-        ],
-      },
-    ],
-  },
-  bob: {
-    id: "bob",
-    displayName: "Bob Shell",
-    hostPattern: BOB_HOST,
-    modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        defaultEnvMappings: bobEnvMappings(),
-        // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
-        injection: {
-          headerName: "Authorization",
-          valueFormat: "Apikey {value}",
-        },
-        extraInjections: [
-          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
-        ],
-      },
-    ],
-  },
-} satisfies Record<ProviderPresetType, ProviderPreset>;
-
-/** Iteration helper — every provider id that has a {@link PROVIDERS} entry. */
-export const PROVIDER_PRESET_TYPES = Object.keys(
-  PROVIDERS,
-) as readonly ProviderPresetType[];
-
-export function isProviderPresetType(
-  type: SecretType,
-): type is ProviderPresetType {
-  return type in PROVIDERS;
 }
 
 export interface SecretView {
@@ -287,12 +38,7 @@ export interface AgentAccess {
   secretIds: string[];
 }
 
-/**
- * Input for {@link SecretsService.createGithubPat}. A single GitHub PAT is
- * fanned out server-side into two `generic` secrets that share this `name`:
- * one for `api.github.com` (Bearer / `GH_TOKEN`) and one for `github.com`
- * (Basic, with the value pre-wrapped as `base64("x-access-token:" + token)`).
- */
+// One PAT fans out server-side into twin `generic` secrets sharing this name (api.github.com Bearer + github.com Basic).
 export type SecretCreateGithubPatInput = z.infer<
   typeof secretCreateGithubPatInputSchema
 >;
@@ -303,12 +49,7 @@ export interface CreateGithubPatOutput {
   gitSecretId: string;
 }
 
-/**
- * Input for {@link SecretsService.updateGithubPat}. Replaces the token on
- * an existing PAT pair by id, re-wrapping the github.com half's basic-
- * auth value server-side so callers send `{apiSecretId, gitSecretId,
- * token}` only.
- */
+// Replaces the token on a PAT pair by id; the github.com half's basic-auth value is re-wrapped server-side.
 export type SecretUpdateGithubPatInput = z.infer<
   typeof secretUpdateGithubPatInputSchema
 >;
@@ -331,8 +72,6 @@ export interface SecretsService {
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
-  /** Expand a selection of primary secret ids to the full granted set
-   *  (adds GitHub-PAT twins). Used to settle grants into an Agent spec at
-   *  create time without re-implementing twin expansion. */
+  // Expands primary secret ids to the full granted set (adds GitHub-PAT twins).
   expandSecretGrants(secretIds: string[]): Promise<string[]>;
 }

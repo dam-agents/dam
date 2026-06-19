@@ -1,4 +1,4 @@
-import type { ConnectionView } from "api-server-api";
+import { type ConnectionView, providerTypeForTemplateId } from "api-server-api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -10,7 +10,6 @@ import {
   type SecretView,
 } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { providerPresetForTemplateId } from "../../connections/lib/provider-templates.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { detectMode, MODES } from "./anthropic/modes.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
@@ -123,7 +122,7 @@ export function ProviderSection({
   const itemByType = useMemo(() => {
     const connByType = new Map<ProviderPresetType, ConnectionView>();
     for (const c of connections) {
-      const preset = providerPresetForTemplateId(c.templateId);
+      const preset = providerTypeForTemplateId(c.templateId);
       if (preset && !connByType.has(preset)) connByType.set(preset, c);
     }
     const secretByType = new Map(secrets.map((s) => [s.type, s]));

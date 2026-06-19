@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  type ConnectionTemplateView,
+  type ConnectionView,
+  PROVIDER_TEMPLATE_IDS,
+} from "api-server-api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -19,7 +23,6 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../../connections/internal-only.js";
-import { PROVIDER_TEMPLATE_IDS } from "../../connections/lib/provider-templates.js";
 import { CardList } from "./card-list.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
