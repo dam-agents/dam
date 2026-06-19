@@ -1,4 +1,4 @@
-import { cancel, isCancel, password } from "@clack/prompts";
+import { cancel, isCancel } from "@clack/prompts";
 import { Command } from "commander";
 import { printServiceError } from "../../agent/commands/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -9,6 +9,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
@@ -84,13 +85,9 @@ export function buildUpdateCommand(deps: {
             );
             process.exit(EXIT_INVALID_INPUT);
           }
-          const entered = await password({
-            message: `New credential value for ${match.name}`,
-            validate(v) {
-              if (!v || v.trim() === "") return "Required";
-              return undefined;
-            },
-          });
+          const entered = await promptSecret(
+            `New credential value for ${match.name}`,
+          );
           if (isCancel(entered)) {
             cancel("Cancelled");
             process.exit(EXIT_SUCCESS);

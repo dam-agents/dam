@@ -6,7 +6,6 @@ import {
   log,
   note,
   outro,
-  password,
   select,
   spinner,
   text,
@@ -23,6 +22,7 @@ import type { AgentView } from "../domain/agent-view.js";
 import { validateAgentName } from "./create-helpers.js";
 import { formatTransportError } from "./errors.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
+import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -503,6 +503,24 @@ function isCliProviderSecretType(type: string): type is CliProviderType {
 }
 
 /**
+ * Lists connections and legacy secrets together — both pickers dual-read the
+ * two surfaces during the #1273 transition. A list failure is fatal: cancel,
+ * flush the rollback ledger, and exit.
+ */
+async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
+  try {
+    return {
+      conns: await trpc.connections.list.query(),
+      secrets: await trpc.secrets.list.query(),
+    };
+  } catch (e) {
+    cancel(`failed to list credentials: ${errorReason(e)}`);
+    await flushCleanup(trpc, cleanup);
+    process.exit(EXIT_RUNTIME_FAILURE);
+  }
+}
+
+/**
  * Provider step. Offers existing provider connections plus legacy provider
  * secrets (dual-read), or "Add new..." which always creates a connection.
  * Singleton-per-type: adding a provider whose type already has a connection
@@ -512,16 +530,7 @@ async function pickProvider(
   trpc: TrpcClient,
   cleanup: Cleanup,
 ): Promise<ProviderSelection> {
-  let conns: ConnectionView[];
-  let secrets: Awaited<ReturnType<typeof trpc.secrets.list.query>>;
-  try {
-    conns = await trpc.connections.list.query();
-    secrets = await trpc.secrets.list.query();
-  } catch (e) {
-    cancel(`failed to list credentials: ${errorReason(e)}`);
-    await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  const { conns, secrets } = await listCredentials(trpc, cleanup);
 
   const existingConns = providerConns(conns);
   const existingSecrets: ExistingProviderSecret[] = secrets
@@ -621,13 +630,9 @@ async function addOrReplaceProvider(
         };
       }
 
-      const value = await password({
-        message: `New ${PROVIDERS[type].displayName} credential`,
-        validate(v) {
-          if (!v || v.trim() === "") return "Required";
-          return undefined;
-        },
-      });
+      const value = await promptSecret(
+        `New ${PROVIDERS[type].displayName} credential`,
+      );
       if (isCancel(value)) return cancelAndCleanup(trpc, cleanup);
 
       const templateId = templateIdForProvider(type, value);
@@ -659,13 +664,9 @@ async function addOrReplaceProvider(
       }
     }
 
-    const value = await password({
-      message: `${PROVIDERS[type].displayName} credential`,
-      validate(v) {
-        if (!v || v.trim() === "") return "Required";
-        return undefined;
-      },
-    });
+    const value = await promptSecret(
+      `${PROVIDERS[type].displayName} credential`,
+    );
     if (isCancel(value)) return cancelAndCleanup(trpc, cleanup);
 
     const created = await createProviderConnection(
@@ -680,35 +681,41 @@ async function addOrReplaceProvider(
   }
 }
 
-// Prompts for a new name on CONFLICT; returns null on other errors so the
-// caller re-prompts the provider type.
-async function createProviderConnection(
+/**
+ * Creates a header connection, re-prompting for a fresh name on CONFLICT
+ * until it succeeds or the user cancels. Tracks the new id in the rollback
+ * ledger immediately so a later cancel/throw can't orphan it. Returns the
+ * created `{ id, name }`, or `null` on a non-recoverable create error — the
+ * caller decides what to re-prompt (provider type vs. token).
+ */
+async function createConnectionWithRename(
   trpc: TrpcClient,
   cleanup: Cleanup,
-  type: CliProviderType,
-  templateId: string,
-  value: string,
-): Promise<ProviderSelection | null> {
-  let name = templateId;
+  params: {
+    templateId: string;
+    name: string;
+    value: string;
+    nameExample: string;
+  },
+): Promise<{ id: string; name: string } | null> {
+  let name = params.name;
   while (true) {
     try {
       const created = await trpc.connections.create.mutate({
-        templateId,
+        templateId: params.templateId,
         name,
         authKind: "header",
-        value,
+        value: params.value,
       });
-      // Track immediately so any cancel/throw before runCreate reaches the
-      // rollback ledger doesn't orphan the new connection.
       cleanup.newConnectionIds.push(created.id);
-      return { routing: { kind: "connection", id: created.id }, name, type };
+      return { id: created.id, name };
     } catch (e) {
       if (trpcCode(e) === "CONFLICT") {
         const renamed = await text({
           message: `A connection named "${name}" already exists. Choose a different name`,
           validate(v) {
             if (!v || !CONNECTION_NAME_RE.test(v)) {
-              return "lowercase letters, digits, and single hyphens (e.g. my-anthropic)";
+              return `lowercase letters, digits, and single hyphens (e.g. ${params.nameExample})`;
             }
             return undefined;
           },
@@ -721,6 +728,29 @@ async function createProviderConnection(
       return null;
     }
   }
+}
+
+// Returns null on a non-recoverable create error so the caller re-prompts the
+// provider type.
+async function createProviderConnection(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+  type: CliProviderType,
+  templateId: string,
+  value: string,
+): Promise<ProviderSelection | null> {
+  const created = await createConnectionWithRename(trpc, cleanup, {
+    templateId,
+    name: templateId,
+    value,
+    nameExample: "my-anthropic",
+  });
+  if (!created) return null;
+  return {
+    routing: { kind: "connection", id: created.id },
+    name: created.name,
+    type,
+  };
 }
 
 type GithubSelection =
@@ -744,16 +774,7 @@ async function pickGithubPat(
   trpc: TrpcClient,
   cleanup: Cleanup,
 ): Promise<GithubSelection | null> {
-  let conns: ConnectionView[];
-  let secrets: Awaited<ReturnType<typeof trpc.secrets.list.query>>;
-  try {
-    conns = await trpc.connections.list.query();
-    secrets = await trpc.secrets.list.query();
-  } catch (e) {
-    cancel(`failed to list credentials: ${errorReason(e)}`);
-    await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  const { conns, secrets } = await listCredentials(trpc, cleanup);
   const patConns = conns.filter((c) => c.templateId === GITHUB_PAT_TEMPLATE_ID);
   const pairs = groupGithubPats(secrets);
 
@@ -822,13 +843,7 @@ async function addOrReplaceGithubPat(
         };
       }
 
-      const token = await password({
-        message: "New GitHub personal access token",
-        validate(v) {
-          if (!v || v.trim() === "") return "Required";
-          return undefined;
-        },
-      });
+      const token = await promptSecret("New GitHub personal access token");
       if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
       try {
@@ -844,46 +859,23 @@ async function addOrReplaceGithubPat(
       }
     }
 
-    const token = await password({
-      message: "GitHub personal access token",
-      validate(v) {
-        if (!v || v.trim() === "") return "Required";
-        return undefined;
-      },
-    });
+    const token = await promptSecret("GitHub personal access token");
     if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
-    let name = DEFAULT_GITHUB_PAT_NAME;
-    let created = false;
-    while (!created) {
-      try {
-        const conn = await trpc.connections.create.mutate({
-          templateId: GITHUB_PAT_TEMPLATE_ID,
-          name,
-          authKind: "header",
-          value: token,
-        });
-        cleanup.newConnectionIds.push(conn.id);
-        return { source: "connection", connectionId: conn.id, name };
-      } catch (e) {
-        if (trpcCode(e) === "CONFLICT") {
-          const renamed = await text({
-            message: `A connection named "${name}" already exists. Choose a different name`,
-            validate(v) {
-              if (!v || !CONNECTION_NAME_RE.test(v)) {
-                return "lowercase letters, digits, and single hyphens (e.g. my-github)";
-              }
-              return undefined;
-            },
-          });
-          if (isCancel(renamed)) return cancelAndCleanup(trpc, cleanup);
-          name = renamed;
-          continue;
-        }
-        log.error(`Failed to create GitHub PAT: ${errorReason(e)}`);
-        break; // re-prompt the token on the outer loop
-      }
+    const created = await createConnectionWithRename(trpc, cleanup, {
+      templateId: GITHUB_PAT_TEMPLATE_ID,
+      name: DEFAULT_GITHUB_PAT_NAME,
+      value: token,
+      nameExample: "my-github",
+    });
+    if (created) {
+      return {
+        source: "connection",
+        connectionId: created.id,
+        name: created.name,
+      };
     }
+    // Non-recoverable create error: loop re-prompts the token.
   }
 }
 
