@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-06-15
+Last verified: 2026-06-19
 
 ## Overview
 
@@ -47,3 +47,11 @@ Two disjoint mechanisms feed the one logger:
 - **Single process, single stdout.** The public API, harness, and ext-authz gRPC apps run in one process, so one logger configuration and one stream cover the whole api-server.
 - **Once per replica.** The domain bus is in-process; each replica's saga logs only its own events. Moving domain events onto the cross-replica Redis bus would require dedup, or every replica would duplicate every line. The api-server runs single-replica today.
 - **Non-blocking.** The egress gate logs on the proxy's request-blocking hop; the writer must never block or throw into a request path.
+
+## Controller logging
+
+The controller logs through Go's standard-library `log/slog`, configured once at startup ([`packages/controller/main.go`](../../packages/controller/main.go), `setupLogger`). Output is one JSON object per line on **stderr** at the `LOG_LEVEL` level (`debug|info|warn|error`, default `info`); `debug` surfaces per-reconcile phase timing. As with the api-server, the level is the only knob — there is no per-feature toggle. The controller logs to stderr rather than stdout because its lines are pure diagnostics, not program output; Kubernetes merges both streams into the one container log, so a collector sees it either way.
+
+The controller carries **no audit trail**. It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
+
+The controller wires up no in-process OpenTelemetry SDK and registers no global `TracerProvider`, which keeps it ready for **zero-code instrumentation**: the OpenTelemetry Operator injects an eBPF auto-instrumentation sidecar whose `log/slog` probe captures these JSON records and exports them with trace correlation (the Go counterpart of Pino log auto-instrumentation). Registering a `TracerProvider` in-process would conflict with the injected auto-SDK and break that correlation, so the binary deliberately stays free of OTel setup.
