@@ -460,8 +460,7 @@ apiServer:
     - cdn.mise.run
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
-    # arXiv API (unauthenticated; rides the SNI-miss L4 passthrough — no
-    # credential chain). Used by the arxiv-scanner seed repo's skills.
+    # arXiv API
     - export.arxiv.org
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
@@ -807,12 +806,6 @@ gitRepos:
     url: https://github.com/dam-agents/link-guardian.git
     description: "Monitor and validate links to guard against broken or malicious URLs"
     compatibleTemplates: [claude-code, bob]
-  # Onboards a GitHub repo (conversation-led, the agent speaks first), then runs
-  # a continuous schedule that searches arXiv for related work and posts a digest
-  # to Slack. All behavior lives in the seeded `arxiv-onboard` + `arxiv-scan`
-  # skills. arXiv needs no credentials: `export.arxiv.org` is in the default
-  # `trusted` egress preset (controller.agent.trustedHosts), so claude-code
-  # agents reach it without an inbox prompt.
   - id: arxiv-scanner
     name: arXiv Scanner
     url: https://github.com/willallstet/arxiv-scanner.git
