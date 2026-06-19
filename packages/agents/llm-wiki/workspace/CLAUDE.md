@@ -29,11 +29,14 @@ stay silent per **Discipline**.
 
 1. **Sources** (`sources/`, gitignored, read-only) — shallow clones of the
    GitHub repos you document. Never edit them. They are the ground truth you cite.
-2. **Wiki** (`pages/`, `index.md`, `log.md`) — the markdown you maintain. This is
-   the product. It is precomputed and kept current, not retrieved per question —
-   that is what distinguishes the wiki from RAG.
-3. **Schema** (this `CLAUDE.md` + `wiki.config.json`) — the rules and
-   configuration that govern how the wiki is built and kept consistent.
+2. **Wiki** (`wiki/` — holding `wiki/pages/`, `wiki/index.md`, `wiki/log.md`) —
+   the markdown you maintain. This is the product. It is precomputed and kept
+   current, not retrieved per question — that is what distinguishes the wiki from
+   RAG. `wiki/` is its own git repo and the **only** thing pushed to the remote:
+   the remote is a pure content database, nothing else lives in it.
+3. **Schema & tooling** (this `CLAUDE.md`, `wiki.config.json`, `scripts/`) — the
+   rules, configuration, and helpers that govern how the wiki is built. Agent-
+   owned: they live on the pod's PVC, never in the pushed `wiki/` repo.
 
 ## This wiki
 
@@ -60,14 +63,14 @@ contradiction policy.
 
 ## Page taxonomy
 
-Pages live under `pages/<category>/`. Default categories:
+Pages live under `wiki/pages/<category>/`. Default categories:
 
 - **sources/** — one overview page per source repo, plus per-module summaries.
 - **entities/** — concrete named things (a service, a class, a table, an endpoint).
 - **concepts/** — cross-cutting ideas (a pattern, an invariant, a workflow).
 
 Onboarding may rename or extend categories for the domain; keep
-`wiki.config.json` `taxonomy` in sync with the directories under `pages/`.
+`wiki.config.json` `taxonomy` in sync with the directories under `wiki/pages/`.
 
 ## Provenance (mandatory on every page)
 
@@ -86,15 +89,16 @@ Cite every load-bearing claim inline as `path/to/file:line @sha`. A claim with n
 citation is a claim you cannot stand behind — either cite it or drop it. Never
 fabricate a citation.
 
-## index.md
+## wiki/index.md
 
-The content catalog. One line per page, grouped by category:
+The content catalog. One line per page, grouped by category. Links are relative
+to `wiki/`, so they omit the `wiki/` prefix:
 
 `- [Title](pages/<category>/<page>.md) — one-line hook`
 
 Keep it complete: every page appears exactly once, and every line resolves.
 
-## log.md
+## wiki/log.md
 
 Chronological, append-only record of what happened and when — every ingest, lint,
 query, and onboard. Newest entry last; never rewrite past entries. One entry per
@@ -104,9 +108,9 @@ maintenance action, each starting with a consistent prefix:
 
 Record what changed (pages added/refreshed, contradictions resolved, watermarks
 advanced). The consistent prefix keeps the log parseable with plain unix tools —
-`grep "^## \[" log.md | tail -5` gives the last five entries. Read the tail at the
-start of a run to understand what's been done recently; append with shell
-redirection (`>> log.md`), never by loading the file into context to edit it.
+`grep "^## \[" wiki/log.md | tail -5` gives the last five entries. Read the tail
+at the start of a run to understand what's been done recently; append with shell
+redirection (`>> wiki/log.md`), never by loading the file into context to edit it.
 
 ## Discipline
 
@@ -123,17 +127,23 @@ redirection (`>> log.md`), never by loading the file into context to edit it.
 
 ## Persistence & commits
 
-The wiki is a git repository rooted at this directory and pushed to its
-configured remote (`wiki.config.json` `remote`), so it survives this ephemeral
-pod. After any workflow that changes wiki content:
+The wiki is a git repository rooted at `wiki/` and pushed to its configured
+remote (`wiki.config.json` `remote`), so its content survives this ephemeral pod.
+`wiki/` holds only content, so there is nothing to whitelist — `sources/`,
+`node_modules/`, harness state, this manual, and `wiki.config.json` all sit
+outside it. After any workflow that changes wiki content:
 
-1. Stage only wiki content — the `.gitignore` whitelists it, so `sources/`,
-   `node_modules/`, and harness state stay out.
-2. Commit with a conventional message: `ingest: <source> @<sha>`,
-   `lint: <summary>`, or `onboard: initialise <purpose>`.
-3. Push to the remote.
+1. Stage and commit from the subdir — `git -C wiki add -A && git -C wiki commit`
+   with a conventional message: `ingest: <source> @<sha>`, `lint: <summary>`, or
+   `onboard: initialise <purpose>`.
+2. `git -C wiki push`.
 
 Commit silently as part of maintenance; the commit is the durable artifact.
+
+Config is **not** pushed, so it is not restored from the remote either. A fresh
+agent pointed at an existing wiki rebuilds `wiki.config.json` at onboard: the
+source list and watermarks are reconstructed from page `commit:` frontmatter.
+Page provenance is the source of truth for what has been ingested.
 
 ## Scheduling
 

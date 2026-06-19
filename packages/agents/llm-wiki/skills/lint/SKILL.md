@@ -31,9 +31,10 @@ tensions per the domain's contradiction policy in `CLAUDE.md` `## This wiki`.
 
 ## Orphans & broken links
 
-`scripts/check-links.mjs` (no args, from the wiki root) emits
-`{ orphans, brokenLinks }`. Repoint or remove each `brokenLinks` target; for each
-orphan, add the missing `index.md` line or cross-link, or retire the page.
+`scripts/check-links.mjs` (no args, run from the workspace root — it scans
+`wiki/`) emits `{ orphans, brokenLinks }`. Repoint or remove each `brokenLinks`
+target; for each orphan, add the missing `wiki/index.md` line or cross-link, or
+retire the page.
 
 ## Coverage gaps
 
@@ -43,5 +44,6 @@ don't necessarily fill them now.
 ## Finish
 
 If nothing changed, stop — a clean wiki is a no-op, no commit. Otherwise append
-one `log.md` entry (`## [date] lint | <summary of refreshed / fixed / flagged>`),
-then commit + push silently per `CLAUDE.md`. Respond only when asked.
+one `wiki/log.md` entry (`## [date] lint | <summary of refreshed / fixed /
+flagged>`), then commit + push the `wiki/` repo silently per `CLAUDE.md`. Respond
+only when asked.

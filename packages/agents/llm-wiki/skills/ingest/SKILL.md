@@ -24,7 +24,7 @@ optional `ref`, and a `watermark_sha`. Process one source at a time.
 
 1. **Map** — build a cheap structural overview (dir tree, languages, entry
    points, top-level modules, docs index) without reading every file. Write one
-   source overview page at `pages/sources/<name>.md`.
+   source overview page at `wiki/pages/sources/<name>.md`.
 2. **Summarise top-down** — one page per module/dir: purpose, key files, public
    surface, and cross-links to the entities and concepts it touches.
 3. **Drill on demand** — full per-file detail only where it carries weight (entry
@@ -47,14 +47,15 @@ optional `ref`, and a `watermark_sha`. Process one source at a time.
 ## Every page
 
 Provenance frontmatter and inline `file:line @sha` citations per `CLAUDE.md`,
-with `commit: $sha`. Add or update the page's line in `index.md`. Where sources
-disagree, flag it for `lint` — do not silently reconcile.
+with `commit: $sha`. Add or update the page's line in `wiki/index.md`. Where
+sources disagree, flag it for `lint` — do not silently reconcile.
 
 ## Finish (per source)
 
 Once the source's pages are written, bump its watermark to the SHA you fetched:
-`scripts/watermark.mjs bump <repo> <$sha>`. Append one `log.md` entry:
+`scripts/watermark.mjs bump <repo> <$sha>`. Append one `wiki/log.md` entry:
 `## [date] ingest | <repo> @<sha>`.
 
-After all sources are done, stage wiki content, commit (`ingest: <source> @<sha>`),
-and push — per `CLAUDE.md`. A run where no source's HEAD advanced is a no-op.
+After all sources are done, commit and push the `wiki/` repo
+(`ingest: <source> @<sha>`) — per `CLAUDE.md`. A run where no source's HEAD
+advanced is a no-op.

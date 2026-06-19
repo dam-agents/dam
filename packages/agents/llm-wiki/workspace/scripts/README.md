@@ -3,8 +3,9 @@
 Thin deterministic helpers so the agent spends tokens on synthesis, not
 mechanical work. Bash for git, ESM `.mjs` for parsing. No build step, no LLM.
 Each script is pure, exits nonzero on error, and prints machine-parseable output
-on stdout (diagnostics go to stderr). Run them from the wiki repo root
-(`$HOME/work`), where `wiki.config.json` and `pages/` live.
+on stdout (diagnostics go to stderr). Run them from the workspace root
+(`$HOME/work`), where `wiki.config.json` and `sources/` live; the wiki content
+they read and lint lives one level down in `wiki/`.
 
 Throughout, `<name>` is a source's short name — the basename of its `org/repo`
 (e.g. `repo` for `org/repo`) — which is also its clone directory under
@@ -49,14 +50,14 @@ scripts/watermark.mjs bump claude-code "$INGESTED_SHA"
 
 ## check-links.mjs
 
-Scan the wiki for link health and print JSON for the `lint` skill to act on:
+Scan `wiki/` for link health and print JSON for the `lint` skill to act on:
 
 ```json
-{ "orphans": ["pages/..."], "brokenLinks": [{ "from": "...", "target": "pages/..." }] }
+{ "orphans": ["wiki/pages/..."], "brokenLinks": [{ "from": "...", "target": "wiki/pages/..." }] }
 ```
 
-- **orphans** — pages under `pages/` that no inline markdown link (from
-  `index.md` or any other page) points to.
-- **brokenLinks** — inline markdown links to a `.md` file under `pages/` whose
-  target does not exist on disk. External links, anchors, and non-`.md` targets
-  (including `file:line @sha` citations) are ignored.
+- **orphans** — pages under `wiki/pages/` that no inline markdown link (from
+  `wiki/index.md` or any other page) points to.
+- **brokenLinks** — inline markdown links to a `.md` file under `wiki/pages/`
+  whose target does not exist on disk. External links, anchors, and non-`.md`
+  targets (including `file:line @sha` citations) are ignored.

@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, normalize } from 'node:path';
 
 const ROOT = process.cwd();
-const PAGES = 'pages';
+const WIKI = 'wiki';
+const PAGES = join(WIKI, 'pages');
 
 function walk(dir) {
   const out = [];
@@ -16,7 +17,7 @@ function walk(dir) {
 }
 
 const pageFiles = existsSync(PAGES) ? walk(PAGES) : [];
-const linkSources = ['index.md', ...pageFiles].filter((f) => existsSync(f));
+const linkSources = [join(WIKI, 'index.md'), ...pageFiles].filter((f) => existsSync(f));
 
 const LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
 const referenced = new Set();

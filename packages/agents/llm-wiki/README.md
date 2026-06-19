@@ -10,10 +10,14 @@ value is the maintenance that runs when nobody is asking.
 
 1. **Sources** — the GitHub repos being documented. Shallow-cloned into a
    gitignored `sources/`, read-only.
-2. **Wiki** — the maintained markdown: `pages/`, `index.md`, `log.md`. This is
-   the product, and it is a git repo pushed to a remote so it outlives the pod.
-3. **Schema** — `CLAUDE.md` (the operating manual) + `wiki.config.json`
-   (per-instance configuration). Onboarding specialises both for the domain.
+2. **Wiki** — the maintained markdown under `wiki/`: `wiki/pages/`,
+   `wiki/index.md`, `wiki/log.md`. This is the product. `wiki/` is its own git
+   repo and the only thing pushed to the remote, so the remote stays a pure
+   content database that outlives the pod.
+3. **Schema & tooling** — `CLAUDE.md` (the operating manual), `wiki.config.json`
+   (per-instance configuration), and `scripts/` (helpers). Agent-owned: they live
+   on the pod's PVC beside `wiki/`, never inside it. Onboarding specialises
+   `CLAUDE.md` and writes `wiki.config.json` for the domain.
 
 ## How the image is built
 
@@ -25,9 +29,10 @@ it adds two overlays:
 - `skills/` → `/app/working-dir/.agents/skills/` — the four wiki workflow skills
   (`onboard`, `ingest`, `query`, `lint`), baked at the canonical skill path and
   surfaced to Claude Code through the inherited symlink.
-- `workspace/` → `/app/working-dir/work/` — the wiki repo seed (`CLAUDE.md`,
-  `wiki.config.json`, `index.md`, `log.md`, `pages/`, `.gitignore`). It lands in
-  `work/` because that is Claude's working directory in the pod.
+- `workspace/` → `/app/working-dir/work/` — the agent workspace seed:
+  `CLAUDE.md`, `wiki.config.json`, `scripts/`, and the `wiki/` content-repo seed
+  (`wiki/index.md`, `wiki/log.md`, `wiki/pages/`). It lands in `work/` because
+  that is Claude's working directory in the pod.
 
 Build locally with `mise run agents:llm-wiki:image` (depends on the claude-code
 image). CI builds it after claude-code rather than in the flat agent matrix,
@@ -37,10 +42,11 @@ because it bases on that image rather than `platform-base`.
 
 The controller mounts a per-agent PVC at `$HOME` (`/home/agent`). On first boot
 the template `init` script seeds the image's `/app/working-dir` into `$HOME` and
-creates `$HOME/work` (Claude's working directory), so the `workspace/` seed
-becomes the live wiki repo at `$HOME/work` on persistent storage. The repo
-survives hibernation via the PVC and survives agent deletion via the git remote
-configured at onboarding.
+creates `$HOME/work` (Claude's working directory), so the `workspace/` seed lands
+on persistent storage with the live wiki repo at `$HOME/work/wiki`. The PVC
+survives hibernation. Across agent deletion only the `wiki/` content survives —
+via its git remote configured at onboarding; a fresh agent clones it and
+reconstructs `wiki.config.json` (source list, watermarks) from page provenance.
 
 The agent is fully autonomous after onboarding:
 
