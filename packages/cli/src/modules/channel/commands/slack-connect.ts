@@ -43,6 +43,14 @@ export function buildSlackConnectCommand(deps: {
         ref: string,
         opts: { channelId: string; server?: string; json?: boolean },
       ) => {
+        // Reject a blank/whitespace channel id before any network call — the
+        // server's min(1) accepts whitespace and a blank value is meaningless.
+        const channelId = opts.channelId.trim();
+        if (channelId.length === 0) {
+          process.stderr.write("error: --channel-id must not be empty\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
+
         const host = await resolveActiveHost(deps, {
           flag: opts.server ? { server: opts.server } : undefined,
           exitCodes: {
@@ -63,7 +71,7 @@ export function buildSlackConnectCommand(deps: {
         const svc = deps.createChannelService(host);
         await ensureProviderAvailable(svc, ChannelType.Slack, host);
 
-        const res = await svc.connectSlack(resolved.value.id, opts.channelId);
+        const res = await svc.connectSlack(resolved.value.id, channelId);
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
@@ -71,7 +79,10 @@ export function buildSlackConnectCommand(deps: {
             );
             process.exit(EXIT_INVALID_INPUT);
           }
-          if (res.error.kind === "channel-precondition") {
+          if (
+            res.error.kind === "channel-precondition" ||
+            res.error.kind === "invalid-input"
+          ) {
             process.stderr.write(`error: ${res.error.message}\n`);
             process.exit(EXIT_INVALID_INPUT);
           }
@@ -83,7 +94,7 @@ export function buildSlackConnectCommand(deps: {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
-            `✓ Slack channel ${opts.channelId} connected to ${resolved.value.name}.\n`,
+            `✓ Slack channel ${channelId} connected to ${resolved.value.name}.\n`,
           );
           process.stderr.write(
             "hint: users must run `/platform login` inside Slack before they can drive this agent\n",

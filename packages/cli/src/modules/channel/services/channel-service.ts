@@ -5,6 +5,7 @@ import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AuthRequiredError,
   ChannelConflictError,
+  ChannelInvalidInputError,
   ChannelPreconditionError,
   TransportError,
 } from "../domain/errors.js";
@@ -26,6 +27,7 @@ export interface ChannelService {
       | AuthRequiredError
       | ChannelConflictError
       | ChannelPreconditionError
+      | ChannelInvalidInputError
     >
   >;
   /** Unbind the Agent's Slack channel. Idempotent server-side. */
@@ -37,7 +39,10 @@ export interface ChannelService {
   ): Promise<
     Result<
       ChannelList,
-      TransportError | AuthRequiredError | ChannelPreconditionError
+      | TransportError
+      | AuthRequiredError
+      | ChannelPreconditionError
+      | ChannelInvalidInputError
     >
   >;
   /** Unbind the Agent's Telegram bot (deletes its k8s Secret). Idempotent. */
@@ -65,6 +70,8 @@ export function createChannelService(deps: {
           return err({ kind: "channel-conflict", message });
         if (code === "PRECONDITION_FAILED")
           return err({ kind: "channel-precondition", message });
+        if (code === "BAD_REQUEST")
+          return err({ kind: "invalid-input", message });
         return classifyTrpcError(e);
       }
     },
@@ -86,6 +93,8 @@ export function createChannelService(deps: {
         const message = e instanceof Error ? e.message : String(e);
         if (code === "PRECONDITION_FAILED")
           return err({ kind: "channel-precondition", message });
+        if (code === "BAD_REQUEST")
+          return err({ kind: "invalid-input", message });
         return classifyTrpcError(e);
       }
     },

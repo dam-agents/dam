@@ -73,7 +73,10 @@ export function buildTelegramConnectCommand(deps: {
 
         const res = await svc.connectTelegram(resolved.value.id, token);
         if (!res.ok) {
-          if (res.error.kind === "channel-precondition") {
+          if (
+            res.error.kind === "channel-precondition" ||
+            res.error.kind === "invalid-input"
+          ) {
             process.stderr.write(`error: ${res.error.message}\n`);
             process.exit(EXIT_INVALID_INPUT);
           }

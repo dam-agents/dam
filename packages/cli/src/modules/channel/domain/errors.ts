@@ -13,3 +13,11 @@ export interface ChannelPreconditionError {
   kind: "channel-precondition";
   message: string;
 }
+
+/** The server rejected the binding input (TRPCError BAD_REQUEST) — carries the
+ *  server's message so the command surfaces it and exits `EXIT_INVALID_INPUT`
+ *  instead of misclassifying it as a transport failure. */
+export interface ChannelInvalidInputError {
+  kind: "invalid-input";
+  message: string;
+}
