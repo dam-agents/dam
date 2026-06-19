@@ -21,6 +21,9 @@ export function printServiceError(
 
 export function printTrpcError(e: unknown, host: string): void {
   const r = classifyTrpcError(e);
+  // Narrowing only — classifyTrpcError never returns ok (it returns err or
+  // throws), but TS won't drop the Result<never, …> success arm on its own,
+  // so without this guard r.error below doesn't type-check.
   if (r.ok) return;
   // A tRPC error envelope is an app-layer rejection, not a connectivity failure.
   if (
