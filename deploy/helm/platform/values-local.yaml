@@ -72,6 +72,23 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: nous
+    enabled: true
+    category: harness
+    experimental: true
+    description: "Nous hypothesis-driven experimentation agent"
+    image:
+      repository: platform-nous
+      tag: latest
+    storageSize: "10Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
   - name: mock
     enabled: true
     description: "Scripted mock agent (E2E test fixture)"

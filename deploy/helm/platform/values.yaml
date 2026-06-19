@@ -922,6 +922,27 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  # Published by CI (build-nous / merge-nous in cd.yml). Experimental: the
+  # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
+  - name: nous
+    enabled: true
+    category: harness
+    experimental: true
+    description: "Nous hypothesis-driven experimentation agent"
+    image:
+      repository: quay.io/dam-agents/nous
+      tag: ""
+    # Campaigns clone, build, and run target systems (plus per-arm git
+    # worktrees and a Python venv), so give it more disk than a chat agent.
+    storageSize: "10Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
   # Test-only mock agent. Scripted ACP emitter; receives prompts
   # into an in-pod buffer and emits a pre-set sequence of session/update
   # frames in response. Default off — flipped on by the e2e/local install.
