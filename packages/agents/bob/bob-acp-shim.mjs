@@ -62,8 +62,8 @@
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
-import { promises as fsp } from "node:fs";
-import { dirname } from "node:path";
+import { copyFileSync, mkdirSync, promises as fsp } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import readline from "node:readline";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
@@ -83,6 +83,8 @@ let currentModeId = (() => {
   return "ask";
 })();
 const pendingNewSessionIds = new Set();
+// Session workspace (ACP cwd); Bob's read guard allows only this dir + its temp.
+let sessionCwd = null;
 let pendingModeSwitch = null;
 
 // agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
@@ -134,6 +136,7 @@ function handleClientLine(line) {
 
   if (isClientRequest && f.method === "session/new") {
     pendingNewSessionIds.add(f.id);
+    if (typeof f.params?.cwd === "string") sessionCwd = f.params.cwd;
     return forwardToBob(line);
   }
 
@@ -158,26 +161,52 @@ function handleClientLine(line) {
     return;
   }
 
-  // One-shot mode switch: prepend an instruction to the next prompt asking
-  // the LLM to call the switch-mode tool. Bob's system prompt teaches the
-  // exact XML form, so the LLM should comply, after which Bob's bundle
-  // updates its internal mode for subsequent turns.
-  if (isClientRequest && f.method === "session/prompt" && pendingModeSwitch) {
-    try {
-      const prompt = f.params?.prompt;
-      if (Array.isArray(prompt)) {
-        const firstText = prompt.find((p) => p?.type === "text" && typeof p?.text === "string");
-        if (firstText) {
-          const instruction = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n`;
-          firstText.text = instruction + firstText.text;
-          pendingModeSwitch = null;
-          return forwardToBob(JSON.stringify(f));
-        }
+  if (isClientRequest && f.method === "session/prompt" && Array.isArray(f.params?.prompt)) {
+    // Bob rejects resource_link blocks (-32603, issue #441); stage each
+    // attachment and pass a text path pointer instead.
+    f.params.prompt = f.params.prompt.map((b) =>
+      b?.type === "resource_link" ? { type: "text", text: stageAttachment(b) } : b,
+    );
+    // One-shot mode switch: prepend an instruction so the LLM calls the
+    // switch-mode tool (Bob's system prompt teaches the XML form).
+    if (pendingModeSwitch) {
+      const firstText = f.params.prompt.find(
+        (p) => p?.type === "text" && typeof p?.text === "string",
+      );
+      if (firstText) {
+        firstText.text = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n${firstText.text}`;
+        pendingModeSwitch = null;
       }
-    } catch { /* fall through */ }
+    }
+    return forwardToBob(JSON.stringify(f));
   }
 
   forwardToBob(line);
+}
+
+// Uploads land in $HOME/.uploads, which Bob can't read in ACP mode (read guard
+// is the workspace + temp, not widenable). Copy into the workspace and point
+// Bob there; on failure fall back to the original path.
+function stageAttachment(block) {
+  let src = typeof block.uri === "string" ? block.uri : "";
+  if (src.startsWith("file://")) {
+    try {
+      src = decodeURIComponent(new URL(src).pathname);
+    } catch {
+      /* keep raw uri */
+    }
+  }
+  const mime = block.mimeType ? ` (${block.mimeType})` : "";
+  try {
+    const destDir = join(sessionCwd || process.cwd(), ".attachments");
+    mkdirSync(destDir, { recursive: true });
+    const dest = join(destDir, basename(src));
+    copyFileSync(src, dest);
+    src = dest;
+  } catch (err) {
+    if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
+  }
+  return `[Attached file${mime}: ${src}]`;
 }
 
 function sendToBob(frame) {
