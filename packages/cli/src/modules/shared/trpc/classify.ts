@@ -1,3 +1,4 @@
+import { TRPCClientError } from "@trpc/client";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import {
@@ -17,6 +18,13 @@ export function classifyTrpcError(
       return err({ kind: "auth-required", reason: cursor.message });
     cursor = (cursor as { cause?: unknown }).cause;
   }
+
+  if (e instanceof TRPCClientError) {
+    const serverCode = e.data?.code as string | undefined;
+    if (serverCode)
+      return err({ kind: "transport", reason: e.message, serverCode });
+  }
+
   return err({
     kind: "transport",
     reason:
