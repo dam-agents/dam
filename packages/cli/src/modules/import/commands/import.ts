@@ -243,7 +243,7 @@ async function uploadAndReport(args: {
       return EXIT_RUNTIME_FAILURE;
     default:
       process.stderr.write(
-        `error: cannot reach server: HTTP ${res.status} ${serverMessage}\n`,
+        `error: ${serverMessage || `the server rejected the request (HTTP ${res.status})`}\n`,
       );
       return EXIT_RUNTIME_FAILURE;
   }
