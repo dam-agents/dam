@@ -17,6 +17,10 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCancelled } from "../../shared/prompt.js";
+import {
+  type ConfigFlagError,
+  resolveConfigInputFlags,
+} from "../domain/config-inputs.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const POLL_INTERVAL_MS = 2000;
@@ -34,6 +38,7 @@ interface ConnectOpts {
   valueFormat?: string;
   envName?: string;
   value?: string;
+  config?: string[];
   server?: string;
   json?: boolean;
   browser?: boolean;
@@ -73,6 +78,12 @@ export function buildConnectCommand(deps: {
     )
     .option("--value <value>", "input: header secret value")
     .option(
+      "-c, --config <key=value>",
+      "set an optional template config input (e.g. -c model=premium-shell), repeatable",
+      (val: string, prev: string[]) => [...prev, val],
+      [] as string[],
+    )
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -93,6 +104,7 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
@@ -145,7 +157,18 @@ export function buildConnectCommand(deps: {
             json,
           });
 
-      const payload = buildPayload(template, name, values);
+      const configRes = resolveConfigInputFlags(template, opts.config ?? []);
+      if (!configRes.ok) {
+        process.stderr.write(
+          `error: ${formatConfigFlagError(configRes.error)}\n`,
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      const payload = buildPayload(template, name, {
+        ...values,
+        ...configRes.value,
+      });
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
         process.exit(EXIT_INVALID_INPUT);
@@ -540,6 +563,21 @@ const FIELD_LABELS: Record<string, string> = {
 
 function labelFor(key: string): string {
   return FIELD_LABELS[key] ?? key;
+}
+
+function formatConfigFlagError(e: ConfigFlagError): string {
+  switch (e.kind) {
+    case "missing-equals":
+      return `invalid --config value \`${e.input}\`; expected key=value`;
+    case "unknown-key": {
+      const accepts = e.validKeys.map((k) => `\`${k}\``).join(", ");
+      return accepts
+        ? `unknown --config key \`${e.key}\`; this template accepts: ${accepts}`
+        : `unknown --config key \`${e.key}\`; this template has no config inputs`;
+    }
+    case "invalid-value":
+      return e.message;
+  }
 }
 
 // Generic by design: the CLI can't tell an operator default from a family

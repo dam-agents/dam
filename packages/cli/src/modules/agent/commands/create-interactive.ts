@@ -13,6 +13,7 @@ import {
 import { Command } from "commander";
 import {
   agentCreateInputSchema,
+  type ConnectionTemplateView,
   type ConnectionView,
   isProviderPresetType,
   PROVIDER_PRESET_TYPES,
@@ -43,6 +44,10 @@ import {
   groupGithubPats,
   type GithubPatPair,
 } from "../lib/group-github-pats.js";
+import {
+  configInputsOf,
+  validateConfigInputValue,
+} from "../../connection/index.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
@@ -510,6 +515,7 @@ async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
     return {
       conns: await trpc.connections.list.query(),
       secrets: await trpc.secrets.list.query(),
+      templates: await trpc.connections.listTemplates.query(),
     };
   } catch (e) {
     cancel(`failed to list credentials: ${errorReason(e)}`);
@@ -528,7 +534,7 @@ async function pickProvider(
   trpc: TrpcClient,
   cleanup: Cleanup,
 ): Promise<ProviderSelection> {
-  const { conns, secrets } = await listCredentials(trpc, cleanup);
+  const { conns, secrets, templates } = await listCredentials(trpc, cleanup);
 
   const existingConns = providerConns(conns);
   const existingSecrets: ExistingProviderSecret[] = secrets
@@ -539,7 +545,7 @@ async function pickProvider(
 
   if (existingConns.length === 0 && existingSecrets.length === 0) {
     log.info("No model providers configured yet — let's add one.");
-    return addOrReplaceProvider(trpc, cleanup, existingConns);
+    return addOrReplaceProvider(trpc, cleanup, existingConns, templates);
   }
 
   const NEW = "__new__";
@@ -559,7 +565,9 @@ async function pickProvider(
   });
   if (isCancel(picked)) return cancelAndCleanup(trpc, cleanup);
 
-  if (picked === NEW) return addOrReplaceProvider(trpc, cleanup, existingConns);
+  if (picked === NEW) {
+    return addOrReplaceProvider(trpc, cleanup, existingConns, templates);
+  }
 
   if (picked.startsWith("conn:")) {
     const found = existingConns.find((c) => `conn:${c.id}` === picked)!;
@@ -595,6 +603,7 @@ async function addOrReplaceProvider(
   trpc: TrpcClient,
   cleanup: Cleanup,
   existingConns: readonly ExistingProviderConn[],
+  templates: readonly ConnectionTemplateView[],
 ): Promise<ProviderSelection> {
   // Loops on server-side create/update failures — re-types the type prompt
   // rather than preserving prior input; the prompts are short.
@@ -666,16 +675,61 @@ async function addOrReplaceProvider(
     );
     if (isCancel(value)) return cancelAndCleanup(trpc, cleanup);
 
+    const templateId = templateIdForProvider(type, value);
+    const template = templates.find((t) => t.id === templateId);
+    const configInputs = template
+      ? await promptConfigInputs(trpc, cleanup, template)
+      : {};
+
     const created = await createProviderConnection(
       trpc,
       cleanup,
       type,
-      templateIdForProvider(type, value),
+      templateId,
       value,
+      configInputs,
     );
     if (created) return created;
     // Fall through to next loop iteration on a non-recoverable create error.
   }
+}
+
+// Prompts the template's optional config inputs after the credential — each skippable.
+async function promptConfigInputs(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+  template: ConnectionTemplateView,
+): Promise<Record<string, string>> {
+  const inputs = configInputsOf(template);
+  if (inputs.length === 0) return {};
+
+  note("Optional configuration — press Enter to skip each.");
+  const out: Record<string, string> = {};
+  for (const input of inputs) {
+    const label = input.label ?? input.name;
+    if (input.enumValues) {
+      const SKIP = "__skip__";
+      const choice = await select<string>({
+        message: input.hint ? `${label} — ${input.hint}` : label,
+        options: [
+          ...input.enumValues.map((v) => ({ value: v, label: v })),
+          { value: SKIP, label: "Skip" },
+        ],
+        initialValue: SKIP,
+      });
+      if (isCancel(choice)) return cancelAndCleanup(trpc, cleanup);
+      if (choice !== SKIP) out[input.name] = choice;
+      continue;
+    }
+    const answer = await text({
+      message: input.hint ? `${label} — ${input.hint}` : label,
+      validate: (v) => validateConfigInputValue(input, v ?? ""),
+    });
+    if (isCancel(answer)) return cancelAndCleanup(trpc, cleanup);
+    const trimmed = answer.trim();
+    if (trimmed) out[input.name] = trimmed;
+  }
+  return out;
 }
 
 /**
@@ -693,9 +747,12 @@ async function createConnectionWithRename(
     name: string;
     value: string;
     nameExample: string;
+    configInputs?: Record<string, string>;
   },
 ): Promise<{ id: string; name: string } | null> {
   let name = params.name;
+  const hasConfig =
+    params.configInputs && Object.keys(params.configInputs).length > 0;
   while (true) {
     try {
       const created = await trpc.connections.create.mutate({
@@ -703,6 +760,7 @@ async function createConnectionWithRename(
         name,
         authKind: "header",
         value: params.value,
+        ...(hasConfig ? { configInputs: params.configInputs } : {}),
       });
       cleanup.newConnectionIds.push(created.id);
       return { id: created.id, name };
@@ -735,12 +793,14 @@ async function createProviderConnection(
   type: ProviderPresetType,
   templateId: string,
   value: string,
+  configInputs: Record<string, string>,
 ): Promise<ProviderSelection | null> {
   const created = await createConnectionWithRename(trpc, cleanup, {
     templateId,
     name: templateId,
     value,
     nameExample: "my-anthropic",
+    configInputs,
   });
   if (!created) return null;
   return {
