@@ -196,8 +196,11 @@ async function proxy(req, res) {
   }
 
   res.writeHead(r.status, keepHeaders([...r.headers], RES_DROP));
-  if (r.body) Readable.fromWeb(r.body).pipe(res);
-  else res.end();
+  if (r.body) {
+    const upstream = Readable.fromWeb(r.body);
+    upstream.on("error", () => res.destroy());
+    upstream.pipe(res);
+  } else res.end();
 }
 
 const server = http.createServer((req, res) => {
