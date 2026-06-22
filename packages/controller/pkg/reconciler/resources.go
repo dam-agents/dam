@@ -317,8 +317,10 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 			PeriodSeconds: 1,
 		}
 		livenessProbe = &corev1.Probe{
-			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
+			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
 		}
 	}
 

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import readline from "node:readline";
 import type { AgentProcess } from "./agent-process.js";
 
 export interface ChildAgentProcessOptions {
@@ -31,14 +32,12 @@ export function createChildAgentProcess(
 
   const handlers: ((line: string) => void)[] = [];
 
-  let buf = "";
-  child.stdout!.on("data", (chunk: Buffer) => {
-    buf += chunk.toString();
-    const lines = buf.split("\n");
-    buf = lines.pop()!;
-    for (const line of lines) {
-      if (line.trim()) for (const h of handlers) h(line);
-    }
+  const rl = readline.createInterface({
+    input: child.stdout!,
+    crlfDelay: Infinity,
+  });
+  rl.on("line", (line) => {
+    if (line.trim()) for (const h of handlers) h(line);
   });
 
   const exited = new Promise<void>((resolve) => {

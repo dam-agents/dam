@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { buildPlatformTurnEndedNotification } from "api-server-api";
 
 import {
@@ -534,7 +535,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const a = deps.spawnAgent();
     agent = a;
-    a.onLine(handleAgentLine);
+    a.onLine((line) => {
+      const start = performance.now();
+      handleAgentLine(line);
+      const ms = performance.now() - start;
+      if (ms >= 250) {
+        const method =
+          (parseFrame(line) as { method?: string } | null)?.method ??
+          "response";
+        deps.log?.(
+          `slow frame ${Math.round(ms)}ms (${line.length}B, ${method})`,
+        );
+      }
+    });
     a.exited.then(() => {
       // A detached (recycled) process exiting must not clobber the current one.
       if (agent !== a) return;
