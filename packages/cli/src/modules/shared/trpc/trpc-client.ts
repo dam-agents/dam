@@ -64,33 +64,22 @@ function wrapFetchWithServerGates(
   const inner = baseFetch ?? fetch;
   return (async (input, init) => {
     const response = await inner(input, init);
-    if (
-      response.status === 401 ||
-      response.status === 403 ||
-      response.status === 412
-    ) {
+    if ([401, 403, 412].includes(response.status)) {
       const clone = response.clone();
+      let body: { error?: string; message?: string };
       try {
-        const body = (await clone.json()) as {
-          error?: string;
-          message?: string;
-        };
-        if (body.error === "terms_stale")
-          throw new TermsStaleAtTransportError(host);
-        if (body.error === "unauthorized")
-          throw new AuthRequiredAtTransportError(`session expired for ${host}`);
-        if (body.error === "forbidden")
-          throw new ForbiddenAtTransportError(
-            typeof body.message === "string" ? body.message : "",
-          );
-      } catch (err) {
-        if (
-          err instanceof TermsStaleAtTransportError ||
-          err instanceof AuthRequiredAtTransportError ||
-          err instanceof ForbiddenAtTransportError
-        )
-          throw err;
+        body = (await clone.json()) as { error?: string; message?: string };
+      } catch {
+        return response; // non-JSON gate response — let tRPC handle the status
       }
+      if (body.error === "terms_stale")
+        throw new TermsStaleAtTransportError(host);
+      if (body.error === "unauthorized")
+        throw new AuthRequiredAtTransportError(`session expired for ${host}`);
+      if (body.error === "forbidden")
+        throw new ForbiddenAtTransportError(
+          typeof body.message === "string" ? body.message : "",
+        );
     }
     return response;
   }) as typeof fetch;
