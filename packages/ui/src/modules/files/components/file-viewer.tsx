@@ -1,11 +1,9 @@
 import {
   ArrowLeft,
   Close as X,
-  Code,
   Download,
   Edit as Pencil,
   Save,
-  View as Eye,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -23,6 +21,7 @@ import {
 } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { CodeEditor } from "./code-editor.js";
+import { RenderToggle } from "./render-toggle.js";
 
 interface Props {
   file: FileContent;
@@ -62,6 +61,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const { path, content, binary, mimeType: mime, tooLarge } = file;
   const isMarkdown = mime === "text/markdown";
   const isSvg = mime === "image/svg+xml";
+  const isHtml = mime === "text/html";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
   const isPdf = mime === "application/pdf";
   const filename = path.split("/").pop();
@@ -75,6 +75,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
+  const [renderHtml, setRenderHtml] = useState(true);
   const [editMode, setEditMode] = useState(editable && openFileEdit);
   const [draft, setDraft] = useState(content);
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
@@ -247,28 +248,28 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </Button>
         )}
         {isSvg && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderSvg ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderSvg((p) => !p)}
-            title={renderSvg ? "Show raw SVG" : "Render SVG"}
-          >
-            {renderSvg ? <Code size={11} /> : <Eye size={11} />}
-            {renderSvg ? "Raw" : "Render"}
-          </Button>
+          <RenderToggle
+            rendered={renderSvg}
+            onToggle={() => setRenderSvg((p) => !p)}
+            rawTitle="Show raw SVG"
+            renderTitle="Render SVG"
+          />
         )}
         {isMarkdown && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderMd ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderMd((p) => !p)}
-            title={renderMd ? "Show raw" : "Render markdown"}
-          >
-            {renderMd ? <Code size={11} /> : <Eye size={11} />}
-            {renderMd ? "Raw" : "Render"}
-          </Button>
+          <RenderToggle
+            rendered={renderMd}
+            onToggle={() => setRenderMd((p) => !p)}
+            rawTitle="Show raw"
+            renderTitle="Render markdown"
+          />
+        )}
+        {isHtml && !editMode && (
+          <RenderToggle
+            rendered={renderHtml}
+            onToggle={() => setRenderHtml((p) => !p)}
+            rawTitle="Show raw HTML"
+            renderTitle="Render HTML"
+          />
         )}
       </div>
       <div
@@ -336,6 +337,15 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </div>
         ) : isMarkdown && renderMd ? (
           <Markdown onFileClick={onOpenFile}>{content}</Markdown>
+        ) : isHtml && renderHtml ? (
+          // `allow-scripts` without `allow-same-origin` runs the page's JS in an
+          // opaque origin, so agent-authored HTML can't reach the app's session.
+          <iframe
+            srcDoc={content}
+            title={filename ?? "html"}
+            sandbox="allow-scripts"
+            className="w-full h-[calc(100dvh-200px)] rounded border border-border bg-white"
+          />
         ) : (
           <HighlightedCode code={content} path={path} />
         )}
