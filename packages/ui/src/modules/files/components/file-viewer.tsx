@@ -71,6 +71,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showConfirm = useStore((s) => s.showConfirm);
   const openFileEdit = useStore((s) => s.openFileEdit);
+  const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
@@ -79,6 +80,14 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
     file.mtimeMs,
   );
+
+  // If the user opens already opened file for editiing
+  useEffect(() => {
+    if (openFileEdit) {
+      if (editable) setEditMode(true);
+      setOpenFileEdit(false);
+    }
+  }, [openFileEdit, editable, setOpenFileEdit]);
 
   const dirty = editMode && draft !== content;
   useUnsavedGuard(dirty);

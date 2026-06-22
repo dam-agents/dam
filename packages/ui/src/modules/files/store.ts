@@ -18,6 +18,7 @@ export interface FilesSlice {
   /** In-flight import count per agent; count not bool so overlapping uploads compose. */
   importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
+  setOpenFileEdit: (edit: boolean) => void;
   setRightTab: (tab: RightTab) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
@@ -73,6 +74,7 @@ export const createFilesSlice: StateCreator<
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
     }),
+  setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
   setRightTab: (tab) => set({ rightTab: tab }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {
