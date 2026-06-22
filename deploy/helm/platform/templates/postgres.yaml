@@ -10,76 +10,150 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 data:
-  01-init-databases.sh: |
-    #!/bin/bash
-    set -e
-    # POSTGRES_USER is `platform_admin`, so the image creates the
-    # admin role as the bootstrap superuser (OID 10) — the one role
-    # Postgres refuses to demote, and exactly the role that should keep
-    # SUPERUSER. This script runs as that superuser on first PGDATA init
-    # and creates the two NOSUPERUSER application roles, each owning its
-    # own database, with cross-database CONNECT revoked. A leaked app
-    # credential is bounded to a single service's data.
-    #
-    # Runs only on first PGDATA init.
-    psql -v ON_ERROR_STOP=1 \
-         -v admin_user="$POSTGRES_USER" \
-         -v apiserver_user="$POSTGRES_APISERVER_USER" \
-         -v apiserver_pwd="$POSTGRES_APISERVER_PASSWORD" \
-         -v keycloak_user="$POSTGRES_KEYCLOAK_USER" \
-         -v keycloak_pwd="$POSTGRES_KEYCLOAK_PASSWORD" \
-         --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
-    -- Application roles: LOGIN, explicit NOSUPERUSER (the default, stated
-    -- so the guarantee reads at a glance and can't silently regress).
-    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'apiserver_user', :'apiserver_pwd')
-    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'apiserver_user')
-    \gexec
-    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'keycloak_user', :'keycloak_pwd')
-    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'keycloak_user')
-    \gexec
+  # Idempotent role + database setup, safe to re-run. Two callers run this
+  # exact file (see DRY note in values.yaml `postgres`):
+  #   1. First PGDATA init — mounted into /docker-entrypoint-initdb.d, the
+  #      official image's entrypoint runs it once on an empty data dir, so a
+  #      fresh cluster comes up with the roles already in place (no app pod
+  #      ever sees a missing role).
+  #   2. The post-install/post-upgrade migration Job (postgres-migrate-roles.yaml)
+  #      — runs it against an existing cluster, where the entrypoint never
+  #      re-runs init scripts, to converge an upgraded single-superuser
+  #      database onto the split-role layout without manual SQL.
+  # Connection identity and the role names/passwords come from the
+  # environment via \getenv, so the file is identical for both callers.
+  01-roles.sql: |
+    \set ON_ERROR_STOP on
+    \getenv admin_user POSTGRES_USER
+    \getenv api_user   POSTGRES_APISERVER_USER
+    \getenv api_pwd    POSTGRES_APISERVER_PASSWORD
+    \getenv kc_user    POSTGRES_KEYCLOAK_USER
+    \getenv kc_pwd     POSTGRES_KEYCLOAK_PASSWORD
 
-    -- One database per service, each owned by its app role so each runs
-    -- its own migrations (Drizzle on platform, Liquibase on keycloak)
-    -- within its own database and reaches nowhere else.
-    SELECT format('CREATE DATABASE platform OWNER %I', :'apiserver_user')
+    -- Application roles: LOGIN, explicit NOSUPERUSER. CREATE only when
+    -- absent; ALTER unconditionally so an existing role converges to the
+    -- intended password and is guaranteed NOSUPERUSER.
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'api_user', :'api_pwd')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'api_user')
+    \gexec
+    ALTER ROLE :"api_user" WITH LOGIN NOSUPERUSER PASSWORD :'api_pwd';
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'kc_user', :'kc_pwd')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'kc_user')
+    \gexec
+    ALTER ROLE :"kc_user" WITH LOGIN NOSUPERUSER PASSWORD :'kc_pwd';
+
+    -- One database per service, each owned by its app role so each runs its
+    -- own migrations (Drizzle on platform, Liquibase on keycloak) and reaches
+    -- nowhere else. CREATE only when absent; the ALTER ... OWNER is what makes
+    -- ownership authoritative on upgrade, where the database already exists
+    -- owned by the original single superuser.
+    SELECT format('CREATE DATABASE platform OWNER %I', :'api_user')
     WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'platform')
     \gexec
-    SELECT format('CREATE DATABASE keycloak OWNER %I', :'keycloak_user')
+    SELECT format('CREATE DATABASE keycloak OWNER %I', :'kc_user')
     WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak')
     \gexec
+    ALTER DATABASE platform OWNER TO :"api_user";
+    ALTER DATABASE keycloak OWNER TO :"kc_user";
 
-    -- CONNECT defaults to PUBLIC; revoke it so neither app role can reach
-    -- the other's database, then grant it back only to each database's own
-    -- owner. The explicit grants are what re-admit the owning service after
-    -- the PUBLIC revoke — do not drop them. The admin superuser bypasses
-    -- the CONNECT check regardless.
+    -- Cross-database isolation: CONNECT defaults to PUBLIC; revoke it so
+    -- neither app role can reach the other's database, then grant it back
+    -- only to each database's owner. The admin superuser bypasses the check.
     REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
     REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;
-    GRANT  CONNECT ON DATABASE platform TO :"apiserver_user";
-    GRANT  CONNECT ON DATABASE keycloak TO :"keycloak_user";
+    GRANT  CONNECT ON DATABASE platform TO :"api_user";
+    GRANT  CONNECT ON DATABASE keycloak TO :"kc_user";
 
-    -- DBA sessions are statement-logged by default. The global
-    -- log_statement stays at ddl (set on the server command line), so
-    -- routine app traffic never enters the audit stream.
+    -- DBA sessions are statement-logged by default. The global log_statement
+    -- stays at ddl (set on the server command line), so routine app traffic
+    -- never enters the audit stream.
     ALTER ROLE :"admin_user" SET log_statement = 'all';
 
-    -- Regression guard: abort the init (ON_ERROR_STOP) if either app role
-    -- comes up SUPERUSER — the guarantee this ADR exists to deliver. A
-    -- failed init crashes the container, so the pod can never reach Ready
-    -- with the escalation hole open. Role names are rendered by Helm
-    -- because psql does not interpolate :vars inside a dollar-quoted body.
+    -- Hand any objects still owned by the admin in each application database
+    -- to that database's app role. No-op on a fresh database (nothing is
+    -- owned by the admin yet); on upgrade it moves the objects created while
+    -- everything ran as the single superuser, so the app role can ALTER/DROP
+    -- them in future migrations. REASSIGN OWNED BY the bootstrap superuser is
+    -- rejected (it owns pinned system objects), so only user objects are
+    -- moved, by kind. Sequences linked to a table column follow their table.
+    -- The two blocks are identical except for the connection + target role.
+    \connect platform
+    SET app.admin = :'admin_user';
+    SET app.target = :'api_user';
     DO $$
+    DECLARE r record; tgt text := current_setting('app.target'); adm text := current_setting('app.admin');
     BEGIN
-      IF EXISTS (
-        SELECT 1 FROM pg_roles
-        WHERE rolname IN ('{{ .Values.postgres.apiserverUser }}', '{{ .Values.postgres.keycloakUser }}')
-          AND rolsuper
-      ) THEN
-        RAISE EXCEPTION 'application roles must be NOSUPERUSER';
-      END IF;
+      FOR r IN SELECT format('%I.%I', n.nspname, c.relname) AS obj
+               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND c.relkind IN ('r','p','v','m','S') AND pg_get_userbyid(c.relowner) = adm
+                 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+                                 AND d.objid=c.oid AND d.deptype='a' AND d.refclassid='pg_class'::regclass)
+               ORDER BY CASE c.relkind WHEN 'r' THEN 0 WHEN 'p' THEN 0 ELSE 1 END
+      LOOP EXECUTE format('ALTER TABLE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT format('%I.%I', n.nspname, t.typname) AS obj
+               FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(t.typowner) = adm AND t.typtype IN ('e','c','d')
+                 AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+      LOOP EXECUTE format('ALTER TYPE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)) AS obj
+               FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(p.proowner) = adm
+      LOOP EXECUTE format('ALTER ROUTINE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT nspname FROM pg_namespace
+               WHERE nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(nspowner) = adm
+      LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, tgt); END LOOP;
     END
     $$;
-    SQL
+    \connect keycloak
+    SET app.admin = :'admin_user';
+    SET app.target = :'kc_user';
+    DO $$
+    DECLARE r record; tgt text := current_setting('app.target'); adm text := current_setting('app.admin');
+    BEGIN
+      FOR r IN SELECT format('%I.%I', n.nspname, c.relname) AS obj
+               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND c.relkind IN ('r','p','v','m','S') AND pg_get_userbyid(c.relowner) = adm
+                 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+                                 AND d.objid=c.oid AND d.deptype='a' AND d.refclassid='pg_class'::regclass)
+               ORDER BY CASE c.relkind WHEN 'r' THEN 0 WHEN 'p' THEN 0 ELSE 1 END
+      LOOP EXECUTE format('ALTER TABLE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT format('%I.%I', n.nspname, t.typname) AS obj
+               FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(t.typowner) = adm AND t.typtype IN ('e','c','d')
+                 AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.reltype = t.oid)
+      LOOP EXECUTE format('ALTER TYPE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)) AS obj
+               FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+               WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND n.nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(p.proowner) = adm
+      LOOP EXECUTE format('ALTER ROUTINE %s OWNER TO %I', r.obj, tgt); END LOOP;
+      FOR r IN SELECT nspname FROM pg_namespace
+               WHERE nspname NOT IN ('pg_catalog','information_schema','pg_toast') AND nspname NOT LIKE 'pg\_%'
+                 AND pg_get_userbyid(nspowner) = adm
+      LOOP EXECUTE format('ALTER SCHEMA %I OWNER TO %I', r.nspname, tgt); END LOOP;
+    END
+    $$;
+    \connect postgres
+
+    -- Regression guard: fail loudly (ON_ERROR_STOP) if either app role is
+    -- SUPERUSER. On first init this aborts the container so the pod never
+    -- reaches Ready with the escalation hole open; in the migration Job it
+    -- fails the hook so the release is marked failed.
+    SET app.api = :'api_user';
+    SET app.kc = :'kc_user';
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles
+                 WHERE rolname IN (current_setting('app.api'), current_setting('app.kc')) AND rolsuper)
+      THEN RAISE EXCEPTION 'application roles must be NOSUPERUSER'; END IF;
+    END
+    $$;
 ---
 apiVersion: v1
 kind: Service
@@ -154,8 +228,8 @@ spec:
           env:
             # Bootstrap identity — POSTGRES_USER becomes the cluster's
             # bootstrap superuser (OID 10), which Postgres forbids
-            # demoting. We make that the dedicated DBA role; the two app
-            # roles are created NOSUPERUSER by 01-init-databases.sh.
+            # demoting. This stays the dedicated DBA role; the two app
+            # roles are created NOSUPERUSER by 01-roles.sql.
             - name: POSTGRES_USER
               value: {{ .Values.postgres.adminUser | quote }}
             - name: POSTGRES_PASSWORD

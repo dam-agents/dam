@@ -279,12 +279,16 @@ Three roles, not one:
   the owning role, so a leaked api-server credential can neither read Keycloak's
   database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) —
   it can only do DDL/DML within the `platform` database it already owns.
-- **`platform_admin`** — the lone `SUPERUSER`, used only for DBA work. It is the
+- **`platform`** — the lone `SUPERUSER`, used only for DBA work. It is the
   image's bootstrap superuser, because Postgres forbids demoting that role and
-  so it must be the role that is *allowed* to keep SUPERUSER, not an app role. A
-  `log_statement = 'all'` per-role default puts every statement an admin session
-  issues into the pod log for the cluster collector, while routine app traffic
-  stays out of the audit stream (the global default is `ddl`).
+  so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
+  An existing single-role cluster already bootstrapped under this name, so it is
+  kept in place rather than renamed (the bootstrap role can be neither demoted
+  nor renamed while connected as itself). A `log_statement = 'all'` per-role
+  default puts every statement an admin session issues into the pod log for the
+  cluster collector, while routine app traffic stays out of the audit stream
+  (the global default is `ddl`). The admin role name is configurable
+  (`postgres.adminUser`).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and
 must be treated as high-value. The statement audit is best-effort, not enforced

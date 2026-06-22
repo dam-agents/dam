@@ -149,18 +149,29 @@ postgres:
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
 
-  # -- Three Postgres roles: one per service plus a
-  # dedicated SUPERUSER for DBA work. The two app roles are
-  # NOSUPERUSER and own only their own database, so a leaked app
-  # credential is bounded to one service's data. The admin role has
-  # `ALTER ROLE … SET log_statement = 'all'` attached so DBA sessions
-  # are statement-logged by default. Passwords are auto-generated on
-  # first install if left null.
+  # -- Three Postgres roles: one per service plus a dedicated SUPERUSER for
+  # DBA work. The two app roles are NOSUPERUSER and own only their own
+  # database, so a leaked app credential is bounded to one service's data.
+  # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
+  # DBA sessions are statement-logged by default. Passwords are
+  # auto-generated on first install if left null.
+  #
+  # `adminUser` is the cluster's bootstrap superuser (Postgres `POSTGRES_USER`
+  # at init). It defaults to `platform` — the name an existing single-role
+  # cluster already bootstrapped with — so an upgrade reuses that superuser
+  # in place rather than renaming it (Postgres forbids renaming the role you
+  # are connected as, and the bootstrap superuser cannot be demoted anyway).
+  #
+  # The role/database layout is applied by the idempotent SQL in
+  # `postgres.yaml` (ConfigMap key `01-roles.sql`), run both on first PGDATA
+  # init and by the post-install/post-upgrade migration Job
+  # (`postgres-migrate-roles.yaml`); the latter converges an existing
+  # single-superuser cluster with no manual SQL.
   apiserverUser: platform_apiserver
   apiserverPassword: null
   keycloakUser: platform_keycloak
   keycloakPassword: null
-  adminUser: platform_admin
+  adminUser: platform
   adminPassword: null
 
   storage: 5Gi
