@@ -23,7 +23,7 @@ export function validateConfigInputValue(
     const opts = input.enumValues.map((v) => `\`${v}\``).join(", ");
     return `${label}: must be one of ${opts}`;
   }
-  if (input.pattern && !new RegExp(input.pattern).test(trimmed)) {
+  if (input.pattern && !new RegExp(`^(?:${input.pattern})$`).test(trimmed)) {
     const expected = input.patternHint ?? `value matching ${input.pattern}`;
     return `${label}: expected ${expected}`;
   }
