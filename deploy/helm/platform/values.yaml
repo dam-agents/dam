@@ -175,6 +175,13 @@ keycloak:
   configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
   port: 8080
 
+  # -- Additional Keycloak server features. The chart always enables a required
+  # base — `token-exchange` (the API server depends on it) and
+  # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
+  # single `--features=` arg (a second `--features` would override, not merge).
+  # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  extraFeatures: []
+
   # -- Admin credentials (for Keycloak admin console)
   admin:
     user: admin
@@ -244,6 +251,23 @@ keycloak:
     # Local dev overrides this to `default` in `values-local.yaml` for
     # readable `kubectl logs`.
     consoleOutput: "json"
+
+  # -- Extra environment variables appended verbatim to the Keycloak container.
+  # The chart does not model Keycloak's still-evolving OpenTelemetry options, so
+  # wire observability here. All signals push over OTLP to a collector — traces,
+  # metrics, and logs share one endpoint and one auth header:
+  #   extraEnv:
+  #     - name: KC_TRACING_ENABLED
+  #       value: "true"
+  #     - name: KC_TRACING_ENDPOINT
+  #       value: "http://otel-collector:4317"
+  #     - name: KC_TELEMETRY_HEADER_AUTHORIZATION  # token from a Secret, never inline
+  #       valueFrom:
+  #         secretKeyRef: { name: otel-creds, key: authorization }
+  # Each entry is a raw corev1.EnvVar (name/value or name/valueFrom). Appended
+  # after the chart's own env, so an entry reusing a built-in KC_ name overrides
+  # it (Kubernetes env is last-wins).
+  extraEnv: []
 
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.

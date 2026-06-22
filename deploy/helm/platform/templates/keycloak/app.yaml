@@ -58,7 +58,7 @@ spec:
         - name: keycloak
           image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy | default "IfNotPresent" }}
-          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1"]
+          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1{{ range .Values.keycloak.extraFeatures }},{{ . }}{{ end }}"]
           ports:
             - containerPort: {{ .Values.keycloak.port }}
               name: http
@@ -102,6 +102,9 @@ spec:
             {{- if eq .Values.scheme "https" }}
             - name: KC_HTTP_ENABLED
               value: "true"
+            {{- end }}
+            {{- with .Values.keycloak.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:
