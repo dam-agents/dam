@@ -1024,6 +1024,52 @@ describe("createAcpRuntime", () => {
     expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
   });
 
+  it("debounces the idle reap and a new prompt within the window cancels it", () => {
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        idleReapDelayMs: 100,
+      });
+
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(initializeRequest(0));
+      fa.pushLine(initializeResponse(outboundId(fa.sent[0]), { close: {} }));
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent[1])));
+
+      // Last viewer leaves → reap is scheduled, not immediate.
+      c.remoteClose();
+      vi.advanceTimersByTime(99);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // A new prompt for the session arrives within the window → reap cancelled.
+      const c2 = makeFakeChannel();
+      runtime.attach(c2.channel);
+      c2.pushMessage(promptRequest(2));
+      vi.advanceTimersByTime(1000);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // Prompt completes and that viewer leaves → reap fires after the window.
+      const promptOut = outboundId(fa.sent[fa.sent.length - 1]);
+      fa.pushLine(agentPromptResponse(promptOut));
+      c2.remoteClose();
+      vi.advanceTimersByTime(100);
+      const closes = fa.sent.filter((f: any) => f.method === "session/close");
+      expect(closes).toHaveLength(1);
+      expect((closes[0] as any).params).toEqual({ sessionId: SID });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not close a session with pending permission requests", () => {
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({

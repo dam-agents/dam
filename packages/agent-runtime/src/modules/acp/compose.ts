@@ -37,6 +37,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     log: opts.log,
     // Warm restart (env on the PV) spawns now; cold boot gates until env arrives.
     envReadyAtBoot: opts.envReader.ready(),
+    // Let a turn's trailing work settle (and quick re-attaches reconnect)
+    // before reaping the harness subprocess.
+    idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
   return { runtime, triggerDriver };

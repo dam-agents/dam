@@ -80,6 +80,10 @@ export interface AcpRuntimeDeps {
   orphanTtlMs?: number;
   /** Override the env force-recycle bound — exposed for tests; default 60s. */
   envForceRecycleMs?: number;
+  /** Quiescence window before reaping an idle session's subprocess. 0 (default)
+   * reaps inline; production injects a few seconds so a turn's trailing work
+   * finishes and quick re-attaches keep the subprocess warm. */
+  idleReapDelayMs?: number;
   /** Env already on disk at boot → spawn now; false gates the first spawn until env arrives. Defaults true. */
   envReadyAtBoot?: boolean;
   /** Override the cold-boot warm-start bound — exposed for tests; default 15s. */
@@ -208,6 +212,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
   const envForceRecycleMs =
     deps.envForceRecycleMs ?? DEFAULT_ENV_FORCE_RECYCLE_MS;
+  const idleReapDelayMs = deps.idleReapDelayMs ?? 0;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
   // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
@@ -267,6 +272,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   /** Per-session orphan timers. A session is orphaned when it has pending
    * agent-initiated requests but no channel engaged with it. */
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Per-session debounced idle-reap timers (see maybeCloseIdleSession). */
+  const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // ── Session log ──
 
@@ -607,6 +614,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     bootstrapBySession.clear();
     for (const t of orphanTimers.values()) clearTimeout(t);
     orphanTimers.clear();
+    for (const t of idleReapTimers.values()) clearTimeout(t);
+    idleReapTimers.clear();
     pendingFromAgent.clear();
     activePromptBySession.clear();
     promptQueueBySession.clear();
@@ -698,6 +707,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    const reap = idleReapTimers.get(sessionId);
+    if (reap) {
+      clearTimeout(reap);
+      idleReapTimers.delete(sessionId);
+    }
   }
 
   /**
@@ -710,7 +724,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * `sessionCapabilities.close`: we can't tell the agent to drop the session,
    * so we also keep the cache so future resumes can still serve from memory.
    */
-  function maybeCloseIdleSession(sessionId: string): void {
+  function reapIdleSessionNow(sessionId: string): void {
+    idleReapTimers.delete(sessionId);
     if (!agent || agentExited) return;
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
@@ -726,6 +741,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
+  }
+
+  // Defer the reap by a quiescence window: the harness can still be flushing
+  // a turn's trailing work (async post-tool hooks) after its prompt response
+  // lands, and a quick re-attach or the next queued prompt should keep the
+  // ~300MB subprocess warm rather than pay a cold respawn. The full guard is
+  // re-checked when the timer fires, so anything that re-engages in the window
+  // cancels the reap. Delay 0 (the library default, and tests) reaps inline,
+  // preserving the original synchronous behaviour. Ceiling: a fixed delay, not
+  // a true harness-idle signal.
+  function maybeCloseIdleSession(sessionId: string): void {
+    if (idleReapDelayMs <= 0) {
+      reapIdleSessionNow(sessionId);
+      return;
+    }
+    const existing = idleReapTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    idleReapTimers.set(
+      sessionId,
+      setTimeout(() => reapIdleSessionNow(sessionId), idleReapDelayMs),
+    );
   }
 
   function sendErrorResponse(
@@ -1318,6 +1354,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      for (const t of idleReapTimers.values()) clearTimeout(t);
+      idleReapTimers.clear();
       clearEnvForceTimer();
       if (warmTimer) clearTimeout(warmTimer);
       warmWaiters.clear();
