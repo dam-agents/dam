@@ -1,5 +1,5 @@
 import { ChannelType } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,

@@ -7,8 +7,8 @@ import {
 import {
   exitCodeForResolveError,
   printResolveError,
-  printServiceError,
 } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
