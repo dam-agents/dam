@@ -182,10 +182,13 @@ export function useFilesPanelController({
           return;
         case "download":
           if (!isDir && selectedAgent) {
-            void downloadFileAt(selectedAgent, path).catch(() =>
+            void downloadFileAt(selectedAgent, path).catch((err) =>
               emitToast({
                 kind: "error",
-                message: `Couldn't download ${path}`,
+                message:
+                  err instanceof Error
+                    ? `${err.message}: ${path}`
+                    : `Couldn't download ${path}`,
               }),
             );
           }

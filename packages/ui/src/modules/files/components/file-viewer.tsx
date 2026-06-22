@@ -64,9 +64,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isSvg = mime === "image/svg+xml";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
   const isPdf = mime === "application/pdf";
-  const hasContent = !!content;
   const filename = path.split("/").pop();
-  const editable = !binary && hasContent;
+  const editable = !binary && !tooLarge;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
@@ -227,7 +226,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             </Button>
           </>
         )}
-        {hasContent && !editMode && (
+        {!tooLarge && !editMode && (
           <Button
             variant="ghost"
             size="sm"
