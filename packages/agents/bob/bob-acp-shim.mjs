@@ -63,8 +63,9 @@
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, promises as fsp } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
 const thinkToolCallIds = new Set();
@@ -85,6 +86,8 @@ let currentModeId = (() => {
 const pendingNewSessionIds = new Set();
 // Session workspace (ACP cwd); Bob's read guard allows only this dir + its temp.
 let sessionCwd = null;
+// Chat uploads land here; only files under it are staged into the workspace.
+const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
 let pendingModeSwitch = null;
 
 // agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
@@ -191,22 +194,28 @@ function stageAttachment(block) {
   let src = typeof block.uri === "string" ? block.uri : "";
   if (src.startsWith("file://")) {
     try {
-      src = decodeURIComponent(new URL(src).pathname);
+      src = fileURLToPath(src);
     } catch {
-      /* keep raw uri */
+      /* leave src as the raw uri */
     }
   }
-  const mime = block.mimeType ? ` (${block.mimeType})` : "";
-  try {
-    const destDir = join(sessionCwd || process.cwd(), ".attachments");
-    mkdirSync(destDir, { recursive: true });
-    const dest = join(destDir, basename(src));
-    copyFileSync(src, dest);
-    src = dest;
-  } catch (err) {
-    if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
+  // Only stage files from the upload dir — copying an arbitrary path into the
+  // workspace would let a crafted uri smuggle a file past Bob's read guard.
+  // Other paths pass through for Bob's own guard to govern.
+  if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
+    try {
+      const destDir = join(sessionCwd || process.cwd(), ".attachments");
+      mkdirSync(destDir, { recursive: true });
+      const dest = join(destDir, basename(src));
+      copyFileSync(src, dest);
+      src = dest;
+    } catch (err) {
+      if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
+    }
   }
-  return `[Attached file${mime}: ${src}]`;
+  const name = typeof block.name === "string" && block.name ? ` "${block.name}"` : "";
+  const mime = block.mimeType ? ` (${block.mimeType})` : "";
+  return `[Attached file${name}${mime}: ${src}]`;
 }
 
 function sendToBob(frame) {
