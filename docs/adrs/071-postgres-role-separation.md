@@ -1,4 +1,4 @@
-# ADR-062: Postgres role separation — no SUPERUSER on app roles
+# ADR-071: Postgres role separation — no SUPERUSER on app roles
 
 **Date:** 2026-05-22
 **Status:** Accepted

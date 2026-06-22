@@ -3,7 +3,7 @@
 Last verified: 2026-06-08
 
 Operational runbook for the three-role Postgres split decided in
-[ADR-062](../adrs/062-postgres-role-separation.md). The ADR carries the *why*;
+[ADR-071](../adrs/071-postgres-role-separation.md). The ADR carries the *why*;
 this note carries the *how* — the parts that move when the chart changes.
 
 The bundled Postgres ends up with three roles:

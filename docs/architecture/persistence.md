@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-15
+Last verified: 2026-06-22
 
 ## Overview
 

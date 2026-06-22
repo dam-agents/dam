@@ -75,7 +75,7 @@ This directory contains ADRs for the Platform project.
 | [068](068-operator-applied-crds.md)           | Frozen shared CRDs — operator-applied schema upgrades | @jezekra1 |
 | [069](069-runtime-env-injection.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
 | [070](070-api-keys-headless-auth.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
-| [062](062-postgres-role-separation.md)        | No SUPERUSER on Postgres app roles — three-way role split with a statement-logged DBA role | @pilartomas |
+| [071](071-postgres-role-separation.md)        | Postgres role separation — no SUPERUSER on app roles | @pilartomas |
 
 ## Drafts
 

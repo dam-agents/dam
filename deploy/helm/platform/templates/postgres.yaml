@@ -13,7 +13,7 @@ data:
   01-init-databases.sh: |
     #!/bin/bash
     set -e
-    # ADR-062: POSTGRES_USER is `platform_admin`, so the image creates the
+    # POSTGRES_USER is `platform_admin`, so the image creates the
     # admin role as the bootstrap superuser (OID 10) — the one role
     # Postgres refuses to demote, and exactly the role that should keep
     # SUPERUSER. This script runs as that superuser on first PGDATA init
@@ -75,7 +75,7 @@ data:
         WHERE rolname IN ('{{ .Values.postgres.apiserverUser }}', '{{ .Values.postgres.keycloakUser }}')
           AND rolsuper
       ) THEN
-        RAISE EXCEPTION 'ADR-062: application roles must be NOSUPERUSER';
+        RAISE EXCEPTION 'application roles must be NOSUPERUSER';
       END IF;
     END
     $$;
@@ -127,7 +127,7 @@ spec:
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
-          # Event logging via server flags (ADR-062). The image's
+          # Event logging via server flags. The image's
           # `postgresql.conf` has no include for a drop-in config dir, so
           # passing these as `-c` flags is the image-agnostic way to make
           # them take effect — auth + admin events land on stderr, where
@@ -155,8 +155,7 @@ spec:
             # Bootstrap identity — POSTGRES_USER becomes the cluster's
             # bootstrap superuser (OID 10), which Postgres forbids
             # demoting. We make that the dedicated DBA role; the two app
-            # roles are created NOSUPERUSER by 01-init-databases.sh
-            # (ADR-062).
+            # roles are created NOSUPERUSER by 01-init-databases.sh.
             - name: POSTGRES_USER
               value: {{ .Values.postgres.adminUser | quote }}
             - name: POSTGRES_PASSWORD
