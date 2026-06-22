@@ -27,9 +27,12 @@ service database, plus a single SUPERUSER reserved for DBA work.
   Cross-database access is closed at the door: `CONNECT` is revoked from
   `PUBLIC` and granted only to each database's owner, so neither app role can
   open a session on the other's database.
-- **`platform_admin`** — the lone SUPERUSER, used only for DBA work (migrations,
-  ad-hoc, break-glass). Its sessions are statement-logged by default, while
-  routine app traffic stays out of the audit stream.
+- **`platform`** — the lone SUPERUSER, used only for DBA work (migrations,
+  ad-hoc, break-glass). The cluster's existing bootstrap superuser is kept as
+  this role rather than renamed, since Postgres neither demotes the bootstrap
+  superuser nor renames the role a session is connected as. Its sessions are
+  statement-logged by default, while routine app traffic stays out of the audit
+  stream.
 
 One database per service stays; schema-based layout is left to a future ADR.
 
@@ -37,6 +40,9 @@ One database per service stays; schema-based layout is left to a future ADR.
 
 - **One shared app role, demoted to NOSUPERUSER** — still one identity across
   both services, so a compromised api-server pivots into Keycloak's data.
+- **A dedicated, renamed admin role (`platform_admin`)** — Postgres won't rename
+  the role a session is connected as nor demote the bootstrap superuser, so the
+  existing role is kept as the admin in place instead.
 - **Non-owner app roles + a separate migration role** — stricter, but splitting
   runtime and migration identity isn't worth the marginal gain once SUPERUSER
   is gone.
@@ -53,22 +59,23 @@ One database per service stays; schema-based layout is left to a future ADR.
 
 - **Easier:** a leaked app credential is bounded to one database — a compromised
   api-server cannot reach Keycloak's data or escalate, and vice versa. DBA work
-  run as `platform_admin` is statement-logged into the postgres pod log, where
-  the cluster collector picks it up.
-- **Harder:** DBA work now needs a credential separate from the application's,
-  and existing clusters need a one-time SQL migration — Postgres forbids
-  demoting the bootstrap superuser, so the pre-existing `platform` role becomes
-  the admin role while two fresh NOSUPERUSER roles take over ownership (see the
+  run as the admin role is statement-logged into the postgres pod log, where the
+  cluster collector picks it up. Existing clusters need no manual migration step.
+- **Harder:** DBA work now needs a credential separate from the application's.
+  Migrating an existing single-role cluster re-owns every object the shared role
+  created to its new app-role owner; until that convergence completes on upgrade
+  the app pods cannot connect under their new identities — a brief in-place
+  window rather than a hand-run procedure (see the
   [migration runbook](../notes/postgres-role-operations.md)).
 - **Committed-to:** the admin credential carries total DB control and lives in a
   K8s Secret, so it must be handled accordingly. Audit on admin sessions is
-  best-effort, not enforced: `log_statement` is a SUSET parameter and
-  `platform_admin` is SUPERUSER, so a session can disable it mid-stream (the
-  disable is itself recorded under the prior setting). Sessions are attributed
-  to the role, not the human — per-operator attribution is an IAM concern.
-  App-role migrations must keep fitting DDL-on-owned-database privileges; a
-  future migration needing SUPERUSER (e.g. a non-trusted `CREATE EXTENSION`)
-  would break app boot.
+  best-effort, not enforced: `log_statement` is a SUSET parameter and the admin
+  role is SUPERUSER, so a session can disable it mid-stream (the disable is
+  itself recorded under the prior setting). Sessions are attributed to the role,
+  not the human — per-operator attribution is an IAM concern. App-role
+  migrations must keep fitting DDL-on-owned-database privileges; a future
+  migration needing SUPERUSER (e.g. a non-trusted `CREATE EXTENSION`) would
+  break app boot.
 - **Managed Postgres:** the decision is provider-agnostic and is the native
   posture of managed services (RDS, Cloud SQL, IBM Cloud Databases), which
   withhold tenant SUPERUSER. The role shape reproduces as plain SQL, but the
