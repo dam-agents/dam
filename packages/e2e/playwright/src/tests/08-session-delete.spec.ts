@@ -35,7 +35,9 @@ test("deleting the active session clears it and lets a fresh session start (#108
     await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
 
     await sendMessageToAgent(page, firstPrompt);
-    await expect(page.getByText(scriptedReply)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(scriptedReply)).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   // The session we just engaged is the active one. Capture its id so the
@@ -64,7 +66,9 @@ test("deleting the active session clears it and lets a fresh session start (#108
   await test.step("(B) a session started right after the delete appears in the sidebar", async () => {
     await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
     await sendMessageToAgent(page, secondPrompt);
-    await expect(page.getByText(scriptedReply)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(scriptedReply)).toBeVisible({
+      timeout: 30_000,
+    });
     // A new active session row exists, and it is not the deleted one.
     const freshRow = page.locator(activeRowSelector);
     await expect(freshRow).toHaveCount(1);
