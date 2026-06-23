@@ -52,6 +52,7 @@ describe("resolveInjection", () => {
     expect(resolveInjection("anthropic", "api-key", undefined)).toEqual({
       headerName: "x-api-key",
       valueFormat: "{value}",
+      http2: false,
     });
   });
 
@@ -59,6 +60,7 @@ describe("resolveInjection", () => {
     expect(resolveInjection("anthropic", "oauth", undefined)).toEqual({
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
+      http2: false,
     });
   });
 
@@ -66,6 +68,7 @@ describe("resolveInjection", () => {
     expect(resolveInjection("anthropic", undefined, undefined)).toEqual({
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
+      http2: false,
     });
   });
 
@@ -78,6 +81,7 @@ describe("resolveInjection", () => {
     ).toEqual({
       headerName: "Token",
       valueFormat: "Token {value}",
+      http2: false,
     });
   });
 
@@ -85,6 +89,7 @@ describe("resolveInjection", () => {
     expect(resolveInjection("generic", undefined, undefined)).toEqual({
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
+      http2: false,
     });
   });
 
@@ -101,6 +106,7 @@ describe("resolveInjection", () => {
     ).toEqual({
       headerName: "X-Bob-Internal",
       valueFormat: "Bearer {value}",
+      http2: false,
     });
   });
 
@@ -114,6 +120,7 @@ describe("resolveInjection", () => {
     ).toEqual({
       headerName: "X-Bobshell-Internal",
       valueFormat: "Bearer {value}",
+      http2: false,
     });
   });
 });
