@@ -1,0 +1,86 @@
+["agents:nous:image"]
+description = "Build the nous agent image (Nous orchestrator on the claude-code base)"
+dir = "{{config_root}}"
+depends = ["agents:claude-code:image"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+
+# Nous installs from its public GitHub repo at build time (no vendoring). The
+# Dockerfile pins a default release; override it here with NOUS_REF=<tag|branch|sha>.
+build_args=()
+[ -n "${NOUS_REF:-}" ] && build_args+=(--build-arg "NOUS_REF=${NOUS_REF}")
+
+# ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
+docker build ${build_args[@]+"${build_args[@]}"} -t platform-nous:latest packages/agents/nous
+'''
+
+["agents:nous:sync-commands"]
+description = "Refresh workspace/.claude/commands from the Nous upstream repo, replacing each file by name"
+dir = "{{config_root}}"
+usage = '''
+flag "--ref <ref>" help="Upstream git ref (tag|branch|sha) to sync from (default: main)"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+ref="${usage_ref:-main}"
+repo="AI-native-Systems-Research/agentic-strategy-evolution"
+src=".claude/commands"
+dst="packages/agents/nous/workspace/.claude/commands"
+
+mkdir -p "$dst"
+
+# List the upstream command files. `gh` handles GitHub auth and JSON parsing; it
+# is the managed tool the repo already uses for the GitHub API.
+names="$(gh api "repos/${repo}/contents/${src}?ref=${ref}" \
+  --jq '.[] | select(.type == "file") | .name')"
+
+if [ -z "$names" ]; then
+  echo "No command files found at ${repo}@${ref}:${src}" >&2
+  exit 1
+fi
+
+# Overwrite each local command with its upstream counterpart name-by-name. We do
+# not wipe the directory, so any local-only files are left untouched. The heredoc
+# (not a pipe) keeps the loop in this shell so `count` survives — and avoids
+# `mapfile`, which the default macOS bash 3.2 lacks.
+count=0
+while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  echo "↻ ${name}"
+  gh api "repos/${repo}/contents/${src}/${name}?ref=${ref}" \
+    -H "Accept: application/vnd.github.raw" >"${dst}/${name}"
+  count=$((count + 1))
+done <<EOF
+${names}
+EOF
+
+echo "Synced ${count} command(s) from ${repo}@${ref} into ${dst}"
+'''
+
+["agents:nous:scan"]
+depends = ["agents:nous:scan:*"]
+
+["agents:nous:scan:trivy"]
+dir = "{{config_root}}"
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/nous:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/nous:${usage_tag}"
+else
+  {{ mise_bin }} run agents:nous:image
+  image="platform-nous:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''
