@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "Local-only types for the pi-dynamic-providers extension. Not installed at runtime; @earendil-works/pi-coding-agent is provided globally by the agent image. Keep this version pinned to the same version installed in the pi-agent workspace mise config so the extension type-checks against the runtime it actually loads against.",
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.79.9",
+    "@earendil-works/pi-coding-agent": "0.79.10",
     "@types/node": "^24.0.0"
   }
 }
