@@ -84,8 +84,9 @@ let currentModeId = (() => {
   return "ask";
 })();
 const pendingNewSessionIds = new Set();
-// Session workspace (ACP cwd); Bob's read guard allows only this dir + its temp.
-let sessionCwd = null;
+// Session workspace (ACP cwd); Bob's read guard allows only this dir + its
+// temp. Defaults to the harness's launch dir (the workspace) until session/new.
+let sessionCwd = process.cwd();
 // Chat uploads land here; only files under it are staged into the workspace.
 const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
 let pendingModeSwitch = null;
@@ -199,12 +200,14 @@ function stageAttachment(block) {
       /* leave src as the raw uri */
     }
   }
-  // Only stage files from the upload dir — copying an arbitrary path into the
-  // workspace would let a crafted uri smuggle a file past Bob's read guard.
-  // Other paths pass through for Bob's own guard to govern.
+  // Resolve before the containment check so `..` segments can't slip a path
+  // outside the upload dir past it — copying an arbitrary path into the
+  // workspace would smuggle a file past Bob's read guard. Other paths pass
+  // through for Bob's own guard to govern.
+  src = resolve(src);
   if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
     try {
-      const destDir = join(sessionCwd || process.cwd(), ".attachments");
+      const destDir = join(sessionCwd, ".attachments");
       mkdirSync(destDir, { recursive: true });
       const dest = join(destDir, basename(src));
       copyFileSync(src, dest);
