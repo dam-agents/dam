@@ -748,7 +748,13 @@ controller:
       # api-server for pod-files producers (currently one global value).
       agentHome: /home/agent
 
-      imagePullPolicy: IfNotPresent
+      # Left unset so Kubernetes applies its native, tag-based pull policy:
+      # `Always` for a mutable `:latest` (so a repushed tag is actually
+      # re-pulled, not served stale from the node cache) and `IfNotPresent`
+      # for the immutable sha/digest tags the harness images use. Hardcoding a
+      # value here forces it for ALL tags and silently strands `:latest` agents
+      # on a cached image. A template or agent can still set its own override.
+      imagePullPolicy: ""
       storageSize: "10Gi"
       resources:
         requests:
