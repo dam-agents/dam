@@ -1,0 +1,11 @@
+# Shared CodeQL config for all languages in the matrix (see ../workflows/codeql.yml).
+# This is the tuning point for scan scope and query selection.
+name: Platform CodeQL config
+
+# node_modules/dist are gitignored (absent in CI checkout) — listed as
+# belt-and-braces; .worktrees holds local git worktrees that may slip in.
+# Add test-only globs here if you decide test code shouldn't be scanned.
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - ".worktrees/**"

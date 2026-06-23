@@ -1,0 +1,68 @@
+# Advanced CodeQL setup. Replaces repo "Default Setup", whose per-PR language
+# list is derived from `main`: a PR that changes no files of a detected language
+# (e.g. the Nous Python) produces an empty database and fails `finalize` with
+# "no source code seen" (github/codeql#21106). An explicit matrix + full-tree
+# extraction (build-mode: none) removes that coupling to the PR diff.
+#
+# REQUIRED before this is effective: disable Default Setup in
+# Settings -> Code security -> Code scanning -> "CodeQL analysis" -> switch to
+# Advanced. Default and advanced setup cannot both run; otherwise GitHub rejects
+# this workflow's SARIF upload.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly full scan; off-the-hour minute per GitHub's scheduling guidance.
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      security-events: write # upload SARIF results
+      packages: read # CodeQL packs from GitHub Packages
+      actions: read # required for the `actions` language and private-repo context
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # build-mode: none extracts from source without a build step — robust in
+        # this mise-managed monorepo. For more precise Go results, switch go to
+        # build-mode: autobuild and add a Go toolchain setup step first.
+        include:
+          - language: actions
+            build-mode: none
+          - language: go
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:${{ matrix.language }}"
