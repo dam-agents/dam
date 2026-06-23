@@ -1,6 +1,6 @@
 import http from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -426,16 +426,82 @@ server.listen(config.PORT, () => {
   });
 });
 
+// cgroup memory accounting is whole-container (agent-runtime + harness +
+// pod-service), so it catches pressure from the harness even when this
+// process's own heap is fine. cgroupfs reads are kernel-served (no disk I/O),
+// so a sync read here can't itself stall the loop. v2 path, v1 fallback.
+function readCgroupBytes(v2: string, v1: string): number | null {
+  for (const p of [v2, v1]) {
+    try {
+      const raw = readFileSync(p, "utf8").trim();
+      if (raw === "max") return Infinity;
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n)) return n;
+    } catch {
+      // try next path / give up
+    }
+  }
+  return null;
+}
+
+// Event-loop block watchdog. /healthz shares this single thread, so a long
+// synchronous stall is what trips the liveness probe and gets the pod
+// SIGKILLed. Each block is logged with memory + CPU context so the cause is
+// self-evident next time without guessing:
+//   - GC thrash        → heap≈heapTotal, high cpu%
+//   - container memory  → cgroup near limit, low cpu% (harness is a separate
+//     pressure            process under the same cgroup; our own heap stays normal)
+//   - CPU-bound sync op → high cpu%, heap + cgroup normal
+//   - blocking syscall  → low cpu%, heap + cgroup normal
+// A gated [mem] heartbeat captures the run-up to a memory-pressure collapse,
+// since a terminal wedge leaves no time to log on its own. monitorEventLoopDelay
+// samples at libuv level so a recoverable block is captured; a terminal wedge
+// still can't self-report (the kubelet event is the signal there).
+const mib = (n: number) => Math.round(n / 1_048_576);
+const cgMax = readCgroupBytes(
+  "/sys/fs/cgroup/memory.max",
+  "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+);
+const haveLimit = cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15;
 const eld = monitorEventLoopDelay({ resolution: 20 });
 eld.enable();
+let prevCpu = process.cpuUsage();
+let prevAt = Date.now();
 setInterval(() => {
-  const maxMs = eld.max / 1e6;
-  if (maxMs >= 1_000)
-    process.stderr.write(
-      `[eventloop] blocked up to ${Math.round(maxMs)}ms ` +
-        `(p99 ${Math.round(eld.percentile(99) / 1e6)}ms) in last 10s\n`,
+  try {
+    const maxMs = eld.max / 1e6;
+    const p99Ms = eld.percentile(99) / 1e6;
+    eld.reset();
+    const cpu = process.cpuUsage(prevCpu);
+    prevCpu = process.cpuUsage();
+    const now = Date.now();
+    const wallMs = Math.max(1, now - prevAt);
+    prevAt = now;
+    const cpuPct = Math.round(((cpu.user + cpu.system) / 1000 / wallMs) * 100);
+    const mu = process.memoryUsage();
+    const cgCur = readCgroupBytes(
+      "/sys/fs/cgroup/memory.current",
+      "/sys/fs/cgroup/memory/memory.usage_in_bytes",
     );
-  eld.reset();
+    const cgStr =
+      cgCur !== null
+        ? ` cgroup=${mib(cgCur)}${haveLimit ? "/" + mib(cgMax as number) : ""}MB`
+        : "";
+    const memStr = `rss=${mib(mu.rss)}MB heap=${mib(mu.heapUsed)}/${mib(mu.heapTotal)}MB cpu=${cpuPct}%${cgStr}`;
+    if (maxMs >= 1_000) {
+      process.stderr.write(
+        `[eventloop] blocked up to ${Math.round(maxMs)}ms (p99 ${Math.round(p99Ms)}ms) in last 10s — ${memStr}\n`,
+      );
+    } else if (
+      haveLimit &&
+      cgCur !== null &&
+      cgCur / (cgMax as number) >= 0.85
+    ) {
+      process.stderr.write(`[mem] high cgroup usage — ${memStr}\n`);
+    }
+  } catch {
+    // observability must never take down the runtime
+  }
 }, 10_000).unref();
 
 let shuttingDown = false;
