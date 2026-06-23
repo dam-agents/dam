@@ -52,6 +52,10 @@ export const egressInjectContribution = z.object({
     .string()
     .regex(/^[A-Za-z0-9_.~-]+$/)
     .optional(),
+  // Terminate this host's gateway chain as HTTP/2 so injection lands on a gRPC
+  // stream (e.g. Modal's x-modal-token-* metadata). Flows to the injection-hosts
+  // annotation the controller reads. Omit for HTTP/1.1 REST hosts.
+  http2: z.boolean().optional(),
 });
 
 export const fileContribution = z.object({

@@ -83,6 +83,23 @@ agentTemplates:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
 
+  - name: k-search
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
+    image:
+      repository: platform-k-search
+      tag: latest
+    storageSize: "5Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.

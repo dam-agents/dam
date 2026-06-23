@@ -187,7 +187,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        component: [claude-code, codex, pi-agent, bob]
+        component: [claude-code, codex, pi-agent, bob, k-search]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -206,6 +206,9 @@ jobs:
           - component: bob
             dockerfile: packages/agents/bob/Dockerfile
             context: packages/agents/bob
+          - component: k-search
+            dockerfile: packages/agents/k-search/Dockerfile
+            context: packages/agents/k-search
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -247,7 +250,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [claude-code, codex, pi-agent, bob]
+        component: [claude-code, codex, pi-agent, bob, k-search]
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:

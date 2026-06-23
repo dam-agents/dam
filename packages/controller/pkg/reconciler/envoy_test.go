@@ -708,3 +708,64 @@ func TestCredentialEnvVars_MalformedAnnotationFallsBackCleanly(t *testing.T) {
 	require.Len(t, envs, 1)
 	assert.Equal(t, "ANTHROPIC_API_KEY", envs[0].Name)
 }
+
+func http2CredentialedChain(secretName, host string) envoyHostChain {
+	c := credentialedChain(secretName, host)
+	c.HTTP2 = true
+	return c
+}
+
+func TestRenderEnvoyBootstrap_HTTP2ChainAdvertisesH2AndMirrorsUpstream(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		http2CredentialedChain("platform-cred-modal-id", "api.modal.com"),
+	})
+	require.NoError(t, err)
+
+	// Downstream terminate chain offers h2 ALPN so a grpclib (HTTP/2) client
+	// negotiates HTTP/2 over the MITM leaf cert.
+	assert.Contains(t, got, "alpn_protocols")
+	assert.Contains(t, got, `"h2"`)
+	// Upstream cluster mirrors the negotiated protocol so the gRPC stream is
+	// forwarded as HTTP/2 and credential injection lands on it.
+	assert.Contains(t, got, "use_downstream_protocol_config")
+	assert.Contains(t, got, "HttpProtocolOptions")
+}
+
+func TestRenderEnvoyBootstrap_RestChainStaysHTTP1(t *testing.T) {
+	// A non-HTTP2 credentialed chain must render byte-for-byte as before:
+	// no ALPN, no upstream protocol-options block.
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "alpn_protocols")
+	assert.NotContains(t, got, "use_downstream_protocol_config")
+}
+
+func TestChainsFromSecrets_HTTP2AnnotationMarksChain(t *testing.T) {
+	s := ownerSecret("platform-cred-modal-id", "generic", "api.modal.com")
+	s.Annotations[envoyHeaderNameAnn] = "x-modal-token-id"
+	s.Annotations[envoyInjectionHTTP2Ann] = "true"
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.True(t, chains[0].HTTP2, "http2 annotation must mark the chain")
+
+	// Same secret without the annotation stays HTTP/1.1.
+	delete(s.Annotations, envoyInjectionHTTP2Ann)
+	chains = chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].HTTP2)
+}
+
+func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
+	s := ownerSecret("platform-conn-modal", "connection", "modal")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.modal.com","headerName":"x-modal-token-id","http2":true}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.True(t, chains[0].HTTP2, "injection-hosts http2:true must mark the chain")
+}

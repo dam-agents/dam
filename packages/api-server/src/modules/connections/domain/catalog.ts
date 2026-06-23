@@ -212,6 +212,56 @@ const BOB: HeaderConnectionTemplate = {
   ],
 };
 
+const MODAL_HOST = "api.modal.com";
+
+// Modal's gRPC auth is two metadata headers: x-modal-token-id (a public id) and
+// x-modal-token-secret (the secret). Only the secret is the connection
+// credential, injected at the gateway over an HTTP/2 chain. The token-id is
+// non-secret and rides as a plain env (filled via the Token ID config input).
+// Blob uploads hit storage.googleapis.com (+ Cloudflare R2 with dynamic hosts,
+// approved from the HITL inbox at first run).
+const MODAL: HeaderConnectionTemplate = {
+  id: "modal",
+  name: "Modal",
+  category: "app",
+  isCustom: false,
+  description:
+    "Modal cloud GPUs for kernel-evaluation workloads (e.g. K-Search).",
+  iconSlug: "modal",
+  authKind: "header",
+  host: MODAL_HOST,
+  headerName: "x-modal-token-secret",
+  valueFormat: "{value}",
+  contributions: [
+    // Placeholder so the modal client emits the header; the gateway overwrites
+    // it with the real secret. Keeps the `as-` shape the client expects.
+    {
+      kind: "env",
+      name: "MODAL_TOKEN_SECRET",
+      placeholder: "as-dummy-placeholder",
+    },
+    {
+      kind: "egress-inject",
+      host: MODAL_HOST,
+      headerName: "x-modal-token-secret",
+      valueFormat: "{value}",
+      http2: true,
+    },
+    // Modal streams function I/O and image-build context through cloud blob
+    // storage (it picks a backend with fallback) — allow the ones observed.
+    { kind: "egress-allow", host: "storage.googleapis.com" },
+    { kind: "egress-allow", host: "s3.amazonaws.com" },
+  ],
+  configInputs: [
+    {
+      inputName: "tokenId",
+      envName: "MODAL_TOKEN_ID",
+      label: "Token ID",
+      hint: "Modal token id (ak-…). Required, non-secret — sent as x-modal-token-id.",
+    },
+  ],
+};
+
 function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "github",
@@ -693,6 +743,7 @@ export function buildCatalog(
     OPENAI,
     IBM_LITELLM,
     BOB,
+    MODAL,
     github(creds.github),
     GITHUB_PAT,
     githubEnterprise(creds.githubEnterprise),

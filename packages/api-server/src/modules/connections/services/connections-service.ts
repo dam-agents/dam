@@ -473,6 +473,7 @@ function connectionSecretAnnotations(
       valueFormat: c.valueFormat,
       ...(c.encoding ? { encoding: c.encoding } : {}),
       ...(c.queryParamName ? { queryParamName: c.queryParamName } : {}),
+      ...(c.http2 ? { http2: c.http2 } : {}),
       // Single source of truth for the filename; the controller reads it rather than recomputing the key.
       sdsKey: sdsFileKeyForInjection(c),
     }));

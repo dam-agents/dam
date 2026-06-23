@@ -29,6 +29,7 @@ const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
 const ANN_QUERY_PARAM = "agent-platform.ai/injection-query-param";
 const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+const ANN_INJECTION_HTTP2 = "agent-platform.ai/injection-http2";
 
 export function readEnvMappings(
   annotations: Record<string, string> | undefined,
@@ -70,13 +71,14 @@ export function resolveInjection(
   type: string,
   authMode: AuthMode | undefined,
   injectionConfig: InjectionConfig | undefined,
-): { headerName: string; valueFormat: string } {
+): { headerName: string; valueFormat: string; http2: boolean } {
   // Explicit `injectionConfig` wins over preset — twins share `type`
   // with the primary but carry their own header from `extraInjections`.
   if (injectionConfig?.headerName) {
     return {
       headerName: injectionConfig.headerName,
       valueFormat: injectionConfig.valueFormat ?? "Bearer {value}",
+      http2: injectionConfig.http2 ?? false,
     };
   }
   if (isProviderPresetType(type as SecretType)) {
@@ -89,12 +91,14 @@ export function resolveInjection(
       return {
         headerName: mode.injection.headerName,
         valueFormat: mode.injection.valueFormat ?? "{value}",
+        http2: mode.injection.http2 ?? false,
       };
     }
   }
   return {
     headerName: "Authorization",
     valueFormat: injectionConfig?.valueFormat ?? "Bearer {value}",
+    http2: injectionConfig?.http2 ?? false,
   };
 }
 
@@ -293,7 +297,7 @@ export function createK8sSecretsPort(
       const secretType = isProviderPresetType(type as SecretType)
         ? type
         : "generic";
-      const { headerName, valueFormat } = resolveInjection(
+      const { headerName, valueFormat, http2 } = resolveInjection(
         secretType,
         authMode,
         injectionConfig,
@@ -316,6 +320,7 @@ export function createK8sSecretsPort(
       }
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
+      if (http2) annotations[ANN_INJECTION_HTTP2] = "true";
       writeEnvMappings(annotations, envMappings ?? []);
       if (injectionConfig?.queryParamName) {
         annotations[ANN_QUERY_PARAM] = injectionConfig.queryParamName;
@@ -390,12 +395,14 @@ export function createK8sSecretsPort(
           ? undefined
           : (patch.injectionConfig ?? existingInjection);
 
-      const { headerName, valueFormat } = resolveInjection(
+      const { headerName, valueFormat, http2 } = resolveInjection(
         secretType,
         newAuthMode,
         newInjection,
       );
       annotations[ANN_HEADER_NAME] = headerName;
+      if (http2) annotations[ANN_INJECTION_HTTP2] = "true";
+      else delete annotations[ANN_INJECTION_HTTP2];
       // Mirror createSecret: skip stamping ANN_VALUE_FORMAT for query-only
       // secrets where the user didn't explicitly supply a valueFormat.
       if (

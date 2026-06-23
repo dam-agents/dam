@@ -42,6 +42,10 @@ const (
 	envoyHeaderNameAnn  = "agent-platform.ai/injection-header-name"
 	envoyQueryParamAnn  = "agent-platform.ai/injection-query-param"
 	envoyAuthModeAnn    = "agent-platform.ai/auth-mode"
+	// Opt-in: terminate this host's chain as HTTP/2 so credential injection
+	// applies to a gRPC stream (e.g. Modal's x-modal-token-* metadata). REST
+	// hosts omit it and stay HTTP/1.1, unchanged.
+	envoyInjectionHTTP2Ann = "agent-platform.ai/injection-http2"
 	// Connection Secrets: N injection targets as JSON. Issue #219. (The
 	// api-server also stamps `agent-platform.ai/host-patterns` for kubectl
 	// readability; the controller doesn't read it.)
@@ -111,6 +115,11 @@ type envoyHostChain struct {
 	// SAN-bound TLS validation so the agent's Host header cannot
 	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
+	// HTTP2, when set, makes the chain advertise h2 ALPN downstream and
+	// mirror the negotiated protocol upstream, so credential injection works
+	// over a gRPC (HTTP/2) stream (e.g. Modal). Off by default — REST chains
+	// stay HTTP/1.1 with byte-identical config.
+	HTTP2 bool
 }
 
 // Credentialed reports whether the chain has any credential injections.
@@ -293,6 +302,8 @@ type connectionHostInjection struct {
 	ValueFormat    string `json:"valueFormat,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
 	QueryParamName string `json:"queryParamName,omitempty"`
+	// HTTP2 marks this host's chain as gRPC (HTTP/2); see envoyInjectionHTTP2Ann.
+	HTTP2 bool `json:"http2,omitempty"`
 	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
 	SDSKey string `json:"sdsKey,omitempty"`
 }
@@ -314,8 +325,9 @@ func sdsFileKey(e connectionHostInjection) string {
 // pair per entry in its `injection-hosts` JSON. Non-connection Secrets
 // remain single-host (handled by the caller).
 type hostCredential struct {
-	host string
-	cred envoyCredential
+	host  string
+	http2 bool
+	cred  envoyCredential
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -342,7 +354,8 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		}
 		seen[key] = struct{}{}
 		out = append(out, hostCredential{
-			host: e.Host,
+			host:  e.Host,
+			http2: e.HTTP2,
 			cred: envoyCredential{
 				SecretName:     s.Name,
 				HeaderName:     header,
@@ -384,12 +397,13 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		host        string
 		seenHeader  map[string]string
 		credentials []envoyCredential
+		http2       bool   // any contributing entry marked this host gRPC/HTTP2
 		first       string // first Secret name encountered for this host (drives ChainID)
 	}
 	byHost := map[string]*bucket{}
 	order := []string{}
 
-	add := func(host, secretName string, cred *envoyCredential) {
+	add := func(host, secretName string, cred *envoyCredential, http2 bool) {
 		if host == "" {
 			return
 		}
@@ -398,6 +412,9 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			b = &bucket{host: host, seenHeader: map[string]string{}, first: secretName}
 			byHost[host] = b
 			order = append(order, host)
+		}
+		if http2 {
+			b.http2 = true
 		}
 		if cred == nil {
 			return
@@ -423,7 +440,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		case "connection":
 			for _, hc := range expandConnectionSecret(s) {
 				cred := hc.cred
-				add(hc.host, s.Name, &cred)
+				add(hc.host, s.Name, &cred, hc.http2)
 			}
 			continue
 		}
@@ -435,8 +452,9 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		if host == "" {
 			continue
 		}
+		http2 := s.Annotations[envoyInjectionHTTP2Ann] == "true"
 		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
-			add(host, s.Name, nil)
+			add(host, s.Name, nil, http2)
 			continue
 		}
 		cred := envoyCredential{
@@ -446,7 +464,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			VolumeName:     "cred-" + s.Name,
 			SDSFileKey:     envoyCredentialKeySDS,
 		}
-		add(host, s.Name, &cred)
+		add(host, s.Name, &cred, http2)
 	}
 
 	chains := make([]envoyHostChain, 0, len(order))
@@ -460,6 +478,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			UpstreamCluster: "upstream_" + b.first + "_" + hostShort(host),
 			Host:            host,
 			Credentials:     b.credentials,
+			HTTP2:           b.http2,
 		})
 	}
 	return chains
@@ -671,6 +690,11 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
               common_tls_context:
+{{- if $chain.HTTP2 }}
+                # gRPC chain: offer h2 so the agent's grpclib client negotiates
+                # HTTP/2 over the MITM cert. REST chains omit ALPN and stay h1.
+                alpn_protocols: [ "h2", "http/1.1" ]
+{{- end }}
                 tls_certificates:
                   - certificate_chain: { filename: {{ $.LeafTLSDir }}/tls.crt }
                     private_key:      { filename: {{ $.LeafTLSDir }}/tls.key }
@@ -974,6 +998,18 @@ static_resources:
       type: STRICT_DNS
       dns_lookup_family: V4_PREFERRED
       lb_policy: ROUND_ROBIN
+{{- if $chain.HTTP2 }}
+      # gRPC chain: mirror the downstream-negotiated protocol upstream (h2 for
+      # gRPC, h1 otherwise) so credential injection applies to the gRPC stream
+      # and Envoy forwards HTTP/2 to the real host. Envoy auto-sets upstream
+      # ALPN to match. REST chains omit this and stay HTTP/1.1.
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          use_downstream_protocol_config:
+            http_protocol_options: {}
+            http2_protocol_options: {}
+{{- end }}
       load_assignment:
         cluster_name: {{ $chain.UpstreamCluster }}
         endpoints:

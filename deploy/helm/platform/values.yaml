@@ -472,6 +472,11 @@ apiServer:
     - cdn.mise.run
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
+    # Hugging Face (model/dataset downloads — e.g. K-Search's KernelBench dataset)
+    - huggingface.co
+    - datasets-server.huggingface.co
+    - cas-server.xethub.hf.co
+    - us.aws.cdn.hf.co
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -789,6 +794,23 @@ agentTemplates:
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
     storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  - name: k-search
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "5Gi"
     resources:
       requests:
         cpu: "500m"
