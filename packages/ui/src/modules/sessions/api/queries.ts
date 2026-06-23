@@ -44,6 +44,17 @@ export function optimisticInsertSession(
   );
 }
 
+// Remove the session from the sidebar list cache so the row disappears immediately; the invalidate that follows reconciles.
+export function removeSessionFromCache(
+  agentId: string,
+  sessionId: string,
+): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) => prev?.filter((s) => s.sessionId !== sessionId),
+  );
+}
+
 /**
  * Sessions list, read straight off the agent over ACP `session/list`
  * and decoded from `_meta.platform`. Schedule sessions are excluded from the
