@@ -50,7 +50,7 @@ agentTemplates:
     storageSize: "5Gi"
 
   - name: pi-agent
-    enabled: false
+    enabled: true
     description: "Pi coding agent with multi-LLM support"
     image:
       repository: platform-pi-agent
