@@ -191,11 +191,36 @@ function persistState(state: ConfigState, lastActivated: Activation): void {
 	writeJson(state.paths.models, state.models);
 	writeJson(state.paths.auth, state.auth);
 
-	// Make the last-activated provider the session default without losing any
-	// other settings already configured in the workspace.
-	state.settings.defaultProvider = lastActivated.name;
-	state.settings.defaultModel = lastActivated.model;
+	// Honour a default the user already configured: if their current
+	// defaultModel still resolves to a model we registered this run, keep it
+	// (canonicalised to the registered casing) instead of clobbering their
+	// choice. Only fall back to the last-activated spec when the existing
+	// default is gone. Other workspace settings are preserved either way.
+	const chosen = resolveExistingDefault(state) ?? lastActivated;
+	state.settings.defaultProvider = chosen.name;
+	state.settings.defaultModel = chosen.model;
 	writeJson(state.paths.settings, state.settings);
+}
+
+// Resolve the user's currently-configured default to a still-registered
+// provider/model, preferring their own provider and matching model ids
+// case-insensitively (proxies are inconsistent about casing). Returns the
+// registered casing so the id we persist matches what the upstream expects.
+// undefined → no usable existing default; the caller picks a fresh one.
+function resolveExistingDefault(state: ConfigState): Activation | undefined {
+	const model = state.settings.defaultModel;
+	if (typeof model !== "string" || model.length === 0) return undefined;
+	const wanted = model.toLowerCase();
+	const preferred = state.settings.defaultProvider;
+	const names = [
+		...(typeof preferred === "string" ? [preferred] : []),
+		...Object.keys(state.models.providers),
+	];
+	for (const name of names) {
+		const hit = state.models.providers[name]?.models?.find((m) => m.id.toLowerCase() === wanted);
+		if (hit) return { name, model: hit.id };
+	}
+	return undefined;
 }
 
 function readJson<T>(path: string): T | undefined {
