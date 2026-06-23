@@ -64,32 +64,37 @@ class KSearchAgent {
       `Starting K-Search kernel optimization (eval backend: ${mode})…\n`,
     );
 
+    // Serialize output through `tail` (preserves order across both streams)
+    // and pause each stream until its chunk is delivered (backpressure → the
+    // queue stays bounded). Awaiting `tail` before the summary guarantees it
+    // prints after the last relayed chunk.
+    let tail = Promise.resolve();
+    const enqueue = (text) => {
+      tail = tail.then(() => this.emit(params.sessionId, text)).catch(() => {});
+      return tail;
+    };
+
     const exitCode = await new Promise((resolve) => {
       const child = spawn("ksearch-run", [], { env: process.env });
       session.child = child;
-      // Pause the stream while a chunk is being delivered so the in-flight
-      // send queue stays bounded (backpressure) instead of growing with output.
       const relay = (rs) => {
         rs.setEncoding("utf8");
         rs.on("data", (chunk) => {
           rs.pause();
-          this.emit(params.sessionId, chunk)
-            .catch(() => {})
-            .finally(() => rs.resume());
+          enqueue(chunk).finally(() => rs.resume());
         });
       };
       relay(child.stdout);
       relay(child.stderr);
       child.on("error", (e) => {
-        this.emit(params.sessionId, `ksearch-run failed to start: ${e.message}\n`).catch(
-          () => {},
-        );
+        enqueue(`ksearch-run failed to start: ${e.message}\n`);
         resolve(1);
       });
       child.on("close", (code) => resolve(code ?? 0));
     });
 
     session.child = null;
+    await tail;
     await this.emit(
       params.sessionId,
       `\nK-Search finished with exit code ${exitCode}.\n`,
