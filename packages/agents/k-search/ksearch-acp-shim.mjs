@@ -15,21 +15,16 @@ class KSearchAgent {
   constructor(connection) {
     this.connection = connection;
     this.sessions = new Map();
-    // Serialize sessionUpdate writes so streamed chunks keep their order.
-    this.tail = Promise.resolve();
   }
 
-  send(sessionId, text) {
-    this.tail = this.tail.then(() =>
-      this.connection.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text },
-        },
-      }),
-    );
-    return this.tail;
+  emit(sessionId, text) {
+    return this.connection.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      },
+    });
   }
 
   async initialize() {
@@ -64,7 +59,7 @@ class KSearchAgent {
     if (!session) throw new Error(`Session ${params.sessionId} not found`);
 
     const mode = process.env.KSEARCH_EVAL_MODE || "modal";
-    await this.send(
+    await this.emit(
       params.sessionId,
       `Starting K-Search kernel optimization (eval backend: ${mode})…\n`,
     );
@@ -72,18 +67,30 @@ class KSearchAgent {
     const exitCode = await new Promise((resolve) => {
       const child = spawn("ksearch-run", [], { env: process.env });
       session.child = child;
-      const relay = (chunk) => this.send(params.sessionId, chunk.toString());
-      child.stdout.on("data", relay);
-      child.stderr.on("data", relay);
+      // Pause the stream while a chunk is being delivered so the in-flight
+      // send queue stays bounded (backpressure) instead of growing with output.
+      const relay = (rs) => {
+        rs.setEncoding("utf8");
+        rs.on("data", (chunk) => {
+          rs.pause();
+          this.emit(params.sessionId, chunk)
+            .catch(() => {})
+            .finally(() => rs.resume());
+        });
+      };
+      relay(child.stdout);
+      relay(child.stderr);
       child.on("error", (e) => {
-        this.send(params.sessionId, `ksearch-run failed to start: ${e.message}\n`);
+        this.emit(params.sessionId, `ksearch-run failed to start: ${e.message}\n`).catch(
+          () => {},
+        );
         resolve(1);
       });
       child.on("close", (code) => resolve(code ?? 0));
     });
 
     session.child = null;
-    await this.send(
+    await this.emit(
       params.sessionId,
       `\nK-Search finished with exit code ${exitCode}.\n`,
     );

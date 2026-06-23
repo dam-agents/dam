@@ -44,10 +44,10 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal /usr/lo
                   "${VIRTUAL_ENV}/lib/python3.12/site-packages/zz_dam_modal_proxy.pth"
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
-# Placeholder satisfies the OpenAI client startup check; real key injected on
-# the wire via the LiteLLM proxy. MODAL_TOKEN_ID/SECRET are NOT declared here —
-# they carry real values and arrive in-pod at runtime via the Agent SecretRef
-# (envFrom), since the modal client consumes them itself (no gateway injection).
+# Placeholder satisfies the OpenAI client startup check; the real key is
+# injected on the wire by the gateway. Modal's token-secret is gateway-injected
+# the same way (the pod only ever sees a placeholder); only the non-secret
+# token-id rides as a plain env. Both come from the Modal connection at runtime.
 ENV OPENAI_API_KEY=dummy-placeholder
 
 USER 65532

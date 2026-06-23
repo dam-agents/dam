@@ -33,8 +33,10 @@ proxy-only egress would drop it. `dam_modal_proxy_patch.py` (auto-loaded via a
 modal's aiohttp blob session with `trust_env=True`. All modal traffic then flows
 through the gateway.
 
-Requirements:
-- `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` in the pod env (real values, via the
-  Agent `SecretRef` — the modal client consumes them itself; no gateway injection).
-- Gateway egress allow-rules for: `api.modal.com` (control plane) plus the blob
-  hosts `storage.googleapis.com`, `*.r2.cloudflarestorage.com`, `*.amazonaws.com`.
+Requirements — supplied by the **Modal connection** granted to the agent:
+- `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the
+  `x-modal-token-secret` header over the HTTP/2 chain (the pod env holds only a
+  placeholder, never the real value).
+- `MODAL_TOKEN_ID` — non-secret identifier, delivered as a plain pod env.
+- Egress allow-rules for `api.modal.com` (control plane) plus the blob hosts
+  `storage.googleapis.com` and `s3.amazonaws.com`.

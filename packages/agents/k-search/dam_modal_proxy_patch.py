@@ -40,9 +40,14 @@ async def _connect_via_proxy(self):
     if proxy is None or self._path is not None:
         return await _orig_create_connection(self)
     loop = self._loop
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Resolve the proxy address family (don't assume IPv4) so an IPv6-only
+    # proxy still works.
+    family, socktype, proto, _, sockaddr = (
+        await loop.getaddrinfo(proxy[0], proxy[1], type=socket.SOCK_STREAM)
+    )[0]
+    sock = socket.socket(family, socktype, proto)
     sock.setblocking(False)
-    await loop.sock_connect(sock, proxy)
+    await loop.sock_connect(sock, sockaddr)
     await loop.sock_sendall(
         sock,
         f"CONNECT {self._host}:{self._port} HTTP/1.1\r\n"
