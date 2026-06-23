@@ -1,4 +1,4 @@
-# ADR-071: Gateway credential injection for gRPC hosts
+# ADR-072: Gateway credential injection for gRPC hosts
 
 **Date:** 2026-06-23
 **Status:** Accepted
