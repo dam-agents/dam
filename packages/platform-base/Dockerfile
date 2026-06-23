@@ -106,15 +106,13 @@ COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
+RUN mkdir -p /home/agent &&\
+    chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /app /home/agent /usr/local/share/mise &&\
     ldconfig &&\
-    chown -R 65532:0 /app &&\
     echo 'sshd:x:74:' >> /etc/group &&\
     echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd &&\
     sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
-    echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd &&\
-    mkdir -p /home/agent &&\
-    chown -R 65532:0 /home/agent
+    echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
 
 USER 65532
 
