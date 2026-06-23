@@ -7,6 +7,7 @@ const AUTH_HINT =
  * is needed; otherwise returns the input untouched.
  */
 export function rewriteAuthError(line: string): string {
+  if (!line.includes("authentication_error")) return line;
   try {
     const msg = JSON.parse(line);
     if (msg?.error?.message?.includes?.("authentication_error")) {

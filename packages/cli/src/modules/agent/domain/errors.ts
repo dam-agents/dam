@@ -11,3 +11,10 @@ export interface AmbiguousError {
   ref: string;
   matches: readonly { id: string; name: string }[];
 }
+
+/** Server rejected the input (TRPCError BAD_REQUEST) — carries the server's
+ *  message so the command can surface it and exit `EXIT_INVALID_INPUT`. */
+export interface InvalidInputError {
+  kind: "invalid-input";
+  message: string;
+}

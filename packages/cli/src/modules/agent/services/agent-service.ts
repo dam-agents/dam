@@ -1,6 +1,7 @@
 import { err, ok, type Result } from "../../../result.js";
 import type {
   AuthRequiredError,
+  InvalidInputError,
   NotFoundError,
   TransportError,
 } from "../domain/errors.js";
@@ -21,6 +22,16 @@ export interface AgentService {
   restart(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
+  /** Full-replace the Agent's allowed-user list; returns the updated Agent. */
+  updateAllowedUserEmails(
+    id: string,
+    emails: readonly string[],
+  ): Promise<
+    Result<
+      AgentView,
+      TransportError | AuthRequiredError | NotFoundError | InvalidInputError
+    >
+  >;
 }
 
 export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
@@ -58,6 +69,26 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
         await deps.trpc.agents.restart.mutate({ id });
         return ok(undefined);
       } catch (e) {
+        return notFoundOnMutate(e, id);
+      }
+    },
+    async updateAllowedUserEmails(id, emails) {
+      try {
+        return ok(
+          await deps.trpc.agents.update.mutate({
+            id,
+            allowedUserEmails: [...emails],
+          }),
+        );
+      } catch (e) {
+        // An unknown email (or other rejected input) comes back as BAD_REQUEST;
+        // surface its message so the command exits as invalid input, not a 500.
+        if ((e as { data?: { code?: string } })?.data?.code === "BAD_REQUEST") {
+          return err({
+            kind: "invalid-input",
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
         return notFoundOnMutate(e, id);
       }
     },

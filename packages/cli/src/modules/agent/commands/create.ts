@@ -11,7 +11,10 @@ import { parseTimeout } from "../../shared/parse-timeout.js";
 import type { AgentService } from "../services/agent-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
-import { formatTransportError, printServiceError } from "./errors.js";
+import {
+  formatTransportError,
+  printServiceError,
+} from "../../shared/trpc/print.js";
 import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -189,9 +192,7 @@ async function runCreate(
     }
     const classified = classifyTrpcError(e);
     if (!classified.ok && classified.error.kind === "auth-required") {
-      process.stderr.write(
-        `error: not authenticated: ${classified.error.reason}\nhint: run \`dam auth login\` first\n`,
-      );
+      printServiceError(classified.error, host);
       process.exit(EXIT_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: failed to create agent: ${errorReason(e)}\n`);

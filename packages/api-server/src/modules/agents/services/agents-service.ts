@@ -119,6 +119,11 @@ export function createAgentsService(deps: {
     ) => Promise<void>;
     listByAgent: (tx: Tx, agentId: string) => Promise<ChannelConfig[]>;
   };
+  /** The Agent (if any) a Slack channel id is already bound to — global, since
+   *  Slack bindings are unique across the whole install. */
+  findSlackChannelBinding: (
+    slackChannelId: string,
+  ) => Promise<{ agentId: string } | null>;
   channelSecretStore: ChannelSecretStore;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
   listAllowedUsersByAgent: (agentId: string) => Promise<string[]>;
@@ -141,7 +146,12 @@ export function createAgentsService(deps: {
     );
     const missing = resolved.filter((r) => r.sub === null).map((r) => r.email);
     if (missing.length > 0) {
-      throw new Error(`User not found in Keycloak: ${missing.join(", ")}`);
+      // Bad input, not a server fault — surface as BAD_REQUEST so clients
+      // (CLI/UI) can report it as an input error rather than a 500.
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `User not found: ${missing.join(", ")}`,
+      });
     }
     return resolved.map((r) => r.sub!);
   }
@@ -540,6 +550,16 @@ export function createAgentsService(deps: {
     async connectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return err({ type: "AgentNotFound" });
+
+      // One Slack channel binds to one Agent globally. Pre-check rather than
+      // relying on the unique-index violation: catching it inside the
+      // transaction below doesn't work — the aborted tx rethrows the raw error
+      // as it unwinds — so a channel bound to a different Agent would otherwise
+      // surface as a generic 500 instead of ChannelAlreadyBound. The in-tx
+      // catch stays as a backstop for the (accepted) concurrent-connect race.
+      const existing = await deps.findSlackChannelBinding(slackChannelId);
+      if (existing && existing.agentId !== id)
+        return err({ type: "ChannelAlreadyBound" as const });
 
       const txResult = await deps.unitOfWork(async (tx) => {
         try {

@@ -21,6 +21,8 @@ export interface ConnectionService {
   createConnection(
     input: ConnectionCreateInput,
   ): Promise<ConnResult<{ id: string }>>;
+  /** Replace a header connection's stored credential value in place. */
+  update(id: string, value: string): Promise<ConnResult<void>>;
   /** Begin the browser OAuth flow for a connection; returns the authorize URL. */
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
   /** Probe an MCP server URL for its auth requirement. */
@@ -66,6 +68,11 @@ export function createConnectionService(deps: {
     },
     async createConnection(input) {
       return trpcCall(() => deps.trpc.connections.create.mutate(input));
+    },
+    async update(id, value) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.update.mutate({ id, value });
+      });
     },
     async startOAuth(connectionId) {
       return trpcCall(() =>

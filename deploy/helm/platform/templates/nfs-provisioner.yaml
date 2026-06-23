@@ -157,10 +157,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: nfs-provisioner
-  {{- with .Values.nfsProvisioner.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.nfsProvisioner) | nindent 2 }}
 spec:
   serviceName: {{ $name }}
   replicas: 1
@@ -173,10 +170,7 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: nfs-provisioner
-      {{- with .Values.nfsProvisioner.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.nfsProvisioner) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}

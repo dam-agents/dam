@@ -248,6 +248,8 @@ func BuildForkAgentJob(
 			ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			InitialDelaySeconds: 10,
 			PeriodSeconds:       10,
+			TimeoutSeconds:      5,
+			FailureThreshold:    3,
 		}
 	}
 	if base.Probes != nil {

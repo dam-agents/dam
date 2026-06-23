@@ -201,6 +201,7 @@ const BOB: HeaderConnectionTemplate = {
       label: "Max coins",
       hint: "Budget cap; Bob exits when exceeded.",
       pattern: "^[1-9]\\d*$",
+      patternHint: "a positive integer",
     },
     {
       inputName: "chatMode",

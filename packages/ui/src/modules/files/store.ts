@@ -13,10 +13,12 @@ export interface FilesSlice {
   /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
+  openFileEdit: boolean;
   expandedDirs: Record<string, Set<string>>;
   /** In-flight import count per agent; count not bool so overlapping uploads compose. */
   importingAgents: Record<string, number>;
-  setOpenFilePath: (path: string | null) => void;
+  setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
+  setOpenFileEdit: (edit: boolean) => void;
   setRightTab: (tab: RightTab) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
@@ -63,9 +65,16 @@ export const createFilesSlice: StateCreator<
   openFilePath: null,
   rightTab: "files",
   openFileDirty: false,
+  openFileEdit: false,
   expandedDirs: {},
   importingAgents: {},
-  setOpenFilePath: (path) => set({ openFilePath: path, openFileDirty: false }),
+  setOpenFilePath: (path, opts) =>
+    set({
+      openFilePath: path,
+      openFileDirty: false,
+      openFileEdit: opts?.edit ?? false,
+    }),
+  setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
   setRightTab: (tab) => set({ rightTab: tab }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {

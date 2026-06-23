@@ -13,6 +13,7 @@ import {
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
   connectionStartOAuthInputSchema,
+  connectionUpdateInputSchema,
 } from "./schemas.js";
 
 export const connectionsRouter = t.router({
@@ -47,6 +48,12 @@ export const connectionsRouter = t.router({
   discoverMcp: manageCredentialsProcedure
     .input(connectionDiscoverMcpInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.discoverMcp(input)),
+
+  update: manageCredentialsProcedure
+    .input(connectionUpdateInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.update(input.id, input.value),
+    ),
 
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)

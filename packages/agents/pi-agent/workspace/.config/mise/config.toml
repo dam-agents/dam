@@ -4,6 +4,6 @@ minimum_release_age = "7d"
 
 # keep pi-coding-agent in sync with the pi-dynamic-providers extension's devDependency
 [tools]
-"npm:@earendil-works/pi-coding-agent" = "0.79.1"
+"npm:@earendil-works/pi-coding-agent" = "0.79.9"
 "npm:pi-acp" = "0.0.28"
 "npm:@zhafron/pi-memory" = "1.0.2"

@@ -11,7 +11,9 @@ interface TokenResponse {
   expires_in: number;
 }
 
-export async function getAccessToken(): Promise<string> {
+export async function getAccessToken(
+  user: { username: string; password: string } = testUser,
+): Promise<string> {
   const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
   const res = await fetch(url, {
     method: "POST",
@@ -19,8 +21,8 @@ export async function getAccessToken(): Promise<string> {
     body: new URLSearchParams({
       grant_type: "password",
       client_id: keycloakClientId,
-      username: testUser.username,
-      password: testUser.password,
+      username: user.username,
+      password: user.password,
     }),
   });
   if (!res.ok) {

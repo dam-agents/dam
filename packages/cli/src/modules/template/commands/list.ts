@@ -2,7 +2,7 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import { renderTable } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
 import {

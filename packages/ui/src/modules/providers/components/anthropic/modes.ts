@@ -1,31 +1,38 @@
 import { type EnvMapping, PROVIDERS } from "../../../../types.js";
 
-/** Ordered Mode keys — left→right toggle order, Zod enum source, and
- *  iteration order. */
+// Toggle order, Zod enum source, and iteration order.
 export const MODE_KEYS = ["oauth", "api-key"] as const;
 export type Mode = (typeof MODE_KEYS)[number];
 
-function mappingFor(modeKey: Mode): EnvMapping {
+function modeFor(modeKey: Mode) {
   const mode = PROVIDERS.anthropic.modes.find((m) => m.key === modeKey);
   if (!mode) throw new Error(`PROVIDERS.anthropic missing mode "${modeKey}"`);
-  return mode.defaultEnvMappings[0];
+  return mode;
 }
 
-/** UI presentation per mode. Placeholder + prefix are UI-only (the
- *  registry doesn't track them); `mapping` is the env-var entry the
- *  form sends to `createSecret`. */
+function prefixFor(modeKey: Mode): string {
+  const prefix = modeFor(modeKey).tokenPrefix;
+  if (prefix === undefined) {
+    throw new Error(`PROVIDERS.anthropic mode "${modeKey}" has no tokenPrefix`);
+  }
+  return prefix;
+}
+
+// `placeholder` is UI-only; everything else derives from the shared registry.
 export const MODES = {
   oauth: {
-    label: "OAuth Token",
+    label: modeFor("oauth").label,
     placeholder: "sk-ant-oat-…",
-    prefix: "sk-ant-oat-",
-    mapping: mappingFor("oauth"),
+    prefix: prefixFor("oauth"),
+    templateId: modeFor("oauth").templateId,
+    mapping: modeFor("oauth").defaultEnvMappings[0],
   },
   "api-key": {
-    label: "API Key",
+    label: modeFor("api-key").label,
     placeholder: "sk-ant-api-…",
-    prefix: "sk-ant-api-",
-    mapping: mappingFor("api-key"),
+    prefix: prefixFor("api-key"),
+    templateId: modeFor("api-key").templateId,
+    mapping: modeFor("api-key").defaultEnvMappings[0],
   },
 } as const satisfies Record<
   Mode,
@@ -33,6 +40,7 @@ export const MODES = {
     label: string;
     placeholder: string;
     prefix: string;
+    templateId: string;
     mapping: EnvMapping;
   }
 >;
@@ -41,9 +49,7 @@ export function detectMode(envName?: string): Mode {
   return envName === MODES["api-key"].mapping.envName ? "api-key" : "oauth";
 }
 
-// `claude setup-token` output often gets a newline inserted mid-string when
-// copied from a terminal, so strip all whitespace rather than just trimming
-// the ends.
+// `claude setup-token` output can pick up newlines on copy, so strip all whitespace.
 export function stripWhitespace(value: string): string {
   return value.replace(/\s+/g, "");
 }

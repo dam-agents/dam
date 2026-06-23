@@ -82,6 +82,20 @@ urls:
 #     - name: my-registry-secret
 imagePullSecrets: []
 
+# -- Annotations added to every chart-managed workload (Deployments,
+# StatefulSets and the setup/migration Jobs). Use for cluster-wide policy or
+# tooling that targets workload objects. Per-component `annotations` override
+# these on collision; chart-internal annotations (e.g. Helm hooks) always win.
+commonAnnotations: {}
+
+# -- Annotations added to the pod template of every chart-managed workload.
+# This is what injection operators read — e.g. set
+# `instrumentation.opentelemetry.io/inject-sdk: "true"` here to opt the whole
+# platform into OpenTelemetry auto-instrumentation. Per-component
+# `podAnnotations` override these; chart-internal annotations (config
+# checksums) always win.
+commonPodAnnotations: {}
+
 # -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
 # postgres, redis) AND controller-managed agent / fork pods. Set
 # `enabled: false` to drop all readiness/liveness/startup probes — escape
@@ -129,10 +143,37 @@ openshift:
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:
   enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
-  user: platform
-  # password is auto-generated if not set
-  password: null
+
+  # -- Three Postgres roles: one per service plus a dedicated SUPERUSER for
+  # DBA work. The two app roles are NOSUPERUSER and own only their own
+  # database, so a leaked app credential is bounded to one service's data.
+  # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
+  # DBA sessions are statement-logged by default. Passwords are
+  # auto-generated on first install if left null.
+  #
+  # `adminUser` is the cluster's bootstrap superuser (Postgres `POSTGRES_USER`
+  # at init). It defaults to `platform` — the name an existing single-role
+  # cluster already bootstrapped with — so an upgrade reuses that superuser
+  # in place rather than renaming it (Postgres forbids renaming the role you
+  # are connected as, and the bootstrap superuser cannot be demoted anyway).
+  #
+  # The role/database layout is applied by the idempotent SQL in
+  # `postgres.yaml` (ConfigMap key `01-roles.sql`), run both on first PGDATA
+  # init and by the post-install/post-upgrade migration Job
+  # (`postgres-migrate-roles.yaml`); the latter converges an existing
+  # single-superuser cluster with no manual SQL.
+  apiserverUser: platform_apiserver
+  apiserverPassword: null
+  keycloakUser: platform_keycloak
+  keycloakPassword: null
+  adminUser: platform
+  adminPassword: null
+
   storage: 5Gi
   storageClass: ""
   resources:
@@ -143,6 +184,38 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+  # -- Event logging. Authentication events (connect, disconnect, failed
+  # auth) and admin events (DDL — CREATE/ALTER/DROP, GRANT/REVOKE, ROLE
+  # changes) are surfaced on the pod's stderr so the external log
+  # collector picks them up. The image's default logging-collector +
+  # file output is disabled in favor of plain stderr (kubectl logs).
+  # These are passed to the server as `-c` flags (see postgres.yaml)
+  # because the image's postgresql.conf has no drop-in include dir.
+  #
+  # JSON-format logs aren't used: PG's `jsonlog` destination requires
+  # the file-based logging_collector, which writes to files instead of
+  # stderr. Plain text with a structured prefix is the canonical
+  # Postgres-in-K8s pattern; the external log shipper parses the
+  # prefix.
+  log:
+    # -- Prefix on every log line. Default is a key=value-ish layout:
+    # timestamp, pid, user@db (only on backend processes via %q), client
+    # host, application_name.
+    linePrefix: "%m [%p] %q%u@%d from %h app=%a "
+
+    # -- Authentication events (PG 18 enum). Comma-separated subset of:
+    # receipt, authentication, authorization, setup_durations. Failed
+    # auth is always logged regardless of this setting.
+    connections: "authentication,authorization"
+
+    # -- Log session-close events (with session duration).
+    disconnections: "on"
+
+    # -- Admin-statement audit. `ddl` covers CREATE / ALTER / DROP
+    # including roles and grants. Set to `all` for full query log
+    # (very noisy), `mod` to also catch INSERT/UPDATE/DELETE.
+    statement: "ddl"
+
 # -- Shared Redis instance.
 # Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
 # wake-ups. Persistence uses AOF with `everysec`; the
@@ -150,6 +223,10 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image: registry.access.redhat.com/hi/valkey:9.0
   port: 6379
   storage: 1Gi
@@ -165,6 +242,10 @@ redis:
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
   # version is pinned in `packages/keycloak-theme/Dockerfile`.
@@ -174,6 +255,13 @@ keycloak:
     pullPolicy: IfNotPresent
   configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
   port: 8080
+
+  # -- Additional Keycloak server features. The chart always enables a required
+  # base — `token-exchange` (the API server depends on it) and
+  # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
+  # single `--features=` arg (a second `--features` would override, not merge).
+  # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  extraFeatures: []
 
   # -- Admin credentials (for Keycloak admin console)
   admin:
@@ -245,6 +333,23 @@ keycloak:
     # readable `kubectl logs`.
     consoleOutput: "json"
 
+  # -- Extra environment variables appended verbatim to the Keycloak container.
+  # The chart does not model Keycloak's still-evolving OpenTelemetry options, so
+  # wire observability here. All signals push over OTLP to a collector — traces,
+  # metrics, and logs share one endpoint and one auth header:
+  #   extraEnv:
+  #     - name: KC_TRACING_ENABLED
+  #       value: "true"
+  #     - name: KC_TRACING_ENDPOINT
+  #       value: "http://otel-collector:4317"
+  #     - name: KC_TELEMETRY_HEADER_AUTHORIZATION  # token from a Secret, never inline
+  #       valueFrom:
+  #         secretKeyRef: { name: otel-creds, key: authorization }
+  # Each entry is a raw corev1.EnvVar (name/value or name/valueFrom). Appended
+  # after the chart's own env, so an entry reusing a built-in KC_ name overrides
+  # it (Kubernetes env is last-wins).
+  extraEnv: []
+
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.
   # Local dev and e2e tests (via values-local.yaml) enable it.
@@ -264,7 +369,7 @@ keycloak:
   db:
     host: ""
     port: 5432
-    user: platform
+    user: platform_keycloak
     password: null
     database: keycloak
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
@@ -330,6 +435,10 @@ ingress:
 
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/ui
     tag: "" # defaults to appVersion
@@ -345,6 +454,10 @@ ui:
 
 # -- API Server
 apiServer:
+  # -- Extra annotations for the Deployment object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/api-server
     tag: ""
@@ -512,7 +625,7 @@ apiServer:
   db:
     host: ""
     port: 5432
-    user: platform
+    user: platform_apiserver
     password: null
     database: platform
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
@@ -531,6 +644,12 @@ apiServer:
 
 # -- Controller (Go reconciler + scheduler)
 controller:
+  # -- Extra annotations for the controller Deployment object / its pod
+  # template (merged over commonAnnotations / commonPodAnnotations). These
+  # apply to the controller pod itself, not the agent pods it launches (those
+  # have their own knobs under controller.agent).
+  annotations: {}
+  podAnnotations: {}
   image:
     repository: quay.io/dam-agents/controller
     tag: ""
@@ -634,7 +753,13 @@ controller:
       # api-server for pod-files producers (currently one global value).
       agentHome: /home/agent
 
-      imagePullPolicy: IfNotPresent
+      # Left unset so Kubernetes applies its native, tag-based pull policy:
+      # `Always` for a mutable `:latest` (so a repushed tag is actually
+      # re-pulled, not served stale from the node cache) and `IfNotPresent`
+      # for the immutable sha/digest tags the harness images use. Hardcoding a
+      # value here forces it for ALL tags and silently strands `:latest` agents
+      # on a cached image. A template or agent can still set its own override.
+      imagePullPolicy: ""
       storageSize: "10Gi"
       resources:
         requests:

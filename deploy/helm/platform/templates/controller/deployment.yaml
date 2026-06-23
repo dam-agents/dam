@@ -9,6 +9,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.controller) | nindent 2 }}
 spec:
   replicas: {{ .Values.controller.replicas | default 1 }}
   selector:
@@ -20,6 +21,7 @@ spec:
       labels:
         {{- include "platform.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: controller
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.controller) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.controller.serviceAccountName" . }}

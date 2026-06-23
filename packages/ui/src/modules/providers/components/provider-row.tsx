@@ -9,18 +9,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-import {
-  type ProviderPresetType,
-  PROVIDERS,
-  type SecretView,
-} from "../../../types.js";
+import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
   description: string;
   subtitle?: string;
-  secret: SecretView | undefined;
+  connected: boolean;
   selected: boolean;
   selectable?: boolean;
   onConnect: () => void;
@@ -33,7 +29,7 @@ export function ProviderRow({
   type,
   description,
   subtitle,
-  secret,
+  connected,
   selected,
   selectable = true,
   onConnect,
@@ -43,7 +39,7 @@ export function ProviderRow({
 }: Props) {
   const name = PROVIDERS[type].displayName;
 
-  if (!secret) {
+  if (!connected) {
     return (
       <button
         type="button"

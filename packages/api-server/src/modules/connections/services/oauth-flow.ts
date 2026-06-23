@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import type {
   Connection,
   ConnectionAuthConfig,
@@ -11,7 +12,10 @@ import type { ConnectionsRepository } from "../infrastructure/connections-reposi
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
+import { upsertGitconfigContribution } from "../domain/gitconfig-contribution.js";
+import { resolveGitHubIdentity } from "../infrastructure/github-identity.js";
 import type { SecretStore } from "../../secret-store/index.js";
+import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -40,6 +44,7 @@ export function createOAuthFlowService(deps: {
   repo: ConnectionsRepository;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
+  runtimeMutator: RuntimeMutator;
   ownerId: string;
   callbackUrl: string;
 }): OAuthFlowService {
@@ -138,12 +143,60 @@ export function createOAuthFlowService(deps: {
         kind: template?.category === "mcp" ? "mcp" : "oauth_app",
       });
 
+      if (template?.id === "github") {
+        await applyGitHubIdentity(conn, tokens.accessToken, deps);
+      }
+
       return {
         connectionId: pending.ctx.connectionId,
         ownerId: pending.ctx.ownerId,
       };
     },
   };
+}
+
+// Best-effort: the token is already minted, so a failed identity lookup must
+// never fail the connection — identity lands on the next successful re-auth.
+async function applyGitHubIdentity(
+  conn: Connection,
+  accessToken: string,
+  deps: {
+    repo: ConnectionsRepository;
+    runtimeMutator: RuntimeMutator;
+  },
+): Promise<void> {
+  try {
+    const identity = await resolveGitHubIdentity(accessToken);
+    const next = upsertGitconfigContribution(conn.contributions, identity);
+    await deps.repo.updateContributions(conn.id, next);
+
+    // State-builder reads contributions live, so a version bump re-pushes them.
+    const agentIds = await deps.repo.listAgentsForConnection(conn.id);
+    for (const agentId of agentIds) {
+      await deps.runtimeMutator.bump(agentId, []);
+      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+    }
+  } catch (err) {
+    securityLog("warn", "oauth.github_identity", {
+      category: "credential",
+      actor: conn.ownerId,
+      actorKind: "user",
+      target: conn.id,
+      result: "failure",
+      detail: githubIdentityErrorDetail(err),
+    });
+  }
+}
+
+function githubIdentityErrorDetail(err: unknown): Record<string, unknown> {
+  if (err instanceof ZodError) {
+    return {
+      error: "ZodError",
+      fields: err.issues.map((i) => i.path.join(".")),
+    };
+  }
+  if (err instanceof Error) return { error: err.name, message: err.message };
+  return { error: String(err) };
 }
 
 async function buildProvider(

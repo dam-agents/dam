@@ -21,6 +21,7 @@ import {
   type FileContent,
   useFileWriteMutation,
 } from "../api/queries.js";
+import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { CodeEditor } from "./code-editor.js";
 
 interface Props {
@@ -53,13 +54,6 @@ function hexDump(base64: string): string {
   return lines.join("\n");
 }
 
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const raw = atob(base64);
-  const bytes = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-  return new Blob([bytes], { type: mimeType });
-}
-
 function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith("image/");
 }
@@ -70,21 +64,30 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isSvg = mime === "image/svg+xml";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
   const isPdf = mime === "application/pdf";
-  const hasContent = !!content;
   const filename = path.split("/").pop();
-  const editable = !binary && hasContent;
+  const editable = !binary && !tooLarge;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showConfirm = useStore((s) => s.showConfirm);
+  const openFileEdit = useStore((s) => s.openFileEdit);
+  const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(editable && openFileEdit);
   const [draft, setDraft] = useState(content);
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
     file.mtimeMs,
   );
+
+  // If the user opens already opened file for editiing
+  useEffect(() => {
+    if (openFileEdit) {
+      if (editable) setEditMode(true);
+      setOpenFileEdit(false);
+    }
+  }, [openFileEdit, editable, setOpenFileEdit]);
 
   const dirty = editMode && draft !== content;
   useUnsavedGuard(dirty);
@@ -177,18 +180,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     return () => URL.revokeObjectURL(url);
   }, [content, isPdf]);
 
-  const downloadFile = useCallback(() => {
-    if (!content) return;
-    const downloadName = path.split("/").pop() ?? "download";
-    const blob = binary
-      ? base64ToBlob(content, mime ?? "application/octet-stream")
-      : new Blob([content], { type: mime ?? "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = downloadName;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [path, content, binary, mime]);
+  const downloadFile = useCallback(() => downloadFileContent(file), [file]);
 
   const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
@@ -243,7 +235,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             </Button>
           </>
         )}
-        {hasContent && !editMode && (
+        {!tooLarge && !editMode && (
           <Button
             variant="ghost"
             size="sm"

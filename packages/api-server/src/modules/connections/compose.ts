@@ -99,6 +99,7 @@ export function composeConnectionsForOwner(opts: {
     repo,
     templates: opts.templates,
     secretStore: opts.secretStore,
+    runtimeMutator: opts.runtimeMutator,
     ownerId: opts.ownerId,
     callbackUrl: opts.oauthCallbackUrl,
   });

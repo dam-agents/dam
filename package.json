@@ -14,6 +14,22 @@
             "optional": true
           }
         }
+      },
+      "keycloakify": {
+        "peerDependencies": {
+          "react": "*",
+          "react-dom": "*",
+          "@types/react": "*",
+          "@types/react-dom": "*"
+        },
+        "peerDependenciesMeta": {
+          "@types/react": {
+            "optional": true
+          },
+          "@types/react-dom": {
+            "optional": true
+          }
+        }
       }
     },
     "overrides": {

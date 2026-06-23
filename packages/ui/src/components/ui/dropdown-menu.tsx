@@ -1,7 +1,12 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { cva, type VariantProps } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
 import * as React from "react";
 
+import {
+  menuContentClassName,
+  menuItemVariants,
+  menuSeparatorClassName,
+} from "@/components/ui/menu-styles";
 import { cn } from "@/lib/utils";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -21,7 +26,8 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-50 min-w-[160px] rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          menuContentClassName,
+          "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
         {...props}
@@ -30,30 +36,15 @@ function DropdownMenuContent({
   );
 }
 
-const dropdownMenuItemVariants = cva(
-  "flex h-9 w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 text-[14px] outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-  {
-    variants: {
-      tone: {
-        default:
-          "data-[highlighted]:bg-muted data-[highlighted]:text-foreground",
-        danger:
-          "data-[highlighted]:bg-danger-light data-[highlighted]:text-danger text-danger",
-      },
-    },
-    defaultVariants: { tone: "default" },
-  },
-);
-
 function DropdownMenuItem({
   className,
   tone,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> &
-  VariantProps<typeof dropdownMenuItemVariants>) {
+  VariantProps<typeof menuItemVariants>) {
   return (
     <DropdownMenuPrimitive.Item
-      className={cn(dropdownMenuItemVariants({ tone }), className)}
+      className={cn(menuItemVariants({ tone }), className)}
       {...props}
     />
   );
@@ -65,7 +56,7 @@ function DropdownMenuSeparator({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn("my-1 h-px bg-border", className)}
+      className={cn(menuSeparatorClassName, className)}
       {...props}
     />
   );

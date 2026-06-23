@@ -13,21 +13,17 @@ export function useFileTree(selectedAgent: string | null) {
   const openFilePath = useStore((s) => s.openFilePath);
   const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
   const setRightTab = useStore((s) => s.setRightTab);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const openFileHandler = useCallback(
-    async (path: string) => {
+    async (path: string, opts?: { edit?: boolean }) => {
       if (!selectedAgent) return;
       if (openFilePath === path) {
-        if (openFileDirty) {
-          const ok = await showConfirm(
-            "Discard unsaved changes?",
-            "Unsaved changes",
-          );
-          if (!ok) return;
-        }
-        setOpenFilePath(null);
+        // Re-selecting the open file resurfaces it; the viewer owns closing.
+        if (opts?.edit) setOpenFileEdit(true);
+        setRightTab("files");
         return;
       }
       if (openFileDirty) {
@@ -41,7 +37,7 @@ export function useFileTree(selectedAgent: string | null) {
         // Pre-warm the content cache before switching the viewer so the UI
         // doesn't flash empty while the poll-driven subscription catches up.
         await fetchFileContent(selectedAgent, path);
-        setOpenFilePath(path);
+        setOpenFilePath(path, opts);
         setRightTab("files");
       } catch (err) {
         emitToast({
@@ -58,6 +54,7 @@ export function useFileTree(selectedAgent: string | null) {
       openFilePath,
       openFileDirty,
       setOpenFilePath,
+      setOpenFileEdit,
       setRightTab,
       showConfirm,
     ],

@@ -96,6 +96,10 @@ export const templateInput = z.object({
   configInput: z.boolean().optional(),
   label: z.string().optional(),
   hint: z.string().optional(),
+  // Validation a config input declares, surfaced so clients can validate before submit (the server enforces the same).
+  pattern: z.string().optional(),
+  patternHint: z.string().optional(),
+  enumValues: z.array(z.string()).optional(),
 });
 export type TemplateInput = z.infer<typeof templateInput>;
 
@@ -140,6 +144,8 @@ export interface ConnectionsService {
     connectionId: string,
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
+
+  update(id: string, value: string): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 

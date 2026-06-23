@@ -28,6 +28,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.keycloak) | nindent 2 }}
 spec:
   replicas: 1
   strategy:
@@ -41,7 +42,7 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
-      annotations: {}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.keycloak) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       initContainers:
@@ -58,7 +59,7 @@ spec:
         - name: keycloak
           image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy | default "IfNotPresent" }}
-          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1"]
+          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1{{ range .Values.keycloak.extraFeatures }},{{ . }}{{ end }}"]
           ports:
             - containerPort: {{ .Values.keycloak.port }}
               name: http
@@ -73,7 +74,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.keycloak.db.password.secretName" . }}
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_KEYCLOAK_PASSWORD
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: {{ .Values.keycloak.admin.user | quote }}
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
@@ -102,6 +103,9 @@ spec:
             {{- if eq .Values.scheme "https" }}
             - name: KC_HTTP_ENABLED
               value: "true"
+            {{- end }}
+            {{- with .Values.keycloak.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:

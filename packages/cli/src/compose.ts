@@ -3,6 +3,7 @@ import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeApprovalModule } from "./modules/approval/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { createBrowserOpener } from "./modules/auth/index.js";
+import { composeChannelModule } from "./modules/channel/compose.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
 import { composeConnectionModule } from "./modules/connection/compose.js";
@@ -125,6 +126,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     createEgressService: egress.exports.createService,
   });
 
+  const channel = composeChannelModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const program = new Command();
   program
     .name("dam")
@@ -144,6 +152,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of schedule.commands) program.addCommand(command);
   for (const command of skill.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);
+  for (const command of channel.commands) program.addCommand(command);
 
   return program;
 }

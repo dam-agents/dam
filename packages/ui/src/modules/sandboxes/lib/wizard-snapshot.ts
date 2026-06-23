@@ -12,7 +12,14 @@ export const wizardSnapshotSchema = z.object({
   templateId: z.string().nullable(),
   customImage: z.string(),
   name: z.string(),
-  providerSecretId: z.string().nullable(),
+  // A provider can be a Connection (new) or a legacy provider Secret.
+  providerRef: z
+    .discriminatedUnion("source", [
+      z.object({ source: z.literal("connection"), id: z.string() }),
+      z.object({ source: z.literal("secret"), id: z.string() }),
+    ])
+    .nullable()
+    .default(null),
   egressPreset: egressPresetSchema,
   connectionIds: z.array(z.string()),
   // Defaulted so a snapshot written by an earlier build still parses.
@@ -27,7 +34,7 @@ export const EMPTY_SNAPSHOT: WizardSnapshot = {
   templateId: null,
   customImage: "",
   name: "",
-  providerSecretId: null,
+  providerRef: null,
   egressPreset: "trusted",
   connectionIds: [],
   pendingConnectionId: null,

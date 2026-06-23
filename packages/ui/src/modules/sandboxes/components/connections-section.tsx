@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  type ConnectionTemplateView,
+  type ConnectionView,
+  PROVIDER_TEMPLATE_IDS,
+} from "api-server-api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -19,7 +23,6 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../../connections/internal-only.js";
-import { PROVIDER_TEMPLATE_IDS } from "../../connections/lib/provider-templates.js";
 import { CardList } from "./card-list.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
@@ -50,7 +53,11 @@ export function ConnectionsSection({
   const [showCatalog, setShowCatalog] = useState(false);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = connectionsQ.data ?? NO_CONNECTIONS;
+  // Provider connections are managed in the Provider section above; keep them
+  // out of the generic list so they aren't offered twice.
+  const connections = (connectionsQ.data ?? NO_CONNECTIONS).filter(
+    (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  );
 
   const templateById = useMemo(
     () => new Map(allTemplates.map((t) => [t.id, t])),

@@ -1,4 +1,5 @@
 import http from "node:http";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -424,3 +425,28 @@ server.listen(config.PORT, () => {
       process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
 });
+
+const eld = monitorEventLoopDelay({ resolution: 20 });
+eld.enable();
+setInterval(() => {
+  const maxMs = eld.max / 1e6;
+  if (maxMs >= 1_000)
+    process.stderr.write(
+      `[eventloop] blocked up to ${Math.round(maxMs)}ms ` +
+        `(p99 ${Math.round(eld.percentile(99) / 1e6)}ms) in last 10s\n`,
+    );
+  eld.reset();
+}, 10_000).unref();
+
+let shuttingDown = false;
+function gracefulShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  process.stderr.write(`[shutdown] ${signal} received, closing\n`);
+  server.close();
+  for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
+  acpRuntime.shutdown();
+  setTimeout(() => process.exit(0), 3_000).unref();
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

@@ -20,8 +20,9 @@ import {
 } from "../../../components/modal.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { useCreateConnection } from "../api/mutations.js";
+import { useCreateConnection, useDiscoverMcp } from "../api/mutations.js";
 import { useOAuthPopup } from "../hooks/use-oauth-popup.js";
+import { validateMcpUrl } from "../lib/mcp-url.js";
 
 export function TemplateCreateForm({
   template,
@@ -42,6 +43,7 @@ export function TemplateCreateForm({
   popupOAuth?: boolean;
 }) {
   const create = useCreateConnection();
+  const discover = useDiscoverMcp();
 
   const [name, setName] = useState(() => slugifyTemplateName(template.name));
   const [fields, setFields] = useState<Record<string, string>>(() => {
@@ -70,7 +72,7 @@ export function TemplateCreateForm({
   });
 
   const needsOAuth = template.authKind === "oauth";
-  const pending = create.isPending || authorizing;
+  const pending = create.isPending || authorizing || discover.isPending;
 
   const inputsByName = useMemo(() => {
     const map = new Map<string, ConnectionTemplateInput>();
@@ -171,6 +173,32 @@ export function TemplateCreateForm({
       return;
     }
     if (needsOAuth) {
+      // Custom MCP servers are reached by a user-typed URL. Verify it exposes
+      // OAuth discovery metadata before opening any tab, so an unreachable or
+      // non-OAuth URL fails inline here instead of flashing a popup that the
+      // create call would immediately close. Premade providers carry no `url`
+      // input and skip this, keeping their synchronous popup.
+      const mcpUrl = submittedValue("url");
+      if (mcpUrl) {
+        const urlError = validateMcpUrl(mcpUrl);
+        if (urlError) {
+          setError(urlError);
+          return;
+        }
+        try {
+          const { auth } = await discover.mutateAsync({ url: mcpUrl });
+          if (auth !== "oauth") {
+            setError(
+              "Couldn't find OAuth discovery metadata at this URL. Check that it points to an MCP server that supports OAuth (we look for /.well-known/oauth-* endpoints).",
+            );
+            return;
+          }
+        } catch {
+          // A transport/server failure is surfaced by the mutation's error toast.
+          return;
+        }
+      }
+
       // Open the popup synchronously (or it gets blocked); navigate it below.
       const popup = popupOAuth ? openPopup() : null;
       if (popup) {
@@ -305,13 +333,15 @@ export function TemplateCreateForm({
           disabled={pending}
           data-testid="connection-create-submit"
         >
-          {authorizing
-            ? "Redirecting…"
-            : pending
-              ? "…"
-              : needsOAuth
-                ? "Create + Authorize"
-                : "Create"}
+          {discover.isPending
+            ? "Verifying…"
+            : authorizing
+              ? "Redirecting…"
+              : pending
+                ? "…"
+                : needsOAuth
+                  ? "Create + Authorize"
+                  : "Create"}
         </Button>
       </DialogFooter>
     </Modal>

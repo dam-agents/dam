@@ -54,13 +54,21 @@ minimumReleaseAgeExclude:
   # actually loads against them (issue #375). The fork ships its core/ai/tui
   # packages at the same version; bump all four together with the mise
   # config. Safe to drop from this list once the chosen version ages past 7 days.
-  - "@earendil-works/pi-coding-agent@0.79.1"
-  - "@earendil-works/pi-agent-core@0.79.1"
-  - "@earendil-works/pi-ai@0.79.1"
-  - "@earendil-works/pi-tui@0.79.1"
+  - "@earendil-works/pi-coding-agent@0.79.9"
+  - "@earendil-works/pi-agent-core@0.79.9"
+  - "@earendil-works/pi-ai@0.79.9"
+  - "@earendil-works/pi-tui@0.79.9"
   # form-data 4.0.6 fixes CVE-2026-12143 (HIGH), pulled in via the override
   # above; published <7 days ago. Safe to drop once it ages past 7 days.
   - "form-data@4.0.6"
+  # undici 8.5.0 fixes the 8.x line of the undici advisory cluster (CVE-2026-12151
+  # HIGH et al.), pulled in by @earendil-works/pi-coding-agent@0.79.9; published
+  # 2026-06-15 (<7 days). Safe to drop once it ages past 7 days.
+  - "undici@8.5.0"
+  # @mistralai/mistralai 2.2.6 is pulled in transitively by @earendil-works/pi-ai
+  # @0.79.9 (the pi-coding-agent bump above); published 2026-06-16 (<7 days).
+  # Safe to drop once it ages past 7 days.
+  - "@mistralai/mistralai@2.2.6"
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

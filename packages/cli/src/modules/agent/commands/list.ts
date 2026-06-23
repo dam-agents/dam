@@ -4,7 +4,7 @@ import type { AgentService } from "../services/agent-service.js";
 import { renderTable } from "../../shared/render-table.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "./errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,

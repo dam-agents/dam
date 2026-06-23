@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { ALL_SCOPES, scopeSchema, type Scope } from "api-server-api";
 import type { ConfigService } from "../../cli/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { printTrpcError } from "../../shared/trpc/print.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -95,9 +96,7 @@ export function buildTokenCreateCommand(deps: TokenCreateCommandDeps): Command {
               process.stderr.write(`expires: ${result.key.expiresAt}\n`);
           }
         } catch (err) {
-          process.stderr.write(
-            `error: ${err instanceof Error ? err.message : String(err)}\n`,
-          );
+          printTrpcError(err, resolved.value.server);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
       },

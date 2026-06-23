@@ -12,6 +12,19 @@ export function useCreateConnection() {
   });
 }
 
+export function useUpdateConnection() {
+  return useMutation({
+    ...trpc.connections.update.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      errorToast: "Couldn't update connection",
+    },
+  });
+}
+
 export function useDeleteConnection() {
   return useMutation({
     ...trpc.connections.delete.mutationOptions(),

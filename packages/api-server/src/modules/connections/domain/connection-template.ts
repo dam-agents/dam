@@ -45,6 +45,7 @@ export interface ConfigInputSpec {
   label: string;
   hint?: string;
   pattern?: string;
+  patternHint?: string;
   enumValues?: readonly string[];
 }
 
@@ -228,6 +229,9 @@ function inputsFor(
           configInput: true,
           label: spec.label,
           ...(spec.hint ? { hint: spec.hint } : {}),
+          ...(spec.pattern ? { pattern: spec.pattern } : {}),
+          ...(spec.patternHint ? { patternHint: spec.patternHint } : {}),
+          ...(spec.enumValues ? { enumValues: [...spec.enumValues] } : {}),
         });
       }
       return out;

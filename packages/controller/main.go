@@ -96,8 +96,11 @@ func main() {
 	})
 }
 
-// setupLogger installs the slog handler at the LOG_LEVEL level (debug|info|warn|
-// error, default info) — debug surfaces the per-reconcile phase timing.
+// setupLogger installs the JSON slog handler at the LOG_LEVEL level (debug|info|
+// warn|error, default info) — debug surfaces the per-reconcile phase timing.
+// JSON on stderr keeps the controller ready for OTel zero-code instrumentation;
+// keep it free of an in-process OTel TracerProvider, which would conflict with
+// the Operator-injected eBPF auto-SDK.
 func setupLogger() {
 	level := slog.LevelInfo
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
@@ -106,7 +109,7 @@ func setupLogger() {
 			level = slog.LevelInfo
 		}
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }
 
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {

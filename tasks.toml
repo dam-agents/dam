@@ -186,10 +186,13 @@ echo "Deleting agents in platform-agents..."
 echo "Dropping + recreating the platform database..."
 "${KCTL[@]}" scale deployment platform-apiserver --replicas=0
 "${KCTL[@]}" wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
+# Recreate owned by the api-server's NOSUPERUSER role so it can run its
+# migrations ($POSTGRES_USER is the admin superuser; $POSTGRES_APISERVER_USER
+# is the platform DB's owning role — both are set on the postgres pod).
 "${KCTL[@]}" exec platform-postgres-0 -- bash -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
      -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
-     -c "CREATE DATABASE platform;"'
+     -c "CREATE DATABASE platform OWNER $POSTGRES_APISERVER_USER;"'
 "${KCTL[@]}" scale deployment platform-apiserver --replicas=1
 "${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=120s
 

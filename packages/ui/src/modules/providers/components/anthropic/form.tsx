@@ -17,11 +17,15 @@ import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 export function AnthropicForm({
   variant,
   initialMode,
+  lockMode = false,
   onSave,
   onCancel,
 }: {
   variant: "wizard" | "edit";
   initialMode: Mode;
+  // Editing a connection rotates its value only — the template (and thus the
+  // mode) can't change, so the toggle is locked to avoid a silent mismatch.
+  lockMode?: boolean;
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
@@ -95,19 +99,29 @@ export function AnthropicForm({
       title="Anthropic"
       description={
         isEdit
-          ? "Pick mode and paste a new credential to replace the existing one."
+          ? lockMode
+            ? `Paste a new ${MODES[initialMode].label} credential to replace the existing one.`
+            : "Pick mode and paste a new credential to replace the existing one."
           : "Required for Claude Code agents. Pick the mode that matches your credential."
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <Controller
-        control={control}
-        name="mode"
-        render={({ field }) => (
-          <ModeToggle mode={field.value} onChange={field.onChange} />
-        )}
-      />
+      {lockMode ? (
+        <div className="flex items-center gap-1 border-b">
+          <span className="h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] border-primary text-primary flex items-center">
+            {MODES[initialMode].label}
+          </span>
+        </div>
+      ) : (
+        <Controller
+          control={control}
+          name="mode"
+          render={({ field }) => (
+            <ModeToggle mode={field.value} onChange={field.onChange} />
+          )}
+        />
+      )}
 
       {mode === "oauth" && <QuickSetupHint />}
 

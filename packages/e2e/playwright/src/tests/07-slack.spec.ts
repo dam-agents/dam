@@ -4,7 +4,17 @@ import { baseUrl, testUser2 } from "../config.js";
 import { waitForAgentRunning } from "../lib/agents.js";
 import { createApiClient } from "../lib/api-client.js";
 import { getAccessToken } from "../lib/auth.js";
-import { agentName } from "../lib/fixtures.js";
+import { ensureCustomHeaderConnection } from "../lib/connections.js";
+import {
+  agentName,
+  connectionHost,
+  echoUrl,
+  foreignConnectionName,
+  foreignEnvName,
+  foreignSentinel,
+  headerName,
+  valueFormat,
+} from "../lib/fixtures.js";
 
 const slackChannelId = "C-E2E-TRACER";
 const foreignSlackUserId = "U-E2E-FOREIGN";
@@ -131,5 +141,56 @@ test("foreign user mention forks the agent and the reply lands back in the threa
         (r.kind === "message" && r.text.startsWith("Error:")),
     );
     expect(failures).toEqual([]);
+  });
+});
+
+test("foreign-user fork injects the foreign user's credential on egress", async () => {
+  test.setTimeout(420_000);
+
+  const token = await getAccessToken();
+  const api = createApiClient(token);
+  await waitForAgentRunning(api, agentName);
+
+  await test.step("foreign user creates their own credential connection", async () => {
+    const foreignApi = createApiClient(await getAccessToken(testUser2));
+    await ensureCustomHeaderConnection(foreignApi, {
+      name: foreignConnectionName,
+      host: connectionHost,
+      headerName,
+      valueFormat,
+      value: foreignSentinel,
+      envName: foreignEnvName,
+    });
+  });
+
+  await test.step("foreign mention forks and the fork egress carries the foreign credential", async () => {
+    await api.e2e.slackResetOutbound.mutate();
+    await api.e2e.slackFireMention.mutate({
+      user: foreignSlackUserId,
+      channel: slackChannelId,
+      ts: "1700000002.000100",
+      text: `__FETCH__ ${echoUrl}`,
+    });
+
+    let replyText = "";
+    await expect
+      .poll(
+        async () => {
+          const { records } = await api.e2e.slackReadOutbound.query();
+          const reply = records.find(
+            (r) => r.kind === "message" && r.text.includes("[fetch "),
+          );
+          replyText = reply && reply.kind === "message" ? reply.text : "";
+          return replyText !== "";
+        },
+        {
+          timeout: 300_000,
+          intervals: [5_000],
+          message: "fork did not post the egress result back to the thread",
+        },
+      )
+      .toBe(true);
+
+    expect(replyText).toContain(foreignSentinel);
   });
 });

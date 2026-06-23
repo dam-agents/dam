@@ -1,8 +1,11 @@
 import type { SecretType } from "api-server-api";
-import { isProviderPresetType, PROVIDERS } from "api-server-api";
+import {
+  isProviderPresetType,
+  PROVIDERS,
+  providerTypeForTemplateId,
+} from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
-import { providerTemplateDisplayName } from "../../connections/lib/provider-templates.js";
 
 export interface SandboxSubtitleLookup {
   templateNameById: ReadonlyMap<string, string>;
@@ -31,8 +34,8 @@ function providerLabel(
 ): string | null {
   for (const connectionId of agent.grantedConnectionIds) {
     const templateId = lookup.connectionTemplateIdById.get(connectionId);
-    const name = templateId ? providerTemplateDisplayName(templateId) : null;
-    if (name) return name;
+    const preset = templateId ? providerTypeForTemplateId(templateId) : null;
+    if (preset) return PROVIDERS[preset].displayName;
   }
   // Secrets fallback for pre-Connections provider grants — delete after the
   // #601 cutover.

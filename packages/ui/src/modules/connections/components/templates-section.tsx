@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  type ConnectionTemplateView,
+  type ConnectionView,
+  PROVIDER_TEMPLATE_IDS,
+} from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -12,7 +16,6 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../internal-only.js";
-import { PROVIDER_TEMPLATE_IDS } from "../lib/provider-templates.js";
 import {
   ConnectionAction,
   ConnectionCatalogRow,

@@ -5,6 +5,10 @@ import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
+import {
+  type ProviderRef,
+  sameProviderRef,
+} from "../../../providers/components/provider-item.js";
 import { ProviderSection } from "../../../providers/components/provider-section.js";
 import type {
   EgressPreset,
@@ -40,7 +44,7 @@ const NETWORK_PRESETS: { value: EgressPreset; label: string; help: string }[] =
 
 interface Props {
   name: string;
-  providerSecretId: string | null;
+  providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
   showRegistry: boolean;
   registryCredential: RegistryCredential;
@@ -51,7 +55,7 @@ interface Props {
 
 export function SetupStep({
   name,
-  providerSecretId,
+  providerRef,
   egressPreset,
   showRegistry,
   registryCredential,
@@ -64,7 +68,7 @@ export function SetupStep({
     registryFilledCount(registryCredential) > 0 &&
     registryFilledCount(registryCredential) < 3;
   const canContinue =
-    name.trim().length > 0 && providerSecretId !== null && !registryPartial;
+    name.trim().length > 0 && providerRef !== null && !registryPartial;
 
   return (
     <div>
@@ -89,11 +93,11 @@ export function SetupStep({
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
         <ProviderSection
-          selectedSecretId={providerSecretId}
-          onSelect={(secretId) => update({ providerSecretId: secretId })}
-          onProviderRemoved={(secretId) => {
-            if (providerSecretId === secretId)
-              update({ providerSecretId: null });
+          selected={providerRef}
+          onSelect={(ref) => update({ providerRef: ref })}
+          onProviderRemoved={(ref) => {
+            if (providerRef && sameProviderRef(providerRef, ref))
+              update({ providerRef: null });
           }}
           autoSelectFirst
           listClassName="md:-ml-4"

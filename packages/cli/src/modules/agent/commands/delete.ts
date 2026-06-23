@@ -3,11 +3,8 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-  printServiceError,
-} from "./errors.js";
+import { exitCodeForResolveError, printResolveError } from "./errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import {
   EXIT_BELOW_FLOOR,
