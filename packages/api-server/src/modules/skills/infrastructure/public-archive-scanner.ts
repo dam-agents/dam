@@ -3,7 +3,9 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
+import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "./git-host.js";
 
 /**
@@ -116,27 +118,35 @@ export async function computeContentHash(absDir: string): Promise<string> {
 
 async function findSkillDirs(repoDir: string): Promise<string[]> {
   const found: string[] = [];
-  const candidates = [path.join(repoDir, "skills"), repoDir];
-  for (const root of candidates) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const ent of entries) {
-      if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-      const dir = path.join(root, ent.name);
-      try {
-        await fs.access(path.join(dir, "SKILL.md"));
-        found.push(path.relative(repoDir, dir));
-      } catch {
-        /* no SKILL.md → not a skill dir */
-      }
-    }
-    if (found.length > 0) return found;
+  for (const root of SKILL_SOURCE_ROOTS) {
+    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
   }
-  return found;
+  if (found.length > 0) return found;
+  return skillDirsUnder(repoDir, repoDir);
+}
+
+async function skillDirsUnder(
+  repoDir: string,
+  root: string,
+): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+    const dir = path.join(root, ent.name);
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+      out.push(path.relative(repoDir, dir));
+    } catch {
+      /* no SKILL.md → not a skill dir */
+    }
+  }
+  return out;
 }
 
 /**
@@ -188,7 +198,7 @@ export async function scanPublicGithubArchive(
     const repoDir = path.join(tmp, extracted[0].name);
 
     const skillDirs = await findSkillDirs(repoDir);
-    const out = await Promise.all(
+    const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);
         const content = await fs.readFile(
@@ -206,7 +216,14 @@ export async function scanPublicGithubArchive(
         };
       }),
     );
-    return out.sort((a, b) => a.name.localeCompare(b.name));
+    const { kept, dropped } = dedupeByName(scanned);
+    for (const d of dropped) {
+      getLogger().warn(
+        { source: gitUrl, name: d.name },
+        "skills scan: dropped same-name skill from a later source root",
+      );
+    }
+    return kept.sort((a, b) => a.name.localeCompare(b.name));
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

@@ -5,7 +5,7 @@ import type {
   ScannedSkill,
   SkillsDomainError,
 } from "agent-runtime-api";
-import { err, ok } from "agent-runtime-api";
+import { dedupeByName, err, ok } from "agent-runtime-api";
 import {
   detectGithubOwnerRepo,
   type DetectedOwnerRepo,
@@ -18,6 +18,7 @@ export interface ScanDeps {
   github: GitHubRestClient;
   git: GitProtocolClient;
   repo: LocalSkillRepository;
+  log: (msg: string) => void;
 }
 
 /**
@@ -36,8 +37,17 @@ export async function runScan(
   input: SkillScanInput,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
-  if (host) return scanGithub(deps, input.source, host);
-  return scanGitClone(deps, input.source);
+  const res = host
+    ? await scanGithub(deps, input.source, host)
+    : await scanGitClone(deps, input.source);
+  if (!res.ok) return res;
+  const { kept, dropped } = dedupeByName(res.value);
+  for (const d of dropped) {
+    deps.log(
+      `scan ${input.source}: dropped same-name skill "${d.name}" from a later source root`,
+    );
+  }
+  return ok(kept);
 }
 
 async function scanGithub(

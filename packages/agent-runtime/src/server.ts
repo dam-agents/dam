@@ -73,6 +73,7 @@ const runtimeManifest = loadManifest(manifestPath);
 const filesService = createFilesService(homeDir);
 const skillsService = composeSkills({
   skillPaths: skillRefPaths(runtimeManifest, homeDir),
+  log: (msg) => process.stderr.write(`[skills] ${msg}\n`),
 });
 const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>

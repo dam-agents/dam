@@ -9,7 +9,7 @@ import type {
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
-import { err, ok } from "agent-runtime-api";
+import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
@@ -54,11 +54,12 @@ export interface LocalSkillRepository {
     opts: { stripComponents?: number },
   ) => Promise<void>;
   /** Walk a freshly-cloned/extracted repo and return every directory
-   *  (relative to `repoDir`) that contains a SKILL.md. Search order:
-   *  `skills/*` first, fall back to top-level `*`. */
+   *  (relative to `repoDir`) that contains a SKILL.md. Unions the deliberate
+   *  `SKILL_SOURCE_ROOTS` in order; top-level `*` only when none matched.
+   *  May contain same-name collisions — callers dedupe via `dedupeByName`. */
   findSkillDirsInClone: (repoDir: string) => Promise<string[]>;
   /** Resolve the directory inside a clone where the named skill lives.
-   *  Tries `skills/<name>/` first, then `<name>/`. */
+   *  Tries each `SKILL_SOURCE_ROOTS`/<name> in order, then top-level <name>. */
   resolveSkillDirInClone: (
     repoDir: string,
     name: SkillName,
@@ -251,35 +252,44 @@ function assertSafeTarEntry(entry: string): void {
 
 async function findSkillDirsInClone(repoDir: string): Promise<string[]> {
   const found: string[] = [];
-  const candidates = [path.join(repoDir, "skills"), repoDir];
-  for (const root of candidates) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const ent of entries) {
-      if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-      const dir = path.join(root, ent.name);
-      try {
-        await fs.access(path.join(dir, "SKILL.md"));
-        found.push(path.relative(repoDir, dir));
-      } catch {}
-    }
-    if (found.length > 0) return found;
+  for (const root of SKILL_SOURCE_ROOTS) {
+    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
   }
-  return found;
+  if (found.length > 0) return found;
+  return skillDirsUnder(repoDir, repoDir);
+}
+
+async function skillDirsUnder(
+  repoDir: string,
+  root: string,
+): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+    const dir = path.join(root, ent.name);
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+      out.push(path.relative(repoDir, dir));
+    } catch {}
+  }
+  return out;
 }
 
 async function resolveSkillDirInClone(
   repoDir: string,
   name: SkillName,
 ): Promise<Result<string, SkillsDomainError>> {
-  for (const candidate of [
-    path.join(repoDir, "skills", name),
+  const candidates = [
+    ...SKILL_SOURCE_ROOTS.map((root) => path.join(repoDir, root, name)),
     path.join(repoDir, name),
-  ]) {
+  ];
+  for (const candidate of candidates) {
     try {
       await fs.access(path.join(candidate, "SKILL.md"));
       return ok(candidate);
