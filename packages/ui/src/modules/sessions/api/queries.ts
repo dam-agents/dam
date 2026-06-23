@@ -8,8 +8,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
-const TERMINAL_RECONCILE_POLL_MS = 4_000;
-const TERMINAL_RECONCILE_DEADLINE_MS = 60_000;
+const STATUS_POLL_MS = 3_000;
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
@@ -35,6 +34,7 @@ export function optimisticInsertSession(
     experimentId: null,
     title: null,
     updatedAt: null,
+    running: false,
   };
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
@@ -72,7 +72,6 @@ export function useAcpSessions(
   includeChannel: boolean,
   options?: {
     enabled?: boolean;
-    pollActive?: boolean;
     activeSessionId?: string | null;
   },
 ) {
@@ -101,22 +100,9 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
-    // Terminal mode has no per-turn refresh; poll the active session until it reconciles to a titled listed session.
-    refetchInterval: options?.pollActive
-      ? (query) => {
-          const id = options.activeSessionId;
-          if (!id) return false;
-          const active = (query.state.data ?? []).find(
-            (s) => s.sessionId === id,
-          );
-          if (!active || active.title) return false;
-          const age = Date.now() - Date.parse(active.createdAt);
-          return age < TERMINAL_RECONCILE_DEADLINE_MS
-            ? TERMINAL_RECONCILE_POLL_MS
-            : false;
-        }
-      : false,
-    staleTime: 5_000,
+    // Poll while running so per-session status dots and harness-set titles stay live.
+    refetchInterval: live ? STATUS_POLL_MS : false,
+    staleTime: STATUS_POLL_MS,
     meta: { errorToast: "Couldn't refresh session list" },
   });
 }

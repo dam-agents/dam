@@ -4,12 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import {
+  SESSION_STATUS_DISPLAY,
+  type SessionStatus,
+} from "../session-status.js";
+
 const LONG_PRESS_MS = 400;
 
 interface Props {
   session: SessionView;
   active: boolean;
-  hasPending: boolean;
+  status: SessionStatus;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -17,7 +22,7 @@ interface Props {
 export function SessionRow({
   session: s,
   active,
-  hasPending,
+  status,
   onResume,
   onDelete,
 }: Props) {
@@ -73,6 +78,8 @@ export function SessionRow({
       : "text-text font-medium"
     : "text-text-muted italic";
 
+  const statusStyle = SESSION_STATUS_DISPLAY[status];
+
   return (
     <div
       data-testid="session-row"
@@ -90,12 +97,12 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          {hasPending && (
-            <span
-              className="w-2 h-2 rounded-full bg-warning anim-pulse shrink-0"
-              title="Pending permission request"
-            />
-          )}
+          <span
+            data-testid="session-status-dot"
+            data-status={status}
+            className={`w-2 h-2 rounded-full shrink-0 ${statusStyle.dotClass} ${statusStyle.pulse ? "anim-pulse" : ""}`}
+            title={statusStyle.label}
+          />
           <span className={`text-[13px] truncate ${titleClass}`}>
             {titleLabel}
           </span>

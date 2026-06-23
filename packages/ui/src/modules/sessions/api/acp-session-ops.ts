@@ -11,6 +11,7 @@ interface PlatformMeta {
   experimentId?: string;
   threadTs?: string;
   createdAt?: string;
+  running?: boolean;
 }
 
 interface ListedSession {
@@ -40,6 +41,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     experimentId: p?.experimentId ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
+    running: p?.running ?? false,
   };
 }
 

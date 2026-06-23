@@ -984,7 +984,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.channel && mapping.originalId !== null) {
           const responseFrame =
             mapping.method === "session/list" && deps.sessionMetadata
-              ? injectPlatformMetaIntoList(frame, deps.sessionMetadata)
+              ? injectPlatformMetaIntoList(
+                  frame,
+                  deps.sessionMetadata,
+                  activePromptBySession,
+                )
               : (frame as object);
           const out = JSON.stringify({
             ...responseFrame,
@@ -1398,6 +1402,7 @@ function stripPlatformMeta(frame: unknown): object {
 function withPlatformMeta(
   session: Record<string, unknown>,
   entry: SessionMetaEntry,
+  running: boolean,
 ): Record<string, unknown> {
   const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
   return {
@@ -1405,7 +1410,7 @@ function withPlatformMeta(
     ...(entry.lastActivityAt ? { updatedAt: entry.lastActivityAt } : {}),
     _meta: {
       ...existingMeta,
-      platform: { ...entry.meta, createdAt: entry.createdAt },
+      platform: { ...entry.meta, createdAt: entry.createdAt, running },
     },
   };
 }
@@ -1419,6 +1424,7 @@ function withPlatformMeta(
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
+  activeSessions: ReadonlyMap<string, unknown>,
 ): object {
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
@@ -1436,7 +1442,9 @@ function injectPlatformMetaIntoList(
     .map((s) => {
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
       const entry = store.get(s.sessionId);
-      return entry ? withPlatformMeta(s, entry) : s;
+      return entry
+        ? withPlatformMeta(s, entry, activeSessions.has(s.sessionId))
+        : s;
     });
   return { ...frame, result: { ...result, sessions: enriched } };
 }
