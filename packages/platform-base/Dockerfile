@@ -21,39 +21,29 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
 COPY packages/platform-base/mise.lock /etc/mise/mise.lock
-# `gws --version` once as root to download platform binary
-ARG NPM_VERSION=11.16.0
-RUN --mount=type=cache,target=/root/.cache/mise \
-    mise install &&\
-    gws --version >/dev/null &&\
-    npm install -g "npm@${NPM_VERSION}" &&\
-    mise reshim
-
+RUN --mount=type=cache,target=/root/.cache/mise mise install
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
-RUN dnf install -y --installroot=/sysroot --use-host-config \
+RUN dnf install \
+      -y \
+      --installroot=/sysroot \
+      --use-host-config \
       --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
       --setopt=install_weak_deps=0 \
-      git tar gzip curl openssh-server catatonit xz-libs &&\
-      rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
-
-# release binaries CVE-tainted (GHSA-pmwq-pjrm-6p5r); build from source
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS gh-builder
-ARG GH_VERSION=2.93.0
-ARG INTOTO_VERSION=0.11.0
-ARG TARGETOS
-ARG TARGETARCH
-ENV GOTOOLCHAIN=go1.26.4 GOFLAGS=-trimpath CGO_ENABLED=0
-RUN git clone --depth 1 -b "v${GH_VERSION}" https://github.com/cli/cli /src
-WORKDIR /src
-RUN go get "github.com/in-toto/in-toto-golang@v${INTOTO_VERSION}" && go mod tidy
-RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -ldflags "-X github.com/cli/cli/v2/internal/build.Version=${GH_VERSION}" -o /gh ./cmd/gh
+      catatonit \
+      curl \
+      git \
+      gzip \
+      openssh-server \
+      tar \
+      xz-libs \
+      &&\
+    rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 FROM base AS builder
 
-COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
+COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
 COPY package.json ./
 RUN install-pnpm && mise reshim
 
@@ -93,7 +83,6 @@ COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=base /etc/mise/ /etc/mise/
-COPY --from=gh-builder /gh /usr/local/bin/gh
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
