@@ -9,6 +9,7 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -72,6 +73,7 @@ export function composeAgentsModule(deps: {
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s);
+  const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
   // Postgres queries that already accept an empty-string owner-filter
@@ -80,6 +82,7 @@ export function composeAgentsModule(deps: {
   return {
     agents: createAgentsService({
       repo,
+      agentEnvRepo,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,

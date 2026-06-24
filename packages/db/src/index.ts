@@ -8,6 +8,7 @@ export {
   skillSources,
   agentSkills,
   agentSkillPublishes,
+  agentEnv,
   egressRules,
   pendingApprovals,
   connections,

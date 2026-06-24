@@ -103,11 +103,8 @@ func TestBuildForkAgentJob_MountsAgentPVC_NotVolumeClaimTemplate(t *testing.T) {
 	assert.Nil(t, persistentVol.EmptyDir)
 }
 
-// The merged Agent CM carries env + secretRef directly; the fork
-// inherits them transitively through the AgentSpec.
-func TestBuildForkAgentJob_InheritsAgentEnvAndSecretRef(t *testing.T) {
-	// testAgent already carries Env=[ACP_PORT=8080] from the test fixture;
-	// add SecretRef + an extra env to exercise both paths.
+// The fork inherits secretRef via the AgentSpec; user env (spec.env) is not — it rides the runtime channel.
+func TestBuildForkAgentJob_InheritsAgentSecretRefNotEnv(t *testing.T) {
 	agent := *testAgent
 	agent.Env = append([]types.EnvVar{{Name: "FOO", Value: "bar"}}, testAgent.Env...)
 	agent.SecretRef = "my-extra-secret"
@@ -115,7 +112,8 @@ func TestBuildForkAgentJob_InheritsAgentEnvAndSecretRef(t *testing.T) {
 	job := BuildForkAgentJob("fork-abc", testForkSpec, &agent, testConfig, configMapOwnerRef(testForkOwnerCM), nil, "")
 	c := job.Spec.Template.Spec.Containers[0]
 
-	assert.Equal(t, "bar", envMap(c.Env)["FOO"])
+	_, hasFOO := envMap(c.Env)["FOO"]
+	assert.False(t, hasFOO, "spec.env must not be projected into the fork — user env rides the rail")
 	require.Len(t, c.EnvFrom, 1)
 	require.NotNil(t, c.EnvFrom[0].SecretRef)
 	assert.Equal(t, "my-extra-secret", c.EnvFrom[0].SecretRef.Name)

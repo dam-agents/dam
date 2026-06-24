@@ -1,6 +1,7 @@
 import {
   eq,
   type Db,
+  agentEnv,
   agentSkills,
   connectionGrants,
   connections as connectionsTable,
@@ -53,13 +54,21 @@ export function createStateBuilder(deps: {
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [granted, skills, secretEnv] = await Promise.all([
+      const [userEnv, granted, skills, secretEnv] = await Promise.all([
+        readUserEnvContributions(deps.db, agentId),
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
         deps.secretEnv.forAgent(agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      const rawContribs = [...builtin, ...granted, ...skills, ...secretEnv];
+      // User env first: the env driver is first-occurrence-wins, so it shadows connection/secret env.
+      const rawContribs = [
+        ...userEnv,
+        ...builtin,
+        ...granted,
+        ...skills,
+        ...secretEnv,
+      ];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
@@ -72,6 +81,24 @@ export function createStateBuilder(deps: {
       };
     },
   };
+}
+
+/** `env` contributions for an agent's user-typed env; the literal value rides in `placeholder`. */
+async function readUserEnvContributions(
+  db: Db,
+  agentId: string,
+): Promise<Contribution[]> {
+  const rows = await db
+    .select({ name: agentEnv.name, value: agentEnv.value })
+    .from(agentEnv)
+    .where(eq(agentEnv.agentId, agentId));
+  return rows.map(
+    (r): Contribution => ({
+      kind: "env",
+      name: r.name,
+      placeholder: r.value,
+    }),
+  );
 }
 
 async function readGrantedContributions(

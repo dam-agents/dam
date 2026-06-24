@@ -8,8 +8,10 @@ import {
 import {
   composeAgentsModule,
   createAgentsRepository,
+  createAgentEnvRepository,
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
+  backfillUserEnv,
   startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
@@ -128,6 +130,21 @@ const redisBus = createRedisBus(config.redisUrl, {
 
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
+const agentEnvRepo = createAgentEnvRepository(db);
+
+// Migrate pre-existing spec.env onto agent_env. First pass runs before serving;
+// per-agent failures are isolated and retried on a timer until a clean pass.
+let backfillRetry: ReturnType<typeof setTimeout> | undefined;
+async function runUserEnvBackfill(): Promise<void> {
+  const { failed } = await backfillUserEnv({
+    repo: agentsRepo,
+    agentEnvRepo,
+    log: (m) => getLogger().info(`[user-env] ${m}`),
+  });
+  if (failed > 0)
+    backfillRetry = setTimeout(() => void runUserEnvBackfill(), 60_000);
+}
+await runUserEnvBackfill();
 
 const runtimeDelivery = composeRuntimeDelivery({
   db,
@@ -382,11 +399,15 @@ const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
 const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
 const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
 
+const agentEnvCleanupHook = (agentId: string) =>
+  agentEnvRepo.deleteForAgent(agentId);
+
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
   (agentId: string) => registrySecretPort.delete(agentId),
   connectionGrantsCleanupHook,
+  agentEnvCleanupHook,
 ];
 
 // Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
@@ -415,6 +436,11 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       name: "connection-grants",
       listAgentIds: () => listConnectionGrantAgentIds(db),
       cleanup: connectionGrantsCleanupHook,
+    },
+    {
+      name: "agent-env",
+      listAgentIds: () => agentEnvRepo.listAgentIds(),
+      cleanup: agentEnvCleanupHook,
     },
   ],
   intervalMs: 30 * 60_000,
@@ -522,6 +548,7 @@ listChannelsByOwner(db, "")()
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
+  if (backfillRetry) clearTimeout(backfillRetry);
   channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();

@@ -75,10 +75,8 @@ func BuildForkAgentJob(
 		agentHome = defaults.AgentHome
 	}
 	specMounts := resolveSpecMounts(agentSpec, defaults)
-	specEnv := agentSpec.Env
-	if len(specEnv) == 0 {
-		specEnv = configEnvToTypes(defaults.Env)
-	}
+	// Project only chart-level platform defaults; user env rides the runtime channel, not spec.env.
+	specEnv := configEnvToTypes(defaults.Env)
 
 	labels := map[string]string{
 		ForkLabelType:   ForkJobLabelType,
@@ -132,8 +130,8 @@ func BuildForkAgentJob(
 	// Placeholder credential envs from the replier's K8s Secrets — same
 	// purpose as the long-lived shape: satisfy the harness's is-env-set
 	// check; the gateway's Envoy overwrites the header on the wire.
-	// The merged AgentSpec carries the only user-owned env layer.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
+	// Chart-level platform default env; user env arrives via the runtime channel.
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}

@@ -9,6 +9,11 @@ export {
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
 export {
+  createAgentEnvRepository,
+  type AgentEnvRepository,
+} from "./infrastructure/agent-env-repository.js";
+export { backfillUserEnv } from "./services/backfill-user-env.js";
+export {
   createAgentRegistrySecretPort,
   type AgentRegistrySecretPort,
 } from "./infrastructure/agent-registry-secret-port.js";

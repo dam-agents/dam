@@ -260,6 +260,20 @@ export const agents = pgTable(
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
+/** Per-agent user-typed env (the UI Environment editor). */
+export const agentEnv = pgTable(
+  "agent_env",
+  {
+    agentId: text("agent_id").notNull(),
+    name: text("name").notNull(),
+    value: text("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.name] }),
+    index("agent_env_agent_idx").on(table.agentId),
+  ],
+);
+
 export const termsAcceptances = pgTable(
   "terms_acceptances",
   {

@@ -22,6 +22,13 @@
       "when": 1781512361632,
       "tag": "0002_marvelous_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782212869850,
+      "tag": "0003_smart_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

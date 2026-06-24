@@ -110,10 +110,8 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		agentHome = defaults.AgentHome
 	}
 	specMounts := resolveSpecMounts(agentSpec, defaults)
-	specEnv := agentSpec.Env
-	if len(specEnv) == 0 {
-		specEnv = configEnvToTypes(defaults.Env)
-	}
+	// Project only chart-level platform defaults; user env rides the runtime channel, not spec.env.
+	specEnv := configEnvToTypes(defaults.Env)
 
 	replicas := int32(1)
 
@@ -179,7 +177,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 
-	// User-supplied agent env; credential placeholders arrive via the runtime channel.
+	// Chart-level platform default env; user env arrives via the runtime channel.
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
