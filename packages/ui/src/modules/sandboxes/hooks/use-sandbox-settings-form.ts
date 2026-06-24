@@ -39,6 +39,7 @@ import type { StagedNetworkAccessController } from "../../egress-rules/component
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { confirmEnableKeepAwake, KEEP_AWAKE_ENV } from "../lib/keep-awake.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 const EMPTY_SECRETS: SecretView[] = [];
@@ -66,6 +67,7 @@ export type SandboxSettingsStatus =
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
   const agent = useMemo(
@@ -173,6 +175,20 @@ export function useSandboxSettingsForm() {
   const envVars = watch("envVars");
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
+
+  // Keep-awake is a derived view over the env list: on iff PLATFORM_KEEP_AWAKE is truthy.
+  const keepAwake = envVars.some(
+    (e) => e.name === KEEP_AWAKE_ENV && e.value === "true",
+  );
+  const setKeepAwake = async (on: boolean) => {
+    if (!(await confirmEnableKeepAwake(on, showConfirm))) return;
+    const without = envVars.filter((e) => e.name !== KEEP_AWAKE_ENV);
+    setValue(
+      "envVars",
+      on ? [...without, { name: KEEP_AWAKE_ENV, value: "true" }] : without,
+      { shouldDirty: true, shouldValidate: true },
+    );
+  };
 
   // A provider can be a connection (assignedAppIds) or a legacy secret
   // (assigned); prefer the connection.
@@ -447,6 +463,8 @@ export function useSandboxSettingsForm() {
     currentPreset,
     egressStaged,
     inheritedEnvs,
+    keepAwake,
+    setKeepAwake,
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:

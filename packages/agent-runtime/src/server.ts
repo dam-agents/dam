@@ -29,6 +29,8 @@ import { configureGitCredentialHelper } from "./modules/git.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
+import { createKeepAwakeStore } from "./modules/keep-awake.js";
+import { handleKeepAwakeMcp } from "./modules/keep-awake-mcp.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
@@ -86,6 +88,10 @@ const stateBackend = createFileDocumentStoreBackend(homeDir);
 // Single shared env store: the env driver writes it; the spawn paths below
 // (harness, terminal, ssh, git) read it through the RuntimeEnvReader port.
 const envStore = createEnvStateStore(homeDir);
+
+// Self-managed keep-awake: a workload pins the pod awake via the in-pod
+// keep-awake MCP tools (or by dropping marker files directly).
+const keepAwake = createKeepAwakeStore(homeDir);
 
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
@@ -327,8 +333,14 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/status") {
+    // Two keep-awake pins fold into idle: the PLATFORM_KEEP_AWAKE hard blocker,
+    // and any marker a workload has placed via the keep-awake MCP tools.
     const status = {
-      idle: acpRuntime.status().idle && ptySlots.size === 0,
+      idle:
+        acpRuntime.status().idle &&
+        ptySlots.size === 0 &&
+        !config.PLATFORM_KEEP_AWAKE &&
+        !keepAwake.hasPin(),
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -354,6 +366,12 @@ const server = http.createServer((req, res) => {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
     trpcHandler(req, res);
+    return;
+  }
+
+  // In-pod keep-awake MCP server, reached by the co-located harness over loopback.
+  if (req.url?.startsWith("/api/mcp/keep-awake")) {
+    void handleKeepAwakeMcp(req, res, keepAwake);
     return;
   }
 

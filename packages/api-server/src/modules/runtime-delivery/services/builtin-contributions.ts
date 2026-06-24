@@ -20,6 +20,11 @@ export function createBuiltinContributions(
           name: "platform-outbound",
           url: `${base}/api/agents/${encodeURIComponent(agentId)}/mcp`,
         },
+        {
+          kind: "mcp-entry",
+          name: "platform-keep-awake",
+          url: "http://localhost:8080/api/mcp/keep-awake",
+        },
       ];
     },
   };

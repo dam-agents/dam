@@ -11,6 +11,7 @@ import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-ed
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { FormField } from "../components/form-field.js";
+import { KeepAwakeToggle } from "../components/keep-awake-toggle.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
 const READ_ONLY_FIELD =
@@ -101,6 +102,16 @@ export function SandboxSettingsView() {
             agentId={agent.id}
             currentPreset={f.currentPreset}
             staged={f.egressStaged}
+          />
+        </FormField>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Lifecycle</SectionLabel>
+        <FormField className="rounded-lg border border-border p-4">
+          <KeepAwakeToggle
+            checked={f.keepAwake}
+            onCheckedChange={(on) => void f.setKeepAwake(on)}
           />
         </FormField>
       </section>

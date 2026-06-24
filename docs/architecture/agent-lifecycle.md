@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-15
+Last verified: 2026-06-22
 
 ## Overview
 
@@ -145,7 +145,9 @@ The **target** lifetime model is single-use Kubernetes Jobs per turn, with a Red
 
 ### Hibernate
 
-The controller's idle checker periodically scans running Agents. For each, it probes agent-runtime's `/api/status` over the cluster network. The runtime is authoritative about its own idleness: it reports a single `idle` flag (false while a prompt turn is running, prompts are queued, an agent-initiated request awaits a client, or a terminal is open — connected viewers don't count), that flag is the endpoint's entire payload, and the controller derives nothing on its own. If the runtime reports idle for long enough (and the probe doesn't error), the checker hibernates the Agent by scaling its StatefulSets to zero.
+The controller's idle checker periodically scans running Agents. For each, it probes agent-runtime's `/api/status` over the cluster network. The runtime is authoritative about its own idleness: it reports a single `idle` flag (false while a prompt turn is running, prompts are queued, an agent-initiated request awaits a client, a terminal is open, or a keep-awake pin is set; connected viewers don't count), that flag is the endpoint's entire payload, and the controller derives nothing on its own. If the runtime reports idle for long enough (and the probe doesn't error), the checker hibernates the Agent by scaling its StatefulSets to zero.
+
+Two opt-in pins keep a long-running, no-session workload from being hibernated mid-job. `PLATFORM_KEEP_AWAKE` (baked into image or set manualy in the ui via toggle or custom env var) makes the agent always report not-idle, so it runs — consuming resources — until stopped by hand; it is off by default. A workload that knows its own boundaries instead pins on demand through the in-pod `keep-awake` MCP server's `acquire`/`release` tools, which drop marker files under `$HOME/.platform/keep-awake.d/`: the agent stays awake while any pin exists and reclaims itself once they are released. Keyed pins (`acquire` with an id) are idempotent and released by the same id, so a later turn or a reconciler can clean up; un-keyed pins release one at a time. Both persist across restarts, and are cleared only by `release`, `purge`, or by hand.
 
 The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake. Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 

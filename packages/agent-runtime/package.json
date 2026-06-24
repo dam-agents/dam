@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@lydell/node-pty": "1.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",
     "@xterm/addon-serialize": "0.14.0",
