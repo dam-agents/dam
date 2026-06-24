@@ -1092,8 +1092,9 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 	cfg.OTelEnv = map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel:4317",
 		"OTEL_TRACES_SAMPLER":         "parentbased_always_on",
-		"OTEL_SERVICE_NAME":           "platform-controller",       // controller identity
-		"OTEL_RESOURCE_ATTRIBUTES":    "k8s.pod.name=controller-0", // controller identity
+		"OTEL_SERVICE_NAME":           "platform-controller",         // controller identity
+		"OTEL_RESOURCE_ATTRIBUTES":    "k8s.pod.name=controller-0",   // controller identity
+		"OTEL_EXPORTER_OTLP_HEADERS":  "Authorization=Bearer secret", // inert for Envoy; may carry a token
 	}
 	env := map[string]string{}
 	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
@@ -1103,6 +1104,8 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 	assert.Equal(t, "parentbased_always_on", env["OTEL_TRACES_SAMPLER"])
 	_, relayedServiceName := env["OTEL_SERVICE_NAME"]
 	assert.False(t, relayedServiceName, "controller's service.name must not ride onto the gateway")
+	_, relayedHeaders := env["OTEL_EXPORTER_OTLP_HEADERS"]
+	assert.False(t, relayedHeaders, "collector auth headers (Envoy can't use them, may hold a token) must not ride onto the gateway")
 	assert.Equal(t, "agent.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"])
 }
 

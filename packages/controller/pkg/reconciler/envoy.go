@@ -1663,6 +1663,13 @@ func gatewayOTelEnv(instanceName string, cfg *config.Config) []corev1.EnvVar {
 		if k == "OTEL_RESOURCE_ATTRIBUTES" || k == "OTEL_SERVICE_NAME" {
 			continue
 		}
+		// Drop the OTLP *_HEADERS family: Envoy can't read collector auth from
+		// env (it needs the header in exporter config), so relaying it is inert
+		// and would needlessly spread any collector credential onto gateway pods.
+		// Collector auth here is transport-level (mesh mTLS), not header-based.
+		if strings.HasSuffix(k, "HEADERS") {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
