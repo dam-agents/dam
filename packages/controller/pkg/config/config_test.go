@@ -244,6 +244,9 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
 		"PLATFORM_LEASE_NAME", "POD_NAME",
 		"AGENT_BASE", "AGENT_TEMPLATE_DEFAULTS",
+		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
+		"OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG",
+		"OTEL_RESOURCE_ATTRIBUTES", "OTEL_SERVICE_NAME",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
@@ -259,5 +262,99 @@ func setEnv(t *testing.T, vars map[string]string) {
 	}
 	for k, v := range vars {
 		t.Setenv(k, v)
+	}
+}
+
+func TestLoadFromEnv_OTelEnv_Relayed(t *testing.T) {
+	// The controller snapshots its inherited OTEL_* env (operator-injected) for
+	// generic relay onto gateway pods.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":       "platform",
+		"POD_NAME":                    "controller-0",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel.platform.svc:4317",
+		"OTEL_TRACES_SAMPLER":         "parentbased_always_on",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "http://otel.platform.svc:4317", cfg.OTelEnv["OTEL_EXPORTER_OTLP_ENDPOINT"])
+	assert.Equal(t, "parentbased_always_on", cfg.OTelEnv["OTEL_TRACES_SAMPLER"])
+	assert.True(t, cfg.OTelEnabled())
+}
+
+func TestLoadFromEnv_OTelEnv_OnlyOtelPrefix(t *testing.T) {
+	// The relay is scoped to the OTEL_ family — unrelated controller env is not
+	// captured and so cannot leak onto gateway pods.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":       "platform",
+		"POD_NAME":                    "controller-0",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel:4317",
+	})
+	t.Setenv("SOME_SECRET", "nope")
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	_, leaked := cfg.OTelEnv["SOME_SECRET"]
+	assert.False(t, leaked)
+}
+
+func TestLoadFromEnv_OTelEnv_DisabledWhenNoEndpoint(t *testing.T) {
+	// No injected endpoint → instrumentation is off and gateways emit nothing.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.False(t, cfg.OTelEnabled())
+}
+
+func TestOTelExporter_Parsing(t *testing.T) {
+	cases := []struct {
+		raw, proto string
+		want       OTLPExporter
+		ok         bool
+	}{
+		{"", "", OTLPExporter{}, false},
+		// gRPC (default protocol): https → secure; port defaults to 4317.
+		{"http://otel.platform.svc:4317", "", OTLPExporter{Host: "otel.platform.svc", Port: 4317, GRPC: true}, true},
+		{"https://otel.example.com", "grpc", OTLPExporter{Host: "otel.example.com", Port: 4317, Secure: true, GRPC: true}, true},
+		{"otel.platform.svc:4317", "", OTLPExporter{Host: "otel.platform.svc", Port: 4317, GRPC: true}, true}, // bare host:port
+		// OTLP/HTTP: not gRPC; port defaults to 4318.
+		{"http://otel.platform.svc", "http/protobuf", OTLPExporter{Host: "otel.platform.svc", Port: 4318, GRPC: false}, true},
+		{"https://otel.example.com:4318", "http/protobuf", OTLPExporter{Host: "otel.example.com", Port: 4318, Secure: true, GRPC: false}, true},
+	}
+	for _, tc := range cases {
+		env := map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": tc.raw}
+		if tc.proto != "" {
+			env["OTEL_EXPORTER_OTLP_PROTOCOL"] = tc.proto
+		}
+		cfg := &Config{OTelEnv: env}
+		got, ok := cfg.OTelExporter()
+		assert.Equal(t, tc.ok, ok, tc.raw)
+		if tc.ok {
+			assert.Equal(t, tc.want, got, tc.raw)
+		}
+	}
+}
+
+func TestTraceSamplingPercent(t *testing.T) {
+	cases := []struct {
+		sampler, arg string
+		want         float64
+	}{
+		{"", "", 100},                            // default: full
+		{"always_on", "", 100},                   //
+		{"parentbased_always_off", "", 0},        //
+		{"traceidratio", "0.1", 10},              // 0.1 ratio → 10%
+		{"parentbased_traceidratio", "0.25", 25}, //
+		{"", "0.5", 50},                          // bare ARG treated as a ratio
+		{"traceidratio", "9", 100},               // clamped: 9×100 → capped at 100
+		{"traceidratio", "bad", 100},             // unparseable → full
+	}
+	for _, tc := range cases {
+		cfg := &Config{OTelEnv: map[string]string{
+			"OTEL_TRACES_SAMPLER":     tc.sampler,
+			"OTEL_TRACES_SAMPLER_ARG": tc.arg,
+		}}
+		assert.Equal(t, tc.want, cfg.TraceSamplingPercent(), "%s/%s", tc.sampler, tc.arg)
 	}
 }

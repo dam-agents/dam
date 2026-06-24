@@ -545,6 +545,19 @@ bootstrap_extensions:
   - name: envoy.bootstrap.internal_listener
     typed_config:
       "@type": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener
+{{- if $.OTel.Metrics }}
+# Push Envoy's stats (ext_authz outcomes, TLS handshakes, cluster health, DNS)
+# over OTLP/gRPC to the collector. No admin interface is enabled, so this is the
+# only stats egress; the sink does not require one.
+stats_sinks:
+  - name: envoy.stat_sinks.open_telemetry
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.stat_sinks.open_telemetry.v3.SinkConfig
+      grpc_service:
+        envoy_grpc:
+          cluster_name: otel_export
+        timeout: 5s
+{{- end }}
 static_resources:
   listeners:
     - name: agent_egress
@@ -556,6 +569,74 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: agent_egress
+{{- if $.OTel.Traces }}
+                # OpenTelemetry tracing for egress. Scoped to this outer listener
+                # so spans see CONNECT (method + host:port, never a path/query) and
+                # plain-HTTP egress — credential injection happens downstream on the
+                # TLS-terminating chains, so no injected secret can reach a span tag
+                # here. traceparent is stripped on the external-egress route below.
+                tracing:
+                  spawn_upstream_span: false
+                  max_path_tag_length: 256
+                  # Sampling from the relayed OTEL_TRACES_SAMPLER[/_ARG]; Envoy's
+                  # tracer ignores those env vars, so the controller translates them.
+                  random_sampling:
+                    value: {{ $.OTel.SamplingPercent }}
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      service_name: "{{ $.OTel.ServiceName }}"
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.TracesURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      # agent.id (a bounded per-gateway label) rides in via
+                      # OTEL_RESOURCE_ATTRIBUTES on the container; service.name stays
+                      # shared so trace cardinality doesn't scale with agent count.
+                      resource_detectors:
+                        - name: envoy.tracers.opentelemetry.resource_detectors.environment
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.tracers.opentelemetry.resource_detectors.v3.EnvironmentResourceDetectorConfig
+{{- end }}
+{{- if $.OTel.AccessLogs }}
+                access_log:
+                  - name: envoy.access_loggers.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: /dev/stdout
+                      log_format:
+                        formatters:
+                          - name: envoy.formatter.req_without_query
+                            typed_config:
+                              "@type": type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
+                        json_format:
+                          # Credential bytes never reach this log: the Authorization
+                          # header is simply not referenced, and REQ_WITHOUT_QUERY
+                          # strips the query string (where the Lua filter parks
+                          # query-param credentials) from the logged path.
+                          service_name: "{{ $.OTel.ServiceName }}"
+                          agent_id: "{{ $.OTel.AgentID }}"
+                          start_time: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          authority: "%REQ(:AUTHORITY)%"
+                          path: "%REQ_WITHOUT_QUERY(:PATH)%"
+                          response_code: "%RESPONSE_CODE%"
+                          response_flags: "%RESPONSE_FLAGS%"
+                          duration_ms: "%DURATION%"
+                          upstream_host: "%UPSTREAM_HOST%"
+                          bytes_received: "%BYTES_RECEIVED%"
+                          bytes_sent: "%BYTES_SENT%"
+                          x_request_id: "%REQ(X-REQUEST-ID)%"
+{{- end }}
                 upgrade_configs:
                   - upgrade_type: CONNECT
                   # dam-run opens a WebSocket to the harness /run endpoint. The
@@ -683,6 +764,14 @@ static_resources:
                         # upstream's HTTP port; no MITM needed since
                         # the bytes are already plaintext.
                         - match: { prefix: "/" }
+{{- if $.OTel.Traces }}
+                          # Strip internal trace context before it reaches an
+                          # external HTTP upstream. The egress span is still
+                          # exported to the collector; the harness route above
+                          # deliberately keeps these headers so its spans link to
+                          # the api-server.
+                          request_headers_to_remove: [ traceparent, tracestate ]
+{{- end }}
                           route:
                             cluster: dynamic_forward_proxy_http
                             timeout: 0s
@@ -716,6 +805,39 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
+{{- if $.OTel.AccessLogs }}
+                # No tracing block on the credential-injection chains: post-MITM
+                # the :path can carry a query-param credential and Envoy has no
+                # query-stripper for span tags. Access logs are safe — they use
+                # REQ_WITHOUT_QUERY and never name the Authorization header — and
+                # the api-server ext_authz decision log already records the egress
+                # verdict for every credentialed request.
+                access_log:
+                  - name: envoy.access_loggers.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: /dev/stdout
+                      log_format:
+                        formatters:
+                          - name: envoy.formatter.req_without_query
+                            typed_config:
+                              "@type": type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
+                        json_format:
+                          service_name: "{{ $.OTel.ServiceName }}"
+                          agent_id: "{{ $.OTel.AgentID }}"
+                          chain: terminate_{{ $chain.ChainID }}
+                          start_time: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          authority: "%REQ(:AUTHORITY)%"
+                          path: "%REQ_WITHOUT_QUERY(:PATH)%"
+                          response_code: "%RESPONSE_CODE%"
+                          response_flags: "%RESPONSE_FLAGS%"
+                          duration_ms: "%DURATION%"
+                          upstream_host: "%UPSTREAM_HOST%"
+                          bytes_received: "%BYTES_RECEIVED%"
+                          bytes_sent: "%BYTES_SENT%"
+                          x_request_id: "%REQ(X-REQUEST-ID)%"
+{{- end }}
                 http_filters:
                   # HITL gate. gRPC ext_authz to the
                   # api-server's single auth endpoint — same Check RPC used
@@ -962,6 +1084,27 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
                 stat_prefix: l4_authz_forward
                 cluster: dynamic_forward_proxy_tcp
+{{- if $.OTel.AccessLogs }}
+                # SNI-passthrough egress visibility: requested server name + byte
+                # counts only. L4, so there is no path/query and nothing to redact.
+                access_log:
+                  - name: envoy.access_loggers.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: /dev/stdout
+                      log_format:
+                        json_format:
+                          service_name: "{{ $.OTel.ServiceName }}"
+                          agent_id: "{{ $.OTel.AgentID }}"
+                          chain: l4_authz_passthrough
+                          start_time: "%START_TIME%"
+                          requested_server_name: "%REQUESTED_SERVER_NAME%"
+                          upstream_host: "%UPSTREAM_HOST%"
+                          response_flags: "%RESPONSE_FLAGS%"
+                          duration_ms: "%DURATION%"
+                          bytes_received: "%BYTES_RECEIVED%"
+                          bytes_sent: "%BYTES_SENT%"
+{{- end }}
 
   clusters:
     - name: tls_inspect_internal
@@ -1150,6 +1293,49 @@ static_resources:
                     socket_address:
                       address: {{ $.ExtAuthzHost }}
                       port_value: {{ $.ExtAuthzPort }}
+{{- if $.OTel.Collector }}
+
+    # OTLP exporter target for the gateway's OWN traces and metrics, dialed
+    # from the relayed OTEL_EXPORTER_OTLP_ENDPOINT. Distinct from the
+    # otel_collector cluster above, which forwards the AGENT's telemetry
+    # (same backend, different config source and possibly port/transport).
+    # Rendered only when telemetry is on. Plaintext over the ambient mesh
+    # (ztunnel encrypts the hop); reachability is subject to the mesh
+    # AuthorizationPolicy on the collector. HTTP/2 framing for OTLP/gRPC;
+    # OTLP/HTTP leaves the cluster at its HTTP/1.1 default.
+    - name: otel_export
+      connect_timeout: 1s
+      type: STRICT_DNS
+      dns_lookup_family: V4_PREFERRED
+      lb_policy: ROUND_ROBIN
+{{- if $.OTel.GRPC }}
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+{{- end }}
+      load_assignment:
+        cluster_name: otel_export
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.OTel.CollectorHost }}
+                      port_value: {{ $.OTel.CollectorPort }}
+{{- if $.OTel.Secure }}
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: {{ $.OTel.CollectorHost }}
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+{{- end }}
+{{- end }}
 `
 
 // envoyListenAddress is the bind address for the gateway pod's outer listener.
@@ -1157,11 +1343,72 @@ static_resources:
 // only from the paired agent pod), not the bind address.
 const envoyListenAddress = "0.0.0.0"
 
+// gatewayOTelServiceName is the shared trace/metric service.name for every
+// gateway. Kept shared (per-gateway identity rides as the bounded `agent.id`
+// resource attribute) so trace and metric cardinality don't scale with the
+// agent count.
+const gatewayOTelServiceName = "platform-agent-gateway"
+
+// envoyOTelView is the template-facing projection of the controller's relayed
+// OpenTelemetry environment, driving the gateway's OWN telemetry (traces,
+// access logs, stats). Distinct from the `.Telemetry` transit chain, which
+// forwards the agent's telemetry. When the environment carries no OTLP
+// endpoint the zero value renders nothing, so the gateway behaves exactly as a
+// non-instrumented platform.
+type envoyOTelView struct {
+	Traces          bool
+	AccessLogs      bool
+	Metrics         bool    // OTel stats sink is gRPC-only; off when the exporter is OTLP/HTTP
+	Collector       bool    // render the otel_export cluster — a traces/metrics dependency
+	Secure          bool    // collector endpoint is https → wrap the cluster in upstream TLS
+	GRPC            bool    // exporter cluster is http2 (OTLP/gRPC) vs HTTP/1.1 (OTLP/HTTP)
+	SamplingPercent float64 // HCM random_sampling, from OTEL_TRACES_SAMPLER[/_ARG]
+	ServiceName     string
+	AgentID         string
+	CollectorHost   string
+	CollectorPort   int
+	TracesURI       string // OTLP/HTTP traces endpoint (only when !GRPC)
+}
+
+// newEnvoyOTelView derives the gateway's telemetry config from the OTLP
+// exporter the controller inherited (chart-set under `clickstack.enabled`, or
+// injected). `instanceName` is the gateway's own identity (agent or fork
+// name), emitted as `agent.id`. When no endpoint is set, telemetry is off.
+func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
+	exp, ok := cfg.OTelExporter()
+	if !ok {
+		return envoyOTelView{}
+	}
+	v := envoyOTelView{
+		Traces:          true,
+		AccessLogs:      true,
+		Metrics:         exp.GRPC, // Envoy's OTel stats sink only speaks OTLP/gRPC
+		Collector:       true,
+		Secure:          exp.Secure,
+		GRPC:            exp.GRPC,
+		SamplingPercent: cfg.TraceSamplingPercent(),
+		ServiceName:     gatewayOTelServiceName,
+		AgentID:         instanceName,
+		CollectorHost:   exp.Host,
+		CollectorPort:   exp.Port,
+	}
+	if !exp.GRPC {
+		scheme := "http"
+		if exp.Secure {
+			scheme = "https"
+		}
+		v.TracesURI = fmt.Sprintf("%s://%s:%d/v1/traces", scheme, exp.Host, exp.Port)
+	}
+	return v
+}
+
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
 //
 // `instanceID` is this gateway's *own* instance (agent or fork name); it is
-// the value stamped into the trusted `x-platform-agent-id` telemetry header.
+// the value stamped into the trusted `x-platform-agent-id` telemetry header
+// and emitted as the bounded `agent.id` attribute on the gateway's own
+// telemetry.
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
 // the gateway dials. For long-lived pairs the two are equal; for forks
 // `extAuthzInstanceID` is the *parent* instance's ID — fork pods run as their
@@ -1212,6 +1459,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost string
 		TelemetryCollectorPort int
 		InstanceID             string
+		OTel                   envoyOTelView
 	}{
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
@@ -1231,6 +1479,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost: cfg.TelemetryCollectorHost,
 		TelemetryCollectorPort: cfg.TelemetryCollectorPort,
 		InstanceID:             instanceID,
+		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}); err != nil {
 		return "", err
 	}
@@ -1317,7 +1566,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v12-telemetry-agent-id"
+const envoyBootstrapTemplateRev = "v13-gateway-otel"
 
 // envoySecretsRev digests the Secret set that drives Envoy's chain
 // rendering. Includes `injection-hosts` JSON so a descriptor change
@@ -1345,7 +1594,7 @@ func envoySecretsRev(secrets []corev1.Secret) string {
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
 // credential Secrets. Used as the sole non-init container of the paired
 // gateway pod.
-func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Container {
+func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Secret) corev1.Container {
 	mounts := []corev1.VolumeMount{{
 		Name:      envoyBootstrapVolume,
 		MountPath: envoyBootstrapMount,
@@ -1368,7 +1617,7 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 			ReadOnly:  true,
 		})
 	}
-	return corev1.Container{
+	c := corev1.Container{
 		Name:            "envoy",
 		Image:           cfg.EnvoyImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
@@ -1389,4 +1638,41 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 			RunAsNonRoot:           ptrBool(true),
 		},
 	}
+	c.Env = gatewayOTelEnv(instanceName, cfg)
+	return c
+}
+
+// gatewayOTelEnv relays the controller's inherited OTEL_* environment onto the
+// gateway Envoy container so OpenTelemetry resource attributes, sampling, and
+// transport settings flow through generically — the controller never
+// enumerates them. The gateway's own identity overrides the controller's:
+// agent.id and the pod namespace go into OTEL_RESOURCE_ATTRIBUTES (read by
+// Envoy's environment resource detector), while service.name stays shared and is
+// owned by the tracer config, so OTEL_SERVICE_NAME is not relayed. Keys are
+// sorted so the pod spec is stable across reconciles. A change to any relayed
+// var also rolls the gateway pod, which is what re-reads the re-rendered
+// bootstrap. Returns nil when the platform's instrumentation is off, leaving
+// the gateway exactly as it was.
+func gatewayOTelEnv(instanceName string, cfg *config.Config) []corev1.EnvVar {
+	if !cfg.OTelEnabled() {
+		return nil
+	}
+	keys := make([]string, 0, len(cfg.OTelEnv))
+	for k := range cfg.OTelEnv {
+		// Drop the controller's own identity vars; the gateway sets its own.
+		if k == "OTEL_RESOURCE_ATTRIBUTES" || k == "OTEL_SERVICE_NAME" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	env := make([]corev1.EnvVar, 0, len(keys)+1)
+	for _, k := range keys {
+		env = append(env, corev1.EnvVar{Name: k, Value: cfg.OTelEnv[k]})
+	}
+	env = append(env, corev1.EnvVar{
+		Name:  "OTEL_RESOURCE_ATTRIBUTES",
+		Value: fmt.Sprintf("agent.id=%s,k8s.namespace.name=%s", instanceName, cfg.Namespace),
+	})
+	return env
 }

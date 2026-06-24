@@ -918,6 +918,13 @@ controller:
     # -- Per-agent leaf cert validity.
     leafDuration: 2160h # 90d
     leafRenewBefore: 360h # 15d
+  # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
+  # data plane no SDK or zero-code instrumentation can reach, so the controller
+  # configures it natively in the rendered bootstrap — sourcing the collector
+  # endpoint, protocol, and sampling from its own OTEL_* environment (set under
+  # `clickstack.enabled`, the same env the controller's SDK reads) and relaying
+  # that env onto each gateway pod. With no OTLP endpoint present, gateways
+  # emit nothing.
   resources:
     requests:
       cpu: 100m

@@ -382,13 +382,13 @@ func TestEnvoyVolumes_TelemetryMountsLeafWithoutSecrets(t *testing.T) {
 	cfg := telemetryTestCfg()
 	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume),
 		"leaf TLS volume must be present when telemetry is on even with no Secrets")
-	assert.True(t, hasMountNamed(envoyContainer(cfg, nil).VolumeMounts, envoyLeafTLSVolume),
+	assert.True(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume),
 		"leaf TLS mount must be present when telemetry is on even with no Secrets")
 }
 
 func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
 	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil), envoyLeafTLSVolume))
-	assert.False(t, hasMountNamed(envoyContainer(bootstrapTestCfg, nil).VolumeMounts, envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
 func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *testing.T) {
@@ -903,4 +903,248 @@ func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
 	chains := chainsFromSecrets([]corev1.Secret{s})
 	require.Len(t, chains, 1)
 	assert.True(t, chains[0].HTTP2, "injection-hosts http2:true must mark the chain")
+}
+
+// --- Gateway OTel render tests ---
+//
+// The gateway is the one platform component that zero-code
+// auto-instrumentation can't reach, so its telemetry is configured
+// natively in the bootstrap. These tests pin the render-gating (default-off),
+// the three signals when enabled, and the credential-redaction invariants that
+// make tracing/logging safe on a credential-injecting MITM proxy.
+
+// otelCfg returns a copy of bootstrapTestCfg with the OTLP endpoint the
+// controller would have inherited. Empty endpoint = off.
+func otelCfg(otlpEndpoint string) *config.Config {
+	c := *bootstrapTestCfg
+	c.OTelEnv = map[string]string{}
+	if otlpEndpoint != "" {
+		c.OTelEnv["OTEL_EXPORTER_OTLP_ENDPOINT"] = otlpEndpoint
+	}
+	return &c
+}
+
+// otelCfgEnv builds a config from an explicit OTEL_* environment, for
+// exercising protocol / sampling knobs.
+func otelCfgEnv(env map[string]string) *config.Config {
+	c := *bootstrapTestCfg
+	c.OTelEnv = env
+	return &c
+}
+
+const testOTLPEndpoint = "http://otel-collector.platform.svc.cluster.local:4317"
+
+func TestRenderEnvoyBootstrap_TelemetryOffWithoutEndpoint(t *testing.T) {
+	// No inherited OTLP endpoint → no telemetry config of any kind, so an
+	// uninstrumented platform's gateways behave exactly as before.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "OpenTelemetryConfig")
+	assert.NotContains(t, got, "access_log")
+	assert.NotContains(t, got, "stats_sinks")
+	assert.NotContains(t, got, "otel_export")
+}
+
+func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+
+	// Tracing provider with the shared service.name.
+	assert.Contains(t, got, "type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig")
+	assert.Contains(t, got, `service_name: "platform-agent-gateway"`)
+	assert.Contains(t, got, "resource_detectors")
+
+	// gRPC transport (default protocol): the tracer uses grpc_service, not
+	// http_service. (grpc_service also appears for ext_authz, so scope to the
+	// tracer block.)
+	assert.Contains(t, otelTracerBlock(got), "grpc_service")
+	assert.NotContains(t, otelTracerBlock(got), "http_service")
+
+	// Default full sampling.
+	assert.Contains(t, got, "random_sampling")
+	assert.Contains(t, got, "value: 100")
+
+	// Metrics: OTLP stats sink, no admin interface needed.
+	assert.Contains(t, got, "stats_sinks")
+	assert.Contains(t, got, "envoy.stat_sinks.open_telemetry")
+
+	// Collector cluster address parsed from the inherited endpoint.
+	assert.Contains(t, got, "- name: otel_export")
+	assert.Contains(t, got, "address: otel-collector.platform.svc.cluster.local")
+	assert.Contains(t, got, "port_value: 4317")
+
+	// Access logs present and credential-safe.
+	assert.Contains(t, got, "envoy.access_loggers.file")
+	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
+}
+
+func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
+	// OTLP/HTTP exporter → http_service to /v1/traces, HTTP/1.1 collector cluster,
+	// and NO stats sink (Envoy's OTel stats sink only speaks gRPC).
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfgEnv(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel.platform.svc:4318",
+		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+	}), nil)
+	require.NoError(t, err)
+	tracer := otelTracerBlock(got)
+	assert.Contains(t, tracer, "http_service")
+	assert.Contains(t, tracer, `uri: "http://otel.platform.svc:4318/v1/traces"`)
+	assert.NotContains(t, tracer, "grpc_service") // ext_authz uses grpc_service; the tracer must not
+	assert.NotContains(t, got, "stats_sinks")
+	// HTTP/1.1 collector — no http2 protocol options on the cluster.
+	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
+	assert.NotContains(t, collectorBlock, "http2_protocol_options")
+}
+
+// otelTracerBlock returns the OpenTelemetryConfig provider block (from its
+// @type to resource_detectors), so transport assertions don't catch the
+// unrelated ext_authz grpc_service.
+func otelTracerBlock(s string) string {
+	start := strings.Index(s, "envoy.config.trace.v3.OpenTelemetryConfig")
+	if start < 0 {
+		return ""
+	}
+	rest := s[start:]
+	if end := strings.Index(rest, "resource_detectors"); end >= 0 {
+		return rest[:end]
+	}
+	return rest
+}
+
+func TestRenderEnvoyBootstrap_SamplingFromEnv(t *testing.T) {
+	// OTEL_TRACES_SAMPLER_ARG flows into the HCM random_sampling percentage.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfgEnv(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint,
+		"OTEL_TRACES_SAMPLER":         "parentbased_traceidratio",
+		"OTEL_TRACES_SAMPLER_ARG":     "0.1",
+	}), nil)
+	require.NoError(t, err)
+	assert.Contains(t, got, "random_sampling")
+	assert.Contains(t, got, "value: 10")
+}
+
+func TestRenderEnvoyBootstrap_PlaintextCollectorNoUpstreamTLS(t *testing.T) {
+	// http:// endpoint → plaintext gRPC; no upstream TLS on the collector cluster.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg("http://otel:4317"), nil)
+	require.NoError(t, err)
+	require.Contains(t, got, "- name: otel_export")
+	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
+	assert.NotContains(t, collectorBlock, "UpstreamTlsContext")
+}
+
+func TestRenderEnvoyBootstrap_HTTPSCollectorGetsUpstreamTLS(t *testing.T) {
+	// https:// endpoint → the collector cluster is wrapped in upstream TLS.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg("https://otel.example.com:4318"), nil)
+	require.NoError(t, err)
+	assert.Contains(t, got, "address: otel.example.com")
+	assert.Contains(t, got, "port_value: 4318")
+	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
+	assert.Contains(t, collectorBlock, "UpstreamTlsContext")
+	assert.Contains(t, collectorBlock, "sni: otel.example.com")
+}
+
+func TestRenderEnvoyBootstrap_TracingNotOnCredentialChains(t *testing.T) {
+	// The post-MITM credential-injection chains must NOT get a tracing provider:
+	// their :path can hold a query-param credential and Envoy has no span-tag
+	// query stripper. Tracing lives only on the outer agent_egress HCM, so the
+	// provider appears exactly once even with two credentialed chains.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(got, "OpenTelemetryConfig"),
+		"tracing provider must be on the outer egress HCM only, not per credential chain")
+}
+
+func TestRenderEnvoyBootstrap_AccessLogNeverLogsCredentials(t *testing.T) {
+	// The proxy injects credentials as an Authorization header AND as URL query
+	// params. The access log must reference neither: no Authorization-header
+	// operator, and the path goes through REQ_WITHOUT_QUERY so the query string
+	// (where the Lua filter parks query-param credentials) is dropped.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), []envoyHostChain{
+		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
+	})
+	require.NoError(t, err)
+	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
+	// The naive path operator would include the query string — must not appear.
+	assert.NotContains(t, got, "%REQ(:PATH)%")
+	assert.NotContains(t, strings.ToLower(got), "req(authorization)")
+}
+
+func TestRenderEnvoyBootstrap_ExternalEgressStripsTraceContext(t *testing.T) {
+	// Internal trace context must not leak to external HTTP upstreams.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), nil)
+	require.NoError(t, err)
+	assert.Contains(t, got, "request_headers_to_remove: [ traceparent, tracestate ]")
+}
+
+func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
+	// The controller relays its inherited OTEL_* env onto the gateway generically,
+	// but the gateway's own identity overrides the controller's: service.name is
+	// owned by the tracer config (OTEL_SERVICE_NAME not relayed), and
+	// OTEL_RESOURCE_ATTRIBUTES is set fresh with the bounded agent.id.
+	cfg := *bootstrapTestCfg
+	cfg.OTelEnv = map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel:4317",
+		"OTEL_TRACES_SAMPLER":         "parentbased_always_on",
+		"OTEL_SERVICE_NAME":           "platform-controller",       // controller identity
+		"OTEL_RESOURCE_ATTRIBUTES":    "k8s.pod.name=controller-0", // controller identity
+	}
+	env := map[string]string{}
+	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "http://otel:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
+	assert.Equal(t, "parentbased_always_on", env["OTEL_TRACES_SAMPLER"])
+	_, relayedServiceName := env["OTEL_SERVICE_NAME"]
+	assert.False(t, relayedServiceName, "controller's service.name must not ride onto the gateway")
+	assert.Equal(t, "agent.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"])
+}
+
+func TestEnvoyContainer_NoOTelEnvWhenDisabled(t *testing.T) {
+	assert.Empty(t, envoyContainer("agent-7", bootstrapTestCfg, nil).Env)
+}
+
+func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
+	// The bundled backend enables BOTH gateway telemetry features at once: the
+	// agent-telemetry transit chain (PLATFORM_TELEMETRY_COLLECTOR_*) and the
+	// gateway's own OTel export (relayed OTEL_*). They must render side by
+	// side with distinct cluster names — a duplicate cluster name is a fatal
+	// Envoy config error that would crash-loop every gateway.
+	cfg := telemetryTestCfg()
+	cfg.OTelEnv = map[string]string{
+		// Same bundled collector, gRPC port so the stats sink renders too.
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://platform-clickstack-collector.platform.svc.cluster.local:4317",
+	}
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", cfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+
+	// Both features present: transit chain, tracer, stats sink.
+	assert.Contains(t, got, "- name: terminate_otel_collector")
+	assert.Contains(t, got, "OpenTelemetryConfig")
+	assert.Contains(t, got, "stats_sinks")
+
+	// Every cluster name is unique — the invariant the split otel_collector /
+	// otel_export naming protects.
+	static, _ := doc["static_resources"].(map[string]any)
+	clusters, _ := static["clusters"].([]any)
+	require.NotEmpty(t, clusters)
+	seen := map[string]bool{}
+	for _, c := range clusters {
+		name, _ := c.(map[string]any)["name"].(string)
+		require.False(t, seen[name], "duplicate cluster name %q", name)
+		seen[name] = true
+	}
+	assert.True(t, seen["otel_collector"], "transit cluster must render")
+	assert.True(t, seen["otel_export"], "own-telemetry exporter cluster must render")
 }

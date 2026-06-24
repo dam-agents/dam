@@ -50,7 +50,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 	}
 
 	volumes := envoyVolumes(agentName, cfg, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
+	containers := []corev1.Container{envoyContainer(agentName, cfg, credentialSecrets)}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod
@@ -165,7 +165,7 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 	}
 
 	volumes := envoyVolumes(forkName, cfg, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
+	containers := []corev1.Container{envoyContainer(forkName, cfg, credentialSecrets)}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod
