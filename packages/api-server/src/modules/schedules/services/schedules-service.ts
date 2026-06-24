@@ -146,8 +146,11 @@ export function createSchedulesService(deps: {
         timezone: input.timezone,
         quietHours: input.quietHours,
         task: input.task,
-        ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       };
+      // "fresh" is the absence of sessionMode — clear any value inherited from
+      // the spread so an edit to fresh isn't masked by the prior setting.
+      if (input.sessionMode) spec.sessionMode = input.sessionMode;
+      else delete spec.sessionMode;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (updated) await deps.runner.sync(updated.id);
