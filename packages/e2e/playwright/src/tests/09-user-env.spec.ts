@@ -44,7 +44,10 @@ test("user env rides the contribution rail", async () => {
   const listed = (await api.agents.list.query()).find(
     (a) => a.name === agentName,
   );
-  expect(listed, `agent ${agentName} must exist from earlier specs`).toBeTruthy();
+  expect(
+    listed,
+    `agent ${agentName} must exist from earlier specs`,
+  ).toBeTruthy();
   await api.agents.wake.mutate({ id: listed!.id });
   const agentId = await waitForAgentRunning(api, agentName);
 
@@ -64,7 +67,10 @@ test("user env rides the contribution rail", async () => {
 
   await test.step("editor view is fed from the store, not the CR", async () => {
     const agent = await api.agents.get.query({ id: agentId });
-    expect(agent.env).toContainEqual({ name: userEnvName, value: userEnvValue });
+    expect(agent.env).toContainEqual({
+      name: userEnvName,
+      value: userEnvValue,
+    });
   });
 
   await test.step("editing the value applies at the next turn", async () => {

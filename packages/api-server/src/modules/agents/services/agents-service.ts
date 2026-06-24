@@ -342,7 +342,8 @@ export function createAgentsService(deps: {
       const userEnv = input.env?.length
         ? preserveProtectedEnvs([], input.env)
         : [];
-      if (userEnv.length > 0) await deps.agentEnvRepo.replace(infra.id, userEnv);
+      if (userEnv.length > 0)
+        await deps.agentEnvRepo.replace(infra.id, userEnv);
 
       const emails = input.allowedUserEmails ?? [];
       if (emails.length > 0) {

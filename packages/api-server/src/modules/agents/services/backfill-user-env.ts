@@ -35,7 +35,9 @@ export async function backfillUserEnv(deps: {
       await deps.repo.patchSpec(infra.id, { env: [] });
     } catch (e) {
       failed++;
-      deps.log(`user-env backfill: agent ${infra.id} failed, will retry: ${errMsg(e)}`);
+      deps.log(
+        `user-env backfill: agent ${infra.id} failed, will retry: ${errMsg(e)}`,
+      );
     }
   }
   deps.log(`user-env backfill: migrated ${migrated}, failed ${failed}`);
