@@ -50,6 +50,7 @@ includes = [
     "packages/agents/claude-code/tasks.toml",
     "packages/agents/codex/tasks.toml",
     "packages/agents/nous/tasks.toml",
+    "packages/agents/openevolve/tasks.toml",
     "packages/agents/pi-agent/tasks.toml",
     "packages/agents/tasks.toml",
     "packages/api-server-api/tasks.toml",
