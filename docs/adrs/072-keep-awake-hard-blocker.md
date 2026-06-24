@@ -1,6 +1,6 @@
 # ADR-072: Keep agents awake with an explicit hard blocker, not work-detection
 
-**Date:** 2026-06-22
+**Date:** 2026-06-24
 **Status:** Accepted
 **Owner:** @jjeliga
 
@@ -10,7 +10,7 @@ Agents auto-hibernate (scale to zero) when the runtime reports itself idle, and 
 
 ## Decision
 
-Keeping an agent awake is an explicit, per-agent opt-in — never inferred from the workload's processes. It takes two forms: an **unconditional flag** (off by default) that makes the agent count as never-idle so the controller never scales it to zero, for long-running no-session workloads that can't signal their own boundaries; and a **self-managed sentinel** a workload creates while its work runs and removes when done, pinning the agent only for that duration so it reclaims itself. The platform observes nothing about the workload and promises only that the agent will not hibernate while a pin is set. The flag is the per-agent form of the existing global auto-hibernation switch, and is never set on interactive harness agents.
+Keeping an agent awake is an explicit, per-agent opt-in — never inferred from the workload's processes. It takes two forms: an **unconditional flag** (off by default) that makes the agent count as never-idle so the controller never scales it to zero, for long-running no-session workloads that can't signal their own boundaries; and a **self-managed sentinel** a workload creates while its work runs and removes when done, pinning the agent only for that duration so it reclaims itself. The platform observes nothing about the workload and promises only that the agent will not hibernate while a pin is set. The flag is the per-agent form of the existing global auto-hibernation switch.
 
 ## Alternatives Considered
 
