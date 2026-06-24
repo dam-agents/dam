@@ -943,6 +943,16 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: openevolve
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "OpenEvolve — evolutionary code-optimization agent"
+    image:
+      repository: quay.io/dam-agents/openevolve
+      tag: ""
+    storageSize: "5Gi"
+
   # Test-only mock agent. Scripted ACP emitter; receives prompts
   # into an in-pod buffer and emits a pre-set sequence of session/update
   # frames in response. Default off — flipped on by the e2e/local install.
