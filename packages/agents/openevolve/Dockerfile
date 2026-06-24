@@ -28,6 +28,17 @@ RUN uv python install 3.11 &&\
 # Put the venv (and thus `openevolve-run`, `python`) ahead of the base tools.
 ENV PATH="/opt/openevolve-venv/bin:${PATH}"
 
+# claude-code symlinks /etc/claude-code/CLAUDE.md -> /etc/AGENTS.md; the
+# behavioral policy (pre-launch gate, resume-on-wake, guardrails) lives here.
+COPY AGENTS.md /etc/AGENTS.md
+
+# Run outputs (target clones + checkpoints) persist on $HOME. /app/working-dir is
+# ephemeral image content the agent init seeds into $HOME on first boot, so create
+# the dir under the seed and point the env at the persisted path.
+ENV OPENEVOLVE_OUTPUT_ROOT=/home/agent/openevolve-runs
+RUN mkdir -p /app/working-dir/openevolve-runs &&\
+    chown -R 65532:0 /app/working-dir/openevolve-runs
+
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 USER 65532
