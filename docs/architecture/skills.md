@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-06-24
+Last verified: 2026-06-25
 
 ## Overview
 
@@ -127,7 +127,7 @@ Three responsibilities:
 
 - **Install** — fetches the source at the requested `version`. For GitHub URLs, uses the REST tarball endpoint (anonymous first, retry authenticated on 404 to distinguish "not found" from "private"); for everything else, shallow-clones via `git`. The paired gateway pod injects the owner's GitHub token on the wire when the request hits `api.github.com`. Resolves the named skill's directory from the source's `path/<name>/` when a [path](#skill-source) is set, else by walking the [Source Roots](#source-roots) in order (then top-level); copies it into every configured Skill Path, and returns the deterministic `contentHash`.
 - **Scan** — same fetch path; enumerates skills from the source's `path` exclusively when set, else across the [Source Roots](#source-roots) (union, deduped by name, top-level fallback); parses frontmatter, and returns `(name, description, version, contentHash)` for each.
-- **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Platform <platform-publish@users.noreply.github.com>`. Branch naming: `platform/publish-<name>-<timestamp>`. There is no `git push`.
+- **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Platform <platform-publish@users.noreply.github.com>`. Files land under the source's [`path`](#skill-source) subdir when set (so the same source's subdir-exclusive scan finds the published skill), else under `skills/`. Branch naming: `platform/publish-<name>-<timestamp>`. There is no `git push`.
 
 When env credentials arrive over the runtime channel, the agent-runtime reacts by running `gh auth setup-git`, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
 
