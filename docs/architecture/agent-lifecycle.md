@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-15
+Last verified: 2026-06-25
 
 ## Overview
 
@@ -60,13 +60,12 @@ When the create request carries a private-registry credential, the api-server wr
 
 The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
 
-Pod env at start is the composition of **three** layers — last occurrence wins, with `PORT` server-enforced:
+Pod env at start is composed by the controller from platform wiring only — last occurrence wins, with `PORT` server-enforced:
 
 1. **platform envs** — proxy + auth wiring rendered by the controller (`HTTPS_PROXY`, harness URL, ext-authz routing, etc.).
-2. **`credentialEnvVars`** — env contributions derived from the Agent's mounted credential Secrets (e.g. `GH_TOKEN` from a GitHub PAT half).
-3. **`agent.env`** — the single env list on the Agent's spec. The api-server is its sole writer.
+2. **chart-level platform defaults** — any `env` the install declares as defaults.
 
-Template env contributes at *create time only*: when an Agent is created from a Template, the api-server's `assembleSpecFromTemplate` step copies template env into `agent.env`. The controller never reads the Template again at pod start, so editing a Template never re-flows into a running Agent — there is no "template envs" runtime layer. Editing `agent.env` takes effect on the next pod restart.
+Everything tied to an Agent's *configuration* rides the runtime channel as `env`-kind contributions instead, never the pod spec: connection-derived env (credential placeholders the gateway swaps on the wire), user-typed env (the Environment editor), and template env. The api-server stores user-typed and template env in Postgres `agent_env` and delivers all of it at the next idle turn with no pod roll, ordering user env ahead of connection/secret env so it wins on a name collision. Template env is seeded into `agent_env` at create time only, so editing a Template never re-flows into a running Agent. The Agent CR's `spec.env` field is retained but no longer read. See [connections](connections.md).
 
 Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
 

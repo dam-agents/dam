@@ -278,6 +278,10 @@ export function createAgentsService(deps: {
           description: input.description,
         });
       }
+      // Template-declared env rides the rail like user env (seeded below), not
+      // the CR — the controller no longer reads spec.env.
+      const templateEnv = (spec.env as EnvVar[] | undefined) ?? [];
+      delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
 
       // Single-shot create: seed grants into the spec before first render so
@@ -338,10 +342,11 @@ export function createAgentsService(deps: {
         throw e;
       }
 
-      // The agent's boot `hello` pulls agent_env on first apply, so no enqueue here.
-      const userEnv = input.env?.length
-        ? preserveProtectedEnvs([], input.env)
-        : [];
+      // Input is ordered last so user env wins over a same-named template default (replace dedupes last-wins).
+      const userEnv = preserveProtectedEnvs(
+        [],
+        [...templateEnv, ...(input.env ?? [])],
+      );
       if (userEnv.length > 0)
         await deps.agentEnvRepo.replace(infra.id, userEnv);
 

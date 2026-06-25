@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import { agentEnv, eq, inArray, sql } from "db";
+import { agentEnv, eq, inArray } from "db";
 import type { EnvVar } from "api-server-api";
 
 /** Postgres store for user-typed agent env, keyed by `agent_id` (ownership enforced by the agents service). */
@@ -62,12 +62,10 @@ export function createAgentEnvRepository(db: Db): AgentEnvRepository {
     },
 
     async listAgentIds() {
-      const rows = await db.execute<{ agent_id: string }>(sql`
-        SELECT DISTINCT agent_id FROM ${agentEnv}
-      `);
-      return (rows as unknown as Array<{ agent_id: string }>).map(
-        (r) => r.agent_id,
-      );
+      const rows = await db
+        .selectDistinct({ agentId: agentEnv.agentId })
+        .from(agentEnv);
+      return rows.map((r) => r.agentId);
     },
   };
 }
