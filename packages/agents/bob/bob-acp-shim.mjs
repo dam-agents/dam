@@ -84,25 +84,20 @@ let currentModeId = (() => {
   return "ask";
 })();
 const pendingNewSessionIds = new Set();
-// Session workspace (ACP cwd); Bob's read guard allows only this dir + its
-// temp. Defaults to the harness's launch dir (the workspace) until session/new.
+// Session workspace (ACP cwd) — the only dir Bob's read guard allows; set on session/new.
 let sessionCwd = process.cwd();
-// Chat uploads land here; only files under it are staged into the workspace.
+// Chat uploads land here; only files under it get staged into the workspace.
 const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
 let pendingModeSwitch = null;
 
-// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
-// </thinking>; the actual user-facing text is whatever lives outside the
-// block. Default state is "inside" because bob skips the opening tag for
-// direct-answer turns. messageCarry retains the tail that might contain a
-// partial THINK_OPEN/THINK_CLOSE tag split across token boundaries.
+// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…</thinking>;
+// user-facing text is what's outside. Default state is "inside" — Bob omits the
+// opening tag on direct-answer turns. messageCarry holds the tail in case a tag is
+// split across token boundaries.
 //
-// outsideBuf accumulates out-of-thinking text for meta-hint filtering.
-// Bob peppers "[using tool X: …]" status lines into the message stream,
-// which spread over many tokens (e.g. the closing "]" arrives several
-// chunks later, with real answer text in between). We strip complete
-// "[using tool … ]" segments and keep the tail whenever a still-unclosed
-// "[using tool" start is present so we don't ship partial meta to the UI.
+// outsideBuf accumulates out-of-thinking text for meta-hint filtering: Bob peppers
+// "[using tool X: …]" status lines across many tokens, so we strip complete
+// "[using tool … ]" segments and keep the tail while a "[using tool" is still open.
 const THINK_OPEN = "<thinking>";
 const THINK_CLOSE = "</thinking>";
 const META_COMPLETE = /\[using tool [^\]]*\]\n?/g;
@@ -166,13 +161,11 @@ function handleClientLine(line) {
   }
 
   if (isClientRequest && f.method === "session/prompt" && Array.isArray(f.params?.prompt)) {
-    // Bob rejects resource_link blocks (-32603, issue #441); stage each
-    // attachment and pass a text path pointer instead.
+    // Bob rejects resource_link blocks (#441); stage each and pass a text path pointer.
     f.params.prompt = f.params.prompt.map((b) =>
       b?.type === "resource_link" ? { type: "text", text: stageAttachment(b) } : b,
     );
-    // One-shot mode switch: prepend an instruction so the LLM calls the
-    // switch-mode tool (Bob's system prompt teaches the XML form).
+    // One-shot mode switch: prepend an instruction so the LLM calls the switch-mode tool.
     if (pendingModeSwitch) {
       const firstText = f.params.prompt.find(
         (p) => p?.type === "text" && typeof p?.text === "string",
@@ -188,22 +181,18 @@ function handleClientLine(line) {
   forwardToBob(line);
 }
 
-// Uploads land in $HOME/.uploads, which Bob can't read in ACP mode (read guard
-// is the workspace + temp, not widenable). Copy into the workspace and point
-// Bob there; on failure fall back to the original path.
+// Copy an upload into the workspace so Bob's read guard (workspace + temp only) can see it.
 function stageAttachment(block) {
   let src = typeof block.uri === "string" ? block.uri : "";
   if (src.startsWith("file://")) {
     try {
       src = fileURLToPath(src);
     } catch {
-      /* leave src as the raw uri */
+      /* keep the raw uri */
     }
   }
-  // Resolve before the containment check so `..` segments can't slip a path
-  // outside the upload dir past it — copying an arbitrary path into the
-  // workspace would smuggle a file past Bob's read guard. Other paths pass
-  // through for Bob's own guard to govern.
+  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT and
+  // smuggle an arbitrary file past Bob's read guard.
   src = resolve(src);
   if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
     try {
