@@ -10,6 +10,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -87,7 +88,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		// Active by activity annotations → not an idle candidate. This is the
 		// exact decision the reconciler uses to scale up, so the two
 		// can never disagree about whether an agent is idle.
-		if shouldRun(agent.GetAnnotations(), timeout, now) {
+		if shouldRun(agent.GetAnnotations(), idleTimeoutFor(agent, timeout), now) {
 			continue
 		}
 
@@ -111,6 +112,16 @@ func (c *IdleChecker) check(ctx context.Context) {
 	// shows when a sweep over unreachable pods runs long.
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+// idleTimeoutFor reads spec.currentHibernationTimeoutMin from the unstructured agent (k8s decodes whole-number JSON as int64); missing falls back to global.
+func idleTimeoutFor(agent *unstructured.Unstructured, global time.Duration) time.Duration {
+	v, found, err := unstructured.NestedInt64(agent.Object, "spec", "currentHibernationTimeoutMin")
+	if err != nil || !found {
+		return global
+	}
+	m := int(v)
+	return effectiveIdleTimeout(&m, global)
 }
 
 // podIsBusy probes the agent runtime's /api/status endpoint. The runtime is

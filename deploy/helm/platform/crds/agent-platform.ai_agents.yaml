@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "2"
+    agent-platform.ai/crd-schema-generation: "3"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -74,6 +74,25 @@ spec:
                   literals in Mounts are already resolved against it at write
                   time, so the controller never sees $HOME.
                 type: string
+              baseHibernationTimeoutMin:
+                description: BaseHibernationTimeoutMin is the operator baseline idle
+                  timeout in minutes (0 = never, nil = inherit the default); the UI
+                  writes it.
+                type: integer
+              currentHibernationTimeoutMin:
+                description: CurrentHibernationTimeoutMin is the effective idle timeout
+                  the controller enforces (0 = never, nil = inherit); the api-server
+                  materializes it from the baseline and pins.
+                type: integer
+              currentHibernationTimeoutSource:
+                description: CurrentHibernationTimeoutSource records what governs
+                  CurrentHibernationTimeoutMin ("manual" baseline or "pins" leases;
+                  nil = manual) so a pin release never clobbers a manual setting;
+                  the controller never reads it.
+                enum:
+                - manual
+                - pins
+                type: string
               description:
                 description: Description is an optional human-readable description.
                 type: string
@@ -127,6 +146,35 @@ spec:
                 description: Init is an optional one-shot init script run before the
                   agent starts.
                 type: string
+              keepAwakePins:
+                description: KeepAwakePins are MCP-written workload leases the api-server
+                  maxes into CurrentHibernationTimeoutMin; the controller never reads
+                  them.
+                items:
+                  description: KeepAwakePin is one workload-held keep-awake lease
+                    maxed into the effective hibernation timeout.
+                  properties:
+                    createdAt:
+                      description: CreatedAt is when the pin was acquired; informational
+                        only (no TTL today).
+                      format: date-time
+                      type: string
+                    id:
+                      description: ID uniquely identifies the pin within an agent;
+                        acquire rejects duplicates.
+                      type: string
+                    value:
+                      description: Value is the requested idle timeout in minutes;
+                        0 or omitted means never hibernate.
+                      type: integer
+                  required:
+                  - createdAt
+                  - id
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
               mounts:
                 description: Mounts declares the agent's volumes; a persisted mount
                   becomes a PVC.

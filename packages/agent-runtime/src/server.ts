@@ -327,6 +327,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/status") {
+    // Idle is pure ACP/terminal activity; keep-awake now lives on the Agent CR.
     const status = {
       idle: acpRuntime.status().idle && ptySlots.size === 0,
     };

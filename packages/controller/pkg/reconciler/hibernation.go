@@ -36,3 +36,11 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	}
 	return now.Sub(t) <= idleTimeout
 }
+
+// effectiveIdleTimeout maps spec.currentHibernationTimeoutMin (minutes; 0 = never, nil = inherit global) to a duration.
+func effectiveIdleTimeout(currentMin *int, global time.Duration) time.Duration {
+	if currentMin == nil {
+		return global
+	}
+	return time.Duration(*currentMin) * time.Minute
+}

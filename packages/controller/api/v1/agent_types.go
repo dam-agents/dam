@@ -35,6 +35,25 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
+	// BaseHibernationTimeoutMin is the operator baseline idle timeout in minutes (0 = never, nil = inherit the default); the UI writes it.
+	// +optional
+	BaseHibernationTimeoutMin *int `json:"baseHibernationTimeoutMin,omitempty"`
+
+	// CurrentHibernationTimeoutMin is the effective idle timeout the controller enforces (0 = never, nil = inherit); the api-server materializes it from the baseline and pins.
+	// +optional
+	CurrentHibernationTimeoutMin *int `json:"currentHibernationTimeoutMin,omitempty"`
+
+	// KeepAwakePins are MCP-written workload leases the api-server maxes into CurrentHibernationTimeoutMin; the controller never reads them.
+	// +optional
+	// +listType=map
+	// +listMapKey=id
+	KeepAwakePins []KeepAwakePin `json:"keepAwakePins,omitempty"`
+
+	// CurrentHibernationTimeoutSource records what governs CurrentHibernationTimeoutMin ("manual" baseline or "pins" leases; nil = manual) so a pin release never clobbers a manual setting; the controller never reads it.
+	// +optional
+	// +kubebuilder:validation:Enum=manual;pins
+	CurrentHibernationTimeoutSource *string `json:"currentHibernationTimeoutSource,omitempty"`
+
 	// ImagePullPolicy overrides the chart-wide default; empty = inherit.
 	// +optional
 	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
@@ -131,6 +150,17 @@ type EnvVar struct {
 	Value string `json:"value"`
 }
 
+// KeepAwakePin is one workload-held keep-awake lease maxed into the effective hibernation timeout.
+type KeepAwakePin struct {
+	// ID uniquely identifies the pin within an agent; acquire rejects duplicates.
+	ID string `json:"id"`
+	// Value is the requested idle timeout in minutes; 0 or omitted means never hibernate.
+	// +optional
+	Value *int `json:"value,omitempty"`
+	// CreatedAt is when the pin was acquired; informational only (no TTL today).
+	CreatedAt metav1.Time `json:"createdAt"`
+}
+
 // ResourceSpec carries container resource requests and limits as K8s Quantity
 // strings keyed by resource name (e.g. "cpu", "memory").
 type ResourceSpec struct {
@@ -144,7 +174,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=3
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

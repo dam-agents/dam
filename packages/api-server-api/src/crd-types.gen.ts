@@ -18,6 +18,18 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
+   * BaseHibernationTimeoutMin is the operator baseline idle timeout in minutes (0 = never, nil = inherit the default); the UI writes it.
+   */
+  baseHibernationTimeoutMin?: number;
+  /**
+   * CurrentHibernationTimeoutMin is the effective idle timeout the controller enforces (0 = never, nil = inherit); the api-server materializes it from the baseline and pins.
+   */
+  currentHibernationTimeoutMin?: number;
+  /**
+   * CurrentHibernationTimeoutSource records what governs CurrentHibernationTimeoutMin ("manual" baseline or "pins" leases; nil = manual) so a pin release never clobbers a manual setting; the controller never reads it.
+   */
+  currentHibernationTimeoutSource?: "manual" | "pins";
+  /**
    * Description is an optional human-readable description.
    */
   description?: string;
@@ -60,6 +72,23 @@ export interface AgentSpecCR {
    * Init is an optional one-shot init script run before the agent starts.
    */
   init?: string;
+  /**
+   * KeepAwakePins are MCP-written workload leases the api-server maxes into CurrentHibernationTimeoutMin; the controller never reads them.
+   */
+  keepAwakePins?: {
+    /**
+     * CreatedAt is when the pin was acquired; informational only (no TTL today).
+     */
+    createdAt: string;
+    /**
+     * ID uniquely identifies the pin within an agent; acquire rejects duplicates.
+     */
+    id: string;
+    /**
+     * Value is the requested idle timeout in minutes; 0 or omitted means never hibernate.
+     */
+    value?: number;
+  }[];
   /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
    */

@@ -39,6 +39,7 @@ import type { StagedNetworkAccessController } from "../../egress-rules/component
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { confirmKeepAwakeToggle } from "../lib/keep-awake.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 const EMPTY_SECRETS: SecretView[] = [];
@@ -54,6 +55,8 @@ const settingsSchema = z.object({
   envVars: z
     .array(envVarSchema)
     .refine(allEnvVarsValid, "All env vars need a name and a value"),
+  // Keep-awake setting the user edits: seeded from the agent's `current`, saved as `base`.
+  keepAwakeTimeoutMin: z.number().int().nonnegative().nullable(),
 });
 type SettingsValues = z.infer<typeof settingsSchema>;
 
@@ -66,6 +69,7 @@ export type SandboxSettingsStatus =
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
   const agent = useMemo(
@@ -123,6 +127,7 @@ export function useSandboxSettingsForm() {
         assigned: [],
         assignedAppIds: [],
         envVars: [],
+        keepAwakeTimeoutMin: null,
       },
     });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
@@ -156,6 +161,7 @@ export function useSandboxSettingsForm() {
         .map((c) => c.connectionId)
         .sort(),
       envVars: userInitialEnv,
+      keepAwakeTimeoutMin: agent.currentHibernationTimeoutMin,
     });
     setFormReady(true);
   }, [
@@ -173,6 +179,22 @@ export function useSandboxSettingsForm() {
   const envVars = watch("envVars");
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
+
+  // Keep-awake is the never-hibernate setting: idle timeout pinned to 0. On → 0;
+  // off → null (inherit the platform default). Later this can become a slider.
+  const keepAwake = watch("keepAwakeTimeoutMin") === 0;
+  const setKeepAwake = async (on: boolean) => {
+    const proceed = await confirmKeepAwakeToggle(
+      on,
+      agent?.keptAwakeByPin ?? false,
+      showConfirm,
+    );
+    if (!proceed) return;
+    setValue("keepAwakeTimeoutMin", on ? 0 : null, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  };
 
   // A provider can be a connection (assignedAppIds) or a legacy secret
   // (assigned); prefer the connection.
@@ -367,13 +389,20 @@ export function useSandboxSettingsForm() {
           secretIds: values.assigned,
         });
       }
-      if (dirtyFields.envVars || dirtyFields.name) {
+      if (
+        dirtyFields.envVars ||
+        dirtyFields.name ||
+        dirtyFields.keepAwakeTimeoutMin
+      ) {
         await updateAgent.mutateAsync({
           id: agentId,
           ...(dirtyFields.envVars
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.keepAwakeTimeoutMin
+            ? { baseHibernationTimeoutMin: values.keepAwakeTimeoutMin }
+            : {}),
         });
       }
       if (net.stagedPreset !== null) {
@@ -401,6 +430,7 @@ export function useSandboxSettingsForm() {
         assigned: values.assigned,
         assignedAppIds: values.assignedAppIds,
         envVars: values.envVars,
+        keepAwakeTimeoutMin: values.keepAwakeTimeoutMin,
       });
     } catch {
       // Mutation meta.errorToast surfaces the failure; stay on the page.
@@ -447,6 +477,8 @@ export function useSandboxSettingsForm() {
     currentPreset,
     egressStaged,
     inheritedEnvs,
+    keepAwake,
+    setKeepAwake,
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:

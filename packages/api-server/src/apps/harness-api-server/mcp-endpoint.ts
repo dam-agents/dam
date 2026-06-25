@@ -17,6 +17,7 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
+import { createKeepAwakeService } from "../../modules/agents/services/keep-awake-service.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 
@@ -122,10 +123,15 @@ export function createMcpSession(
     ],
   });
 
-  server.tool(
+  const keepAwake = createKeepAwakeService(deps.k8s);
+
+  server.registerTool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
-    { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
+    {
+      description:
+        "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
+      inputSchema: { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
+    },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
         agentId,
@@ -135,34 +141,36 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  server.registerTool(
     "send_channel_message",
-    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
     {
-      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-      text: z.string(),
-      chatId: z.string().optional(),
-      attachment: z
-        .object({
-          path: z
-            .string()
-            .min(1)
-            .describe(
-              `Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`,
-            ),
-          filename: z
-            .string()
-            .optional()
-            .describe(
-              "Name shown in the channel; defaults to the basename of path.",
-            ),
-          mimeType: z
-            .string()
-            .optional()
-            .describe("Override the runtime-detected MIME type."),
-          title: z.string().optional(),
-        })
-        .optional(),
+      description: `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
+      inputSchema: {
+        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+        text: z.string(),
+        chatId: z.string().optional(),
+        attachment: z
+          .object({
+            path: z
+              .string()
+              .min(1)
+              .describe(
+                `Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`,
+              ),
+            filename: z
+              .string()
+              .optional()
+              .describe(
+                "Name shown in the channel; defaults to the basename of path.",
+              ),
+            mimeType: z
+              .string()
+              .optional()
+              .describe("Override the runtime-detected MIME type."),
+            title: z.string().optional(),
+          })
+          .optional(),
+      },
     },
     async ({ channel, text, chatId, attachment }) => {
       let resolved: ChannelAttachment | undefined;
@@ -244,10 +252,13 @@ export function createMcpSession(
   // `agentId` is captured from the verified MCP session, so agents cannot
   // spoof it via tool input.
 
-  server.tool(
+  server.registerTool(
     "list_skill_sources",
-    "List the skill sources (public git repos) this agent can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
-    {},
+    {
+      description:
+        "List the skill sources (public git repos) this agent can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
+      inputSchema: {},
+    },
     () =>
       textTool(
         "Failed to list skill sources",
@@ -256,10 +267,13 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  server.registerTool(
     "list_skills_in_source",
-    "List the skills available inside a connected skill source. Returns each skill's name, description, and the last-touching commit SHA (pass this as `version` to install_skill).",
-    { sourceId: z.string() },
+    {
+      description:
+        "List the skills available inside a connected skill source. Returns each skill's name, description, and the last-touching commit SHA (pass this as `version` to install_skill).",
+      inputSchema: { sourceId: z.string() },
+    },
     ({ sourceId }) =>
       textTool(
         "Failed to list skills",
@@ -268,13 +282,16 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  server.registerTool(
     "install_skill",
-    "Install a skill onto THIS running agent. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
     {
-      source: z.string().url(),
-      name: z.string().min(1),
-      version: z.string().min(1),
+      description:
+        "Install a skill onto THIS running agent. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
+      inputSchema: {
+        source: z.string().url(),
+        name: z.string().min(1),
+        version: z.string().min(1),
+      },
     },
     ({ source, name, version }) =>
       textTool(
@@ -285,12 +302,15 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  server.registerTool(
     "uninstall_skill",
-    "Uninstall a skill from THIS agent. Removes the directory from the pod and drops the entry from the agent spec.",
     {
-      source: z.string().url(),
-      name: z.string().min(1),
+      description:
+        "Uninstall a skill from THIS agent. Removes the directory from the pod and drops the entry from the agent spec.",
+      inputSchema: {
+        source: z.string().url(),
+        name: z.string().min(1),
+      },
     },
     ({ source, name }) =>
       textTool(
@@ -301,14 +321,17 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  server.registerTool(
     "publish_skill",
-    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
-      sourceId: z.string().min(1),
-      name: z.string().min(1),
-      title: z.string().optional(),
-      body: z.string().optional(),
+      description:
+        "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+      inputSchema: {
+        sourceId: z.string().min(1),
+        name: z.string().min(1),
+        title: z.string().optional(),
+        body: z.string().optional(),
+      },
     },
     ({ sourceId, name, title, body }) =>
       textTool(
@@ -323,10 +346,13 @@ export function createMcpSession(
   // Descriptions are deliberately assertive — Claude Code ships with an in-process
   // scheduled-tasks tool that would otherwise be preferred. These schedules are the
   // *persistent, platform-level* ones visible in the host UI.
-  server.tool(
+  server.registerTool(
     "list_schedules",
-    "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
-    {},
+    {
+      description:
+        "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
+      inputSchema: {},
+    },
     async () => {
       const list = await schedules.list(agentId);
       return {
@@ -337,30 +363,33 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  server.registerTool(
     "create_schedule",
-    "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
     {
-      name: z
-        .string()
-        .min(1)
-        .describe("Human-readable name shown in the host UI"),
-      cron: z
-        .string()
-        .min(1)
-        .describe(
-          "Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily",
-        ),
-      task: z
-        .string()
-        .min(1)
-        .describe("Prompt the agent will receive when the schedule fires"),
-      sessionMode: z
-        .enum(["continuous", "fresh"])
-        .optional()
-        .describe(
-          "continuous = resume prior session each tick; fresh = new session per run (default)",
-        ),
+      description:
+        "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+      inputSchema: {
+        name: z
+          .string()
+          .min(1)
+          .describe("Human-readable name shown in the host UI"),
+        cron: z
+          .string()
+          .min(1)
+          .describe(
+            "Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily",
+          ),
+        task: z
+          .string()
+          .min(1)
+          .describe("Prompt the agent will receive when the schedule fires"),
+        sessionMode: z
+          .enum(["continuous", "fresh"])
+          .optional()
+          .describe(
+            "continuous = resume prior session each tick; fresh = new session per run (default)",
+          ),
+      },
     },
     async ({ name, cron, task, sessionMode }) => {
       try {
@@ -405,10 +434,13 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  server.registerTool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
-    { id: z.string().min(1) },
+    {
+      description:
+        "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
+      inputSchema: { id: z.string().min(1) },
+    },
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
@@ -446,10 +478,13 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  server.registerTool(
     "delete_schedule",
-    "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
-    { id: z.string().min(1) },
+    {
+      description:
+        "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
+      inputSchema: { id: z.string().min(1) },
+    },
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
@@ -466,6 +501,58 @@ export function createMcpSession(
       await schedules.delete(id);
       return { content: [{ type: "text" as const, text: `deleted ${id}` }] };
     },
+  );
+
+  // ---- Keep-awake tools -----------------------------------------------------
+  // agentId is captured from the verified session, so an agent can only pin itself.
+
+  server.registerTool(
+    "keep_awake_acquire",
+    {
+      description:
+        "Keep THIS agent awake while long-running background work runs that has NO active chat/terminal session (those already keep it awake). Pass a unique `id` you will later release — typically a job/run id; acquiring the same id twice errors. Optional `value` = minutes of idleness to tolerate while held (0 or omitted = never hibernate). IMPORTANT: pins never expire on their own. The agent will NOT hibernate until you call keep_awake_release with the same id (or keep_awake_purge), so always release when the work finishes — otherwise the agent might run forever.",
+      inputSchema: {
+        id: z.string().min(1),
+        value: z.number().int().min(0).optional(),
+      },
+    },
+    ({ id, value }) =>
+      textTool(
+        "Failed to acquire keep-awake pin",
+        () => keepAwake.acquire(agentId, id, value),
+        () =>
+          `Acquired keep-awake pin "${id}". This agent will not hibernate until it is released.`,
+      ),
+  );
+
+  server.registerTool(
+    "keep_awake_release",
+    {
+      description:
+        "Release a keep-awake pin previously acquired with keep_awake_acquire, by its `id`. Idempotent — releasing an unknown id is a no-op. When the last pin is released the agent returns to normal idle-hibernation.",
+      inputSchema: { id: z.string().min(1) },
+    },
+    ({ id }) =>
+      textTool(
+        "Failed to release keep-awake pin",
+        () => keepAwake.release(agentId, id),
+        () => `Released keep-awake pin "${id}".`,
+      ),
+  );
+
+  server.registerTool(
+    "keep_awake_purge",
+    {
+      description:
+        "Release ALL keep-awake pins on this agent at once, returning it to normal idle-hibernation. Use to clean up pins orphaned by work that never released its own.",
+      inputSchema: {},
+    },
+    () =>
+      textTool(
+        "Failed to purge keep-awake pins",
+        () => keepAwake.purge(agentId),
+        () => "Released all keep-awake pins.",
+      ),
   );
 
   // ---- Transport ------------------------------------------------------------

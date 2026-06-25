@@ -27,6 +27,10 @@ function toView(agent: Agent) {
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
+    baseHibernationTimeoutMin: agent.spec.baseHibernationTimeoutMin ?? null,
+    currentHibernationTimeoutMin:
+      agent.spec.currentHibernationTimeoutMin ?? null,
+    keptAwakeByPin: (agent.spec.keepAwakePins?.length ?? 0) > 0,
     grantedSecretIds: agent.spec.grantedSecretIds ?? [],
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,

@@ -117,6 +117,12 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: EnvVar[];
+  /** Operator baseline idle timeout (min); 0 = never, null = inherit. UI writes this. */
+  baseHibernationTimeoutMin: number | null;
+  /** Effective idle timeout the controller enforces (min); UI shows this. */
+  currentHibernationTimeoutMin: number | null;
+  /** Whether an agent keep-awake pin is currently held; gates the disable confirm. */
+  keptAwakeByPin: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

@@ -13,6 +13,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import { currentFromPins } from "./keep-awake-service.js";
 
 /** Outbox-derived contribution status, supplied by runtime-delivery. */
 export interface ContributionsStatus {
@@ -283,6 +284,11 @@ export function createAgentsService(deps: {
       const templateEnv = (spec.env as EnvVar[] | undefined) ?? [];
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      if (input.baseHibernationTimeoutMin !== undefined) {
+        spec.baseHibernationTimeoutMin = input.baseHibernationTimeoutMin;
+        spec.currentHibernationTimeoutMin = input.baseHibernationTimeoutMin;
+        spec.currentHibernationTimeoutSource = "manual";
+      }
 
       // Single-shot create: seed grants into the spec before first render so
       // credentials ride the first snapshot and the gateway renders its chains
@@ -430,6 +436,25 @@ export function createAgentsService(deps: {
       if (input.description !== undefined)
         patch.description = input.description;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
+      if (input.baseHibernationTimeoutMin !== undefined) {
+        const base = input.baseHibernationTimeoutMin;
+        patch.baseHibernationTimeoutMin = base;
+        if (base !== null) {
+          // Setting a concrete baseline claims governance: manual overrides live pins.
+          patch.currentHibernationTimeoutMin = base;
+          patch.currentHibernationTimeoutSource = "manual";
+        } else {
+          // Disable: revert to live pins, but a still-never result (never-pin) is suppressed to manual/inherit so the operator's off takes hold.
+          const pins =
+            (await deps.repo.get(input.id, deps.owner))?.spec.keepAwakePins ??
+            [];
+          const reverted = currentFromPins(pins, null);
+          const suppress = reverted === 0;
+          patch.currentHibernationTimeoutMin = suppress ? null : reverted;
+          patch.currentHibernationTimeoutSource =
+            suppress || pins.length === 0 ? "manual" : "pins";
+        }
+      }
       // Both branches do the owner check; an env-only update skips the no-op CR patch.
       const infra =
         Object.keys(patch).length > 0
