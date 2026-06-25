@@ -26,6 +26,20 @@ own Claude model are reached through the platform's credential gateway — **no 
 key lives in this pod**. Never ask the user for a key, never write one to disk,
 never `pip install openevolve` yourself.
 
+Candidate code runs in the OpenEvolve venv (`$OPENEVOLVE_VENV`) — `openevolve` +
+numpy only. Install whatever else a run needs (PyPI egress is allowed; `scipy` is
+the usual one for numerical work):
+
+```sh
+uv pip install --python "$OPENEVOLVE_VENV/bin/python" scipy
+```
+
+The venv is ephemeral but the uv cache is on persistent `$HOME`, so reinstall on
+resume (fast, from cache). An unavailable import just scores that mutation
+`combined_score = 0` and the run continues — so install what the **evolved** code
+will reach for up front (e.g. scipy for numerical work), not just the initial
+program's imports. See `AGENTS.md` ("Run dependencies").
+
 The pod-level workflow — the mandatory pre-launch gate, per-run directories,
 backgrounding runs, resume-on-wake, and the hard guardrails — is defined in this
 pod's system context (`AGENTS.md`). **This skill is the setup-and-CLI
@@ -66,7 +80,7 @@ models, fall back to a pinned known-good id (for IBM LiteLLM: `aws/claude-sonnet
 
 ```sh
 cat > config.yaml <<YAML
-max_iterations: 100
+max_iterations: 100              # the agreed TOTAL budget — single source of truth; set to what the user approved
 checkpoint_interval: 10          # leave a resumable checkpoint on shorter runs (default 100)
 diff_based_evolution: true       # requires EVOLVE-BLOCK markers in program (default)
 llm:
@@ -137,10 +151,13 @@ openevolve-run <program> <evaluator> -c config.yaml -o <output> -i <N> \
 | `<program> <evaluator>` | positional: initial program file, evaluator file |
 | `-c, --config` | config YAML |
 | `-o, --output` | output dir — **always** an explicit path on `$OPENEVOLVE_OUTPUT_ROOT`, outside the target repo |
-| `-i, --iterations` | max iterations — **always bound** (config default is 10000) |
+| `-i, --iterations` | iterations **this invocation** runs (not an absolute cap) — **always bound**; config default is 10000 |
 | `-t, --target-score` | stop once `combined_score` reaches this |
 | `--checkpoint <dir>` | resume full state from `output/checkpoints/checkpoint_<N>` (continues iteration numbering) |
 | `-l, --log-level` | `INFO` for the per-iteration progress lines |
+
+> On a `--checkpoint` resume `-i` adds that many **more** iterations, so pass the
+> remaining budget (`max_iterations − checkpoint_N`), not the original `-i`.
 
 (`--api-base` / `--primary-model` / `--secondary-model` exist but do **not**
 override an `llm.models` ensemble loaded from the config — configure models in

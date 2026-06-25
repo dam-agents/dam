@@ -55,8 +55,13 @@ any currently-running evolution in one line.
 
 ## The pre-launch gate (mandatory)
 
-**Never launch a full evolution run before all four of these.** A run is
-autonomous and spends real tokens per iteration, so the gate is non-negotiable:
+**Work through all four before launching a full evolution run.** A run is
+autonomous and spends real tokens per iteration. Steps 1–3 are *correctness*
+checks that protect the user's own tokens, so they always run — "go fast" lets
+you run them inline without narrating each one, but it does **not** let you drop
+them (the smoke-eval especially: skipping it can silently burn the whole run on a
+miswired evaluator). Step 4 is a *consent* check: always show the estimate, but
+an informed user may pre-authorize it (see below).
 
 1. **The objective is measurable.** You must be able to write an `evaluate()`
    that returns a number for "better." If the user's goal isn't measurable as a
@@ -69,9 +74,13 @@ autonomous and spends real tokens per iteration, so the gate is non-negotiable:
    known input sensibly (a baseline number the user recognizes as correct). This
    catches the silent failure mode where the evaluator runs but scores the wrong
    thing.
-4. **You've presented an iteration/cost estimate and the user has confirmed.**
-   State the rough call count (≈ iterations × models-per-iteration), that it runs
-   autonomously, and the keep-awake tradeoff (below). Get an explicit go-ahead.
+4. **You've presented an iteration/cost estimate.** State the rough call count
+   (≈ iterations × models-per-iteration), that it runs autonomously, and the
+   keep-awake tradeoff (below). Then **wait for an explicit go-ahead — unless the
+   user already pre-authorized this run** ("just launch it," "don't ask"):
+   pre-authorization waives the *wait*, never the estimate — show the numbers,
+   then launch. (Resuming an already-approved run after hibernation needs no new
+   confirmation — see resume-on-wake.)
 
 ## Run discipline
 
@@ -90,11 +99,23 @@ autonomous and spends real tokens per iteration, so the gate is non-negotiable:
 - **Always pass an explicit `--output`** on the **persisted** workspace
   (`$OPENEVOLVE_OUTPUT_ROOT`, on `$HOME`) and **outside the cloned target repo** —
   so checkpoints survive hibernation and never pollute the target.
-- **Always bound the run** with `--iterations` and/or `--target-score`. The
-  config default is 10000 iterations — never run unbounded.
+- **Always bound the run** (`--iterations` / `--target-score`); never unbounded.
+  Set `config.yaml`'s `max_iterations` to the agreed budget (what the user
+  approved, not a stock 100/10000) and pass a matching `-i`.
 - **Clone the target into its own run directory**, never the pod home root or an
   unrelated path. Give each run a unique web-safe `<run-id>` (repo + objective
   slug; append `-2`, `-3` on collision).
+
+## Run dependencies
+
+Candidate code runs in the OpenEvolve venv (`$OPENEVOLVE_VENV`), which has only
+`openevolve` + numpy. PyPI egress is open, so install whatever the run needs into
+that venv (`uv pip install --python "$OPENEVOLVE_VENV/bin/python" …`) — and
+anticipate what the **evolved** code will reach for, not just the initial
+program's imports (e.g. `scipy` for a numerical-optimization task). The venv is
+ephemeral but the uv cache is on persistent `$HOME`, so reinstall after a restart
+— it's fast. A missing import scores that mutation zero and the run continues, so
+install up front rather than chasing failures.
 
 ## Surviving hibernation (resume-on-wake)
 
@@ -103,22 +124,15 @@ queued prompt, no open terminal/SSH session. That kills any background
 `openevolve-run`. The output dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while you're not engaged**.
 
-Therefore, **at the start of every turn**, for each run the user cares about (or
-any you launched this session): if `run.pid` is dead but the run hasn't reached
-its target/iteration budget, resume from the latest checkpoint —
-
-```sh
-cd "$OPENEVOLVE_OUTPUT_ROOT/<run-id>"
-latest=$(ls -d output/checkpoints/checkpoint_* 2>/dev/null | sort -t_ -k2 -n | tail -1)
-nohup openevolve-run program.py evaluator.py -c config.yaml \
-  -o "$PWD/output" -i <N> --checkpoint "$latest" -l INFO >> run.log 2>&1 &
-echo $! > run.pid
-```
-
-`--checkpoint` restores the full MAP-Elites state and continues the iteration
-numbering. For short or babysat runs to leave a resumable checkpoint, lower
-`checkpoint_interval` in the config (the default is every 100 iterations — see
-the skill).
+So at the **start of each turn**, check any run you care about: if its `run.pid`
+is dead and it hasn't reached its budget, reinstall the run's deps (the venv
+reset) and resume from the latest checkpoint with `--checkpoint`. One non-obvious
+catch — `-i` counts the iterations *this invocation* runs, not an absolute cap, so
+on a resume it runs that many **more**: pass the **remaining** budget
+(`max_iterations` − the latest checkpoint's number, since a resume restarts from
+that checkpoint), not the original `-i`, or it overshoots. A run that's reached
+its budget is done; going further is a new, re-gated decision, not a resume.
+(Lower `checkpoint_interval` if a short run needs to leave a resumable checkpoint.)
 
 **Keep-awake escape hatch:** for a long evolution that must progress
 continuously (e.g. overnight), tell the user to keep a **terminal or SSH session
@@ -148,7 +162,12 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
 
 - **Never** introduce a side path that puts a raw token in the agent or the run
   subprocess — no PAT in env, no `gh auth login` with a literal token, no writing
-  credentials to disk.
+  credentials to disk. If the user offers a token, decline and point them at the
+  connection.
+- **Confirm a connection is attached before promising a PR** — check
+  `PLATFORM_GH_TOKEN_AVAILABLE` (`true` when granted) or `gh auth status`; if it's
+  missing, tell the user to grant one (and still never take a token). A public
+  repo clones read-only without one.
 - Credential injection is **host-keyed**: any in-pod process reaching an allowed
   GitHub host — *including LLM-generated evaluator code* — gets the credential.
   The control surface is therefore the **connection's scope**: keep the GitHub
