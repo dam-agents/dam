@@ -35,7 +35,11 @@ export async function runInstall(
     );
     if (!fetched.ok) return fetched;
 
-    const srcDirRes = await deps.repo.resolveSkillDirInClone(tmp, name);
+    const srcDirRes = await deps.repo.resolveSkillDirInClone(
+      tmp,
+      name,
+      input.path,
+    );
     if (!srcDirRes.ok) {
       // Re-tag with the original source URL — the tmpdir path inside the
       // repo's resolveSkillDirInClone result isn't useful to callers.

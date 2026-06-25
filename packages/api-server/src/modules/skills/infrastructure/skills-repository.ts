@@ -8,7 +8,7 @@ export interface SkillsRepository {
   list(owner: string): Promise<SkillSource[]>;
   get(id: string, owner: string): Promise<SkillSource | null>;
   create(
-    input: { name: string; gitUrl: string },
+    input: { name: string; gitUrl: string; path?: string },
     owner: string,
   ): Promise<SkillSource>;
   delete(id: string, owner: string): Promise<void>;
@@ -23,6 +23,20 @@ export class SkillSourceProtectedError extends Error {
 
 function generateId(): string {
   return `skill-src-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function rowToSource(r: {
+  id: string;
+  name: string;
+  gitUrl: string;
+  path: string | null;
+}): SkillSource {
+  return {
+    id: r.id,
+    name: r.name,
+    gitUrl: r.gitUrl,
+    ...(r.path !== null ? { path: r.path } : {}),
+  };
 }
 
 /** Postgres-backed user-source repo. System (admin-seeded) sources never live
@@ -45,7 +59,7 @@ export function createSkillsRepository(
         .select()
         .from(skillSources)
         .where(eq(skillSources.owner, owner));
-      return rows.map((r) => ({ id: r.id, name: r.name, gitUrl: r.gitUrl }));
+      return rows.map(rowToSource);
     },
 
     async get(id, owner) {
@@ -56,7 +70,7 @@ export function createSkillsRepository(
         .limit(1);
       const r = rows[0];
       if (!r) return null;
-      return { id: r.id, name: r.name, gitUrl: r.gitUrl };
+      return rowToSource(r);
     },
 
     async create(input, owner) {
@@ -66,8 +80,14 @@ export function createSkillsRepository(
         owner,
         name: input.name,
         gitUrl: input.gitUrl,
+        path: input.path || null,
       });
-      return { id, name: input.name, gitUrl: input.gitUrl };
+      return {
+        id,
+        name: input.name,
+        gitUrl: input.gitUrl,
+        ...(input.path ? { path: input.path } : {}),
+      };
     },
 
     async delete(id, owner) {

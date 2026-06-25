@@ -962,14 +962,18 @@ e2e:
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
-# `{name, gitUrl}` shape works for per-template sources under
-# `<templateKey>.skillSources`.
+# `{name, gitUrl, path?}` shape works for per-template sources under
+# `<templateKey>.skillSources`. `path` is an optional repo-relative
+# subdirectory to scan; omit it to scan `skills/` then the repo root.
 skills:
   skillSources: []
   # Example:
   # skillSources:
   #   - name: "Anthropic Skills"
   #     gitUrl: "https://github.com/anthropics/skills"
+  #   - name: "Acme Monorepo Skills"
+  #     gitUrl: "https://github.com/acme/monorepo"
+  #     path: ".claude/skills"
 
 # -- Curated catalog of public git repos an agent's working directory can be
 # seeded from at creation (cloned once into /home/agent/work, shortly after the

@@ -26,7 +26,7 @@ function keyFor(c: Contribution): string {
     case "mcp-entry":
       return `mcp-entry:${c.name}`;
     case "skill-ref":
-      return `skill-ref:${c.name}@${c.version}@${c.sourceUrl}`;
+      return `skill-ref:${c.name}@${c.version}@${c.sourceUrl}@${c.path ?? ""}`;
   }
 }
 

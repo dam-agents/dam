@@ -194,4 +194,5 @@ type EnvVar struct {
 type SkillSource struct {
 	Name   string `json:"name"`
 	GitURL string `json:"gitUrl"`
+	Path   string `json:"path,omitempty"`
 }

@@ -116,7 +116,24 @@ export async function computeContentHash(absDir: string): Promise<string> {
   return h.digest("hex");
 }
 
-async function findSkillDirs(repoDir: string): Promise<string[]> {
+function subPathEscapes(subPath: string): boolean {
+  return subPath.startsWith("/") || subPath.split("/").includes("..");
+}
+
+async function findSkillDirs(
+  repoDir: string,
+  subPath?: string,
+): Promise<string[]> {
+  // An explicit subdir is scanned exclusively — no source-root union or root
+  // fallback, so the user gets exactly the directory they pointed at. The path
+  // is api-validated at source creation; guard here too so a stray
+  // `..`/absolute path can never escape the extracted archive.
+  if (subPath) {
+    if (subPathEscapes(subPath)) {
+      throw new Error(`skill source path rejected: ${subPath}`);
+    }
+    return skillDirsUnder(repoDir, path.join(repoDir, subPath));
+  }
   const found: string[] = [];
   for (const root of SKILL_SOURCE_ROOTS) {
     found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
@@ -156,6 +173,7 @@ async function skillDirsUnder(
  */
 export async function scanPublicGithubArchive(
   gitUrl: string,
+  subPath?: string,
 ): Promise<Skill[]> {
   const host = detectHost(gitUrl);
   if (!host)
@@ -197,7 +215,7 @@ export async function scanPublicGithubArchive(
       throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
-    const skillDirs = await findSkillDirs(repoDir);
+    const skillDirs = await findSkillDirs(repoDir, subPath);
     const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);

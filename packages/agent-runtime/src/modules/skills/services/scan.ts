@@ -38,8 +38,8 @@ export async function runScan(
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
   const res = host
-    ? await scanGithub(deps, input.source, host)
-    : await scanGitClone(deps, input.source);
+    ? await scanGithub(deps, input.source, host, input.path)
+    : await scanGitClone(deps, input.source, input.path);
   if (!res.ok) return res;
   const { kept, dropped } = dedupeByName(res.value);
   for (const d of dropped) {
@@ -54,6 +54,7 @@ async function scanGithub(
   deps: ScanDeps,
   source: string,
   host: DetectedOwnerRepo,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   // Anonymous preflight. The Envoy sidecar passes public repos through and
   // its credential_injector filter rewrites the sentinel for private repos
@@ -97,19 +98,20 @@ async function scanGithub(
     }
     const repoDir = path.join(tmp, extracted[0].name);
 
-    return collectSkills(deps, source, repoDir, version);
+    return collectSkills(deps, source, repoDir, version, subPath);
   });
 }
 
 async function scanGitClone(
   deps: ScanDeps,
   source: string,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     const cloned = await deps.git.cloneShallow(source, tmp, 50);
     if (!cloned.ok) return cloned;
 
-    const skillDirs = await deps.repo.findSkillDirsInClone(tmp);
+    const skillDirs = await deps.repo.findSkillDirsInClone(tmp, subPath);
     const out: ScannedSkill[] = [];
     for (const rel of skillDirs) {
       const absDir = path.join(tmp, rel);
@@ -134,8 +136,9 @@ async function collectSkills(
   source: string,
   repoDir: string,
   version: string,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  const skillDirs = await deps.repo.findSkillDirsInClone(repoDir);
+  const skillDirs = await deps.repo.findSkillDirsInClone(repoDir, subPath);
   const out = await Promise.all(
     skillDirs.map(async (rel) => {
       const absDir = path.join(repoDir, rel);

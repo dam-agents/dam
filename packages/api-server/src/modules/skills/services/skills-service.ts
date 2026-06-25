@@ -62,18 +62,20 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   runtimeMutator: RuntimeMutator;
   owner: string;
-  /** Scan via the provided scanner with a shared TTL cache. The cache key is
-   *  the gitUrl alone — results are user-independent. */
+  /** Scan via the provided scanner with a shared TTL cache, keyed by
+   *  `(gitUrl, path)` — the catalogue depends on both, and the cache is shared
+   *  across users who may point the same repo at different subdirs. */
   scanSource: (
     gitUrl: string,
+    path: string | undefined,
     scanner: (gitUrl: string) => Promise<Skill[]>,
   ) => Promise<Skill[]>;
-  invalidateScan: (gitUrl: string) => void;
+  invalidateScan: (gitUrl: string, path: string | undefined) => void;
   /** Scan a public GitHub repo directly from the api-server pod. Throws
    *  `PublicArchiveNotFoundError` when the archive endpoint returns 404 —
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
-  scanPublic: (gitUrl: string) => Promise<Skill[]>;
+  scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
@@ -113,6 +115,7 @@ async function loadTemplateSources(
     id: templateSourceId(template.id, seed.gitUrl),
     name: seed.name,
     gitUrl: seed.gitUrl,
+    ...(seed.path !== undefined ? { path: seed.path } : {}),
     fromTemplate: { templateId: template.id, templateName: template.name },
   }));
 }
@@ -138,6 +141,7 @@ async function resolveTemplateSource(
     id,
     name: seed.name,
     gitUrl: seed.gitUrl,
+    ...(seed.path !== undefined ? { path: seed.path } : {}),
     fromTemplate: { templateId: template.id, templateName: template.name },
   };
 }
@@ -190,6 +194,24 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
     out.push(s);
   }
   return out;
+}
+
+/** Recover a source's subdir from its gitUrl using the same merge + dedupe
+ *  precedence as listSources (user → system → template). Install carries the
+ *  gitUrl, not the source id, so this is how the path is found to denormalize
+ *  onto the installed ref. */
+async function resolveSourcePathByGitUrl(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  gitUrl: string,
+): Promise<string | undefined> {
+  const [owned, template] = await Promise.all([
+    deps.repo.list(deps.owner),
+    loadTemplateSources(deps, agentId),
+  ]);
+  const seeds = deps.seedSources.map(seedToSkillSource);
+  const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
+  return merged.find((s) => s.gitUrl === gitUrl)?.path;
 }
 
 function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
@@ -295,7 +317,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // egress — it never touches the agent pod's per-grant gating.
       if (detectHost(src.gitUrl)) {
         try {
-          return await deps.scanSource(src.gitUrl, deps.scanPublic);
+          return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
+            deps.scanPublic(gitUrl, src.path),
+          );
         } catch (err) {
           if (!(err instanceof PublicArchiveNotFoundError)) throw err;
           // 404 → repo is private (or nonexistent). Only the authenticated
@@ -316,8 +340,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
       await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
       try {
-        return await deps.scanSource(src.gitUrl, (gitUrl) =>
-          deps.runtimeClient.scan(agentId, gitUrl),
+        return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
+          deps.runtimeClient.scan(agentId, gitUrl, src.path),
         );
       } catch (err) {
         if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
@@ -328,6 +352,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async install(input: SkillInstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
+      const path = await resolveSourcePathByGitUrl(
+        deps,
+        input.agentId,
+        input.source,
+      );
       const ref: SkillRef = {
         source: input.source,
         name: input.name,
@@ -335,6 +364,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         ...(input.contentHash !== undefined
           ? { contentHash: input.contentHash }
           : {}),
+        ...(path !== undefined ? { path } : {}),
       };
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
       await deps.runtimeMutator.bump(input.agentId, []);
@@ -401,7 +431,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // the merged PR (whenever that happens — we don't wait, we just stop
       // serving a stale snapshot).
       const source = await resolveSource(deps, input.sourceId);
-      if (source) deps.invalidateScan(source.gitUrl);
+      if (source) deps.invalidateScan(source.gitUrl, source.path);
       return result;
     },
 
@@ -412,7 +442,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           code: "NOT_FOUND",
           message: "skill source not found",
         });
-      deps.invalidateScan(source.gitUrl);
+      deps.invalidateScan(source.gitUrl, source.path);
     },
 
     async listLocal(agentId: string): Promise<LocalSkill[]> {

@@ -24,6 +24,10 @@ export function buildSourceAddCommand(deps: {
     .argument("<git-url>", "git URL of the skill source repository")
     .option("--name <name>", "source name (default: derived from the git URL)")
     .option(
+      "--path <path>",
+      "optional subdirectory within the repository to scan for skills",
+    )
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -35,12 +39,13 @@ export function buildSourceAddCommand(deps: {
         "uses shadows it — removing your source re-exposes the original.\n" +
         "\nExamples:\n" +
         "  dam skill source add https://github.com/anthropics/skills\n" +
-        "  dam skill source add https://github.com/acme/skills --name acme\n",
+        "  dam skill source add https://github.com/acme/skills --name acme\n" +
+        "  dam skill source add https://github.com/acme/monorepo --path .claude/skills\n",
     )
     .action(
       async (
         gitUrl: string,
-        opts: { name?: string; server?: string; json?: boolean },
+        opts: { name?: string; path?: string; server?: string; json?: boolean },
       ) => {
         const json = opts.json ?? false;
 
@@ -60,6 +65,19 @@ export function buildSourceAddCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
+        let path: string | undefined;
+        if (opts.path !== undefined) {
+          const pathCheck = skillCreateSourceInputSchema.shape.path.safeParse(
+            opts.path,
+          );
+          if (!pathCheck.success) {
+            const msg = pathCheck.error.issues[0]?.message ?? "invalid path";
+            process.stderr.write(`error: ${msg}\n`);
+            process.exit(EXIT_INVALID_INPUT);
+          }
+          path = pathCheck.data || undefined;
+        }
+
         const host = await resolveActiveHost(deps, {
           flag: opts.server ? { server: opts.server } : undefined,
           exitCodes: {
@@ -70,7 +88,7 @@ export function buildSourceAddCommand(deps: {
 
         const result = await deps
           .createSkillsService(host)
-          .addSource({ name, gitUrl });
+          .addSource({ name, gitUrl, path });
         if (!result.ok) {
           if (result.error.kind === "source-exists") {
             process.stderr.write(

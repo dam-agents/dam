@@ -5,6 +5,7 @@ export const skillInstallInputSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   skillPaths: z.array(z.string().min(1)).min(1),
+  path: z.string().optional(),
 });
 
 export const skillUninstallInputSchema = z.object({
@@ -14,6 +15,7 @@ export const skillUninstallInputSchema = z.object({
 
 export const skillScanInputSchema = z.object({
   source: z.string().min(1),
+  path: z.string().optional(),
 });
 
 // No skillPaths: the agent-runtime resolves them from its manifest.

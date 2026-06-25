@@ -138,6 +138,7 @@ async function readSkillRefContributions(
       source: agentSkills.source,
       name: agentSkills.name,
       version: agentSkills.version,
+      path: agentSkills.path,
     })
     .from(agentSkills)
     .where(eq(agentSkills.agentId, agentId));
@@ -147,6 +148,7 @@ async function readSkillRefContributions(
       sourceUrl: r.source,
       name: r.name,
       version: r.version,
+      ...(r.path !== null ? { path: r.path } : {}),
     }),
   );
 }
