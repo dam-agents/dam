@@ -117,6 +117,32 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  # Local-GPU variant. Disabled by default — the lima k3s dev cluster has no
+  # GPU, so it would stay Pending. Enable on a cluster with an NVIDIA GPU.
+  - name: k-search-local
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+    image:
+      repository: platform-k-search
+      tag: latest
+    storageSize: "10Gi"
+    env:
+      - name: KSEARCH_EVAL_MODE
+        value: "local"
+      - name: KSEARCH_TARGET_GPU
+        value: "A100"
+    resources:
+      requests:
+        cpu: "2"
+        memory: "8Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.

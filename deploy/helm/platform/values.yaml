@@ -685,6 +685,14 @@ controller:
       extraLabels: {}
       extraAnnotations: {}
       nodeSelector: {}
+      # Tolerations apply to every agent pod, but a toleration only *permits*
+      # scheduling on a tainted node — it doesn't attract pods there. So if the
+      # GPU node carries the standard taint, uncomment this to let the
+      # nvidia.com/gpu-requesting k-search-local pod past it; CPU-only agents
+      # still land on regular nodes (they don't request the GPU).
+      #   - key: nvidia.com/gpu
+      #     operator: Exists
+      #     effect: NoSchedule
       tolerations: []
       affinity: {}
       topologySpreadConstraints: []
@@ -943,6 +951,36 @@ agentTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+  # Same image as k-search, but evaluates kernels on an in-cluster NVIDIA GPU
+  # (KSEARCH_EVAL_MODE=local) instead of Modal. The nvidia.com/gpu request is
+  # what schedules it onto a GPU node. Disabled by default so it isn't left
+  # Pending on GPU-less clusters — enable on a cluster with a GPU (e.g. A100).
+  # If that node is tainted, add the matching toleration to
+  # controller.agent.base.tolerations (chart-global; see there).
+  - name: k-search-local
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "10Gi"
+    env:
+      - name: KSEARCH_EVAL_MODE
+        value: "local"
+      - name: KSEARCH_TARGET_GPU
+        value: "A100"
+    resources:
+      requests:
+        cpu: "2"
+        memory: "8Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
 
   # Published by CI (build-nous / merge-nous in cd.yml). Experimental: the
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.

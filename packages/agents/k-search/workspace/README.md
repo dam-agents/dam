@@ -7,11 +7,22 @@ kernel-optimization job out of the box.
 ## How it runs
 
 Terminal-mode launches `ksearch-run`, which drives
-`generate_kernels_and_eval.py` with the co-evolving world model enabled. Kernels
-are benchmarked on **Modal cloud GPUs** by default, so no local GPU is required.
+`generate_kernels_and_eval.py` with the co-evolving world model enabled.
 
 LLM calls use the OpenAI-compatible endpoint injected by DAM (`OPENAI_BASE_URL`,
 `OPENAI_API_KEY`, `OPENAI_MODEL`) — i.e. the LiteLLM proxy.
+
+## Eval backend: Modal vs local GPU
+
+Pick by selecting the workload at sandbox creation:
+
+- **`k-search`** — kernels benchmarked on **Modal cloud GPUs** (`KSEARCH_EVAL_MODE=modal`);
+  no in-cluster GPU needed. Requires the Modal connection.
+- **`k-search-local`** — kernels benchmarked on an **in-cluster NVIDIA GPU**
+  (`KSEARCH_EVAL_MODE=local`); the pod requests `nvidia.com/gpu` and schedules onto
+  a GPU node. No Modal connection needed.
+
+Both are the same image — only the eval backend (env) and GPU request differ.
 
 ## Configuration (env)
 
