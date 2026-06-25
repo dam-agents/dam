@@ -9,6 +9,7 @@ export interface PublishSkillCall {
   repo: string;
   title: string;
   body: string;
+  path?: string;
 }
 
 export interface PublishSkillResult {

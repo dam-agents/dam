@@ -25,6 +25,9 @@ export const skillPublishInputSchema = z.object({
   repo: z.string().min(1),
   title: z.string().min(1),
   body: z.string(),
+  // Source subdir the skill is published into; mirrors the scanner so a
+  // subdir source's own scan finds what was published back to it.
+  path: z.string().optional(),
 });
 
 export const skillReadLocalInputSchema = z.object({
