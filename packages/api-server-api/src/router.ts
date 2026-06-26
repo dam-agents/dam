@@ -6,6 +6,7 @@ import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
+import { experimentsRouter } from "./modules/experiments/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { secretsRouter } from "./modules/secrets/router.js";
@@ -25,6 +26,7 @@ export const appRouter = t.router({
   skills: skillsRouter,
   approvals: approvalsRouter,
   egressRules: egressRulesRouter,
+  experiments: experimentsRouter,
   files: filesRouter,
   terms: termsRouter,
   e2e: e2eRouter,
