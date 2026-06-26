@@ -27,6 +27,15 @@ import (
 // forks use the fork name. Selector pins to the pair's agent pod —
 // the paired gateway pod's egress stays unrestricted.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
+	return buildAgentEgressNetworkPolicyTo(pairKey, pairKey, cfg, ownerRef)
+}
+
+// buildAgentEgressNetworkPolicyTo admits egress from the `selectorPair` agent
+// pod to the `gatewayPair` gateway pod's Envoy port. For long-lived agents and
+// forks the two pairs are identical (a pod reaches its own gateway); `dam-run`
+// executors set `gatewayPair` to the parent so they route through the parent's
+// already-running gateway rather than standing up their own.
+func buildAgentEgressNetworkPolicyTo(selectorPair, gatewayPair string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
 
@@ -40,7 +49,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 		To: []networkingv1.NetworkPolicyPeer{{
 			PodSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					LabelPair: pairKey,
+					LabelPair: gatewayPair,
 					LabelRole: RoleGateway,
 				},
 			},
@@ -52,11 +61,11 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      pairKey + "-agent-egress",
+			Name:      selectorPair + "-agent-egress",
 			Namespace: cfg.Namespace,
 			Labels: map[string]string{
-				LabelAgent:                     pairKey,
-				LabelPair:                      pairKey,
+				LabelAgent:                     selectorPair,
+				LabelPair:                      selectorPair,
 				LabelRole:                      RoleAgent,
 				"agent-platform.ai/managed-by": "platform-controller",
 			},
@@ -65,7 +74,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					LabelPair: pairKey,
+					LabelPair: selectorPair,
 					LabelRole: RoleAgent,
 				},
 			},
@@ -104,6 +113,13 @@ func (r *AgentReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np 
 func (r *ForkReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return fmt.Errorf("applying fork agent egress NetworkPolicy: %w", err)
+	}
+	return nil
+}
+
+func (r *RunReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
+	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
+		return fmt.Errorf("applying run agent egress NetworkPolicy: %w", err)
 	}
 	return nil
 }

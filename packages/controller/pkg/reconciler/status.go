@@ -101,3 +101,33 @@ func writeForkStatus(ctx context.Context, dyn dynamic.Interface, namespace, name
 		return err
 	})
 }
+
+// writeRunStatus overwrites a Run's status subresource. Same whole-status
+// replace + no-op guard as writeForkStatus (the controller watches Runs).
+func writeRunStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.RunStatus) error {
+	cli := dyn.Resource(RunsGVR).Namespace(namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		obj, err := cli.Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("getting run %s/%s: %w", namespace, name, err)
+		}
+		var current apiv1.RunStatus
+		if raw, ok, _ := unstructured.NestedMap(obj.Object, "status"); ok && raw != nil {
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw, &current); err != nil {
+				return fmt.Errorf("decoding run status: %w", err)
+			}
+		}
+		if apiequality.Semantic.DeepEqual(current, desired) {
+			return nil
+		}
+		statusMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&desired)
+		if err != nil {
+			return fmt.Errorf("encoding run status: %w", err)
+		}
+		if err := unstructured.SetNestedMap(obj.Object, statusMap, "status"); err != nil {
+			return fmt.Errorf("setting run status: %w", err)
+		}
+		_, err = cli.UpdateStatus(ctx, obj, metav1.UpdateOptions{})
+		return err
+	})
+}

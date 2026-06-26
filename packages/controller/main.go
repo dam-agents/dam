@@ -120,6 +120,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
 	forkInformer := dynFactory.ForResource(reconciler.ForksGVR)
+	runInformer := dynFactory.ForResource(reconciler.RunsGVR)
 
 	// Pod informer: pod readiness transitions re-enqueue the owning
 	// agent so its Ready conditions are recomputed. Separate factory — it pins a
@@ -136,6 +137,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentResolver := reconciler.NewAgentResolver(agentGetter)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
+	runReconciler := reconciler.NewRunReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	go idleChecker.RunLoop(ctx)
@@ -157,6 +159,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	defer agentQueue.ShutDown()
 	forkQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer forkQueue.ShutDown()
+	runQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	defer runQueue.ShutDown()
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
@@ -182,21 +186,40 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 	})
 
+	runInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) { enqueueObjectName(obj, runQueue) },
+		UpdateFunc: func(_, newObj interface{}) {
+			enqueueObjectName(newObj, runQueue)
+		},
+		DeleteFunc: func(obj interface{}) {
+			if u := unstructuredFrom(obj); u != nil {
+				runReconciler.Delete(ctx, u.GetName())
+			}
+		},
+	})
+
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
-		UpdateFunc: func(_, newObj interface{}) { enqueuePodOwner(newObj, agentQueue) },
+		AddFunc: func(obj interface{}) {
+			enqueuePodOwner(obj, agentQueue)
+			enqueueRunPod(obj, runQueue)
+		},
+		UpdateFunc: func(_, newObj interface{}) {
+			enqueuePodOwner(newObj, agentQueue)
+			enqueueRunPod(newObj, runQueue)
+		},
 		DeleteFunc: func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
 	})
 
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, forkInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, forkInformer.Informer().HasSynced, runInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
 		slog.Error("failed to sync informer caches")
 		return
 	}
 	slog.Info("informer caches synced")
 
 	go runForkWorker(ctx, forkReconciler, forkInformer.Lister(), cfg.Namespace, forkQueue)
+	go runRunWorker(ctx, runReconciler, runInformer.Lister(), cfg.Namespace, runQueue)
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 
@@ -277,6 +300,51 @@ func runForkWorker(ctx context.Context, r *reconciler.ForkReconciler, lister cac
 			}
 			queue.Forget(name)
 		}()
+	}
+}
+
+// runRunWorker drains the run queue, reconciling each Run CR read from the
+// informer cache. Blocks until the queue shuts down.
+func runRunWorker(ctx context.Context, r *reconciler.RunReconciler, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string]) {
+	for {
+		name, shutdown := queue.Get()
+		if shutdown {
+			return
+		}
+		slog.Debug("run reconcile dequeued", "name", name, "queueDepth", queue.Len())
+		func() {
+			defer queue.Done(name)
+			obj, err := lister.ByNamespace(namespace).Get(name)
+			if err != nil {
+				queue.Forget(name)
+				return
+			}
+			run, err := reconciler.RunFromCacheObject(obj)
+			if err != nil {
+				slog.Error("decode run", "name", name, "error", err)
+				queue.Forget(name)
+				return
+			}
+			if err := r.Reconcile(ctx, run); err != nil {
+				slog.Error("reconcile run", "name", name, "error", err)
+				queue.AddRateLimited(name)
+				return
+			}
+			queue.Forget(name)
+		}()
+	}
+}
+
+// enqueueRunPod re-enqueues the owning Run when its executor pod transitions
+// (e.g. becomes Ready), so the controller writes the Ready+podIP status without
+// waiting for the informer resync — interactive dam-run startup stays snappy.
+func enqueueRunPod(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	if runID := pod.Labels[reconciler.RunLabelRunID]; runID != "" {
+		queue.Add(runID)
 	}
 }
 

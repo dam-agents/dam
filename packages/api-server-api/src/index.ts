@@ -53,7 +53,7 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
-export type { AgentSpecCR, ForkSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,

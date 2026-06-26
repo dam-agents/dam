@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-06-22
+Last verified: 2026-06-25
 
 ## Overview
 
@@ -377,6 +377,30 @@ agent's `agent-platform.ai/agent` label still points at the parent
 Agent so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
 Agent's pair.
+
+## `dam-run` executor pods
+
+The in-pod `dam-run` CLI runs a command in a fresh ephemeral pod (a
+`Run`; see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run)).
+It adds **no new privilege to the agent pod**: `dam-run` only dials the
+api-server harness port the agent can already reach, which is pinned to
+the agent's own SA at the waypoint, so an agent can spawn executors only
+for itself. The executor runs as the parent Agent's **own** owner and
+**routes egress through the parent's existing gateway** (one egress
+NetworkPolicy admits it there) — so it has no credential bytes, no SA, and
+no gateway/cert/AuthorizationPolicy of its own, and its egress boundary is
+exactly the parent's (same credentials, same ext-authz/HITL gate).
+
+Because the executor borrows the parent gateway's identity, it can reach
+the parent's full harness surface including `/run`, so recursion (an
+executor spawning executors) is bounded by a **per-agent concurrent-run
+cap** in the api-server relay rather than blocked structurally — a runaway
+`dam-run` loop is capped, not unbounded. Teardown is guaranteed by the
+stream lifetime plus a controller hard-lifetime reaper and a harness-boot
+orphan sweep, so an executor pod cannot outlive its `dam-run` wrapper
+unboundedly. The trade is deliberate: dropping the per-run gateway and its
+mesh identity removes a large amount of per-invocation machinery in
+exchange for a cap-based recursion bound.
 
 ## Intra-cluster identity and admission
 

@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-06-12
+Last verified: 2026-06-25
 
 ## Overview
 
@@ -84,6 +84,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
+| agent (`dam-run`) → api-server (harness `/api/agents/<id>/run`, via paired gateway → waypoint) | WebSocket (exec frames) | Ephemeral-executor stdio relay; the api-server creates a `Run`, waits for its podIP, then relays to the executor's `/api/exec` |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
@@ -102,6 +103,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 |---|---|
 | `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
 | `Fork` | Forked run: parent agent ref + overrides |
+| `Run` | Ephemeral single-command executor backing the in-pod `dam-run` CLI: parent agent ref only. The api-server creates one per invocation and deletes it when the stream closes; the controller materialises a bare executor pod that routes egress through the parent's existing gateway (no gateway/cert/SA/AuthZ of its own) and reaps over-age leaks. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
 

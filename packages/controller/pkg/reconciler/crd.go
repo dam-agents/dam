@@ -18,9 +18,11 @@ import (
 var (
 	AgentsGVR = apiv1.GroupVersion.WithResource("agents")
 	ForksGVR  = apiv1.GroupVersion.WithResource("forks")
+	RunsGVR   = apiv1.GroupVersion.WithResource("runs")
 
 	agentGVK = apiv1.GroupVersion.WithKind("Agent")
 	forkGVK  = apiv1.GroupVersion.WithKind("Fork")
+	runGVK   = apiv1.GroupVersion.WithKind("Run")
 )
 
 // agentFromUnstructured converts an informer/lister/dynamic-client object into
@@ -117,4 +119,31 @@ func forkToUnstructured(fork *apiv1.Fork) (*unstructured.Unstructured, error) {
 // them with the Fork.
 func forkOwnerRef(fork *apiv1.Fork) metav1.OwnerReference {
 	return *metav1.NewControllerRef(fork, forkGVK)
+}
+
+// runFromUnstructured converts an informer/lister/dynamic-client object into a
+// typed Run.
+func runFromUnstructured(obj interface{}) (*apiv1.Run, error) {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return nil, fmt.Errorf("expected *unstructured.Unstructured, got %T", obj)
+	}
+	run := &apiv1.Run{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, run); err != nil {
+		return nil, fmt.Errorf("converting unstructured to Run: %w", err)
+	}
+	return run, nil
+}
+
+// RunFromCacheObject converts a cache object (lister/informer payload) into a
+// typed Run for the run work queue.
+func RunFromCacheObject(obj interface{}) (*apiv1.Run, error) {
+	return runFromUnstructured(obj)
+}
+
+// runOwnerRef builds the controller owner reference to a Run CR. Children the
+// reconciler renders in the agent namespace carry this so K8s GC
+// cascade-deletes them with the Run.
+func runOwnerRef(run *apiv1.Run) metav1.OwnerReference {
+	return *metav1.NewControllerRef(run, runGVK)
 }

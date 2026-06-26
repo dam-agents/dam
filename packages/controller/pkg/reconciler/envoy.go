@@ -530,6 +530,10 @@ static_resources:
                 stat_prefix: agent_egress
                 upgrade_configs:
                   - upgrade_type: CONNECT
+                  # dam-run opens a WebSocket to the harness /run endpoint. The
+                  # CONNECT-tunnelled path carries it transparently; this also
+                  # admits the Upgrade on the absolute-URI forward path.
+                  - upgrade_type: websocket
                 http_filters:
                   # np-gate liveness probe (#675): answered locally before
                   # ext_authz; pass_through_mode:false so it never forwards.

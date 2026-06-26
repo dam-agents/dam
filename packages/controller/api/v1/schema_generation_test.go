@@ -16,6 +16,7 @@ func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 	cases := map[string]int{
 		"agent-platform.ai_agents.yaml": AgentSchemaGeneration,
 		"agent-platform.ai_forks.yaml":  ForkSchemaGeneration,
+		"agent-platform.ai_runs.yaml":   RunSchemaGeneration,
 	}
 	for file, want := range cases {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "deploy", "helm", "platform", "crds", file))

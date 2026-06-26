@@ -126,3 +126,20 @@ export interface ForkSpecCR {
    */
   sessionId?: string;
 }
+
+/**
+ * RunSpec is an ephemeral executor derived from an Agent, backing the in-pod
+ * `dam-run` CLI: it materializes a throwaway sandbox pod (same image, config,
+ * and RWX workspace as the parent) that runs one command streamed over
+ * /api/exec. Unlike a Fork it runs as the parent Agent's own owner. The command
+ * argv is deliberately NOT stored here — it travels only over the exec
+ * WebSocket — so the executor pod is generic and no command bytes land in etcd.
+ * The api-server is the sole writer of the spec and deletes the Run when the
+ * streaming connection ends.
+ */
+export interface RunSpecCR {
+  /**
+   * AgentName names the parent Agent this run derives from.
+   */
+  agentName: string;
+}

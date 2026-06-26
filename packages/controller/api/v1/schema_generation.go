@@ -12,4 +12,5 @@ const (
 	// Agent gen 2: imagePullSecretRef added to AgentSpec (#930/#932).
 	AgentSchemaGeneration = 2
 	ForkSchemaGeneration  = 1
+	RunSchemaGeneration   = 1
 )

@@ -27,6 +27,7 @@ func Assert(ctx context.Context, client dynamic.Interface) error {
 	required := map[string]int{
 		"agents." + apiv1.GroupVersion.Group: apiv1.AgentSchemaGeneration,
 		"forks." + apiv1.GroupVersion.Group:  apiv1.ForkSchemaGeneration,
+		"runs." + apiv1.GroupVersion.Group:   apiv1.RunSchemaGeneration,
 	}
 	for name, want := range required {
 		crd, err := client.Resource(crdGVR).Get(ctx, name, metav1.GetOptions{})
