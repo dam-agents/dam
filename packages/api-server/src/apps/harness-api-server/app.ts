@@ -7,6 +7,8 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
+import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
+import { composeArtifactsModule } from "../../modules/artifacts/compose.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -41,6 +43,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const k8sClient = createK8sClient(api, config.namespace);
   // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const { service: artifacts } = composeArtifactsModule({
+    db,
+    maxBytes: config.maxArtifactBytes,
+  });
 
   const app = createHarnessRouter({
     channelManager,
@@ -60,6 +66,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       ),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
+    experimentsServiceFor: (owner) =>
+      composeExperimentsForOwner({ db, owner }).experiments,
+    artifacts,
   });
 
   const server = serve(
