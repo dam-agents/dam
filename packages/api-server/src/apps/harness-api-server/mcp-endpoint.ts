@@ -17,7 +17,7 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { createKeepAwakeService } from "../../modules/agents/services/keep-awake-service.js";
+import type { KeepAwakeService } from "../../modules/agents/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 
@@ -102,6 +102,7 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
+  keepAwake: KeepAwakeService;
   agentHome: string;
 }
 
@@ -109,7 +110,7 @@ export function createMcpSession(
   agentId: string,
   deps: McpSessionDeps,
 ): McpSession {
-  const { agentHome, schedules } = deps;
+  const { agentHome, schedules, keepAwake } = deps;
   const server = new McpServer({
     name: `platform-${agentId}`,
     version: "1.0.0",
@@ -122,8 +123,6 @@ export function createMcpSession(
       }),
     ],
   });
-
-  const keepAwake = createKeepAwakeService(deps.k8s);
 
   server.registerTool(
     "describe_channel",
@@ -555,6 +554,41 @@ export function createMcpSession(
       ),
   );
 
+  server.registerTool(
+    "keep_awake_info",
+    {
+      description:
+        "Show THIS agent's keep-awake state: whether and after how much idle time it will hibernate, what governs that (the operator's setting vs. workload keep-awake pins), and every active pin you hold (id, tolerated idle, acquired time). Returns JSON.",
+      inputSchema: {},
+    },
+    () =>
+      textTool("Failed to read keep-awake state", () => keepAwake.info(agentId), (info) => {
+        const describe = (min: number | null) =>
+          min === null
+            ? "platform default"
+            : min === 0
+              ? "never (kept awake)"
+              : `${min} minutes`;
+        return JSON.stringify(
+          {
+            hibernatesAfterIdle: describe(info.currentHibernationTimeoutMin),
+            governedBy:
+              info.currentHibernationTimeoutSource === "pins"
+                ? "workload keep-awake pins"
+                : "operator setting",
+            operatorSetting: describe(info.baseHibernationTimeoutMin),
+            activePins: info.keepAwakePins.map((p) => ({
+              id: p.id,
+              toleratedIdle: describe(p.value ?? 0),
+              acquiredAt: p.createdAt,
+            })),
+          },
+          null,
+          2,
+        );
+      }),
+  );
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -581,6 +615,7 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  keepAwake: KeepAwakeService;
   agentHome: string;
 }
 
@@ -639,6 +674,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       k8s: deps.k8s,
       skills,
       schedules,
+      keepAwake: deps.keepAwake,
       agentHome: deps.agentHome,
     });
     await session.server.connect(session.transport);

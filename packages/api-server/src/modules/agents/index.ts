@@ -14,6 +14,10 @@ export {
 } from "./infrastructure/agent-env-repository.js";
 export { backfillUserEnv } from "./services/backfill-user-env.js";
 export {
+  createKeepAwakeService,
+  type KeepAwakeService,
+} from "./services/keep-awake-service.js";
+export {
   createAgentRegistrySecretPort,
   type AgentRegistrySecretPort,
 } from "./infrastructure/agent-registry-secret-port.js";

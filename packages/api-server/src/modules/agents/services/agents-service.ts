@@ -13,7 +13,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
-import { currentFromPins } from "./keep-awake-service.js";
+import { currentFromPins } from "../domain/hibernation.js";
 
 /** Outbox-derived contribution status, supplied by runtime-delivery. */
 export interface ContributionsStatus {
@@ -436,31 +436,39 @@ export function createAgentsService(deps: {
       if (input.description !== undefined)
         patch.description = input.description;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
-      if (input.baseHibernationTimeoutMin !== undefined) {
-        const base = input.baseHibernationTimeoutMin;
+      const base = input.baseHibernationTimeoutMin;
+      // A concrete baseline is a blind set (manual overrides live pins); disable (null) derives below.
+      if (base !== undefined && base !== null) {
         patch.baseHibernationTimeoutMin = base;
-        if (base !== null) {
-          // Setting a concrete baseline claims governance: manual overrides live pins.
-          patch.currentHibernationTimeoutMin = base;
-          patch.currentHibernationTimeoutSource = "manual";
-        } else {
-          // Disable: revert to live pins, but a still-never result (never-pin) is suppressed to manual/inherit so the operator's off takes hold.
-          const pins =
-            (await deps.repo.get(input.id, deps.owner))?.spec.keepAwakePins ??
-            [];
-          const reverted = currentFromPins(pins, null);
-          const suppress = reverted === 0;
-          patch.currentHibernationTimeoutMin = suppress ? null : reverted;
-          patch.currentHibernationTimeoutSource =
-            suppress || pins.length === 0 ? "manual" : "pins";
-        }
+        patch.currentHibernationTimeoutMin = base;
+        patch.currentHibernationTimeoutSource = "manual";
       }
       // Both branches do the owner check; an env-only update skips the no-op CR patch.
-      const infra =
+      let infra =
         Object.keys(patch).length > 0
           ? await deps.repo.updateSpec(input.id, deps.owner, patch)
           : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
+
+      if (base === null) {
+        // Disable under optimistic concurrency: revert to live pins, but a still-never result is suppressed to manual/inherit so the operator's off takes hold.
+        const reverted = await deps.repo.mutateSpec(
+          input.id,
+          deps.owner,
+          (spec) => {
+            const pins = spec.keepAwakePins ?? [];
+            const current = currentFromPins(pins, null);
+            const suppress = current === 0;
+            return {
+              baseHibernationTimeoutMin: null,
+              currentHibernationTimeoutMin: suppress ? null : current,
+              currentHibernationTimeoutSource:
+                suppress || pins.length === 0 ? "manual" : "pins",
+            };
+          },
+        );
+        if (reverted) infra = reverted;
+      }
 
       let env = input.env;
       if (env !== undefined) {

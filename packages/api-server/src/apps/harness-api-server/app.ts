@@ -4,6 +4,10 @@ import type { RuntimeDeliveryService } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
+  createAgentsRepository,
+  createKeepAwakeService,
+} from "../../modules/agents/index.js";
+import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
@@ -39,6 +43,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
+  const keepAwake = createKeepAwakeService(createAgentsRepository(k8sClient));
   // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
 
@@ -47,6 +52,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     agentHome: config.agentHome,
     runtimeHello,
+    keepAwake,
     composeSkills: (owner) =>
       composeSkillsModule(
         api,

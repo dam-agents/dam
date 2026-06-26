@@ -1,4 +1,5 @@
-import { type K8sClient } from "./k8s.js";
+import type { AgentSpec } from "api-server-api";
+import { isConflict, type K8sClient } from "./k8s.js";
 import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
@@ -21,6 +22,9 @@ import {
   WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
 
+// Bounded optimistic-concurrency retries for mutateSpec.
+const MAX_SPEC_MUTATE_RETRIES = 10;
+
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -38,6 +42,12 @@ export interface AgentsRepository {
   /** Merge-patch arbitrary spec fields without an ownership check — for
    *  trusted internal fan-outs (e.g. connection grants). */
   patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
+  /** Read-modify-write a spec subtree under optimistic concurrency; retries on 409. */
+  mutateSpec(
+    id: string,
+    owner: string | undefined,
+    mutate: (spec: AgentSpec) => Record<string, unknown>,
+  ): Promise<InfraAgent | null>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
@@ -115,6 +125,25 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
 
     async patchSpec(id, patch) {
       await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
+    },
+
+    async mutateSpec(id, owner, mutate) {
+      for (let attempt = 1; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        if (!obj) return null;
+        if (owner && !agentIsOwnedBy(obj, owner)) return null;
+        const patch = mutate((obj.spec ?? {}) as AgentSpec);
+        try {
+          const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: { resourceVersion: obj.metadata?.resourceVersion },
+            spec: patch,
+          });
+          return parseInfraAgent(updated);
+        } catch (err) {
+          if (isConflict(err) && attempt < MAX_SPEC_MUTATE_RETRIES) continue;
+          throw err;
+        }
+      }
     },
 
     async delete(id, owner?) {

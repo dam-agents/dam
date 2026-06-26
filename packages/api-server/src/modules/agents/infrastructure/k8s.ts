@@ -29,7 +29,7 @@ export interface K8sClient {
   ): Promise<KubeObject[]>;
   createCustomObject(plural: string, body: object): Promise<KubeObject>;
   /** RFC 7386 merge-patch — replaces the supplied spec/metadata subtrees,
-   *  arrays included. Conflict-free (no resourceVersion), so no 409 retry. */
+   *  arrays included. Pass `metadata.resourceVersion` for a 409-on-stale guard. */
   patchCustomObject(
     plural: string,
     name: string,
@@ -47,6 +47,7 @@ export interface KubeObject {
     name?: string;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
+    resourceVersion?: string;
   };
   spec?: unknown;
   status?: unknown;
@@ -69,6 +70,7 @@ function isStatus(err: unknown, code: number): boolean {
   );
 }
 const is404 = (err: unknown) => isStatus(err, 404);
+export const isConflict = (err: unknown) => isStatus(err, 409);
 
 export function createK8sClient(
   api: k8s.CoreV1Api,

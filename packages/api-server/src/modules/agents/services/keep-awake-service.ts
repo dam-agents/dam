@@ -1,20 +1,21 @@
-import type { K8sClient } from "../infrastructure/k8s.js";
-import { AGENTS_PLURAL } from "../infrastructure/labels.js";
+import type { AgentSpec, AgentSpecCR } from "api-server-api";
+import type { AgentsRepository } from "../infrastructure/agents-repository.js";
+import { currentFromPins } from "../domain/hibernation.js";
 
-// One workload-held keep-awake lease (mirrors the CRD KeepAwakePin).
-export interface KeepAwakePin {
-  id: string;
-  value?: number; // minutes; 0 / omitted = never hibernate
-  createdAt: string; // RFC3339
-}
+// One workload-held keep-awake lease, as stored on the Agent CR.
+export type KeepAwakePin = NonNullable<AgentSpecCR["keepAwakePins"]>[number];
 
-// What governs current: the UI baseline, or the workload pins. Default manual.
-export type HibernationTimeoutSource = "manual" | "pins";
+// What governs `current`: the operator baseline ("manual") or the workload pins.
+export type HibernationTimeoutSource = NonNullable<
+  AgentSpecCR["currentHibernationTimeoutSource"]
+>;
 
-interface KeepAwakeSpec {
-  baseHibernationTimeoutMin?: number | null;
-  keepAwakePins?: KeepAwakePin[];
-  currentHibernationTimeoutSource?: HibernationTimeoutSource | null;
+// The agent's keep-awake state as stored on the CR.
+export interface KeepAwakeInfo {
+  baseHibernationTimeoutMin: number | null;
+  currentHibernationTimeoutMin: number | null;
+  currentHibernationTimeoutSource: HibernationTimeoutSource;
+  keepAwakePins: KeepAwakePin[];
 }
 
 export interface KeepAwakeService {
@@ -24,101 +25,91 @@ export interface KeepAwakeService {
   release(agentId: string, id: string): Promise<void>;
   // Drop all leases; current reverts to the baseline.
   purge(agentId: string): Promise<void>;
+  // Read the keep-awake state straight off the CR.
+  info(agentId: string): Promise<KeepAwakeInfo>;
 }
 
-// Materialized current: the most-awake live pin (never wins), else the baseline.
-export function currentFromPins(
-  pins: readonly { value?: number }[],
-  baseline: number | null,
-): number | null {
-  if (pins.length === 0) return baseline;
-  let best = -1;
-  for (const p of pins) {
-    const v = p.value ?? 0;
-    if (v <= 0) return 0;
-    if (v > best) best = v;
-  }
-  return best;
-}
-
-export function createKeepAwakeService(k8s: K8sClient): KeepAwakeService {
-  async function readSpec(agentId: string): Promise<KeepAwakeSpec> {
-    const obj = await k8s.getCustomObject(AGENTS_PLURAL, agentId);
-    if (!obj) throw new Error(`agent ${agentId} not found`);
-    return (obj.spec ?? {}) as KeepAwakeSpec;
-  }
-
-  // Merge-patch only the given keys (replaces the pin array wholesale; one harness serializes its calls, so no retry loop). Omitting a key leaves it untouched.
-  async function write(
+export function createKeepAwakeService(
+  repo: AgentsRepository,
+): KeepAwakeService {
+  // Every write derives current/source from the live pins → optimistic-concurrency RMW.
+  async function mutate(
     agentId: string,
-    patch: {
-      pins?: KeepAwakePin[];
-      current?: number | null;
-      source?: HibernationTimeoutSource;
-    },
+    fn: (spec: AgentSpec) => Record<string, unknown>,
   ): Promise<void> {
-    const spec: Record<string, unknown> = {};
-    if (patch.pins !== undefined) spec.keepAwakePins = patch.pins;
-    if (patch.current !== undefined)
-      spec.currentHibernationTimeoutMin = patch.current;
-    if (patch.source !== undefined)
-      spec.currentHibernationTimeoutSource = patch.source;
-    await k8s.patchCustomObject(AGENTS_PLURAL, agentId, { spec });
+    const updated = await repo.mutateSpec(agentId, undefined, fn);
+    if (!updated) throw new Error(`agent ${agentId} not found`);
   }
 
   return {
     async acquire(agentId, id, value) {
-      const spec = await readSpec(agentId);
-      const pins = spec.keepAwakePins ?? [];
-      if (pins.some((p) => p.id === id)) {
-        throw new Error(`keep-awake pin "${id}" already exists`);
-      }
-      const pin: KeepAwakePin = {
-        id,
-        ...(value !== undefined ? { value } : {}),
-        createdAt: new Date().toISOString(),
-      };
-      // An acquire always takes over: pins govern current from here.
-      const next = [...pins, pin];
-      await write(agentId, {
-        pins: next,
-        current: currentFromPins(next, spec.baseHibernationTimeoutMin ?? null),
-        source: "pins",
+      await mutate(agentId, (spec) => {
+        const pins = spec.keepAwakePins ?? [];
+        if (pins.some((p) => p.id === id)) {
+          throw new Error(`keep-awake pin "${id}" already exists`);
+        }
+        const pin: KeepAwakePin = {
+          id,
+          ...(value !== undefined ? { value } : {}),
+          createdAt: new Date().toISOString(),
+        };
+        const next = [...pins, pin];
+        return {
+          keepAwakePins: next,
+          currentHibernationTimeoutMin: currentFromPins(
+            next,
+            spec.baseHibernationTimeoutMin ?? null,
+          ),
+          currentHibernationTimeoutSource: "pins",
+        };
       });
     },
 
     async release(agentId, id) {
-      const spec = await readSpec(agentId);
-      const pins = spec.keepAwakePins ?? [];
-      const remaining = pins.filter((p) => p.id !== id);
-      const baseline = spec.baseHibernationTimeoutMin ?? null;
-      const source = spec.currentHibernationTimeoutSource ?? "manual";
-      if (remaining.length === 0) {
-        // No pins left → governance returns to the manual baseline (the default).
-        await write(agentId, {
-          pins: remaining,
-          current: baseline,
-          source: "manual",
-        });
-      } else if (source === "pins") {
-        // Pins still govern → recompute current from what remains.
-        await write(agentId, {
-          pins: remaining,
-          current: currentFromPins(remaining, baseline),
-        });
-      } else {
+      await mutate(agentId, (spec) => {
+        const pins = spec.keepAwakePins ?? [];
+        const remaining = pins.filter((p) => p.id !== id);
+        const baseline = spec.baseHibernationTimeoutMin ?? null;
+        const source = spec.currentHibernationTimeoutSource ?? "manual";
+        if (remaining.length === 0) {
+          // No pins left → governance returns to the manual baseline.
+          return {
+            keepAwakePins: remaining,
+            currentHibernationTimeoutMin: baseline,
+            currentHibernationTimeoutSource: "manual",
+          };
+        }
+        if (source === "pins") {
+          // Pins still govern → recompute current from what remains.
+          return {
+            keepAwakePins: remaining,
+            currentHibernationTimeoutMin: currentFromPins(remaining, baseline),
+          };
+        }
         // Manual governs → drop the pin but leave current untouched.
-        await write(agentId, { pins: remaining });
-      }
+        return { keepAwakePins: remaining };
+      });
     },
 
     async purge(agentId) {
-      const spec = await readSpec(agentId);
-      await write(agentId, {
-        pins: [],
-        current: spec.baseHibernationTimeoutMin ?? null,
-        source: "manual",
-      });
+      await mutate(agentId, (spec) => ({
+        keepAwakePins: [],
+        currentHibernationTimeoutMin: spec.baseHibernationTimeoutMin ?? null,
+        currentHibernationTimeoutSource: "manual",
+      }));
+    },
+
+    async info(agentId) {
+      const agent = await repo.get(agentId);
+      if (!agent) throw new Error(`agent ${agentId} not found`);
+      const { spec } = agent;
+      return {
+        baseHibernationTimeoutMin: spec.baseHibernationTimeoutMin ?? null,
+        currentHibernationTimeoutMin: spec.currentHibernationTimeoutMin ?? null,
+        currentHibernationTimeoutSource:
+          spec.currentHibernationTimeoutSource ?? "manual",
+        keepAwakePins: spec.keepAwakePins ?? [],
+      };
     },
   };
 }

@@ -2,9 +2,9 @@ import { Switch } from "@/components/ui/switch";
 
 const KEEP_AWAKE_LABEL = "Keep awake (never hibernate)";
 
-// The keep-awake control row (label + description + Switch), shared by the
-// create wizard and the settings form so copy and testId can't drift. Callers
-// own the surrounding layout and the (confirm-wrapped) change handler.
+// The keep-awake control row (label + description + Switch) used by the settings
+// form; copy and testId live here. Callers own the surrounding layout and the
+// (confirm-wrapped) change handler.
 export function KeepAwakeToggle({
   checked,
   onCheckedChange,
