@@ -129,7 +129,9 @@ export function createMcpSession(
     {
       description:
         "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
-      inputSchema: { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
+      inputSchema: {
+        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      },
     },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -562,31 +564,35 @@ export function createMcpSession(
       inputSchema: {},
     },
     () =>
-      textTool("Failed to read keep-awake state", () => keepAwake.info(agentId), (info) => {
-        const describe = (min: number | null) =>
-          min === null
-            ? "platform default"
-            : min === 0
-              ? "never (kept awake)"
-              : `${min} minutes`;
-        return JSON.stringify(
-          {
-            hibernatesAfterIdle: describe(info.currentHibernationTimeoutMin),
-            governedBy:
-              info.currentHibernationTimeoutSource === "pins"
-                ? "workload keep-awake pins"
-                : "operator setting",
-            operatorSetting: describe(info.baseHibernationTimeoutMin),
-            activePins: info.keepAwakePins.map((p) => ({
-              id: p.id,
-              toleratedIdle: describe(p.value ?? 0),
-              acquiredAt: p.createdAt,
-            })),
-          },
-          null,
-          2,
-        );
-      }),
+      textTool(
+        "Failed to read keep-awake state",
+        () => keepAwake.info(agentId),
+        (info) => {
+          const describe = (min: number | null) =>
+            min === null
+              ? "platform default"
+              : min === 0
+                ? "never (kept awake)"
+                : `${min} minutes`;
+          return JSON.stringify(
+            {
+              hibernatesAfterIdle: describe(info.currentHibernationTimeoutMin),
+              governedBy:
+                info.currentHibernationTimeoutSource === "pins"
+                  ? "workload keep-awake pins"
+                  : "operator setting",
+              operatorSetting: describe(info.baseHibernationTimeoutMin),
+              activePins: info.keepAwakePins.map((p) => ({
+                id: p.id,
+                toleratedIdle: describe(p.value ?? 0),
+                acquiredAt: p.createdAt,
+              })),
+            },
+            null,
+            2,
+          );
+        },
+      ),
   );
 
   // ---- Transport ------------------------------------------------------------
