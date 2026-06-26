@@ -438,14 +438,17 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60
 
 # ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
 # CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
-# the quay.io/dam-agents mirror (their db/agent images stay upstream).
+# the quay.io/dam-agents mirror (their db/agent images stay upstream). The MongoDB operator
+# defaults to watching only its own namespace, so it must be pointed at the release ns
+# (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
     --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
     --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
     --set clickhouse-operator.manager.image.tag=v0.0.1 \
-    --set mongodb-operator.registry.operator=quay.io/dam-agents
+    --set mongodb-operator.registry.operator=quay.io/dam-agents \
+    --set mongodb-operator.operator.watchNamespace=default
   kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
     crd/clickhouseclusters.clickhouse.com \
     crd/keeperclusters.clickhouse.com \
