@@ -83,6 +83,14 @@ export interface ExperimentAddArmInput {
   armSpec: ExperimentConfig;
 }
 
+export interface ExperimentRecordRunInput {
+  experimentId: string;
+  agentId: string;
+  sessionId: string;
+  candidateRef: string;
+  score: number;
+}
+
 /** Owner-scoped application service. Composed per-owner for both the user tRPC
  *  router and the in-pod MCP session (the owner is bound at composition time,
  *  never taken from request input). */
@@ -99,4 +107,8 @@ export interface ExperimentsService {
    *  agent belongs to, or null. Used by the ingestion path to attribute a run
    *  without trusting agent-supplied experiment ids. */
   resolveActiveArm(agentId: string): Promise<ActiveArm | null>;
+  /** Append a Run to the ledger for an already attribution-resolved arm,
+   *  allocating the next per-arm run number. The caller stores the Candidate
+   *  artifact first; `candidateRef` is its key. */
+  recordRun(input: ExperimentRecordRunInput): Promise<ExperimentRun>;
 }

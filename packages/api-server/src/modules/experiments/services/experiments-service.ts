@@ -5,6 +5,8 @@ import type {
   ExperimentAddArmInput,
   ExperimentArm,
   ExperimentCreateInput,
+  ExperimentRecordRunInput,
+  ExperimentRun,
   ExperimentsService,
   ExperimentWithRuns,
 } from "api-server-api";
@@ -174,6 +176,28 @@ export function createExperimentsService(deps: {
         agentId: arm.agentId,
         armSpec: arm.armSpec,
       };
+    },
+
+    async recordRun(input: ExperimentRecordRunInput): Promise<ExperimentRun> {
+      const run = await deps.repo.addRun({
+        experimentId: input.experimentId,
+        agentId: input.agentId,
+        sessionId: input.sessionId,
+        candidateRef: input.candidateRef,
+        score: input.score,
+        status: "completed",
+      });
+      securityLog("info", "experiment.record_run", {
+        category: "resource",
+        actor: input.agentId,
+        actorKind: "agent",
+        surface: "mcp",
+        agentId: input.agentId,
+        target: input.experimentId,
+        result: "success",
+        detail: { runNumber: run.runNumber },
+      });
+      return run;
     },
   };
 }

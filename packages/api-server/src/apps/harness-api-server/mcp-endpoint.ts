@@ -8,6 +8,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  SessionType,
+  type ExperimentsService,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -17,6 +19,8 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
+import { createAcpClient } from "../../core/acp-client.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 
@@ -101,6 +105,8 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
+  experiments: ExperimentsService;
+  artifacts: ArtifactService;
   agentHome: string;
 }
 
@@ -121,6 +127,29 @@ export function createMcpSession(
       }),
     ],
   });
+
+  async function resolveTrialSessionId(
+    experimentId: string,
+  ): Promise<string | null> {
+    const acp = createAcpClient({
+      namespace: deps.k8s.namespace,
+      instanceName: agentId,
+    });
+    let sessions: Awaited<ReturnType<typeof acp.listSessions>>;
+    try {
+      sessions = await acp.listSessions();
+    } catch {
+      return null;
+    }
+    const trial = sessions
+      .filter(
+        (s) =>
+          s.platform?.type === SessionType.ExperimentTrial &&
+          s.platform?.experimentId === experimentId,
+      )
+      .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
+    return trial?.sessionId ?? null;
+  }
 
   server.tool(
     "describe_channel",
@@ -468,6 +497,92 @@ export function createMcpSession(
     },
   );
 
+  // ---- Experiments tools ----------------------------------------------------
+  server.tool(
+    "record_run",
+    `Append a Run to your Experiment's ledger — call this once per optimization-loop iteration that produced a result. Pass the iteration's \`score\` (a single number, higher is better) and \`candidate\`, the path to the artifact file the iteration produced (absolute under ${agentHome} or workspace-relative, e.g. candidate.json). The platform reads and stores that file (10 MiB cap) and attributes the Run to your active experiment arm automatically. Only works while this agent is an arm of a running experiment.`,
+    {
+      score: z
+        .number()
+        .describe("The iteration's score; a single number, higher is better."),
+      candidate: z
+        .string()
+        .min(1)
+        .describe(
+          `Path to the candidate artifact file: absolute under ${agentHome} or workspace-relative (e.g. candidate.json).`,
+        ),
+    },
+    async ({ score, candidate }) => {
+      const active = await deps.experiments.resolveActiveArm(agentId);
+      if (!active) {
+        return errorResult(
+          "record_run is only available while this agent is an arm of a running experiment; none is active.",
+        );
+      }
+
+      const resolvedPath = resolveWorkspacePath(candidate, agentHome);
+      let file: { content: string; binary: boolean; mimeType?: string };
+      try {
+        file = await runtimeClient.files.read.query({ path: resolvedPath });
+      } catch (err) {
+        if (err instanceof TRPCClientError) {
+          if (err.data?.code === "NOT_FOUND") {
+            return errorResult(
+              `candidate not found: ${candidate} (resolved to ${resolvedPath})`,
+            );
+          }
+          if (err.data?.code === "PAYLOAD_TOO_LARGE") {
+            return errorResult(
+              `candidate ${candidate} exceeds the 10 MB per-file cap`,
+            );
+          }
+        }
+        return errorResult(
+          `failed to read candidate ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      const content = file.binary
+        ? Buffer.from(file.content, "base64")
+        : Buffer.from(file.content, "utf8");
+      const contentType = file.mimeType ?? "application/octet-stream";
+
+      const sessionId = await resolveTrialSessionId(active.experimentId);
+      if (!sessionId) {
+        return errorResult(
+          "no active trial session found for this experiment; start the experiment before recording runs.",
+        );
+      }
+
+      const key = `${active.experimentId}/${agentId}/${crypto.randomUUID()}/${basename(candidate)}`;
+      try {
+        await deps.artifacts.put({ key, content, contentType });
+      } catch (err) {
+        return errorResult(
+          `failed to store candidate: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      const run = await deps.experiments.recordRun({
+        experimentId: active.experimentId,
+        agentId,
+        sessionId,
+        candidateRef: key,
+        score,
+      });
+
+      return textResult(
+        JSON.stringify({
+          runId: run.id,
+          runNumber: run.runNumber,
+          experimentId: run.experimentId,
+          score: run.score,
+          candidateRef: run.candidateRef,
+        }),
+      );
+    },
+  );
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -494,6 +609,8 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  experimentsServiceFor: (owner: string) => ExperimentsService;
+  artifacts: ArtifactService;
   agentHome: string;
 }
 
@@ -547,11 +664,14 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
+    const experiments = deps.experimentsServiceFor(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
       schedules,
+      experiments,
+      artifacts: deps.artifacts,
       agentHome: deps.agentHome,
     });
     await session.server.connect(session.transport);
