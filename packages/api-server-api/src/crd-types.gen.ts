@@ -73,7 +73,7 @@ export interface AgentSpecCR {
    */
   init?: string;
   /**
-   * KeepAwakePins are MCP-written workload leases the api-server maxes into CurrentHibernationTimeoutMin; the controller never reads them.
+   * KeepAwakePins are MCP-written workload leases; while any is held the api-server derives CurrentHibernationTimeoutMin from them (most-awake pin wins, replacing the baseline). The controller never reads them.
    */
   keepAwakePins?: {
     /**

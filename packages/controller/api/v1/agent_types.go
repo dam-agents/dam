@@ -43,7 +43,7 @@ type AgentSpec struct {
 	// +optional
 	CurrentHibernationTimeoutMin *int `json:"currentHibernationTimeoutMin,omitempty"`
 
-	// KeepAwakePins are MCP-written workload leases the api-server maxes into CurrentHibernationTimeoutMin; the controller never reads them.
+	// KeepAwakePins are MCP-written workload leases; while any is held the api-server derives CurrentHibernationTimeoutMin from them (most-awake pin wins, replacing the baseline). The controller never reads them.
 	// +optional
 	// +listType=map
 	// +listMapKey=id
@@ -150,7 +150,7 @@ type EnvVar struct {
 	Value string `json:"value"`
 }
 
-// KeepAwakePin is one workload-held keep-awake lease maxed into the effective hibernation timeout.
+// KeepAwakePin is one workload-held keep-awake lease that governs the effective hibernation timeout while held.
 type KeepAwakePin struct {
 	// ID uniquely identifies the pin within an agent; acquire rejects duplicates.
 	ID string `json:"id"`

@@ -147,12 +147,13 @@ spec:
                   agent starts.
                 type: string
               keepAwakePins:
-                description: KeepAwakePins are MCP-written workload leases the api-server
-                  maxes into CurrentHibernationTimeoutMin; the controller never reads
-                  them.
+                description: KeepAwakePins are MCP-written workload leases; while
+                  any is held the api-server derives CurrentHibernationTimeoutMin
+                  from them (most-awake pin wins, replacing the baseline). The controller
+                  never reads them.
                 items:
                   description: KeepAwakePin is one workload-held keep-awake lease
-                    maxed into the effective hibernation timeout.
+                    that governs the effective hibernation timeout while held.
                   properties:
                     createdAt:
                       description: CreatedAt is when the pin was acquired; informational
