@@ -92,6 +92,8 @@ export interface ExperimentsService {
   create(input: ExperimentCreateInput): Promise<Experiment>;
   /** Add an arm referencing an existing owned agent. */
   addArm(input: ExperimentAddArmInput): Promise<ExperimentArm>;
+  start(id: string): Promise<Experiment>;
+  stop(id: string): Promise<Experiment>;
   delete(id: string): Promise<void>;
   /** Resolve the arm of the owner's currently-running experiment that this
    *  agent belongs to, or null. Used by the ingestion path to attribute a run

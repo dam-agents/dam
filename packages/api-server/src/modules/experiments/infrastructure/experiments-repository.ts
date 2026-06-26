@@ -29,6 +29,11 @@ export interface ExperimentsRepository {
   }): Promise<Experiment>;
   listByOwner(ownerId: string): Promise<Experiment[]>;
   get(id: string, ownerId: string): Promise<Experiment | null>;
+  updateStatus(
+    id: string,
+    ownerId: string,
+    status: ExperimentStatus,
+  ): Promise<Experiment | null>;
   delete(id: string, ownerId: string): Promise<void>;
 
   addArm(input: {
@@ -123,6 +128,16 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
           and(eq(experimentsTable.id, id), eq(experimentsTable.owner, ownerId)),
         );
       return rows[0] ? rowToExperiment(rows[0]) : null;
+    },
+
+    async updateStatus(id, ownerId, status): Promise<Experiment | null> {
+      await db
+        .update(experimentsTable)
+        .set({ status, updatedAt: new Date() })
+        .where(
+          and(eq(experimentsTable.id, id), eq(experimentsTable.owner, ownerId)),
+        );
+      return this.get(id, ownerId);
     },
 
     async delete(id, ownerId): Promise<void> {

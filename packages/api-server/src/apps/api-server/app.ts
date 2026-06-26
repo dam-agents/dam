@@ -33,6 +33,7 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
+import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
@@ -737,6 +738,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
+    const { experiments } = composeExperimentsForOwner({
+      db,
+      owner: user.sub,
+      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+    });
     const skills = composeSkillsModule(
       api,
       config.namespace,
@@ -785,6 +791,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         skills,
         approvals,
         egressRules,
+        experiments,
         files,
         terms,
         e2e,

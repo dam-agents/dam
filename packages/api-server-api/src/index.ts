@@ -87,6 +87,12 @@ export type {
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {
+  experimentAddArmInputSchema,
+  experimentConfigSchema,
+  experimentCreateInputSchema,
+  experimentIdInputSchema,
+} from "./modules/experiments/schemas.js";
+export {
   quietWindowSchema,
   scheduleCreateCronInputSchema,
   scheduleCreateRRuleInputSchema,
