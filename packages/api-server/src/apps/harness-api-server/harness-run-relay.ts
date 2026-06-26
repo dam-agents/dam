@@ -101,7 +101,7 @@ export function createRunRelay(deps: {
       });
 
       try {
-        await deps.runs.create(runId, agentId);
+        await deps.runs.create(runId, agentId, identity.uid);
         const podIP = await deps.runs.waitReady(runId, abort.signal);
         if (clientGone || overflow) return release();
 

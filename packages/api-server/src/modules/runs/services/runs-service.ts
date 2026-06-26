@@ -23,8 +23,9 @@ export class RunFailedError extends Error {
 export interface RunsService {
   /** Generate a fresh DNS-1035-safe Run name. */
   newRunId(): string;
-  /** Write the Run CR; the controller materialises the executor pair. */
-  create(runId: string, agentId: string): Promise<void>;
+  /** Write the Run CR, owner-refed to the parent Agent (by uid) for cascade
+   *  deletion; the controller materialises the executor pair. */
+  create(runId: string, agentId: string, agentUid: string): Promise<void>;
   /** Poll until the executor pod is Ready, returning its podIP. Throws
    *  RunFailedError on a failed/timed-out run. */
   waitReady(runId: string, signal: AbortSignal): Promise<string>;
@@ -42,10 +43,10 @@ export function createRunsService(k8s: K8sClient): RunsService {
       return `run-${crypto.randomUUID()}`;
     },
 
-    async create(runId, agentId) {
+    async create(runId, agentId, agentUid) {
       await k8s.createCustomObject(
         RUNS_PLURAL,
-        buildRunObject({ runId, agentId }),
+        buildRunObject({ runId, agentId, agentUid }),
       );
     },
 

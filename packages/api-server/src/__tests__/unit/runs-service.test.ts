@@ -29,22 +29,25 @@ function fakeK8s(overrides: Partial<K8sClient>): K8sClient {
 const liveSignal = () => new AbortController().signal;
 
 describe("runs-service", () => {
-  it("creates a Run CR with the agent name", async () => {
-    let created: {
-      plural: string;
-      body: { spec?: { agentName?: string } };
-    } | null = null;
+  it("creates a Run CR with the agent name, owner-refed to the parent agent", async () => {
+    type RunBody = {
+      spec?: { agentName?: string };
+      metadata?: { ownerReferences?: { uid?: string; kind?: string }[] };
+    };
+    let created: { plural: string; body: RunBody } | null = null;
     const svc = createRunsService(
       fakeK8s({
         createCustomObject: async (plural, body) => {
-          created = { plural, body: body as { spec?: { agentName?: string } } };
+          created = { plural, body: body as RunBody };
           return {} as KubeObject;
         },
       }),
     );
-    await svc.create("run-x", "my-agent");
+    await svc.create("run-x", "my-agent", "agent-uid-123");
     expect(created!.plural).toBe("runs");
     expect(created!.body.spec?.agentName).toBe("my-agent");
+    const ownerRef = created!.body.metadata?.ownerReferences?.[0];
+    expect(ownerRef).toMatchObject({ kind: "Agent", uid: "agent-uid-123" });
   });
 
   it("returns the podIP once the executor is Ready", async () => {
