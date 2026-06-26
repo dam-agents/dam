@@ -73,6 +73,19 @@ export type {
   ScheduleUpdateRRuleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
+export type {
+  ExperimentConfig,
+  ExperimentStatus,
+  Experiment,
+  ExperimentArm,
+  ExperimentRun,
+  ExperimentArmWithRuns,
+  ExperimentWithRuns,
+  ActiveArm,
+  ExperimentCreateInput,
+  ExperimentAddArmInput,
+  ExperimentsService,
+} from "./modules/experiments/types.js";
 export {
   quietWindowSchema,
   scheduleCreateCronInputSchema,
