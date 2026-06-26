@@ -443,8 +443,14 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60
 # set, also enable the bundled clickstack workload in the chart upgrade below.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
+  # Pinned chart version + operator images pulled from the quay.io/dam-agents mirror
+  # (mirror these tags by hand). Only the operator images are redirected — the MongoDB
+  # operator's own database/agent images stay upstream for now.
   helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
-    --namespace clickstack-operators --create-namespace --wait --timeout 5m
+    --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
+    --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
+    --set clickhouse-operator.manager.image.tag=v0.0.1 \
+    --set mongodb-operator.registry.operator=quay.io/dam-agents
   kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
     crd/clickhouseclusters.clickhouse.com \
     crd/keeperclusters.clickhouse.com \

@@ -266,7 +266,7 @@ clickstack:
   collector:
     annotations: {}
     podAnnotations: {}
-    image: otel/opentelemetry-collector-contrib:0.146.1
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
     resources:
       requests:
         cpu: 100m
@@ -277,6 +277,16 @@ clickstack:
 
   # ---------- forwarded to the `clickstack` subchart ----------
 
+  # All third-party images are pinned and pulled from the quay.io/dam-agents mirror, like
+  # the other bundled images. Mirror these exact tags by hand:
+  #   quay.io/dam-agents/hyperdx:2.27.0                          <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+  #   quay.io/dam-agents/clickhouse-server:25.7-alpine           <- clickhouse/clickhouse-server:25.7-alpine
+  #   quay.io/dam-agents/busybox:1.37.0                          <- busybox (HyperDX mongo-wait init)
+  #   quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1 <- otel/opentelemetry-collector-contrib:0.146.1 (our collector, above)
+  # The two operators are mirrored + pinned in deploy/tasks.toml (cluster:install):
+  #   quay.io/dam-agents/clickhouse-operator:v0.0.1              <- ghcr.io/clickhouse/clickhouse-operator:v0.0.1
+  #   quay.io/dam-agents/mongodb-kubernetes:1.7.0                <- quay.io/mongodb/mongodb-kubernetes:1.7.0
+
   # Disable the subchart's HyperDX/OpAMP-managed collector; we run our own (above). Its
   # static config only ships a debug exporter — the ClickHouse pipeline AND the ingestion-
   # key auth are delivered by HyperDX over OpAMP, which is exactly the token-based access
@@ -284,9 +294,21 @@ clickstack:
   otel-collector:
     enabled: false
 
+  hyperdx:
+    deployment:
+      image:
+        repository: quay.io/dam-agents/hyperdx
+        tag: "2.27.0"
+      waitForMongodb:
+        image: "quay.io/dam-agents/busybox:1.37.0"
+
   clickhouse:
     cluster:
       spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-server
+            tag: "25.7-alpine"
         dataVolumeClaimSpec:
           resources:
             requests:
