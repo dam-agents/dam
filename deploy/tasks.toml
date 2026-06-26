@@ -480,6 +480,18 @@ fi
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
 
+# HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
+# long-lived monitor connection is closed, topology stuck Unknown, and it does not
+# self-heal). Once the stack is up and Mongo is ready, a warm restart connects cleanly and
+# stays healthy in-mesh — so restart it here. (Prod installs should likewise ensure HyperDX
+# (re)starts after Mongo is ready.)
+if [ -n "${CLICKSTACK:-}" ] && [ "$NO_RESTART" != true ]; then
+  echo "Restarting HyperDX onto a ready MongoDB..."
+  kubectl --kubeconfig="$KUBECONFIG" rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-clickstack-app
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-clickstack-app --timeout=5m
+fi
+
 # 7. Prune dangling image layers (issue #244). After repeated reinstalls,
 # old `:latest` SHAs lose their tag to the freshly imported one and become
 # `<none>:<none>`. Drop only those — `crictl rmi --prune` would also wipe
