@@ -10,6 +10,7 @@ import { loadManifest, type RuntimeManifest } from "./manifest.js";
 import { createStateStore } from "./state-store.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerImpl } from "./drivers/trigger-impl.js";
+import { createExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
 import { createDispatcher } from "./dispatcher.js";
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { createExtensionLoader } from "./infrastructure/extension-loader.js";
@@ -73,6 +74,10 @@ export async function composeRuntimeChannel(
     stateStore: triggerStateStore,
   });
 
+  const experimentTriggerImpl = createExperimentTriggerImpl({
+    driver: opts.triggerDriver,
+  });
+
   const seedWorkspace = createSeedWorkspace({ workDir: opts.workDir, log });
 
   const harnessClient: HarnessClient = createHarnessClient({
@@ -91,6 +96,7 @@ export async function composeRuntimeChannel(
     dispatcher,
     stateStore,
     triggerImpl,
+    experimentTriggerImpl,
     seedWorkspace,
     log,
   });

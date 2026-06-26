@@ -742,6 +742,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+      runtimeMutator,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
     });
     const skills = composeSkillsModule(
       api,
