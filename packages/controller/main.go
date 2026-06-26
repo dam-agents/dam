@@ -218,8 +218,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 	slog.Info("informer caches synced")
 
-	go runForkWorker(ctx, forkReconciler, forkInformer.Lister(), cfg.Namespace, forkQueue)
-	go runRunWorker(ctx, runReconciler, runInformer.Lister(), cfg.Namespace, runQueue)
+	go runCachedWorker(ctx, "fork", forkInformer.Lister(), cfg.Namespace, forkQueue, reconciler.ForkFromCacheObject, forkReconciler.Reconcile)
+	go runCachedWorker(ctx, "run", runInformer.Lister(), cfg.Namespace, runQueue, reconciler.RunFromCacheObject, runReconciler.Reconcile)
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 
@@ -271,15 +271,18 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 	}
 }
 
-// runForkWorker drains the fork queue, reconciling each Fork CR read from the
-// informer cache. Blocks until the queue shuts down.
-func runForkWorker(ctx context.Context, r *reconciler.ForkReconciler, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string]) {
+// runCachedWorker drains a queue, decoding each name from the informer cache
+// and reconciling the typed CR. Shared by the Fork and Run workers (the Agent
+// worker resolves via a getter, not a lister). Blocks until the queue shuts
+// down. A missing object is forgotten (deleted out from under us); a decode or
+// reconcile error is logged, with reconcile errors re-queued rate-limited.
+func runCachedWorker[T any](ctx context.Context, kind string, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string], decode func(any) (*T, error), reconcile func(context.Context, *T) error) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
 			return
 		}
-		slog.Debug("fork reconcile dequeued", "name", name, "queueDepth", queue.Len())
+		slog.Debug(kind+" reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
 			obj, err := lister.ByNamespace(namespace).Get(name)
@@ -287,46 +290,14 @@ func runForkWorker(ctx context.Context, r *reconciler.ForkReconciler, lister cac
 				queue.Forget(name)
 				return
 			}
-			fork, err := reconciler.ForkFromCacheObject(obj)
+			typed, err := decode(obj)
 			if err != nil {
-				slog.Error("decode fork", "name", name, "error", err)
+				slog.Error("decode "+kind, "name", name, "error", err)
 				queue.Forget(name)
 				return
 			}
-			if err := r.Reconcile(ctx, fork); err != nil {
-				slog.Error("reconcile fork", "name", name, "error", err)
-				queue.AddRateLimited(name)
-				return
-			}
-			queue.Forget(name)
-		}()
-	}
-}
-
-// runRunWorker drains the run queue, reconciling each Run CR read from the
-// informer cache. Blocks until the queue shuts down.
-func runRunWorker(ctx context.Context, r *reconciler.RunReconciler, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string]) {
-	for {
-		name, shutdown := queue.Get()
-		if shutdown {
-			return
-		}
-		slog.Debug("run reconcile dequeued", "name", name, "queueDepth", queue.Len())
-		func() {
-			defer queue.Done(name)
-			obj, err := lister.ByNamespace(namespace).Get(name)
-			if err != nil {
-				queue.Forget(name)
-				return
-			}
-			run, err := reconciler.RunFromCacheObject(obj)
-			if err != nil {
-				slog.Error("decode run", "name", name, "error", err)
-				queue.Forget(name)
-				return
-			}
-			if err := r.Reconcile(ctx, run); err != nil {
-				slog.Error("reconcile run", "name", name, "error", err)
+			if err := reconcile(ctx, typed); err != nil {
+				slog.Error("reconcile "+kind, "name", name, "error", err)
 				queue.AddRateLimited(name)
 				return
 			}

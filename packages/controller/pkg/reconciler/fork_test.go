@@ -230,7 +230,7 @@ func TestFork_ResolvesParentWorkspacePVCByLabel(t *testing.T) {
 	r, _ := setupForkReconciler(t, nil, nil, parentPVC)
 	spec := &types.AgentSpec{Mounts: []types.Mount{{Path: "/home/agent", Persist: true}, {Path: "/tmp", Persist: false}}}
 
-	got, err := r.resolveParentWorkspacePVCs(context.Background(), "parent-agent", spec)
+	got, err := resolveParentWorkspacePVCs(context.Background(), r.client, r.config, "parent-agent", spec)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"home-agent": "platform-pool-zzzzzz"}, got)
 }
@@ -242,20 +242,19 @@ func TestFork_FallsBackToConventionPVCName(t *testing.T) {
 	r, _ := setupForkReconciler(t, nil, nil)
 	spec := &types.AgentSpec{Mounts: []types.Mount{{Path: "/home/agent", Persist: true}}}
 
-	got, err := r.resolveParentWorkspacePVCs(context.Background(), "legacy-agent", spec)
+	got, err := resolveParentWorkspacePVCs(context.Background(), r.client, r.config, "legacy-agent", spec)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"home-agent": "home-agent-legacy-agent-0"}, got)
 }
 
-func TestApplyForkParentPVCs_RewritesClaimName(t *testing.T) {
-	job := &batchv1.Job{}
-	job.Spec.Template.Spec.Volumes = []corev1.Volume{
+func TestRewriteParentPVCs_RewritesClaimName(t *testing.T) {
+	volumes := []corev1.Volume{
 		{Name: "home-agent", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "home-agent-p-0"}}},
 		{Name: "ca-cert", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 
-	applyForkParentPVCs(job, map[string]string{"home-agent": "platform-pool-zzzzzz"})
+	rewriteParentPVCs(volumes, map[string]string{"home-agent": "platform-pool-zzzzzz"})
 
-	assert.Equal(t, "platform-pool-zzzzzz", job.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName)
-	assert.Nil(t, job.Spec.Template.Spec.Volumes[1].PersistentVolumeClaim, "non-PVC volume untouched")
+	assert.Equal(t, "platform-pool-zzzzzz", volumes[0].PersistentVolumeClaim.ClaimName)
+	assert.Nil(t, volumes[1].PersistentVolumeClaim, "non-PVC volume untouched")
 }

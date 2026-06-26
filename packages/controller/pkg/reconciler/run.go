@@ -11,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/util/retry"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -82,10 +81,6 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	if err := r.ensureRunOwnerReference(ctx, run, parentAgent); err != nil {
-		slog.Warn("setting run owner reference", "run", runName, "agent", parentAgentID, "error", err)
-	}
-
 	// Route through the parent's already-running gateway (IP-direct, no DNS).
 	gwSvc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(parentAgentID), metav1.GetOptions{})
 	if err != nil {
@@ -112,11 +107,11 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 	}
 
 	desired := BuildRunExecutorPod(runName, parentAgentID, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
-	parentPVCs, err := r.resolveParentWorkspacePVCs(ctx, parentAgentID, agentSpec)
+	parentPVCs, err := resolveParentWorkspacePVCs(ctx, r.client, r.config, parentAgentID, agentSpec)
 	if err != nil {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
 	}
-	applyRunParentPVCs(desired, parentPVCs)
+	rewriteParentPVCs(desired.Spec.Volumes, parentPVCs)
 	if err := r.applyPod(ctx, desired); err != nil {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying executor pod: %v", err))
 	}
@@ -172,60 +167,6 @@ func (r *RunReconciler) findRunPod(ctx context.Context, runName string) (*corev1
 		}
 	}
 	return nil, nil
-}
-
-func (r *RunReconciler) ensureRunOwnerReference(ctx context.Context, run *apiv1.Run, parent *apiv1.Agent) error {
-	for _, ref := range run.OwnerReferences {
-		if ref.UID == parent.UID {
-			return nil
-		}
-	}
-	cli := r.dynamic.Resource(RunsGVR).Namespace(r.config.Namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		obj, err := cli.Get(ctx, run.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		refs := obj.GetOwnerReferences()
-		for _, ref := range refs {
-			if ref.UID == parent.UID {
-				return nil
-			}
-		}
-		obj.SetOwnerReferences(append(refs, metav1.OwnerReference{
-			APIVersion: apiv1.GroupVersion.String(),
-			Kind:       "Agent",
-			Name:       parent.Name,
-			UID:        parent.UID,
-		}))
-		_, err = cli.Update(ctx, obj, metav1.UpdateOptions{})
-		return err
-	})
-}
-
-// resolveParentWorkspacePVCs maps each persisted parent mount to its backing PVC
-// name by (agent, mount) label, falling back to the legacy convention name —
-// identical to the fork resolver (#692).
-func (r *RunReconciler) resolveParentWorkspacePVCs(ctx context.Context, parentAgent string, agentSpec *types.AgentSpec) (map[string]string, error) {
-	out := map[string]string{}
-	for _, m := range resolveSpecMounts(agentSpec, r.config.AgentTemplateDefaults) {
-		if !m.Persist {
-			continue
-		}
-		volName := types.SanitizeMountName(m.Path)
-		list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: LabelAgent + "=" + parentAgent + "," + LabelMount + "=" + volName,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if len(list.Items) > 0 {
-			out[volName] = list.Items[0].Name
-		} else {
-			out[volName] = fmt.Sprintf("%s-%s-0", volName, parentAgent)
-		}
-	}
-	return out, nil
 }
 
 func (r *RunReconciler) applyPod(ctx context.Context, desired *corev1.Pod) error {

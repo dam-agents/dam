@@ -61,21 +61,3 @@ func BuildRunExecutorPod(
 		Spec: tmpl.Spec,
 	}
 }
-
-// applyRunParentPVCs rewrites the executor pod's workspace-volume claim refs to
-// the parent PVC names the reconciler resolved by label — the same warm-pool
-// fix as forks (#692). No-op for an empty map.
-func applyRunParentPVCs(pod *corev1.Pod, parentPVCs map[string]string) {
-	if len(parentPVCs) == 0 {
-		return
-	}
-	for i := range pod.Spec.Volumes {
-		pvc := pod.Spec.Volumes[i].PersistentVolumeClaim
-		if pvc == nil {
-			continue
-		}
-		if name, ok := parentPVCs[pod.Spec.Volumes[i].Name]; ok {
-			pvc.ClaimName = name
-		}
-	}
-}

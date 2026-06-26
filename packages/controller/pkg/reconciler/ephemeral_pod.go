@@ -1,15 +1,63 @@
 package reconciler
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
+
+// resolveParentWorkspacePVCs maps each persisted mount of the parent Agent to
+// the PVC name backing it, looked up by (agent, mount) label so a warm-pool
+// workspace — whose name is the pool's generated name, not the
+// `<mount>-<agent>-0` convention — resolves correctly (#692). For agents created
+// before the mount label existed, no labeled PVC is found and it falls back to
+// the legacy convention name, which is still the real name for those. Shared by
+// the Fork and Run reconcilers.
+func resolveParentWorkspacePVCs(ctx context.Context, client kubernetes.Interface, cfg *config.Config, parentAgent string, agentSpec *types.AgentSpec) (map[string]string, error) {
+	out := map[string]string{}
+	for _, m := range resolveSpecMounts(agentSpec, cfg.AgentTemplateDefaults) {
+		if !m.Persist {
+			continue
+		}
+		volName := types.SanitizeMountName(m.Path)
+		list, err := client.CoreV1().PersistentVolumeClaims(cfg.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: LabelAgent + "=" + parentAgent + "," + LabelMount + "=" + volName,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(list.Items) > 0 {
+			out[volName] = list.Items[0].Name
+		} else {
+			out[volName] = fmt.Sprintf("%s-%s-0", volName, parentAgent)
+		}
+	}
+	return out, nil
+}
+
+// rewriteParentPVCs overwrites the ephemeral pod's workspace-volume claim refs
+// with the parent PVC names resolved by label (#692) — the builder fills in the
+// legacy `<mount>-<agent>-0` name; this swaps in the warm-pool spare's generated
+// name when the parent claimed one (a no-op for pre-label agents and an empty
+// map). Shared by Fork (Job template) and Run (Pod) — both pass their volumes.
+func rewriteParentPVCs(volumes []corev1.Volume, parentPVCs map[string]string) {
+	for i := range volumes {
+		pvc := volumes[i].PersistentVolumeClaim
+		if pvc == nil {
+			continue
+		}
+		if name, ok := parentPVCs[volumes[i].Name]; ok {
+			pvc.ClaimName = name
+		}
+	}
+}
 
 // Shared shape for the two ephemeral pod-set kinds derived from an Agent: the
 // per-turn Fork (wrapped in a Job) and the per-command Run executor (a bare
