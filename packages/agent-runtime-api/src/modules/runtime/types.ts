@@ -14,6 +14,7 @@ export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
   "workspace-seed",
+  "experiment-trigger",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -138,10 +139,27 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
+export const experimentTriggerEventPayload = z.object({
+  experimentId: z.string().min(1),
+  task: z.string().min(1),
+});
+export type ExperimentTriggerEventPayload = z.infer<
+  typeof experimentTriggerEventPayload
+>;
+
+export const experimentTriggerEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("experiment-trigger"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: experimentTriggerEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
+  experimentTriggerEvent,
 ]);
 export type Event = z.infer<typeof event>;
 

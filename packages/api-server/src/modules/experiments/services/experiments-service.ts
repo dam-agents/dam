@@ -11,7 +11,9 @@ import type {
   ExperimentWithRuns,
 } from "api-server-api";
 import type { ExperimentsRepository } from "../infrastructure/experiments-repository.js";
+import type { TrialLauncher } from "../infrastructure/trial-launcher.js";
 import { rollupExperiment } from "../domain/experiment-rollup.js";
+import { buildTrialPrompt } from "../domain/trial-prompt.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
@@ -19,6 +21,7 @@ export function createExperimentsService(deps: {
   owner: string;
   repo: ExperimentsRepository;
   agentExists?: (agentId: string) => Promise<boolean>;
+  trialLauncher?: TrialLauncher;
 }): ExperimentsService {
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
@@ -37,6 +40,36 @@ export function createExperimentsService(deps: {
         code: "BAD_REQUEST",
         message: `Agent "${agentId}" not found`,
       });
+    }
+  }
+
+  async function launchTrials(experiment: Experiment): Promise<void> {
+    if (!deps.trialLauncher) return;
+    const launcher = deps.trialLauncher;
+    const arms = await deps.repo.listArms(experiment.id);
+    for (const arm of arms) {
+      const task = buildTrialPrompt({
+        goal: experiment.goal,
+        spec: experiment.spec,
+        armSpec: arm.armSpec,
+      });
+      try {
+        await launcher.launch({
+          agentId: arm.agentId,
+          experimentId: experiment.id,
+          task,
+        });
+      } catch (err) {
+        securityLog("warn", "experiment.trial_launch", {
+          category: "resource",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: arm.agentId,
+          target: experiment.id,
+          result: "failure",
+          reason: (err as Error).message,
+        });
+      }
     }
   }
 
@@ -122,6 +155,7 @@ export function createExperimentsService(deps: {
       if (experiment.status === "running") return experiment;
       const updated = await deps.repo.updateStatus(id, deps.owner, "running");
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      await launchTrials(updated);
       securityLog("info", "experiment.start", {
         category: "resource",
         actor: deps.owner,

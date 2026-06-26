@@ -1,7 +1,9 @@
 import type { Db } from "db";
 import type { ExperimentsService } from "api-server-api";
 import { createExperimentsRepository } from "./infrastructure/experiments-repository.js";
+import { createRuntimeTrialLauncher } from "./infrastructure/trial-launcher.js";
 import { createExperimentsService } from "./services/experiments-service.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export interface ComposeExperimentsForOwnerOpts {
   db: Db;
@@ -10,6 +12,8 @@ export interface ComposeExperimentsForOwnerOpts {
    *  can only reference an owned agent. Omit in contexts without an agents
    *  service (the check is then skipped). */
   agentExists?: (agentId: string) => Promise<boolean>;
+  runtimeMutator?: RuntimeMutator;
+  wakeAgent?: (agentId: string) => Promise<void>;
 }
 
 /** Compose the owner-scoped Experiments service. The owner is bound here, so
@@ -20,11 +24,19 @@ export function composeExperimentsForOwner(
   opts: ComposeExperimentsForOwnerOpts,
 ): { experiments: ExperimentsService } {
   const repo = createExperimentsRepository(opts.db);
+  const trialLauncher =
+    opts.runtimeMutator && opts.wakeAgent
+      ? createRuntimeTrialLauncher({
+          runtimeMutator: opts.runtimeMutator,
+          wakeAgent: opts.wakeAgent,
+        })
+      : undefined;
   return {
     experiments: createExperimentsService({
       owner: opts.owner,
       repo,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
+      ...(trialLauncher ? { trialLauncher } : {}),
     }),
   };
 }
