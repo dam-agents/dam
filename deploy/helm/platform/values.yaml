@@ -289,17 +289,6 @@ clickstack:
             requests:
               storage: 20Gi
 
-  # Keep MongoDB out of the ambient mesh: ztunnel tears down the MongoDB driver's
-  # long-lived monitor connections, which breaks HyperDX (agent pods opt out the same way).
-  mongodb:
-    spec:
-      statefulSet:
-        spec:
-          template:
-            metadata:
-              labels:
-                istio.io/dataplane-mode: none
-
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
