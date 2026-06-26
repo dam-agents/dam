@@ -1,4 +1,4 @@
-import type { SessionMode } from "api-server-api";
+import { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
@@ -111,6 +111,7 @@ export function SessionsSidebar({
         {sessions.map((s) => {
           const isOpen = s.sessionId === sessionId;
           const working = isOpen ? busy : !!s.running;
+          // Polled approvals cover all sessions; the live store surfaces the open one instantly.
           const needsApproval =
             approvalSessions.has(s.sessionId) ||
             pendingPermissions.some((p) => p.sessionId === s.sessionId);
@@ -119,7 +120,11 @@ export function SessionsSidebar({
               key={s.sessionId}
               session={s}
               active={isOpen}
-              status={resolveSessionStatus({ working, needsApproval })}
+              status={resolveSessionStatus({
+                working,
+                needsApproval,
+                isTerminal: s.mode === SessionMode.Terminal,
+              })}
               onResume={() => onResumeSession(s.sessionId, s.mode)}
               onDelete={() => confirmDelete(s.sessionId, s.title)}
             />

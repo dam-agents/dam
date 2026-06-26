@@ -99,7 +99,9 @@ export async function openConnection(
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(await wsUrl(agentId, opts?.passive ?? false));
+  const { stream, ws } = await wsStream(
+    await wsUrl(agentId, opts?.passive ?? false),
+  );
   const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {

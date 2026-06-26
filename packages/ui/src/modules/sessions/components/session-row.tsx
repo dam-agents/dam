@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import {
   SESSION_STATUS_DISPLAY,
@@ -100,7 +101,11 @@ export function SessionRow({
           <span
             data-testid="session-status-dot"
             data-status={status}
-            className={`w-2 h-2 rounded-full shrink-0 ${statusStyle.dotClass} ${statusStyle.pulse ? "anim-pulse" : ""}`}
+            className={cn(
+              "w-2 h-2 rounded-full shrink-0",
+              statusStyle.dotClass,
+              statusStyle.pulse && "anim-pulse",
+            )}
             title={statusStyle.label}
           />
           <span className={`text-[13px] truncate ${titleClass}`}>
