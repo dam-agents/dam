@@ -2180,6 +2180,7 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       mode: "chat",
       type: "regular",
       createdAt: "2026-01-01T00:00:00Z",
+      running: false,
     });
     expect(resp.result.sessions[0].title).toBe("Hello");
   });

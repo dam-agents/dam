@@ -123,6 +123,13 @@ export function createAcpRelay(
         } catch {}
       });
 
+      // A passive connection (the sessions-list status poll) is a read that
+      // must not defer hibernation: skip presence and the last-activity bump.
+      const passive =
+        new URL(req.url ?? "", "http://localhost").searchParams.get(
+          "passive",
+        ) === "1";
+
       // Resolve identity once per upgrade. The instance's owner/agent
       // can't change for the lifetime of this WS — capturing here avoids
       // a K8s ConfigMap GET per permission-request mirror. Failure to
@@ -174,7 +181,7 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      const release = presence.acquire(agentId);
+      const release = passive ? () => {} : presence.acquire(agentId);
       client.once("close", release);
 
       const pending: {
@@ -196,7 +203,18 @@ export function createAcpRelay(
           }
           identity = resolved;
         })
-        .then(() => repo.ensureReady(agentId))
+        .then(async () => {
+          // Passive: never wake or bump activity. Read-only readiness gate;
+          // fail closed if the pod isn't already up.
+          if (passive) {
+            if (!(await repo.isReady(agentId))) {
+              client.close(1011, "agent not ready");
+              throw new Error("agent not ready");
+            }
+            return;
+          }
+          await repo.ensureReady(agentId);
+        })
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
           for (const msg of pending) {
@@ -210,7 +228,7 @@ export function createAcpRelay(
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
 
-            if (shouldUpdateActivity(agentId)) {
+            if (!passive && shouldUpdateActivity(agentId)) {
               repo
                 .patchAnnotation(
                   agentId,

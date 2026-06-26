@@ -1,4 +1,4 @@
-import { SessionMode } from "api-server-api";
+import type { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 

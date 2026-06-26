@@ -9,7 +9,7 @@ import {
   deleteAgentSession,
   listAgentSessions,
 } from "../api/acp-session-ops.js";
-import { acpSessionsKeys } from "../api/queries.js";
+import { acpSessionsKeys, setSessionRunning } from "../api/queries.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
@@ -42,6 +42,13 @@ export function useAcpSession(
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
+  // Mirror busy into the list cache's `running` so the row keeps its blue dot
+  // when it stops being the open session (the poll-fed `running` lags a switch).
+  useEffect(() => {
+    if (selectedAgent && sessionId) {
+      setSessionRunning(selectedAgent, sessionId, busy);
+    }
+  }, [busy, selectedAgent, sessionId]);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 

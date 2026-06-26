@@ -8,7 +8,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
-const STATUS_POLL_MS = 3_000;
+const STATUS_POLL_MS = 5_000;
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
@@ -53,6 +53,20 @@ export function removeSessionFromCache(
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
     (prev) => prev?.filter((s) => s.sessionId !== sessionId),
+  );
+}
+
+// Seed the open session's live busy state into the list cache so its status dot
+// stays correct the instant it stops being the open row — before the next poll.
+export function setSessionRunning(
+  agentId: string,
+  sessionId: string,
+  running: boolean,
+): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.map((s) => (s.sessionId === sessionId ? { ...s, running } : s)),
   );
 }
 
