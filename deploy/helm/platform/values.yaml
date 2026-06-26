@@ -239,6 +239,63 @@ redis:
       cpu: 200m
       memory: 256Mi
 
+# -- Agent-telemetry backend (ClickStack: ClickHouse + Keeper + MongoDB + HyperDX, plus
+# the platform's own OpenTelemetry collector). Receives and stores agent telemetry.
+# FOUNDATION component — it only stands the backend up (a running OTLP endpoint + a
+# persistent store). Agents do not yet export to it and the user-facing read path is
+# separate; both are out of scope for now.
+#
+# DISABLED by default: a heavy multi-pod stack with no producer yet. Enable per-cluster
+# once telemetry export is wired. REQUIRES the clickstack-operators chart (ClickHouse +
+# MongoDB operators + CRDs) to be installed out-of-band FIRST — see deploy/tasks.toml
+# (cluster:install) and the install runbook; the operators are treated like Istio and
+# cert-manager.
+#
+# Everything under `clickstack:` EXCEPT `enabled` and `collector` is forwarded to the
+# upstream `clickstack` subchart (see Chart.yaml); those keys mirror that chart's values
+# and deep-merge over its defaults. `collector` configures the platform's OWN collector
+# (templates/clickstack/), which replaces the subchart's HyperDX/OpAMP-managed collector so
+# that collector access is gated by an Istio AuthorizationPolicy, not HyperDX tokens.
+clickstack:
+  enabled: false
+
+  # -- Platform-owned OpenTelemetry collector (NOT forwarded to the subchart). Static
+  # config, no OpAMP, no ingestion key; reachability is gated by the AuthorizationPolicy
+  # in templates/clickstack/. Writes to the operator ClickHouse as the `otelcollector`
+  # user (db `default`, standard otel_* tables) which HyperDX's sources already read.
+  collector:
+    annotations: {}
+    podAnnotations: {}
+    image: otel/opentelemetry-collector-contrib:0.146.1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+
+  # ---------- forwarded to the `clickstack` subchart ----------
+
+  # Disable the subchart's HyperDX/OpAMP-managed collector; we run our own (above). Its
+  # static config only ships a debug exporter — the ClickHouse pipeline AND the ingestion-
+  # key auth are delivered by HyperDX over OpAMP, which is exactly the token-based access
+  # control we are replacing with Istio. HyperDX still reads ClickHouse directly.
+  otel-collector:
+    enabled: false
+
+  clickhouse:
+    cluster:
+      spec:
+        dataVolumeClaimSpec:
+          resources:
+            requests:
+              storage: 20Gi
+
+  # NOTE for production: override the subchart's default app-state secrets
+  # (`clickstack.hyperdx.secrets.*`: HYPERDX_API_KEY, CLICKHOUSE_PASSWORD,
+  # CLICKHOUSE_APP_PASSWORD, MONGODB_PASSWORD) — they default to well-known placeholders.
+
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true

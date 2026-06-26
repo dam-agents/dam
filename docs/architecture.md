@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-06-12
+Last verified: 2026-06-26
 
 ## System context
 
@@ -66,6 +66,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [connections](architecture/connections.md) — unified Connection / Contribution model, runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, agent-side driver model.
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
+- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh rather than ingestion tokens.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
 - [code](security/code.md) — CodeQL SAST and pre-commit hardening.
 - [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.

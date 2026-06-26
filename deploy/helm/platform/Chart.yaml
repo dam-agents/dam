@@ -4,3 +4,16 @@ description: ADK — Secure Agent Execution Platform
 type: application
 version: 0.2.6
 appVersion: "0.2.6"
+
+dependencies:
+  # Agent-telemetry backend. Ships the ClickHouse/Keeper/MongoDB custom resources and the
+  # HyperDX UI; gated by `clickstack.enabled` (default off). Its ClickHouse + MongoDB
+  # operators and CRDs are installed out-of-band (see deploy/tasks.toml), like Istio and
+  # cert-manager, because Helm never upgrades a chart's crds/ on an existing release. We
+  # disable the subchart's own OpenTelemetry collector (clickstack.otel-collector.enabled)
+  # and run our own (templates/clickstack/) so collector access is gated by Istio, not by
+  # HyperDX ingestion tokens.
+  - name: clickstack
+    version: "3.0.0"
+    repository: "https://clickhouse.github.io/ClickStack-helm-charts"
+    condition: clickstack.enabled

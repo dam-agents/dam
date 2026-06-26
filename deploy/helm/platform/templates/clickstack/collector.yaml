@@ -1,0 +1,156 @@
+{{- if .Values.clickstack.enabled }}
+{{- /*
+Platform-owned OpenTelemetry collector for the ClickStack telemetry backend.
+
+Replaces the subchart's bundled collector (clickstack.otel-collector.enabled=false). That
+one is driven by HyperDX over OpAMP, which injects an ingestion-API-key check on the OTLP
+receivers — token-based access control we deliberately avoid. This collector runs a static
+config with NO auth extension and NO OpAMP; reachability is gated entirely by the Istio
+AuthorizationPolicy alongside (authorizationpolicy.yaml).
+
+It reuses the subchart's shared `clickstack-config` ConfigMap + `clickstack-secret` Secret
+for the ClickHouse connection, writing as the `otelcollector` user (granted CREATE on
+default.*) into db `default` with the standard otel_* tables that HyperDX's sources read.
+*/ -}}
+{{- $name := include "platform.clickstack.collector.fullname" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      batch: {}
+    exporters:
+      clickhouse:
+        endpoint: ${env:CLICKHOUSE_ENDPOINT}
+        username: ${env:CLICKHOUSE_USER}
+        password: ${env:CLICKHOUSE_PASSWORD}
+        database: default
+        create_schema: true
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    service:
+      extensions: [health_check]
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      name: otlp-grpc
+      appProtocol: grpc
+    - port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+      name: otlp-http
+  selector:
+    app.kubernetes.io/component: clickstack-collector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 2 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: clickstack-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: clickstack-collector
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: collector
+          image: {{ .Values.clickstack.collector.image }}
+          args: ["--config=/etc/otelcol/config.yaml"]
+          # CLICKHOUSE_ENDPOINT/USER/PASSWORD come from the subchart's shared config/secret.
+          # OPAMP_SERVER_URL is also present there but ignored — our config has no opamp.
+          envFrom:
+            - configMapRef:
+                name: clickstack-config
+            - secretRef:
+                name: clickstack-secret
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+            - containerPort: 4318
+              name: otlp-http
+            - containerPort: 13133
+              name: health
+          {{- if .Values.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          {{- end }}
+          resources:
+            {{- toYaml .Values.clickstack.collector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+{{- end }}
