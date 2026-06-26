@@ -84,6 +84,7 @@ export type {
   ActiveArm,
   ExperimentCreateInput,
   ExperimentAddArmInput,
+  ExperimentRecordRunInput,
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {

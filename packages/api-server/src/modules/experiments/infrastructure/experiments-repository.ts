@@ -39,6 +39,15 @@ export interface ExperimentsRepository {
   listArms(experimentId: string): Promise<ExperimentArm[]>;
   listRuns(experimentId: string): Promise<ExperimentRun[]>;
 
+  addRun(input: {
+    experimentId: string;
+    agentId: string;
+    sessionId: string;
+    candidateRef: string;
+    score: number;
+    status: string;
+  }): Promise<ExperimentRun>;
+
   /** The arm of the owner's single running experiment that contains `agentId`,
    *  or null. Owner-scoped so a leaked agentId can't reach another tenant. */
   findActiveArm(
@@ -178,6 +187,40 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
         .where(eq(experimentRunsTable.experimentId, experimentId))
         .orderBy(asc(experimentRunsTable.runNumber));
       return rows.map(rowToRun);
+    },
+
+    async addRun(input): Promise<ExperimentRun> {
+      const id = `run-${randomBytes(6).toString("hex")}`;
+      const [last] = await db
+        .select({ runNumber: experimentRunsTable.runNumber })
+        .from(experimentRunsTable)
+        .where(
+          and(
+            eq(experimentRunsTable.experimentId, input.experimentId),
+            eq(experimentRunsTable.agentId, input.agentId),
+          ),
+        )
+        .orderBy(desc(experimentRunsTable.runNumber))
+        .limit(1);
+      const runNumber = (last?.runNumber ?? 0) + 1;
+      await db.insert(experimentRunsTable).values({
+        id,
+        experimentId: input.experimentId,
+        agentId: input.agentId,
+        runNumber,
+        sessionId: input.sessionId,
+        candidateRef: input.candidateRef,
+        score: input.score,
+        status: input.status,
+      });
+      const [row] = await db
+        .select()
+        .from(experimentRunsTable)
+        .where(eq(experimentRunsTable.id, id));
+      if (!row) {
+        throw new Error(`addRun: run ${id} not found after insert`);
+      }
+      return rowToRun(row);
     },
 
     async findActiveArm(
