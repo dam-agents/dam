@@ -137,6 +137,17 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(5 * 1024 * 1024 * 1024),
+  /** Hard ceiling for a single Experiment Candidate artifact stored in
+   *  Postgres, in bytes. Enforced by the artifact service before the blob is
+   *  written, so an oversized Candidate can't bloat the database. Default
+   *  10 MiB — Candidates are meant to be small (a prompt, a config, a small
+   *  program); larger artifacts want object storage, not a row. Tune via
+   *  `MAX_ARTIFACT_BYTES`. */
+  maxArtifactBytes: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10 * 1024 * 1024),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -210,6 +221,7 @@ export function loadConfig(): Config {
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
+    maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",
