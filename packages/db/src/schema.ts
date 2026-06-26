@@ -460,3 +460,69 @@ export const apiKeys = pgTable(
       .where(sql`${table.revokedAt} IS NULL`),
   ],
 );
+
+export const experiments = pgTable(
+  "experiments",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    goal: text("goal").notNull(),
+    spec: jsonb("spec").notNull(),
+    status: text("status").notNull().default("draft"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("experiments_owner_idx").on(table.owner),
+    uniqueIndex("experiments_owner_name_unique_idx").on(
+      table.owner,
+      table.name,
+    ),
+  ],
+);
+
+export const experimentArms = pgTable(
+  "experiment_arms",
+  {
+    experimentId: text("experiment_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    armSpec: jsonb("arm_spec").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.experimentId, table.agentId] }),
+    index("experiment_arms_agent_idx").on(table.agentId),
+  ],
+);
+
+export const experimentRuns = pgTable(
+  "experiment_runs",
+  {
+    id: text("id").primaryKey(),
+    experimentId: text("experiment_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    runNumber: integer("run_number").notNull(),
+    sessionId: text("session_id").notNull(),
+    candidateRef: text("candidate_ref"),
+    score: jsonb("score"),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("experiment_runs_arm_run_number_idx").on(
+      table.experimentId,
+      table.agentId,
+      table.runNumber,
+    ),
+  ],
+);
