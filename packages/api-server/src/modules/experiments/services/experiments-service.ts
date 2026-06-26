@@ -5,6 +5,7 @@ import type {
   ExperimentAddArmInput,
   ExperimentArm,
   ExperimentCreateInput,
+  ExperimentListItem,
   ExperimentRecordRunInput,
   ExperimentRun,
   ExperimentsService,
@@ -74,7 +75,8 @@ export function createExperimentsService(deps: {
   }
 
   return {
-    list: (): Promise<Experiment[]> => deps.repo.listByOwner(deps.owner),
+    list: (): Promise<ExperimentListItem[]> =>
+      deps.repo.listByOwner(deps.owner),
 
     async getWithRuns(id): Promise<ExperimentWithRuns | null> {
       const experiment = await deps.repo.get(id, deps.owner);

@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   inArray,
+  sql,
   type Db,
   experiments as experimentsTable,
   experimentArms as experimentArmsTable,
@@ -14,6 +15,7 @@ import type {
   Experiment,
   ExperimentArm,
   ExperimentConfig,
+  ExperimentListItem,
   ExperimentRun,
   ExperimentStatus,
 } from "api-server-api";
@@ -27,7 +29,7 @@ export interface ExperimentsRepository {
     goal: string;
     spec: ExperimentConfig;
   }): Promise<Experiment>;
-  listByOwner(ownerId: string): Promise<Experiment[]>;
+  listByOwner(ownerId: string): Promise<ExperimentListItem[]>;
   get(id: string, ownerId: string): Promise<Experiment | null>;
   updateStatus(
     id: string,
@@ -120,13 +122,49 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
       return created;
     },
 
-    async listByOwner(ownerId): Promise<Experiment[]> {
+    async listByOwner(ownerId): Promise<ExperimentListItem[]> {
       const rows = await db
         .select()
         .from(experimentsTable)
         .where(eq(experimentsTable.owner, ownerId))
         .orderBy(desc(experimentsTable.createdAt));
-      return rows.map(rowToExperiment);
+      if (rows.length === 0) return [];
+
+      const ids = rows.map((r) => r.id);
+      const [armRows, runCountRows] = await Promise.all([
+        db
+          .select({
+            experimentId: experimentArmsTable.experimentId,
+            agentId: experimentArmsTable.agentId,
+          })
+          .from(experimentArmsTable)
+          .where(inArray(experimentArmsTable.experimentId, ids))
+          .orderBy(asc(experimentArmsTable.createdAt)),
+        db
+          .select({
+            experimentId: experimentRunsTable.experimentId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(experimentRunsTable)
+          .where(inArray(experimentRunsTable.experimentId, ids))
+          .groupBy(experimentRunsTable.experimentId),
+      ]);
+
+      const armAgentIdsByExperiment = new Map<string, string[]>();
+      for (const arm of armRows) {
+        const list = armAgentIdsByExperiment.get(arm.experimentId);
+        if (list) list.push(arm.agentId);
+        else armAgentIdsByExperiment.set(arm.experimentId, [arm.agentId]);
+      }
+      const runCountByExperiment = new Map(
+        runCountRows.map((r) => [r.experimentId, r.count]),
+      );
+
+      return rows.map((row) => ({
+        ...rowToExperiment(row),
+        armAgentIds: armAgentIdsByExperiment.get(row.id) ?? [],
+        runCount: runCountByExperiment.get(row.id) ?? 0,
+      }));
     },
 
     async get(id, ownerId): Promise<Experiment | null> {

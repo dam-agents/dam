@@ -81,6 +81,7 @@ export type {
   ExperimentRun,
   ExperimentArmWithRuns,
   ExperimentWithRuns,
+  ExperimentListItem,
   ActiveArm,
   ExperimentCreateInput,
   ExperimentAddArmInput,

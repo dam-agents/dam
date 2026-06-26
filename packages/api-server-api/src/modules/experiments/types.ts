@@ -59,6 +59,15 @@ export interface ExperimentWithRuns extends Experiment {
   arms: ExperimentArmWithRuns[];
 }
 
+/** A list-row projection: the experiment plus the cheap rollup the list view
+ *  needs — a swatch per arm and the total run count — without fetching every
+ *  arm's full run ledger. `armAgentIds` is in arm-creation order; its length is
+ *  the arm count. */
+export interface ExperimentListItem extends Experiment {
+  armAgentIds: string[];
+  runCount: number;
+}
+
 /** What the ingestion / harness side needs to attribute work to the right
  *  experiment for a given agent, resolved from the agent's verified identity.
  *  Carries the goal + specs so the harness has its task context in hand. */
@@ -95,7 +104,7 @@ export interface ExperimentRecordRunInput {
  *  router and the in-pod MCP session (the owner is bound at composition time,
  *  never taken from request input). */
 export interface ExperimentsService {
-  list(): Promise<Experiment[]>;
+  list(): Promise<ExperimentListItem[]>;
   getWithRuns(id: string): Promise<ExperimentWithRuns | null>;
   create(input: ExperimentCreateInput): Promise<Experiment>;
   /** Add an arm referencing an existing owned agent. */
