@@ -324,13 +324,7 @@ API Server ServiceAccount name
 {{- printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* ---- ClickStack telemetry backend ---- */}}
-
-{{/*
-Platform-owned OpenTelemetry collector for the ClickStack backend (Deployment + Service).
-Replaces the subchart's HyperDX/OpAMP-managed collector so collector access is gated by
-Istio AuthorizationPolicy rather than HyperDX ingestion tokens.
-*/}}
+{{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
 {{- define "platform.clickstack.collector.fullname" -}}
 {{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}

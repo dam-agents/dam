@@ -1,19 +1,8 @@
 {{- if .Values.clickstack.enabled }}
 {{- /*
-Mesh-level access control for the telemetry collector.
-
-Out of the box, ClickStack gates the collector with a HyperDX-issued ingestion API key
-(pushed via OpAMP). The platform instead gates the collector at the mesh, consistent with
-its SPIFFE-principal access model (see apiserver/auth-policy-pod-deny.yaml). The collector
-itself runs with no auth extension (collector.yaml), so this policy is the gate.
-
-ALLOW from the release namespace and the agent namespace only; Istio ALLOW semantics deny
-any source matching no rule. Enforced at L4 by ztunnel — no waypoint required.
-
-Namespace `from` matching keys off the source's mesh identity. Release-namespace peers are
-in the ambient mesh and match directly. How agent telemetry ultimately reaches the
-collector (direct vs. via the in-mesh gateway, and the identity it carries) is settled by
-the export-wiring sub-issue; this expresses the intended allow-set now.
+Mesh gate for the collector: ALLOW only the release + agent namespaces (Istio ALLOW denies
+all else, L4 via ztunnel), replacing ClickStack's HyperDX-token gate.
+See docs/architecture/observability.md.
 */ -}}
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy

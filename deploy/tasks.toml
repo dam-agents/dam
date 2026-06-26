@@ -347,9 +347,8 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# Resolve chart dependencies (the clickstack telemetry subchart) into charts/ before any
-# helm template/upgrade below. charts/ is gitignored (build artifact), and Helm requires
-# declared dependencies to be present even when clickstack.enabled=false.
+# Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
+# clickstack.enabled=false.
 helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
 helm dependency build deploy/helm/platform
 
@@ -437,15 +436,11 @@ echo "Installing/upgrading Platform chart..."
 kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f deploy/helm/platform/crds/
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f deploy/helm/platform/crds/
 
-# ClickStack telemetry operators (ClickHouse + MongoDB) + their CRDs — installed
-# out-of-band like Istio/cert-manager, because Helm never upgrades a chart's crds/ on an
-# existing release. Gated on CLICKSTACK=1 (the telemetry workload is off by default); when
-# set, also enable the bundled clickstack workload in the chart upgrade below.
+# ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
+# CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
+# the quay.io/dam-agents mirror (their db/agent images stay upstream).
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
-  # Pinned chart version + operator images pulled from the quay.io/dam-agents mirror
-  # (mirror these tags by hand). Only the operator images are redirected — the MongoDB
-  # operator's own database/agent images stay upstream for now.
   helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
     --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
     --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
