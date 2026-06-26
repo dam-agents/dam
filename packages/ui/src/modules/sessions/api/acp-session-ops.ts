@@ -75,13 +75,15 @@ export async function listAgentSessions(
     agentId,
     async (conn) => {
       const r = await conn.listSessions({ cwd: "." });
-      // Stable newest-first: immutable createdAt, sessionId tiebreaker.
+      // Most-recently-active first; sessionId breaks ties for a stable order.
       return (r.sessions ?? [])
         .map((s) => toSessionView(agentId, s as unknown as ListedSession))
         .sort((a, b) => {
-          const byCreated = b.createdAt.localeCompare(a.createdAt);
-          return byCreated !== 0
-            ? byCreated
+          const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+            a.updatedAt ?? a.createdAt,
+          );
+          return byActivity !== 0
+            ? byActivity
             : a.sessionId.localeCompare(b.sessionId);
         });
     },
