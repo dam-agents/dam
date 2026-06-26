@@ -56,8 +56,17 @@ export function createCandidateRoutes(deps: CandidateRoutesDeps) {
         detail: { runId, candidateRef: run.candidateRef },
       });
 
-      const filename = sanitizeFilename(run.candidateRef.split("/").pop() ?? "");
-      return new Response(Uint8Array.from(artifact.content), {
+      const filename = sanitizeFilename(
+        run.candidateRef.split("/").pop() ?? "",
+      );
+      // Pipe the blob to the client rather than copying it into a fresh buffer.
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(artifact.content);
+          controller.close();
+        },
+      });
+      return new Response(body, {
         status: 200,
         headers: {
           "Content-Type": artifact.contentType || "application/octet-stream",
