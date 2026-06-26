@@ -5,6 +5,7 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
+  ExperimentTrial: "experiment_trial",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -29,6 +30,7 @@ export interface SessionView {
   mode: SessionMode;
   createdAt: string;
   scheduleId?: string | null;
+  experimentId?: string | null;
   title?: string | null;
   updatedAt?: string | null;
 }

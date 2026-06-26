@@ -32,6 +32,7 @@ export function optimisticInsertSession(
     mode,
     createdAt: new Date().toISOString(),
     scheduleId: null,
+    experimentId: null,
     title: null,
     updatedAt: null,
   };
@@ -57,8 +58,8 @@ export function removeSessionFromCache(
 
 /**
  * Sessions list, read straight off the agent over ACP `session/list`
- * and decoded from `_meta.platform`. Schedule sessions are excluded from the
- * main list; channel sessions are included only when asked. Pass
+ * and decoded from `_meta.platform`. Schedule and experiment-trial sessions are
+ * excluded from the main list; channel sessions are included only when asked. Pass
  * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
  * without firing requests.
  *
