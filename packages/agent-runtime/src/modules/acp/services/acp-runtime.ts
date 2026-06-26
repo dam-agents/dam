@@ -1224,6 +1224,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (promptSessionId !== null) {
+        // A real prompt is genuine activity — stamp it so the session list
+        // sorts/displays by last message, not the harness mtime.
+        deps.sessionMetadata?.recordActivity(promptSessionId);
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
@@ -1399,6 +1402,7 @@ function withPlatformMeta(
   const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
   return {
     ...session,
+    ...(entry.lastActivityAt ? { updatedAt: entry.lastActivityAt } : {}),
     _meta: {
       ...existingMeta,
       platform: { ...entry.meta, createdAt: entry.createdAt },
