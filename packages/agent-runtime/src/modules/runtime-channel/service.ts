@@ -7,6 +7,7 @@ import type {
 import type { Dispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 import type { TriggerImpl } from "./drivers/trigger-impl.js";
+import type { ExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
 import type { SeedWorkspaceFn } from "./seed-workspace.js";
 import { processEvents, type EventHandlers } from "./event-loop.js";
 
@@ -14,6 +15,7 @@ export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   stateStore: StateStore;
   triggerImpl: TriggerImpl;
+  experimentTriggerImpl: ExperimentTriggerImpl;
   seedWorkspace: SeedWorkspaceFn;
   log: (msg: string) => void;
 }
@@ -31,6 +33,7 @@ export function createRuntimeChannelService(
 
   const handlers: EventHandlers = {
     triggerImpl: deps.triggerImpl,
+    experimentTriggerImpl: deps.experimentTriggerImpl,
     seedWorkspace: deps.seedWorkspace,
   };
 

@@ -1,10 +1,12 @@
 import type { Event } from "agent-runtime-api";
 import type { TriggerImpl } from "./drivers/trigger-impl.js";
+import type { ExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
 import type { SeedWorkspaceFn } from "./seed-workspace.js";
 import type { StateStore } from "./state-store.js";
 
 export interface EventHandlers {
   triggerImpl: TriggerImpl;
+  experimentTriggerImpl: ExperimentTriggerImpl;
   seedWorkspace: SeedWorkspaceFn;
 }
 
@@ -67,6 +69,9 @@ async function invokeHandler(e: Event, handlers: EventHandlers): Promise<void> {
       return;
     case "schedule-reset":
       handlers.triggerImpl.reset(e.payload.scheduleId);
+      return;
+    case "experiment-trigger":
+      await handlers.experimentTriggerImpl.handle(e.payload);
       return;
     case "workspace-seed":
       await handlers.seedWorkspace(e.payload);
