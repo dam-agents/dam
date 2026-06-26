@@ -7,6 +7,9 @@ import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { ExperimentDetailView } from "./modules/experiments/views/experiment-detail-view.js";
+import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
+import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -98,6 +101,23 @@ function MainApp() {
           view: "sandbox-settings",
           agentId: decodeURIComponent(path.slice("/sandboxes/".length)),
         });
+      else if (path === "/experiments")
+        useStore.setState({
+          view: "experiments",
+          agentId: null,
+          experimentId: null,
+        });
+      else if (path === "/experiments/new")
+        useStore.setState({
+          view: "experiment-new",
+          agentId: null,
+          experimentId: null,
+        });
+      else if (/^\/experiments\/[^/]+$/.test(path))
+        useStore.setState({
+          view: "experiment-detail",
+          experimentId: decodeURIComponent(path.slice("/experiments/".length)),
+        });
       else leaveChat();
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
@@ -125,6 +145,8 @@ function MainApp() {
         <main className="relative z-10 flex-1 overflow-y-auto">
           {view === "sandbox-new" ? (
             <SandboxWizardView />
+          ) : view === "experiment-new" ? (
+            <ExperimentWizardView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
               {view === "settings" ? (
@@ -133,6 +155,10 @@ function MainApp() {
                 <InboxView />
               ) : view === "sandbox-settings" ? (
                 <SandboxSettingsView />
+              ) : view === "experiments" ? (
+                <ExperimentsListView />
+              ) : view === "experiment-detail" ? (
+                <ExperimentDetailView />
               ) : (
                 <ListView />
               )}

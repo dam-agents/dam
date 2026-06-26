@@ -11,11 +11,15 @@ import {
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
+  experimentId: string | null;
   settingsTab: SettingsTab;
   setView: (v: View) => void;
   navigateToCreateSandbox: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxSettings: (agentId: string) => void;
+  navigateToExperiments: () => void;
+  navigateToCreateExperiment: () => void;
+  navigateToExperiment: (experimentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
   showMobilePanel: boolean;
@@ -51,13 +55,19 @@ export const createNavigationSlice: StateCreator<
     return pathToState(window.location.pathname).view;
   })(),
   agentId: pathToState(window.location.pathname).agentId ?? null,
+  experimentId: pathToState(window.location.pathname).experimentId ?? null,
   settingsTab: pathToState(window.location.pathname).settingsTab ?? "account",
   setView: (v) => {
     history.pushState(null, "", viewToPath(v));
     // viewToPath(v) without a tab is /settings, so keep the tab in sync.
     if (v === "settings")
-      set({ view: v, agentId: null, settingsTab: "account" });
-    else set({ view: v, agentId: null });
+      set({
+        view: v,
+        agentId: null,
+        experimentId: null,
+        settingsTab: "account",
+      });
+    else set({ view: v, agentId: null, experimentId: null });
   },
   navigateToCreateSandbox: () => {
     history.pushState(null, "", viewToPath("sandbox-new"));
@@ -75,6 +85,22 @@ export const createNavigationSlice: StateCreator<
   navigateToSandboxSettings: (agentId) => {
     history.pushState(null, "", viewToPath("sandbox-settings", null, agentId));
     set({ view: "sandbox-settings", agentId });
+  },
+  navigateToExperiments: () => {
+    history.pushState(null, "", viewToPath("experiments"));
+    set({ view: "experiments", agentId: null, experimentId: null });
+  },
+  navigateToCreateExperiment: () => {
+    history.pushState(null, "", viewToPath("experiment-new"));
+    set({ view: "experiment-new", agentId: null, experimentId: null });
+  },
+  navigateToExperiment: (experimentId) => {
+    history.pushState(
+      null,
+      "",
+      viewToPath("experiment-detail", null, null, null, experimentId),
+    );
+    set({ view: "experiment-detail", agentId: null, experimentId });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
