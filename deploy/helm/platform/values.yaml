@@ -520,6 +520,12 @@ apiServer:
   # 5 GiB import could fill the disk.
   maxImportBundleBytes: 5368709120
 
+  # -- Hard ceiling (bytes) for a single Experiment Candidate artifact stored
+  # in Postgres. Enforced by the api-server before the blob is written.
+  # Default 10 MiB — Candidates are meant to be small; larger artifacts want
+  # object storage, not a database row.
+  maxArtifactBytes: 10485760
+
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
   # if the CLI is behind the current server version). Set this to retire a
