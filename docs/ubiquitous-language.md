@@ -119,6 +119,21 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 | Apply Failures | The drivers that failed the most recent settle (`runtime_state_outbox.apply_failures`, a `DriverFailure[]`). Drives the background retry (capped by `apply_attempts`) and the per-kind notifications — failed / recovered, plus a terminal *gave-up* when a kind exhausts the retry cap. The failed/recovered/gave-up diff is computed under a row lock in `recordOutcome` so concurrent workers can't double-emit. A version bump clears them (stale by definition). Surfaced on the Agent as `contributionFailures` (the degraded badge). Empty ⇒ healthy |
 | Contributions Settled | The settlement fact "the agent has terminated reconciliation for the current desired Version" — true when `runtime_state_outbox.last_settled_version >= version` (or there is no outbox row, i.e. nothing to apply). Does *not* assert per-driver success: an agent is Settled with non-empty Apply Failures. Drives the background **retry** — the sweep re-dispatches any row that is not Settled, or is Settled-with-failures under the attempt cap. On this iteration it does **not** gate readiness: readiness is the controller-published `Ready` condition and the apply worker dispatches only to a Ready agent (`isReady`). Gating readiness on settlement is deferred. |
 
+## Experiments (bounded context) — proposed, MVP design
+
+An Experiment races several AI-driven R&D harnesses against one goal and compares what each produced. Mirrors the Connections owner + grant-to-many-Agents pattern; the platform starts Arms and captures Runs — it never runs an optimization loop and never interprets a score. Terms are in active design (epic `dam-u1n`).
+
+| Term | Definition |
+|------|-----------|
+| Experiment | Owner-scoped resource holding a goal, a shared spec, a status, and the Run Ledger. Peer to the Agent; references many Agents through Arms. The Connection analog at the experiment level |
+| Arm | One competitor in an Experiment: a framework + config pair. References one existing Agent (the harness, fixed as the Agent's image) and carries an opaque JSON `arm_spec` interpreted by the harness, not the platform. Keyed `(experiment_id, agent_id)`, so the same framework can appear more than once with different configs. The `connectionGrants` analog |
+| Trial | The single Session an Arm's Agent opens when the Experiment starts; the harness runs its own loop here. One per Arm. Owns the transcript and session-level telemetry (tokens, tool use), which are therefore Arm-level, not Run-level. Carried as `SessionType.ExperimentTrial` |
+| Run | One entry the harness appends to the Run Ledger per loop iteration — a Score plus a Candidate. Many per Trial, numbered monotonically within the Arm. The verb "run the experiment" (start it) is unrelated to this noun |
+| Candidate | The artifact a Run produced, retrievable as a downloadable archive. Opaque to the platform, which stores only a `candidate_ref` — a path on a shared artifact volume readable while the Agent is offline |
+| Score | The result a harness reports for a Run. Opaque to the platform in MVP — captured, never normalized across Arms. A single number, higher-is-better, for within-Arm best and ranking |
+| Run Ledger | The append-only record of every Run across an Experiment's Arms; the one genuinely new persistence primitive. The platform stores Run metadata + a pointer to the producing Session, never the score's meaning |
+| record_run | The outbound MCP tool a harness calls to append a Run (Score + `candidate_ref`) to the Run Ledger; attributed to the caller's active Arm by network-verified Agent identity. The `platform-experiments` skill is what leads a generic harness to call it |
+
 ## Secrets (bounded context)
 
 | Term | Definition |
