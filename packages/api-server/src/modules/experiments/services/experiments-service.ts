@@ -108,6 +108,49 @@ export function createExperimentsService(deps: {
       }
     },
 
+    async start(id): Promise<Experiment> {
+      const experiment = await deps.repo.get(id, deps.owner);
+      if (!experiment) throw new TRPCError({ code: "NOT_FOUND" });
+      if (experiment.status === "completed") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "A completed experiment cannot be started again.",
+        });
+      }
+      if (experiment.status === "running") return experiment;
+      const updated = await deps.repo.updateStatus(id, deps.owner, "running");
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      securityLog("info", "experiment.start", {
+        category: "resource",
+        actor: deps.owner,
+        actorKind: "user",
+        target: id,
+        result: "success",
+      });
+      return updated;
+    },
+
+    async stop(id): Promise<Experiment> {
+      const experiment = await deps.repo.get(id, deps.owner);
+      if (!experiment) throw new TRPCError({ code: "NOT_FOUND" });
+      if (experiment.status !== "running") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Only a running experiment can be stopped (status: ${experiment.status}).`,
+        });
+      }
+      const updated = await deps.repo.updateStatus(id, deps.owner, "stopped");
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      securityLog("info", "experiment.stop", {
+        category: "resource",
+        actor: deps.owner,
+        actorKind: "user",
+        target: id,
+        result: "success",
+      });
+      return updated;
+    },
+
     async delete(id): Promise<void> {
       await deps.repo.delete(id, deps.owner);
       securityLog("info", "experiment.delete", {
