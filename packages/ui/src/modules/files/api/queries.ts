@@ -60,6 +60,138 @@ function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
  *  entry and React Query refetches without any explicit invalidation. Returns null
  *  until the slice is present; null is the right answer for "the user just
  *  expanded this dir and the next poll hasn't arrived yet". */
+const MOCK_FILE_TREE: ListDirsResponse = {
+  results: [
+    {
+      path: "",
+      ok: true,
+      entries: [
+        { name: "src", type: "dir" },
+        { name: "tests", type: "dir" },
+        { name: "scripts", type: "dir" },
+        { name: "package.json", type: "file" },
+        { name: "tsconfig.json", type: "file" },
+        { name: "docker-compose.yml", type: "file" },
+        { name: "Dockerfile", type: "file" },
+        { name: ".env.example", type: "file" },
+        { name: "README.md", type: "file" },
+      ],
+    },
+    {
+      path: "src",
+      ok: true,
+      entries: [
+        { name: "routes", type: "dir" },
+        { name: "middleware", type: "dir" },
+        { name: "services", type: "dir" },
+        { name: "models", type: "dir" },
+        { name: "lib", type: "dir" },
+        { name: "config", type: "dir" },
+        { name: "index.ts", type: "file" },
+        { name: "app.ts", type: "file" },
+        { name: "server.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/routes",
+      ok: true,
+      entries: [
+        { name: "auth.ts", type: "file" },
+        { name: "users.ts", type: "file" },
+        { name: "projects.ts", type: "file" },
+        { name: "webhooks.ts", type: "file" },
+        { name: "health.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/middleware",
+      ok: true,
+      entries: [
+        { name: "auth.ts", type: "file" },
+        { name: "rate-limit.ts", type: "file" },
+        { name: "validate.ts", type: "file" },
+        { name: "error-handler.ts", type: "file" },
+        { name: "logger.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/services",
+      ok: true,
+      entries: [
+        { name: "auth.service.ts", type: "file" },
+        { name: "user.service.ts", type: "file" },
+        { name: "project.service.ts", type: "file" },
+        { name: "email.service.ts", type: "file" },
+        { name: "storage.service.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/models",
+      ok: true,
+      entries: [
+        { name: "user.ts", type: "file" },
+        { name: "project.ts", type: "file" },
+        { name: "session.ts", type: "file" },
+        { name: "audit-log.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/lib",
+      ok: true,
+      entries: [
+        { name: "db.ts", type: "file" },
+        { name: "redis.ts", type: "file" },
+        { name: "jwt.ts", type: "file" },
+        { name: "crypto.ts", type: "file" },
+        { name: "queue.ts", type: "file" },
+      ],
+    },
+    {
+      path: "src/config",
+      ok: true,
+      entries: [
+        { name: "index.ts", type: "file" },
+        { name: "database.ts", type: "file" },
+        { name: "auth.ts", type: "file" },
+      ],
+    },
+    {
+      path: "tests",
+      ok: true,
+      entries: [
+        { name: "unit", type: "dir" },
+        { name: "integration", type: "dir" },
+        { name: "setup.ts", type: "file" },
+      ],
+    },
+    {
+      path: "tests/unit",
+      ok: true,
+      entries: [
+        { name: "auth.service.test.ts", type: "file" },
+        { name: "user.service.test.ts", type: "file" },
+        { name: "jwt.test.ts", type: "file" },
+      ],
+    },
+    {
+      path: "tests/integration",
+      ok: true,
+      entries: [
+        { name: "auth.test.ts", type: "file" },
+        { name: "projects.test.ts", type: "file" },
+      ],
+    },
+    {
+      path: "scripts",
+      ok: true,
+      entries: [
+        { name: "migrate.ts", type: "file" },
+        { name: "seed.ts", type: "file" },
+      ],
+    },
+  ],
+};
+
 export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
@@ -67,12 +199,13 @@ export function useDirSnapshot(agentId: string | null, path: string) {
   return useQuery({
     queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
     queryFn: async (): Promise<ListDirsResponse> => {
+      if (!operable) return MOCK_FILE_TREE;
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
-    enabled: !!agentId && operable,
-    refetchInterval: 2000,
-    staleTime: 2000,
+    enabled: !!agentId,
+    refetchInterval: operable ? 2000 : false,
+    staleTime: operable ? 2000 : Infinity,
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
     meta: { errorToast: "Couldn't refresh file tree" },
@@ -163,10 +296,65 @@ export function useFileWriteMutation(agentId: string | null) {
   });
 }
 
+function addEntryToCache(
+  qc: ReturnType<typeof useQueryClient>,
+  agentId: string,
+  path: string,
+  type: "file" | "dir",
+) {
+  const dir =
+    path.lastIndexOf("/") >= 0 ? path.slice(0, path.lastIndexOf("/")) : "";
+  const name =
+    path.lastIndexOf("/") >= 0 ? path.slice(path.lastIndexOf("/") + 1) : path;
+  qc.setQueriesData<ListDirsResponse>(
+    { queryKey: fileKeys.tree(agentId) },
+    (old) => {
+      if (!old) return old;
+      return {
+        results: old.results.map((r) => {
+          if (r.path !== dir || !r.ok) return r;
+          return { ...r, entries: [...r.entries, { name, type }] };
+        }),
+      };
+    },
+  );
+}
+
+function removeEntryFromCache(
+  qc: ReturnType<typeof useQueryClient>,
+  agentId: string,
+  path: string,
+) {
+  const dir =
+    path.lastIndexOf("/") >= 0 ? path.slice(0, path.lastIndexOf("/")) : "";
+  const name =
+    path.lastIndexOf("/") >= 0 ? path.slice(path.lastIndexOf("/") + 1) : path;
+  qc.setQueriesData<ListDirsResponse>(
+    { queryKey: fileKeys.tree(agentId) },
+    (old) => {
+      if (!old) return old;
+      return {
+        results: old.results.map((r) => {
+          if (r.path !== dir || !r.ok) return r;
+          return {
+            ...r,
+            entries: r.entries.filter((e: { name: string }) => e.name !== name),
+          };
+        }),
+      };
+    },
+  );
+}
+
 export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
+  const operable = useIsAgentOperable(agentId);
   return useMutation({
     mutationFn: async (input: { path: string; content?: string }) => {
+      if (!operable) {
+        if (agentId) addEntryToCache(qc, agentId, input.path, "file");
+        return { path: input.path };
+      }
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.create.mutate({
         path: input.path,
@@ -174,37 +362,51 @@ export function useFileCreateMutation(agentId: string | null) {
       });
     },
     onSuccess: (_data, vars) => {
-      if (agentId) invalidateFiles(qc, agentId, vars.path);
+      if (agentId && operable) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
 export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
+  const operable = useIsAgentOperable(agentId);
   return useMutation({
     mutationFn: async (input: { path: string }) => {
+      if (!operable) {
+        if (agentId) addEntryToCache(qc, agentId, input.path, "dir");
+        return { path: input.path };
+      }
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.mkdir.mutate(input);
     },
     onSuccess: () => {
-      if (agentId) invalidateFiles(qc, agentId);
+      if (agentId && operable) invalidateFiles(qc, agentId);
     },
   });
 }
 
 export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
+  const operable = useIsAgentOperable(agentId);
   return useMutation({
     mutationFn: async (input: {
       from: string;
       to: string;
       overwrite?: boolean;
     }) => {
+      if (!operable) {
+        if (agentId) {
+          removeEntryFromCache(qc, agentId, input.from);
+          const isDir = input.from.includes("/") ? false : true;
+          addEntryToCache(qc, agentId, input.to, isDir ? "dir" : "file");
+        }
+        return { from: input.from, to: input.to };
+      }
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.rename.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (agentId) {
+      if (agentId && operable) {
         invalidateFiles(qc, agentId, vars.from);
         qc.invalidateQueries({
           queryKey: fileKeys.content(agentId, vars.to),
@@ -216,13 +418,18 @@ export function useFileRenameMutation(agentId: string | null) {
 
 export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
+  const operable = useIsAgentOperable(agentId);
   return useMutation({
     mutationFn: async (input: { path: string }) => {
+      if (!operable) {
+        if (agentId) removeEntryFromCache(qc, agentId, input.path);
+        return { path: input.path };
+      }
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.remove.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (agentId) invalidateFiles(qc, agentId, vars.path);
+      if (agentId && operable) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
@@ -270,15 +477,22 @@ export async function uploadMessageAttachment(
 
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
+  const operable = useIsAgentOperable(agentId);
   return useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       path: string;
       contentBase64: string;
       contentType?: string;
       overwrite?: boolean;
-    }) => api.files.upload.mutate({ agentId: agentId!, ...input }),
+    }) => {
+      if (!operable) {
+        if (agentId) addEntryToCache(qc, agentId, input.path, "file");
+        return { path: input.path };
+      }
+      return api.files.upload.mutate({ agentId: agentId!, ...input });
+    },
     onSuccess: (_data, vars) => {
-      if (agentId) invalidateFiles(qc, agentId, vars.path);
+      if (agentId && operable) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }

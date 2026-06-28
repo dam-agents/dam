@@ -1,6 +1,13 @@
+import { Add } from "@carbon/icons-react";
 import { FilePlus, FolderPlus, FolderUp, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import type { FileEntryKind } from "../hooks/use-file-mutations.js";
 
@@ -22,40 +29,32 @@ export function FilesPanelToolbar({
       <span className="text-[11px] font-mono text-text-muted flex-1 truncate">
         /home/agent
       </span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title={isUploading ? "Upload in progress…" : "Upload files"}
-        disabled={isUploading}
-        onClick={onUploadFiles}
-      >
-        <Upload size={13} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title={isUploading ? "Upload in progress…" : "Upload folder"}
-        disabled={isUploading}
-        onClick={onUploadFolder}
-      >
-        <FolderUp size={13} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title="New file"
-        onClick={() => onNew("file")}
-      >
-        <FilePlus size={13} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title="New folder"
-        onClick={() => onNew("dir")}
-      >
-        <FolderPlus size={13} />
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            title="Add"
+            disabled={isUploading}
+          >
+            <Add size={14} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onNew("file")}>
+            <FilePlus size={14} /> New file
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onNew("dir")}>
+            <FolderPlus size={14} /> New folder
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={isUploading} onClick={onUploadFiles}>
+            <Upload size={14} /> Upload files
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={isUploading} onClick={onUploadFolder}>
+            <FolderUp size={14} /> Upload folder
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
