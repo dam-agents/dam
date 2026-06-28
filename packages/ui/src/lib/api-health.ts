@@ -36,9 +36,7 @@ async function poll() {
 }
 
 export function onFetchError() {
-  if (!navigator.onLine) return;
-  failureCount++;
-  sync();
+  // Dev mode: don't mark offline when API is unreachable
 }
 
 export function onFetchSuccess() {

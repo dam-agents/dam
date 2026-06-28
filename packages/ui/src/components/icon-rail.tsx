@@ -1,8 +1,8 @@
 import {
   type CarbonIconType,
   Email as Inbox,
+  Home,
   Settings,
-  Terminal,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -32,8 +32,8 @@ export function IconRail() {
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
 
   const home: Destination = {
-    label: "Sandboxes",
-    icon: Terminal,
+    label: "Home",
+    icon: Home,
     active: view === "list",
     badge: 0,
     navigate: () => setView("list"),
