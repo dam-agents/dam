@@ -1,8 +1,8 @@
 import {
   type CarbonIconType,
   Email as Inbox,
-  Home,
   Settings,
+  Terminal,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -32,8 +32,8 @@ export function IconRail() {
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
 
   const home: Destination = {
-    label: "Home",
-    icon: Home,
+    label: "Sandboxes",
+    icon: Terminal,
     active: view === "list",
     badge: 0,
     navigate: () => setView("list"),
@@ -56,7 +56,7 @@ export function IconRail() {
   return (
     <>
       <nav
-        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card shrink-0"
+        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r border-border shrink-0"
         data-testid="app-sidebar"
       >
         <div className="flex items-center justify-center pt-2">

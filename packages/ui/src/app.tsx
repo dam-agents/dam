@@ -107,23 +107,18 @@ function MainApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat view is full-screen (has its own layout)
-  if (view === "chat")
-    return (
-      <>
-        <ChatView />
-        <DialogOverlay />
-        <ConnectionBanner />
-      </>
-    );
+  const fullLayoutView = view === "chat" || view === "sandbox-new";
 
-  // All non-chat views share the icon-rail shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
-        <main className="relative z-10 flex-1 overflow-y-auto">
-          {view === "sandbox-new" ? (
+        <main
+          className={`relative z-10 flex-1 flex flex-col min-w-0 ${fullLayoutView ? "overflow-hidden" : "overflow-y-auto"}`}
+        >
+          {view === "chat" ? (
+            <ChatView />
+          ) : view === "sandbox-new" ? (
             <SandboxWizardView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
