@@ -16,6 +16,10 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
+  createLayoutSlice,
+  type LayoutSlice,
+} from "./modules/sessions/store/layout.js";
+import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
@@ -30,6 +34,11 @@ import {
 
 export type { DialogState } from "./modules/platform/store/dialog.js";
 export type {
+  ConfigPanelVariant,
+  PanelSide,
+  SessionNavVariant,
+} from "./modules/sessions/store/layout.js";
+export type {
   PendingPermission,
   PermissionOption,
   PermissionOutcome,
@@ -43,7 +52,8 @@ export type PlatformStore = DialogSlice &
   SessionsSlice &
   SessionConfigSlice &
   FilesSlice &
-  PermissionsSlice;
+  PermissionsSlice &
+  LayoutSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -54,6 +64,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createLayoutSlice(...a),
 }));
 
 // Reuse the path parser for browser back/forward hydration

@@ -1,5 +1,5 @@
 import {
-  Attachment as Paperclip,
+  Add,
   Close as X,
   Document as FileIcon,
   Send as SendIcon,
@@ -20,45 +20,18 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
-import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 const BUSY_VERBS = [
-  "Bamboozling",
-  "Bamming",
-  "Cowabunga-ing",
-  "Gadzooksing",
-  "Gee whizzing",
-  "Gee willikering",
-  "Gollying",
-  "Great Scotting",
-  "Holy guacamoleing",
-  "Holy mackereling",
-  "Holy moleying",
-  "Hot diggitying",
-  "Jeepersing",
-  "Jiminy cricketing",
-  "Kablooeying",
-  "Kabooming",
-  "Kapowing",
-  "Kersplatting",
-  "Klonking",
-  "Leapin' lizarding",
-  "Powieing",
-  "Sakes aliving",
-  "Shazaming",
-  "Thwacking",
-  "Up-up-and-awaying",
-  "Vrooming",
-  "Whamming",
-  "Whiz-banging",
-  "Whomping",
-  "Zlonking",
-  "Zonking",
-  "Zwapping",
+  "Thinking",
+  "Processing",
+  "Analyzing",
+  "Working",
+  "Generating",
+  "Reasoning",
 ];
 
 function BusyIndicator() {
@@ -113,46 +86,50 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const showToast = useCallback((opts: { kind: string; message: string }) => {
+    console.warn(`[${opts.kind}] ${opts.message}`);
+  }, []);
 
   useAutoResize(textareaRef, input);
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      // Mirror the server-side 10 MB cap so oversized files never get
-      // base64-encoded into memory just to fail on upload.
-      if (file.size > MAX_UPLOAD_BYTES) {
-        emitToast({
-          kind: "error",
-          message: `${file.name} exceeds 10 MB — skipped`,
-        });
-        continue;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(",")[1];
-        if (!base64) return;
-        if (IMAGE_MIME.includes(file.type)) {
-          setAttachments((prev) => [
-            ...prev,
-            { kind: "image", data: base64, mimeType: file.type },
-          ]);
-        } else {
-          setAttachments((prev) => [
-            ...prev,
-            {
-              kind: "file",
-              name: file.name,
-              data: base64,
-              mimeType: file.type || "application/octet-stream",
-              size: file.size,
-            },
-          ]);
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      for (const file of Array.from(files)) {
+        if (file.size > MAX_UPLOAD_BYTES) {
+          showToast({
+            kind: "error",
+            message: `${file.name} exceeds 10 MB — skipped`,
+          });
+          continue;
         }
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          if (!base64) return;
+          if (IMAGE_MIME.includes(file.type)) {
+            setAttachments((prev) => [
+              ...prev,
+              { kind: "image", data: base64, mimeType: file.type },
+            ]);
+          } else {
+            setAttachments((prev) => [
+              ...prev,
+              {
+                kind: "file",
+                name: file.name,
+                data: base64,
+                mimeType: file.type || "application/octet-stream",
+                size: file.size,
+              },
+            ]);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [showToast],
+  );
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
@@ -192,15 +169,10 @@ export function ChatInput({
   const isComputing = busy && !loadingSession;
   const hasInput = input.trim().length > 0;
   const hasContent = hasInput || attachments.length > 0;
-  // Always show the stop affordance while busy so the user is never stranded
-  // without a way to interrupt. When they also have content typed, keep the
-  // send button alongside it so pressing the button queues the follow-up.
   const showStop = isComputing;
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
 
-  // Always dispatch — the server-side runtime queues prompts per session, so
-  // sending while busy just parks the prompt behind the active one.
   const send = useCallback(() => {
     const text = input.trim();
     const files = attachments.length > 0 ? attachments : undefined;
@@ -211,23 +183,22 @@ export function ChatInput({
   }, [input, attachments, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Mobile: Enter inserts newline (send via the button). Desktop: Enter sends, Shift+Enter newlines.
     if (e.key === "Enter" && !e.shiftKey && !isMobile()) {
       e.preventDefault();
       send();
     }
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message agent...";
+  const placeholder = isComputing ? "Queue a follow-up…" : "Message…";
 
   return (
     <div
-      className={`border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-primary bg-primary/10" : "border-border"}`}
+      className={`px-4 md:px-8 py-4 transition-colors ${dragOver ? "bg-primary/5" : ""}`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
+      <div className="mx-auto max-w-[680px]">
         <input
           ref={fileInputRef}
           type="file"
@@ -238,44 +209,42 @@ export function ChatInput({
             e.target.value = "";
           }}
         />
-        <div className="flex items-end gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-[44px] w-[44px] text-muted-foreground hover:text-primary hover:border-primary shrink-0 disabled:opacity-40"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loadingSession}
-            title="Attach file"
-          >
-            <Paperclip size={16} />
-          </Button>
-          {attachments.length > 0 ? (
-            <div className="flex-1 rounded-lg border border-primary bg-background shadow-[0_0_0_3px_var(--color-accent-glow)] transition-all focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--color-accent-glow)]">
-              <div className="flex gap-2 flex-wrap px-3 pt-3">
-                {attachments.map((a, i) => (
-                  <AttachmentChip
-                    key={i}
-                    attachment={a}
-                    onRemove={() => removeAttachment(i)}
-                  />
-                ))}
-              </div>
-              <Textarea
-                ref={textareaRef}
-                className="w-full bg-transparent border-0 px-4 py-2 text-[14px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                placeholder={placeholder}
-                rows={1}
-                disabled={loadingSession}
-              />
+
+        {/* Floating input container */}
+        <div
+          className={`rounded-lg border bg-card transition-all ${
+            dragOver
+              ? "border-primary"
+              : "border-border focus-within:border-primary"
+          }`}
+        >
+          {/* Attachments row */}
+          {attachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap px-4 pt-3">
+              {attachments.map((a, i) => (
+                <AttachmentChip
+                  key={i}
+                  attachment={a}
+                  onRemove={() => removeAttachment(i)}
+                />
+              ))}
             </div>
-          ) : (
+          )}
+
+          {/* Input row */}
+          <div className="flex items-end gap-1 px-2 py-1.5">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loadingSession}
+              className="h-9 w-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-30 shrink-0"
+              title="Attach file"
+            >
+              <Add size={16} />
+            </button>
+
             <Textarea
               ref={textareaRef}
-              className="flex-1 rounded-lg border border-border bg-background px-4 py-3 text-[14px] text-foreground resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-muted-foreground disabled:opacity-40"
+              className="flex-1 bg-transparent border-0 px-2 py-2 text-[14px] text-foreground resize-none min-h-[36px] max-h-[200px] overflow-hidden placeholder:text-muted-foreground/60 disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -284,31 +253,36 @@ export function ChatInput({
               rows={1}
               disabled={loadingSession}
             />
-          )}
-          {showStop && (
-            <Button
-              variant="destructive"
-              size="icon"
-              className="h-[44px] w-[44px] shrink-0"
-              onClick={onStop}
-              title="Stop"
-            >
-              <Square size={16} />
-            </Button>
-          )}
-          {showSend && (
-            <Button
-              size="icon"
-              className="h-[44px] w-[44px] disabled:opacity-40 shrink-0"
-              onClick={send}
-              disabled={sendDisabled || loadingSession}
-              title={isComputing ? "Queue" : "Send"}
-            >
-              <SendIcon size={16} />
-            </Button>
-          )}
+
+            <div className="flex items-center gap-1 shrink-0">
+              {showStop && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/10"
+                  onClick={onStop}
+                  title="Stop"
+                >
+                  <Square size={16} />
+                </Button>
+              )}
+              {showSend && (
+                <Button
+                  size="icon"
+                  className="h-9 w-9 rounded-xl disabled:opacity-30 shrink-0"
+                  onClick={send}
+                  disabled={sendDisabled || loadingSession}
+                  title={isComputing ? "Queue" : "Send"}
+                >
+                  <SendIcon size={16} />
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3 min-h-[24px]">
+
+        {/* Footer row */}
+        <div className="flex items-center gap-3 min-h-[24px] px-2 mt-1.5">
           {footer}
           {isComputing && <BusyIndicator />}
         </div>
@@ -330,24 +304,22 @@ function AttachmentChip({
         <img
           src={`data:${attachment.mimeType};base64,${attachment.data}`}
           alt="attachment"
-          className="h-14 w-14 rounded-md border border-border object-cover"
+          className="h-12 w-12 rounded-lg border border-border object-cover"
         />
       ) : (
-        <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
-          <FileIcon size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
+        <div className="h-10 px-3 rounded-lg border border-border bg-muted/30 flex items-center gap-2">
+          <FileIcon size={13} className="text-muted-foreground shrink-0" />
+          <span className="text-[11px] text-foreground/80 truncate max-w-[100px]">
             {attachment.name}
           </span>
         </div>
       )}
-      <Button
-        variant="destructive"
-        size="icon"
+      <button
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
       >
-        <X size={10} />
-      </Button>
+        <X size={8} />
+      </button>
     </div>
   );
 }

@@ -1,59 +1,46 @@
-import {
-  Checkmark as Check,
-  ChevronDown,
-  ChevronRight,
-  Close as X,
-  Renew as Loader,
-} from "@carbon/icons-react";
+import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useState } from "react";
-
-import { Button } from "@/components/ui/button";
 
 import type { ToolChip as T } from "../../../types.js";
 
-const statusColor: Record<string, string> = {
-  pending: "text-muted-foreground",
-  in_progress: "text-warning",
-  running: "text-warning",
-  completed: "text-success",
-  failed: "text-destructive",
+const dotColor: Record<string, string> = {
+  pending: "bg-muted-foreground",
+  in_progress: "bg-emerald-400",
+  running: "bg-emerald-400",
+  pending_approval: "bg-warning",
+  completed: "bg-emerald-400",
+  failed: "bg-destructive",
 };
 
 function stripFences(text: string): string {
   return text.replace(/^```\w*\n?/, "").replace(/\n?```\s*$/, "");
 }
 
-const statusIcon = (status: string) => {
-  if (status === "completed") return <Check size={12} className="shrink-0" />;
-  if (status === "failed") return <X size={12} className="shrink-0" />;
-  if (status === "in_progress" || status === "running")
-    return <Loader size={11} className="anim-spin shrink-0" />;
-  return null;
-};
-
 export function ToolChip({ chip }: { chip: T }) {
   const [open, setOpen] = useState(false);
   const hasContent = chip.content && chip.content.length > 0;
-  const color = statusColor[chip.status] ?? statusColor.pending;
+  const dot = dotColor[chip.status] ?? dotColor.pending;
+  const isPendingApproval = chip.status === "pending_approval";
 
   return (
-    <div className="text-[12px] max-w-full">
-      <Button
-        variant="outline"
-        size="sm"
-        className={`h-auto gap-1.5 py-1 px-2 font-medium ${color} max-w-full ${hasContent ? "cursor-pointer" : "cursor-default"}`}
+    <div className="text-[13px] max-w-full">
+      <button
+        type="button"
+        className={`inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[13px] text-foreground/80 max-w-full transition-colors ${hasContent ? "cursor-pointer hover:bg-muted/50" : "cursor-default"}`}
         onClick={hasContent ? () => setOpen((o) => !o) : undefined}
       >
-        {hasContent ? (
-          open ? (
-            <ChevronDown size={12} className="shrink-0" />
+        <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+        {hasContent &&
+          (open ? (
+            <ChevronDown size={11} className="shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight size={12} className="shrink-0" />
-          )
-        ) : null}
-        {statusIcon(chip.status)}
-        <span className="font-semibold truncate">{chip.title}</span>
-      </Button>
+            <ChevronRight
+              size={11}
+              className="shrink-0 text-muted-foreground"
+            />
+          ))}
+        <span className="truncate">{chip.title}</span>
+      </button>
       {open && chip.content && (
         <div className="mt-1 rounded-lg bg-muted border border-border overflow-hidden">
           {chip.content.map((c, i) =>
@@ -66,6 +53,14 @@ export function ToolChip({ chip }: { chip: T }) {
               </pre>
             ) : null,
           )}
+        </div>
+      )}
+      {isPendingApproval && (
+        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-warning">
+          <span className="w-2.5 h-2.5 rounded-full bg-warning animate-pulse shrink-0" />
+          <span className="font-medium">
+            Waiting for your approval to proceed
+          </span>
         </div>
       )}
     </div>
