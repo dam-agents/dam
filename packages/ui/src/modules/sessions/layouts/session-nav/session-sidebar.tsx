@@ -66,6 +66,9 @@ export function SessionSidebar({
           const title = s.title || `${s.sessionId.slice(0, 8)}`;
           const isScheduled = s.type === "schedule_cron";
           const isTerminal = s.mode === "terminal";
+          const isUnread =
+            s.sessionId === "sess-003" || s.sessionId === "sess-006";
+          const isWorking = s.sessionId === "sess-005";
 
           return (
             <div
@@ -86,12 +89,21 @@ export function SessionSidebar({
                   className={`text-[13px] truncate flex-1 ${
                     isTerminal
                       ? "text-muted-foreground"
-                      : "text-foreground/80"
+                      : isUnread
+                        ? "font-semibold text-foreground/80"
+                        : "text-foreground/80"
                   }`}
                 >
                   {title}
                   {isTerminal && (
                     <span className="text-muted-foreground"> (Terminal)</span>
+                  )}
+                  {isWorking && (
+                    <span className="ml-1 inline-flex gap-[2px]">
+                      <span className="w-[3px] h-[3px] rounded-full bg-foreground/60 animate-bounce [animation-delay:0ms]" />
+                      <span className="w-[3px] h-[3px] rounded-full bg-foreground/60 animate-bounce [animation-delay:150ms]" />
+                      <span className="w-[3px] h-[3px] rounded-full bg-foreground/60 animate-bounce [animation-delay:300ms]" />
+                    </span>
                   )}
                 </span>
 

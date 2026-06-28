@@ -58,60 +58,107 @@ export function ChatView() {
 
   const sessions: SessionView[] = useMemo(
     () => [
+      // 1. Active session (opened)
       {
         sessionId: "sess-001",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
-        createdAt: "2026-06-26T09:00:00Z",
+        createdAt: "2026-06-17T09:00:00Z",
         title: "New session",
-        updatedAt: "2026-06-26T10:00:00Z",
+        updatedAt: "2026-06-17T10:00:00Z",
       },
+      // 2. Hover (just a normal session — hover state is CSS)
       {
         sessionId: "sess-002",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
-        createdAt: "2026-06-25T08:00:00Z",
-        title: "Mutate parent candidate ‘p2p-1...",
-        updatedAt: "2026-06-25T09:30:00Z",
+        createdAt: "2026-06-17T08:00:00Z",
+        title: "Write unit tests",
+        updatedAt: "2026-06-17T09:30:00Z",
       },
+      // 3. Unread (bold title)
       {
         sessionId: "sess-003",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
-        createdAt: "2026-06-24T14:00:00Z",
-        title: "Debug API timeout",
-        updatedAt: "2026-06-24T15:00:00Z",
+        createdAt: "2026-06-17T07:00:00Z",
+        title: "Mutate parent candidate ‘p2p-1...",
+        updatedAt: "2026-06-17T08:00:00Z",
       },
+      // 4. Default (read)
       {
         sessionId: "sess-004",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
-        createdAt: "2026-06-24T10:00:00Z",
-        title: "Write unit tests",
-        updatedAt: "2026-06-24T11:00:00Z",
+        createdAt: "2026-06-16T14:00:00Z",
+        title: "Write unit test",
+        updatedAt: "2026-06-16T15:00:00Z",
       },
+      // 5. Working (animated dots)
+      {
+        sessionId: "sess-005",
+        agentId: selectedAgent ?? "",
+        type: "regular",
+        mode: SessionMode.Chat,
+        createdAt: "2026-06-16T10:00:00Z",
+        title: "Write unit test",
+        updatedAt: "2026-06-16T11:00:00Z",
+      },
+      // 6. Terminal
       {
         sessionId: "sess-term-001",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Terminal,
-        createdAt: "2026-06-24T08:00:00Z",
+        createdAt: "2026-06-16T08:00:00Z",
         title: "Write unit tests",
-        updatedAt: "2026-06-24T08:30:00Z",
+        updatedAt: "2026-06-16T08:30:00Z",
       },
+      // 7. Unread & Action required (blue dot + bold)
+      {
+        sessionId: "sess-006",
+        agentId: selectedAgent ?? "",
+        type: "regular",
+        mode: SessionMode.Chat,
+        createdAt: "2026-06-17T06:00:00Z",
+        title: "Mutate parent candidate ‘p2p-1...",
+        updatedAt: "2026-06-17T07:00:00Z",
+      },
+      // 8. Read & Action required (blue dot + normal weight)
+      {
+        sessionId: "sess-007",
+        agentId: selectedAgent ?? "",
+        type: "regular",
+        mode: SessionMode.Chat,
+        createdAt: "2026-06-16T06:00:00Z",
+        title: "Write unit tests",
+        updatedAt: "2026-06-16T07:00:00Z",
+      },
+      // 9. Scheduled session
       {
         sessionId: "sess-sched-001",
         agentId: selectedAgent ?? "",
         type: "schedule_cron",
         mode: SessionMode.Chat,
-        createdAt: "2026-06-23T06:00:00Z",
+        createdAt: "2026-06-16T06:00:00Z",
         title: "Write unit test",
-        updatedAt: "2026-06-23T06:12:00Z",
+        updatedAt: "2026-06-16T06:12:00Z",
         scheduleId: "sched-001",
+      },
+      // 10. Scheduled session + Action required
+      {
+        sessionId: "sess-sched-002",
+        agentId: selectedAgent ?? "",
+        type: "schedule_cron",
+        mode: SessionMode.Chat,
+        createdAt: "2026-06-16T05:00:00Z",
+        title: "Write unit test",
+        updatedAt: "2026-06-16T05:30:00Z",
+        scheduleId: "sched-002",
       },
     ],
     [selectedAgent],
@@ -121,33 +168,24 @@ export function ChatView() {
   const [activeTab, setActiveTab] = useState<string | null>("sess-001");
 
   const messages = activeTab ? (MOCK_MESSAGES[activeTab] ?? []) : [];
-  const hasPendingPermission = activeTab === "sess-003";
+  const hasPendingPermission =
+    activeTab === "sess-006" ||
+    activeTab === "sess-007" ||
+    activeTab === "sess-sched-002";
 
   useEffect(() => {
-    if (activeTab === "sess-003") {
-      const already = useStore
-        .getState()
-        .pendingPermissions.some((p) => p.sessionId === "sess-003");
-      if (!already) {
+    const state = useStore.getState();
+    const actionRequiredSessions = ["sess-006", "sess-007", "sess-sched-002"];
+    for (const sid of actionRequiredSessions) {
+      if (!state.pendingPermissions.some((p) => p.sessionId === sid)) {
         addPendingPermission({
           ...MOCK_PENDING_PERMISSION,
-          sessionId: "sess-003",
+          sessionId: sid,
           resolve: () => {},
         });
       }
     }
-    // Also add a pending permission for sess-004 to show the blue dot
-    const has004 = useStore
-      .getState()
-      .pendingPermissions.some((p) => p.sessionId === "sess-004");
-    if (!has004) {
-      addPendingPermission({
-        ...MOCK_PENDING_PERMISSION,
-        sessionId: "sess-004",
-        resolve: () => {},
-      });
-    }
-  }, [activeTab, addPendingPermission]);
+  }, [addPendingPermission]);
 
   const handleResumeSession = useCallback((sid: string) => {
     setActiveTab(sid);
@@ -284,8 +322,8 @@ export function ChatView() {
           />
 
           {hasPendingPermission && (
-            <div className="mx-auto max-w-[680px] w-full px-4 md:px-6 flex flex-col gap-1.5 mb-2">
-              {/* Bash command approval */}
+            <div className="px-4 md:px-8 flex flex-col gap-1.5 mb-2">
+              {/* ACP native: Bash tool call */}
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
@@ -293,31 +331,25 @@ export function ChatView() {
                     Bash
                   </span>
                   <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    npm run db:migrate --env production
+                    rm -rf node_modules && npm install
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
+                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
                       Allow once
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
-                      Always
+                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
+                      Always allow
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
-                      Deny
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
+                      Reject
+                    </button>
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      Reject always
                     </button>
                   </div>
                 </div>
               </div>
-              {/* File write approval */}
+              {/* ACP native: Write tool call */}
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
@@ -325,31 +357,25 @@ export function ChatView() {
                     Write
                   </span>
                   <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    src/middleware/auth.ts
+                    packages/api-server/src/routes/sessions.ts
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
+                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
                       Allow once
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
-                      Always
+                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
+                      Always allow
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
-                      Deny
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
+                      Reject
+                    </button>
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      Reject always
                     </button>
                   </div>
                 </div>
               </div>
-              {/* Network/egress approval */}
+              {/* ext_authz: Network egress */}
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
                 <div className="flex items-center gap-2.5">
                   <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
@@ -360,23 +386,43 @@ export function ChatView() {
                     registry.npmjs.org/express/latest
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
+                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
                       Allow once
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
+                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
                       Allow host
                     </button>
-                    <button
-                      className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors"
-                      onClick={() => setActiveTab("sess-001")}
-                    >
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
                       Deny
+                    </button>
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {/* ext_authz: POST egress */}
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+                    POST
+                  </span>
+                  <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
+                    api.github.com/repos/dam-agents/dam/pulls
+                  </code>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
+                      Allow once
+                    </button>
+                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
+                      Allow host
+                    </button>
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
+                      Deny
+                    </button>
+                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      Dismiss
                     </button>
                   </div>
                 </div>
