@@ -265,6 +265,16 @@ export const agents = pgTable(
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
+// Per-user concurrent CPU/memory ceiling; `owner` is the plaintext `agent-platform.ai/owner`.
+export const userBudgets = pgTable("user_budgets", {
+  owner: text("owner").primaryKey(),
+  cpuMilli: bigint("cpu_milli", { mode: "number" }).notNull(),
+  memoryBytes: bigint("memory_bytes", { mode: "number" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 /** Per-agent user-typed env (the UI Environment editor). */
 export const agentEnv = pgTable(
   "agent_env",

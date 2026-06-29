@@ -21,6 +21,7 @@ export {
   actorRoles,
   termsAcceptances,
   apiKeys,
+  userBudgets,
 } from "./schema.js";
 export {
   eq,

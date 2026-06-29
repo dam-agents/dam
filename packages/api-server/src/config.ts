@@ -137,6 +137,12 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(5 * 1024 * 1024 * 1024),
+  /** Per-user CPU/memory ceiling when a user has no `user_budgets` row (#1900). */
+  defaultUserCpuBudget: z.string().default("4"),
+  defaultUserMemoryBudget: z.string().default("8Gi"),
+  /** Assumed agent requests when a CR omits `spec.resources`; must mirror the controller's templateDefaults. */
+  agentDefaultCpuRequest: z.string().default("250m"),
+  agentDefaultMemoryRequest: z.string().default("512Mi"),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -210,6 +216,10 @@ export function loadConfig(): Config {
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
+    defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
+    defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
+    agentDefaultCpuRequest: process.env.AGENT_DEFAULT_CPU_REQUEST,
+    agentDefaultMemoryRequest: process.env.AGENT_DEFAULT_MEMORY_REQUEST,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

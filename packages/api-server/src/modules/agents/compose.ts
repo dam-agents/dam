@@ -8,6 +8,7 @@ import type { ChannelSecretStore } from "../channels/infrastructure/channel-secr
 import {
   createAgentsRepository,
   type AgentsRepository,
+  type WakeBudgetGate,
 } from "./infrastructure/agents-repository.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
@@ -15,6 +16,7 @@ import {
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsSettledPort,
+  type BudgetGate,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -41,6 +43,12 @@ export type {
   PresetSeeder,
 } from "./services/agents-service.js";
 
+/** Allow-all gate for repos that never bring an agent online (e.g. the files proxy, which only checks ownership). */
+export const allowAllBudgetGate: BudgetGate & WakeBudgetGate = {
+  assertCreateAllowed: () => Promise.resolve(),
+  assertWakeAllowed: () => Promise.resolve(),
+};
+
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
@@ -55,6 +63,8 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Per-user CPU/memory ceiling — gates create (service) and wake (repo). */
+  budgetGate: BudgetGate & WakeBudgetGate;
   /** Single-shot create; wired from secrets + connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -72,7 +82,7 @@ export function composeAgentsModule(deps: {
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s);
+  const repo = createAgentsRepository(k8s, deps.budgetGate);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
@@ -90,6 +100,7 @@ export function composeAgentsModule(deps: {
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
+      budgetGate: deps.budgetGate,
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

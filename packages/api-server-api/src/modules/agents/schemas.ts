@@ -8,6 +8,7 @@ export const agentGetInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
+export const agentStopInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema;
 export const agentDisconnectTelegramInputSchema = idSchema;
 

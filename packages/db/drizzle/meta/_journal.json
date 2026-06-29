@@ -36,6 +36,13 @@
       "when": 1782382620734,
       "tag": "0004_open_mariko_yashida",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782725494576,
+      "tag": "0005_shiny_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

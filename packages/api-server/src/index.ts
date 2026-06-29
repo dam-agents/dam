@@ -59,6 +59,10 @@ import {
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import {
+  composeBudgetsModule,
+  type BudgetGuard,
+} from "./modules/budgets/index.js";
 import { createSecretEnvSource } from "./modules/secrets/services/secret-env-source.js";
 import {
   createKubernetesSecretStore,
@@ -129,7 +133,44 @@ const redisBus = createRedisBus(config.redisUrl, {
 });
 
 const k8sClient = createK8sClient(api, config.namespace);
-const agentsRepo = createAgentsRepository(k8sClient);
+// Late-bound to break the repo↔budget cycle; assigned synchronously below.
+let budgetGuard: BudgetGuard | undefined;
+const agentsRepo = createAgentsRepository(k8sClient, {
+  assertWakeAllowed: (id) => {
+    if (!budgetGuard) throw new Error("budget guard used before wiring");
+    return budgetGuard.assertWakeAllowed(id);
+  },
+});
+const { budget } = composeBudgetsModule({
+  db,
+  running: {
+    listRunning: async (owner) =>
+      (await agentsRepo.list(owner))
+        .filter((a) => !a.hibernated)
+        .map((a) => ({ requests: a.spec.resources?.requests })),
+    describe: async (agentId) => {
+      const [infra, owner] = await Promise.all([
+        agentsRepo.get(agentId),
+        agentsRepo.getOwner(agentId),
+      ]);
+      if (!infra || !owner) return null;
+      return {
+        owner,
+        requests: infra.spec.resources?.requests,
+        hibernated: infra.hibernated,
+      };
+    },
+  },
+  agentDefaultRequests: {
+    cpu: config.agentDefaultCpuRequest,
+    memory: config.agentDefaultMemoryRequest,
+  },
+  defaultCeiling: {
+    cpu: config.defaultUserCpuBudget,
+    memory: config.defaultUserMemoryBudget,
+  },
+});
+budgetGuard = budget;
 const agentEnvRepo = createAgentEnvRepository(db);
 
 // Migrate pre-existing spec.env onto agent_env. First pass runs before serving;
@@ -246,6 +287,7 @@ const { agents: systemAgents } = composeAgentsModule({
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
+  budgetGate: budget,
 });
 
 const identityLinkService = createIdentityLinkService({
@@ -452,6 +494,7 @@ const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  // Budget-gated (#1900): a rejected poke is a failed fire; the committed event redelivers later.
   wakeAgent: async (agentId) => {
     await agentsRepo.wakeIfHibernated(agentId);
   },
@@ -506,6 +549,7 @@ const { server: apiServer } = startApiServerApp({
   secretStores,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
+  budget,
   schedulesBoot,
   mountUsageRoutes: usage.mount,
   terms: termsService,
@@ -522,6 +566,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   runtimeHello: runtimeDelivery.hello,
   schedulesBoot,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  budget,
 });
 
 // Instance identity for ext-authz now flows from the per-instance

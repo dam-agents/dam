@@ -32,6 +32,7 @@ import { CardList } from "../card-list.js";
 import { StepHeader } from "../step-header.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
+const NO_CONNECTIONS: ConnectionView[] = [];
 
 const CATEGORY_ORDER = ["app", "mcp", "other"] as const;
 const CATEGORY_LABEL: Record<(typeof CATEGORY_ORDER)[number], string> = {
@@ -59,7 +60,11 @@ export function ConnectionsStep({
   const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = (connectionsQ.data ?? []) as unknown as ConnectionView[];
+  // Provider connections are managed in the Provider step; keep them out of the
+  // generic grant list so they aren't offered twice.
+  const connections = (connectionsQ.data ?? NO_CONNECTIONS).filter(
+    (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  );
 
   const templateById = useMemo(
     () => new Map(allTemplates.map((t) => [t.id, t])),

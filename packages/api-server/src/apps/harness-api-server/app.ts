@@ -3,6 +3,7 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { RuntimeDeliveryService } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { BudgetGuard } from "../../modules/budgets/index.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -24,6 +25,7 @@ export interface HarnessApiServerAppDeps {
   runtimeHello: RuntimeDeliveryService;
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
+  budget: BudgetGuard;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -36,6 +38,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     schedulesBoot,
     runtimeMutator,
+    budget,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -57,6 +60,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         config.brand.name,
         runtimeMutator,
         templatesRepo,
+        budget,
       ),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,

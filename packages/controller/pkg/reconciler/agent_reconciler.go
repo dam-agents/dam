@@ -219,6 +219,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("agentStatefulSet")
 
+	// Hard stop (#1900): scale to zero now, bypassing the idle probe.
+	if agent.Annotations[annStopRequested] != "" {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
+		}
+		return r.publishReconciled(ctx, agent)
+	}
+
 	// The reconciler only scales up; scale-down and the Hibernated
 	// readiness reason are the idle checker's job. So readiness is published
 	// only for a running agent — but rendering succeeded either way, so an idle

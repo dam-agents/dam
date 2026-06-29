@@ -23,6 +23,7 @@ interface Props {
   onSelect: () => void;
   onWake: () => void;
   onRestart: () => void;
+  onStop: () => void;
   onConfigure: () => void;
   onDelete: () => void;
 }
@@ -35,6 +36,7 @@ export function AgentRow({
   onSelect,
   onWake,
   onRestart,
+  onStop,
   onConfigure,
   onDelete,
 }: Props) {
@@ -73,6 +75,11 @@ export function AgentRow({
                   onSelect={onRestart}
                 >
                   Restart
+                </DropdownMenuItem>
+              )}
+              {display.powerAction === "restart" && (
+                <DropdownMenuItem onSelect={onStop}>
+                  Stop to free capacity
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={onConfigure}>

@@ -277,6 +277,15 @@ spec:
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
             {{- end }}
+            # Per-user compute ceiling (#1900); AGENT_DEFAULT_* mirrors the controller templateDefaults.
+            - name: DEFAULT_USER_CPU_BUDGET
+              value: {{ .Values.apiServer.defaultUserCpuBudget | quote }}
+            - name: DEFAULT_USER_MEMORY_BUDGET
+              value: {{ .Values.apiServer.defaultUserMemoryBudget | quote }}
+            - name: AGENT_DEFAULT_CPU_REQUEST
+              value: {{ .Values.controller.agent.templateDefaults.resources.requests.cpu | quote }}
+            - name: AGENT_DEFAULT_MEMORY_REQUEST
+              value: {{ .Values.controller.agent.templateDefaults.resources.requests.memory | quote }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
             # agent templates are mounted from a ConfigMap and loaded

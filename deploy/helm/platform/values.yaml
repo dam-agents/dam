@@ -520,6 +520,15 @@ apiServer:
   # 5 GiB import could fill the disk.
   maxImportBundleBytes: 5368709120
 
+  # -- Per-user ceiling on concurrent CPU and memory across a user's running
+  # agents (#1900), applied when the user has no `user_budgets` override row.
+  # CPU in cores (Kubernetes quantity), memory as a Kubernetes quantity. A user
+  # at their ceiling must stop a running sandbox before starting another;
+  # hibernation also frees room automatically. Raise per-user via a
+  # `user_budgets` row.
+  defaultUserCpuBudget: "4"
+  defaultUserMemoryBudget: "8Gi"
+
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
   # if the CLI is behind the current server version). Set this to retire a

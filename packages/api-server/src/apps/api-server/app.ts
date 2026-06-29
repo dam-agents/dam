@@ -26,6 +26,7 @@ import {
   createKeycloakUserDirectory,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
+import type { BudgetGuard } from "../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
@@ -111,6 +112,7 @@ export interface ApiServerAppDeps {
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  budget: BudgetGuard;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
@@ -140,6 +142,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     secretStores,
     runtimeMutator,
     contributionsSettled,
+    budget,
     schedulesBoot,
     terms,
     isTermsAccepted,
@@ -147,7 +150,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const agentsRepo = createAgentsRepository(k8sClient);
+  // Budget-gated so the relays and proxies that wake via the raw repo honor the ceiling (#1900).
+  const agentsRepo = createAgentsRepository(k8sClient, budget);
   // Templates are file-mounted config loaded once at boot; shared
   // across requests rather than re-read from K8s on each tRPC call.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -715,6 +719,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsSettled,
+      budgetGate: budget,
       grantProvisioner: {
         async resolveSpecGrants(sel) {
           return {
@@ -746,6 +751,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       config.brand.name,
       runtimeMutator,
       templatesRepo,
+      budget,
     );
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -789,6 +795,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         terms,
         e2e,
         apiKeys,
+        budgets: { usage: () => budget.usage(user.sub) },
         user,
         e2eEnabled: config.e2eEnabled,
       }),

@@ -89,6 +89,7 @@ export interface AgentsService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;
+  stop: (id: string) => Promise<Agent | null>;
   /**
    * Ensure the agent's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps
