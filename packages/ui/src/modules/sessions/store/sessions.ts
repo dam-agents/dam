@@ -27,8 +27,10 @@ export interface SessionsSlice {
   queuedMessage: string | null;
   busy: boolean;
   terminalPaused: boolean;
+  pendingResumeSessionId: string | null;
 
   setSessionId: (id: string | null) => void;
+  setPendingResumeSessionId: (id: string | null) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -67,8 +69,10 @@ export const createSessionsSlice: StateCreator<
   queuedMessage: null,
   busy: false,
   terminalPaused: false,
+  pendingResumeSessionId: null,
 
   setSessionId: (id) => set({ sessionId: id }),
+  setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
   setSessionMode: (mode) => set({ sessionMode: mode }),
   setTerminalPaused: (paused) => set({ terminalPaused: paused }),
   setMessages: (updater) =>
@@ -94,6 +98,7 @@ export const createSessionsSlice: StateCreator<
       sessionConfigOptions: [],
       pendingPermissions: [],
       queuedMessage: null,
+      pendingResumeSessionId: null,
     }),
 
   addLog: (type, payload) => {

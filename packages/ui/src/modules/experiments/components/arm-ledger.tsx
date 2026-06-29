@@ -1,5 +1,9 @@
+import { Launch } from "@carbon/icons-react";
+
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
+import { useStore } from "../../../store.js";
 import { armColor } from "../lib/arm-color.js";
 import { formatScore } from "../lib/score.js";
 import type { ExperimentArmDetail } from "../types.js";
@@ -18,6 +22,9 @@ export function ArmLedger({
   agentName,
   templateName,
 }: Props) {
+  const openAgentSession = useStore((s) => s.openAgentSession);
+  const trialSessionId = arm.runs[arm.runs.length - 1]?.sessionId ?? null;
+
   return (
     <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border p-4">
@@ -32,6 +39,16 @@ export function ArmLedger({
           <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
             {templateName}
           </span>
+        )}
+        {trialSessionId && (
+          <Button
+            variant="link"
+            size="xs"
+            onClick={() => openAgentSession(arm.agentId, trialSessionId)}
+          >
+            <Launch size={14} />
+            Open trial
+          </Button>
         )}
         <span className="ml-auto font-mono text-[12px] text-muted-foreground">
           {JSON.stringify(arm.armSpec)}

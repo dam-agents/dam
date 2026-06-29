@@ -170,6 +170,22 @@ export function ChatView() {
     }
   }, [messages.length]);
 
+  const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
+  const setPendingResumeSessionId = useStore(
+    (s) => s.setPendingResumeSessionId,
+  );
+  useEffect(() => {
+    if (!selectedAgent || !pendingResumeSessionId) return;
+    const sid = pendingResumeSessionId;
+    setPendingResumeSessionId(null);
+    resumeSession(sid);
+  }, [
+    selectedAgent,
+    pendingResumeSessionId,
+    setPendingResumeSessionId,
+    resumeSession,
+  ]);
+
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       setMobileScreen("chat");

@@ -38,6 +38,7 @@ export interface AgentsSlice {
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
   selectAgent: (id: string) => void;
+  openAgentSession: (agentId: string, sessionId: string) => void;
   goBack: () => void;
 }
 
@@ -88,6 +89,18 @@ export const createAgentsSlice: StateCreator<
       view: "chat",
       mobileScreen: "sessions",
       showMobilePanel: false,
+    });
+  },
+
+  openAgentSession: (agentId, sessionId) => {
+    history.pushState(null, "", viewToPath("chat", agentId));
+    get().resetChatContext();
+    set({
+      selectedAgent: agentId,
+      view: "chat",
+      mobileScreen: "chat",
+      showMobilePanel: false,
+      pendingResumeSessionId: sessionId,
     });
   },
 
