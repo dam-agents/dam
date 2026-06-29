@@ -47,9 +47,9 @@ describe("runs-service", () => {
         },
       }),
     );
-    expect(
-      await svc.waitReady("run-x", new AbortController().signal),
-    ).toBe("10.4.5.6");
+    expect(await svc.waitReady("run-x", new AbortController().signal)).toBe(
+      "10.4.5.6",
+    );
   });
 
   it("throws RunFailedError with the controller's reason on Failed", async () => {

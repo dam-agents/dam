@@ -61,7 +61,12 @@ export function createRunsService(k8s: K8sClient): RunsService {
             "agent-platform.ai/run-id": runId,
           },
           ownerReferences: [
-            { apiVersion: API_VERSION, kind: "Agent", name: agentId, uid: agentUid },
+            {
+              apiVersion: API_VERSION,
+              kind: "Agent",
+              name: agentId,
+              uid: agentUid,
+            },
           ],
         },
         spec: { agentName: agentId } satisfies RunSpecCR,
