@@ -88,6 +88,15 @@ the per-agent MCP endpoint authorizes by the pod's **mesh identity** (no token �
 ADR-041). Stdlib-only; the agent launches it on demand (see `AGENTS.md`). Needs a
 channel bound to the agent; delivery is best-effort.
 
+Each summary is itself an OpenAI-format LLM call (`OPENAI_BASE_URL`). Under
+LiteLLM that hits the proxy's intercept CA and a model-id `403`, so the image
+extends the base model-gateway shim ([`nous-model-gateway.sh`](./nous-model-gateway.sh)):
+after the base repoints `ANTHROPIC_BASE_URL` at the in-pod gateway, it does the
+same for `OPENAI_BASE_URL` when that is unset or a LiteLLM endpoint. It's sourced
+by the chat/terminal harness and the SSH login profile, so the whole shell env —
+and everything `nous` spawns — carries the gateway URL (a deliberately-distinct
+OpenAI endpoint is left alone).
+
 ## Harness modes
 
 | Mode | Entrypoint | Behavior |
@@ -119,8 +128,8 @@ The nous image is published by CI (`.github/workflows/cd.yml`): `build-nous`
 (per-arch) runs after `merge-agents` — nous builds `FROM` claude-code, so it
 pulls its base by the same per-commit tag — and `merge-nous` publishes the
 multi-arch manifest to `quay.io/dam-agents/nous`. The `publish` (Helm) job waits
-on `merge-nous`. The template is enabled by default in `values.yaml`
-(`experimental: true`).
+on `merge-nous`. The template is enabled by default in `values.yaml` under
+"Pre-configured Images" (`category: preconfigured`, `experimental: true`).
 
 ## Known follow-ups (not yet wired)
 

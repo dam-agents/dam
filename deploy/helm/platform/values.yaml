@@ -926,7 +926,7 @@ agentTemplates:
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
   - name: nous
     enabled: true
-    category: harness
+    category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
     image:
