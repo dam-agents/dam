@@ -82,6 +82,11 @@ func (in *AgentSpec) DeepCopyInto(out *AgentSpec) {
 		copy(*out, *in)
 	}
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.HibernationTimeout != nil {
+		in, out := &in.HibernationTimeout, &out.HibernationTimeout
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.GrantedSecretIDs != nil {
 		in, out := &in.GrantedSecretIDs, &out.GrantedSecretIDs
 		*out = make([]string, len(*in))

@@ -117,6 +117,7 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: EnvVar[];
+  hibernationTimeoutMin: number;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

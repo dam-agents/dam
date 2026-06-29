@@ -27,6 +27,8 @@ function toView(agent: Agent) {
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
+    // Effective idle timeout (0 = never): the per-agent override resolved against the global default by the service.
+    hibernationTimeoutMin: agent.effectiveHibernationTimeoutMin,
     grantedSecretIds: agent.spec.grantedSecretIds ?? [],
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,

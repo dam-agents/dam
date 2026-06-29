@@ -57,6 +57,8 @@ export interface Agent {
   spec: AgentSpec;
   /** Observed lifecycle state, synthesized from the controller's status.yaml. */
   state: AgentState;
+  /** Effective idle timeout in minutes (0 = never): the per-agent override (spec.hibernationTimeout) resolved against the global default. */
+  effectiveHibernationTimeoutMin: number;
   /** Latest controller-reported error, if any. */
   error?: string;
   /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */

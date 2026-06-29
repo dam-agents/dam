@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "2"
+    agent-platform.ai/crd-schema-generation: "3"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -107,6 +107,12 @@ spec:
                 items:
                   type: string
                 type: array
+              hibernationTimeout:
+                description: 'HibernationTimeout overrides the chart-wide idle timeout
+                  for this Agent: "0s" never hibernates, omitted inherits the default.
+                  The UI writes it (presented in minutes); the controller and api-server
+                  resolve the effective value.'
+                type: string
               image:
                 description: Image is the agent container image.
                 type: string

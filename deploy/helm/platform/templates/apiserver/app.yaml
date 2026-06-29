@@ -216,6 +216,8 @@ spec:
             {{- end }}
             - name: AGENT_HOME
               value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
+            - name: AGENT_IDLE_TIMEOUT
+              value: {{ .Values.controller.agent.base.idleTimeout | quote }}
             {{- if .Values.skills.skillSources }}
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}

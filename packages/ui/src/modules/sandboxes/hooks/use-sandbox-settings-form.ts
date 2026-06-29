@@ -39,6 +39,7 @@ import type { StagedNetworkAccessController } from "../../egress-rules/component
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { confirmHibernationChange } from "../lib/hibernation.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 const EMPTY_SECRETS: SecretView[] = [];
@@ -54,6 +55,10 @@ const settingsSchema = z.object({
   envVars: z
     .array(envVarSchema)
     .refine(allEnvVarsValid, "All env vars need a name and a value"),
+  hibernationTimeoutMin: z
+    .number({ message: "Enter a number of minutes (0 = never)" })
+    .int()
+    .nonnegative(),
 });
 type SettingsValues = z.infer<typeof settingsSchema>;
 
@@ -66,6 +71,7 @@ export type SandboxSettingsStatus =
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
   const agent = useMemo(
@@ -123,6 +129,7 @@ export function useSandboxSettingsForm() {
         assigned: [],
         assignedAppIds: [],
         envVars: [],
+        hibernationTimeoutMin: 60,
       },
     });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
@@ -156,6 +163,7 @@ export function useSandboxSettingsForm() {
         .map((c) => c.connectionId)
         .sort(),
       envVars: userInitialEnv,
+      hibernationTimeoutMin: agent.hibernationTimeoutMin,
     });
     setFormReady(true);
   }, [
@@ -171,6 +179,7 @@ export function useSandboxSettingsForm() {
   const assigned = watch("assigned");
   const assignedAppIds = watch("assignedAppIds");
   const envVars = watch("envVars");
+  const hibernationTimeoutMin = watch("hibernationTimeoutMin");
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
@@ -354,9 +363,22 @@ export function useSandboxSettingsForm() {
       .map((a) => a.host);
     if (
       restartingHosts.length > 0 &&
-      !window.confirm(
-        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement. Continue?`,
-      )
+      !(await showConfirm(
+        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement.`,
+        "Restart agent?",
+        { confirmLabel: "Save & restart" },
+      ))
+    ) {
+      return;
+    }
+    if (
+      dirtyFields.hibernationTimeoutMin &&
+      agent &&
+      !(await confirmHibernationChange(
+        agent.hibernationTimeoutMin,
+        values.hibernationTimeoutMin,
+        showConfirm,
+      ))
     ) {
       return;
     }
@@ -367,13 +389,20 @@ export function useSandboxSettingsForm() {
           secretIds: values.assigned,
         });
       }
-      if (dirtyFields.envVars || dirtyFields.name) {
+      if (
+        dirtyFields.envVars ||
+        dirtyFields.name ||
+        dirtyFields.hibernationTimeoutMin
+      ) {
         await updateAgent.mutateAsync({
           id: agentId,
           ...(dirtyFields.envVars
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.hibernationTimeoutMin
+            ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
+            : {}),
         });
       }
       if (net.stagedPreset !== null) {
@@ -401,6 +430,7 @@ export function useSandboxSettingsForm() {
         assigned: values.assigned,
         assignedAppIds: values.assignedAppIds,
         envVars: values.envVars,
+        hibernationTimeoutMin: values.hibernationTimeoutMin,
       });
     } catch {
       // Mutation meta.errorToast surfaces the failure; stay on the page.
@@ -447,6 +477,7 @@ export function useSandboxSettingsForm() {
     currentPreset,
     egressStaged,
     inheritedEnvs,
+    hibernationTimeoutMin,
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:

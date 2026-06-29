@@ -10,6 +10,7 @@ const (
 	SchemaGenerationAnnotation = "agent-platform.ai/crd-schema-generation"
 
 	// Agent gen 2: imagePullSecretRef added to AgentSpec (#930/#932).
-	AgentSchemaGeneration = 2
+	// Agent gen 3: hibernationTimeout (per-agent idle-timeout override, duration) added to AgentSpec.
+	AgentSchemaGeneration = 3
 	ForkSchemaGeneration  = 1
 )

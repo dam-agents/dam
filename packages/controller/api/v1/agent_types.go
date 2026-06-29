@@ -35,6 +35,10 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
+	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+	// +optional
+	HibernationTimeout *metav1.Duration `json:"hibernationTimeout,omitempty"`
+
 	// ImagePullPolicy overrides the chart-wide default; empty = inherit.
 	// +optional
 	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
@@ -144,7 +148,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=3
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1
