@@ -23,6 +23,7 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../../connections/internal-only.js";
+import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { CardList } from "./card-list.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
@@ -53,10 +54,8 @@ export function ConnectionsSection({
   const [showCatalog, setShowCatalog] = useState(false);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  // Provider connections are managed in the Provider section above; keep them
-  // out of the generic list so they aren't offered twice.
-  const connections = (connectionsQ.data ?? NO_CONNECTIONS).filter(
-    (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  const connections = excludeProviderConnections(
+    connectionsQ.data ?? NO_CONNECTIONS,
   );
 
   const templateById = useMemo(

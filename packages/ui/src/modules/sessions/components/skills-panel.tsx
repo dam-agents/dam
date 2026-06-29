@@ -1,3 +1,4 @@
+import { SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type {
   LocalSkill,
   Skill,
@@ -10,6 +11,7 @@ import {
   ChevronRight,
   ExternalLink,
   Eye,
+  Info,
   Plus,
   RefreshCw,
   Share2,
@@ -20,6 +22,8 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
@@ -100,6 +104,7 @@ function skillSourceUrl(
   source: string,
   version: string,
   name: string,
+  path?: string,
   compareFrom?: string,
 ): string {
   const base = source.replace(/\.git$/, "").replace(/\/$/, "");
@@ -111,7 +116,8 @@ function skillSourceUrl(
   if (compareFrom) {
     return `${base}/compare/${compareFrom}...${version}`;
   }
-  return `${base}/blob/${version}/skills/${name}/SKILL.md`;
+  const dir = path ?? "skills";
+  return `${base}/blob/${version}/${dir}/${name}/SKILL.md`;
 }
 
 export function SkillsPanel({
@@ -139,7 +145,7 @@ export function SkillsPanel({
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ name: "", gitUrl: "" });
+  const [addForm, setAddForm] = useState({ name: "", gitUrl: "", path: "" });
   const [addBusy, setAddBusy] = useState(false);
   const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
   const [publishForm, setPublishForm] = useState({
@@ -341,13 +347,14 @@ export function SkillsPanel({
         api.skills.sources.create.mutate({
           name: addForm.name.trim(),
           gitUrl: addForm.gitUrl.trim(),
+          path: addForm.path.trim() || undefined,
         }),
       "Failed to add source",
     );
     setAddBusy(false);
     if (result !== ACTION_FAILED) {
       setSources((s) => [...s, result]);
-      setAddForm({ name: "", gitUrl: "" });
+      setAddForm({ name: "", gitUrl: "", path: "" });
       setShowAdd(false);
     }
   };
@@ -600,7 +607,7 @@ export function SkillsPanel({
           size="xs"
           className="w-full"
           onClick={() => {
-            setAddForm({ name: "", gitUrl: "" });
+            setAddForm({ name: "", gitUrl: "", path: "" });
             setShowAdd(true);
           }}
         >
@@ -610,23 +617,61 @@ export function SkillsPanel({
 
       {showAdd && (
         <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
-          <Input
-            size="sm"
-            placeholder='Name (e.g. "My Skills")'
-            value={addForm.name}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, name: e.target.value }))
-            }
-          />
-          <Input
-            size="sm"
-            variant="monospace"
-            placeholder="https://github.com/your-org/skills"
-            value={addForm.gitUrl}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, gitUrl: e.target.value }))
-            }
-          />
+          <div className="flex flex-col gap-1">
+            <Label className="text-[11px] text-text-muted">Name</Label>
+            <Input
+              size="sm"
+              placeholder='e.g. "My Skills"'
+              value={addForm.name}
+              onChange={(e) =>
+                setAddForm((f) => ({ ...f, name: e.target.value }))
+              }
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[11px] text-text-muted">Git URL</Label>
+            <Input
+              size="sm"
+              variant="monospace"
+              placeholder="https://github.com/your-org/skills"
+              value={addForm.gitUrl}
+              onChange={(e) =>
+                setAddForm((f) => ({ ...f, gitUrl: e.target.value }))
+              }
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1">
+              <Label className="text-[11px] text-text-muted">
+                Path (optional)
+              </Label>
+              <Tooltip
+                side="right"
+                content={
+                  <span>
+                    Subdirectory to scan for skills. Leave empty to
+                    auto-discover skills in{" "}
+                    {SKILL_SOURCE_ROOTS.map((r) => `${r}/`).join(", ")} or the
+                    repo root.
+                  </span>
+                }
+              >
+                <Info
+                  size={12}
+                  className="text-text-muted cursor-help shrink-0"
+                />
+              </Tooltip>
+            </div>
+            <Input
+              size="sm"
+              variant="monospace"
+              placeholder="e.g. packages/skills"
+              value={addForm.path}
+              onChange={(e) =>
+                setAddForm((f) => ({ ...f, path: e.target.value }))
+              }
+            />
+          </div>
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
@@ -699,9 +744,10 @@ export function SkillsPanel({
               )}
               <span
                 className="text-[11px] text-text-muted truncate max-w-[200px]"
-                title={src.gitUrl}
+                title={src.path ? `${src.gitUrl} · ${src.path}` : src.gitUrl}
               >
                 {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
+                {src.path ? ` · ${src.path}` : ""}
               </span>
               <span
                 role="button"
@@ -822,6 +868,8 @@ export function SkillsPanel({
                             skill.source,
                             skill.version,
                             skill.name,
+                            sources.find((s) => s.gitUrl === skill.source)
+                              ?.path,
                             hasDrift ? installed?.version : undefined,
                           )}
                           target="_blank"

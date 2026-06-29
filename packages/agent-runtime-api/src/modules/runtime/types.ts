@@ -74,6 +74,7 @@ export const skillRefContribution = z.object({
   sourceUrl: z.string().min(1),
   name: z.string().min(1),
   version: z.string().min(1),
+  path: z.string().optional(),
 });
 
 export const contribution = z.discriminatedUnion("kind", [

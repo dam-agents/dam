@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+/** A repo-relative subdirectory to scan for skills: relative, no `..`
+ *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */
+export const skillSourcePathSchema = z
+  .string()
+  .transform((p) => p.trim().replace(/^\/+|\/+$/g, ""))
+  .refine((p) => !p.split("/").includes(".."), "path must not contain '..'");
+
 // --- Entity / output schemas ---
 
 /** A connected skill source (e.g. a public git repo). */
@@ -7,6 +14,7 @@ export const skillSourceSchema = z.object({
   id: z.string(),
   name: z.string(),
   gitUrl: z.string(),
+  path: z.string().optional(),
   /** True when the source is managed by the cluster admin
    *  (Helm-seeded). Users can't delete it. */
   system: z.boolean().optional(),
@@ -46,6 +54,9 @@ export const skillRefSchema = z.object({
    *  Optional for backward compatibility with installs that pre-date
    *  this field. */
   contentHash: z.string().optional(),
+  /** Source subdir the skill was installed from, denormalized so the apply
+   *  path resolves the skill dir without re-reading the source. */
+  path: z.string().optional(),
 });
 
 /** A skill authored directly on the instance's PVC (not installed
@@ -99,6 +110,7 @@ export const skillListSourcesInputSchema = z
 export const skillCreateSourceInputSchema = z.object({
   name: z.string().min(1).max(128),
   gitUrl: z.string().url(),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const skillDeleteSourceInputSchema = z.object({

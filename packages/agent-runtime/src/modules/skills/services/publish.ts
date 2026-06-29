@@ -52,6 +52,10 @@ export async function runPublish(
   if (!headRef.ok) return headRef;
   const headSha = headRef.value.sha;
 
+  // Publish back into the source's configured subdir so its scanner — which
+  // reads that subdir exclusively — finds the skill; default `skills/` when unset.
+  const baseDir = input.path && input.path.length > 0 ? input.path : "skills";
+
   // 1. Blob per file.
   const blobs: { path: string; sha: string }[] = [];
   for (const f of files) {
@@ -62,7 +66,10 @@ export async function runPublish(
         : { content: f.content, encoding: "utf-8" },
     );
     if (!blob.ok) return blob;
-    blobs.push({ path: `skills/${name}/${f.relPath}`, sha: blob.value.sha });
+    blobs.push({
+      path: `${baseDir}/${name}/${f.relPath}`,
+      sha: blob.value.sha,
+    });
   }
 
   // 2. Tree referencing the blobs, parented on the default-branch HEAD tree.

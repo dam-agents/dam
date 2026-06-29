@@ -62,9 +62,10 @@
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
-import { promises as fsp } from "node:fs";
-import { dirname } from "node:path";
+import { copyFileSync, mkdirSync, promises as fsp } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
 const thinkToolCallIds = new Set();
@@ -83,20 +84,20 @@ let currentModeId = (() => {
   return "ask";
 })();
 const pendingNewSessionIds = new Set();
+// Session workspace (ACP cwd) — the only dir Bob's read guard allows; set on session/new.
+let sessionCwd = process.cwd();
+// Chat uploads land here; only files under it get staged into the workspace.
+const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
 let pendingModeSwitch = null;
 
-// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
-// </thinking>; the actual user-facing text is whatever lives outside the
-// block. Default state is "inside" because bob skips the opening tag for
-// direct-answer turns. messageCarry retains the tail that might contain a
-// partial THINK_OPEN/THINK_CLOSE tag split across token boundaries.
+// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…</thinking>;
+// user-facing text is what's outside. Default state is "inside" — Bob omits the
+// opening tag on direct-answer turns. messageCarry holds the tail in case a tag is
+// split across token boundaries.
 //
-// outsideBuf accumulates out-of-thinking text for meta-hint filtering.
-// Bob peppers "[using tool X: …]" status lines into the message stream,
-// which spread over many tokens (e.g. the closing "]" arrives several
-// chunks later, with real answer text in between). We strip complete
-// "[using tool … ]" segments and keep the tail whenever a still-unclosed
-// "[using tool" start is present so we don't ship partial meta to the UI.
+// outsideBuf accumulates out-of-thinking text for meta-hint filtering: Bob peppers
+// "[using tool X: …]" status lines across many tokens, so we strip complete
+// "[using tool … ]" segments and keep the tail while a "[using tool" is still open.
 const THINK_OPEN = "<thinking>";
 const THINK_CLOSE = "</thinking>";
 const META_COMPLETE = /\[using tool [^\]]*\]\n?/g;
@@ -134,6 +135,7 @@ function handleClientLine(line) {
 
   if (isClientRequest && f.method === "session/new") {
     pendingNewSessionIds.add(f.id);
+    if (typeof f.params?.cwd === "string") sessionCwd = f.params.cwd;
     return forwardToBob(line);
   }
 
@@ -158,26 +160,54 @@ function handleClientLine(line) {
     return;
   }
 
-  // One-shot mode switch: prepend an instruction to the next prompt asking
-  // the LLM to call the switch-mode tool. Bob's system prompt teaches the
-  // exact XML form, so the LLM should comply, after which Bob's bundle
-  // updates its internal mode for subsequent turns.
-  if (isClientRequest && f.method === "session/prompt" && pendingModeSwitch) {
-    try {
-      const prompt = f.params?.prompt;
-      if (Array.isArray(prompt)) {
-        const firstText = prompt.find((p) => p?.type === "text" && typeof p?.text === "string");
-        if (firstText) {
-          const instruction = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n`;
-          firstText.text = instruction + firstText.text;
-          pendingModeSwitch = null;
-          return forwardToBob(JSON.stringify(f));
-        }
+  if (isClientRequest && f.method === "session/prompt" && Array.isArray(f.params?.prompt)) {
+    // Bob rejects resource_link blocks (#441); stage each and pass a text path pointer.
+    f.params.prompt = f.params.prompt.map((b) =>
+      b?.type === "resource_link" ? { type: "text", text: stageAttachment(b) } : b,
+    );
+    // One-shot mode switch: prepend an instruction so the LLM calls the switch-mode tool.
+    if (pendingModeSwitch) {
+      const firstText = f.params.prompt.find(
+        (p) => p?.type === "text" && typeof p?.text === "string",
+      );
+      if (firstText) {
+        firstText.text = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n${firstText.text}`;
+        pendingModeSwitch = null;
       }
-    } catch { /* fall through */ }
+    }
+    return forwardToBob(JSON.stringify(f));
   }
 
   forwardToBob(line);
+}
+
+// Copy an upload into the workspace so Bob's read guard (workspace + temp only) can see it.
+function stageAttachment(block) {
+  let src = typeof block.uri === "string" ? block.uri : "";
+  if (src.startsWith("file://")) {
+    try {
+      src = fileURLToPath(src);
+    } catch {
+      /* keep the raw uri */
+    }
+  }
+  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT and
+  // smuggle an arbitrary file past Bob's read guard.
+  src = resolve(src);
+  if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
+    try {
+      const destDir = join(sessionCwd, ".attachments");
+      mkdirSync(destDir, { recursive: true });
+      const dest = join(destDir, basename(src));
+      copyFileSync(src, dest);
+      src = dest;
+    } catch (err) {
+      if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
+    }
+  }
+  const name = typeof block.name === "string" && block.name ? ` "${block.name}"` : "";
+  const mime = block.mimeType ? ` (${block.mimeType})` : "";
+  return `[Attached file${name}${mime}: ${src}]`;
 }
 
 function sendToBob(frame) {

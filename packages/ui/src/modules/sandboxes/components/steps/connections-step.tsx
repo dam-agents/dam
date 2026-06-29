@@ -1,6 +1,5 @@
 import {
   type ConnectionTemplateView,
-  type ConnectionView,
   PROVIDER_TEMPLATE_IDS,
 } from "api-server-api";
 import { useMemo, useState } from "react";
@@ -24,6 +23,7 @@ import {
   filterOfferedTemplates,
   isShowInternalConnectionsEnabled,
 } from "../../../connections/internal-only.js";
+import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import {
   saveSnapshot,
   type WizardSnapshot,
@@ -59,7 +59,7 @@ export function ConnectionsStep({
   const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = (connectionsQ.data ?? []) as unknown as ConnectionView[];
+  const connections = excludeProviderConnections(connectionsQ.data ?? []);
 
   const templateById = useMemo(
     () => new Map(allTemplates.map((t) => [t.id, t])),

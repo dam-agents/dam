@@ -245,6 +245,7 @@ export {
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
+  skillSourcePathSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,

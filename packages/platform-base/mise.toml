@@ -3,7 +3,10 @@ lockfile = true
 minimum_release_age = "7d"
 
 [tools]
-node = "24"
+# Exact pin (not "24") so minimum_release_age doesn't gate it: node's bundled npm
+# vendors the patched brace-expansion/tar/picomatch/ip-address/minimatch only from
+# 24.18.0 (npm 11.16.0) onward. Bump in lockstep when patching those CVEs.
+node = "24.18.0"
 gh = "latest"
 ripgrep = "latest"
 fd = "latest"

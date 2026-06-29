@@ -89,6 +89,16 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: openevolve
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "OpenEvolve — evolutionary code-optimization agent"
+    image:
+      repository: platform-openevolve
+      tag: latest
+    storageSize: "5Gi"
+
   - name: mock
     enabled: true
     description: "Scripted mock agent (E2E test fixture)"

@@ -33,6 +33,7 @@ export interface SkillsService {
   addSource(input: {
     name: string;
     gitUrl: string;
+    path?: string;
   }): Promise<
     Result<
       SkillSource,
