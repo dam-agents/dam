@@ -97,11 +97,12 @@ ws.onerror = () => {
 
 // Closing the socket makes the api-server delete the Run, reaping the executor.
 // In a tty, Ctrl-C reaches the remote PTY as input via raw mode instead.
+const SIGNUM = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
     try {
       ws.close();
     } catch {}
-    finish(130);
+    finish(128 + SIGNUM[sig]); // shell convention: 130/143/129
   });
 }
