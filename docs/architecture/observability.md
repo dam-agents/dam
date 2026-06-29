@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-06-26
+Last verified: 2026-06-29
 
 ## Overview
 
@@ -41,7 +41,13 @@ ClickStack's default posture secures the collector with an ingestion key the UI 
 
 Making the mesh the sole gate is why the collector is platform-owned. ClickStack's bundled collector takes its configuration — including the ingestion-key check — dynamically from the exploration UI, so that configuration cannot be the access boundary here. The platform instead runs its own collector with a fixed configuration and no key enforcement. The UI is unaffected: it reads the telemetry store directly, not the collector.
 
-How agent telemetry actually reaches the collector, and the mesh identity that traffic carries, belong to the export path and are described where that lands.
+## Trusted attribution
+
+Telemetry only answers *whose agents ran, and how* if each record is reliably tied to the agent that produced it — and agents run untrusted code, so the attribution cannot be taken from what the agent put in its own telemetry. It comes instead from the platform-controlled path the telemetry already travels.
+
+Every agent's egress, telemetry included, leaves through its **paired gateway pod**: the agent has no other admitted route (see [security-and-credentials](security-and-credentials.md)), and the gateway proxy's configuration is controller-rendered, not agent-writable. When the telemetry backend is enabled, that gateway proxy intercepts any agent OTLP bound for the collector and stamps a trusted `platform.agent.id` identifying the producing agent — **overwriting** anything the agent set, since the value is fixed in this gateway's own per-agent configuration. The collector then promotes that value to a `platform.agent.id` resource attribute on every signal in the request, and **drops any agent-supplied `platform.agent.id` that did not arrive from the gateway**, so a forged value can never survive.
+
+The guarantee is **attribution, not content integrity**: an agent can still misreport its own numbers (inflate a token count), but it can only ever pollute *its own* telemetry — never make its telemetry appear under another agent or user. The owner-scoped read path resolves `platform.agent.id` to the owning user; telemetry that carries no `platform.agent.id` (the platform's own components) is not agent telemetry and is never attributed to a user. The attribute is namespaced under the permanent `platform` codename so it never collides with OpenTelemetry semantic-convention or agent-self-reported `agent.*` attributes.
 
 ## Persistence
 

@@ -42,6 +42,32 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 
+func TestLoadFromEnv_Telemetry(t *testing.T) {
+	// Off by default: no collector host, port defaults to 4318.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.TelemetryCollectorHost)
+	assert.False(t, cfg.TelemetryEnabled())
+	assert.Equal(t, 4318, cfg.TelemetryCollectorPort)
+
+	// Configured by the chart when clickstack is enabled.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":             "platform",
+		"POD_NAME":                          "controller-0",
+		"PLATFORM_TELEMETRY_COLLECTOR_HOST": "platform-clickstack-collector.platform.svc.cluster.local",
+		"PLATFORM_TELEMETRY_COLLECTOR_PORT": "4318",
+	})
+	cfg, err = LoadFromEnv()
+	require.NoError(t, err)
+	assert.True(t, cfg.TelemetryEnabled())
+	assert.Equal(t, "platform-clickstack-collector.platform.svc.cluster.local", cfg.TelemetryCollectorHost)
+	assert.Equal(t, 4318, cfg.TelemetryCollectorPort)
+}
+
 // LoadFromEnv fails-loud when the chart-required fields are missing.
 func TestLoadFromEnv_RejectsMissingRequiredAgentBase(t *testing.T) {
 	setEnv(t, map[string]string{
@@ -220,6 +246,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"AGENT_BASE", "AGENT_TEMPLATE_DEFAULTS",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
+		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
