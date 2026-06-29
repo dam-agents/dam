@@ -1,7 +1,7 @@
 import { brandSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
-import { durationToMinutes } from "./duration.js";
+import { durationToMinutesStrict } from "./duration.js";
 
 function isValidAppSlug(s: string): boolean {
   return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
@@ -196,7 +196,7 @@ export function loadConfig(): Config {
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
     agentHome: process.env.AGENT_HOME,
-    agentIdleTimeoutMinutes: durationToMinutes(
+    agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
