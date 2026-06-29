@@ -5,6 +5,7 @@ import type {
   ExperimentAddArmInput,
   ExperimentArm,
   ExperimentCreateInput,
+  ExperimentFinishArmInput,
   ExperimentListItem,
   ExperimentRecordRunInput,
   ExperimentRun,
@@ -49,6 +50,7 @@ export function createExperimentsService(deps: {
     const launcher = deps.trialLauncher;
     const arms = await deps.repo.listArms(experiment.id);
     for (const arm of arms) {
+      if (arm.status !== "running") continue;
       const task = buildTrialPrompt({
         prompt: experiment.prompt,
         armSpec: arm.armSpec,
@@ -69,6 +71,9 @@ export function createExperimentsService(deps: {
           result: "failure",
           reason: (err as Error).message,
         });
+        // A Trial that never launched can never report or finish; fail the arm
+        // now rather than leave it to time out on the inactivity sweep.
+        await deps.repo.failLaunch(experiment.id, arm.agentId);
       }
     }
   }
@@ -155,6 +160,7 @@ export function createExperimentsService(deps: {
       if (experiment.status === "running") return experiment;
       const updated = await deps.repo.updateStatus(id, deps.owner, "running");
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      await deps.repo.markArmsRunning(id);
       await launchTrials(updated);
       securityLog("info", "experiment.start", {
         category: "resource",
@@ -163,7 +169,10 @@ export function createExperimentsService(deps: {
         target: id,
         result: "success",
       });
-      return updated;
+      // launchTrials may have failed every arm (all launches threw), which
+      // flips the experiment straight to `completed` — re-read so the caller
+      // sees the settled status, not the stale `running` snapshot.
+      return (await deps.repo.get(id, deps.owner)) ?? updated;
     },
 
     async stop(id): Promise<Experiment> {
@@ -175,7 +184,7 @@ export function createExperimentsService(deps: {
           message: `Only a running experiment can be stopped (status: ${experiment.status}).`,
         });
       }
-      const updated = await deps.repo.updateStatus(id, deps.owner, "stopped");
+      const updated = await deps.repo.stop(id, deps.owner);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
       securityLog("info", "experiment.stop", {
         category: "resource",
@@ -220,6 +229,25 @@ export function createExperimentsService(deps: {
         score: input.score,
         status: "completed",
       });
+      if (!run) {
+        // The arm finished, was stopped, or the experiment ended between
+        // attribution and the insert. The ledger is closed for this arm.
+        securityLog("warn", "experiment.record_run", {
+          category: "resource",
+          actor: input.agentId,
+          actorKind: "agent",
+          surface: "mcp",
+          agentId: input.agentId,
+          target: input.experimentId,
+          result: "failure",
+          reason: "arm-not-running",
+        });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is not an active arm of a running experiment; the run ledger is closed.",
+        });
+      }
       securityLog("info", "experiment.record_run", {
         category: "resource",
         actor: input.agentId,
@@ -231,6 +259,38 @@ export function createExperimentsService(deps: {
         detail: { runNumber: run.runNumber },
       });
       return run;
+    },
+
+    async finishArm(input: ExperimentFinishArmInput): Promise<ExperimentArm> {
+      const arm = await deps.repo.finishArm(input.experimentId, input.agentId);
+      if (!arm) {
+        securityLog("warn", "experiment.finish_arm", {
+          category: "resource",
+          actor: input.agentId,
+          actorKind: "agent",
+          surface: "mcp",
+          agentId: input.agentId,
+          target: input.experimentId,
+          result: "failure",
+          reason: "arm-not-running",
+        });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is not an active arm of a running experiment; there is nothing to finish.",
+        });
+      }
+      securityLog("info", "experiment.finish_arm", {
+        category: "resource",
+        actor: input.agentId,
+        actorKind: "agent",
+        surface: "mcp",
+        agentId: input.agentId,
+        target: input.experimentId,
+        result: "success",
+        detail: { status: arm.status },
+      });
+      return arm;
     },
   };
 }

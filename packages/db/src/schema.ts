@@ -495,12 +495,21 @@ export const experiments = pgTable(
   ],
 );
 
+// `status` + `last_activity_at` (dam-u1n.13): per-arm status is the source of
+// truth for Experiment completion. Without it, "this arm finished" is not
+// representable and an Experiment can never leave `running`. Lifecycle:
+// pending → running → completed | failed | stopped. `last_activity_at` is the
+// liveness clock the inactivity-deadline sweep reads — set when the arm starts
+// running and bumped on each recorded Run; a `running` arm that goes quiet past
+// the deadline is reaped to `failed` so the Experiment can still complete.
 export const experimentArms = pgTable(
   "experiment_arms",
   {
     experimentId: text("experiment_id").notNull(),
     agentId: text("agent_id").notNull(),
     armSpec: jsonb("arm_spec").notNull(),
+    status: text("status").notNull().default("pending"),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -508,6 +517,9 @@ export const experimentArms = pgTable(
   (table) => [
     primaryKey({ columns: [table.experimentId, table.agentId] }),
     index("experiment_arms_agent_idx").on(table.agentId),
+    index("experiment_arms_running_activity_idx")
+      .on(table.lastActivityAt)
+      .where(sql`${table.status} = 'running'`),
   ],
 );
 

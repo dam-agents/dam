@@ -3,10 +3,25 @@
  *  harness reads it (epic decision D4). */
 export type ExperimentConfig = Record<string, unknown>;
 
-/** Lifecycle of an Experiment. `draft` is the create-time default; the start
- *  path (later ticket) moves it to `running`; stop/finish move it to `stopped`
- *  / `completed`. Only a `running` experiment has an active arm. */
+/** Lifecycle of an Experiment. `draft` is the create-time default; start moves
+ *  it to `running`; Stop moves it to `stopped`; it reaches `completed` on its
+ *  own once every Arm is terminal (derived from Arm Status, written by the
+ *  completion path — see {@link ArmStatus}). Only a `running` experiment has an
+ *  active arm. */
 export type ExperimentStatus = "draft" | "running" | "completed" | "stopped";
+
+/** Per-Arm lifecycle, the source of truth for Experiment completion. `pending`
+ *  (Arm added, Experiment not yet started) → `running` (Trial launched) → one
+ *  terminal state: `completed` (`finish_arm` called), `failed` (Inactivity
+ *  Deadline tripped, or the Trial failed to launch), or `stopped` (Experiment
+ *  Stopped while the Arm was still running). The Experiment becomes `completed`
+ *  once every Arm is terminal, regardless of the mix. */
+export type ArmStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
 
 export interface Experiment {
   id: string;
@@ -27,6 +42,7 @@ export interface ExperimentArm {
   experimentId: string;
   agentId: string;
   armSpec: ExperimentConfig;
+  status: ArmStatus;
   createdAt: string;
 }
 
@@ -96,6 +112,14 @@ export interface ExperimentRecordRunInput {
   score: number;
 }
 
+/** Attribution for `finish_arm`, resolved from the caller's verified agent
+ *  identity exactly like {@link ExperimentRecordRunInput} — the harness never
+ *  supplies an experiment id. */
+export interface ExperimentFinishArmInput {
+  experimentId: string;
+  agentId: string;
+}
+
 /** Owner-scoped application service. Composed per-owner for both the user tRPC
  *  router and the in-pod MCP session (the owner is bound at composition time,
  *  never taken from request input). */
@@ -114,6 +138,13 @@ export interface ExperimentsService {
   resolveActiveArm(agentId: string): Promise<ActiveArm | null>;
   /** Append a Run to the ledger for an already attribution-resolved arm,
    *  allocating the next per-arm run number. The caller stores the Candidate
-   *  artifact first; `candidateRef` is its key. */
+   *  artifact first; `candidateRef` is its key. Rejected (CONFLICT) once the
+   *  calling arm is no longer `running` — the ledger can't grow after Stop or
+   *  completion. */
   recordRun(input: ExperimentRecordRunInput): Promise<ExperimentRun>;
+  /** Mark the calling arm `completed` — the success-only completion dual of
+   *  `recordRun`. Advances the arm, then flips the Experiment to `completed`
+   *  once every arm is terminal. Rejected (CONFLICT) unless the calling arm is
+   *  `running`. */
+  finishArm(input: ExperimentFinishArmInput): Promise<ExperimentArm>;
 }

@@ -35,11 +35,20 @@ The platform reads that file, stores its bytes, and appends a Run to the ledger 
 - **Attribution is automatic.** The platform resolves which experiment arm you are from your verified agent identity. There is no experiment-id argument and you never pass one.
 - **Do not delete the candidate file before the call returns** — the platform reads it during the call.
 
-## Tool
+## When your loop is finished
 
-`record_run` on the `platform-outbound` MCP server. If its schema is not loaded, fetch it via ToolSearch:
+When you have no more candidates to produce — the search is exhausted, the budget is spent, the metric has converged — call `finish_arm` **once**, after recording your last Run. It marks your arm complete so the platform can wrap up the comparison; once every arm finishes, the experiment is done.
 
-`select:mcp__platform-outbound__record_run`
+- **Record first, then finish.** Make sure every scored iteration is already in the ledger via `record_run` before you call `finish_arm`.
+- **Call it exactly once, and only when truly done.** After it, both `record_run` and `finish_arm` report no active arm — you cannot reopen the arm.
+- **There is no failure form.** `finish_arm` is success-only. If you're giving up rather than finishing, just stop — don't call it. An arm that goes quiet is wound down automatically.
+- **Attribution is automatic**, same as `record_run` — no arguments.
+
+## Tools
+
+Both on the `platform-outbound` MCP server. If a schema is not loaded, fetch it via ToolSearch:
+
+`select:mcp__platform-outbound__record_run,mcp__platform-outbound__finish_arm`
 
 ## When it does nothing
 
