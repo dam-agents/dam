@@ -8,11 +8,16 @@ import {
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
 
-// Per-agent ceiling on concurrent `dam-run` executors. With the SA-scoping
-// recursion guard (an executor's gateway SA can't reach /run), this is the
-// second fork-bomb defence: a runaway loop in the agent can't exhaust the
-// cluster. Upgrade path: lift to a config value if real workloads need more.
-const MAX_CONCURRENT_RUNS_PER_AGENT = 4;
+// Per-agent ceiling on concurrent `dam-run` executors, and the SOLE bound on
+// recursion: an executor egresses through the parent's gateway with the parent
+// agent's identity, which the waypoint authorizes for `/api/agents/<parent>/*`
+// — including `/run` — so a command inside an executor can spawn its own
+// dam-run (nesting depth N = N concurrent runs for the agent). Unlike forks
+// there is no SA-scoping guard (executors borrow the parent's gateway, they get
+// no SA of their own), so this cap is what stops a runaway loop from exhausting
+// the cluster. Counted in-memory per api-server process (replicas=1). Upgrade
+// path: lift to a config value if real workloads need more.
+const MAX_CONCURRENT_RUNS_PER_AGENT = 16;
 
 const PENDING_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
 
