@@ -148,6 +148,19 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(10 * 1024 * 1024),
+  /** Inactivity-deadline window for Experiment arms, in seconds. A `running`
+   *  arm that records no Run and never calls `finish_arm` for this long is
+   *  reaped to `failed` by the background sweep, so a started Experiment always
+   *  reaches a terminal state even when a harness crashes, forgets to finish,
+   *  or hibernates mid-loop. The clock resets on each recorded Run. Default
+   *  1 hour — generous enough not to reap an arm mid-iteration, short enough
+   *  that a dead arm doesn't pin an Experiment open indefinitely. Tune via
+   *  `EXPERIMENT_ARM_INACTIVITY_SECONDS`. */
+  experimentArmInactivitySeconds: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -222,6 +235,8 @@ export function loadConfig(): Config {
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
+    experimentArmInactivitySeconds:
+      process.env.EXPERIMENT_ARM_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

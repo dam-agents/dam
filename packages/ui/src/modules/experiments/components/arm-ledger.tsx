@@ -7,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { armColor } from "../lib/arm-color.js";
 import { formatScore } from "../lib/score.js";
 import type { ExperimentArmDetail } from "../types.js";
+import { ArmStatusBadge } from "./arm-status-badge.js";
 import { CandidateDownloadButton } from "./candidate-download-button.js";
 
 interface Props {
@@ -35,6 +36,7 @@ export function ArmLedger({
         <span className="font-medium text-foreground">
           {agentName ?? arm.agentId}
         </span>
+        <ArmStatusBadge status={arm.status} />
         {templateName && (
           <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
             {templateName}

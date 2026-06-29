@@ -3,6 +3,10 @@ import type { ExperimentsService } from "api-server-api";
 import { createExperimentsRepository } from "./infrastructure/experiments-repository.js";
 import { createRuntimeTrialLauncher } from "./infrastructure/trial-launcher.js";
 import { createExperimentsService } from "./services/experiments-service.js";
+import {
+  createExperimentArmSweeper,
+  type ExperimentArmSweeper,
+} from "./services/experiment-arm-sweeper.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export interface ComposeExperimentsForOwnerOpts {
@@ -39,4 +43,21 @@ export function composeExperimentsForOwner(
       ...(trialLauncher ? { trialLauncher } : {}),
     }),
   };
+}
+
+/** Compose the system-level inactivity-deadline sweep. Owner-agnostic (it scans
+ *  every owner's experiments), so it builds its own repository rather than going
+ *  through the per-owner service. Long-lived: started once at boot. */
+export function composeExperimentArmSweeper(opts: {
+  db: Db;
+  inactivityMs: number;
+  intervalMs: number;
+  batchSize: number;
+}): ExperimentArmSweeper {
+  return createExperimentArmSweeper({
+    repo: createExperimentsRepository(opts.db),
+    inactivityMs: opts.inactivityMs,
+    intervalMs: opts.intervalMs,
+    batchSize: opts.batchSize,
+  });
 }

@@ -96,6 +96,7 @@ import {
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
+import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -448,6 +449,20 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
+// Inactivity-deadline sweep: reaps `running` Experiment arms that have gone
+// quiet (no Run, no finish_arm) past the configured window to `failed`, so a
+// started Experiment always reaches a terminal state. Atomic conditional
+// transitions make it multi-replica safe. Sweep at the window cadence, capped
+// at 5 minutes so the default 1h window isn't scanned needlessly often.
+const armInactivityMs = config.experimentArmInactivitySeconds * 1000;
+const experimentArmSweeper = composeExperimentArmSweeper({
+  db,
+  inactivityMs: armInactivityMs,
+  intervalMs: Math.min(armInactivityMs, 5 * 60_000),
+  batchSize: 200,
+});
+experimentArmSweeper.start();
+
 const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
@@ -558,6 +573,7 @@ async function shutdown() {
   audit.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
+  await experimentArmSweeper.stop();
   await channelManager.stopAll();
   await runtimeDelivery.sweep.stop();
   await runtimeDelivery.worker.close();

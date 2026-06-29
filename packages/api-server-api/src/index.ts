@@ -76,6 +76,7 @@ export type {
 export type {
   ExperimentConfig,
   ExperimentStatus,
+  ArmStatus,
   Experiment,
   ExperimentArm,
   ExperimentRun,
@@ -86,6 +87,7 @@ export type {
   ExperimentCreateInput,
   ExperimentAddArmInput,
   ExperimentRecordRunInput,
+  ExperimentFinishArmInput,
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {

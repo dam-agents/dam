@@ -583,6 +583,34 @@ export function createMcpSession(
     },
   );
 
+  server.tool(
+    "finish_arm",
+    "Declare your Experiment arm's optimization loop finished — call this ONCE, after your final iteration, when there are no more candidates to produce and every scored Run is already recorded with record_run. It marks your arm complete so the platform can wrap up the comparison; once every arm finishes, the Experiment is done. Only works while this agent is an arm of a running experiment, and only once: afterwards both record_run and finish_arm report no active arm. Do NOT call it if you intend to record more Runs — there is no failure form, a loop that gives up should simply stop.",
+    {},
+    async () => {
+      const active = await deps.experiments.resolveActiveArm(agentId);
+      if (!active) {
+        return errorResult(
+          "finish_arm is only available while this agent is an arm of a running experiment; none is active.",
+        );
+      }
+      return textTool(
+        "Failed to finish arm",
+        () =>
+          deps.experiments.finishArm({
+            experimentId: active.experimentId,
+            agentId,
+          }),
+        (arm) =>
+          JSON.stringify({
+            experimentId: arm.experimentId,
+            agentId: arm.agentId,
+            status: arm.status,
+          }),
+      );
+    },
+  );
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
