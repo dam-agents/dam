@@ -12,9 +12,7 @@ export const armFieldSchema = z.object({
 export const experimentWizardSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(200),
-    task: z.string().trim(),
-    runBudget: z.string().trim(),
-    timeBudget: z.string().trim(),
+    prompt: z.string().trim().min(1, "Prompt is required"),
     arms: z.array(armFieldSchema).min(1, "Add at least one arm"),
   })
   .superRefine((values, ctx) => {
@@ -46,20 +44,6 @@ export const experimentWizardSchema = z
   });
 
 export type ExperimentWizardValues = z.infer<typeof experimentWizardSchema>;
-
-/** Assemble the opaque experiment `spec` from the goal-step fields, dropping
- *  blanks so the harness sees only what was filled in. */
-export function buildExperimentSpec(
-  values: ExperimentWizardValues,
-): ExperimentConfig {
-  return Object.fromEntries(
-    Object.entries({
-      task: values.task,
-      runBudget: values.runBudget,
-      timeBudget: values.timeBudget,
-    }).filter(([, value]) => value.trim() !== ""),
-  );
-}
 
 export function parseArmSpec(configText: string): ExperimentConfig {
   if (configText.trim() === "") return {};

@@ -28,7 +28,7 @@ export function ExperimentRow({ experiment, onSelect }: Props) {
           {experiment.name}
         </h2>
         <p className="mt-1 truncate text-[14px] text-muted-foreground">
-          {experiment.goal}
+          {experiment.prompt}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-4 text-[13px] text-muted-foreground">

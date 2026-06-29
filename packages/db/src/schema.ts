@@ -477,8 +477,7 @@ export const experiments = pgTable(
     id: text("id").primaryKey(),
     owner: text("owner").notNull(),
     name: text("name").notNull(),
-    goal: text("goal").notNull(),
-    spec: jsonb("spec").notNull(),
+    prompt: text("prompt").notNull(),
     status: text("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

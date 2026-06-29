@@ -1,7 +1,6 @@
-/** Opaque JSON config the platform stores but does not interpret. The
- *  experiment `spec` (shared task + budget) and per-arm `armSpec` are both
- *  user-authored blobs handed to the harness at start; only the harness reads
- *  them (epic decision D4). */
+/** Opaque JSON config the platform stores but does not interpret. A per-arm
+ *  `armSpec` is a user-authored blob handed to the harness at start; only the
+ *  harness reads it (epic decision D4). */
 export type ExperimentConfig = Record<string, unknown>;
 
 /** Lifecycle of an Experiment. `draft` is the create-time default; the start
@@ -13,9 +12,8 @@ export interface Experiment {
   id: string;
   ownerId: string;
   name: string;
-  /** Prose statement of what every arm is racing toward. */
-  goal: string;
-  spec: ExperimentConfig;
+  /** The common instruction every arm receives; leads each arm's trial prompt. */
+  prompt: string;
   status: ExperimentStatus;
   createdAt: string;
   updatedAt: string;
@@ -70,20 +68,18 @@ export interface ExperimentListItem extends Experiment {
 
 /** What the ingestion / harness side needs to attribute work to the right
  *  experiment for a given agent, resolved from the agent's verified identity.
- *  Carries the goal + specs so the harness has its task context in hand. */
+ *  Carries the prompt + arm params so the harness has its task context in hand. */
 export interface ActiveArm {
   experimentId: string;
   experimentName: string;
-  goal: string;
-  spec: ExperimentConfig;
+  prompt: string;
   agentId: string;
   armSpec: ExperimentConfig;
 }
 
 export interface ExperimentCreateInput {
   name: string;
-  goal: string;
-  spec: ExperimentConfig;
+  prompt: string;
 }
 
 export interface ExperimentAddArmInput {

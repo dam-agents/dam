@@ -13,22 +13,19 @@ import {
   useStartExperiment,
 } from "../api/mutations.js";
 import { ArmsStep } from "../components/wizard/arms-step.js";
-import { GoalStep } from "../components/wizard/goal-step.js";
+import { PromptStep } from "../components/wizard/prompt-step.js";
 import { ReviewStep } from "../components/wizard/review-step.js";
 import { WizardStepIndicator } from "../components/wizard/wizard-step-indicator.js";
 import {
-  buildExperimentSpec,
   experimentWizardSchema,
   type ExperimentWizardValues,
   parseArmSpec,
 } from "../forms/experiment-wizard-schema.js";
 
 const STEP_FIELDS: Record<number, (keyof ExperimentWizardValues)[]> = {
-  0: ["name"],
+  0: ["name", "prompt"],
   1: ["arms"],
 };
-
-const MOCK_GOAL = "Beat the 0.82 baseline accuracy on the reviews-eval set.";
 
 export function ExperimentWizardView() {
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
@@ -42,9 +39,7 @@ export function ExperimentWizardView() {
     mode: "onBlur",
     defaultValues: {
       name: "",
-      task: "",
-      runBudget: "",
-      timeBudget: "",
+      prompt: "",
       arms: [],
     },
   });
@@ -68,8 +63,7 @@ export function ExperimentWizardView() {
     try {
       const created = await createExperiment.mutateAsync({
         name: values.name,
-        goal: MOCK_GOAL,
-        spec: buildExperimentSpec(values),
+        prompt: values.prompt,
       });
       for (const arm of values.arms) {
         await addArm.mutateAsync({
@@ -114,7 +108,7 @@ export function ExperimentWizardView() {
           />
           <div className="min-w-0 flex-1 md:max-w-[640px]">
             {step === 0 ? (
-              <GoalStep />
+              <PromptStep />
             ) : step === 1 ? (
               <ArmsStep />
             ) : (

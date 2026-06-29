@@ -125,7 +125,7 @@ An Experiment races several AI-driven R&D harnesses against one goal and compare
 
 | Term | Definition |
 |------|-----------|
-| Experiment | Owner-scoped resource holding a goal, a shared spec, a status, and the Run Ledger. Peer to the Agent; references many Agents through Arms. The Connection analog at the experiment level |
+| Experiment | Owner-scoped resource holding a prompt (the common instruction every Arm receives), a status, and the Run Ledger. Peer to the Agent; references many Agents through Arms. The Connection analog at the experiment level |
 | Arm | One competitor in an Experiment: a framework + config pair. References one existing Agent (the harness, fixed as the Agent's image) and carries an opaque JSON `arm_spec` interpreted by the harness, not the platform. Keyed `(experiment_id, agent_id)`, so the same framework can appear more than once with different configs. The `connectionGrants` analog |
 | Trial | The single Session an Arm's Agent opens when the Experiment starts; the harness runs its own loop here. One per Arm. Owns the transcript and session-level telemetry (tokens, tool use), which are therefore Arm-level, not Run-level. Carried as `SessionType.ExperimentTrial` |
 | Run | One entry the harness appends to the Run Ledger per loop iteration — a Score plus a Candidate. Many per Trial, numbered monotonically within the Arm. The verb "run the experiment" (start it) is unrelated to this noun |

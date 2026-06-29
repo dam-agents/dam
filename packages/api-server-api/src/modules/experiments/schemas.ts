@@ -8,8 +8,7 @@ export const experimentIdInputSchema = z.object({
 
 export const experimentCreateInputSchema = z.object({
   name: z.string().trim().min(1, "name is required").max(200),
-  goal: z.string().trim().min(1, "goal is required"),
-  spec: experimentConfigSchema.default({}),
+  prompt: z.string().trim().min(1, "prompt is required"),
 });
 
 export const experimentAddArmInputSchema = z.object({

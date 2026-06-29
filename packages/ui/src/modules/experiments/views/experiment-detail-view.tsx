@@ -48,8 +48,8 @@ export function ExperimentDetailView() {
           <h1 className="text-[22px] font-semibold tracking-[-0.5px] text-foreground">
             {experiment.name}
           </h1>
-          <p className="mt-1 max-w-[70ch] text-[14px] text-muted-foreground">
-            {experiment.goal}
+          <p className="mt-1 max-w-[70ch] whitespace-pre-wrap text-[14px] text-muted-foreground">
+            {experiment.prompt}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground">
             <ExperimentStatusBadge status={experiment.status} />

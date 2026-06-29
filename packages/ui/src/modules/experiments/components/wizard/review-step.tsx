@@ -19,10 +19,6 @@ export function ReviewStep() {
   const values = useWatch({ control });
   const labels = useAgentLabels();
 
-  const budget = [values.runBudget, values.timeBudget]
-    .filter((value) => value && value.trim() !== "")
-    .join(" · ");
-
   return (
     <div>
       <WizardStepHeader
@@ -33,11 +29,9 @@ export function ReviewStep() {
 
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         <ReviewRow label="Name">{values.name}</ReviewRow>
-        {budget && (
-          <ReviewRow label="Budget">
-            <span className="font-mono">{budget}</span>
-          </ReviewRow>
-        )}
+        <ReviewRow label="Prompt">
+          <span className="whitespace-pre-wrap">{values.prompt}</span>
+        </ReviewRow>
         <ReviewRow label="Arms">
           <div className="flex flex-col gap-2">
             {(values.arms ?? []).map((arm, index) => (

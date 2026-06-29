@@ -50,6 +50,13 @@
       "when": 1782465891284,
       "tag": "0006_lonely_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782728614146,
+      "tag": "0007_adorable_arclight",
+      "breakpoints": true
     }
   ]
 }

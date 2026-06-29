@@ -26,8 +26,7 @@ export interface ExperimentsRepository {
   create(input: {
     ownerId: string;
     name: string;
-    goal: string;
-    spec: ExperimentConfig;
+    prompt: string;
   }): Promise<Experiment>;
   listByOwner(ownerId: string): Promise<ExperimentListItem[]>;
   get(id: string, ownerId: string): Promise<Experiment | null>;
@@ -72,8 +71,7 @@ function rowToExperiment(row: ExperimentRow): Experiment {
     id: row.id,
     ownerId: row.owner,
     name: row.name,
-    goal: row.goal,
-    spec: (row.spec as ExperimentConfig) ?? {},
+    prompt: row.prompt,
     status: row.status as ExperimentStatus,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -112,8 +110,7 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
         id,
         owner: input.ownerId,
         name: input.name,
-        goal: input.goal,
-        spec: input.spec,
+        prompt: input.prompt,
       });
       const created = await this.get(id, input.ownerId);
       if (!created) {

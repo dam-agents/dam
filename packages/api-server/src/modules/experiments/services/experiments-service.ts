@@ -50,8 +50,7 @@ export function createExperimentsService(deps: {
     const arms = await deps.repo.listArms(experiment.id);
     for (const arm of arms) {
       const task = buildTrialPrompt({
-        goal: experiment.goal,
-        spec: experiment.spec,
+        prompt: experiment.prompt,
         armSpec: arm.armSpec,
       });
       try {
@@ -93,8 +92,7 @@ export function createExperimentsService(deps: {
         const experiment = await deps.repo.create({
           ownerId: deps.owner,
           name: input.name,
-          goal: input.goal,
-          spec: input.spec,
+          prompt: input.prompt,
         });
         securityLog("info", "experiment.create", {
           category: "resource",
@@ -207,8 +205,7 @@ export function createExperimentsService(deps: {
       return {
         experimentId: experiment.id,
         experimentName: experiment.name,
-        goal: experiment.goal,
-        spec: experiment.spec,
+        prompt: experiment.prompt,
         agentId: arm.agentId,
         armSpec: arm.armSpec,
       };
