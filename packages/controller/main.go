@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
@@ -115,7 +116,7 @@ func setupLogger() {
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
-	// Agents and Forks are custom resources — watched via dynamic
+	// Agents, Forks, and Runs are custom resources — watched via dynamic
 	// informers off a shared factory.
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
@@ -218,8 +219,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 	slog.Info("informer caches synced")
 
-	go runCachedWorker(ctx, "fork", forkInformer.Lister(), cfg.Namespace, forkQueue, reconciler.ForkFromCacheObject, forkReconciler.Reconcile)
-	go runCachedWorker(ctx, "run", runInformer.Lister(), cfg.Namespace, runQueue, reconciler.RunFromCacheObject, runReconciler.Reconcile)
+	go runCachedWorker(ctx, "fork", forkInformer.Lister(), cfg.Namespace, forkQueue, reconciler.FromCacheObject[apiv1.Fork], forkReconciler.Reconcile)
+	go runCachedWorker(ctx, "run", runInformer.Lister(), cfg.Namespace, runQueue, reconciler.FromCacheObject[apiv1.Run], runReconciler.Reconcile)
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 

@@ -93,8 +93,7 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 
 	// Credential placeholder env mirrors the parent's grants; real injection
 	// happens at the shared parent gateway.
-	owner := parentAgent.Labels[envoyOwnerLabel]
-	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner,
+	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, parentAgent.Labels[envoyOwnerLabel],
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing credential secrets: %v", err))
@@ -102,7 +101,7 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 
 	// One owned resource beyond the pod: an egress NetworkPolicy admitting the
 	// executor (pair=runName) to the parent gateway (pair=parentAgentID).
-	if err := r.applyAgentEgressNetworkPolicy(ctx, buildAgentEgressNetworkPolicyTo(runName, parentAgentID, r.config, ownerRef)); err != nil {
+	if err := applyNetworkPolicy(ctx, r.client, buildAgentEgressNetworkPolicyTo(runName, parentAgentID, r.config, ownerRef)); err != nil {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
@@ -112,20 +111,18 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
 	}
 	rewriteParentPVCs(desired.Spec.Volumes, parentPVCs)
-	if err := r.applyPod(ctx, desired); err != nil {
+	if err := createPodIfMissing(ctx, r.client, desired); err != nil {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying executor pod: %v", err))
 	}
 
-	pod, _ := r.findRunPod(ctx, runName)
+	pod, _ := findEphemeralPod(ctx, r.client, r.config.Namespace, RunLabelRunID, runName)
 	if pod != nil && isPodReady(*pod) && pod.Status.PodIP != "" {
 		return writeRunStatus(ctx, r.dynamic, r.config.Namespace, runName, apiv1.RunStatus{
 			Phase: apiv1.RunPhaseReady, PodIP: pod.Status.PodIP,
 		})
 	}
-	if pod != nil {
-		if _, msg, ok := terminationReason(pod); ok {
-			return r.setRunFailed(ctx, runName, types.ForkReasonPodNotReady, msg)
-		}
+	if _, msg, ok := terminationReason(pod); ok {
+		return r.setRunFailed(ctx, runName, types.ForkReasonPodNotReady, msg)
 	}
 	if age := r.now().Sub(run.CreationTimestamp.Time); age > RunPodReadyTimeout {
 		return r.setRunFailed(ctx, runName, types.ForkReasonTimeout,
@@ -152,28 +149,4 @@ func (r *RunReconciler) setRunFailed(ctx context.Context, name, reason, detail s
 		slog.Error("writing run failed status", "run", name, "error", err)
 	}
 	return fmt.Errorf("run %s: %s: %s", name, reason, detail)
-}
-
-func (r *RunReconciler) findRunPod(ctx context.Context, runName string) (*corev1.Pod, error) {
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", RunLabelRunID, runName),
-	})
-	if err != nil {
-		return nil, err
-	}
-	for i := range pods.Items {
-		if pods.Items[i].DeletionTimestamp == nil {
-			return &pods.Items[i], nil
-		}
-	}
-	return nil, nil
-}
-
-func (r *RunReconciler) applyPod(ctx context.Context, desired *corev1.Pod) error {
-	_, err := r.client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.CoreV1().Pods(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	return err
 }

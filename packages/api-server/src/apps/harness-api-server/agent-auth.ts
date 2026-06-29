@@ -4,10 +4,8 @@ import {
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved agent metadata. `agentId` mirrors the URL parameter after a
- *  successful resolution; `owner` comes from the Agent's labels; `uid` is the
- *  Agent CR's UID, used to owner-ref ephemeral children (e.g. dam-run Runs) for
- *  cascade deletion. */
+/** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
+ *  ephemeral children (e.g. dam-run Runs) for cascade deletion. */
 export interface AgentIdentity {
   agentId: string;
   owner: string;

@@ -27,21 +27,18 @@ if (!mcpUrl || !/\/mcp$/.test(mcpUrl)) {
   process.stderr.write("dam-run: PLATFORM_MCP_URL not set; not inside a sandbox pod?\n");
   process.exit(1);
 }
-const cols = process.stdout.columns || 80;
-const rows = process.stdout.rows || 24;
 const runUrl =
   mcpUrl.replace(/\/mcp$/, "/run").replace(/^http/, "ws") +
   "?argv=" +
   encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
   "&cwd=" +
   encodeURIComponent(process.cwd()) +
-  `&cols=${cols}&rows=${rows}`;
+  `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}`;
 
 const ws = new WebSocket(runUrl);
 ws.binaryType = "arraybuffer";
 const isTty = Boolean(process.stdin.isTTY);
 
-let exitCode = 1; // a clean close without OP_EXIT is a failure
 let exited = false;
 const finish = (code) => {
   if (exited) return;
@@ -83,20 +80,15 @@ ws.onmessage = (ev) => {
   const buf = new Uint8Array(ev.data);
   if (buf.length === 0) return;
   if (buf[0] === OP_OUTPUT) process.stdout.write(buf.subarray(1));
-  else if (buf[0] === OP_EXIT) {
-    exitCode = buf.length > 1 ? buf[1] : 0;
-    try {
-      ws.close();
-    } catch {}
-    finish(exitCode);
-  }
+  // finish() exits the process; no need to close the socket
+  else if (buf[0] === OP_EXIT) finish(buf.length > 1 ? buf[1] : 0);
 };
 
 ws.onclose = (ev) => {
   if (!exited && ev.code !== 1000 && ev.reason) {
     process.stderr.write(`dam-run: ${ev.reason}\n`);
   }
-  finish(exited ? exitCode : ev.code === 1000 ? exitCode : 1);
+  finish(1); // a close without a prior OP_EXIT is a failure
 };
 ws.onerror = () => {
   if (!exited) process.stderr.write("dam-run: connection failed\n");

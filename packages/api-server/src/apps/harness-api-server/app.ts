@@ -71,7 +71,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const runs = createRunsService(k8sClient);
   const runRelay = createRunRelay({
     k8s: k8sClient,
-    namespace: config.namespace,
     runs,
   });
 

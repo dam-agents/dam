@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-25
+Last verified: 2026-06-28
 
 ## Overview
 
@@ -160,9 +160,6 @@ Forks are the third durable concept in the bounded context (alongside Template a
 
 ## Run executors (`dam-run`)
 
-A **Run** is an ephemeral, single-command executor behind the in-pod `dam-run` CLI: `dam-run <cmd>` runs the command in a *separate* sandbox pod that shares the calling pod's image, configuration, and RWX workspace, with stdio streamed through a PTY so it reads as a local invocation. It deliberately reuses the parent Agent's infrastructure rather than standing up its own: the executor runs as the parent's **own** owner and routes egress through the parent's **already-running gateway** (its `HTTPS_PROXY` points at the parent's gateway Service, and one egress NetworkPolicy admits it there), so it needs **no gateway, leaf cert, ServiceAccount, or AuthorizationPolicy of its own** — just a bare Pod plus that NetworkPolicy. The pod boots agent-runtime in **exec-only mode** (`PLATFORM_EXEC_ONLY=1`: serves only `/api/exec` + `/healthz`, skips the runtime-channel hello); credentials reach it as for a fork — placeholder env from the controller plus on-wire injection at the shared gateway — so no runtime channel is needed.
+A **Run** is an ephemeral, single-command executor behind the in-pod `dam-run` CLI: `dam-run <cmd>` runs the command in a *separate* sandbox pod that shares the calling pod's image, configuration, and RWX workspace, with stdio streamed through a PTY so it reads as a local invocation. The executor stands up no infrastructure of its own — just a bare Pod plus one egress NetworkPolicy admitting it to the parent's existing gateway, whose credentials and egress boundary it borrows wholesale (see [security-and-credentials](security-and-credentials.md#dam-run-executor-pods)). Its pod boots agent-runtime in **exec-only mode** — an exec endpoint plus health, no runtime-channel hello.
 
-The flow is synchronous to a single streaming connection: `dam-run` opens a WebSocket to the api-server harness port (`/api/agents/<id>/run` — the only endpoint the agent pod can reach, pinned to its own SA at the waypoint), the api-server writes a `Run` CR and waits for the controller-published `podIP`, then relays terminal-protocol frames between `dam-run` and the executor's `/api/exec`. When the stream closes (command exits, or the `dam-run` process dies), the api-server deletes the `Run` CR and the controller GC-reaps the executor pod + NetworkPolicy (both owner-refed to the `Run`) — so the ephemeral pod dies with the wrapper. The api-server owner-refs the `Run` to the parent Agent at create time, so deleting the Agent cascade-deletes any in-flight `Run` (and its executor) too. Two backstops cover a `Run` the api-server never cleaned up (e.g. it crashed mid-stream): a controller hard-lifetime reaper, and a harness-boot sweep that deletes any `Run` a fresh process holds no live relay for.
-
-Because the executor borrows the parent gateway's identity it can in principle reach `/api/agents/<parent>/run` itself, so recursion (an executor spawning executors) is bounded by a **per-agent concurrent-run cap** in the api-server rather than blocked structurally. See [security-and-credentials](security-and-credentials.md).
-
+The flow is synchronous over one WebSocket: `dam-run` dials the api-server harness port, which writes a `Run` CR, waits for the controller-published pod IP, then relays terminal-protocol frames both ways. When the stream closes (command exits, or `dam-run` dies) the api-server deletes the `Run`, and K8s GC reaps the owner-refed executor pod + NetworkPolicy. The `Run` is itself owner-refed to the parent Agent, so deleting the Agent cascade-deletes any in-flight `Run`. Two backstops cover a `Run` the api-server never cleaned up (e.g. a crash mid-stream): a controller hard-lifetime reaper and a harness-boot sweep that deletes any `Run` a fresh process holds no live relay for.

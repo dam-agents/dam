@@ -14,36 +14,40 @@ import {
 // from the api-server, which only dials it on a Run executor pod), and it
 // forwards argv supplied by the agent itself — the agent is already trusted to
 // run arbitrary code in its own sandbox, so executing argv verbatim is the
-// point, not a new trust boundary.
-//
-// The command runs in a PTY and speaks the same frame protocol as the terminal
-// endpoint, so stdio streams back as if run locally; the exit code (0-255;
-// signals reported as 128+signum) is relayed so `dam-run` exits with it.
+// point, not a new trust boundary. Speaks the terminal frame protocol; signals
+// are reported as exit code 128+signum.
 
-export interface ExecOptions {
-  argv: string[];
-  cols: number;
-  rows: number;
-  cwd: string;
-  env: NodeJS.ProcessEnv;
-  log: (msg: string) => void;
-}
-
-export function attachExec(ws: WsWebSocket, opts: ExecOptions): void {
+export function attachExec(
+  ws: WsWebSocket,
+  {
+    argv,
+    cols,
+    rows,
+    cwd,
+    env,
+    log,
+  }: {
+    argv: string[];
+    cols: number;
+    rows: number;
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    log: (msg: string) => void;
+  },
+): void {
   ws.binaryType = "nodebuffer";
-  const { argv, cwd, env } = opts;
 
   let pty: nodePty.IPty;
   try {
     pty = nodePty.spawn(argv[0]!, argv.slice(1), {
       name: "xterm-256color",
-      cols: opts.cols,
-      rows: opts.rows,
+      cols,
+      rows,
       cwd,
       env: env as Record<string, string>,
     });
   } catch (e) {
-    opts.log(`spawn failed: ${String(e)}`);
+    log(`spawn failed: ${String(e)}`);
     if (ws.readyState === 1) {
       ws.send(
         encodeDataFrame(

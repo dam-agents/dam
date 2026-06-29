@@ -19,28 +19,14 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-func runToUnstructured(t *testing.T, run *apiv1.Run) *unstructured.Unstructured {
-	t.Helper()
-	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(run)
-	require.NoError(t, err)
-	u := &unstructured.Unstructured{Object: raw}
-	u.SetAPIVersion(apiv1.GroupVersion.String())
-	u.SetKind("Run")
-	return u
-}
-
-// The executor routes through the parent's already-running gateway, so the
-// parent gateway Service must exist with a ClusterIP.
-func parentGatewayService() *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent"), Namespace: "test-agents"},
-		Spec:       corev1.ServiceSpec{ClusterIP: "10.96.7.7"},
-	}
-}
-
 func setupRunReconciler(t *testing.T, run *apiv1.Run, objects ...runtime.Object) (*RunReconciler, *fake.Clientset) {
 	t.Helper()
-	objects = append(objects, parentGatewayService())
+	// The executor routes through the parent's already-running gateway, so the
+	// parent gateway Service must exist with a ClusterIP.
+	objects = append(objects, &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent"), Namespace: "test-agents"},
+		Spec:       corev1.ServiceSpec{ClusterIP: "10.96.7.7"},
+	})
 	client := fake.NewSimpleClientset(objects...)
 	cfg := &config.Config{
 		Namespace:          "test-agents",
@@ -56,12 +42,13 @@ func setupRunReconciler(t *testing.T, run *apiv1.Run, objects ...runtime.Object)
 			ImagePullPolicy: "IfNotPresent",
 		},
 	}
-	var dynObjs []runtime.Object
-	if run != nil {
-		dynObjs = append(dynObjs, runToUnstructured(t, run))
-	}
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(run)
+	require.NoError(t, err)
+	u := &unstructured.Unstructured{Object: raw}
+	u.SetAPIVersion(apiv1.GroupVersion.String())
+	u.SetKind("Run")
 	getter := &fakeGetter{agents: map[string]*apiv1.Agent{"my-agent": agentCR()}}
-	r := NewRunReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic(dynObjs...))
+	r := NewRunReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic(u))
 	r.now = func() time.Time { return time.Unix(1_000_000, 0) }
 	return r, client
 }
@@ -71,7 +58,6 @@ func runCR(name string, createdAt time.Time) *apiv1.Run {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents", UID: apitypes.UID("run-uid-" + name),
 			CreationTimestamp: metav1.Time{Time: createdAt},
-			Labels:            map[string]string{LabelAgent: "my-agent", RunLabelRunID: name},
 		},
 		Spec: apiv1.RunSpec{AgentName: "my-agent"},
 	}

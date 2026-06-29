@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
@@ -12,6 +13,35 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
+
+// createPodIfMissing creates desired only if no pod of that name exists. Bare
+// ephemeral pods are immutable in their key fields, so an existing pod with the
+// same name is authoritative and left running. Owner references GC it with its
+// owner. Shared by the Fork and Run reconcilers.
+func createPodIfMissing(ctx context.Context, client kubernetes.Interface, desired *corev1.Pod) error {
+	_, err := client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		_, err = client.CoreV1().Pods(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+	}
+	return err
+}
+
+// findEphemeralPod returns the live (non-terminating) pod labeled labelKey=name,
+// or nil if none. Shared by the Fork and Run reconcilers.
+func findEphemeralPod(ctx context.Context, client kubernetes.Interface, namespace, labelKey, name string) (*corev1.Pod, error) {
+	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", labelKey, name),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp == nil {
+			return &pods.Items[i], nil
+		}
+	}
+	return nil, nil
+}
 
 // resolveParentWorkspacePVCs maps each persisted mount of the parent Agent to
 // the PVC name backing it, looked up by (agent, mount) label so a warm-pool
@@ -120,8 +150,6 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 	}
 	podLabels["istio.io/dataplane-mode"] = "none"
 
-	caCertPath := "/etc/platform/ca/ca.crt"
-
 	// Paired gateway's ClusterIP literal — IP-direct so HTTPS_PROXY has zero
 	// DNS dependency. The reconciler requeues until the gateway Service has a
 	// ClusterIP, so the IP is always known by the time we get here.
@@ -132,7 +160,7 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "PLATFORM_AGENT_ID", Value: c.parentAgentID},
@@ -280,7 +308,6 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		VolumeMounts:    volumeMounts,
 	}}
 
-	falseVal := false
 	podMeta := metav1.ObjectMeta{Labels: podLabels}
 	applyAgentBaseMeta(&podMeta, base)
 
@@ -291,8 +318,8 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		ImagePullSecrets:              pullSecrets,
 		SecurityContext:               base.PodSecurityContext,
 		InitContainers:                initContainers,
-		AutomountServiceAccountToken:  &falseVal,
-		ShareProcessNamespace:         &falseVal,
+		AutomountServiceAccountToken:  ptrBool(false),
+		ShareProcessNamespace:         ptrBool(false),
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}

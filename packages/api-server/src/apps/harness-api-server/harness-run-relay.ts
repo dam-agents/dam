@@ -1,8 +1,10 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import type { RunsService } from "../../modules/runs/services/runs-service.js";
-import { RunFailedError } from "../../modules/runs/services/runs-service.js";
+import {
+  RunFailedError,
+  type RunsService,
+} from "../../modules/runs/services/runs-service.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
 
@@ -14,20 +16,7 @@ const MAX_CONCURRENT_RUNS_PER_AGENT = 4;
 
 const PENDING_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
 
-export interface RunRelay {
-  handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    agentId: string,
-  ): void;
-}
-
-export function createRunRelay(deps: {
-  k8s: K8sClient;
-  namespace: string;
-  runs: RunsService;
-}): RunRelay {
+export function createRunRelay(deps: { k8s: K8sClient; runs: RunsService }) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const livePerAgent = new Map<string, number>();
 

@@ -1,20 +1,27 @@
+import { z } from "zod";
+import type { RunSpecCR } from "api-server-api";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
-import {
-  RUNS_PLURAL,
-  buildRunObject,
-  parseRunStatus,
-} from "../infrastructure/run-mappers.js";
+
+const RUNS_PLURAL = "runs";
+const API_VERSION = "agent-platform.ai/v1";
 
 // Slightly over the controller's RunPodReadyTimeout (120s) so a controller-set
 // Failed/Timeout status surfaces as the error rather than our own generic one.
 const READY_TIMEOUT_MS = 125_000;
 const POLL_INTERVAL_MS = 500;
 
+const runStatusSchema = z
+  .object({
+    phase: z.string().optional(),
+    podIP: z.string().optional(),
+    error: z
+      .object({ reason: z.string().optional(), detail: z.string().optional() })
+      .optional(),
+  })
+  .nullish();
+
 export class RunFailedError extends Error {
-  constructor(
-    public readonly reason: string,
-    detail?: string,
-  ) {
+  constructor(reason: string, detail?: string) {
     super(detail ? `${reason}: ${detail}` : reason);
     this.name = "RunFailedError";
   }
@@ -36,18 +43,29 @@ export interface RunsService {
 }
 
 export function createRunsService(k8s: K8sClient): RunsService {
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
   return {
     newRunId() {
       return `run-${crypto.randomUUID()}`;
     },
 
     async create(runId, agentId, agentUid) {
-      await k8s.createCustomObject(
-        RUNS_PLURAL,
-        buildRunObject({ runId, agentId, agentUid }),
-      );
+      // CR labels are for kubectl/debugging; GC is by the owner reference to
+      // the parent Agent, so deleting it cascade-deletes in-flight Runs.
+      await k8s.createCustomObject(RUNS_PLURAL, {
+        apiVersion: API_VERSION,
+        kind: "Run",
+        metadata: {
+          name: runId,
+          labels: {
+            "agent-platform.ai/agent": agentId,
+            "agent-platform.ai/run-id": runId,
+          },
+          ownerReferences: [
+            { apiVersion: API_VERSION, kind: "Agent", name: agentId, uid: agentUid },
+          ],
+        },
+        spec: { agentName: agentId } satisfies RunSpecCR,
+      });
     },
 
     async waitReady(runId, signal) {
@@ -57,7 +75,7 @@ export function createRunsService(k8s: K8sClient): RunsService {
         const obj = await k8s.getCustomObject(RUNS_PLURAL, runId);
         if (!obj)
           throw new RunFailedError("OrchestrationFailed", "run disappeared");
-        const status = parseRunStatus(obj);
+        const status = runStatusSchema.parse(obj.status ?? null);
         if (status?.phase === "Ready" && status.podIP) return status.podIP;
         if (status?.phase === "Failed") {
           throw new RunFailedError(
@@ -65,7 +83,7 @@ export function createRunsService(k8s: K8sClient): RunsService {
             status.error?.detail,
           );
         }
-        await sleep(POLL_INTERVAL_MS);
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       }
       throw new RunFailedError(
         "Timeout",

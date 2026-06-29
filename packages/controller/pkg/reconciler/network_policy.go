@@ -85,10 +85,11 @@ func buildAgentEgressNetworkPolicyTo(selectorPair, gatewayPair string, cfg *conf
 }
 
 // applyNetworkPolicy creates or updates a NetworkPolicy. Mirrors
-// applyAuthorizationPolicy / applyServiceAccount shape.
+// applyAuthorizationPolicy / applyServiceAccount shape. Shared by the Agent,
+// Fork, and Run reconcilers.
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {
 	cli := client.NetworkingV1().NetworkPolicies(desired.Namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
 			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
@@ -101,25 +102,8 @@ func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desire
 		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
-}
-
-func (r *AgentReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
+	if err != nil {
 		return fmt.Errorf("applying agent egress NetworkPolicy: %w", err)
-	}
-	return nil
-}
-
-func (r *ForkReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
-		return fmt.Errorf("applying fork agent egress NetworkPolicy: %w", err)
-	}
-	return nil
-}
-
-func (r *RunReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
-		return fmt.Errorf("applying run agent egress NetworkPolicy: %w", err)
 	}
 	return nil
 }

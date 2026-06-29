@@ -10,23 +10,8 @@ import type {
 
 // Minimal K8sClient stub: only the custom-object methods runs-service touches.
 function fakeK8s(overrides: Partial<K8sClient>): K8sClient {
-  const base: K8sClient = {
-    namespace: "test",
-    listSecrets: async () => [],
-    getSecret: async () => null,
-    createSecret: async () => ({}) as never,
-    replaceSecret: async () => ({}) as never,
-    deleteSecret: async () => {},
-    getCustomObject: async () => null,
-    listCustomObjects: async () => [],
-    createCustomObject: async () => ({}) as KubeObject,
-    patchCustomObject: async () => ({}) as KubeObject,
-    deleteCustomObject: async () => {},
-  };
-  return { ...base, ...overrides };
+  return overrides as unknown as K8sClient;
 }
-
-const liveSignal = () => new AbortController().signal;
 
 describe("runs-service", () => {
   it("creates a Run CR with the agent name, owner-refed to the parent agent", async () => {
@@ -62,7 +47,9 @@ describe("runs-service", () => {
         },
       }),
     );
-    expect(await svc.waitReady("run-x", liveSignal())).toBe("10.4.5.6");
+    expect(
+      await svc.waitReady("run-x", new AbortController().signal),
+    ).toBe("10.4.5.6");
   });
 
   it("throws RunFailedError with the controller's reason on Failed", async () => {
@@ -77,9 +64,9 @@ describe("runs-service", () => {
           }) as KubeObject,
       }),
     );
-    await expect(svc.waitReady("run-x", liveSignal())).rejects.toBeInstanceOf(
-      RunFailedError,
-    );
+    await expect(
+      svc.waitReady("run-x", new AbortController().signal),
+    ).rejects.toBeInstanceOf(RunFailedError);
   });
 
   it("aborts the wait when the signal fires", async () => {

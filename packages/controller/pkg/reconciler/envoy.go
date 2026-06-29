@@ -1223,8 +1223,6 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 			ReadOnly:  true,
 		})
 	}
-	readOnlyRoot := true
-	runAsNonRoot := true
 	return corev1.Container{
 		Name:            "envoy",
 		Image:           cfg.EnvoyImage,
@@ -1242,8 +1240,8 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 		},
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities:           &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			ReadOnlyRootFilesystem: &readOnlyRoot,
-			RunAsNonRoot:           &runAsNonRoot,
+			ReadOnlyRootFilesystem: ptrBool(true),
+			RunAsNonRoot:           ptrBool(true),
 		},
 	}
 }
