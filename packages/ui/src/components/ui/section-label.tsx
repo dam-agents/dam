@@ -2,10 +2,12 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { labelVariants } from "./label.js";
+
 /**
- * The project's section/field label. Once the redesign lands, this should
- * replace the Radix `Label` primitive (`@/components/ui/label`) everywhere so
- * there is a single label component across the app.
+ * The project's label, sharing its style with the Radix `Label`. Renders a
+ * `<span>` for section/group headings and as the label text inside
+ * `FormField`. Reach for `Label` when the element must be a real `<label>`.
  */
 export function SectionLabel({
   className,
@@ -17,13 +19,7 @@ export function SectionLabel({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={cn(
-        "text-[11px] font-medium uppercase leading-[17.05px] tracking-[1.65px] text-muted-foreground",
-        spaced && "mb-3 block",
-        className,
-      )}
-    >
+    <span className={cn(labelVariants(), spaced && "mb-3 block", className)}>
       {children}
     </span>
   );
