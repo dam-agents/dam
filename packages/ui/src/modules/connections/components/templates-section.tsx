@@ -5,6 +5,7 @@ import {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -77,7 +78,7 @@ export function ConnectionTemplatesSection() {
       {!loading && conns.length > 0 && (
         <div className="mb-8">
           <SectionLabel spaced>My connections</SectionLabel>
-          <div className="flex flex-col gap-3">
+          <Inset className="flex flex-col gap-3">
             {conns.map((c) => (
               <ConnectionRow
                 key={c.id}
@@ -98,7 +99,7 @@ export function ConnectionTemplatesSection() {
                 />
               </ConnectionRow>
             ))}
-          </div>
+          </Inset>
         </div>
       )}
 
@@ -110,7 +111,7 @@ export function ConnectionTemplatesSection() {
             return (
               <div key={cat}>
                 <SectionLabel spaced>{CATEGORY_LABEL[cat]}</SectionLabel>
-                <div className="flex flex-col gap-3">
+                <Inset className="flex flex-col gap-3">
                   {list.map((t) => (
                     <ConnectionCatalogRow
                       key={t.id}
@@ -118,7 +119,7 @@ export function ConnectionTemplatesSection() {
                       onConnect={() => setCreating(t)}
                     />
                   ))}
-                </div>
+                </Inset>
               </div>
             );
           })}
