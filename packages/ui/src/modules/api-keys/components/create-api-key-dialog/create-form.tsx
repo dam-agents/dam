@@ -1,6 +1,7 @@
 import { AGENT_SCOPES, CREDENTIAL_SCOPES, type Scope } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -86,16 +87,16 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
       </DialogHeader>
       <DialogBody>
         <div className="mb-4">
-          <SectionLabel className="mb-1 block">Name</SectionLabel>
-          <Input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. CI release pipeline"
-            autoFocus
-            maxLength={100}
-            aria-label="Name"
-          />
+          <FormField label="Name">
+            <Input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. CI release pipeline"
+              autoFocus
+              maxLength={100}
+            />
+          </FormField>
         </div>
 
         <div className="mb-4">
