@@ -43,6 +43,9 @@ export const KIND_AGENT = "Agent";
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 
+// User-initiated hard stop (#1900): non-empty ⇒ controller scales to zero now; any bump clears it.
+export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+
 // Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status

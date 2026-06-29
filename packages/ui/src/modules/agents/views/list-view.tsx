@@ -6,9 +6,10 @@ import { Card } from "@/components/ui/card";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
+import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { useDeleteAgent } from "../api/mutations.js";
+import { useDeleteAgent, useStopAgentMutation } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import {
@@ -36,6 +37,7 @@ export function ListView() {
   useSyncRestartingAgents();
 
   const deleteAgent = useDeleteAgent();
+  const stopAgent = useStopAgentMutation();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
@@ -89,6 +91,8 @@ export function ListView() {
         )}
       </div>
 
+      {agents.length > 0 && <BudgetMeter />}
+
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && agents.length === 0 && (
@@ -119,6 +123,7 @@ export function ListView() {
               onSelect={() => selectAgent(agent.id)}
               onWake={() => wakeAgent.wake(agent.id)}
               onRestart={() => restartAgent(agent.id)}
+              onStop={() => stopAgent.mutate({ id: agent.id })}
               onConfigure={() => navigateToSandboxSettings(agent.id)}
               onDelete={() => void deleteSandbox(agent)}
             />

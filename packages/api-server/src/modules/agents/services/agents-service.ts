@@ -27,6 +27,14 @@ export interface ContributionsSettledPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
 }
+
+/** Rejects a create over the owner's budget (#1900); wakes are gated in the repository. */
+export interface BudgetGate {
+  assertCreateAllowed(
+    owner: string,
+    requests: { cpu?: string; memory?: string } | undefined,
+  ): Promise<void>;
+}
 import {
   assembleAgent,
   type InfraAgent,
@@ -107,6 +115,8 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Per-user CPU/memory ceiling; pass the allow-all gate to disable. */
+  budgetGate: BudgetGate;
   /** Single-shot create: seeds spec grant fields before first render, then
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
@@ -317,6 +327,14 @@ export function createAgentsService(deps: {
         });
       }
       const owner = deps.owner;
+      await deps.budgetGate.assertCreateAllowed(
+        owner,
+        (
+          spec.resources as
+            | { requests?: { cpu?: string; memory?: string } }
+            | undefined
+        )?.requests,
+      );
       const agentId = generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -596,6 +614,31 @@ export function createAgentsService(deps: {
         result: "success",
       });
       emit({ type: EventType.AgentWoken, agentId: id });
+      return project(infra);
+    },
+
+    async stop(id) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.stop" },
+        });
+        return null;
+      }
+      const infra = await deps.repo.requestStop(id);
+      if (!infra) return null;
+      securityLog("info", "agent.stop", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
       return project(infra);
     },
 

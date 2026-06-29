@@ -1,4 +1,4 @@
-export { composeAgentsModule } from "./compose.js";
+export { composeAgentsModule, allowAllBudgetGate } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,

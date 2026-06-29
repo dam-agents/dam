@@ -25,6 +25,7 @@ export {
   experimentArms,
   experimentRuns,
   runArtifacts,
+  userBudgets,
 } from "./schema.js";
 export {
   eq,

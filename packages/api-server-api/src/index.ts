@@ -63,6 +63,7 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
+export type { BudgetUsage, BudgetsService } from "./modules/budgets/types.js";
 export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {

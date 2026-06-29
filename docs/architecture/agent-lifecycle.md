@@ -170,6 +170,10 @@ It's a blunt instrument, not a fix for the blind spot: a longer window (or `0`) 
 
 The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake. Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 
+Idle hibernation is **not** the enforcement mechanism for a fixed compute pool — it is a convenience that helps a user drift back under their own ceiling. The ceiling itself is the [per-user resource budget](budgets.md): the api-server rejects a create or wake that would push a user's running agents past their CPU/memory share, so a user who pins agents awake simply consumes their budget rather than escaping it.
+
+To free room without waiting for the idle checker — or for an agent pinned awake by an open session — the user issues a **hard stop**: the api-server stamps `agent-platform.ai/stop-requested` (and clears `active-session`), which the reconciler honors by scaling the pair to zero immediately, bypassing the idle probe. Any later activity poke clears the annotation so the agent can wake again. This is the only scale-down path other than the idle checker, and the only way to reclaim a keep-awake-pinned agent without deleting it.
+
 ### Delete
 
 The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions are agent-owned files on the PVC and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).

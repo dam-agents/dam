@@ -6,24 +6,20 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Activity annotations the api-server stamps on an Agent. They are the only
-// inputs to the run/hibernate decision now that desiredState is gone.
+// Activity annotations the api-server stamps on an Agent — the only inputs to the run/hibernate decision.
 const (
 	annActiveSession = "agent-platform.ai/active-session"
 	annLastActivity  = "agent-platform.ai/last-activity"
+	// User-initiated hard stop (#1900): forces hibernation, overriding activity and disabled auto-hibernation.
+	annStopRequested = "agent-platform.ai/stop-requested"
 )
 
-// shouldRun reports whether an agent should be scaled up, derived purely from
-// activity annotations. It is the single decision function shared by the
-// reconciler (which scales *up* when it returns true) and the idle checker
-// (which treats a false result as a scale-*down* candidate), so the two can
-// never disagree.
-//
-// It fails open: an agent runs when auto-hibernation is disabled
-// (idleTimeout <= 0) or when the last-activity stamp is missing or unparseable.
-// Hibernation is therefore only ever the result of a *positive* idle signal,
-// never of absent data.
+// shouldRun is the single run/hibernate decision shared by the reconciler (scales up on true)
+// and the idle checker (treats false as a scale-down candidate). Fails open on missing data.
 func shouldRun(annotations map[string]string, idleTimeout time.Duration, now time.Time) bool {
+	if annotations[annStopRequested] != "" {
+		return false
+	}
 	if idleTimeout <= 0 {
 		return true
 	}

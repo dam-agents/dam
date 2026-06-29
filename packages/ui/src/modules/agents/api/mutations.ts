@@ -143,6 +143,20 @@ export function useWakeAgentMutation() {
   });
 }
 
+/** Hard stop: scales the agent to zero to free its budget without deleting it. */
+export function useStopAgentMutation() {
+  return useMutation({
+    ...trpc.agents.stop.mutationOptions(),
+    meta: {
+      invalidates: [
+        ...invalidatesAgentsList.invalidates,
+        trpc.budgets.usage.queryKey(),
+      ],
+      errorToast: "Failed to stop agent",
+    },
+  });
+}
+
 /**
  * Raw restart mutation. The UI-side "Restarting" pill lifecycle is managed
  * by useRestartAgent in hooks/use-restart-agent.ts — consumers should

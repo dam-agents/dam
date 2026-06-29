@@ -14,6 +14,7 @@ import {
   agentDisconnectTelegramInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
+  agentStopInputSchema,
   agentUpdateInputSchema,
   agentWakeInputSchema,
 } from "./schemas.js";
@@ -91,6 +92,14 @@ export const agentsRouter = t.router({
     .input(agentWakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.wake(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(agent);
+    }),
+
+  stop: manageAgentsProcedure
+    .input(agentStopInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.stop(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),

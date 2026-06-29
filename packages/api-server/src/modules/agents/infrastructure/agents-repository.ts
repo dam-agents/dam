@@ -5,6 +5,7 @@ import {
   ANN_ROLL_REV,
   LABEL_OWNER,
   LAST_ACTIVITY_KEY,
+  STOP_REQUESTED_KEY,
 } from "./labels.js";
 import {
   agentIsOwnedBy,
@@ -27,6 +28,11 @@ import {
 } from "../domain/wake-failure.js";
 import { getLogger } from "../../../core/logger.js";
 
+/** Gate every wake funnels through (#1900); covers the relays that bypass the service. */
+export interface WakeBudgetGate {
+  assertWakeAllowed(agentId: string): Promise<void>;
+}
+
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -47,6 +53,8 @@ export interface AgentsRepository {
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
+  /** Hard stop: stamp `stop-requested` and clear `active-session`; any later bump clears it. */
+  requestStop(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
   /** Resolve an agent CR to its identity. Used by the ext_authz hot path
@@ -71,20 +79,21 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
-export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
-  // Single-flight per agent id. Concurrent callers for the same id share
-  // one in-flight wake+wait+bump; callers for different ids don't block each
-  // other. Correctness does not depend on this (K8s optimistic concurrency
-  // already serializes concurrent writes) — it keeps API load sane under
-  // bursty call patterns.
+export function createAgentsRepository(
+  k8s: K8sClient,
+  budgetGate: WakeBudgetGate,
+): AgentsRepository {
+  // Single-flight per id: same-id callers share one wake+wait+bump (load, not correctness).
   const inflight = new Map<string, Promise<void>>();
 
-  // RFC 7386 merge-patch — no read-modify-write, no resourceVersion, no 409
-  // conflict possible. One round trip.
   async function bumpLastActivity(id: string): Promise<void> {
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
       metadata: {
-        annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
+        annotations: {
+          [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+          // Any activity cancels a pending hard stop so the agent can wake.
+          [STOP_REQUESTED_KEY]: "",
+        },
       },
     });
   }
@@ -151,9 +160,25 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     async wake(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      // Waking is an activity poke — bump last-activity so the
-      // reconciler scales the pair up. There is no desiredState to flip.
+      // Only a real hibernated→running transition spends budget.
+      if (parseInfraAgent(obj).hibernated)
+        await budgetGate.assertWakeAllowed(id);
       await bumpLastActivity(id);
+      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return reread ? parseInfraAgent(reread) : null;
+    },
+
+    async requestStop(id) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          annotations: {
+            [STOP_REQUESTED_KEY]: new Date().toISOString(),
+            [ACTIVE_SESSION_KEY]: "",
+          },
+        },
+      });
       const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
       return reread ? parseInfraAgent(reread) : null;
     },
@@ -198,8 +223,8 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     async wakeIfHibernated(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return false;
-      // Unconditional activity poke; waking an already-running
-      // agent simply keeps it warm.
+      if (parseInfraAgent(obj).hibernated)
+        await budgetGate.assertWakeAllowed(id);
       await bumpLastActivity(id);
       return true;
     },

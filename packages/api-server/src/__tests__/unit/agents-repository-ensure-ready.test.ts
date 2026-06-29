@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { allowAllBudgetGate } from "../../modules/agents/compose.js";
 import type {
   K8sClient,
   KubeObject,
@@ -86,7 +87,7 @@ function harness(initial: KubeObject[]) {
   const lines: Array<Record<string, unknown>> = [];
   configureLogger({ level: "info", write: (l) => lines.push(JSON.parse(l)) });
   const { client, store } = fakeK8s(initial);
-  const repo = createAgentsRepository(client);
+  const repo = createAgentsRepository(client, allowAllBudgetGate);
   return { repo, store, lines };
 }
 
@@ -272,7 +273,7 @@ describe("ensureReady", () => {
       return { client: wrapped };
     })();
     vi.setSystemTime(0);
-    const repo2 = createAgentsRepository(client);
+    const repo2 = createAgentsRepository(client, allowAllBudgetGate);
     const p = repo2.ensureReady("a1");
     await advanceUntilSettled(p);
     await expect(p).resolves.toBeUndefined();

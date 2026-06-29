@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import type { AppRouter as AgentRuntimeRouter } from "agent-runtime-api";
 import type { FilesService } from "api-server-api";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
-import { createAgentsRepository } from "../agents/index.js";
+import { allowAllBudgetGate, createAgentsRepository } from "../agents/index.js";
 import { createK8sClient, podBaseUrl } from "../agents/infrastructure/k8s.js";
 
 export function composeFilesModule(
@@ -12,7 +12,10 @@ export function composeFilesModule(
   namespace: string,
   ownerSub: string,
 ): FilesService {
-  const agentsRepo = createAgentsRepository(createK8sClient(api, namespace));
+  const agentsRepo = createAgentsRepository(
+    createK8sClient(api, namespace),
+    allowAllBudgetGate,
+  );
   return {
     async upload(input) {
       if (!(await agentsRepo.isOwnedBy(input.agentId, ownerSub))) {
