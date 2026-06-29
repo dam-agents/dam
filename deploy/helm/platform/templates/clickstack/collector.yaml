@@ -107,7 +107,9 @@ spec:
         - name: collector
           image: {{ .Values.clickstack.collector.image }}
           args: ["--config=/etc/otelcol/config.yaml"]
-          # ClickHouse conn from the shared config/secret; OPAMP_SERVER_URL there is ignored (no opamp in our config).
+          # ClickHouse conn from HyperDX's clickstack-config/secret (rendered with the subchart, not the
+          # disabled bundled collector), so co-gated with this collector under clickstack.enabled.
+          # OPAMP_SERVER_URL there is ignored (no opamp in our config).
           envFrom:
             - configMapRef:
                 name: clickstack-config
