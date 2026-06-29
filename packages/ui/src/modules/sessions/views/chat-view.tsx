@@ -13,6 +13,7 @@ import { AgentConfigTearsheet } from "../components/agent-config-tearsheet.js";
 import { ChatHeader } from "../components/chat-header.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ChatMessages } from "../components/chat-messages.js";
+import { ComponentShowcase } from "../components/component-showcase.js";
 import { ModelSelector } from "../components/model-selector.js";
 import { SessionLogsTearsheet } from "../components/session-logs-tearsheet.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -55,6 +56,7 @@ export function ChatView() {
     sessionId: string;
     title: string;
   } | null>(null);
+  const [showShowcase, setShowShowcase] = useState(false);
 
   const sessions: SessionView[] = useMemo(
     () => [
@@ -160,6 +162,16 @@ export function ChatView() {
         updatedAt: "2026-06-16T05:30:00Z",
         scheduleId: "sched-002",
       },
+      // 11. Showcase — all component types
+      {
+        sessionId: "sess-showcase",
+        agentId: selectedAgent ?? "",
+        type: "regular",
+        mode: SessionMode.Chat,
+        createdAt: "2026-06-28T10:00:00Z",
+        title: "Setup notifications table + API",
+        updatedAt: "2026-06-28T11:00:00Z",
+      },
     ],
     [selectedAgent],
   );
@@ -168,10 +180,9 @@ export function ChatView() {
   const [activeTab, setActiveTab] = useState<string | null>("sess-001");
 
   const messages = activeTab ? (MOCK_MESSAGES[activeTab] ?? []) : [];
-  const hasPendingPermission =
-    activeTab === "sess-006" ||
-    activeTab === "sess-007" ||
-    activeTab === "sess-sched-002";
+  const hasPendingPermission = pendingPermissions.some(
+    (p) => p.sessionId === activeTab,
+  );
 
   useEffect(() => {
     const state = useStore.getState();
@@ -322,7 +333,8 @@ export function ChatView() {
           />
 
           {hasPendingPermission && (
-            <div className="px-4 md:px-8 flex flex-col gap-1.5 mb-2">
+            <div className="px-4 md:px-8">
+            <div className="mx-auto max-w-[680px] flex flex-col gap-1.5 mb-2">
               {/* ACP native: Bash tool call */}
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
                 <div className="flex items-center gap-2.5">
@@ -331,7 +343,7 @@ export function ChatView() {
                     Bash
                   </span>
                   <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    rm -rf node_modules && npm install
+                    rm -rf node_modules &amp;&amp; npm install
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
                     <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
@@ -342,9 +354,6 @@ export function ChatView() {
                     </button>
                     <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
                       Reject
-                    </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
-                      Reject always
                     </button>
                   </div>
                 </div>
@@ -369,9 +378,6 @@ export function ChatView() {
                     <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
                       Reject
                     </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
-                      Reject always
-                    </button>
                   </div>
                 </div>
               </div>
@@ -387,16 +393,13 @@ export function ChatView() {
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
                     <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow once
+                      Allow
                     </button>
                     <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Allow host
+                      Always
                     </button>
                     <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
                       Deny
-                    </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
-                      Dismiss
                     </button>
                   </div>
                 </div>
@@ -413,20 +416,18 @@ export function ChatView() {
                   </code>
                   <div className="flex items-center gap-1 shrink-0">
                     <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow once
+                      Allow
                     </button>
                     <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Allow host
+                      Always
                     </button>
                     <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
                       Deny
                     </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors">
-                      Dismiss
-                    </button>
                   </div>
                 </div>
               </div>
+            </div>
             </div>
           )}
           <ChatInput
@@ -457,6 +458,13 @@ export function ChatView() {
           onClose={() => setLogsTearsheet(null)}
         />
       )}
+      {showShowcase && <ComponentShowcase onClose={() => setShowShowcase(false)} />}
+      <button
+        onClick={() => setShowShowcase(true)}
+        className="fixed bottom-5 right-5 z-40 h-9 px-3 rounded-full bg-foreground text-background text-[12px] font-medium shadow-lg hover:opacity-90 transition-opacity"
+      >
+        Components
+      </button>
     </div>
   );
 }

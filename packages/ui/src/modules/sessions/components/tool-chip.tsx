@@ -3,64 +3,63 @@ import { useState } from "react";
 
 import type { ToolChip as T } from "../../../types.js";
 
-const dotColor: Record<string, string> = {
-  pending: "bg-muted-foreground",
-  in_progress: "bg-emerald-400",
-  running: "bg-emerald-400",
-  pending_approval: "bg-warning",
-  completed: "bg-emerald-400",
-  failed: "bg-destructive",
-};
-
 function stripFences(text: string): string {
   return text.replace(/^```\w*\n?/, "").replace(/\n?```\s*$/, "");
 }
 
+const statusSuffix: Record<string, string | null> = {
+  pending: null,
+  in_progress: "running…",
+  running: "running…",
+  pending_approval: "awaiting approval",
+  completed: null,
+  failed: "failed",
+};
+
 export function ToolChip({ chip }: { chip: T }) {
   const [open, setOpen] = useState(false);
   const hasContent = chip.content && chip.content.length > 0;
-  const dot = dotColor[chip.status] ?? dotColor.pending;
-  const isPendingApproval = chip.status === "pending_approval";
+  const suffix = statusSuffix[chip.status] ?? null;
+  const isFailed = chip.status === "failed";
 
   return (
-    <div className="text-[13px] max-w-full">
+    <div className="max-w-full">
       <button
         type="button"
-        className={`inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[13px] text-foreground/80 max-w-full transition-colors ${hasContent ? "cursor-pointer hover:bg-muted/50" : "cursor-default"}`}
+        className={`inline-flex items-center gap-1.5 py-0.5 text-[12px] font-mono max-w-full transition-colors ${
+          hasContent
+            ? "cursor-pointer text-muted-foreground hover:text-foreground"
+            : "cursor-default text-muted-foreground"
+        }`}
         onClick={hasContent ? () => setOpen((o) => !o) : undefined}
       >
-        <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
         {hasContent &&
           (open ? (
-            <ChevronDown size={11} className="shrink-0 text-muted-foreground" />
+            <ChevronDown size={11} className="shrink-0 opacity-50" />
           ) : (
-            <ChevronRight
-              size={11}
-              className="shrink-0 text-muted-foreground"
-            />
+            <ChevronRight size={11} className="shrink-0 opacity-50" />
           ))}
         <span className="truncate">{chip.title}</span>
+        {suffix && (
+          <span
+            className={`shrink-0 text-[11px] ${isFailed ? "text-destructive" : "opacity-50"}`}
+          >
+            — {suffix}
+          </span>
+        )}
       </button>
       {open && chip.content && (
-        <div className="mt-1 rounded-lg bg-muted border border-border overflow-hidden">
+        <div className="mt-0.5 ml-4 pl-3 overflow-hidden">
           {chip.content.map((c, i) =>
             c.text ? (
               <pre
                 key={i}
-                className="px-3 py-1.5 text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]"
+                className="text-[11px] font-mono text-muted-foreground/70 whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]"
               >
                 {stripFences(c.text)}
               </pre>
             ) : null,
           )}
-        </div>
-      )}
-      {isPendingApproval && (
-        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-warning">
-          <span className="w-2.5 h-2.5 rounded-full bg-warning animate-pulse shrink-0" />
-          <span className="font-medium">
-            Waiting for your approval to proceed
-          </span>
         </div>
       )}
     </div>

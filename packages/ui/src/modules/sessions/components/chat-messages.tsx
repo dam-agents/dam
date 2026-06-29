@@ -97,10 +97,17 @@ export function ChatMessages({
               </p>
             </div>
           )}
-          {messages.map((m) =>
-            m.notice ? (
-              <div key={m.id} className="flex justify-center anim-in">
-                <span className="text-[11px] italic text-muted-foreground bg-muted/50 rounded-full px-3 py-1">
+          {messages.map((m, mIdx) => {
+            const prevMsg = mIdx > 0 ? messages[mIdx - 1] : null;
+            const showLabel =
+              m.role === "user" ||
+              (m.role === "assistant" &&
+                (!prevMsg || prevMsg.role !== "assistant" || prevMsg.notice));
+
+            return m.notice ? (
+              <div key={m.id} className="flex items-center gap-3 anim-in my-2">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                   {m.parts.find((p) => p.kind === "text")?.kind === "text"
                     ? (
                         m.parts.find((p) => p.kind === "text") as {
@@ -109,15 +116,18 @@ export function ChatMessages({
                       ).text
                     : "…"}
                 </span>
+                <div className="flex-1 h-px bg-border" />
               </div>
             ) : (
               <div
                 key={m.id}
                 className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
               >
-                <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-                  {m.role === "user" ? "You" : "Agent"}
-                </span>
+                {showLabel && (
+                  <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
+                    {m.role === "user" ? "You" : "Agent"}
+                  </span>
+                )}
                 {m.error ? (
                   <SendErrorCard
                     error={m.error.message}
@@ -131,37 +141,19 @@ export function ChatMessages({
                         : undefined
                     }
                   />
-                ) : (
-                  <div
-                    className={
-                      m.role === "user"
-                        ? "flex flex-col gap-2 rounded-lg border border-border bg-card px-5 py-3 text-[14px] text-foreground max-w-[620px]"
-                        : "flex flex-col gap-2 max-w-full text-[14px] text-foreground"
-                    }
-                  >
+                ) : m.role === "user" ? (
+                  <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-5 py-3 text-[14px] text-foreground max-w-[620px]">
                     {m.parts.map((p, i) =>
                       p.kind === "text" ? (
-                        m.role === "assistant" ? (
-                          <Markdown key={i} onFileClick={onOpenFile}>
-                            {p.text}
-                          </Markdown>
-                        ) : (
-                          <span
-                            key={i}
-                            className="whitespace-pre-wrap break-words"
-                          >
-                            {p.text}
-                            {m.streaming && i === m.parts.length - 1 && (
-                              <span className="inline-block w-[7px] h-4 bg-primary ml-0.5 align-text-bottom anim-blink rounded-sm" />
-                            )}
-                          </span>
-                        )
-                      ) : p.kind === "thought" ? (
-                        <ThoughtBlock
+                        <span
                           key={i}
-                          text={p.text}
-                          streaming={m.streaming}
-                        />
+                          className="whitespace-pre-wrap break-words"
+                        >
+                          {p.text}
+                          {m.streaming && i === m.parts.length - 1 && (
+                            <span className="inline-block w-[7px] h-4 bg-primary ml-0.5 align-text-bottom anim-blink rounded-sm" />
+                          )}
+                        </span>
                       ) : p.kind === "image" ? (
                         <img
                           key={i}
@@ -189,10 +181,77 @@ export function ChatMessages({
                             </span>
                           )}
                         </div>
-                      ) : (
-                        <ToolChip key={i} chip={p} />
-                      ),
+                      ) : null,
                     )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 max-w-full">
+                    {(() => {
+                      const actions = m.parts.filter(
+                        (p) => p.kind === "tool" || p.kind === "thought",
+                      );
+                      const content = m.parts.filter(
+                        (p) =>
+                          p.kind !== "tool" && p.kind !== "thought",
+                      );
+                      return (
+                        <>
+                          {actions.length > 0 && (
+                            <div className="flex flex-col gap-0.5 pl-3 border-l border-muted-foreground/15">
+                              {actions.map((p, i) =>
+                                p.kind === "thought" ? (
+                                  <ThoughtBlock
+                                    key={i}
+                                    text={p.text}
+                                    streaming={m.streaming}
+                                  />
+                                ) : p.kind === "tool" ? (
+                                  <ToolChip key={i} chip={p} />
+                                ) : null,
+                              )}
+                            </div>
+                          )}
+                          {content.length > 0 && (
+                            <div className="flex flex-col gap-2 text-[14px] text-foreground/85">
+                              {content.map((p, i) =>
+                                p.kind === "text" ? (
+                                  <Markdown key={i} onFileClick={onOpenFile}>
+                                    {p.text}
+                                  </Markdown>
+                                ) : p.kind === "image" ? (
+                                  <img
+                                    key={i}
+                                    src={`data:${p.mimeType};base64,${p.data}`}
+                                    alt="image"
+                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border object-contain"
+                                  />
+                                ) : p.kind === "file" ? (
+                                  <div
+                                    key={i}
+                                    className="inline-flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5"
+                                  >
+                                    <FileIcon
+                                      size={13}
+                                      className="text-muted-foreground shrink-0"
+                                    />
+                                    <span className="text-[13px] text-foreground/80">
+                                      {p.name}
+                                    </span>
+                                    {p.size !== undefined && (
+                                      <span className="text-[11px] text-muted-foreground">
+                                        {p.size < 1024
+                                          ? `${p.size} B`
+                                          : `${(p.size / 1024).toFixed(1)} KB`}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : null,
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {m.streaming &&
                       m.parts.length === 0 &&
                       (m.queued ? (
@@ -205,8 +264,8 @@ export function ChatMessages({
                   </div>
                 )}
               </div>
-            ),
-          )}
+            );
+          })}
         </div>
       </div>
 

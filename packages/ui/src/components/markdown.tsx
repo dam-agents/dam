@@ -62,39 +62,100 @@ export function Markdown({
     [children],
   );
 
-  const components = useMemo<Components | undefined>(
-    () =>
-      onFileClick
-        ? {
-            a({ href, children }) {
-              if (href && isRelativePath(href)) {
-                const path = href.replace(/^\.\//, "");
-                return (
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onFileClick(path);
-                    }}
-                    className="cursor-pointer"
-                  >
-                    {children}
-                  </a>
-                );
-              }
-              return (
-                <a href={href} target="_blank" rel="noopener noreferrer">
-                  {children}
-                </a>
-              );
-            },
-          }
-        : undefined,
+  const components = useMemo<Components>(
+    () => ({
+      a({ href, children }) {
+        if (onFileClick && href && isRelativePath(href)) {
+          const path = href.replace(/^\.\//, "");
+          return (
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                onFileClick(path);
+              }}
+              className="text-primary hover:underline cursor-pointer"
+            >
+              {children}
+            </a>
+          );
+        }
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            {children}
+          </a>
+        );
+      },
+      p({ children }) {
+        return <p className="my-1.5 leading-relaxed">{children}</p>;
+      },
+      strong({ children }) {
+        return <strong className="font-semibold text-foreground">{children}</strong>;
+      },
+      em({ children }) {
+        return <em className="italic">{children}</em>;
+      },
+      h1({ children }) {
+        return <h1 className="text-[15px] font-semibold text-foreground mt-4 mb-1.5">{children}</h1>;
+      },
+      h2({ children }) {
+        return <h2 className="text-[14px] font-semibold text-foreground mt-3 mb-1">{children}</h2>;
+      },
+      h3({ children }) {
+        return <h3 className="text-[14px] font-medium text-foreground mt-2 mb-1">{children}</h3>;
+      },
+      ul({ children }) {
+        return <ul className="my-1.5 ml-4 list-disc text-foreground/80 space-y-0.5">{children}</ul>;
+      },
+      ol({ children }) {
+        return <ol className="my-1.5 ml-4 list-decimal text-foreground/80 space-y-0.5">{children}</ol>;
+      },
+      li({ children }) {
+        return <li className="leading-relaxed">{children}</li>;
+      },
+      code({ className, children }) {
+        const isBlock = className?.includes("language-") || className?.includes("hljs");
+        if (isBlock) {
+          return (
+            <code className={`${className ?? ""} text-[12px] leading-[1.6]`}>
+              {children}
+            </code>
+          );
+        }
+        return (
+          <code className="text-[13px] font-mono text-foreground/90">
+            {children}
+          </code>
+        );
+      },
+      pre({ children }) {
+        return (
+          <pre className="my-2 rounded-md bg-muted/50 border border-border px-3 py-2 overflow-x-auto text-[12px] font-mono leading-[1.6]">
+            {children}
+          </pre>
+        );
+      },
+      blockquote({ children }) {
+        return (
+          <blockquote className="my-2 ml-0 pl-3 border-l-2 border-border text-muted-foreground italic">
+            {children}
+          </blockquote>
+        );
+      },
+      hr() {
+        return <hr className="my-3 border-border" />;
+      },
+    }),
     [onFileClick],
   );
 
   return (
-    <div className="prose">
+    <div className="text-[14px] text-foreground/80">
       {frontmatter !== null && <FrontmatterBlock source={frontmatter} />}
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

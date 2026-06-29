@@ -79,7 +79,7 @@ export function FileRow({
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center py-[5px] text-[12px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-accent-light ring-1 ring-accent ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-surface-raised" : "text-text-secondary hover:bg-accent-light hover:text-accent"}`}
+          className={`group relative flex items-center py-[5px] text-[12px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-muted ring-1 ring-border ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-muted/50" : "text-text-secondary hover:bg-muted/50"}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)

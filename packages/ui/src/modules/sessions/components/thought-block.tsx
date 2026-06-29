@@ -1,11 +1,5 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  MachineLearning as Brain,
-} from "@carbon/icons-react";
+import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
-
-import { Button } from "@/components/ui/button";
 
 import { Markdown } from "../../../components/markdown.js";
 
@@ -29,23 +23,21 @@ export function ThoughtBlock({
   };
 
   return (
-    <div className="text-[12px] max-w-full">
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-auto gap-1.5 py-1 px-2 text-muted-foreground cursor-pointer"
+    <div className="max-w-full">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 py-0.5 text-[12px] font-mono text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onClick={toggle}
       >
         {open ? (
-          <ChevronDown size={12} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0 opacity-50" />
         ) : (
-          <ChevronRight size={12} className="shrink-0" />
+          <ChevronRight size={11} className="shrink-0 opacity-50" />
         )}
-        <Brain size={12} className="shrink-0" />
-        <span className="font-semibold">Thinking</span>
-      </Button>
+        <span>Thinking</span>
+      </button>
       {open && (
-        <div className="mt-1 px-3 py-1.5 rounded-lg bg-muted border border-border opacity-70 text-[13px]">
+        <div className="mt-0.5 ml-4 pl-3 text-[12px] text-muted-foreground/70">
           <Markdown>{text}</Markdown>
         </div>
       )}

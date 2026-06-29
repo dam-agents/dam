@@ -353,6 +353,80 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
     },
   ],
 
+  "sess-006": [
+    {
+      id: "m6-1",
+      role: "user",
+      parts: [
+        {
+          kind: "text",
+          text: "Mutate the parent candidate 'p2p-1' to use the new routing algorithm",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "m6-2",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-6-read",
+          title: "Read packages/controller/src/candidates/p2p.go",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              text: "package candidates\n\nfunc (c *P2PCandidate) Route(ctx context.Context) error {\n\treturn c.legacyRouter.Forward(ctx, c.payload)\n}",
+            },
+          ],
+        },
+        {
+          kind: "text",
+          text: "I can see the current routing uses `legacyRouter`. I'll update it to use the new algorithm. This requires modifying the production config — I need your approval to write the changes.",
+        },
+      ],
+      streaming: false,
+    },
+  ],
+
+  "sess-007": [
+    {
+      id: "m7-1",
+      role: "user",
+      parts: [
+        {
+          kind: "text",
+          text: "Run the database migration for the new sessions schema",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "m7-2",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-7-run",
+          title: "Run: mise run db:generate",
+          status: "completed",
+          content: [
+            {
+              type: "terminal",
+              text: "1 migration generated:\n  → 0015_add_session_metadata.sql",
+            },
+          ],
+        },
+        {
+          kind: "text",
+          text: "Migration generated. I need to apply it to the database now — this will alter the sessions table in production.",
+        },
+      ],
+      streaming: false,
+    },
+  ],
+
   "sess-sched-002": [
     {
       id: "ms2-1",
@@ -378,7 +452,59 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
           content: [
             {
               type: "terminal",
-              text: "found 0 vulnerabilities\n\n0 packages audited in 2.1s",
+              text: "found 1 vulnerability (1 critical)\n\n  critical: Remote Code Execution in vm2 <3.9.17\n    fix: upgrade vm2 to >=3.9.17",
+            },
+          ],
+        },
+        {
+          kind: "text",
+          text: "**Critical vulnerability found.** I need to run `npm audit fix --force` to patch vm2. This will modify package-lock.json.",
+        },
+      ],
+      streaming: false,
+    },
+  ],
+
+  "sess-showcase": [
+    {
+      id: "sc-1",
+      role: "user",
+      parts: [
+        {
+          kind: "text",
+          text: "Can you set up the database migration for the new notifications table and wire up the API endpoint?",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-2",
+      role: "assistant",
+      parts: [
+        {
+          kind: "thought",
+          text: "I need to create a notifications table with columns for recipient, type, payload, read status, and timestamps. Then I'll create a tRPC router with list/markRead/dismiss endpoints. Let me check the existing schema pattern first.",
+        },
+        {
+          kind: "text",
+          text: "I'll set up the notifications table and API. Let me check the existing schema patterns first.",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-3",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-read1",
+          title: "Read packages/db/src/schema.ts",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              text: "import { pgTable, uuid, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';\n\nexport const users = pgTable('users', {\n  id: uuid('id').primaryKey().defaultRandom(),\n  email: text('email').notNull().unique(),\n  name: text('name'),\n  createdAt: timestamp('created_at').defaultNow().notNull(),\n});\n\nexport const sessions = pgTable('sessions', {\n  id: uuid('id').primaryKey().defaultRandom(),\n  userId: uuid('user_id').references(() => users.id).notNull(),\n  agentId: text('agent_id').notNull(),\n  title: text('title'),\n  createdAt: timestamp('created_at').defaultNow().notNull(),\n  updatedAt: timestamp('updated_at').defaultNow().notNull(),\n});",
             },
           ],
         },
@@ -386,15 +512,168 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
       streaming: false,
     },
     {
-      id: "ms2-3",
+      id: "sc-4",
       role: "assistant",
       parts: [
         {
           kind: "text",
-          text: "**Security scan complete.** No vulnerabilities found. All clear.",
+          text: "Good — the pattern uses `uuid` primary keys with `defaultRandom()`, `timestamp` with `defaultNow()`, and references for foreign keys. I'll follow that pattern.\n\nHere's the notifications table schema:",
+        },
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-edit1",
+          title: "Edit packages/db/src/schema.ts",
+          status: "completed",
+          content: [
+            {
+              type: "diff",
+              text: "+ export const notifications = pgTable('notifications', {\n+   id: uuid('id').primaryKey().defaultRandom(),\n+   recipientId: uuid('recipient_id').references(() => users.id).notNull(),\n+   type: text('type').notNull(), // 'session_complete' | 'approval_needed' | 'mention'\n+   title: text('title').notNull(),\n+   body: text('body'),\n+   payload: jsonb('payload'),\n+   read: boolean('read').default(false).notNull(),\n+   dismissed: boolean('dismissed').default(false).notNull(),\n+   createdAt: timestamp('created_at').defaultNow().notNull(),\n+ });",
+            },
+          ],
         },
       ],
       streaming: false,
+    },
+    {
+      id: "sc-5",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-run1",
+          title: "Run: mise run db:generate",
+          status: "completed",
+          content: [
+            {
+              type: "terminal",
+              text: "drizzle-kit: v0.20.14\n\n1 table added: notifications\n1 migration generated:\n  → 0014_add_notifications_table.sql\n\n✓ Done in 0.8s",
+            },
+          ],
+        },
+        {
+          kind: "text",
+          text: "Migration generated. Now I'll create the tRPC router for the notifications API:",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-6",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-write1",
+          title: "Write packages/api-server/src/modules/notifications/router.ts",
+          status: "completed",
+          content: [
+            {
+              type: "content",
+              text: "import { z } from 'zod';\nimport { eq, and, desc } from 'drizzle-orm';\nimport { router, protectedProcedure } from '../../trpc';\nimport { notifications } from '@platform/db/schema';\n\nexport const notificationsRouter = router({\n  list: protectedProcedure\n    .input(z.object({ limit: z.number().min(1).max(50).default(20) }))\n    .query(async ({ ctx, input }) => {\n      return ctx.db\n        .select()\n        .from(notifications)\n        .where(\n          and(\n            eq(notifications.recipientId, ctx.user.id),\n            eq(notifications.dismissed, false)\n          )\n        )\n        .orderBy(desc(notifications.createdAt))\n        .limit(input.limit);\n    }),\n\n  markRead: protectedProcedure\n    .input(z.object({ id: z.string().uuid() }))\n    .mutation(async ({ ctx, input }) => {\n      await ctx.db\n        .update(notifications)\n        .set({ read: true })\n        .where(\n          and(\n            eq(notifications.id, input.id),\n            eq(notifications.recipientId, ctx.user.id)\n          )\n        );\n    }),\n\n  dismiss: protectedProcedure\n    .input(z.object({ id: z.string().uuid() }))\n    .mutation(async ({ ctx, input }) => {\n      await ctx.db\n        .update(notifications)\n        .set({ dismissed: true })\n        .where(\n          and(\n            eq(notifications.id, input.id),\n            eq(notifications.recipientId, ctx.user.id)\n          )\n        );\n    }),\n});",
+            },
+          ],
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-notice",
+      role: "assistant",
+      parts: [
+        {
+          kind: "text",
+          text: "Session paused — agent reached checkpoint",
+        },
+      ],
+      streaming: false,
+      notice: true,
+    },
+    {
+      id: "sc-7",
+      role: "user",
+      parts: [
+        {
+          kind: "text",
+          text: "Nice. Can you run the tests and also add an index on recipient_id + created_at?",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-8",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-run2",
+          title: "Run: mise run test -- packages/api-server",
+          status: "completed",
+          content: [
+            {
+              type: "terminal",
+              text: " ✓ notifications/router.test.ts (4 tests)\n   ✓ list returns only user's non-dismissed notifications\n   ✓ list respects limit parameter\n   ✓ markRead updates read status\n   ✓ dismiss sets dismissed flag\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Duration  2.14s",
+            },
+          ],
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-9",
+      role: "assistant",
+      parts: [
+        {
+          kind: "text",
+          text: "Tests pass. Now I'll add the composite index. This requires running a migration against the database:",
+        },
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-run3",
+          title: "Run: psql -c 'CREATE INDEX CONCURRENTLY idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC)'",
+          status: "pending_approval",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-10",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-run-fail",
+          title: "Run: curl -s https://internal-registry.corp.net/v2/manifests/latest",
+          status: "failed",
+          content: [
+            {
+              type: "terminal",
+              text: "curl: (7) Failed to connect to internal-registry.corp.net port 443: Connection refused\n\nNetwork policy denied: host not in allowlist",
+            },
+          ],
+        },
+        {
+          kind: "text",
+          text: "The network request was blocked — `internal-registry.corp.net` isn't in the agent's network allowlist. I'll skip the registry check and proceed with the local image.\n\nHere's a summary of what was done:\n\n1. **Created** `notifications` table with recipient, type, title, body, payload, read/dismissed flags\n2. **Generated** migration `0014_add_notifications_table.sql`\n3. **Implemented** tRPC router with `list`, `markRead`, and `dismiss` procedures\n4. **Tests** pass (4/4)\n5. **Pending** — composite index on `(recipient_id, created_at DESC)` awaiting approval",
+        },
+      ],
+      streaming: false,
+    },
+    {
+      id: "sc-11",
+      role: "assistant",
+      parts: [
+        {
+          kind: "tool",
+          toolCallId: "tc-sc-running",
+          title: "Run: mise run check",
+          status: "running",
+        },
+        {
+          kind: "text",
+          text: "Running lint and type-check across all packages...",
+        },
+      ],
+      streaming: true,
     },
   ],
 };
