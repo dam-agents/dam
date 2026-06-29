@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Goal", "Arms", "Review"] as const;
+const STEPS = ["Setup", "Arms", "Review"] as const;
 
 interface Props {
   step: number;

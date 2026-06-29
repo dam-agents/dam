@@ -12,7 +12,6 @@ export const armFieldSchema = z.object({
 export const experimentWizardSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(200),
-    goal: z.string().trim().min(1, "Goal is required"),
     task: z.string().trim(),
     runBudget: z.string().trim(),
     timeBudget: z.string().trim(),

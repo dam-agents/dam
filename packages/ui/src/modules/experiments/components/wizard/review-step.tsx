@@ -33,7 +33,6 @@ export function ReviewStep() {
 
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         <ReviewRow label="Name">{values.name}</ReviewRow>
-        <ReviewRow label="Goal">{values.goal}</ReviewRow>
         {budget && (
           <ReviewRow label="Budget">
             <span className="font-mono">{budget}</span>

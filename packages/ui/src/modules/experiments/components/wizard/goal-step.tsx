@@ -17,8 +17,8 @@ export function GoalStep() {
     <div>
       <WizardStepHeader
         step={1}
-        title="Define the goal"
-        subtitle="Name the experiment and state the objective every arm receives."
+        title="Set up the experiment"
+        subtitle="Name the experiment and define the shared spec every arm receives."
       />
 
       <div className="flex flex-col gap-5">
@@ -33,20 +33,6 @@ export function GoalStep() {
           {errors.name && (
             <p className="text-[12px] text-destructive">
               {errors.name.message}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="exp-goal">Goal</Label>
-          <Textarea
-            id="exp-goal"
-            placeholder="Beat the 0.82 baseline accuracy on the reviews-eval set."
-            {...register("goal")}
-          />
-          {errors.goal && (
-            <p className="text-[12px] text-destructive">
-              {errors.goal.message}
             </p>
           )}
         </div>

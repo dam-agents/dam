@@ -24,9 +24,11 @@ import {
 } from "../forms/experiment-wizard-schema.js";
 
 const STEP_FIELDS: Record<number, (keyof ExperimentWizardValues)[]> = {
-  0: ["name", "goal"],
+  0: ["name"],
   1: ["arms"],
 };
+
+const MOCK_GOAL = "Beat the 0.82 baseline accuracy on the reviews-eval set.";
 
 export function ExperimentWizardView() {
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
@@ -40,7 +42,6 @@ export function ExperimentWizardView() {
     mode: "onBlur",
     defaultValues: {
       name: "",
-      goal: "",
       task: "",
       runBudget: "",
       timeBudget: "",
@@ -67,7 +68,7 @@ export function ExperimentWizardView() {
     try {
       const created = await createExperiment.mutateAsync({
         name: values.name,
-        goal: values.goal,
+        goal: MOCK_GOAL,
         spec: buildExperimentSpec(values),
       });
       for (const arm of values.arms) {
