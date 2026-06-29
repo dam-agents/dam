@@ -1,4 +1,12 @@
 import { SessionMode, type SessionView } from "api-server-api";
+import {
+  Check,
+  CheckCheck,
+  Globe,
+  Settings2,
+  ShieldOff,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -52,35 +60,39 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedAgent);
 
+  const [viewMode, setViewMode] = useState<"chat" | "terminal">("chat");
+
   const [logsTearsheet, setLogsTearsheet] = useState<{
     sessionId: string;
     title: string;
   } | null>(null);
-  const [showShowcase, setShowShowcase] = useState(false);
+  const [showShowcase, setShowShowcase] = useState(() =>
+    new URLSearchParams(window.location.search).has("showcase"),
+  );
 
   const sessions: SessionView[] = useMemo(
     () => [
-      // 1. Active session (opened)
+      // Active session (selected/opened)
       {
         sessionId: "sess-001",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
         createdAt: "2026-06-17T09:00:00Z",
-        title: "New session",
+        title: "Refactor auth to JWT",
         updatedAt: "2026-06-17T10:00:00Z",
       },
-      // 2. Hover (just a normal session — hover state is CSS)
+      // Default read state
       {
         sessionId: "sess-002",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
         createdAt: "2026-06-17T08:00:00Z",
-        title: "Write unit tests",
+        title: "Fix analytics N+1 query",
         updatedAt: "2026-06-17T09:30:00Z",
       },
-      // 3. Unread (bold title)
+      // Unread (bold title)
       {
         sessionId: "sess-003",
         agentId: selectedAgent ?? "",
@@ -90,79 +102,59 @@ export function ChatView() {
         title: "Mutate parent candidate ‘p2p-1...",
         updatedAt: "2026-06-17T08:00:00Z",
       },
-      // 4. Default (read)
-      {
-        sessionId: "sess-004",
-        agentId: selectedAgent ?? "",
-        type: "regular",
-        mode: SessionMode.Chat,
-        createdAt: "2026-06-16T14:00:00Z",
-        title: "Write unit test",
-        updatedAt: "2026-06-16T15:00:00Z",
-      },
-      // 5. Working (animated dots)
+      // Working (animated dots)
       {
         sessionId: "sess-005",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
         createdAt: "2026-06-16T10:00:00Z",
-        title: "Write unit test",
+        title: "Generate DB migration",
         updatedAt: "2026-06-16T11:00:00Z",
       },
-      // 6. Terminal
+      // Terminal mode
       {
         sessionId: "sess-term-001",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Terminal,
         createdAt: "2026-06-16T08:00:00Z",
-        title: "Write unit tests",
+        title: "Debug pod networking",
         updatedAt: "2026-06-16T08:30:00Z",
       },
-      // 7. Unread & Action required (blue dot + bold)
+      // Action required (pending approval)
       {
         sessionId: "sess-006",
         agentId: selectedAgent ?? "",
         type: "regular",
         mode: SessionMode.Chat,
         createdAt: "2026-06-17T06:00:00Z",
-        title: "Mutate parent candidate ‘p2p-1...",
+        title: "Add composite index on events",
         updatedAt: "2026-06-17T07:00:00Z",
       },
-      // 8. Read & Action required (blue dot + normal weight)
-      {
-        sessionId: "sess-007",
-        agentId: selectedAgent ?? "",
-        type: "regular",
-        mode: SessionMode.Chat,
-        createdAt: "2026-06-16T06:00:00Z",
-        title: "Write unit tests",
-        updatedAt: "2026-06-16T07:00:00Z",
-      },
-      // 9. Scheduled session
+      // Scheduled session
       {
         sessionId: "sess-sched-001",
         agentId: selectedAgent ?? "",
         type: "schedule_cron",
         mode: SessionMode.Chat,
         createdAt: "2026-06-16T06:00:00Z",
-        title: "Write unit test",
+        title: "Nightly test sweep",
         updatedAt: "2026-06-16T06:12:00Z",
         scheduleId: "sched-001",
       },
-      // 10. Scheduled session + Action required
+      // Scheduled + Action required
       {
         sessionId: "sess-sched-002",
         agentId: selectedAgent ?? "",
         type: "schedule_cron",
         mode: SessionMode.Chat,
         createdAt: "2026-06-16T05:00:00Z",
-        title: "Write unit test",
+        title: "Dependency audit",
         updatedAt: "2026-06-16T05:30:00Z",
         scheduleId: "sched-002",
       },
-      // 11. Showcase — all component types
+      // Showcase — all component types
       {
         sessionId: "sess-showcase",
         agentId: selectedAgent ?? "",
@@ -186,7 +178,7 @@ export function ChatView() {
 
   useEffect(() => {
     const state = useStore.getState();
-    const actionRequiredSessions = ["sess-006", "sess-007", "sess-sched-002"];
+    const actionRequiredSessions = ["sess-006", "sess-sched-002", "sess-term-001"];
     for (const sid of actionRequiredSessions) {
       if (!state.pendingPermissions.some((p) => p.sessionId === sid)) {
         addPendingPermission({
@@ -282,6 +274,8 @@ export function ChatView() {
         agents={agents}
         busy={busy}
         agentDisplay={agentDisplay}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
         onBack={handleBack}
         onMobilePanel={() => {}}
         onToggleSetup={() => {}}
@@ -320,124 +314,236 @@ export function ChatView() {
           <SessionNavWrapper variant="sidebar" {...sessionNavProps} />
         </div>
 
-        {/* Center: Chat messages + input */}
-        <div className="flex flex-1 flex-col min-w-0">
-          <ChatMessages
-            messages={messages}
-            loadingSession={loadingSession}
-            sessionError={sessionError}
-            onErrorBack={handleErrorBack}
-            onErrorDelete={handleErrorDelete}
-            onRetry={sendPrompt}
-            onOpenFile={openFileHandler}
-          />
-
-          {hasPendingPermission && (
-            <div className="px-4 md:px-8">
-            <div className="mx-auto max-w-[680px] flex flex-col gap-1.5 mb-2">
-              {/* ACP native: Bash tool call */}
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-primary shrink-0">
-                    Bash
-                  </span>
-                  <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    rm -rf node_modules &amp;&amp; npm install
-                  </code>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow once
+        {/* Center: Chat messages + input (or Terminal) */}
+        <div className="relative flex flex-1 flex-col min-w-0">
+          {viewMode === "terminal" && hasPendingPermission && (
+            <div className="absolute top-3 right-3 z-30 w-[360px] flex flex-col gap-2 animate-in slide-in-from-top-2">
+              {/* Floating approval: registry.npmjs.org */}
+              <div className="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-2.5 shadow-lg">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-foreground">
+                    registry.npmjs.org
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                    GET /express/latest
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                    >
+                      <Check size={12} /> Allow once
                     </button>
-                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Always allow
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                    >
+                      <CheckCheck size={12} /> Allow permanently
                     </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
-                      Reject
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X size={12} /> Dismiss
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <ShieldOff size={12} /> Deny forever
                     </button>
                   </div>
                 </div>
               </div>
-              {/* ACP native: Write tool call */}
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-primary shrink-0">
-                    Write
-                  </span>
-                  <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    packages/api-server/src/routes/sessions.ts
-                  </code>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow once
+              {/* Floating approval: api.github.com */}
+              <div className="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-2.5 shadow-lg">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold text-foreground">
+                    api.github.com
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                    POST /repos/acme/app/pulls
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                    >
+                      <Check size={12} /> Allow once
                     </button>
-                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Always allow
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                    >
+                      <CheckCheck size={12} /> Allow permanently
                     </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
-                      Reject
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X size={12} /> Dismiss
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <ShieldOff size={12} /> Deny forever
                     </button>
                   </div>
                 </div>
               </div>
-              {/* ext_authz: Network egress */}
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-                    GET
-                  </span>
-                  <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    registry.npmjs.org/express/latest
-                  </code>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow
-                    </button>
-                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Always
-                    </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
-                      Deny
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {/* ext_authz: POST egress */}
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-[#0f62fe] shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-                    POST
-                  </span>
-                  <code className="text-[11px] font-mono text-foreground/80 truncate flex-1 min-w-0">
-                    api.github.com/repos/dam-agents/dam/pulls
-                  </code>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors">
-                      Allow
-                    </button>
-                    <button className="h-6 px-2 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors">
-                      Always
-                    </button>
-                    <button className="h-6 px-2 rounded-md text-[11px] font-medium text-destructive/70 hover:text-destructive transition-colors">
-                      Deny
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
             </div>
           )}
-          <ChatInput
-            textareaRef={textareaRef}
-            busy={busy}
-            loadingSession={loadingSession}
-            onSend={sendPrompt}
-            onStop={stopAgent}
-            footer={!loadingSession && <ModelSelector />}
-          />
+          {viewMode === "terminal" ? (
+            <TerminalMockup />
+          ) : (
+            <>
+              <ChatMessages
+                messages={messages}
+                loadingSession={loadingSession}
+                sessionError={sessionError}
+                onErrorBack={handleErrorBack}
+                onErrorDelete={handleErrorDelete}
+                onRetry={sendPrompt}
+                onOpenFile={openFileHandler}
+              />
+
+              {hasPendingPermission && (
+                <div className="px-4 md:px-8">
+                  <div className="mx-auto max-w-[680px] flex flex-col gap-3 mb-3">
+                    {/* ext_authz: Network egress — full card */}
+                    <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex flex-col gap-2.5">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-foreground">
+                          registry.npmjs.org
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                          GET /express/latest
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                          >
+                            <Check size={12} /> Allow once
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                          >
+                            <CheckCheck size={12} /> Allow permanently
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted min-w-0"
+                          >
+                            <Globe size={12} />
+                            <span className="truncate">
+                              Allow registry.npmjs.org
+                            </span>
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <X size={12} /> Dismiss
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <ShieldOff size={12} /> Deny forever
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <Settings2 size={12} /> Customize…
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {/* ext_authz: POST egress — full card */}
+                    <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex flex-col gap-2.5">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-foreground">
+                          api.github.com
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                          POST /repos/acme/app/pulls
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                          >
+                            <Check size={12} /> Allow once
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted"
+                          >
+                            <CheckCheck size={12} /> Allow permanently
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-input bg-background text-[12px] font-medium text-foreground hover:bg-muted min-w-0"
+                          >
+                            <Globe size={12} />
+                            <span className="truncate">
+                              Allow api.github.com
+                            </span>
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <X size={12} /> Dismiss
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <ShieldOff size={12} /> Deny forever
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <Settings2 size={12} /> Customize…
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <ChatInput
+                textareaRef={textareaRef}
+                busy={busy}
+                loadingSession={loadingSession}
+                onSend={sendPrompt}
+                onStop={stopAgent}
+                footer={!loadingSession && <ModelSelector />}
+              />
+            </>
+          )}
         </div>
 
         {/* Right panel: File explorer */}
@@ -458,13 +564,101 @@ export function ChatView() {
           onClose={() => setLogsTearsheet(null)}
         />
       )}
-      {showShowcase && <ComponentShowcase onClose={() => setShowShowcase(false)} />}
+      {showShowcase && (
+        <ComponentShowcase onClose={() => setShowShowcase(false)} />
+      )}
       <button
         onClick={() => setShowShowcase(true)}
         className="fixed bottom-5 right-5 z-40 h-9 px-3 rounded-full bg-foreground text-background text-[12px] font-medium shadow-lg hover:opacity-90 transition-opacity"
       >
         Components
       </button>
+    </div>
+  );
+}
+
+function TerminalMockup() {
+  return (
+    <div className="flex-1 flex flex-col bg-[#0c0a09] overflow-hidden p-1">
+      <div
+        className="flex-1 overflow-y-auto px-3 py-2"
+        style={{
+          fontFamily:
+            "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
+          fontSize: 14,
+          lineHeight: 1.4,
+          color: "#e7e5e4",
+        }}
+      >
+        <div style={{ color: "#78716c" }}>Session: refactor-auth-jwt</div>
+        <div style={{ color: "#78716c" }}>Agent: claude-code-01</div>
+        <div className="mt-3">
+          <span style={{ color: "#22c55e" }}>~/project</span>
+          <span style={{ color: "#e7e5e4" }}> $ </span>
+          <span style={{ color: "#e7e5e4" }}>cat src/middleware/auth.ts</span>
+        </div>
+        <pre
+          className="mt-1 whitespace-pre-wrap"
+          style={{ color: "#a8a29e" }}
+        >
+          {`import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from 'express';
+
+export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}`}
+        </pre>
+        <div className="mt-3">
+          <span style={{ color: "#22c55e" }}>~/project</span>
+          <span style={{ color: "#e7e5e4" }}> $ </span>
+          <span style={{ color: "#e7e5e4" }}>
+            mise run test -- packages/api-server
+          </span>
+        </div>
+        <pre
+          className="mt-1 whitespace-pre-wrap"
+          style={{ color: "#a8a29e" }}
+        >
+          {` ✓ auth.test.ts (3 tests)
+   ✓ verifies valid JWT
+   ✓ rejects expired token
+   ✓ rejects missing token
+
+ Tests  3 passed (3)
+ Duration  0.8s`}
+        </pre>
+        <div className="mt-3">
+          <span style={{ color: "#22c55e" }}>~/project</span>
+          <span style={{ color: "#e7e5e4" }}> $ </span>
+          <span style={{ color: "#e7e5e4" }}>git diff --stat</span>
+        </div>
+        <pre
+          className="mt-1 whitespace-pre-wrap"
+          style={{ color: "#a8a29e" }}
+        >
+          {` src/middleware/auth.ts    | 24 ++++++++++++++----------
+ src/routes/login.ts      |  8 ++++++--
+ src/middleware/refresh.ts | 18 ++++++++++++++++++
+ 3 files changed, 38 insertions(+), 12 deletions(-)`}
+        </pre>
+        <div className="mt-3">
+          <span style={{ color: "#22c55e" }}>~/project</span>
+          <span style={{ color: "#e7e5e4" }}> $ </span>
+          <span className="anim-blink" style={{ color: "#e7e5e4" }}>
+            ▊
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

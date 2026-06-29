@@ -48,6 +48,7 @@ export interface FilesPanelContextValue {
   onRowDragEnter: (targetDir: string) => void;
   onRowDragLeave: (targetDir: string) => void;
   onRowDrop: (targetDir: string, files: FileList) => void;
+  onMoveEntry: (targetDir: string, sourcePath: string) => void;
 }
 
 export const FilesPanelContext = createContext<FilesPanelContextValue | null>(
@@ -173,6 +174,19 @@ export function useFilesPanelController({
     [uploadFiles],
   );
 
+  const handleMoveEntry = useCallback(
+    (targetDir: string, sourcePath: string) => {
+      setDragTargetPath(null);
+      const fileName = sourcePath.split("/").pop() ?? sourcePath;
+      const dest = targetDir ? `${targetDir}/${fileName}` : fileName;
+      emitToast({
+        kind: "info",
+        message: `Moved ${fileName} → ${dest}`,
+      });
+    },
+    [],
+  );
+
   const handleAction = useCallback(
     (action: FileRowMenuAction, path: string, type: "file" | "dir") => {
       const isDir = type === "dir";
@@ -266,13 +280,22 @@ export function useFilesPanelController({
 
   const handlePanelDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (e.dataTransfer?.types?.includes("Files")) setPanelDragActive(true);
+    if (
+      e.dataTransfer?.types?.includes("Files") ||
+      e.dataTransfer?.types?.includes("text/plain")
+    )
+      setPanelDragActive(true);
   }, []);
 
   const handlePanelDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer?.types?.includes("Files")) {
+    if (
+      e.dataTransfer?.types?.includes("Files") ||
+      e.dataTransfer?.types?.includes("text/plain")
+    ) {
       e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes("Files")
+        ? "copy"
+        : "move";
     }
   }, []);
 
@@ -288,6 +311,15 @@ export function useFilesPanelController({
       e.preventDefault();
       setPanelDragActive(false);
       setDragTargetPath(null);
+
+      // Internal move to root
+      const raw = e.dataTransfer.getData("text/plain");
+      if (raw?.startsWith("filetree:")) {
+        const sourcePath = raw.slice("filetree:".length);
+        handleMoveEntry("", sourcePath);
+        return;
+      }
+
       // Row handlers stopPropagation before this fires, so reaching here
       // means the drop happened on empty panel space → upload to root.
       const items = e.dataTransfer.items;
@@ -300,7 +332,7 @@ export function useFilesPanelController({
       }
       if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
     },
-    [uploadBundle, uploadFiles],
+    [uploadBundle, uploadFiles, handleMoveEntry],
   );
 
   const ctxValue = useMemo<FilesPanelContextValue | null>(
@@ -322,6 +354,7 @@ export function useFilesPanelController({
             onRowDragEnter: handleRowDragEnter,
             onRowDragLeave: handleRowDragLeave,
             onRowDrop: handleRowDrop,
+            onMoveEntry: handleMoveEntry,
           }
         : null,
     [
@@ -340,6 +373,7 @@ export function useFilesPanelController({
       handleRowDragEnter,
       handleRowDragLeave,
       handleRowDrop,
+      handleMoveEntry,
     ],
   );
 

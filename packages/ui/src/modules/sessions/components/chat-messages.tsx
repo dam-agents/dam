@@ -191,22 +191,30 @@ export function ChatMessages({
                         (p) => p.kind === "tool" || p.kind === "thought",
                       );
                       const content = m.parts.filter(
-                        (p) =>
-                          p.kind !== "tool" && p.kind !== "thought",
+                        (p) => p.kind !== "tool" && p.kind !== "thought",
                       );
                       return (
                         <>
                           {actions.length > 0 && (
-                            <div className="flex flex-col gap-0.5 pl-3 border-l border-muted-foreground/15">
+                            <div className="flex flex-col gap-1">
                               {actions.map((p, i) =>
                                 p.kind === "thought" ? (
-                                  <ThoughtBlock
+                                  <div
                                     key={i}
-                                    text={p.text}
-                                    streaming={m.streaming}
-                                  />
+                                    className="pl-3 border-l-2 border-muted-foreground/15"
+                                  >
+                                    <ThoughtBlock
+                                      text={p.text}
+                                      streaming={m.streaming}
+                                    />
+                                  </div>
                                 ) : p.kind === "tool" ? (
-                                  <ToolChip key={i} chip={p} />
+                                  <div
+                                    key={i}
+                                    className="pl-3 border-l-2 border-muted-foreground/15"
+                                  >
+                                    <ToolChip chip={p} />
+                                  </div>
                                 ) : null,
                               )}
                             </div>

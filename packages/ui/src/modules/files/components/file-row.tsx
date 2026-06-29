@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
+import { makeDragStartProps, useFileRowDrag } from "../hooks/use-file-row-drag.js";
 import {
   type FileRowMenuAction,
   FileRowMenuItems,
@@ -58,33 +58,39 @@ export function FileRow({
   const panel = useFilesPanel();
   const isDir = type === "dir";
   const targetDir = isDir ? path : parentDirOf(path);
-  // Raise the row above its siblings while its menu is open (parity with the
-  // previous coordinate menu); Radix portals the menu content itself.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const drag = useFileRowDrag(targetDir, {
     onEnter: panel.onRowDragEnter,
     onLeave: panel.onRowDragLeave,
     onDrop: panel.onRowDrop,
+    onMoveDrop: panel.onMoveEntry,
   });
+
+  const dragStart = makeDragStartProps(path);
 
   const dispatch = (action: FileRowMenuAction) =>
     panel.onAction(action, path, type);
 
-  // Dir rows highlight on drop-hover; file rows route their drops to the
-  // parent dir but don't highlight (matches VSCode/Finder).
   const highlight = isDir && dropActive;
 
   return (
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center py-[5px] text-[12px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-muted ring-1 ring-border ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-muted/50" : "text-text-secondary hover:bg-muted/50"}`}
+          className={`group relative flex items-center py-[5px] text-[12px] cursor-grab transition-colors ${menuOpen ? "z-20" : ""} ${dragging ? "opacity-40" : ""} ${highlight ? "bg-muted ring-1 ring-border ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-muted/50" : "text-text-secondary hover:bg-muted/50"}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)
           }
           {...drag}
+          {...dragStart}
+          onDragStart={(e) => {
+            setDragging(true);
+            dragStart.onDragStart(e);
+          }}
+          onDragEnd={() => setDragging(false)}
         >
           <div
             className="flex items-center gap-1.5 flex-1 min-w-0"
@@ -114,6 +120,9 @@ export function FileRow({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          {highlight && (
+            <div className="absolute inset-x-0 bottom-0 h-[2px] bg-primary" />
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

@@ -95,31 +95,54 @@ export function Markdown({
         return <p className="my-1.5 leading-relaxed">{children}</p>;
       },
       strong({ children }) {
-        return <strong className="font-semibold text-foreground">{children}</strong>;
+        return (
+          <strong className="font-semibold text-foreground">{children}</strong>
+        );
       },
       em({ children }) {
         return <em className="italic">{children}</em>;
       },
       h1({ children }) {
-        return <h1 className="text-[15px] font-semibold text-foreground mt-4 mb-1.5">{children}</h1>;
+        return (
+          <h1 className="text-[15px] font-semibold text-foreground mt-4 mb-1.5">
+            {children}
+          </h1>
+        );
       },
       h2({ children }) {
-        return <h2 className="text-[14px] font-semibold text-foreground mt-3 mb-1">{children}</h2>;
+        return (
+          <h2 className="text-[14px] font-semibold text-foreground mt-3 mb-1">
+            {children}
+          </h2>
+        );
       },
       h3({ children }) {
-        return <h3 className="text-[14px] font-medium text-foreground mt-2 mb-1">{children}</h3>;
+        return (
+          <h3 className="text-[14px] font-medium text-foreground mt-2 mb-1">
+            {children}
+          </h3>
+        );
       },
       ul({ children }) {
-        return <ul className="my-1.5 ml-4 list-disc text-foreground/80 space-y-0.5">{children}</ul>;
+        return (
+          <ul className="my-1.5 ml-4 list-disc text-foreground/80 space-y-0.5">
+            {children}
+          </ul>
+        );
       },
       ol({ children }) {
-        return <ol className="my-1.5 ml-4 list-decimal text-foreground/80 space-y-0.5">{children}</ol>;
+        return (
+          <ol className="my-1.5 ml-4 list-decimal text-foreground/80 space-y-0.5">
+            {children}
+          </ol>
+        );
       },
       li({ children }) {
         return <li className="leading-relaxed">{children}</li>;
       },
       code({ className, children }) {
-        const isBlock = className?.includes("language-") || className?.includes("hljs");
+        const isBlock =
+          className?.includes("language-") || className?.includes("hljs");
         if (isBlock) {
           return (
             <code className={`${className ?? ""} text-[12px] leading-[1.6]`}>

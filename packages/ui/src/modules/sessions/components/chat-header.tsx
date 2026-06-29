@@ -4,7 +4,7 @@ import {
   Renew as RotateCw,
   TrashCan,
 } from "@carbon/icons-react";
-import { ArrowLeft, Settings2 } from "lucide-react";
+import { ArrowLeft, MessageSquare, Settings2, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ interface ChatHeaderProps {
   agentDisplay: {
     powerAction: "start" | "restart" | null;
   } | null;
+  viewMode: "chat" | "terminal";
+  onViewModeChange: (mode: "chat" | "terminal") => void;
   onBack: () => void;
   onMobilePanel: () => void;
   onStart: () => void;
@@ -42,6 +44,8 @@ export function ChatHeader({
   agents,
   busy,
   agentDisplay,
+  viewMode,
+  onViewModeChange,
   onBack,
   onMobilePanel,
   onStart,
@@ -55,7 +59,7 @@ export function ChatHeader({
   const state = agent?.state ?? "starting";
 
   return (
-    <header className="flex items-center gap-4 px-4 h-14 border-b border-border bg-white shrink-0">
+    <header className="relative flex items-center gap-4 px-4 h-14 border-b border-border bg-white shrink-0">
       <button
         className="md:hidden flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground transition-colors"
         onClick={onBack}
@@ -137,6 +141,34 @@ export function ChatHeader({
       </div>
 
       {sessionNavTrigger}
+
+      {/* Chat / Terminal toggle — centered */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center h-8 rounded-lg bg-muted/60 p-0.5">
+        <button
+          type="button"
+          onClick={() => onViewModeChange("chat")}
+          className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[12px] font-medium transition-all ${
+            viewMode === "chat"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <MessageSquare size={13} />
+          Chat
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewModeChange("terminal")}
+          className={`flex items-center gap-1.5 h-7 px-3 rounded-md text-[12px] font-medium transition-all ${
+            viewMode === "terminal"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Terminal size={13} />
+          Terminal
+        </button>
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         <button

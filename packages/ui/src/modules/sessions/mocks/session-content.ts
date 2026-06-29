@@ -390,43 +390,6 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
     },
   ],
 
-  "sess-007": [
-    {
-      id: "m7-1",
-      role: "user",
-      parts: [
-        {
-          kind: "text",
-          text: "Run the database migration for the new sessions schema",
-        },
-      ],
-      streaming: false,
-    },
-    {
-      id: "m7-2",
-      role: "assistant",
-      parts: [
-        {
-          kind: "tool",
-          toolCallId: "tc-7-run",
-          title: "Run: mise run db:generate",
-          status: "completed",
-          content: [
-            {
-              type: "terminal",
-              text: "1 migration generated:\n  → 0015_add_session_metadata.sql",
-            },
-          ],
-        },
-        {
-          kind: "text",
-          text: "Migration generated. I need to apply it to the database now — this will alter the sessions table in production.",
-        },
-      ],
-      streaming: false,
-    },
-  ],
-
   "sess-sched-002": [
     {
       id: "ms2-1",
@@ -564,7 +527,8 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
         {
           kind: "tool",
           toolCallId: "tc-sc-write1",
-          title: "Write packages/api-server/src/modules/notifications/router.ts",
+          title:
+            "Write packages/api-server/src/modules/notifications/router.ts",
           status: "completed",
           content: [
             {
@@ -629,7 +593,8 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
         {
           kind: "tool",
           toolCallId: "tc-sc-run3",
-          title: "Run: psql -c 'CREATE INDEX CONCURRENTLY idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC)'",
+          title:
+            "Run: psql -c 'CREATE INDEX CONCURRENTLY idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC)'",
           status: "pending_approval",
         },
       ],
@@ -642,7 +607,8 @@ export const MOCK_MESSAGES: Record<string, Message[]> = {
         {
           kind: "tool",
           toolCallId: "tc-sc-run-fail",
-          title: "Run: curl -s https://internal-registry.corp.net/v2/manifests/latest",
+          title:
+            "Run: curl -s https://internal-registry.corp.net/v2/manifests/latest",
           status: "failed",
           content: [
             {
