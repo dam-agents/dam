@@ -153,6 +153,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
       image: "",
     },
     state: "running",
+    effectiveHibernationTimeoutMin: 60,
     contributionFailures: [],
     channels: [],
     allowedUserEmails: [],
