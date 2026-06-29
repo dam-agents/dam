@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -314,6 +315,25 @@ func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
 	clusterDef = clusterDef[:strings.Index(clusterDef[len("- name: otel_collector"):], "- name: ")+len("- name: otel_collector")]
 	assert.Contains(t, clusterDef, "type: STRICT_DNS")
 	assert.NotContains(t, clusterDef, "transport_socket")
+}
+
+func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
+	// The bootstrap is a templated YAML string embedded in a ConfigMap, so a
+	// stray indent in the collector chain/cluster only surfaces when Envoy
+	// boots. Render with telemetry on AND a credentialed chain (both new
+	// template blocks plus the existing ones active) and confirm the whole
+	// document parses as YAML.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+	// The collector chain/cluster coexist with the credentialed chain (distinct
+	// hosts → no collision).
+	assert.Contains(t, got, "terminate_otel_collector")
+	assert.Contains(t, got, "- name: otel_collector")
+	assert.Contains(t, got, "name: upstream_platform-conn-github")
 }
 
 func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
