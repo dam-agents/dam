@@ -436,7 +436,7 @@ function OverridableSection({
   // sense overridden together (your own app means all of its credentials, not
   // a mix of presets and custom values), so we don't expose them per-field.
   return (
-    <Inset className="rounded-lg border border-dashed border-border p-4">
+    <Inset className="rounded-lg border border-dashed border-border p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <SectionLabel>Customize defaults</SectionLabel>
@@ -501,6 +501,7 @@ function LabeledInput({
   value,
   onChange,
   help,
+  disableInset,
 }: {
   label: string;
   testId?: string;
@@ -509,9 +510,10 @@ function LabeledInput({
   value: string;
   onChange: (v: string) => void;
   help?: string;
+  disableInset?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help}>
+    <FormField label={label} hint={help} disableInset={disableInset}>
       <Input
         type={type ?? "text"}
         data-testid={testId}

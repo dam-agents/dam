@@ -11,6 +11,9 @@ function toView(tmpl: Template) {
     image: tmpl.spec.image,
     description: tmpl.spec.description,
     category: tmpl.spec.category ?? "harness",
+    tags: tmpl.spec.tags,
+    docsUrl: tmpl.spec.docsUrl,
+    setupNote: tmpl.spec.setupNote,
     experimental: tmpl.spec.experimental ?? false,
   };
 }

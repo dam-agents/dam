@@ -27,6 +27,8 @@
   --color-danger-light: var(--c-danger-light);
   --color-info: var(--c-info);
   --color-info-light: var(--c-info-light);
+  --color-callout: var(--c-callout-bg);
+  --color-callout-border: var(--c-callout-border);
   --color-template: var(--c-template);
   --color-template-light: var(--c-template-light);
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
@@ -80,6 +82,8 @@
   --c-danger-light: #fef2f2;
   --c-info: #000000;
   --c-info-light: #f2f4f8;
+  --c-callout-bg: #edf5ff4d;
+  --c-callout-border: #a6c8ff;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
 
@@ -128,6 +132,8 @@
   --c-danger-light: #3a1515;
   --c-info: #60a5fa;
   --c-info-light: #0f1f3a;
+  --c-callout-bg: #0f1f3a;
+  --c-callout-border: #3c92fd;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
   color-scheme: dark;

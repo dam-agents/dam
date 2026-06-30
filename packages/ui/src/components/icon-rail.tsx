@@ -70,7 +70,7 @@ export function IconRail() {
   return (
     <>
       <nav
-        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card shrink-0"
+        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r border-border shrink-0"
         data-testid="app-sidebar"
       >
         <div className="flex items-center justify-center pt-2">

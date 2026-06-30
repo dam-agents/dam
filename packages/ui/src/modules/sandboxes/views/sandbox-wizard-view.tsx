@@ -1,4 +1,7 @@
+import { ArrowRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+
+import { Button } from "@/components/ui/button";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -83,6 +86,16 @@ export function SandboxWizardView() {
 
   const goToStep = (step: WizardStep) => update({ step });
 
+  const step1CanAdvance =
+    snapshot.templateId !== null || snapshot.customImage.trim().length > 0;
+  const registryFilled = registryFilledCount(registryCredential);
+  const registryPartial =
+    isCustomImage && registryFilled > 0 && registryFilled < 3;
+  const step2CanAdvance =
+    snapshot.name.trim().length > 0 &&
+    snapshot.providerRef !== null &&
+    !registryPartial;
+
   const finish = async () => {
     const image = snapshot.customImage.trim();
     const useRegistry =
@@ -121,12 +134,28 @@ export function SandboxWizardView() {
     }
   };
 
+  const footer =
+    snapshot.step === 1 ? (
+      <Button onClick={() => update({ step: 2 })} disabled={!step1CanAdvance}>
+        Continue <ArrowRight size={16} />
+      </Button>
+    ) : snapshot.step === 2 ? (
+      <Button onClick={() => update({ step: 3 })} disabled={!step2CanAdvance}>
+        Continue <ArrowRight size={16} />
+      </Button>
+    ) : (
+      <Button onClick={finish} disabled={createAgent.isPending}>
+        Create sandbox
+      </Button>
+    );
+
   return (
     <SandboxWizardShell
       step={snapshot.step}
       maxStep={snapshot.maxStep || snapshot.step}
       imageLabel={imageLabel}
       onNavigate={goToStep}
+      footer={footer}
     >
       {snapshot.step === 1 && (
         <ImageStep
@@ -140,7 +169,9 @@ export function SandboxWizardView() {
           onCustomImageChange={(customImage) =>
             update({ customImage, templateId: null })
           }
-          onContinue={() => update({ step: 2 })}
+          onContinue={() => {
+            if (step1CanAdvance) update({ step: 2 });
+          }}
         />
       )}
 
@@ -153,17 +184,14 @@ export function SandboxWizardView() {
           registryCredential={registryCredential}
           onRegistryChange={setRegistryCredential}
           update={update}
-          onContinue={() => update({ step: 3 })}
+          setupNote={
+            templateList.find((t) => t.id === snapshot.templateId)?.setupNote
+          }
         />
       )}
 
       {snapshot.step === 3 && (
-        <ConnectionsStep
-          snapshot={snapshot}
-          update={update}
-          onFinish={finish}
-          finishing={createAgent.isPending}
-        />
+        <ConnectionsStep snapshot={snapshot} update={update} />
       )}
     </SandboxWizardShell>
   );

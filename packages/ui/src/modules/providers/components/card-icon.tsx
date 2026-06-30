@@ -27,8 +27,8 @@ const STYLES: Record<
 > = {
   anthropic: {
     Icon: AnthropicIcon,
-    bg: "bg-[#D97757]",
-    iconClass: "w-5 h-5 text-white",
+    bg: "bg-foreground",
+    iconClass: "w-5 h-5 text-background",
   },
   openai: {
     Icon: OpenAIIcon,
@@ -49,7 +49,7 @@ const STYLES: Record<
 
 const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
   lg: "w-[68px] h-[68px]",
-  md: "w-10 h-10",
+  md: "w-[38px] h-[38px]",
   sm: "w-7 h-7",
 };
 

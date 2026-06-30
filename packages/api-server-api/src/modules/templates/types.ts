@@ -33,8 +33,12 @@ export interface SkillSourceSeed {
 export interface TemplateSpec {
   version: string;
   image: string;
+  name?: string;
   description?: string;
   category?: TemplateCategory;
+  tags?: string[];
+  docsUrl?: string;
+  setupNote?: { title: string; body: string };
   experimental?: boolean;
   mounts?: Mount[];
   init?: string;

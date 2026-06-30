@@ -57,7 +57,7 @@ function loadTemplates(dir: string): Map<string, Template> {
       const spec = templateSpecSchema.parse(
         yaml.load(readFileSync(join(dir, entry), "utf8")),
       );
-      byId.set(id, { id, name: id, spec });
+      byId.set(id, { id, name: spec.name ?? id, spec });
     } catch (err) {
       process.stderr.write(
         `agent-templates: skipping ${entry}: ${err instanceof Error ? err.message : err}\n`,

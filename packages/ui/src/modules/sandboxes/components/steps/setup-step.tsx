@@ -1,7 +1,4 @@
-import { ArrowRight } from "lucide-react";
-
 import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -51,7 +48,7 @@ interface Props {
   registryCredential: RegistryCredential;
   onRegistryChange: (value: RegistryCredential) => void;
   update: (patch: Partial<WizardSnapshot>) => void;
-  onContinue: () => void;
+  setupNote?: { title: string; body: string };
 }
 
 export function SetupStep({
@@ -62,14 +59,12 @@ export function SetupStep({
   registryCredential,
   onRegistryChange,
   update,
-  onContinue,
+  setupNote,
 }: Props) {
   const registryPartial =
     showRegistry &&
     registryFilledCount(registryCredential) > 0 &&
     registryFilledCount(registryCredential) < 3;
-  const canContinue =
-    name.trim().length > 0 && providerRef !== null && !registryPartial;
 
   return (
     <div>
@@ -89,6 +84,19 @@ export function SetupStep({
           />
         </FormField>
       </section>
+
+      {setupNote && (
+        <section className="mb-8">
+          <div className="rounded-lg border border-callout-border bg-callout p-4 md:-ml-4">
+            <p className="text-[14px] font-semibold text-foreground">
+              {setupNote.title}
+            </p>
+            <p className="mt-1 text-[14px] text-muted-foreground">
+              {setupNote.body}
+            </p>
+          </div>
+        </section>
+      )}
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
@@ -126,12 +134,6 @@ export function SetupStep({
           partial={registryPartial}
         />
       )}
-
-      <div className="flex justify-end">
-        <Button onClick={onContinue} disabled={!canContinue}>
-          Continue <ArrowRight size={16} />
-        </Button>
-      </div>
     </div>
   );
 }
@@ -153,24 +155,16 @@ function NetworkPresetRow({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors",
+        "w-full rounded-lg border px-4 py-3 text-left transition-colors",
         selected
           ? "border-foreground bg-card"
           : "border-border bg-card hover:bg-muted/30",
       )}
     >
-      <span
-        className={cn(
-          "mt-0.5 h-4 w-4 shrink-0 rounded-full transition-all",
-          selected ? "border-[5px] border-foreground" : "border border-border",
-        )}
-      />
-      <div>
-        <p className="text-[16px] font-medium text-foreground leading-[1.2]">
-          {label}
-        </p>
-        <p className="text-[14px] text-muted-foreground">{help}</p>
-      </div>
+      <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+        {label}
+      </p>
+      <p className="text-[14px] text-muted-foreground">{help}</p>
     </button>
   );
 }

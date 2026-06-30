@@ -31,8 +31,23 @@ data:
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
     agentHome: {{ $home | quote }}
+    {{- with $tmpl.displayName }}
+    name: {{ . | quote }}
+    {{- end }}
     {{- with $tmpl.category }}
     category: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.tags }}
+    tags:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.docsUrl }}
+    docsUrl: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.setupNote }}
+    setupNote:
+      title: {{ .title | quote }}
+      body: {{ .body | quote }}
     {{- end }}
     {{- if $tmpl.experimental }}
     experimental: true

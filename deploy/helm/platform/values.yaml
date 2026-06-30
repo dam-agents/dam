@@ -958,8 +958,10 @@ controller:
 agentTemplates:
   claude-code:
     enabled: true
+    displayName: "Claude Code"
     description: "Default Claude Code agent"
     telemetry: true
+    tags: ["Anthropic"]
     image:
       repository: quay.io/dam-agents/claude-code
       tag: ""
@@ -967,7 +969,9 @@ agentTemplates:
 
   codex:
     enabled: true
+    displayName: "Codex"
     description: "OpenAI Codex coding agent"
+    tags: ["OpenAI"]
     image:
       repository: quay.io/dam-agents/codex
       tag: ""
@@ -975,7 +979,9 @@ agentTemplates:
 
   pi-agent:
     enabled: true
+    displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
+    tags: ["Any provider"]
     image:
       repository: quay.io/dam-agents/pi-agent
       tag: ""
@@ -983,7 +989,9 @@ agentTemplates:
 
   bob:
     enabled: true
+    displayName: "IBM Bob"
     description: "Bob shell agent"
+    tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob
       tag: ""
@@ -1056,7 +1064,10 @@ agentTemplates:
     enabled: true
     category: preconfigured
     experimental: true
+    displayName: "NOUS"
     description: "Nous hypothesis-driven experimentation agent"
+    tags: ["Any provider"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
     image:
       repository: quay.io/dam-agents/nous
       tag: ""
@@ -1075,7 +1086,10 @@ agentTemplates:
     enabled: true
     category: preconfigured
     experimental: true
+    displayName: "OpenEvolve"
     description: "OpenEvolve — evolutionary code-optimization agent"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md"
     image:
       repository: quay.io/dam-agents/openevolve
       tag: ""

@@ -24,7 +24,7 @@ export function WizardStepIndicator({
   return (
     <nav
       aria-label="Wizard steps"
-      className="flex shrink-0 flex-row gap-1 md:w-[200px] md:flex-col"
+      className="flex shrink-0 flex-row gap-1 md:sticky md:top-12 md:w-[200px] md:flex-col md:self-start"
     >
       {STEPS.map((item) => (
         <StepItem

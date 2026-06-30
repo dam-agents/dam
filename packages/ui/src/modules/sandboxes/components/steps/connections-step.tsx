@@ -4,7 +4,6 @@ import {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
@@ -43,16 +42,9 @@ const CATEGORY_LABEL: Record<(typeof CATEGORY_ORDER)[number], string> = {
 interface Props {
   snapshot: WizardSnapshot;
   update: (patch: Partial<WizardSnapshot>) => void;
-  onFinish: () => void;
-  finishing: boolean;
 }
 
-export function ConnectionsStep({
-  snapshot,
-  update,
-  onFinish,
-  finishing,
-}: Props) {
+export function ConnectionsStep({ snapshot, update }: Props) {
   const templatesQ = useConnectionTemplates();
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -164,12 +156,6 @@ export function ConnectionsStep({
           </section>
         );
       })}
-
-      <div className="flex justify-end gap-3">
-        <Button onClick={onFinish} disabled={finishing}>
-          Create sandbox
-        </Button>
-      </div>
 
       {creating && (
         <TemplateCreateForm

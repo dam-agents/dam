@@ -5,12 +5,10 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { KEY_GUIDE_URL } from "@/constants.js";
 
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
-
-const KEY_GUIDE_URL =
-  "https://pages.github.ibm.com/dam-agents/docs/guides/litellm-key/";
 
 const ibmLitellmCredentialSchema = z
   .object({ value: z.string() })
