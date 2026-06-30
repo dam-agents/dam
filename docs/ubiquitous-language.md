@@ -70,7 +70,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Skill | A directory containing `SKILL.md` (with `name`/`description` frontmatter); the unit of installation |
 | Skill Path | An absolute on-pod directory under which Skills are materialized; a Skill's identity within a path is the directory name |
 | Local Skill | A Skill present in some Skill Path on this pod, regardless of whether it was installed from a Source or authored in place |
-| Skill Source | A git repository URL that contains one or more Skills under `skills/*` or top-level `*` |
+| Skill Source | A git repository URL that contains one or more Skills |
 | Scanned Skill | A Skill discovered in a Source: `(source, name, description, version, contentHash)` where `version` is the Source's HEAD commit SHA at scan time |
 | Content Hash | Deterministic SHA-256 over a Skill directory's file contents (sorted-path order, NUL-delimited); the drift signal produced — but not compared — on this side |
 | Install | Materializing a Skill from a Source at a Version into one or more Skill Paths |

@@ -296,5 +296,11 @@ export function useAcpConnection(
     setState("idle");
   }, [clearEngagement]);
 
+  // Tear the connection down and drop the engagement binding — otherwise the channel stays bound to the gone session
+  useEffect(() => {
+    if (sessionId) return;
+    reset();
+  }, [sessionId, reset]);
+
   return { state, ensureLive, connectionRef, reset };
 }

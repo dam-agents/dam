@@ -153,8 +153,11 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
 	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the entrypoint")
 	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
-	assert.Equal(t, "8080", envMap["ACP_PORT"])
-	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
+	// User env (spec.env) is no longer projected — it rides the runtime channel.
+	_, hasACPPort := envMap["ACP_PORT"]
+	assert.False(t, hasACPPort, "spec.env must not be projected into the container")
+	_, hasGithubOrg := envMap["GITHUB_ORG"]
+	assert.False(t, hasGithubOrg, "spec.env must not be projected into the container")
 
 	require.Len(t, c.EnvFrom, 1)
 	assert.Equal(t, "my-secrets", c.EnvFrom[0].SecretRef.LocalObjectReference.Name)

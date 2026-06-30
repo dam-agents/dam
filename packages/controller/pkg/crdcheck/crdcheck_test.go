@@ -32,6 +32,7 @@ func bothCRDs(generation int) []runtime.Object {
 	return []runtime.Object{
 		crd("agents."+apiv1.GroupVersion.Group, ann),
 		crd("forks."+apiv1.GroupVersion.Group, ann),
+		crd("runs."+apiv1.GroupVersion.Group, ann),
 	}
 }
 
@@ -62,6 +63,7 @@ func TestAssertTreatsMissingAnnotationAsStale(t *testing.T) {
 	objs := []runtime.Object{
 		crd("agents."+apiv1.GroupVersion.Group, nil),
 		crd("forks."+apiv1.GroupVersion.Group, nil),
+		crd("runs."+apiv1.GroupVersion.Group, nil),
 	}
 	err := Assert(context.Background(), newClient(objs...))
 	if err == nil || !strings.Contains(err.Error(), "schema generation 0") {

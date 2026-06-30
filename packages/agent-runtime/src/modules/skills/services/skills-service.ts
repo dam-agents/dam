@@ -27,6 +27,7 @@ export interface SkillsServiceDeps {
   skillPaths: SkillPath[];
   /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;
+  log: (msg: string) => void;
 }
 
 interface ValidatedNameAndPaths {

@@ -75,6 +75,9 @@ export function SessionRow({
 
   return (
     <div
+      data-testid="session-row"
+      data-session-id={s.sessionId}
+      data-active={active ? "true" : "false"}
       className={`group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border-light transition-colors hover:bg-accent-light select-none ${active ? "bg-accent-light border-l-[3px] border-l-accent" : ""}`}
       onClick={handleClick}
       onTouchStart={startPress}
@@ -114,6 +117,7 @@ export function SessionRow({
       </div>
       {/* Desktop: hover-visible delete button */}
       <Button
+        data-testid="session-delete-button"
         variant="ghost"
         tone="danger"
         size="icon-xs"

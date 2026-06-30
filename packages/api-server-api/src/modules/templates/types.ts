@@ -24,6 +24,7 @@ export type TemplateCategory = "harness" | "preconfigured";
 export interface SkillSourceSeed {
   name: string;
   gitUrl: string;
+  path?: string;
 }
 
 // An agent template's spec.yaml carries Layer B + C fields.

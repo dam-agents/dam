@@ -11,6 +11,7 @@ export interface ComposeSkillsOptions {
   /** Wall-clock provider. Defaults to `() => new Date()`. Tests inject a
    *  fixed clock to pin publish branch timestamps. */
   now?: () => Date;
+  log: (msg: string) => void;
 }
 
 export function composeSkills(opts: ComposeSkillsOptions): SkillsService {
@@ -29,5 +30,6 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsService {
     repo,
     skillPaths: skillPaths.value,
     now: opts.now ?? (() => new Date()),
+    log: opts.log,
   });
 }

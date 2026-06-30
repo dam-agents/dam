@@ -64,5 +64,13 @@ export default defineConfig({
       dependencies: ["injection"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      // Creates and deletes its own session, so it leaves no residue for other
+      // specs; depends on "agent" only to gate on a provisioned running agent.
+      name: "session-delete",
+      testMatch: /08-.*\.spec\.ts$/,
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

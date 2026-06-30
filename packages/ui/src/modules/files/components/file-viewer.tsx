@@ -1,18 +1,15 @@
 import {
   ArrowLeft,
   Close as X,
-  Code,
   Download,
   Edit as Pencil,
+  Maximize,
   Save,
-  View as Eye,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { HighlightedCode } from "../../../components/highlighted-code.js";
-import { Markdown } from "../../../components/markdown.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -22,7 +19,9 @@ import {
   useFileWriteMutation,
 } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
-import { CodeEditor } from "./code-editor.js";
+import { FilePreviewBody } from "./file-preview-body.js";
+import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
+import { RenderToggle } from "./render-toggle.js";
 
 interface Props {
   file: FileContent;
@@ -30,41 +29,14 @@ interface Props {
   onOpenFile: (path: string) => void;
 }
 
-function hexDump(base64: string): string {
-  const raw = atob(base64);
-  const lines: string[] = [];
-  const maxBytes = Math.min(raw.length, 1024);
-  for (let off = 0; off < maxBytes; off += 16) {
-    const slice = raw.slice(off, Math.min(off + 16, maxBytes));
-    const hex = Array.from(slice)
-      .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
-      .join(" ");
-    const ascii = Array.from(slice)
-      .map((c) => {
-        const code = c.charCodeAt(0);
-        return code >= 0x20 && code < 0x7f ? c : ".";
-      })
-      .join("");
-    lines.push(
-      `${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  ${ascii}`,
-    );
-  }
-  if (raw.length > maxBytes)
-    lines.push(`... ${raw.length - maxBytes} more bytes`);
-  return lines.join("\n");
-}
-
-function isImageMime(mime: string | undefined): boolean {
-  return !!mime && mime.startsWith("image/");
-}
-
 export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const { path, content, binary, mimeType: mime, tooLarge } = file;
   const isMarkdown = mime === "text/markdown";
   const isSvg = mime === "image/svg+xml";
-  const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
+  const isHtml = mime === "text/html";
   const isPdf = mime === "application/pdf";
-  const filename = path.split("/").pop();
+  const isBinaryImage =
+    binary && !!content && !!mime && mime.startsWith("image/") && !isSvg;
   const editable = !binary && !tooLarge;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -75,6 +47,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
+  const [renderHtml, setRenderHtml] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [editMode, setEditMode] = useState(editable && openFileEdit);
   const [draft, setDraft] = useState(content);
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
@@ -88,6 +62,9 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       setOpenFileEdit(false);
     }
   }, [openFileEdit, editable, setOpenFileEdit]);
+
+  // Leaving fullscreen when the viewer switches to a different file.
+  useEffect(() => setIsExpanded(false), [path]);
 
   const dirty = editMode && draft !== content;
   useUnsavedGuard(dirty);
@@ -184,6 +161,31 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
+  // Whether the current view is a rendered preview (not source/editor/hex) and
+  // therefore worth offering at full size.
+  const isRenderedPreview =
+    !editMode &&
+    (isBinaryImage ||
+      (isPdf && !!pdfBlobUrl) ||
+      (isSvg && renderSvg) ||
+      (isMarkdown && renderMd) ||
+      (isHtml && renderHtml));
+
+  const previewBody = (
+    <FilePreviewBody
+      file={file}
+      editMode={editMode}
+      draft={draft}
+      onDraftChange={setDraft}
+      onSave={save}
+      renderSvg={renderSvg}
+      renderMd={renderMd}
+      renderHtml={renderHtml}
+      pdfBlobUrl={pdfBlobUrl}
+      onOpenFile={onOpenFile}
+    />
+  );
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
@@ -235,6 +237,17 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             </Button>
           </>
         )}
+        {isRenderedPreview && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
+            onClick={() => setIsExpanded(true)}
+            title="Open fullscreen"
+          >
+            <Maximize size={11} /> Fullscreen
+          </Button>
+        )}
         {!tooLarge && !editMode && (
           <Button
             variant="ghost"
@@ -247,28 +260,28 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </Button>
         )}
         {isSvg && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderSvg ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderSvg((p) => !p)}
-            title={renderSvg ? "Show raw SVG" : "Render SVG"}
-          >
-            {renderSvg ? <Code size={11} /> : <Eye size={11} />}
-            {renderSvg ? "Raw" : "Render"}
-          </Button>
+          <RenderToggle
+            rendered={renderSvg}
+            onToggle={() => setRenderSvg((p) => !p)}
+            rawTitle="Show raw SVG"
+            renderTitle="Render SVG"
+          />
         )}
         {isMarkdown && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderMd ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderMd((p) => !p)}
-            title={renderMd ? "Show raw" : "Render markdown"}
-          >
-            {renderMd ? <Code size={11} /> : <Eye size={11} />}
-            {renderMd ? "Raw" : "Render"}
-          </Button>
+          <RenderToggle
+            rendered={renderMd}
+            onToggle={() => setRenderMd((p) => !p)}
+            rawTitle="Show raw"
+            renderTitle="Render markdown"
+          />
+        )}
+        {isHtml && !editMode && (
+          <RenderToggle
+            rendered={renderHtml}
+            onToggle={() => setRenderHtml((p) => !p)}
+            rawTitle="Show raw HTML"
+            renderTitle="Render HTML"
+          />
         )}
       </div>
       <div
@@ -276,70 +289,22 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
         }
       >
-        {editMode ? (
-          <CodeEditor
-            value={draft}
-            path={path}
-            onChange={setDraft}
-            onSave={save}
-          />
-        ) : isBinaryImage ? (
-          <div className="flex items-center justify-center">
-            <img
-              src={`data:${mime};base64,${content}`}
-              alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border"
-            />
+        {isExpanded ? (
+          <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
+            Opened in fullscreen
           </div>
-        ) : isPdf && pdfBlobUrl ? (
-          <iframe
-            src={pdfBlobUrl}
-            title={filename ?? "pdf"}
-            className="w-full h-[calc(100dvh-200px)] rounded border border-border bg-white"
-          />
-        ) : /* tooLarge must come before the `binary` arm: PAYLOAD_TOO_LARGE
-           comes back with binary:true and content:"" so the hex-dump path
-           would otherwise render an empty buffer. */ tooLarge ? (
-          <div className="py-12 text-center text-[13px] text-muted-foreground">
-            <p>File too large to preview</p>
-            <p className="mt-1 text-[11px]">
-              Files over 10 MB cannot be displayed
-            </p>
-          </div>
-        ) : binary ? (
-          <div>
-            <div className="mb-2 flex items-baseline gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-                Binary file — hex dump
-              </p>
-              {mime && (
-                <p className="text-[11px] font-mono text-muted-foreground">
-                  {mime}
-                </p>
-              )}
-            </div>
-            <p className="mb-3 text-[11px] text-muted-foreground">
-              This file is not directly viewable. The first bytes are shown
-              below.
-            </p>
-            <pre className="text-[11px] font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">
-              {hexDump(content)}
-            </pre>
-          </div>
-        ) : isSvg && renderSvg ? (
-          <div className="flex items-center justify-center">
-            <img
-              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`}
-              alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border"
-            />
-          </div>
-        ) : isMarkdown && renderMd ? (
-          <Markdown onFileClick={onOpenFile}>{content}</Markdown>
         ) : (
-          <HighlightedCode code={content} path={path} />
+          previewBody
         )}
       </div>
+      {isExpanded && (
+        <FullscreenPreviewDialog
+          title={path}
+          onClose={() => setIsExpanded(false)}
+        >
+          {previewBody}
+        </FullscreenPreviewDialog>
+      )}
     </div>
   );
 }

@@ -19,13 +19,13 @@ import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { sourceKind } from "../domain/source-ref.js";
 import type { SkillsService } from "../services/skills-service.js";
 
-const HEADER = ["ID", "NAME", "GIT URL", "KIND"];
+const HEADER = ["ID", "NAME", "GIT URL", "PATH", "KIND"];
 
 function tableFor(sources: readonly SkillSource[]): string {
   const sorted = [...sources].sort((a, b) => a.name.localeCompare(b.name));
   return renderTable([
     HEADER,
-    ...sorted.map((s) => [s.id, s.name, s.gitUrl, sourceKind(s)]),
+    ...sorted.map((s) => [s.id, s.name, s.gitUrl, s.path ?? "", sourceKind(s)]),
   ]);
 }
 

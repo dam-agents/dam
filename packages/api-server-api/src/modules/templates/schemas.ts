@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { skillSourcePathSchema } from "../skills/schemas.js";
 
 export const templateGetInputSchema = z.object({
   id: z.string().min(1),
@@ -27,6 +28,7 @@ const envVarConfigMapSchema = z.object({
 export const skillSourceSeedSchema = z.object({
   name: z.string(),
   gitUrl: z.string(),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const templateCategorySchema = z

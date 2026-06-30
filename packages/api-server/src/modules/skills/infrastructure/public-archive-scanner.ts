@@ -3,7 +3,9 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
+import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "./git-host.js";
 
 /**
@@ -114,29 +116,54 @@ export async function computeContentHash(absDir: string): Promise<string> {
   return h.digest("hex");
 }
 
-async function findSkillDirs(repoDir: string): Promise<string[]> {
-  const found: string[] = [];
-  const candidates = [path.join(repoDir, "skills"), repoDir];
-  for (const root of candidates) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch {
-      continue;
+function subPathEscapes(subPath: string): boolean {
+  return subPath.startsWith("/") || subPath.split("/").includes("..");
+}
+
+async function findSkillDirs(
+  repoDir: string,
+  subPath?: string,
+): Promise<string[]> {
+  // An explicit subdir is scanned exclusively — no source-root union or root
+  // fallback, so the user gets exactly the directory they pointed at. The path
+  // is api-validated at source creation; guard here too so a stray
+  // `..`/absolute path can never escape the extracted archive.
+  if (subPath) {
+    if (subPathEscapes(subPath)) {
+      throw new Error(`skill source path rejected: ${subPath}`);
     }
-    for (const ent of entries) {
-      if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-      const dir = path.join(root, ent.name);
-      try {
-        await fs.access(path.join(dir, "SKILL.md"));
-        found.push(path.relative(repoDir, dir));
-      } catch {
-        /* no SKILL.md → not a skill dir */
-      }
-    }
-    if (found.length > 0) return found;
+    return skillDirsUnder(repoDir, path.join(repoDir, subPath));
   }
-  return found;
+  const found: string[] = [];
+  for (const root of SKILL_SOURCE_ROOTS) {
+    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
+  }
+  if (found.length > 0) return found;
+  return skillDirsUnder(repoDir, repoDir);
+}
+
+async function skillDirsUnder(
+  repoDir: string,
+  root: string,
+): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+    const dir = path.join(root, ent.name);
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+      out.push(path.relative(repoDir, dir));
+    } catch {
+      /* no SKILL.md → not a skill dir */
+    }
+  }
+  return out;
 }
 
 /**
@@ -146,6 +173,7 @@ async function findSkillDirs(repoDir: string): Promise<string[]> {
  */
 export async function scanPublicGithubArchive(
   gitUrl: string,
+  subPath?: string,
 ): Promise<Skill[]> {
   const host = detectHost(gitUrl);
   if (!host)
@@ -187,8 +215,8 @@ export async function scanPublicGithubArchive(
       throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
-    const skillDirs = await findSkillDirs(repoDir);
-    const out = await Promise.all(
+    const skillDirs = await findSkillDirs(repoDir, subPath);
+    const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);
         const content = await fs.readFile(
@@ -206,7 +234,14 @@ export async function scanPublicGithubArchive(
         };
       }),
     );
-    return out.sort((a, b) => a.name.localeCompare(b.name));
+    const { kept, dropped } = dedupeByName(scanned);
+    for (const d of dropped) {
+      getLogger().warn(
+        { source: gitUrl, name: d.name },
+        "skills scan: dropped same-name skill from a later source root",
+      );
+    }
+    return kept.sort((a, b) => a.name.localeCompare(b.name));
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

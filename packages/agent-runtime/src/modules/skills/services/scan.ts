@@ -5,7 +5,7 @@ import type {
   ScannedSkill,
   SkillsDomainError,
 } from "agent-runtime-api";
-import { err, ok } from "agent-runtime-api";
+import { dedupeByName, err, ok } from "agent-runtime-api";
 import {
   detectGithubOwnerRepo,
   type DetectedOwnerRepo,
@@ -18,6 +18,7 @@ export interface ScanDeps {
   github: GitHubRestClient;
   git: GitProtocolClient;
   repo: LocalSkillRepository;
+  log: (msg: string) => void;
 }
 
 /**
@@ -36,14 +37,24 @@ export async function runScan(
   input: SkillScanInput,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
-  if (host) return scanGithub(deps, input.source, host);
-  return scanGitClone(deps, input.source);
+  const res = host
+    ? await scanGithub(deps, input.source, host, input.path)
+    : await scanGitClone(deps, input.source, input.path);
+  if (!res.ok) return res;
+  const { kept, dropped } = dedupeByName(res.value);
+  for (const d of dropped) {
+    deps.log(
+      `scan ${input.source}: dropped same-name skill "${d.name}" from a later source root`,
+    );
+  }
+  return ok(kept);
 }
 
 async function scanGithub(
   deps: ScanDeps,
   source: string,
   host: DetectedOwnerRepo,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   // Anonymous preflight. The Envoy sidecar passes public repos through and
   // its credential_injector filter rewrites the sentinel for private repos
@@ -87,19 +98,20 @@ async function scanGithub(
     }
     const repoDir = path.join(tmp, extracted[0].name);
 
-    return collectSkills(deps, source, repoDir, version);
+    return collectSkills(deps, source, repoDir, version, subPath);
   });
 }
 
 async function scanGitClone(
   deps: ScanDeps,
   source: string,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     const cloned = await deps.git.cloneShallow(source, tmp, 50);
     if (!cloned.ok) return cloned;
 
-    const skillDirs = await deps.repo.findSkillDirsInClone(tmp);
+    const skillDirs = await deps.repo.findSkillDirsInClone(tmp, subPath);
     const out: ScannedSkill[] = [];
     for (const rel of skillDirs) {
       const absDir = path.join(tmp, rel);
@@ -124,8 +136,9 @@ async function collectSkills(
   source: string,
   repoDir: string,
   version: string,
+  subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  const skillDirs = await deps.repo.findSkillDirsInClone(repoDir);
+  const skillDirs = await deps.repo.findSkillDirsInClone(repoDir, subPath);
   const out = await Promise.all(
     skillDirs.map(async (rel) => {
       const absDir = path.join(repoDir, rel);

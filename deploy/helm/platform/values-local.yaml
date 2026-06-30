@@ -50,7 +50,7 @@ agentTemplates:
     storageSize: "5Gi"
 
   - name: pi-agent
-    enabled: false
+    enabled: true
     description: "Pi coding agent with multi-LLM support"
     image:
       repository: platform-pi-agent
@@ -88,6 +88,16 @@ agentTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+  - name: openevolve
+    enabled: true
+    category: preconfigured
+    experimental: true
+    description: "OpenEvolve — evolutionary code-optimization agent"
+    image:
+      repository: platform-openevolve
+      tag: latest
+    storageSize: "5Gi"
 
   - name: mock
     enabled: true

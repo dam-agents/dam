@@ -12,6 +12,7 @@ import {
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
+import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 
 /** Outbox-derived contribution status, supplied by runtime-delivery. */
 export interface ContributionsStatus {
@@ -77,8 +78,15 @@ function preserveProtectedEnvs(
   return [...preserved, ...user];
 }
 
+/** Feed the view's `spec.env` from the store (the CR no longer carries user env). */
+function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
+  return { ...infra, spec: { ...infra.spec, env } };
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
+  /** Postgres store for user-typed env. */
+  agentEnvRepo: AgentEnvRepository;
   owner: string | undefined;
   readTemplateSpec: (
     id: string,
@@ -168,14 +176,15 @@ export function createAgentsService(deps: {
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, allowedSubs, status] = await Promise.all([
+    const [channels, allowedSubs, status, userEnv] = await Promise.all([
       deps.listChannelsByAgent(infra.id),
       deps.listAllowedUsersByAgent(infra.id),
       safeStatus(infra.id),
+      deps.agentEnvRepo.list(infra.id),
     ]);
     const emails = await subsToEmails(allowedSubs);
     return assembleAgent(
-      infra,
+      withUserEnv(infra, userEnv),
       channels,
       emails,
       status.failures,
@@ -221,16 +230,19 @@ export function createAgentsService(deps: {
           ? await deps.userDirectory.resolveManyBySub(allSubs)
           : new Map<string, string>();
 
-      const failuresMap = await deps.contributionsSettled
-        .statusMany([...infraIds])
-        .catch(() => new Map<string, ContributionsStatus>());
+      const [failuresMap, envMap] = await Promise.all([
+        deps.contributionsSettled
+          .statusMany([...infraIds])
+          .catch(() => new Map<string, ContributionsStatus>()),
+        deps.agentEnvRepo.listMany([...infraIds]),
+      ]);
 
       return infraAgents.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
         const status = failuresMap.get(infra.id);
         return assembleAgent(
-          infra,
+          withUserEnv(infra, envMap.get(infra.id) ?? []),
           channelMap.get(infra.id) ?? [],
           emails,
           status?.failures ?? [],
@@ -266,13 +278,10 @@ export function createAgentsService(deps: {
           description: input.description,
         });
       }
-      // Append caller-supplied extras (e.g. envMappings from granted app
-      // connections). `preserveProtectedEnvs` ensures PORT is always sourced
-      // from the template/defaults, no matter what the caller sends.
-      if (input.env?.length) {
-        const base = (spec.env as EnvVar[] | undefined) ?? [];
-        spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
-      }
+      // Template-declared env rides the rail like user env (seeded below), not
+      // the CR — the controller no longer reads spec.env.
+      const templateEnv = (spec.env as EnvVar[] | undefined) ?? [];
+      delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
 
       // Single-shot create: seed grants into the spec before first render so
@@ -333,6 +342,14 @@ export function createAgentsService(deps: {
         throw e;
       }
 
+      // Input is ordered last so user env wins over a same-named template default (replace dedupes last-wins).
+      const userEnv = preserveProtectedEnvs(
+        [],
+        [...templateEnv, ...(input.env ?? [])],
+      );
+      if (userEnv.length > 0)
+        await deps.agentEnvRepo.replace(infra.id, userEnv);
+
       const emails = input.allowedUserEmails ?? [];
       if (emails.length > 0) {
         const subs = await emailsToSubs(emails);
@@ -381,7 +398,7 @@ export function createAgentsService(deps: {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
-      const agent = assembleAgent(infra, [], emails, []);
+      const agent = assembleAgent(withUserEnv(infra, userEnv), [], emails, []);
       // Records the agent's initial security posture (preset, secret ref,
       // allow-list size, env key names — never env values).
       securityLog("info", "agent.create", {
@@ -408,19 +425,26 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
-      let env = input.env;
-      if (env !== undefined) {
-        const current = await deps.repo.get(input.id, deps.owner);
-        env = preserveProtectedEnvs(current?.spec.env ?? [], env);
-      }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.description !== undefined)
         patch.description = input.description;
-      if (env !== undefined) patch.env = env;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
-      const infra = await deps.repo.updateSpec(input.id, deps.owner, patch);
+      // Both branches do the owner check; an env-only update skips the no-op CR patch.
+      const infra =
+        Object.keys(patch).length > 0
+          ? await deps.repo.updateSpec(input.id, deps.owner, patch)
+          : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
+
+      let env = input.env;
+      if (env !== undefined) {
+        // Strip protected names, then bump + enqueue so a running agent applies it next turn.
+        env = preserveProtectedEnvs([], env);
+        await deps.agentEnvRepo.replace(input.id, env);
+        await deps.runtimeMutator.bump(input.id, []);
+        await deps.runtimeMutator.enqueueAfterCommit(input.id);
+      }
 
       if (input.env !== undefined || input.secretRef !== undefined) {
         // Env and secretRef control what credentials the pod receives — log

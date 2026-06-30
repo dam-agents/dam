@@ -1,7 +1,7 @@
-# ADR-047: Usage tracking — append-only activity log with pseudonymized identifiers
+# ADR-048: Usage tracking — append-only activity log with pseudonymized identifiers
 
 **Date:** 2026-05-20
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @jjeliga
 
 ## Context

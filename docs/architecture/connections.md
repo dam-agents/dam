@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-18
+Last verified: 2026-06-25
 
 ## Overview
 
@@ -103,7 +103,7 @@ A header connection's stored credential can be **updated in place** — the valu
 
 A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. The kinds today:
 
-- **`env`** — an environment variable the harness merges in at spawn, carrying a credential placeholder rather than the secret itself.
+- **`env`** — an environment variable the harness merges in at spawn. For credential-derived env the value is a placeholder (the real secret is injected gateway-side); for user-typed and non-credential config env it is the literal value.
 - **`egress-allow`** — permission to reach a host (optionally path-scoped).
 - **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter.
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
@@ -195,7 +195,7 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
-| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env (user env wins). A change recycles the harness at an idle turn boundary — no pod roll. |
+| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env. Three sources feed this kind — user-typed env (the UI Environment editor, stored in Postgres `agent_env`, #1079), connection-derived env, and secret-derived env — and the state-builder orders user env first so it wins on name collision (the driver is first-occurrence-wins). A change recycles the harness at an idle turn boundary — no pod roll. |
 | `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
 | `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [security and credentials](security-and-credentials.md)). Agent never sees these. |
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
@@ -523,6 +523,7 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Substrate | What lives there | Notes |
 |---|---|---|
 | Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
+| Postgres `agent_env` | User-typed env per agent (`agent_id`, `name`, `value`) | The Environment editor's store since #1079 — read by the state-builder as `env` contributions (ordered first), replacing the Agent CR's `spec.env`. The CR field is retained but no longer read. |
 | Postgres `runtime_state_outbox` | One row per agent | `agent_id`, `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
 | Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
 | Runtime-state file on the agent PVC | Applied cursor (`lastAppliedVersion`, `lastAppliedHash`) and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |

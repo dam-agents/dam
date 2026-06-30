@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-06-23
+Last verified: 2026-06-29
 
 ## Overview
 
@@ -380,6 +380,22 @@ agent's `agent-platform.ai/agent` label still points at the parent
 Agent so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
 Agent's pair.
+
+## `dam-run` executor pods
+
+The in-pod `dam-run` CLI runs a command in a fresh ephemeral pod (a
+`Run`; see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run)).
+It adds **no new privilege to the agent pod**: `dam-run` only dials the
+api-server harness port the agent can already reach, pinned to the
+agent's own SA at the waypoint, so an agent can spawn executors only for
+itself. The executor holds no credential bytes and has no SA, gateway,
+cert, or AuthorizationPolicy of its own — one egress NetworkPolicy routes
+it through the parent's existing gateway, so its egress boundary is
+exactly the parent's: same credentials, same ext-authz/HITL gate. That
+identity reaches the parent's full harness surface, runs included, so
+recursion is bounded by a per-agent concurrent-run cap in the api-server
+relay rather than structurally — a deliberate trade for dropping the
+per-run gateway and its mesh identity.
 
 ## Intra-cluster identity and admission
 

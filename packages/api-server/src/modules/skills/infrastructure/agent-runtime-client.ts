@@ -9,6 +9,7 @@ export interface PublishSkillCall {
   repo: string;
   title: string;
   body: string;
+  path?: string;
 }
 
 export interface PublishSkillResult {
@@ -37,7 +38,7 @@ export interface UpstreamGatewayError {
 export interface AgentRuntimeSkillsClient {
   listLocal(agentId: string): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
-  scan(agentId: string, source: string): Promise<Skill[]>;
+  scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -112,10 +113,14 @@ export function createAgentRuntimeSkillsClient(
       runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
         makeClient(agentId, namespace).skills.publish.mutate(body),
       ),
-    scan: async (agentId, source) => {
+    scan: async (agentId, source, path) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime scan ${agentId}`,
-        () => makeClient(agentId, namespace).skills.scan.mutate({ source }),
+        () =>
+          makeClient(agentId, namespace).skills.scan.mutate({
+            source,
+            ...(path !== undefined ? { path } : {}),
+          }),
       );
       return skills as Skill[];
     },

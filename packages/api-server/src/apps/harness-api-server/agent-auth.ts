@@ -4,11 +4,12 @@ import {
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved agent metadata. `agentId` mirrors the URL parameter after a
- *  successful resolution; `owner` comes from the Agent's labels. */
+/** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
+ *  ephemeral children (e.g. dam-run Runs) for cascade deletion. */
 export interface AgentIdentity {
   agentId: string;
   owner: string;
+  uid: string;
 }
 
 /**
@@ -32,5 +33,5 @@ export async function resolveAgent(
   const owner = obj.metadata?.labels?.[LABEL_OWNER];
   if (!owner) return null;
 
-  return { agentId, owner };
+  return { agentId, owner, uid: obj.metadata?.uid ?? "" };
 }

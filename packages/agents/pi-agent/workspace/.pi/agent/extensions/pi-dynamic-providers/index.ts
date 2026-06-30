@@ -5,27 +5,20 @@ import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendi
 
 declare const process: { env: Record<string, string | undefined> };
 
-// Each spec is activated when ${envPrefix}_URL is set on the pod. Models are
-// discovered from the OpenAI-compatible /v1/models endpoint; ${envPrefix}_MODEL
-// is optional and only used to pick the default when it appears in the
-// discovered list. If discovery fails, we fall back to a single-model
-// registration as long as ${envPrefix}_MODEL is set — otherwise the spec is
-// skipped.
-//
-// Auth is injected on the wire by the Envoy sidecar's credential_injector
-// filter; the apiKey here only exists to satisfy pi-acp's per-session
-// auth gate (reads models.json.apiKey + auth.json), and the discovery fetch
-// intentionally does not set Authorization so envoy can inject it the same way
-// it does for the actual model traffic.
+// A spec activates when ${envPrefix}_URL is set. Models come from the
+// OpenAI-compatible /v1/models endpoint; ${envPrefix}_MODEL only picks the
+// default. If discovery fails we register the single ${envPrefix}_MODEL, else
+// skip the spec. Auth is injected on the wire by Envoy's credential_injector;
+// the apiKey here only satisfies pi-acp's auth gate, and discovery deliberately
+// omits Authorization so Envoy injects it the same way.
 
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
-	// If this spec activates and ${envPrefix}_URL matches the shadow's urlEnv,
-	// hide the named provider as a duplicate alias. apiKeyEnv is unset so
-	// built-in providers (whose auth is discovered via pi-ai env-api-keys) are
-	// filtered out of getAvailable() — pi.unregisterProvider() alone only
-	// affects dynamically-registered providers.
+	// When activated and ${envPrefix}_URL matches the shadow's urlEnv, hide the
+	// named provider as a duplicate alias. apiKeyEnv is unset so built-in
+	// providers (auth discovered via pi-ai env-api-keys) drop out of
+	// getAvailable() — unregisterProvider() only affects dynamic ones.
 	shadows?: { name: string; urlEnv: string; apiKeyEnv?: string }[];
 };
 
@@ -87,10 +80,9 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 
 	applyShadows(pi, spec, url, state);
 
-	// Use the requested model as the default only when it appears in the
-	// discovered list (case-insensitive — proxies are inconsistent about
-	// casing); otherwise fall back to the first discovered model. The
-	// discovered id is preferred so the casing we send matches the upstream.
+	// Default to the requested model only if it was discovered (matched
+	// case-insensitively; proxies are inconsistent), preferring the discovered
+	// casing so it matches upstream. Otherwise use the first discovered model.
 	const requestedLower = requestedModel?.toLowerCase();
 	const defaultModel = models.find((m) => m.id.toLowerCase() === requestedLower)?.id ?? models[0].id;
 	return { name: spec.name, model: defaultModel };
@@ -109,8 +101,7 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 
 function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
-	// vLLM exposes max_model_len (total input+output). Capping maxTokens at it
-	// prevents requesting more output than the model can physically produce.
+	// Cap maxTokens at the context window (vLLM's max_model_len covers input+output).
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
 	return {
 		id: model.id,
@@ -121,7 +112,6 @@ function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderMo
 		maxTokens,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		compat: {
-			// vLLM and most OpenAI-compatible proxies don't speak these.
 			supportsDeveloperRole: false,
 			supportsReasoningEffort: true,
 			supportsUsageInStreaming: false,
@@ -132,11 +122,10 @@ function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderMo
 	};
 }
 
+// Best-effort: startup may race the upstream, the endpoint may be missing, or
+// the response malformed. The caller falls back to env-defined registration; we
+// warn so operators see when discovery silently degrades.
 async function discoverModels(url: string): Promise<DiscoveredModel[]> {
-	// Discovery is best-effort: pod startup may race the upstream proxy, the
-	// endpoint may be missing, or the response may be malformed. The caller
-	// falls back to env-defined single-model registration; we still warn so
-	// operators have a signal when discovery silently degrades.
 	try {
 		const res = await fetch(url, { signal: AbortSignal.timeout(intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000)) });
 		if (!res.ok) {
@@ -185,17 +174,37 @@ function loadState(): ConfigState {
 }
 
 function persistState(state: ConfigState, lastActivated: Activation): void {
-	// pi-acp re-checks models.json/auth.json on every session/prompt; runtime
-	// registerProvider() is invisible to that check, so mirror to disk.
+	// pi-acp re-checks models.json/auth.json every session/prompt and can't see
+	// runtime registerProvider(), so mirror to disk.
 	// Upstream: https://github.com/svkozak/pi-acp/issues/15
 	writeJson(state.paths.models, state.models);
 	writeJson(state.paths.auth, state.auth);
 
-	// Make the last-activated provider the session default without losing any
-	// other settings already configured in the workspace.
-	state.settings.defaultProvider = lastActivated.name;
-	state.settings.defaultModel = lastActivated.model;
+	// Keep the user's existing default if it still resolves to a registered
+	// model; only fall back to the last-activated spec otherwise.
+	const chosen = resolveExistingDefault(state) ?? lastActivated;
+	state.settings.defaultProvider = chosen.name;
+	state.settings.defaultModel = chosen.model;
 	writeJson(state.paths.settings, state.settings);
+}
+
+// Resolve the configured default to a still-registered provider/model,
+// preferring the user's own provider and matching ids case-insensitively.
+// Returns the registered casing, or undefined when there's no usable default.
+function resolveExistingDefault(state: ConfigState): Activation | undefined {
+	const model = state.settings.defaultModel;
+	if (typeof model !== "string" || model.length === 0) return undefined;
+	const wanted = model.toLowerCase();
+	const preferred = state.settings.defaultProvider;
+	const names = [
+		...(typeof preferred === "string" ? [preferred] : []),
+		...Object.keys(state.models.providers),
+	];
+	for (const name of names) {
+		const hit = state.models.providers[name]?.models?.find((m) => m.id.toLowerCase() === wanted);
+		if (hit) return { name, model: hit.id };
+	}
+	return undefined;
 }
 
 function readJson<T>(path: string): T | undefined {
@@ -203,8 +212,7 @@ function readJson<T>(path: string): T | undefined {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		return parsed && typeof parsed === "object" ? (parsed as T) : undefined;
 	} catch {
-		// File may not exist yet on a fresh home, or may be malformed; the
-		// caller treats undefined as "start from empty".
+		// Missing on a fresh home or malformed; caller treats undefined as empty.
 		return undefined;
 	}
 }

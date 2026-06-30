@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-15
+Last verified: 2026-06-29
 
 ## Overview
 
@@ -60,13 +60,12 @@ When the create request carries a private-registry credential, the api-server wr
 
 The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
 
-Pod env at start is the composition of **three** layers — last occurrence wins, with `PORT` server-enforced:
+Pod env at start is composed by the controller from platform wiring only — last occurrence wins, with `PORT` server-enforced:
 
 1. **platform envs** — proxy + auth wiring rendered by the controller (`HTTPS_PROXY`, harness URL, ext-authz routing, etc.).
-2. **`credentialEnvVars`** — env contributions derived from the Agent's mounted credential Secrets (e.g. `GH_TOKEN` from a GitHub PAT half).
-3. **`agent.env`** — the single env list on the Agent's spec. The api-server is its sole writer.
+2. **chart-level platform defaults** — any `env` the install declares as defaults.
 
-Template env contributes at *create time only*: when an Agent is created from a Template, the api-server's `assembleSpecFromTemplate` step copies template env into `agent.env`. The controller never reads the Template again at pod start, so editing a Template never re-flows into a running Agent — there is no "template envs" runtime layer. Editing `agent.env` takes effect on the next pod restart.
+Everything tied to an Agent's *configuration* rides the runtime channel as `env`-kind contributions instead, never the pod spec: connection-derived env (credential placeholders the gateway swaps on the wire), user-typed env (the Environment editor), and template env. The api-server stores user-typed and template env in Postgres `agent_env` and delivers all of it at the next idle turn with no pod roll, ordering user env ahead of connection/secret env so it wins on a name collision. Template env is seeded into `agent_env` at create time only, so editing a Template never re-flows into a running Agent. The Agent CR's `spec.env` field is retained but no longer read. See [connections](connections.md).
 
 Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
 
@@ -159,3 +158,8 @@ Schedules are independent Postgres rows and survive Agent deletion as orphans un
 
 Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
 
+## Run executors (`dam-run`)
+
+A **Run** is an ephemeral, single-command executor behind the in-pod `dam-run` CLI: `dam-run <cmd>` runs the command in a *separate* sandbox pod that shares the calling pod's image, configuration, and RWX workspace, with stdio streamed through a PTY so it reads as a local invocation. The executor stands up no infrastructure of its own — just a bare Pod plus one egress NetworkPolicy admitting it to the parent's existing gateway, whose credentials and egress boundary it borrows wholesale (see [security-and-credentials](security-and-credentials.md#dam-run-executor-pods)). Its pod boots agent-runtime in **exec-only mode** — an exec endpoint plus health, no runtime-channel hello.
+
+The flow is synchronous over one WebSocket: `dam-run` dials the api-server harness port, which writes a `Run` CR, waits for the controller-published pod IP, then relays terminal-protocol frames both ways. When the stream closes (command exits, or `dam-run` dies) the api-server deletes the `Run`, and K8s GC reaps the owner-refed executor pod + NetworkPolicy. The `Run` is itself owner-refed to the parent Agent, so deleting the Agent cascade-deletes any in-flight `Run`. Two backstops cover a `Run` the api-server never cleaned up (e.g. a crash mid-stream): a controller hard-lifetime reaper and a harness-boot sweep that deletes any `Run` a fresh process holds no live relay for.

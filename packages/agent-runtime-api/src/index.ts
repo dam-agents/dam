@@ -44,6 +44,11 @@ export {
   skillScanInputSchema,
   skillUninstallInputSchema,
 } from "./modules/skills/schemas.js";
+export {
+  SKILL_SOURCE_ROOTS,
+  dedupeByName,
+} from "./modules/skills/source-roots.js";
+export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
 export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
 export { importBundleResultSchema } from "./modules/import/types.js";

@@ -157,6 +157,8 @@ export const skillSources = pgTable(
     owner: text("owner").notNull(),
     name: text("name").notNull(),
     gitUrl: text("git_url").notNull(),
+    // Repo-relative subdir to scan; null ⇒ default (`skills/` then root).
+    path: text("path"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -178,6 +180,9 @@ export const agentSkills = pgTable(
     name: text("name").notNull(),
     version: text("version").notNull(),
     contentHash: text("content_hash"),
+    // Source's `path` denormalized at install time; the source may be a
+    // non-persisted system/template entry, or since deleted.
+    path: text("path"),
     installedAt: timestamp("installed_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -258,6 +263,20 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
+);
+
+/** Per-agent user-typed env (the UI Environment editor). */
+export const agentEnv = pgTable(
+  "agent_env",
+  {
+    agentId: text("agent_id").notNull(),
+    name: text("name").notNull(),
+    value: text("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.name] }),
+    index("agent_env_agent_idx").on(table.agentId),
+  ],
 );
 
 export const termsAcceptances = pgTable(

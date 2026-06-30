@@ -19,3 +19,5 @@ ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 USER 65532
+
+ENV PI_SKIP_VERSION_CHECK=1

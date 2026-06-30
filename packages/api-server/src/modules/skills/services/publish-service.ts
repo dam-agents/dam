@@ -75,6 +75,7 @@ export async function publishSkill(
       body:
         input.body?.trim() ||
         `Published from ${deps.brandName}.\n\n**Skill:** \`${input.name}\``,
+      ...(source.path !== undefined ? { path: source.path } : {}),
     });
   } catch (err) {
     if (err instanceof AgentRuntimeUpstreamError) {

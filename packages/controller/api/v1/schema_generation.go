@@ -13,4 +13,5 @@ const (
 	// per-template scheduling (GPU-passthrough Kata workloads).
 	AgentSchemaGeneration = 3
 	ForkSchemaGeneration  = 1
+	RunSchemaGeneration   = 1
 )

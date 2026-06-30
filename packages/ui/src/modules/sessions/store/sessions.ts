@@ -7,7 +7,7 @@ import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
 import type { LogEntry, Message } from "../../../types.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
-import { acpSessionsKeys } from "../api/queries.js";
+import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 
 /** A resume-time failure that blocks showing the session chat. Rendered inline. */
 export interface SessionError {
@@ -38,8 +38,9 @@ export interface SessionsSlice {
   setBusy: (busy: boolean) => void;
 
   addLog: (type: string, payload: object) => void;
-  /** Delete a session via the platform API, then invalidate the TQ session
-   *  list query. Resets the chat context if the deleted session was active. */
+  /** Delete a session via the platform API, drop it from the sidebar list
+   *  cache immediately, then invalidate to reconcile. Resets the chat context
+   *  if the deleted session was active. */
   deleteSession: (sessionId: string) => Promise<void>;
 
   /**
@@ -111,7 +112,14 @@ export const createSessionsSlice: StateCreator<
     );
     if (ok === ACTION_FAILED) return;
     if (get().sessionId === sessionId) get().resetChatContext();
-    queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+    // Cancel in-flight list refetches first — then drop the row and reconcile.
+    await queryClient.cancelQueries({
+      queryKey: acpSessionsKeys.agentLists(agentId),
+    });
+    removeSessionFromCache(agentId, sessionId);
+    queryClient.invalidateQueries({
+      queryKey: acpSessionsKeys.agentLists(agentId),
+    });
     emitToast({ kind: "success", message: "Session deleted" });
   },
 });
