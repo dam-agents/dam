@@ -10,6 +10,7 @@ import { useMemo, useRef, useState } from "react";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 
@@ -368,7 +369,7 @@ function OAuthAppHint({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-muted/40 p-3 flex flex-col gap-2">
+    <Inset className="rounded-lg border border-border bg-muted/40 p-4 flex flex-col gap-2">
       <p className="text-[12px] text-foreground/80">
         Register an OAuth app at the provider, then paste its client credentials
         below.
@@ -412,7 +413,7 @@ function OAuthAppHint({
           </div>
         </div>
       )}
-    </div>
+    </Inset>
   );
 }
 

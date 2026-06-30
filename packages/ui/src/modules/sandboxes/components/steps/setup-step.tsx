@@ -80,7 +80,7 @@ export function SetupStep({
       />
 
       <section className="mb-8">
-        <FormField label="Name" inset>
+        <FormField label="Name">
           <Input
             autoFocus
             value={name}

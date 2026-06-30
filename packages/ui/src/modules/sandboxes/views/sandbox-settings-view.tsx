@@ -48,7 +48,7 @@ export function SandboxSettingsView() {
       </h1>
 
       <section className="mb-8">
-        <FormField label="Name" inset error={f.errors.name?.message}>
+        <FormField label="Name" error={f.errors.name?.message}>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
@@ -58,7 +58,6 @@ export function SandboxSettingsView() {
             delete+recreate, destroying the workspace PVC. */}
         <FormField
           label="Image"
-          inset
           hint={
             agent.templateId ? (
               <span className="truncate font-mono">{agent.image}</span>

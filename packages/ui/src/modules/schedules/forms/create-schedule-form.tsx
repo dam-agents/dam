@@ -307,7 +307,7 @@ export function CreateScheduleForm({
         )}
       </div>
 
-      <FormField label="Timezone" error={tzError ?? undefined}>
+      <FormField label="Timezone" error={tzError ?? undefined} inset={false}>
         <Input
           className="h-8 text-[12px]"
           value={timezone}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Inset } from "@/components/ui/inset.js";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
@@ -106,7 +107,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.
           </p>
-          <div className="space-y-4 rounded-lg border border-border p-4">
+          <Inset className="space-y-4 rounded-lg border border-border p-4">
             {SCOPE_GROUPS.map((group) => (
               <div key={group.label}>
                 <SectionLabel className="mb-1.5 block">
@@ -124,7 +125,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
                 </div>
               </div>
             ))}
-          </div>
+          </Inset>
         </div>
 
         {showBinding && (

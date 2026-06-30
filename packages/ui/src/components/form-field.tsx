@@ -10,13 +10,19 @@ interface Props {
   label: ReactNode;
   hint?: ReactNode;
   error?: string;
-  /** Outdent the control to align its text with the label on `md+`. Use on
-   *  base-level page forms; leave off in modals and nested containers. */
+  /** Outdent the control on `md+` so its text aligns with the label. On by
+   *  default for new-design forms; pass `false` for forms not yet migrated. */
   inset?: boolean;
   children: ReactNode;
 }
 
-export function FormField({ label, hint, error, inset, children }: Props) {
+export function FormField({
+  label,
+  hint,
+  error,
+  inset = true,
+  children,
+}: Props) {
   return (
     <label className="flex flex-col gap-2">
       <SectionLabel>{label}</SectionLabel>
