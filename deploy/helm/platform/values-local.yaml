@@ -119,6 +119,9 @@ agentTemplates:
 
   # Local-GPU variant. Disabled by default — the lima k3s dev cluster has no
   # GPU, so it would stay Pending. Enable on a cluster with an NVIDIA GPU.
+  # GPU passthrough under Kata needs a GPU-capable runtime class + GPU node
+  # label set per-template (see values.yaml for the rationale); uncomment and
+  # set them to your cluster's values.
   - name: k-search-local
     enabled: false
     category: preconfigured
@@ -128,6 +131,9 @@ agentTemplates:
       repository: platform-k-search
       tag: latest
     storageSize: "10Gi"
+    # runtimeClassName: "kata-nvidia-gpu"
+    # nodeSelector:
+    #   nvidia.com/gpu.present: "true"
     env:
       - name: KSEARCH_EVAL_MODE
         value: "local"
@@ -135,11 +141,11 @@ agentTemplates:
         value: "A100"
     resources:
       requests:
-        cpu: "2"
+        cpu: "1"
         memory: "8Gi"
         nvidia.com/gpu: "1"
       limits:
-        cpu: "4"
+        cpu: "2"
         memory: "16Gi"
         nvidia.com/gpu: "1"
 

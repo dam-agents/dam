@@ -27,8 +27,10 @@ export interface SkillSourceSeed {
 }
 
 // An agent template's spec.yaml carries Layer B + C fields.
-// Layer A (security context, scheduling, cluster details) is chart-only and
-// intentionally absent from this surface — operators set it via Helm values.
+// Layer A (security context, cluster details) is chart-only and intentionally
+// absent from this surface — operators set it via Helm values. Scheduling is
+// mostly chart-wide too, except runtimeClassName + nodeSelector, which are
+// per-template so a GPU workload can opt into GPU-passthrough scheduling.
 export interface TemplateSpec {
   version: string;
   image: string;
@@ -50,6 +52,13 @@ export interface TemplateSpec {
   /** Overrides `controller.agent.templateDefaults.storageSize` for the
    *  persistent home mount. Per-mount `size` (if set) wins over this. */
   storageSize?: string;
+  /** Overrides the chart-wide `controller.agent.base.runtimeClassName` for this
+   *  template's pods (e.g. a GPU-passthrough Kata class). Empty = inherit. */
+  runtimeClassName?: string;
+  /** Node selector labels merged onto the chart-wide
+   *  `controller.agent.base.nodeSelector` for this template's pods (e.g. a GPU
+   *  node label). Template keys win on collision. Empty = inherit. */
+  nodeSelector?: Record<string, string>;
   /** Template-declared skill sources surfaced in the Skills panel of every
    *  instance derived from this template. Read-only; badged as "Agent". */
   skillSources?: SkillSourceSeed[];

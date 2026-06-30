@@ -43,6 +43,13 @@ data:
     {{- with $tmpl.storageSize }}
     storageSize: {{ . | quote }}
     {{- end }}
+    {{- with $tmpl.runtimeClassName }}
+    runtimeClassName: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     {{- if $tmpl.imagePullSecret }}
     imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $tmpl.name | quote }}
     {{- end }}

@@ -308,6 +308,7 @@ func BuildForkAgentJob(
 		Volumes:                       volumes,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
+	applyTemplateScheduling(&podSpec, agentSpec)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

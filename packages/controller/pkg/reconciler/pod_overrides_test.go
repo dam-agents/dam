@@ -91,6 +91,33 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
 }
 
+func TestApplyTemplateScheduling_OverridesBase(t *testing.T) {
+	// Base ran first (kata + workload=agents); the template now opts into a
+	// GPU-passthrough class and adds a GPU node label without losing the base.
+	spec := &corev1.PodSpec{}
+	applyAgentBaseScheduling(spec, fullAgentBase())
+	applyTemplateScheduling(spec, &types.AgentSpec{
+		RuntimeClassName: "kata-qemu-nvidia-gpu",
+		NodeSelector:     map[string]string{"nvidia.com/gpu.present": "true"},
+	})
+
+	require.NotNil(t, spec.RuntimeClassName)
+	assert.Equal(t, "kata-qemu-nvidia-gpu", *spec.RuntimeClassName, "template runtimeClass wins")
+	assert.Equal(t, "true", spec.NodeSelector["nvidia.com/gpu.present"], "template key added")
+	assert.Equal(t, "agents", spec.NodeSelector["workload"], "base key retained")
+}
+
+func TestApplyTemplateScheduling_EmptyKeepsBase(t *testing.T) {
+	// An empty template spec must not clobber chart-level scheduling.
+	spec := &corev1.PodSpec{}
+	applyAgentBaseScheduling(spec, fullAgentBase())
+	applyTemplateScheduling(spec, &types.AgentSpec{})
+
+	require.NotNil(t, spec.RuntimeClassName)
+	assert.Equal(t, "kata", *spec.RuntimeClassName)
+	assert.Equal(t, "agents", spec.NodeSelector["workload"])
+}
+
 // $HOME substitution lives in the chart (agent-templates.yaml + the
 // controller/deployment.yaml AGENT_TEMPLATE_DEFAULTS replace). The
 // controller and reconciler tests assert resolved paths flow through

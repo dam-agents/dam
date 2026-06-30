@@ -18,6 +18,8 @@ export function assembleSpecFromTemplate(
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     storageSize: tmplSpec.storageSize,
+    runtimeClassName: tmplSpec.runtimeClassName,
+    nodeSelector: tmplSpec.nodeSelector,
   };
 }
 

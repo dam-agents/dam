@@ -9,9 +9,11 @@ import (
 // sole writer.
 //
 // There is no desiredState field: running-vs-hibernated is not stored intent
-// but observed status the controller derives from activity. Security
-// context and scheduling are chart-only (config.AgentBase) and cannot be set
-// here by design.
+// but observed status the controller derives from activity. Security context
+// is chart-only (config.AgentBase) and cannot be set here by design. Most
+// scheduling is likewise chart-wide, but RuntimeClassName and NodeSelector are
+// per-template overridable so a GPU workload can request a GPU-passthrough Kata
+// runtime class and land on a GPU node without forcing that onto every agent.
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -46,6 +48,16 @@ type AgentSpec struct {
 	// time, so the controller never sees $HOME.
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
+
+	// RuntimeClassName overrides the chart-wide runtime class for this agent's
+	// pod; empty = inherit config.AgentBase. Lets a GPU workload select a
+	// GPU-passthrough Kata runtime class distinct from the default agent class.
+	// +optional
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+	// NodeSelector overrides the chart-wide node selector for this agent's pod;
+	// empty = inherit config.AgentBase. Lets a GPU workload target GPU nodes.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -144,7 +156,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=3
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

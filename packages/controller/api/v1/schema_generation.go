@@ -9,7 +9,8 @@ package v1
 const (
 	SchemaGenerationAnnotation = "agent-platform.ai/crd-schema-generation"
 
-	// Agent gen 2: imagePullSecretRef added to AgentSpec (#930/#932).
-	AgentSchemaGeneration = 2
+	// Agent gen 3: runtimeClassName + nodeSelector added to AgentSpec for
+	// per-template scheduling (GPU-passthrough Kata workloads).
+	AgentSchemaGeneration = 3
 	ForkSchemaGeneration  = 1
 )

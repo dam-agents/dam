@@ -24,6 +24,13 @@ Pick by selecting the workload at sandbox creation:
 
 Both are the same image — only the eval backend (env) and GPU request differ.
 
+> **Kata note:** agents run under a sandboxed Kata runtime. GPU passthrough
+> needs a GPU-capable Kata runtime class (VFIO) distinct from the default agent
+> class, so `k-search-local` sets `runtimeClassName` + `nodeSelector`
+> per-template (the chart-wide class can't carry the GPU VM config for every
+> agent). The operator fills in the cluster's actual GPU Kata class and GPU node
+> label — see the `k-search-local` block in `deploy/helm/platform/values.yaml`.
+
 ## Configuration (env)
 
 | Variable | Default | Notes |

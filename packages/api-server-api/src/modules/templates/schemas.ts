@@ -51,6 +51,11 @@ export const templateSpecSchema = z
     // pod can pull the image without the user entering registry credentials.
     imagePullSecretRef: z.string().optional(),
     storageSize: z.string().optional(),
+    // Per-template scheduling — carried onto the agent spec so a GPU workload
+    // can select a GPU-passthrough Kata runtime class and target GPU nodes
+    // without forcing those onto every agent (chart-wide base otherwise).
+    runtimeClassName: z.string().optional(),
+    nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();
