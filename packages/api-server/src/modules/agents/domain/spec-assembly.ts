@@ -1,4 +1,13 @@
 import type { TemplateSpec } from "api-server-api";
+import { durationToMinutes } from "../../../duration.js";
+
+// Effective idle timeout in minutes: a per-agent override (Go duration on the spec) wins, else the global default. 0 = never hibernate.
+export function resolveEffectiveHibernationTimeoutMin(
+  override: string | undefined,
+  globalIdleTimeoutMin: number,
+): number {
+  return override != null ? durationToMinutes(override) : globalIdleTimeoutMin;
+}
 
 export function assembleSpecFromTemplate(
   name: string,

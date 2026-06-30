@@ -323,3 +323,8 @@ API Server ServiceAccount name
 {{- define "platform.apiserver.serviceAccountName" -}}
 {{- printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
+{{- define "platform.clickstack.collector.fullname" -}}
+{{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}

@@ -706,6 +706,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
+      agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       owner: user.sub,
       db,
       userDirectory,

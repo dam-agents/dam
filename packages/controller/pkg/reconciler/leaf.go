@@ -41,6 +41,16 @@ func dnsNamesFromChains(chains []envoyHostChain) []string {
 	return out
 }
 
+// containsHost reports whether `host` is already in the sorted SAN list.
+func containsHost(hosts []string, host string) bool {
+	for _, h := range hosts {
+		if h == host {
+			return true
+		}
+	}
+	return false
+}
+
 // Placeholder SAN for a leaf issued with no credential hosts; never presented.
 func leafPlaceholderDNS(instanceName string) string {
 	return instanceName + ".mitm-placeholder.invalid"
@@ -52,6 +62,15 @@ func leafPlaceholderDNS(instanceName string) string {
 // false (forks) returns nil when there's nothing to MITM.
 func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, alwaysIssue bool) *cmv1.Certificate {
 	hosts := dnsNamesFromChains(chainsFromSecrets(secrets))
+	// When telemetry is on, the gateway MITM-terminates the collector host to
+	// stamp the trusted agent id, so the leaf must cover it — even for an
+	// instance (or fork) with no credential Secrets. Dedupe in case the host
+	// also appears as a credentialed chain (the collision-guarded chain in
+	// envoy.go is suppressed in that case, but the SAN is still needed).
+	if cfg.TelemetryEnabled() && !containsHost(hosts, cfg.TelemetryCollectorHost) {
+		hosts = append(hosts, cfg.TelemetryCollectorHost)
+		sort.Strings(hosts)
+	}
 	if len(hosts) == 0 {
 		if !alwaysIssue {
 			return nil

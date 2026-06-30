@@ -239,6 +239,56 @@ redis:
       cpu: 200m
       memory: 256Mi
 
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
+# chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
+# Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
+clickstack:
+  enabled: false
+
+  # Our own OTLP collector (replaces the subchart's OpAMP/token-gated one): static config,
+  # no auth, gated by the AuthorizationPolicy in templates/clickstack/.
+  collector:
+    annotations: {}
+    podAnnotations: {}
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+
+  # --- forwarded to the clickstack subchart ---
+  # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
+  #   hyperdx:2.27.0                <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+  #   clickhouse-server:25.7-alpine <- clickhouse/clickhouse-server:25.7-alpine
+  #   busybox:1.37.0               <- busybox
+  # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
+
+  otel-collector:
+    enabled: false        # we run our own collector (above)
+
+  hyperdx:
+    deployment:
+      image:
+        repository: quay.io/dam-agents/hyperdx
+        tag: "2.27.0"
+      waitForMongodb:
+        image: "quay.io/dam-agents/busybox:1.37.0"
+
+  clickhouse:
+    cluster:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-server
+            tag: "25.7-alpine"
+        dataVolumeClaimSpec:
+          resources:
+            requests:
+              storage: 20Gi
+
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
@@ -1005,7 +1055,7 @@ agentTemplates:
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
   - name: nous
     enabled: true
-    category: harness
+    category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
     image:

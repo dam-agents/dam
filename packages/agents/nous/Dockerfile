@@ -44,6 +44,12 @@ RUN "$NOUS_VENV/bin/python" /usr/local/bin/nous-patch-campaign-schema
 # Put the venv (and thus `nous`, `python`, `pip`) ahead of the base tools.
 ENV PATH="/opt/nous-venv/bin:${PATH}"
 
+# Route Nous's OpenAI-format gate-summary calls through the in-pod model gateway
+# by extending the base model-gateway shim (see nous-model-gateway.sh), so the
+# shell env — chat/terminal harness and SSH login — also carries OPENAI_BASE_URL.
+RUN mv /usr/local/lib/model-gateway.sh /usr/local/lib/model-gateway-base.sh
+COPY nous-model-gateway.sh /usr/local/lib/model-gateway.sh
+
 # Every campaign in this pod runs `--auto-approve`; some Nous versions gate that
 # behind this env. Setting it here makes unattended/background runs unconditional
 # (the design/findings human gates auto-pass). `locked_parameters` is still

@@ -239,6 +239,7 @@ const userDirectory = createKeycloakUserDirectory({
 const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
+  agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
   owner: undefined,
   db,
   userDirectory,

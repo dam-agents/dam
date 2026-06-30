@@ -1,10 +1,12 @@
 import { brandSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
+import { durationToMinutesStrict } from "./duration.js";
 
 function isValidAppSlug(s: string): boolean {
   return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
 }
+
 const adminAppSlugSchema = z
   .string()
   .nullable()
@@ -82,6 +84,10 @@ const configSchema = z.object({
    *  are off entirely. Threaded from `keycloak.inspectorRole` Helm value. */
   keycloakInspectorRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
+  /** Global default idle timeout in minutes (0 = never hibernate), mirrored from
+   *  the controller's `controller.agent.base.idleTimeout` Helm value. Always
+   *  supplied by loadConfig — the `AGENT_IDLE_TIMEOUT` fallback is the sole default. */
+  agentIdleTimeoutMinutes: z.number().int().min(0),
   /** JSON array of system Skill Sources declared by the cluster admin via
    *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
    *  parseSeedSources at startup — malformed JSON or wrong shape crashes the
@@ -190,6 +196,9 @@ export function loadConfig(): Config {
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
     agentHome: process.env.AGENT_HOME,
+    agentIdleTimeoutMinutes: durationToMinutesStrict(
+      process.env.AGENT_IDLE_TIMEOUT ?? "1h",
+    ),
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret:

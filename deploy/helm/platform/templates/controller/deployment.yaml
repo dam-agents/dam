@@ -79,6 +79,16 @@ spec:
               value: {{ .Values.istio.trustDomain | quote }}
             - name: PLATFORM_ISTIO_WAYPOINT_NAME
               value: {{ .Values.istio.waypointName | quote }}
+            {{- if .Values.clickstack.enabled }}
+            # Telemetry attribution: when the bundled telemetry backend is on,
+            # each gateway gains a collector egress chain that MITM-terminates
+            # this host and stamps the trusted x-platform-agent-id header. Empty
+            # otherwise, so the chain (and the leaf SAN entry) are not rendered.
+            - name: PLATFORM_TELEMETRY_COLLECTOR_HOST
+              value: "{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: PLATFORM_TELEMETRY_COLLECTOR_PORT
+              value: "4318"
+            {{- end }}
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"
             - name: ENVOY_IMAGE

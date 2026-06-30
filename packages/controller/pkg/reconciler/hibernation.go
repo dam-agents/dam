@@ -1,6 +1,10 @@
 package reconciler
 
-import "time"
+import (
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // Activity annotations the api-server stamps on an Agent. They are the only
 // inputs to the run/hibernate decision now that desiredState is gone.
@@ -35,4 +39,12 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 		return true
 	}
 	return now.Sub(t) <= idleTimeout
+}
+
+// effectiveIdleTimeout resolves the per-agent override (nil = inherit the global; "0s" = never hibernate) against the chart-wide default.
+func effectiveIdleTimeout(override *metav1.Duration, global time.Duration) time.Duration {
+	if override == nil {
+		return global
+	}
+	return override.Duration
 }

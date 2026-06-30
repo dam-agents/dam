@@ -19,6 +19,8 @@ Platform persists state on three durable substrates, split cleanly between the p
 
 The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
 
+The optional agent-telemetry backend adds a fourth durable substrate, outside this split — see [observability](observability.md). It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
+
 ## Diagram
 
 ```mermaid

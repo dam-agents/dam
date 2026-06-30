@@ -33,6 +33,8 @@ export const agentCreateInputSchema = z
       .optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
+    // Per-agent idle timeout override in minutes (0 = never hibernate); omit to inherit the global default.
+    hibernationTimeoutMin: z.number().int().min(0).optional(),
     // Optional: clone this public repo (optionally a branch/tag via `ref`) into
     // the work dir once, via a one-shot `workspace-seed` event. Not enforced
     // against the `gitRepos` catalog server-side — the clone runs in the
@@ -57,6 +59,8 @@ export const agentUpdateInputSchema = z.object({
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   allowedUserEmails: z.array(z.email()).optional(),
+  // Per-agent idle timeout override in minutes (0 = never hibernate); null clears it back to the global default.
+  hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

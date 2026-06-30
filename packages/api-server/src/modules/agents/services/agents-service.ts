@@ -13,6 +13,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import { minutesToDuration } from "../../../duration.js";
 
 /** Outbox-derived contribution status, supplied by runtime-delivery. */
 export interface ContributionsStatus {
@@ -87,6 +88,8 @@ export function createAgentsService(deps: {
   repo: AgentsRepository;
   /** Postgres store for user-typed env. */
   agentEnvRepo: AgentEnvRepository;
+  /** Global default idle timeout in minutes; resolves a per-agent override into the effective value. */
+  agentIdleTimeoutMinutes: number;
   owner: string | undefined;
   readTemplateSpec: (
     id: string,
@@ -188,6 +191,7 @@ export function createAgentsService(deps: {
       channels,
       emails,
       status.failures,
+      deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
     );
   }
@@ -246,6 +250,7 @@ export function createAgentsService(deps: {
           channelMap.get(infra.id) ?? [],
           emails,
           status?.failures ?? [],
+          deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
         );
       });
@@ -283,6 +288,10 @@ export function createAgentsService(deps: {
       const templateEnv = (spec.env as EnvVar[] | undefined) ?? [];
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      if (input.hibernationTimeoutMin !== undefined)
+        spec.hibernationTimeout = minutesToDuration(
+          input.hibernationTimeoutMin,
+        );
 
       // Single-shot create: seed grants into the spec before first render so
       // credentials ride the first snapshot and the gateway renders its chains
@@ -398,7 +407,13 @@ export function createAgentsService(deps: {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
-      const agent = assembleAgent(withUserEnv(infra, userEnv), [], emails, []);
+      const agent = assembleAgent(
+        withUserEnv(infra, userEnv),
+        [],
+        emails,
+        [],
+        deps.agentIdleTimeoutMinutes,
+      );
       // Records the agent's initial security posture (preset, secret ref,
       // allow-list size, env key names — never env values).
       securityLog("info", "agent.create", {
@@ -430,6 +445,12 @@ export function createAgentsService(deps: {
       if (input.description !== undefined)
         patch.description = input.description;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
+      // null clears the override (merge-patch deletes the key → inherit the global default).
+      if (input.hibernationTimeoutMin !== undefined)
+        patch.hibernationTimeout =
+          input.hibernationTimeoutMin === null
+            ? null
+            : minutesToDuration(input.hibernationTimeoutMin);
       // Both branches do the owner check; an env-only update skips the no-op CR patch.
       const infra =
         Object.keys(patch).length > 0
@@ -614,6 +635,7 @@ export function createAgentsService(deps: {
           txResult.value.channels,
           emails,
           status.failures,
+          deps.agentIdleTimeoutMinutes,
           status.preparingWorkspace,
         ),
       );

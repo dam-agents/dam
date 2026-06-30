@@ -9,6 +9,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   name: id,
   templateId: null,
   image: "x:latest",
+  hibernationTimeoutMin: 60,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   state,

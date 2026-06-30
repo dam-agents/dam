@@ -23,6 +23,8 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { api } from "../../../api.js";
@@ -453,9 +455,6 @@ export function SkillsPanel({
     }
   };
 
-  const inp =
-    "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-
   return (
     <div className="flex flex-col">
       {isError && (
@@ -484,8 +483,8 @@ export function SkillsPanel({
                 <span className="font-mono text-text">{publishFor.name}</span>{" "}
                 as a pull request.
               </div>
-              <select
-                className={inp}
+              <Select
+                size="sm"
                 value={publishForm.sourceId}
                 onChange={(e) =>
                   setPublishForm((f) => ({ ...f, sourceId: e.target.value }))
@@ -497,7 +496,7 @@ export function SkillsPanel({
                     {s.gitUrl.replace(/^https:\/\/(github|gitlab)\.com\//, "")})
                   </option>
                 ))}
-              </select>
+              </Select>
               <Input
                 size="sm"
                 placeholder="Pull request title"
@@ -506,8 +505,8 @@ export function SkillsPanel({
                   setPublishForm((f) => ({ ...f, title: e.target.value }))
                 }
               />
-              <textarea
-                className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[60px]"
+              <Textarea
+                className="resize-y min-h-[60px] text-[12px]"
                 placeholder="Pull request body (optional)"
                 value={publishForm.body}
                 onChange={(e) =>

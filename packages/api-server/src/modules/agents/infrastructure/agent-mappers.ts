@@ -16,6 +16,7 @@ import {
   READY_REASON_HIBERNATED,
   VERSION,
 } from "./labels.js";
+import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
 
@@ -135,6 +136,7 @@ export function assembleAgent(
   channels: ChannelConfig[],
   allowedUserEmails: string[],
   contributionFailures: DriverFailure[],
+  globalIdleTimeoutMin: number,
   preparingWorkspace = false,
 ): Agent {
   return {
@@ -143,6 +145,10 @@ export function assembleAgent(
     templateId: infra.templateId,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
+    effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
+      infra.spec.hibernationTimeout,
+      globalIdleTimeoutMin,
+    ),
     error: infra.error,
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,

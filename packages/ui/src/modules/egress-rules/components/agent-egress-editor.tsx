@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Select } from "@/components/ui/select";
 
 import {
   useApplyEgressPreset,
@@ -244,17 +245,17 @@ export function AgentEgressEditor({
       <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
           <SectionLabel>{stagedMode ? "Preset" : "Apply preset"}</SectionLabel>
-          <select
+          <Select
+            size="xs"
             value={dropdownValue}
             onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
-            className="h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
           >
             <option value="trusted">
               Trusted defaults (npm, PyPI, GitHub, Anthropic, …)
             </option>
             <option value="none">Strict default-deny (no rules added)</option>
             <option value="all">Allow everything (development only)</option>
-          </select>
+          </Select>
         </div>
         {!stagedMode && (
           <Button
@@ -289,7 +290,8 @@ export function AgentEgressEditor({
             />
           </Field>
           <Field label="Method" widthClass="w-[100px]">
-            <select
+            <Select
+              size="xs"
               value={
                 ALL_METHODS.includes(
                   draft.method as (typeof ALL_METHODS)[number],
@@ -298,7 +300,6 @@ export function AgentEgressEditor({
                   : "*"
               }
               onChange={(e) => setDraft({ ...draft, method: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="*">* (any)</option>
               {ALL_METHODS.map((m) => (
@@ -306,7 +307,7 @@ export function AgentEgressEditor({
                   {m}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Path" widthClass="min-w-[160px] flex-1">
             <Input
@@ -321,7 +322,8 @@ export function AgentEgressEditor({
             />
           </Field>
           <Field label="Verdict" widthClass="w-[100px]">
-            <select
+            <Select
+              size="xs"
               value={draft.verdict}
               onChange={(e) =>
                 setDraft({
@@ -329,11 +331,10 @@ export function AgentEgressEditor({
                   verdict: e.target.value as "allow" | "deny",
                 })
               }
-              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="allow">allow</option>
               <option value="deny">deny</option>
-            </select>
+            </Select>
           </Field>
           <Button
             type="button"

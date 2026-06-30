@@ -154,7 +154,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// reconciler scales *up* when recent activity says the agent should run;
 	// scale-*down* is the idle checker's probe-gated job, so a reconcile
 	// triggered for any other reason can never hibernate a busy agent.
-	running := shouldRun(agent.Annotations, r.config.AgentBase.IdleTimeout.AsDuration(), time.Now().UTC())
+	running := shouldRun(
+		agent.Annotations,
+		effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration()),
+		time.Now().UTC(),
+	)
 
 	// Paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
