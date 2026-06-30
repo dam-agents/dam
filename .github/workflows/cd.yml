@@ -556,6 +556,9 @@ jobs:
             echo "npmTag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build Helm chart dependencies
+        run: mise run helm:deps
+
       - name: Push Helm chart (release)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
