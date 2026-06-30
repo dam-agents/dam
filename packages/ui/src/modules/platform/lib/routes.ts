@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isShowExperimentsEnabled } from "../../experiments/internal-only.js";
+
 export const viewSchema = z.enum([
   "list",
   "chat",
@@ -74,6 +76,11 @@ export function pathToState(path: string): {
       view: "sandbox-settings",
       agentId: decodeURIComponent(sandboxSettingsMatch[1]!),
     };
+  if (
+    (path === "/experiments" || path.startsWith("/experiments/")) &&
+    !isShowExperimentsEnabled()
+  )
+    return { view: "list" };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/experiments/new") return { view: "experiment-new" };
   const experimentDetailMatch = path.match(/^\/experiments\/([^/]+)$/);
