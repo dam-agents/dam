@@ -51,6 +51,20 @@ export class AgentRuntimeUpstreamError extends Error {
   }
 }
 
+/**
+ * The request never reached a responding agent-runtime tRPC server —
+ * connection refused, timeout, DNS, or a bare proxy 5xx while the pod is
+ * rolling/starting. The controller's cached Ready condition can still read
+ * True during that window, so read-side callers (state/listLocal) catch this
+ * to degrade gracefully instead of 500ing on a transient.
+ */
+export class AgentRuntimeUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRuntimeUnreachableError";
+  }
+}
+
 // Auth on the api-server → agent-runtime hop is enforced at the kernel by
 // the agent pod's NetworkPolicy (ingress admitted only from the api-server
 // pod). No Bearer header is sent.
@@ -91,6 +105,11 @@ async function runWithUpstreamMapping<T>(
       const upstream = data?.upstream;
       if (isUpstreamGatewayError(upstream)) {
         throw new AgentRuntimeUpstreamError(`${label}: ${e.message}`, upstream);
+      }
+      // No error envelope means no agent-runtime tRPC server responded — a
+      // transport failure, not an application error from the pod.
+      if (data === null) {
+        throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
       }
       throw new Error(`${label}: ${e.message}`);
     }

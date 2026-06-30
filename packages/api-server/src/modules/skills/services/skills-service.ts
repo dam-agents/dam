@@ -26,6 +26,7 @@ import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
+  AgentRuntimeUnreachableError,
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
@@ -450,7 +451,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
       if (computeAgentState(infra) !== "running") return [];
-      const all = await deps.runtimeClient.listLocal(agentId);
+      let all: LocalSkill[];
+      try {
+        all = await deps.runtimeClient.listLocal(agentId);
+      } catch (err) {
+        // "running" is the controller's cached Ready condition, not a live
+        // probe; the pod's tRPC listener can be briefly unreachable while it
+        // rolls/starts. Treat that like "not running" rather than 500ing.
+        if (err instanceof AgentRuntimeUnreachableError) return [];
+        throw err;
+      }
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
@@ -470,23 +480,37 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
      * because the filesystem is the source of truth for "what is installed";
      * the DB row is the declarative record that just needs to catch up.
      *
-     * When the pod isn't running we can't see the filesystem, so we return
-     * the tracked refs as-is (no reconciliation) and an empty standalone
-     * list. This avoids wrongly dropping rows during a restart.
+     * When we can't see the filesystem — the pod isn't running, or it reports
+     * "running" off the controller's cached Ready condition but its tRPC
+     * listener is momentarily unreachable (rolling/starting) — we return the
+     * tracked refs as-is (no reconciliation) and an empty standalone list.
+     * This avoids wrongly dropping rows during a restart, and avoids a 500 on
+     * a transient unreachable window.
      */
     async getState(agentId: string): Promise<SkillsState> {
       const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra)
         return { installed: [], standalone: [], instancePublishes: [] };
-      if (computeAgentState(infra) !== "running") {
+
+      // The declarative record without a filesystem read — the safe view
+      // whenever the pod's disk isn't observable.
+      const trackedOnly = async (): Promise<SkillsState> => {
         const [installed, instancePublishes] = await Promise.all([
           deps.agentSkillsRepo.listSkills(agentId),
           deps.agentSkillsRepo.listPublishes(agentId),
         ]);
         return { installed, standalone: [], instancePublishes };
-      }
+      };
 
-      const local = await deps.runtimeClient.listLocal(agentId);
+      if (computeAgentState(infra) !== "running") return trackedOnly();
+
+      let local: LocalSkill[];
+      try {
+        local = await deps.runtimeClient.listLocal(agentId);
+      } catch (err) {
+        if (err instanceof AgentRuntimeUnreachableError) return trackedOnly();
+        throw err;
+      }
 
       const onDisk = new Set(local.map((s) => s.name));
 
