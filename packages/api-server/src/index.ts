@@ -200,6 +200,12 @@ const connectionsServiceFor = (ownerId: string) =>
     brandName: config.brand.name,
   });
 let secretsMigrationRetry: ReturnType<typeof setTimeout> | undefined;
+// Cap the retry chain so a credential that fails every pass (e.g. a genuinely
+// unreadable Secret that surfaces as a transient error) can't re-arm a 60s
+// timer forever. Past the cap we stop and log loud — an operator runs the
+// dry-run entrypoint to inspect what's stuck.
+const SECRETS_MIGRATION_MAX_RETRIES = 10;
+let secretsMigrationRetries = 0;
 async function runSecretsToConnectionsMigration(): Promise<void> {
   const { failed } = await migrateSecretsToConnections({
     k8sClient,
@@ -209,11 +215,20 @@ async function runSecretsToConnectionsMigration(): Promise<void> {
     connectionRulesSync: createConnectionRulesSyncAdapter(db),
     log: (m) => getLogger().info(`[secrets-migration] ${m}`),
   });
-  if (failed > 0)
-    secretsMigrationRetry = setTimeout(
-      () => void runSecretsToConnectionsMigration(),
-      60_000,
+  if (failed === 0) return;
+  if (secretsMigrationRetries >= SECRETS_MIGRATION_MAX_RETRIES) {
+    getLogger().error(
+      `[secrets-migration] still ${failed} failing after ` +
+        `${SECRETS_MIGRATION_MAX_RETRIES} retries; giving up — agents keep ` +
+        `working on legacy secrets, run the dry-run entrypoint to inspect`,
     );
+    return;
+  }
+  secretsMigrationRetries++;
+  secretsMigrationRetry = setTimeout(
+    () => void runSecretsToConnectionsMigration(),
+    60_000,
+  );
 }
 await runSecretsToConnectionsMigration();
 

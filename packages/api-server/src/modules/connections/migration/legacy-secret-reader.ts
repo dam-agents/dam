@@ -132,8 +132,3 @@ export async function listLegacySecrets(
     .map(parseLegacySecret)
     .filter((s): s is LegacySecret => s !== null);
 }
-
-/** The K8s Secret name a legacy secret id resolves to (for deletion). */
-export function legacySecretName(id: string): string {
-  return `${LEGACY_NAME_PREFIX}${id}`;
-}

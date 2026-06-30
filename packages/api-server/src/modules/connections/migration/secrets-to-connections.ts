@@ -7,9 +7,19 @@
  *
  * Per pass, per owner: read + group legacy secrets into logical credentials,
  * map each to a template + recover its bare value, create the Connection
- * idempotently (deterministic id derived from the legacy secret id), flip each
- * granting agent to the connection (union grant) and drop the legacy secret id
- * from the CR, then delete the legacy secret once no agent grants it.
+ * idempotently (deterministic id derived from the legacy secret id), then flip
+ * each granting agent to the connection (union grant) and drop the legacy
+ * secret id from the CR.
+ *
+ * The legacy K8s Secret is deliberately NOT deleted here. Dropping the grant
+ * makes it inert (the controller mounts only granted secrets, so it stops
+ * injecting), but the controller rolls each agent's gateway StatefulSet
+ * asynchronously: deleting the Secret while a gateway pod is still mid-roll on a
+ * revision that references it wedges that pod in `ContainerCreating` (FailedMount
+ * on the gone Secret), and the StatefulSet's OrderedReady policy then refuses to
+ * replace it — a self-inflicted egress outage. Leaving the now-unreferenced
+ * Secret in place lets every gateway roll cleanly; the #1273 follow-up (#2198)
+ * sweeps the drained Secrets once the field confirms no gateway still mounts them.
  *
  * Non-blocking and self-disarming: a transient failure leaves the legacy secret
  * intact and re-arms a retry; a permanent skip (malformed / unrecoverable /
@@ -33,7 +43,6 @@ import {
   connectionSecretAnnotations,
 } from "../domain/connection-sds.js";
 import {
-  legacySecretName,
   listLegacySecrets,
   type LegacySecret,
 } from "./legacy-secret-reader.js";
@@ -72,7 +81,7 @@ interface LogicalCredential {
   templateId: string;
   primary: LegacySecret;
   twins: LegacySecret[];
-  /** primary + twins; the grant flip and deletion act on all of these. */
+  /** primary + twins; the grant flip acts on all of these. */
   secretIds: string[];
 }
 
@@ -87,8 +96,10 @@ export async function migrateSecretsToConnections(
     deps.log(`secrets→connections: list failed, will retry: ${errMsg(e)}`);
     return { migrated: 0, skipped: 0, failed: 1, report };
   }
-  if (secrets.length === 0)
+  if (secrets.length === 0) {
+    deps.log("secrets→connections: no legacy secrets found, nothing to do");
     return { migrated: 0, skipped: 0, failed: 0, report };
+  }
 
   const byOwner = new Map<string, LegacySecret[]>();
   for (const s of secrets) {
@@ -107,15 +118,50 @@ export async function migrateSecretsToConnections(
       report.push(`SKIP [${owner}] ${skip}`);
       deps.log(`secrets→connections: skip ${skip}`);
     }
+
+    // Only construct the per-owner service for live mutation — the dry-run
+    // entrypoint deliberately makes connectionsServiceFor throw.
+    const svc = deps.dryRun ? undefined : deps.connectionsServiceFor(owner);
+
+    // Phase 1: ensure each credential's Connection exists and collect a
+    // per-agent flip plan. Phase 2 then flips each agent ONCE with its whole
+    // connection set, so its gateway StatefulSet rolls to the final state in a
+    // bounded number of steps. Flipping per credential instead churns the
+    // gateway through an intermediate revision for every credential, and a pod
+    // can wedge on any of them (StatefulSet OrderedReady won't replace a pod
+    // that isn't ready), deadlocking the agent's egress mid-migration.
+    const plan = new Map<string, FlipItem[]>();
     for (const cred of credentials) {
       try {
-        const outcome = await migrateCredential(deps, cred, report);
-        if (outcome === "migrated") migrated++;
-        else if (outcome === "skipped") skipped++;
+        const res = await ensureConnection(deps, svc, cred, report);
+        if (!res) {
+          skipped++;
+          continue;
+        }
+        if (res.created) migrated++;
+        else skipped++;
+        for (const agentId of res.granting) {
+          const list = plan.get(agentId) ?? [];
+          list.push({ connId: res.connId, secretIds: cred.secretIds });
+          plan.set(agentId, list);
+        }
       } catch (e) {
         failed++;
         deps.log(
           `secrets→connections: credential ${cred.primary.id} failed, will retry: ${errMsg(e)}`,
+        );
+      }
+    }
+
+    // Phase 2 mutates grants; dry-run stops after building the report above.
+    if (deps.dryRun || !svc) continue;
+    for (const [agentId, items] of plan) {
+      try {
+        await flipAgent(deps, svc, owner, agentId, items);
+      } catch (e) {
+        failed++;
+        deps.log(
+          `secrets→connections: agent ${agentId} flip failed, will retry: ${errMsg(e)}`,
         );
       }
     }
@@ -127,11 +173,25 @@ export async function migrateSecretsToConnections(
   return { migrated, skipped, failed, report };
 }
 
-async function migrateCredential(
+/** One agent's slice of the flip plan: a migrated connection and the legacy
+ *  secret id(s) it replaces (so phase 2 relabels the right egress rows and
+ *  drops the right grants). */
+interface FlipItem {
+  connId: string;
+  secretIds: string[];
+}
+
+/** Recover the credential and ensure its Connection exists (idempotent on the
+ *  deterministic id). Returns the connection id, the agents that currently grant
+ *  the legacy secret, and whether the connection was newly created — or null
+ *  when the value can't be recovered (a permanent skip). Touches no agent grants;
+ *  the batched phase-2 flipAgent does that. */
+async function ensureConnection(
   deps: MigrateDeps,
+  svc: ConnectionsService | undefined,
   cred: LogicalCredential,
   report: string[],
-): Promise<"migrated" | "skipped"> {
+): Promise<{ connId: string; granting: string[]; created: boolean } | null> {
   const value = recoverValue(cred.primary);
   if (value === null) {
     report.push(
@@ -140,7 +200,7 @@ async function migrateCredential(
     deps.log(
       `secrets→connections: skip ${cred.primary.id} — value unrecoverable`,
     );
-    return "skipped";
+    return null;
   }
 
   const connId = deterministicId("conn-", cred.primary.id);
@@ -153,14 +213,12 @@ async function migrateCredential(
         `template=${cred.templateId} env=[${cred.primary.envMappings.map((m) => m.envName).join(",")}] ` +
         `agents=${granting.length}${existing ? " (already migrated)" : ""}`,
     );
-    return existing ? "skipped" : "migrated";
+    return { connId, granting, created: !existing };
   }
 
-  // Only construct the per-owner service for live mutation — the dry-run
-  // entrypoint deliberately makes this throw.
-  const svc = deps.connectionsServiceFor(cred.owner);
-
   if (!existing) {
+    if (!svc)
+      throw new Error("connectionsServiceFor missing for live migration");
     const name = await freeName(
       deps.repo,
       cred.owner,
@@ -181,12 +239,7 @@ async function migrateCredential(
     report.push(`[${cred.owner}] migrated ${cred.primary.id} → ${connId}`);
   }
 
-  for (const agentId of granting) {
-    await flipAgent(deps, svc, agentId, cred, connId);
-  }
-
-  await deleteLegacySecrets(deps, cred);
-  return existing ? "skipped" : "migrated";
+  return { connId, granting, created: !existing };
 }
 
 /** Build the Connection record explicitly from the legacy secret's *actual*
@@ -266,22 +319,31 @@ function toEgressInject(s: LegacySecret): Contribution {
   };
 }
 
-/** Add the connection to the agent (union with its current grants), hand the
- *  legacy secret's egress rows to the connection, then drop the legacy secret
- *  id(s) from the CR. The grant lands first so the host is never uncovered;
- *  the controller dedupes the brief duplicate (host, header) injection. The
- *  egress rows are *relabeled* in place rather than revoked-and-reinserted:
- *  the legacy row holds the active-row unique slot, so `setAgentConnections`
- *  can't insert the connection's row for an overlapping host — relabeling
- *  avoids both the duplicate and the coverage gap a revoke would open. */
+/** Flip one agent to all of its migrated connections in a bounded number of CR
+ *  writes: union every new connection id onto its grants (one
+ *  `setAgentConnections` → one `grantedConnectionIds` patch + fanout), relabel
+ *  each legacy secret's egress rows onto its connection (DB-only), then drop
+ *  every migrated secret id from the CR in one patch. Batching per agent — not
+ *  per credential — is what keeps the gateway StatefulSet from churning through
+ *  an intermediate revision per credential and wedging on one.
+ *
+ *  The connections land before the secret-drop so no host is ever uncovered;
+ *  while both are granted the controller dedupes the brief duplicate
+ *  (host, header) injection (the `platform-cred-` secret name sorts before the
+ *  `platform-secret-` connection secret, so the legacy value wins until the
+ *  drop). Egress rows are *relabeled* in place rather than revoked-and-
+ *  reinserted: the legacy row holds the active-row unique slot, so
+ *  `setAgentConnections` can't insert the connection's row for an overlapping
+ *  host — relabeling avoids both the duplicate and the coverage gap a revoke
+ *  would open. */
 async function flipAgent(
   deps: MigrateDeps,
   svc: ConnectionsService,
+  owner: string,
   agentId: string,
-  cred: LogicalCredential,
-  connId: string,
+  items: FlipItem[],
 ): Promise<void> {
-  const grantsPort = createAgentGrantsPort(deps.k8sClient, cred.owner);
+  const grantsPort = createAgentGrantsPort(deps.k8sClient, owner);
 
   // Build the union from the DB grants (what setAgentConnections reconciles
   // against), not the CR. If the CR's grantedConnectionIds has drifted from the
@@ -290,18 +352,24 @@ async function flipAgent(
   // wedges the migration on every retry.
   const currentConns = await svc.getAgentConnections(agentId);
   const union = Array.from(
-    new Set([...currentConns.connections.map((c) => c.connectionId), connId]),
+    new Set([
+      ...currentConns.connections.map((c) => c.connectionId),
+      ...items.map((i) => i.connId),
+    ]),
   );
   await svc.setAgentConnections(agentId, union);
 
-  await deps.connectionRulesSync.adoptSources({
-    agentId,
-    fromSources: cred.secretIds.map((id) => `connection:${id}`),
-    toSource: `connection:${connId}`,
-  });
+  for (const item of items) {
+    await deps.connectionRulesSync.adoptSources({
+      agentId,
+      fromSources: item.secretIds.map((id) => `connection:${id}`),
+      toSource: `connection:${item.connId}`,
+    });
+  }
 
+  const migratedSecretIds = new Set(items.flatMap((i) => i.secretIds));
   const remaining = (await grantsPort.get(agentId)).grantedSecretIds.filter(
-    (id) => !cred.secretIds.includes(id),
+    (id) => !migratedSecretIds.has(id),
   );
   await grantsPort.setSecretGrants(agentId, remaining);
 }
@@ -318,19 +386,6 @@ async function findGrantingAgents(
     }
   }
   return Array.from(agents);
-}
-
-async function deleteLegacySecrets(
-  deps: MigrateDeps,
-  cred: LogicalCredential,
-): Promise<void> {
-  const grantsPort = createAgentGrantsPort(deps.k8sClient, cred.owner);
-  // Twins first, primary last, so a retry after a partial delete is clean.
-  for (const id of [...cred.twins.map((t) => t.id), cred.primary.id]) {
-    const stillGranted = await grantsPort.listAgentsGrantedSecret(id);
-    if (stillGranted.length > 0) continue;
-    await deps.k8sClient.deleteSecret(legacySecretName(id));
-  }
 }
 
 // ---- grouping -------------------------------------------------------------
@@ -352,9 +407,22 @@ function groupLogicalCredentials(
   }
 
   // GitHub PAT pairs: two `generic` secrets sharing a display name, one on
-  // api.github.com (Bearer), one on github.com (Basic). Linked by display name,
-  // not primary-secret-id.
+  // api.github.com injecting `Authorization: Bearer {value}` (the raw PAT), one
+  // on github.com injecting `Authorization: Basic {value}` (base64). Linked by
+  // display name, not primary-secret-id. Match on the host + injection signature
+  // so a custom-header `generic` a user happened to point at a GitHub host is
+  // never mistaken for a PAT half.
+  const isPatApiHalf = (s: LegacySecret): boolean =>
+    s.hostPattern === "api.github.com" &&
+    (s.headerName ?? "Authorization") === "Authorization" &&
+    s.valueFormat === "Bearer {value}";
+  const isPatGitHalf = (s: LegacySecret): boolean =>
+    s.hostPattern === "github.com" &&
+    (s.headerName ?? "Authorization") === "Authorization" &&
+    s.valueFormat === "Basic {value}";
+
   const consumedAsPatGit = new Set<string>();
+  const patApiHalves = new Set<string>();
   const genericByDisplay = new Map<string, LegacySecret[]>();
   for (const s of secrets) {
     if (s.type !== "generic" || s.primarySecretId) continue;
@@ -362,11 +430,12 @@ function groupLogicalCredentials(
     list.push(s);
     genericByDisplay.set(s.displayName, list);
   }
-  const patApiHalves = new Set<string>();
   for (const group of genericByDisplay.values()) {
-    const api = group.find((s) => s.hostPattern === "api.github.com");
-    const git = group.find((s) => s.hostPattern === "github.com");
-    if (api && git) {
+    const apis = group.filter(isPatApiHalf);
+    const gits = group.filter(isPatGitHalf);
+    if (apis.length === 1 && gits.length === 1) {
+      const api = apis[0]!;
+      const git = gits[0]!;
       patApiHalves.add(api.id);
       consumedAsPatGit.add(git.id);
       credentials.push({
@@ -377,15 +446,33 @@ function groupLogicalCredentials(
         twins: [git],
         secretIds: [api.id, git.id],
       });
-    } else if (git && !api) {
-      // Lone git-half: the bare PAT isn't recoverable in the form the
+    } else if (apis.length === 0 && gits.length > 0) {
+      // Lone git-half(s): the bare PAT isn't recoverable in the form the
       // github-pat template expects, and re-baking would add hosts it never
-      // had. Leave it for an operator.
-      consumedAsPatGit.add(git.id);
-      skips.push(
-        `${git.id} (lone github.com PAT half — no api.github.com pair)`,
-      );
+      // had. Leave them for an operator.
+      for (const git of gits) {
+        consumedAsPatGit.add(git.id);
+        skips.push(
+          `${git.id} (lone github.com PAT half — no api.github.com pair)`,
+        );
+      }
+    } else if (apis.length > 0 && gits.length > 0) {
+      // Both sides present but not a clean 1:1 (e.g. two PATs sharing one
+      // display name) — pairing api↔git would be a guess. Skip every PAT-shaped
+      // half rather than mis-pair or silently demote the leftovers to
+      // custom-header connections.
+      for (const s of [...apis, ...gits]) {
+        if (s.hostPattern === "api.github.com") patApiHalves.add(s.id);
+        else consumedAsPatGit.add(s.id);
+        skips.push(
+          `${s.id} (ambiguous github PAT grouping for display name ` +
+            `"${s.displayName}": ${apis.length} api / ${gits.length} git halves)`,
+        );
+      }
     }
+    // else: only api.github.com half(s) and no git half — left un-consumed so
+    // each migrates as a custom-header connection, preserving its existing
+    // Bearer-on-api.github.com injection.
   }
 
   for (const s of secrets) {
