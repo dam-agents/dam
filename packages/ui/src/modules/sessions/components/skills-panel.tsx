@@ -617,7 +617,7 @@ export function SkillsPanel({
 
       {showAdd && (
         <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
-          <FormField label="Name" inset={false}>
+          <FormField label="Name" disableInset>
             <Input
               size="sm"
               placeholder='e.g. "My Skills"'
@@ -627,7 +627,7 @@ export function SkillsPanel({
               }
             />
           </FormField>
-          <FormField label="Git URL" inset={false}>
+          <FormField label="Git URL" disableInset>
             <Input
               size="sm"
               variant="monospace"

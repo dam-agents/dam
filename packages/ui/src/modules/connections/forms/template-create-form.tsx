@@ -436,7 +436,7 @@ function OverridableSection({
   // sense overridden together (your own app means all of its credentials, not
   // a mix of presets and custom values), so we don't expose them per-field.
   return (
-    <div className="rounded-lg border border-dashed border-border p-3">
+    <Inset className="rounded-lg border border-dashed border-border p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <SectionLabel>Customize defaults</SectionLabel>
@@ -473,7 +473,7 @@ function OverridableSection({
           ))}
         </div>
       )}
-    </div>
+    </Inset>
   );
 }
 

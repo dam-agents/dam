@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The base-level field outdent. On `md+` it shifts a control (or a `p-4`
- * bordered group) left by 16px, cancelling the inner padding so the content's
- * text lines up with the label while the box bleeds into the page gutter.
- * Only meaningful on standalone centered pages — not in modals or nested
- * containers. Reusable on any element; `FormField` applies it via `inset`.
+ * The field outdent. On `md+` it shifts a control (or a `p-4` bordered group)
+ * left by 16px, cancelling the inner padding so the content's text lines up
+ * with the label while the box bleeds into the gutter. Applied across migrated
+ * forms (pages and modals alike); opted out only for not-yet-migrated forms and
+ * gutter-less nested panels. Reusable on any element; `FormField` applies it
+ * unless `disableInset` is set.
  */
 export const FIELD_INSET = "md:-ml-4";
 

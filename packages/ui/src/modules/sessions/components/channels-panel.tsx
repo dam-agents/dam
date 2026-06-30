@@ -159,7 +159,7 @@ function ChannelsForm({
 
           {slackEnabled && (
             <>
-              <FormField label="Channel ID">
+              <FormField label="Channel ID" disableInset>
                 <Input
                   type="text"
                   value={channelId}

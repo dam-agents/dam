@@ -10,9 +10,10 @@ interface Props {
   label: ReactNode;
   hint?: ReactNode;
   error?: string;
-  /** Outdent the control on `md+` so its text aligns with the label. On by
-   *  default for new-design forms; pass `false` for forms not yet migrated. */
-  inset?: boolean;
+  /** The control is outdent-aligned with the label on `md+` by default (see
+   *  Inset). Set to opt out — forms not yet migrated, or containers with no
+   *  gutter (nested side panels). */
+  disableInset?: boolean;
   children: ReactNode;
 }
 
@@ -20,13 +21,13 @@ export function FormField({
   label,
   hint,
   error,
-  inset = true,
+  disableInset,
   children,
 }: Props) {
   return (
     <label className="flex flex-col gap-2">
       <SectionLabel>{label}</SectionLabel>
-      <div className={cn(inset && FIELD_INSET)}>{children}</div>
+      <div className={cn(!disableInset && FIELD_INSET)}>{children}</div>
       {hint && (
         <span className="text-[12px] text-muted-foreground">{hint}</span>
       )}
