@@ -23,8 +23,8 @@ import {
 import { buildConnection } from "../domain/build-connection.js";
 import {
   buildConnectionSdsFields,
+  connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
-  sdsFileKeyForInjection,
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
@@ -358,7 +358,9 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      const id = newConnectionId();
+      // The migration supplies a deterministic id (derived from the legacy
+      // secret) so re-runs are idempotent; interactive callers omit it.
+      const id = input.id ?? newConnectionId();
       const contributions = built.contributions.map(
         (c): Contribution =>
           c.kind === "mcp-entry" ? { ...c, name: input.name } : c,
@@ -471,44 +473,4 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
     case "none":
       return null;
   }
-}
-
-function connectionSecretAnnotations(
-  contributions: Connection["contributions"],
-): Record<string, string> {
-  const envMappings = contributions
-    .filter(
-      (c): c is Extract<Connection["contributions"][number], { kind: "env" }> =>
-        c.kind === "env",
-    )
-    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
-
-  const injectionHosts = contributions
-    .filter(
-      (
-        c,
-      ): c is Extract<
-        Connection["contributions"][number],
-        { kind: "egress-inject" }
-      > => c.kind === "egress-inject",
-    )
-    .map((c) => ({
-      host: c.host,
-      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
-      headerName: c.headerName,
-      valueFormat: c.valueFormat,
-      ...(c.encoding ? { encoding: c.encoding } : {}),
-      ...(c.queryParamName ? { queryParamName: c.queryParamName } : {}),
-      // Single source of truth for the filename; the controller reads it rather than recomputing the key.
-      sdsKey: sdsFileKeyForInjection(c),
-    }));
-
-  const out: Record<string, string> = {};
-  if (envMappings.length > 0) {
-    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
-  }
-  if (injectionHosts.length > 0) {
-    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
-  }
-  return out;
 }

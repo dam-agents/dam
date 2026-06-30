@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { EgressRuleSource } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 
 /**
@@ -45,6 +46,18 @@ export interface ConnectionRulesSync {
      */
     ownedSourceIds: ReadonlySet<string>;
   }): Promise<void>;
+
+  /** Transfer ownership of an agent's active egress rows from the legacy
+   *  secret sources to the migrated connection's source, in place. Used by
+   *  the secrets→connections migration: a plain revoke-then-insert would
+   *  briefly leave the host with no active allow row, so this relabels the
+   *  existing row instead — no coverage gap, and the connection then owns the
+   *  row so a later revoke closes egress correctly. */
+  adoptSources(input: {
+    agentId: string;
+    fromSources: string[];
+    toSource: string;
+  }): Promise<void>;
 }
 
 /**
@@ -78,6 +91,14 @@ export function createConnectionRulesSync(
   deps: CreateConnectionRulesSyncDeps,
 ): ConnectionRulesSync {
   return {
+    async adoptSources({ agentId, fromSources, toSource }) {
+      await deps.repo.reassignActiveSource(
+        agentId,
+        fromSources,
+        toSource as EgressRuleSource,
+      );
+    },
+
     async syncForAgent({ agentId, decidedBy, grants, ownedSourceIds }) {
       const current = await deps.repo.listConnectionDerivedForAgent(agentId);
       // Index existing rows by (connId, host, pathPattern). A connection

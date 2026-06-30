@@ -92,9 +92,14 @@ import {
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
 import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
+import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
+import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
+import { migrateSecretsToConnections } from "./modules/connections/migration/secrets-to-connections.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -168,6 +173,46 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+// Drain legacy provider/PAT secrets into Connections (#1273). Same shape as
+// the user-env backfill: first pass awaited before serving, non-blocking
+// (agents keep working on legacy secrets until each is flipped), timer-retry
+// on partial failure, self-disarming once no legacy secrets remain. Runs with
+// the api-server's cross-owner K8s reach — no owner-scoped surface needed.
+const connectionsBoot = composeConnectionsAtBoot({
+  db,
+  secretStore: secretStores.default(),
+});
+const connectionsServiceFor = (ownerId: string) =>
+  composeConnectionsForOwner({
+    ownerId,
+    db,
+    templates: connectionsBoot.templates,
+    oauthEngine: connectionsBoot.oauthEngine,
+    secretStore: secretStores.default(),
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    agentsRepo,
+    connectionRulesSync: createConnectionRulesSyncAdapter(db),
+    oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+    brandName: config.brand.name,
+  });
+let secretsMigrationRetry: ReturnType<typeof setTimeout> | undefined;
+async function runSecretsToConnectionsMigration(): Promise<void> {
+  const { failed } = await migrateSecretsToConnections({
+    k8sClient,
+    repo: createConnectionsRepository(db),
+    secretStore: secretStores.default(),
+    connectionsServiceFor,
+    connectionRulesSync: createConnectionRulesSyncAdapter(db),
+    log: (m) => getLogger().info(`[secrets-migration] ${m}`),
+  });
+  if (failed > 0)
+    secretsMigrationRetry = setTimeout(
+      () => void runSecretsToConnectionsMigration(),
+      60_000,
+    );
+}
+await runSecretsToConnectionsMigration();
 
 const { service: termsService, isAcceptedPort: isTermsAccepted } =
   composeTermsModule({
@@ -550,6 +595,7 @@ listChannelsByOwner(db, "")()
 async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
+  if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
   channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();

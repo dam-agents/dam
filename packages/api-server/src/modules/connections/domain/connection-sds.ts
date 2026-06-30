@@ -52,4 +52,42 @@ export function buildConnectionSdsFields(
   return out;
 }
 
+/** Per-Connection K8s Secret annotations the controller reads: the env
+ *  placeholders to project and the injection-host descriptors to fan into
+ *  Envoy chains. Projected from the connection's contributions. */
+export function connectionSecretAnnotations(
+  contributions: Contribution[],
+): Record<string, string> {
+  const envMappings = contributions
+    .filter(
+      (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
+    )
+    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
+
+  const injectionHosts = contributions
+    .filter(
+      (c): c is Extract<Contribution, { kind: "egress-inject" }> =>
+        c.kind === "egress-inject",
+    )
+    .map((c) => ({
+      host: c.host,
+      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
+      headerName: c.headerName,
+      valueFormat: c.valueFormat,
+      ...(c.encoding ? { encoding: c.encoding } : {}),
+      ...(c.queryParamName ? { queryParamName: c.queryParamName } : {}),
+      // Single source of truth for the filename; the controller reads it rather than recomputing the key.
+      sdsKey: sdsFileKeyForInjection(c),
+    }));
+
+  const out: Record<string, string> = {};
+  if (envMappings.length > 0) {
+    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
+  }
+  if (injectionHosts.length > 0) {
+    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
+  }
+  return out;
+}
+
 export const CONNECTION_TOKEN_PLACEHOLDER = PLACEHOLDER_TOKEN;
