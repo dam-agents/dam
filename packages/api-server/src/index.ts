@@ -98,6 +98,7 @@ import {
 import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import { migrateSecretsToConnections } from "./modules/connections/migration/secrets-to-connections.js";
+import { createLegacySecretEnvSource } from "./modules/connections/migration/legacy-secret-env-source.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -159,10 +160,11 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
-  // Legacy secret-derived env is retired (#1273); connection `env` contributions
-  // are the only credential-env source now. No-op keeps the state-builder's
-  // shape until a follow-up drops the field.
-  secretEnv: { forAgent: async () => [] },
+  // Inert safety (#1273): supplies credential env for any agent still on a
+  // legacy secret until the migration flips it to a Connection (which then
+  // carries its own env). Returns [] in the steady state. The controller's
+  // kept host-pattern branch covers gateway injection but not this env half.
+  secretEnv: createLegacySecretEnvSource({ k8sClient }),
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {

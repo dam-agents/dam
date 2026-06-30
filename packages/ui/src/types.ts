@@ -161,10 +161,7 @@ export type {
 } from "api-server-api";
 export {
   BOB_CHAT_MODES,
-  bobEnvMappings,
-  bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
-  ibmLitellmEnvMappings,
   isProviderPresetType,
   isValidEnvName,
   PROVIDER_PRESET_TYPES,

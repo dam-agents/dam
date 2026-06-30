@@ -12,8 +12,16 @@ export const wizardSnapshotSchema = z.object({
   templateId: z.string().nullable(),
   customImage: z.string(),
   name: z.string(),
-  // The selected provider Connection (the single credential model).
-  providerRef: z.object({ id: z.string() }).nullable().default(null),
+  // The selected provider Connection (the single credential model). A snapshot
+  // persisted by a pre-#1273 build carried a `{source, id}` shape where the id
+  // could be a legacy *secret* id; drop those to null rather than let a secret
+  // id leak through as a connection id on finish.
+  providerRef: z
+    .preprocess(
+      (v) => (v && typeof v === "object" && "source" in v ? null : v),
+      z.object({ id: z.string() }).nullable(),
+    )
+    .default(null),
   egressPreset: egressPresetSchema,
   connectionIds: z.array(z.string()),
   // Defaulted so a snapshot written by an earlier build still parses.

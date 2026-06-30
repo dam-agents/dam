@@ -118,11 +118,16 @@ function parseLegacySecret(s: k8s.V1Secret): LegacySecret | null {
   return out;
 }
 
-/** List every legacy provider/PAT Secret across all owners. */
+/** List legacy provider/PAT Secrets — across all owners, or scoped to one when
+ *  `owner` is given (the per-agent env source reads only its agent's owner). */
 export async function listLegacySecrets(
   client: K8sClient,
+  owner?: string,
 ): Promise<LegacySecret[]> {
-  const raw = await client.listSecrets(`${LABEL_MANAGED_BY}=api-server`);
+  const selector = owner
+    ? `${LABEL_OWNER}=${owner},${LABEL_MANAGED_BY}=api-server`
+    : `${LABEL_MANAGED_BY}=api-server`;
+  const raw = await client.listSecrets(selector);
   return raw
     .map(parseLegacySecret)
     .filter((s): s is LegacySecret => s !== null);

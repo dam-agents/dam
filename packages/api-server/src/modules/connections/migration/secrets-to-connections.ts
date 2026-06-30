@@ -282,9 +282,16 @@ async function flipAgent(
   connId: string,
 ): Promise<void> {
   const grantsPort = createAgentGrantsPort(deps.k8sClient, cred.owner);
-  const current = await grantsPort.get(agentId);
 
-  const union = Array.from(new Set([...current.grantedConnectionIds, connId]));
+  // Build the union from the DB grants (what setAgentConnections reconciles
+  // against), not the CR. If the CR's grantedConnectionIds has drifted from the
+  // DB, unioning off the CR would make the reconcile revoke a still-valid
+  // connection — or pass a stale/unowned id that fails the owned-by check and
+  // wedges the migration on every retry.
+  const currentConns = await svc.getAgentConnections(agentId);
+  const union = Array.from(
+    new Set([...currentConns.connections.map((c) => c.connectionId), connId]),
+  );
   await svc.setAgentConnections(agentId, union);
 
   await deps.connectionRulesSync.adoptSources({
@@ -293,7 +300,7 @@ async function flipAgent(
     toSource: `connection:${connId}`,
   });
 
-  const remaining = current.grantedSecretIds.filter(
+  const remaining = (await grantsPort.get(agentId)).grantedSecretIds.filter(
     (id) => !cred.secretIds.includes(id),
   );
   await grantsPort.setSecretGrants(agentId, remaining);
