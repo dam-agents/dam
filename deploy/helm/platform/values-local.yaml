@@ -36,6 +36,7 @@ agentTemplates:
   - name: claude-code
     enabled: true
     description: "Default Claude Code agent"
+    telemetry: true
     image:
       repository: platform-claude-code
       tag: latest
