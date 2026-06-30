@@ -1,10 +1,6 @@
 import type { useExperiment, useExperiments } from "./api/queries.js";
 
-export type {
-  ArmStatus,
-  ExperimentConfig,
-  ExperimentStatus,
-} from "api-server-api";
+export type { ArmStatus, ExperimentStatus } from "api-server-api";
 
 // Derive view types from the query hooks rather than the hand-written contract
 // interfaces: tRPC's output inference turns `unknown` fields (a run's opaque

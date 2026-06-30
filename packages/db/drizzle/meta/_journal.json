@@ -64,6 +64,13 @@
       "when": 1782733163330,
       "tag": "0008_slow_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782815559421,
+      "tag": "0009_optimal_betty_brant",
+      "breakpoints": true
     }
   ]
 }

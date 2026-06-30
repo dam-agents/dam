@@ -53,7 +53,7 @@ export function createExperimentsService(deps: {
       if (arm.status !== "running") continue;
       const task = buildTrialPrompt({
         prompt: experiment.prompt,
-        armSpec: arm.armSpec,
+        armVariation: arm.armVariation,
       });
       try {
         await launcher.launch({
@@ -126,7 +126,7 @@ export function createExperimentsService(deps: {
         const arm = await deps.repo.addArm({
           experimentId: input.experimentId,
           agentId: input.agentId,
-          armSpec: input.armSpec,
+          armVariation: input.armVariation,
         });
         securityLog("info", "experiment.arm_add", {
           category: "resource",
@@ -216,7 +216,7 @@ export function createExperimentsService(deps: {
         experimentName: experiment.name,
         prompt: experiment.prompt,
         agentId: arm.agentId,
-        armSpec: arm.armSpec,
+        armVariation: arm.armVariation,
       };
     },
 

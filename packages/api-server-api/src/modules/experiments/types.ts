@@ -1,8 +1,3 @@
-/** Opaque JSON config the platform stores but does not interpret. A per-arm
- *  `armSpec` is a user-authored blob handed to the harness at start; only the
- *  harness reads it (epic decision D4). */
-export type ExperimentConfig = Record<string, unknown>;
-
 /** Lifecycle of an Experiment. `draft` is the create-time default; start moves
  *  it to `running`; Stop moves it to `stopped`; it reaches `completed` on its
  *  own once every Arm is terminal (derived from Arm Status, written by the
@@ -41,7 +36,7 @@ export interface Experiment {
 export interface ExperimentArm {
   experimentId: string;
   agentId: string;
-  armSpec: ExperimentConfig;
+  armVariation: string;
   status: ArmStatus;
   createdAt: string;
 }
@@ -84,13 +79,14 @@ export interface ExperimentListItem extends Experiment {
 
 /** What the ingestion / harness side needs to attribute work to the right
  *  experiment for a given agent, resolved from the agent's verified identity.
- *  Carries the prompt + arm params so the harness has its task context in hand. */
+ *  Carries the prompt + arm variation so the harness has its task context in
+ *  hand. */
 export interface ActiveArm {
   experimentId: string;
   experimentName: string;
   prompt: string;
   agentId: string;
-  armSpec: ExperimentConfig;
+  armVariation: string;
 }
 
 export interface ExperimentCreateInput {
@@ -101,7 +97,7 @@ export interface ExperimentCreateInput {
 export interface ExperimentAddArmInput {
   experimentId: string;
   agentId: string;
-  armSpec: ExperimentConfig;
+  armVariation: string;
 }
 
 export interface ExperimentRecordRunInput {

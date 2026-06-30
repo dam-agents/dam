@@ -507,7 +507,7 @@ export const experimentArms = pgTable(
   {
     experimentId: text("experiment_id").notNull(),
     agentId: text("agent_id").notNull(),
-    armSpec: jsonb("arm_spec").notNull(),
+    armVariation: text("arm_variation").notNull().default(""),
     status: text("status").notNull().default("pending"),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
