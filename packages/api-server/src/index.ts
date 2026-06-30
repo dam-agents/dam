@@ -25,7 +25,6 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { stripStaleModelPins } from "./modules/secrets/infrastructure/strip-stale-model-pins.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -59,7 +58,6 @@ import {
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
-import { createSecretEnvSource } from "./modules/secrets/services/secret-env-source.js";
 import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
@@ -161,7 +159,10 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
-  secretEnv: createSecretEnvSource({ k8sClient }),
+  // Legacy secret-derived env is retired (#1273); connection `env` contributions
+  // are the only credential-env source now. No-op keeps the state-builder's
+  // shape until a follow-up drops the field.
+  secretEnv: { forAgent: async () => [] },
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {
@@ -519,19 +520,6 @@ try {
     `[boot] clearActiveSessions failed: ${(err as Error).message}\n`,
   );
 }
-
-stripStaleModelPins(k8sClient)
-  .then((n) => {
-    if (n)
-      process.stderr.write(
-        `[boot] stripped stale model pins from ${n} provider secret(s)\n`,
-      );
-  })
-  .catch((err) =>
-    process.stderr.write(
-      `[boot] stale-model-pin sweep failed: ${(err as Error).message}\n`,
-    ),
-  );
 
 const { server: apiServer } = startApiServerApp({
   config,

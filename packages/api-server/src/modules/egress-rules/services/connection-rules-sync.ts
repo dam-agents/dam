@@ -4,12 +4,11 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
 
 /**
  * Reconciles `egress_rules` with the agent's currently-granted connections.
- * Both the secrets module (`setAgentAccess`) and the connections module
- * (`setAgentConnections`) call this with their full desired grant set on
- * every change. Each grant is a connection id paired with the (host,
- * pathPattern) rules the connection covers — secrets contribute one rule
- * (the credential target host); app connections may contribute several
- * (e.g. Google Workspace; Gmail with both modern and legacy hosts).
+ * `setAgentConnections` calls this with its full desired grant set on every
+ * change. Each grant is a connection id paired with the (host, pathPattern)
+ * rules the connection covers — a single-host credential contributes one rule;
+ * app connections may contribute several (e.g. Google Workspace; Gmail with
+ * both modern and legacy hosts).
  *
  * Lifecycle (DRAFT-unified-hitl-ux §"Single rules table"):
  *   - Granted (connId, host, pathPattern) not yet in egress_rules → insert
@@ -20,11 +19,9 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
  *     this scan because `listConnectionDerivedForAgent` only returns
  *     `connection:%`.
  *
- * The `connection:<id>` source prefix is shared by both modules (legacy
- * unified scheme), so each caller passes `ownedSourceIds` to scope the
- * revoke pass to rules it's responsible for. Without it, the secrets sync
- * would revoke app-connection rows and vice versa — so disconnecting any
- * app would silently nuke unrelated secret rules.
+ * Callers pass `ownedSourceIds` to scope the revoke pass to the rules they're
+ * responsible for, so a sync for one set of connections never revokes rows
+ * sourced from another.
  *
  * Idempotent — calling with the same input twice is a no-op. Multiple rows
  * may share the same `source` (one connection covering many hosts); the

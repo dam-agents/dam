@@ -107,12 +107,11 @@ export function createAgentsService(deps: {
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
-      secretIds: string[];
       connectionIds: string[];
-    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
-      sel: { secretIds: string[]; connectionIds: string[] },
+      sel: { connectionIds: string[] },
     ): Promise<void>;
   };
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
@@ -296,16 +295,10 @@ export function createAgentsService(deps: {
       // Single-shot create: seed grants into the spec before first render so
       // credentials ride the first snapshot and the gateway renders its chains
       // once. (Not the roll fix — the agent template is grant-independent.)
-      const grantSel = {
-        secretIds: input.secretIds ?? [],
-        connectionIds: input.connectionIds ?? [],
-      };
-      const hasInitialGrants =
-        grantSel.secretIds.length > 0 || grantSel.connectionIds.length > 0;
+      const grantSel = { connectionIds: input.connectionIds ?? [] };
+      const hasInitialGrants = grantSel.connectionIds.length > 0;
       if (deps.grantProvisioner && hasInitialGrants) {
         const g = await deps.grantProvisioner.resolveSpecGrants(grantSel);
-        if (g.grantedSecretIds.length)
-          spec.grantedSecretIds = g.grantedSecretIds;
         if (g.grantedConnectionIds.length)
           spec.grantedConnectionIds = g.grantedConnectionIds;
       }

@@ -172,7 +172,6 @@ test("credentials:read — credential reads allowed; agent reads + writes forbid
   const cred = await mintKey(["credentials:read"]);
 
   expect(Array.isArray(await cred.connections.list.query())).toBe(true);
-  expect(Array.isArray(await cred.secrets.list.query())).toBe(true);
 
   await expectRejected(
     cred.agents.list.query(),

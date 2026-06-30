@@ -56,14 +56,11 @@ import { createAuth, ForbiddenError, clientIp } from "./auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { createTermsGate } from "./terms-gate.js";
 import type { IsAcceptedPort } from "../../modules/terms/compose.js";
-import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
-import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
 import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
 } from "./../../modules/connections/compose.js";
 import { composeApiKeysModule } from "./../../modules/api-keys/index.js";
-import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
 import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -682,15 +679,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
-    // Before the agents module so grantProvisioner (single-shot create) can use them.
-    const grants = createAgentGrantsPort(k8sClient, user.sub);
-    const secrets = createSecretsService({
-      k8sPort: createK8sSecretsPort(k8sClient, user.sub),
-      grants,
-      connectionRules: createConnectionRulesSyncAdapter(db),
-      ownerSub: user.sub,
-      runtimeMutator,
-    });
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       db,
@@ -717,17 +705,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       runtimeMutator,
       contributionsSettled,
       grantProvisioner: {
-        async resolveSpecGrants(sel) {
-          return {
-            grantedSecretIds: sel.secretIds.length
-              ? await secrets.expandSecretGrants(sel.secretIds)
-              : [],
+        resolveSpecGrants(sel) {
+          return Promise.resolve({
             grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          };
+          });
         },
         async applyAfterCreate(agentId, sel) {
-          if (sel.secretIds.length)
-            await secrets.setAgentAccess(agentId, { secretIds: sel.secretIds });
           if (sel.connectionIds.length)
             await connections.setAgentConnections(agentId, sel.connectionIds);
         },
@@ -780,7 +763,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         repos: reposService,
         agents,
         schedules,
-        secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
         skills,
