@@ -7,10 +7,8 @@
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
  * but observed status the controller derives from activity. Security context
- * is chart-only (config.AgentBase) and cannot be set here by design. Most
- * scheduling is likewise chart-wide, but RuntimeClassName and NodeSelector are
- * per-template overridable so a GPU workload can request a GPU-passthrough Kata
- * runtime class and land on a GPU node without forcing that onto every agent.
+ * is chart-only (config.AgentBase); scheduling is chart-wide except
+ * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
  */
 export interface AgentSpecCR {
   /**
@@ -91,8 +89,7 @@ export interface AgentSpecCR {
    */
   name?: string;
   /**
-   * NodeSelector overrides the chart-wide node selector for this agent's pod;
-   * empty = inherit config.AgentBase. Lets a GPU workload target GPU nodes.
+   * NodeSelector overrides the chart-wide node selector; empty = inherit.
    */
   nodeSelector?: {
     [k: string]: string;
@@ -109,9 +106,7 @@ export interface AgentSpecCR {
     };
   };
   /**
-   * RuntimeClassName overrides the chart-wide runtime class for this agent's
-   * pod; empty = inherit config.AgentBase. Lets a GPU workload select a
-   * GPU-passthrough Kata runtime class distinct from the default agent class.
+   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
    */
   runtimeClassName?: string;
   /**

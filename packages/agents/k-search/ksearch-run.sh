@@ -2,15 +2,10 @@
 set -eu
 
 : "${KSEARCH_ROOT:=/opt/k-search}"
-# Call the venv interpreter by absolute path — the harness env (agent-runtime →
-# node → spawn) doesn't carry the image's PATH, and platform-base has no system
-# python3. This interpreter also auto-loads the modal proxy patch via its .pth.
+# Absolute path: the harness env doesn't carry the image PATH.
 PYTHON="${KSEARCH_PYTHON:-/opt/ksearch-venv/bin/python3}"
 
-# Python TLS (httpx/openai/modal) verifies against certifi, not the system
-# trust store the entrypoint updates — so it doesn't trust the platform MITM CA
-# the gateway presents for credentialed hosts (LiteLLM, api.modal.com). Append
-# the CA to the venv's certifi bundle once so those TLS handshakes verify.
+# Python TLS uses certifi, not the system store — add the platform MITM CA.
 MITM_CA="/etc/platform/ca/ca.crt"
 if [ -s "$MITM_CA" ]; then
   CERTIFI="$("$PYTHON" -c 'import certifi; print(certifi.where())' 2>/dev/null || true)"
@@ -19,9 +14,6 @@ if [ -s "$MITM_CA" ]; then
   fi
 fi
 
-# Evaluation backend is a runtime knob: `modal` runs the GPU benchmark on
-# Modal's cloud (no local GPU needed); switch to `local` once the pod is
-# scheduled on a GPU node. Only the kernelbench task supports `modal` today.
 TASK_SOURCE="${KSEARCH_TASK_SOURCE:-kernelbench}"
 EVAL_MODE="${KSEARCH_EVAL_MODE:-modal}"
 TARGET_GPU="${KSEARCH_TARGET_GPU:-H100}"

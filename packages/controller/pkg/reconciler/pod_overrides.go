@@ -57,10 +57,9 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	}
 }
 
-// applyTemplateScheduling layers per-template scheduling onto the pod after
-// applyAgentBaseScheduling, so a template's RuntimeClassName / NodeSelector win
-// over the chart-wide base. NodeSelector keys merge onto the base map (a fresh
-// copy — never mutate the shared config map); RuntimeClassName replaces.
+// applyTemplateScheduling layers per-template RuntimeClassName / NodeSelector
+// over the chart-wide base. NodeSelector keys merge (onto a fresh copy, never
+// the shared config map); RuntimeClassName replaces.
 func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
 	if agentSpec.RuntimeClassName != "" {
 		rc := agentSpec.RuntimeClassName

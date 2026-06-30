@@ -1,21 +1,6 @@
-"""Route the Modal client through DAM's HTTP CONNECT egress gateway.
-
-DAM agent pods reach the network only via an explicit HTTPS_PROXY (the paired
-Envoy gateway); direct egress and DNS are blocked. The modal client ignores
-HTTPS_PROXY on both of its transports, so without this patch its traffic is
-dropped. Two gaps closed here:
-
-  1. grpclib (Modal control plane, api.modal.com) has no proxy support — patch
-     Channel._create_connection to CONNECT through the proxy, then layer TLS
-     end-to-end (the gateway L4-passes the tunnel; the token stays in-pod).
-  2. Modal's aiohttp blob client (GCS / Cloudflare R2 / S3 uploads) is built
-     without trust_env — rebuild the session factory with trust_env=True so it
-     honors HTTPS_PROXY.
-
-Auto-loaded at interpreter startup via a .pth file, so it also covers the
-run_and_check.py subprocess that performs the Modal evaluation. A no-op when
-HTTPS_PROXY is unset.
-"""
+"""Teach the Modal client to honor HTTPS_PROXY (grpclib has no proxy support;
+aiohttp blob client is built without trust_env). Auto-loaded via a .pth;
+a no-op when HTTPS_PROXY is unset."""
 import os
 import socket
 import sys
@@ -40,8 +25,6 @@ async def _connect_via_proxy(self):
     if proxy is None or self._path is not None:
         return await _orig_create_connection(self)
     loop = self._loop
-    # Resolve the proxy address family (don't assume IPv4) so an IPv6-only
-    # proxy still works.
     family, socktype, proto, _, sockaddr = (
         await loop.getaddrinfo(proxy[0], proxy[1], type=socket.SOCK_STREAM)
     )[0]

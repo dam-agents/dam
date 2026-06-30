@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Minimal ACP agent that fronts the K-Search batch job.
-//
-// agent-runtime spawns harness-chat as a long-lived ACP subprocess at boot and
-// crashes if it exits. K-Search is not an interactive LLM agent, so this shim
-// implements just enough ACP (initialize / session/new / session/prompt) to
-// stay alive and, on a prompt, run `ksearch-run` and stream its output back as
-// agent message chunks. The prompt text is ignored for now — the run is driven
-// by the KSEARCH_* env (see ksearch-run).
+// Minimal ACP agent so agent-runtime's required harness-chat subprocess stays
+// alive; on a prompt it runs `ksearch-run` (driven by KSEARCH_* env) and
+// streams the output back. The prompt text is ignored.
 import * as acp from "@agentclientprotocol/sdk";
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
@@ -64,10 +59,8 @@ class KSearchAgent {
       `Starting K-Search kernel optimization (eval backend: ${mode})…\n`,
     );
 
-    // Serialize output through `tail` (preserves order across both streams)
-    // and pause each stream until its chunk is delivered (backpressure → the
-    // queue stays bounded). Awaiting `tail` before the summary guarantees it
-    // prints after the last relayed chunk.
+    // Serialize relayed chunks through `tail` (ordered + bounded via stream
+    // pause/resume); awaited before the summary so it prints last.
     let tail = Promise.resolve();
     const enqueue = (text) => {
       tail = tail.then(() => this.emit(params.sessionId, text)).catch(() => {});

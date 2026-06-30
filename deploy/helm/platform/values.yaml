@@ -730,14 +730,8 @@ controller:
       extraLabels: {}
       extraAnnotations: {}
       nodeSelector: {}
-      # Tolerations apply to every agent pod, but a toleration only *permits*
-      # scheduling on a tainted node — it doesn't attract pods there. So if the
-      # GPU node carries the standard taint, uncomment this to let the
-      # nvidia.com/gpu-requesting k-search-local pod past it; CPU-only agents
-      # still land on regular nodes (they don't request the GPU).
-      #   - key: nvidia.com/gpu
-      #     operator: Exists
-      #     effect: NoSchedule
+      # If a GPU node is tainted, add a matching toleration here (applies to
+      # every agent pod, but only the GPU pod requests nvidia.com/gpu).
       tolerations: []
       affinity: {}
       topologySpreadConstraints: []
@@ -997,19 +991,10 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
-  # Same image as k-search, but evaluates kernels on an in-cluster NVIDIA GPU
-  # (KSEARCH_EVAL_MODE=local) instead of Modal. The nvidia.com/gpu request is
-  # what schedules it onto a GPU node. Disabled by default so it isn't left
-  # Pending on GPU-less clusters — enable on a cluster with a GPU (e.g. A100).
-  # If that node is tainted, add the matching toleration to
-  # controller.agent.base.tolerations (chart-global; see there).
-  #
-  # Kata note: agents run under a sandboxed (Kata) runtime, and GPU passthrough
-  # needs a *GPU-capable* Kata runtime class (VFIO) that is heavier than the
-  # default agent class — so it must be set per-template here, not chart-wide on
-  # controller.agent.base.runtimeClassName (that would force the GPU VM config
-  # onto every CPU-only agent). Uncomment runtimeClassName/nodeSelector below and
-  # set them to your cluster's GPU Kata class + GPU node label.
+  # Same image as k-search, evaluating on an in-cluster NVIDIA GPU
+  # (KSEARCH_EVAL_MODE=local). Disabled by default — stays Pending without a GPU.
+  # GPU passthrough under Kata needs a GPU-capable runtime class set per-template
+  # below (the chart-wide class can't carry the GPU VM config for every agent).
   - name: k-search-local
     enabled: false
     category: preconfigured
@@ -1019,14 +1004,10 @@ agentTemplates:
       repository: quay.io/dam-agents/k-search
       tag: ""
     storageSize: "10Gi"
-    # GPU-passthrough Kata runtime class (cluster-specific). On OpenShift the
-    # sandboxed-containers operator's KataConfig names it "kata-nvidia-gpu".
-    # Overrides the chart-wide class. Note: this class carries a podFixed
-    # overhead (e.g. +1 CPU / +4Gi) added to every pod's requests.
+    # GPU Kata runtime class (cluster-specific; e.g. "kata-nvidia-gpu" on
+    # OpenShift). Adds a podFixed overhead (~1 CPU / 4Gi).
     # runtimeClassName: "kata-nvidia-gpu"
-    # Optional — the runtime class already pins to the Kata GPU node pool, and
-    # the nvidia.com/gpu request pins to the GPU node within it. Set this only to
-    # make GPU-node targeting explicit. Merged onto controller.agent.base.nodeSelector.
+    # Optional — the GPU request already pins to the GPU node.
     # nodeSelector:
     #   nvidia.com/gpu.present: "true"
     env:
@@ -1036,8 +1017,6 @@ agentTemplates:
         value: "A100"
     resources:
       requests:
-        # 1 CPU request; the kata-nvidia-gpu runtime class adds ~1 CPU podFixed
-        # overhead on top, so the pod schedules against ~2 CPU total.
         cpu: "1"
         memory: "8Gi"
         nvidia.com/gpu: "1"

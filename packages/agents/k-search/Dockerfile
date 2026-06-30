@@ -24,9 +24,7 @@ RUN git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search
     ! grep -nE '(dataset_src: str|self\.dataset_src) = "huggingface"' "${KSEARCH_ROOT}/k_search/tasks/kernelbench_task.py" "${KSEARCH_ROOT}/k_search/tasks/kernelbench/run_and_check.py" && \
     chown -R 65532:0 "${KSEARCH_ROOT}" "${VIRTUAL_ENV}" "${UV_PYTHON_INSTALL_DIR}"
 
-# Minimal ACP agent for chat-mode: agent-runtime spawns harness-chat at boot and
-# crashes if it exits, so K-Search ships a small ACP shim (Node, @agentclientprotocol/sdk)
-# that stays alive and runs the kernel-opt job on prompt.
+# ACP shim deps (agent-runtime requires a live harness-chat).
 RUN --mount=type=cache,target=/root/.npm \
     mkdir -p /opt/ksearch-acp && cd /opt/ksearch-acp && \
     npm init -y >/dev/null && \
@@ -37,9 +35,7 @@ COPY ksearch-acp-shim.mjs /opt/ksearch-acp/ksearch-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 COPY ksearch-run.sh /usr/local/bin/ksearch-run
-# Route the modal client through DAM's HTTPS_PROXY gateway. Installed as a .pth
-# so it auto-loads in every venv interpreter — including the run_and_check.py
-# subprocess that actually talks to Modal.
+# .pth auto-loads the modal proxy patch in every venv interpreter.
 COPY dam_modal_proxy_patch.py ${VIRTUAL_ENV}/lib/python3.12/site-packages/dam_modal_proxy_patch.py
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal /usr/local/bin/ksearch-run && \
     printf 'import dam_modal_proxy_patch\n' > "${VIRTUAL_ENV}/lib/python3.12/site-packages/zz_dam_modal_proxy.pth" && \
@@ -47,10 +43,7 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal /usr/lo
                   "${VIRTUAL_ENV}/lib/python3.12/site-packages/zz_dam_modal_proxy.pth"
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
-# Placeholder satisfies the OpenAI client startup check; the real key is
-# injected on the wire by the gateway. Modal's token-secret is gateway-injected
-# the same way (the pod only ever sees a placeholder); only the non-secret
-# token-id rides as a plain env. Both come from the Modal connection at runtime.
+# Placeholder only; the real key is injected at the gateway, never in-pod.
 ENV OPENAI_API_KEY=dummy-placeholder
 
 USER 65532
