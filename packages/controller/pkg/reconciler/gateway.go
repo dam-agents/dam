@@ -49,7 +49,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 		LabelRole:  RoleGateway,
 	}
 
-	volumes := envoyVolumes(agentName, credentialSecrets)
+	volumes := envoyVolumes(agentName, cfg, credentialSecrets)
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
@@ -164,7 +164,7 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 		ForkLabelType: ForkJobLabelType,
 	}
 
-	volumes := envoyVolumes(forkName, credentialSecrets)
+	volumes := envoyVolumes(forkName, cfg, credentialSecrets)
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -178,7 +179,7 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 }
 
 func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 	})
 	require.NoError(t, err)
@@ -223,7 +224,7 @@ func TestRenderEnvoyBootstrap_EmptyRoutesNoLeafTLSReferences(t *testing.T) {
 	// otherwise a no-grants render would crash with "Failed to load
 	// incomplete private key" the moment the CM is updated to include
 	// routes (the volume backing that path doesn't exist yet).
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, nil)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "tls.key",
 		"empty-routes bootstrap must not reference the leaf TLS private key — pod has no envoy-tls volume to back it")
@@ -239,7 +240,7 @@ func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(
 	// With no credentialed routes there should be no per-credential cluster
 	// and no host_rewrite_literal — the catch-all/L4 paths still use
 	// dynamic_forward_proxy clusters but those are non-credentialed.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
 	})
 	require.NoError(t, err)
@@ -255,7 +256,7 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	// Credentialed and allow-only side-by-side: only the credentialed one
 	// gets a pinned cluster. The two chains are visually adjacent in the
 	// output, so we anchor each assertion on its specific cluster name.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
 	})
@@ -268,6 +269,140 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	assert.Equal(t, 1, pinnedCount, "exactly one pinned upstream cluster should be rendered (credentialed routes only)")
 	assert.Contains(t, got, "name: upstream_platform-conn-github")
 	assert.NotContains(t, got, "name: upstream_platform-allow-only-npm")
+}
+
+// telemetryTestCfg copies bootstrapTestCfg with the telemetry collector
+// configured, so the gateway renders the collector egress chain.
+func telemetryTestCfg() *config.Config {
+	c := *bootstrapTestCfg
+	c.TelemetryCollectorHost = "platform-clickstack-collector.platform.svc.cluster.local"
+	c.TelemetryCollectorPort = 4318
+	return &c
+}
+
+func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
+	// Telemetry on, no credential Secrets — the collector chain stands alone.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+
+	// Dedicated collector chain, matched on the collector SNI.
+	assert.Contains(t, got, "terminate_otel_collector")
+	assert.Contains(t, got, `server_names: [ "platform-clickstack-collector.platform.svc.cluster.local" ]`)
+
+	// Trusted identity header stamped with OVERWRITE so an agent-supplied
+	// value can't survive; value is this instance's id.
+	assert.Contains(t, got, "key: x-platform-agent-id")
+	assert.Contains(t, got, `value: "inst-1"`)
+	assert.Contains(t, got, "OVERWRITE_IF_EXISTS_OR_ADD")
+
+	// Pinned STRICT_DNS collector cluster on the OTLP/HTTP port.
+	assert.Contains(t, got, "address: platform-clickstack-collector.platform.svc.cluster.local")
+	assert.Contains(t, got, "port_value: 4318")
+
+	// The collector chain is platform-internal: no HITL ext_authz and no
+	// credential injection on it. Isolate the chain (it precedes the L4
+	// catch-all) so the assertion doesn't trip on ext_authz elsewhere.
+	cs := strings.Index(got, "- name: terminate_otel_collector")
+	ce := strings.Index(got, "# SNI miss")
+	require.True(t, cs >= 0 && ce > cs, "collector chain must precede the L4 catch-all")
+	collectorChain := got[cs:ce]
+	assert.NotContains(t, collectorChain, "ext_authz")
+	assert.NotContains(t, collectorChain, "credential_injector")
+
+	// The collector upstream is plaintext (ztunnel adds mTLS on the in-cluster
+	// hop) — no upstream TLS transport_socket on the cluster definition.
+	clusterDef := got[strings.Index(got, "- name: otel_collector"):]
+	clusterDef = clusterDef[:strings.Index(clusterDef[len("- name: otel_collector"):], "- name: ")+len("- name: otel_collector")]
+	assert.Contains(t, clusterDef, "type: STRICT_DNS")
+	assert.NotContains(t, clusterDef, "transport_socket")
+}
+
+func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
+	// The bootstrap is a templated YAML string embedded in a ConfigMap, so a
+	// stray indent in the collector chain/cluster only surfaces when Envoy
+	// boots. Render with telemetry on AND a credentialed chain (both new
+	// template blocks plus the existing ones active) and confirm the whole
+	// document parses as YAML.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+	// The collector chain/cluster coexist with the credentialed chain (distinct
+	// hosts → no collision).
+	assert.Contains(t, got, "terminate_otel_collector")
+	assert.Contains(t, got, "- name: otel_collector")
+	assert.Contains(t, got, "name: upstream_platform-conn-github")
+}
+
+func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
+	// bootstrapTestCfg has no collector host → telemetry off.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "terminate_otel_collector")
+	assert.NotContains(t, got, "otel_collector")
+	assert.NotContains(t, got, "x-platform-agent-id")
+}
+
+func TestRenderEnvoyBootstrap_TelemetryHeaderUsesInstanceNotExtAuthzID(t *testing.T) {
+	// Forks dial the PARENT's ext-authz Service (extAuthzInstanceID=parent)
+	// but their telemetry must attribute to the fork itself — the header value
+	// tracks the instance id, not the ext-authz id.
+	got, err := renderEnvoyBootstrap("fork-xyz", "parent-agent", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	assert.Contains(t, got, `value: "fork-xyz"`)
+	assert.NotContains(t, got, `value: "parent-agent"`)
+	// ext-authz authority still points at the parent's per-instance Service.
+	assert.Contains(t, got, "extauthz-parent-agent")
+}
+
+func hasVolumeNamed(vols []corev1.Volume, name string) bool {
+	for _, v := range vols {
+		if v.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMountNamed(mounts []corev1.VolumeMount, name string) bool {
+	for _, m := range mounts {
+		if m.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEnvoyVolumes_TelemetryMountsLeafWithoutSecrets(t *testing.T) {
+	// No credential Secrets, telemetry on: the leaf TLS volume + mount must
+	// still be present because the collector chain MITM-terminates with it.
+	// Without this the gateway would crash loading a non-existent tls.key.
+	cfg := telemetryTestCfg()
+	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume),
+		"leaf TLS volume must be present when telemetry is on even with no Secrets")
+	assert.True(t, hasMountNamed(envoyContainer(cfg, nil).VolumeMounts, envoyLeafTLSVolume),
+		"leaf TLS mount must be present when telemetry is on even with no Secrets")
+}
+
+func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer(bootstrapTestCfg, nil).VolumeMounts, envoyLeafTLSVolume))
+}
+
+func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *testing.T) {
+	// If the collector host collided with a credentialed chain host, two
+	// filter chains would share server_names — fatal to Envoy. The collector
+	// chain is suppressed; the credentialed chain wins (and the host stays in
+	// the leaf SAN via that chain).
+	cfg := telemetryTestCfg()
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", cfg, []envoyHostChain{
+		credentialedChain("platform-conn-collector", cfg.TelemetryCollectorHost),
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "terminate_otel_collector")
+	assert.NotContains(t, got, "- name: otel_collector")
 }
 
 // secretWithEnvMappings returns an owner-labelled Secret carrying an
@@ -461,7 +596,7 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 	// SDS value into the credential's header; Lua moves it into the URL
 	// query parameter and strips the header before the request leaves
 	// the sidecar.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		queryParamChain("platform-cred-bob", "prod.ibm-bob-staging.cloud.ibm.com", "X-Bobshell-Cred", "key"),
 	})
 	require.NoError(t, err)
@@ -484,7 +619,7 @@ func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
 	// Without QueryParamName the chain has only credential_injector — no
 	// Lua. credential_injector writes the pre-formatted SDS value (baked
 	// by api-server) directly into the user header.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 	})
 	require.NoError(t, err)
@@ -497,7 +632,7 @@ func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing
 	// stack as two credential_injector entries inside a single TLS chain.
 	// Exactly one chain definition, one route-config, one upstream cluster —
 	// the second credential MUST NOT spawn a duplicate filter chain.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
 		twoCredentialChain("platform-cred-header", "platform-cred-query", "prod.ibm-bob-staging.cloud.ibm.com"),
 	})
 	require.NoError(t, err)
