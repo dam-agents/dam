@@ -60,7 +60,11 @@ data:
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- with $tmpl.env }}
+    {{- $env := $tmpl.env | default list }}
+    {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}
+    {{- $env = concat $env (include "platform.agentTelemetry.env" $ | fromYamlArray) }}
+    {{- end }}
+    {{- with $env }}
     env:
       {{- toYaml . | nindent 6 }}
     {{- end }}

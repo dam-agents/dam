@@ -933,6 +933,7 @@ agentTemplates:
   - name: claude-code
     enabled: true
     description: "Default Claude Code agent"
+    telemetry: true
     image:
       repository: quay.io/dam-agents/claude-code
       tag: ""
