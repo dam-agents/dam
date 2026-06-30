@@ -1,16 +1,13 @@
 import { useStore } from "../../../store.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
-import { useDeleteSecret } from "../../secrets/api/mutations.js";
 import type { ProviderRef } from "./provider-item.js";
 
 export function useProviderActions() {
   const showConfirm = useStore((s) => s.showConfirm);
-  const deleteSecret = useDeleteSecret();
   const deleteConnection = useDeleteConnection();
 
   return {
-    /** Confirm with the user, then delete the provider — routing by source so
-     *  a legacy secret-backed provider still removes via the secrets path.
+    /** Confirm with the user, then delete the provider connection.
      *  Destructive variant: removing a provider breaks any agent using it. */
     async remove(ref: ProviderRef, onRemoved?: () => void) {
       const ok = await showConfirm(
@@ -20,11 +17,7 @@ export function useProviderActions() {
       );
       if (!ok) return;
       const opts = onRemoved ? { onSuccess: () => onRemoved() } : undefined;
-      if (ref.source === "connection") {
-        deleteConnection.mutate({ id: ref.id }, opts);
-      } else {
-        deleteSecret.mutate({ id: ref.id }, opts);
-      }
+      deleteConnection.mutate({ id: ref.id }, opts);
     },
   };
 }

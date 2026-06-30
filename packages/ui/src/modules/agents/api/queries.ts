@@ -78,24 +78,9 @@ export function useIsAgentOperable(agentId: string | null): boolean {
 }
 
 /**
- * Per-agent secret + connection access. The agent might not yet be fully
- * reconciled (controller syncs asynchronously after create), so we swallow
- * errors silently rather than toasting.
- */
-export function useAgentAccess(agentId: string | null) {
-  return useQuery({
-    ...trpc.secrets.getAgentAccess.queryOptions(
-      agentId ? { agentId: agentId } : skipToken,
-    ),
-    retry: false,
-    refetchOnMount: "always",
-  });
-}
-
-/**
- * Per-agent app-connection grants. Same controller-sync lag as
- * {@link useAgentAccess}, so errors stay silent and initial data defaults
- * to an empty grant list.
+ * Per-agent app-connection grants. The agent might not yet be fully reconciled
+ * (controller syncs asynchronously after create), so errors stay silent and
+ * initial data defaults to an empty grant list.
  */
 export function useAgentConnections(agentId: string | null) {
   return useQuery({
