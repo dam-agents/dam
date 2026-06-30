@@ -73,7 +73,7 @@ agentTemplates:
         memory: "4Gi"
 
   - name: nous
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
@@ -90,7 +90,7 @@ agentTemplates:
         memory: "4Gi"
 
   - name: openevolve
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "OpenEvolve — evolutionary code-optimization agent"
@@ -111,7 +111,7 @@ agentTemplates:
         value: "Hello from the mock agent."
 
   - name: k-search
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"

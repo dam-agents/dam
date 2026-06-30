@@ -19,6 +19,9 @@ RUN git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search
     [ -f /opt/kernelbench/uv.lock ] && cp /opt/kernelbench/uv.lock "${KSEARCH_ROOT}/k_search/tasks/uv.lock" || true && \
     uv venv "${VIRTUAL_ENV}" --python 3.12 && \
     uv pip install --python "${VIRTUAL_ENV}/bin/python" openai modal "/opt/kernelbench[gpu]" && \
+    sed -i 's/dataset_src: str = "huggingface"/dataset_src: str = "local"/g' "${KSEARCH_ROOT}/k_search/tasks/kernelbench_task.py" && \
+    sed -i 's/self.dataset_src = "huggingface"/self.dataset_src = "local"/g' "${KSEARCH_ROOT}/k_search/tasks/kernelbench/run_and_check.py" && \
+    ! grep -nE '(dataset_src: str|self\.dataset_src) = "huggingface"' "${KSEARCH_ROOT}/k_search/tasks/kernelbench_task.py" "${KSEARCH_ROOT}/k_search/tasks/kernelbench/run_and_check.py" && \
     chown -R 65532:0 "${KSEARCH_ROOT}" "${VIRTUAL_ENV}" "${UV_PYTHON_INSTALL_DIR}"
 
 # Minimal ACP agent for chat-mode: agent-runtime spawns harness-chat at boot and

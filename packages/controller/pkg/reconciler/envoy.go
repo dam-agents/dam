@@ -43,8 +43,7 @@ const (
 	envoyQueryParamAnn  = "agent-platform.ai/injection-query-param"
 	envoyAuthModeAnn    = "agent-platform.ai/auth-mode"
 	// Opt-in: terminate this host's chain as HTTP/2 so credential injection
-	// applies to a gRPC stream (e.g. Modal's x-modal-token-* metadata). REST
-	// hosts omit it and stay HTTP/1.1, unchanged.
+	// applies to a gRPC stream (e.g. Modal). REST hosts stay HTTP/1.1.
 	envoyInjectionHTTP2Ann = "agent-platform.ai/injection-http2"
 	// Connection Secrets: N injection targets as JSON. Issue #219. (The
 	// api-server also stamps `agent-platform.ai/host-patterns` for kubectl
@@ -115,10 +114,6 @@ type envoyHostChain struct {
 	// SAN-bound TLS validation so the agent's Host header cannot
 	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
-	// HTTP2, when set, makes the chain advertise h2 ALPN downstream and
-	// mirror the negotiated protocol upstream, so credential injection works
-	// over a gRPC (HTTP/2) stream (e.g. Modal). Off by default — REST chains
-	// stay HTTP/1.1 with byte-identical config.
 	HTTP2 bool
 }
 
@@ -302,7 +297,6 @@ type connectionHostInjection struct {
 	ValueFormat    string `json:"valueFormat,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
 	QueryParamName string `json:"queryParamName,omitempty"`
-	// HTTP2 marks this host's chain as gRPC (HTTP/2); see envoyInjectionHTTP2Ann.
 	HTTP2 bool `json:"http2,omitempty"`
 	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
 	SDSKey string `json:"sdsKey,omitempty"`
@@ -397,7 +391,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		host        string
 		seenHeader  map[string]string
 		credentials []envoyCredential
-		http2       bool   // any contributing entry marked this host gRPC/HTTP2
+		http2       bool
 		first       string // first Secret name encountered for this host (drives ChainID)
 	}
 	byHost := map[string]*bucket{}

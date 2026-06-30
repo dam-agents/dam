@@ -635,11 +635,6 @@ apiServer:
     - cdn.mise.run
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
-    # Hugging Face (model/dataset downloads — e.g. K-Search's KernelBench dataset)
-    - huggingface.co
-    - datasets-server.huggingface.co
-    - cas-server.xethub.hf.co
-    - us.aws.cdn.hf.co
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding

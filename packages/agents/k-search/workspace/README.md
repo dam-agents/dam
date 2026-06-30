@@ -12,6 +12,11 @@ Terminal-mode launches `ksearch-run`, which drives
 LLM calls use the OpenAI-compatible endpoint injected by DAM (`OPENAI_BASE_URL`,
 `OPENAI_API_KEY`, `OPENAI_MODEL`) — i.e. the LiteLLM proxy.
 
+KernelBench problems are read from the copy baked into the image
+(`dataset_src=local`, patched at build time), not fetched from Hugging Face — so
+the only egress an eval needs is the LLM endpoint. This keeps Hugging Face off
+the platform-wide egress allowlist.
+
 ## Eval backend: Modal vs local GPU
 
 Pick by selecting the workload at sandbox creation:
