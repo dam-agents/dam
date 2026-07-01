@@ -1,3 +1,4 @@
+# resolver rebuild demo — harmless no-op change (remove before merge)
 _GATEWAY_BASE="http://127.0.0.1:24180"
 
 _gateway_custom_upstream() {
