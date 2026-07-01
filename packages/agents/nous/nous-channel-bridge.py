@@ -19,7 +19,7 @@ webhook — so no external egress and no webhook secret on disk.
 Why this works in the pod (all verified against a live agent):
   * Auth is mesh-based — a process inside the agent pod inherits the pod's
     mesh identity, which the api-server waypoint accepts for
-    ``/api/agents/<id>/mcp`` (ADR-041). No token needed.
+    ``/api/agents/<id>/mcp``. No token needed.
   * The MCP endpoint URL is injected as ``PLATFORM_MCP_URL``.
   * The MCP call must traverse the egress gateway (the pod's NetworkPolicy
     routes all egress through it); urllib's default opener honors ``HTTP_PROXY``
@@ -86,6 +86,41 @@ def _mcp_post(payload: dict, session_id: str | None):
         return resp.headers, _first_jsonrpc(body, resp.headers.get("Content-Type", ""))
 
 
+def _resolve_chat_id(channel: str, session_id: str | None) -> str | None:
+    """Resolve the bound chat for ``channel`` via ``describe_channel``.
+
+    Nous's webhook wiring is just ``?channel=<slack|telegram>`` with no chatId, so
+    without this the tool falls back to the *last-active* thread — and Telegram
+    rejects the send outright when no thread is currently active ("no active
+    Telegram thread"), silently dropping every gate summary on a fresh campaign.
+    ``describe_channel`` returns the authorized chats; we address the first one
+    explicitly so delivery never depends on a live thread. An explicit
+    ``?chatId=`` in the webhook URL still wins — this runs only when none is given.
+    """
+    _, parsed = _mcp_post(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "describe_channel", "arguments": {"channel": channel}},
+        },
+        session_id,
+    )
+    result = (parsed or {}).get("result", {})
+    if result.get("isError"):  # channel not bound / not available
+        return None
+    for item in result.get("content", []):
+        if item.get("type") != "text":
+            continue
+        try:
+            chats = json.loads(item.get("text", "") or "{}").get("chats")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(chats, list) and chats:
+            return chats[0].get("id")
+    return None
+
+
 def send_channel_message(channel: str, text: str, chat_id: str | None) -> None:
     """Run the MCP handshake and call send_channel_message."""
     if not MCP_URL:
@@ -107,14 +142,19 @@ def send_channel_message(channel: str, text: str, chat_id: str | None) -> None:
     sid = headers.get("mcp-session-id")
     # 2. initialized notification (the transport expects it before tool calls).
     _mcp_post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
-    # 3. the actual tool call.
+    # 3. Address the bound chat explicitly. Without a chatId the tool targets the
+    #    last-active thread, which Telegram rejects when none is active — so
+    #    resolve it from describe_channel unless the webhook URL pinned one.
+    if not chat_id:
+        chat_id = _resolve_chat_id(channel, sid)
+    # 4. the actual tool call.
     args: dict = {"channel": channel, "text": text}
     if chat_id:
         args["chatId"] = chat_id
     _, parsed = _mcp_post(
         {
             "jsonrpc": "2.0",
-            "id": 2,
+            "id": 3,
             "method": "tools/call",
             "params": {"name": "send_channel_message", "arguments": args},
         },
