@@ -54,6 +54,7 @@ function makeFakeRepo(): FakeRepo {
     listPendingForOwner: async () => [],
     listPendingForInstance: async () => [],
     resolvePending: async () => true,
+    resolveExpired: async () => {},
     markDelivered: async () => {},
     listResolvedUndelivered: async () => [],
     expirePending: async (id) => {

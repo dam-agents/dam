@@ -197,14 +197,12 @@ export function createApprovalsService(
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        // The pending row may already be expired (the held call timed out),
-        // in which case resolvePending no-ops — that's the timed-out
-        // approve-permanent flow: rule is written, future retries match.
         const casWon = await deps.repo.resolvePending(
           id,
           "allow",
           deps.ownerSub,
         );
+        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
@@ -249,6 +247,7 @@ export function createApprovalsService(
           "allow",
           deps.ownerSub,
         );
+        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         // Host-wide allow (method:*/path:*) — a broad widening of the
         // allow-list; flag it.
@@ -286,6 +285,7 @@ export function createApprovalsService(
           "deny",
           deps.ownerSub,
         );
+        if (!casWon) await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",

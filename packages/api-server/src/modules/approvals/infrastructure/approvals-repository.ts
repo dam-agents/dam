@@ -46,6 +46,11 @@ export interface ApprovalsRepository {
     decidedBy: string,
     opts?: { markDelivered?: boolean },
   ): Promise<boolean>;
+  resolveExpired(
+    id: string,
+    verdict: "allow" | "deny",
+    decidedBy: string,
+  ): Promise<void>;
   /** Idempotent. Stamps `delivered_at` on a row whose response frame has
    *  reached the wrapper. Re-running is harmless: the WHERE keeps it from
    *  overwriting an earlier delivery timestamp. */
@@ -233,6 +238,25 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         )
         .returning({ id: pendingApprovals.id });
       return rows.length > 0;
+    },
+
+    async resolveExpired(id, verdict, decidedBy) {
+      const now = new Date();
+      await db
+        .update(pendingApprovals)
+        .set({
+          status: "resolved",
+          verdict,
+          decidedBy,
+          resolvedAt: now,
+          deliveredAt: now,
+        })
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "expired"),
+          ),
+        );
     },
 
     async markDelivered(id) {
