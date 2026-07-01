@@ -261,9 +261,10 @@ clickstack:
 
   # --- forwarded to the clickstack subchart ---
   # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
-  #   hyperdx:2.27.0                <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
-  #   clickhouse-server:25.7-alpine <- clickhouse/clickhouse-server:25.7-alpine
-  #   busybox:1.37.0               <- busybox
+  #   hyperdx:2.27.0                 <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+  #   clickhouse-server:25.7-alpine  <- clickhouse/clickhouse-server:25.7-alpine
+  #   clickhouse-keeper:25.7-alpine  <- clickhouse/clickhouse-keeper:25.7-alpine
+  #   busybox:1.37.0                 <- busybox
   # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
 
   otel-collector:
@@ -278,6 +279,15 @@ clickstack:
         image: "quay.io/dam-agents/busybox:1.37.0"
 
   clickhouse:
+    # Without an explicit image the operator injects its built-in default
+    # (docker.io/clickhouse/clickhouse-keeper:latest) — pin to the mirror and
+    # match the server tag. Merges over the subchart's keeper.spec defaults.
+    keeper:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-keeper
+            tag: "25.7-alpine"
     cluster:
       spec:
         containerTemplate:
