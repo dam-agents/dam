@@ -94,52 +94,22 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: d
         env:
+          # PR: reuse from the registry what the merge-base already built.
+          # Everything else (main/tag/schedule/dispatch) rebuilds & republishes all.
           EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "platform_base=true" >> "$GITHUB_OUTPUT"
-            echo "platform_base_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            echo 'agents=["claude-code","codex","pi-agent","bob","k-search"]' >> "$GITHUB_OUTPUT"
-            echo 'archs=["amd64","arm64"]' >> "$GITHUB_OUTPUT"
-            echo "nous=true" >> "$GITHUB_OUTPUT"
-            echo "openevolve=true" >> "$GITHUB_OUTPUT"
-            echo "claude_code_base_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mb="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          echo "::notice::PR merge-base $mb"
-          changed() { ! git diff --quiet "$mb" "$HEAD_SHA" -- "$@"; }
-
-          pb=false
-          changed packages/platform-base packages/agent-runtime \
-                  packages/agent-runtime-api packages/api-server-api \
-                  packages/dev-config scripts/install-pnpm.js \
-                  package.json pnpm-workspace.yaml pnpm-lock.yaml && pb=true
-
-          agents="$(for a in claude-code codex pi-agent bob k-search; do
-            { [ "$pb" = true ] || changed "packages/agents/$a"; } && echo "$a" || true
-          done | jq -R . | jq -cs .)"
-          cc=false; echo "$agents" | jq -e 'index("claude-code")' >/dev/null && cc=true
-
-          nous=false;       { [ "$cc" = true ] || changed packages/agents/nous; }       && nous=true
-          openevolve=false; { [ "$cc" = true ] || changed packages/agents/openevolve; } && openevolve=true
-
-          pb_tag="$mb"; [ "$pb" = true ] && pb_tag="$GITHUB_SHA"
-          cc_tag="$mb"; [ "$cc" = true ] && cc_tag="$GITHUB_SHA"
-
-          echo "platform_base=$pb" >> "$GITHUB_OUTPUT"
-          echo "platform_base_tag=$pb_tag" >> "$GITHUB_OUTPUT"
-          echo "agents=$agents" >> "$GITHUB_OUTPUT"
-          echo 'archs=["amd64"]' >> "$GITHUB_OUTPUT"
-          echo "nous=$nous" >> "$GITHUB_OUTPUT"
-          echo "openevolve=$openevolve" >> "$GITHUB_OUTPUT"
-          echo "claude_code_base_tag=$cc_tag" >> "$GITHUB_OUTPUT"
-          echo "::notice::platform_base=$pb agents=$agents nous=$nous openevolve=$openevolve pb_tag=$pb_tag cc_tag=$cc_tag"
+          [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
+          out="$(scripts/resolve-image.sh gha-outputs)"
+          printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
+          printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
   build-images:
     needs: [check]

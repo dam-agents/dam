@@ -1,12 +1,8 @@
 ["agents:k-search:image"]
-description = "Build the k-search workload image"
+description = "Build the k-search workload image, or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
 depends = ["platform-base:image"]
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-k-search:latest packages/agents/k-search
-'''
+run = "scripts/resolve-image.sh build-or-reuse k-search -- packages/agents/k-search"
 
 ["agents:k-search:scan"]
 depends = ["agents:k-search:scan:*"]

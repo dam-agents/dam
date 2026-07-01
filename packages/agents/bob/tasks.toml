@@ -1,12 +1,8 @@
 ["agents:bob:image"]
-description = "Build the bob agent image"
+description = "Build the bob agent image, or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
 depends = ["platform-base:image"]
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-bob:latest packages/agents/bob
-'''
+run = "scripts/resolve-image.sh build-or-reuse bob -- packages/agents/bob"
 
 ["agents:bob:scan"]
 depends = ["agents:bob:scan:*"]

@@ -1,11 +1,10 @@
 ["agents:openevolve:image"]
-description = "Build the openevolve agent image (OpenEvolve on the claude-code base)"
+description = "Build the openevolve agent image (OpenEvolve on the claude-code base), or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
 depends = ["agents:claude-code:image"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 
 # OpenEvolve installs from PyPI at build time. The Dockerfile pins a default
 # version; override it here with OPENEVOLVE_VERSION=<version>.
@@ -13,7 +12,7 @@ build_args=()
 [ -n "${OPENEVOLVE_VERSION:-}" ] && build_args+=(--build-arg "OPENEVOLVE_VERSION=${OPENEVOLVE_VERSION}")
 
 # ${build_args[@]+...} guards the empty-array expansion under `set -u` (bash 3.2 on macOS).
-docker build ${build_args[@]+"${build_args[@]}"} -t platform-openevolve:latest packages/agents/openevolve
+exec scripts/resolve-image.sh build-or-reuse openevolve -- ${build_args[@]+"${build_args[@]}"} packages/agents/openevolve
 '''
 
 ["agents:openevolve:scan"]

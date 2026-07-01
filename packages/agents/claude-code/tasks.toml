@@ -1,12 +1,8 @@
 ["agents:claude-code:image"]
-description = "Build the claude-code agent image"
+description = "Build the claude-code agent image, or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
 depends = ["platform-base:image"]
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-claude-code:latest packages/agents/claude-code
-'''
+run = "scripts/resolve-image.sh build-or-reuse claude-code -- packages/agents/claude-code"
 
 ["agents:claude-code:scan"]
 depends = ["agents:claude-code:scan:*"]

@@ -382,6 +382,12 @@ description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"
 run = "zizmor --min-confidence medium .github/workflows/"
 
+["common:check:resolve-image"]
+description = "Assert the image dependency graph in scripts/resolve-image.sh (build-vs-reuse logic)"
+dir = "{{config_root}}"
+sources = ["scripts/resolve-image.sh"]
+run = "scripts/resolve-image.sh --self-check"
+
 ["common:check:lockfile-age"]
 description = "Verify no lockfile dependency is newer than 7 days"
 dir = "{{config_root}}"
