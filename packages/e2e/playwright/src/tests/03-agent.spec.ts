@@ -19,16 +19,17 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     );
     expect(agent, `agent ${agentName} already exists`).toBeUndefined();
 
-    const providerTypes = new Set([
+    const providerTemplateIds = new Set([
       "anthropic",
+      "anthropic-oauth",
       "ibm-litellm",
       "openai",
       "bob",
     ]);
-    const secrets = await api.secrets.list.query();
-    for (const secret of secrets) {
-      if (providerTypes.has(secret.type))
-        await api.secrets.delete.mutate({ id: secret.id });
+    const conns = await api.connections.list.query();
+    for (const conn of conns) {
+      if (providerTemplateIds.has(conn.templateId))
+        await api.connections.delete.mutate({ id: conn.id });
     }
   });
 

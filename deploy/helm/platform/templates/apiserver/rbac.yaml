@@ -54,10 +54,12 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
-  # the api-server is the sole writer of the Agent + Fork custom
+  # the api-server is the sole writer of the Agent + Fork + Run custom
   # resource spec (create/patch/delete); the controller owns their status.
+  # Runs back the in-pod `dam-run` CLI: the harness relay creates one per
+  # invocation and deletes it when the stream closes.
   - apiGroups: ["agent-platform.ai"]
-    resources: ["agents", "forks"]
+    resources: ["agents", "forks", "runs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Secrets for credentials. ConfigMaps are gone from the api-server's API
   # surface: agents/forks are CRs and the chart-shipped templates

@@ -91,3 +91,11 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;
+
+// Validates a caller-supplied Anthropic credential before it's saved as a
+// connection. The envName discriminates api-key (`x-api-key`) vs OAuth
+// (`Authorization: Bearer`) so the test request mirrors the real injection.
+export const connectionTestAnthropicInputSchema = z.object({
+  value: z.string().min(1),
+  envName: z.enum(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
+});

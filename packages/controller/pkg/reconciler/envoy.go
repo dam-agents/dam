@@ -42,6 +42,8 @@ const (
 	envoyHeaderNameAnn  = "agent-platform.ai/injection-header-name"
 	envoyQueryParamAnn  = "agent-platform.ai/injection-query-param"
 	envoyAuthModeAnn    = "agent-platform.ai/auth-mode"
+	// Opt-in HTTP/2 chain so credential injection covers a gRPC stream (Modal).
+	envoyInjectionHTTP2Ann = "agent-platform.ai/injection-http2"
 	// Connection Secrets: N injection targets as JSON. Issue #219. (The
 	// api-server also stamps `agent-platform.ai/host-patterns` for kubectl
 	// readability; the controller doesn't read it.)
@@ -111,6 +113,7 @@ type envoyHostChain struct {
 	// SAN-bound TLS validation so the agent's Host header cannot
 	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
+	HTTP2           bool
 }
 
 // Credentialed reports whether the chain has any credential injections.
@@ -293,6 +296,7 @@ type connectionHostInjection struct {
 	ValueFormat    string `json:"valueFormat,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
 	QueryParamName string `json:"queryParamName,omitempty"`
+	HTTP2          bool   `json:"http2,omitempty"`
 	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
 	SDSKey string `json:"sdsKey,omitempty"`
 }
@@ -314,8 +318,9 @@ func sdsFileKey(e connectionHostInjection) string {
 // pair per entry in its `injection-hosts` JSON. Non-connection Secrets
 // remain single-host (handled by the caller).
 type hostCredential struct {
-	host string
-	cred envoyCredential
+	host  string
+	http2 bool
+	cred  envoyCredential
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -342,7 +347,8 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		}
 		seen[key] = struct{}{}
 		out = append(out, hostCredential{
-			host: e.Host,
+			host:  e.Host,
+			http2: e.HTTP2,
 			cred: envoyCredential{
 				SecretName:     s.Name,
 				HeaderName:     header,
@@ -384,12 +390,13 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		host        string
 		seenHeader  map[string]string
 		credentials []envoyCredential
+		http2       bool
 		first       string // first Secret name encountered for this host (drives ChainID)
 	}
 	byHost := map[string]*bucket{}
 	order := []string{}
 
-	add := func(host, secretName string, cred *envoyCredential) {
+	add := func(host, secretName string, cred *envoyCredential, http2 bool) {
 		if host == "" {
 			return
 		}
@@ -398,6 +405,9 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			b = &bucket{host: host, seenHeader: map[string]string{}, first: secretName}
 			byHost[host] = b
 			order = append(order, host)
+		}
+		if http2 {
+			b.http2 = true
 		}
 		if cred == nil {
 			return
@@ -423,7 +433,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		case "connection":
 			for _, hc := range expandConnectionSecret(s) {
 				cred := hc.cred
-				add(hc.host, s.Name, &cred)
+				add(hc.host, s.Name, &cred, hc.http2)
 			}
 			continue
 		}
@@ -435,8 +445,9 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		if host == "" {
 			continue
 		}
+		http2 := s.Annotations[envoyInjectionHTTP2Ann] == "true"
 		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
-			add(host, s.Name, nil)
+			add(host, s.Name, nil, http2)
 			continue
 		}
 		cred := envoyCredential{
@@ -446,7 +457,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			VolumeName:     "cred-" + s.Name,
 			SDSFileKey:     envoyCredentialKeySDS,
 		}
-		add(host, s.Name, &cred)
+		add(host, s.Name, &cred, http2)
 	}
 
 	chains := make([]envoyHostChain, 0, len(order))
@@ -460,6 +471,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			UpstreamCluster: "upstream_" + b.first + "_" + hostShort(host),
 			Host:            host,
 			Credentials:     b.credentials,
+			HTTP2:           b.http2,
 		})
 	}
 	return chains
@@ -471,6 +483,22 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 func hostShort(host string) string {
 	h := sha1.Sum([]byte(host)) // #nosec G401 — non-cryptographic
 	return hex.EncodeToString(h[:])[:8]
+}
+
+// hostInChains reports whether any per-host chain already terminates `host`.
+// Used to suppress the telemetry collector chain when the collector host
+// would collide with a credentialed/allow-only chain (duplicate
+// `server_names` is a fatal Envoy config error).
+func hostInChains(chains []envoyHostChain, host string) bool {
+	if host == "" {
+		return false
+	}
+	for _, c := range chains {
+		if c.Host == host {
+			return true
+		}
+	}
+	return false
 }
 
 // Bootstrap template — TLS-intercepting CONNECT proxy.
@@ -530,6 +558,10 @@ static_resources:
                 stat_prefix: agent_egress
                 upgrade_configs:
                   - upgrade_type: CONNECT
+                  # dam-run opens a WebSocket to the harness /run endpoint. The
+                  # CONNECT-tunnelled path carries it transparently; this also
+                  # admits the Upgrade on the absolute-URI forward path.
+                  - upgrade_type: websocket
                 http_filters:
                   # np-gate liveness probe (#675): answered locally before
                   # ext_authz; pass_through_mode:false so it never forwards.
@@ -671,6 +703,11 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
               common_tls_context:
+{{- if $chain.HTTP2 }}
+                # gRPC chain: offer h2 so the agent's grpclib client negotiates
+                # HTTP/2 over the MITM cert. REST chains omit ALPN and stay h1.
+                alpn_protocols: [ "h2", "http/1.1" ]
+{{- end }}
                 tls_certificates:
                   - certificate_chain: { filename: {{ $.LeafTLSDir }}/tls.crt }
                     private_key:      { filename: {{ $.LeafTLSDir }}/tls.key }
@@ -832,6 +869,61 @@ static_resources:
 {{- end }}
                             timeout: 0s
 {{- end }}
+{{- if .Telemetry }}
+        # Telemetry egress. The agent exports OTLP/HTTP to the collector
+        # through this gateway (its only admitted egress route); we MITM-
+        # terminate here on the collector SNI and stamp the trusted
+        # x-platform-agent-id header, OVERWRITING anything the agent set, so the
+        # collector attributes the telemetry to this instance and no agent can
+        # forge another's identity. No ext_authz (platform-internal traffic,
+        # not user egress) and no credential injection. Forwards plaintext to
+        # the in-cluster collector; ztunnel wraps the gateway→collector hop in
+        # mTLS. The collector host is in the leaf SAN (see leaf.go), so the
+        # agent's TLS client validates this intercept cert.
+        - name: terminate_otel_collector
+          filter_chain_match:
+            server_names: [ "{{ .TelemetryCollectorHost }}" ]
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: {{ .LeafTLSDir }}/tls.crt }
+                    private_key:      { filename: {{ .LeafTLSDir }}/tls.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: terminate_otel_collector
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: forward_otel_collector
+                  virtual_hosts:
+                    - name: default
+                      domains: [ "*" ]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            # Pinned to the static plaintext collector cluster
+                            # (clusters list below); the agent's Host header
+                            # cannot steer the destination.
+                            cluster: otel_collector
+                            host_rewrite_literal: "{{ .TelemetryCollectorHost }}"
+                            timeout: 0s
+                          request_headers_to_add:
+                            # Trusted, unforgeable identity: OVERWRITE replaces
+                            # any x-platform-agent-id the agent supplied. The
+                            # value is fixed in this gateway's controller-
+                            # rendered config; the agent cannot change it.
+                            - header:
+                                key: x-platform-agent-id
+                                value: "{{ .InstanceID }}"
+                              append_action: OVERWRITE_IF_EXISTS_OR_ADD
+{{- end }}
         # SNI miss: every other host hits the L4 ext_authz catch-all, which
         # gates by SNI alone via the API server's gRPC ext_authz endpoint.
         # No TLS termination, no credential injection -- bytes pass through
@@ -974,6 +1066,18 @@ static_resources:
       type: STRICT_DNS
       dns_lookup_family: V4_PREFERRED
       lb_policy: ROUND_ROBIN
+{{- if $chain.HTTP2 }}
+      # gRPC chain: mirror the downstream-negotiated protocol upstream (h2 for
+      # gRPC, h1 otherwise) so credential injection applies to the gRPC stream
+      # and Envoy forwards HTTP/2 to the real host. Envoy auto-sets upstream
+      # ALPN to match. REST chains omit this and stay HTTP/1.1.
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          use_downstream_protocol_config:
+            http_protocol_options: {}
+            http2_protocol_options: {}
+{{- end }}
       load_assignment:
         cluster_name: {{ $chain.UpstreamCluster }}
         endpoints:
@@ -998,6 +1102,30 @@ static_resources:
                   matcher:
                     exact: {{ $chain.Host }}
 {{- end }}
+{{- end }}
+{{- if .Telemetry }}
+
+    # Pinned plaintext upstream for the telemetry collector chain. STRICT_DNS
+    # resolves {{ .TelemetryCollectorHost }}:{{ .TelemetryCollectorPort }}
+    # directly; the agent's Host header plays no role in destination selection.
+    # No upstream TLS — the collector is in-cluster and ztunnel wraps the
+    # gateway→collector hop in mTLS transparently. dns_lookup_family is set
+    # explicitly (STRICT_DNS defaults to IPv6-first AUTO) to match every other
+    # DNS cluster in this bootstrap.
+    - name: otel_collector
+      connect_timeout: 5s
+      type: STRICT_DNS
+      dns_lookup_family: V4_PREFERRED
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: otel_collector
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ .TelemetryCollectorHost }}
+                      port_value: {{ .TelemetryCollectorPort }}
 {{- end }}
 
     # Single gRPC ext_authz cluster: both Envoy filters (HTTP on
@@ -1032,14 +1160,17 @@ const envoyListenAddress = "0.0.0.0"
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
 //
+// `instanceID` is this gateway's *own* instance (agent or fork name); it is
+// the value stamped into the trusted `x-platform-agent-id` telemetry header.
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials. For long-lived pairs this equals the
-// instance name; for forks it is the parent instance's ID — fork pods
-// run as their *own* per-fork SA, but the parent owner's HITL
-// rules should gate fork egress, so the fork's gateway dials the parent's
-// per-instance ext-authz Service. The fork SA is admitted there via a
-// separate per-fork AuthorizationPolicy (`BuildForkExtAuthzAuthorizationPolicy`).
-func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
+// the gateway dials. For long-lived pairs the two are equal; for forks
+// `extAuthzInstanceID` is the *parent* instance's ID — fork pods run as their
+// *own* per-fork SA, but the parent owner's HITL rules should gate fork
+// egress, so the fork's gateway dials the parent's per-instance ext-authz
+// Service (admitted via `BuildForkExtAuthzAuthorizationPolicy`). The telemetry
+// header, by contrast, must carry the fork's own `instanceID` so its telemetry
+// attributes to the fork, not the parent.
+func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
 		return "", err
@@ -1053,6 +1184,14 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 	// this exact string so the harness route is scoped to api-server
 	// traffic only — fall-through goes through the regular egress paths.
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
+	// Render the telemetry collector chain only when the backend is configured
+	// AND the collector host doesn't collide with a credentialed chain host —
+	// two filter chains sharing `server_names` is a fatal Envoy config error.
+	// A collision isn't expected in practice (the collector host is an internal
+	// Service DNS no agent would be granted a credential for), but guard
+	// structurally rather than crash-loop the gateway. The credentialed chain
+	// for that host still wins, and the host is in the leaf SAN regardless.
+	telemetry := cfg.TelemetryEnabled() && !hostInChains(chains, cfg.TelemetryCollectorHost)
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
@@ -1069,6 +1208,10 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		ExtAuthzPort           int
 		ExtAuthzHoldSeconds    int
 		ExtAuthzTimeoutSeconds int
+		Telemetry              bool
+		TelemetryCollectorHost string
+		TelemetryCollectorPort int
+		InstanceID             string
 	}{
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
@@ -1084,6 +1227,10 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
+		Telemetry:              telemetry,
+		TelemetryCollectorHost: cfg.TelemetryCollectorHost,
+		TelemetryCollectorPort: cfg.TelemetryCollectorPort,
+		InstanceID:             instanceID,
 	}); err != nil {
 		return "", err
 	}
@@ -1098,7 +1245,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 // both args; forks pass the parent instance ID for the second.
 func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets)
-	yaml, err := renderEnvoyBootstrap(extAuthzInstanceID, cfg, chains)
+	yaml, err := renderEnvoyBootstrap(instanceName, extAuthzInstanceID, cfg, chains)
 	if err != nil {
 		return nil, err
 	}
@@ -1118,7 +1265,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *
 // TLS leaf used to terminate the agent's intercepted TLS. None of these are
 // referenced from the agent pod — the credential boundary lives at the pod
 // boundary.
-func envoyVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
+func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secret) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name: envoyBootstrapVolume,
 		VolumeSource: corev1.VolumeSource{
@@ -1141,9 +1288,11 @@ func envoyVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume 
 			},
 		})
 	}
-	// Leaf cert is required whenever ANY route exists (allow-only or
-	// credentialed) — both flavors terminate TLS to gate the request.
-	if len(secrets) > 0 {
+	// Leaf cert is required whenever ANY TLS-terminating chain exists:
+	// allow-only or credentialed chains (both gate the request), or the
+	// telemetry collector chain (it MITM-terminates the collector SNI even
+	// when the instance has no credential Secrets).
+	if len(secrets) > 0 || cfg.TelemetryEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: envoyLeafTLSVolume,
 			VolumeSource: corev1.VolumeSource{
@@ -1168,7 +1317,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v11-gateway-health-probe"
+const envoyBootstrapTemplateRev = "v12-telemetry-agent-id"
 
 // envoySecretsRev digests the Secret set that drives Envoy's chain
 // rendering. Includes `injection-hosts` JSON so a descriptor change
@@ -1212,15 +1361,13 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 			ReadOnly:  true,
 		})
 	}
-	if len(secrets) > 0 {
+	if len(secrets) > 0 || cfg.TelemetryEnabled() {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      envoyLeafTLSVolume,
 			MountPath: envoyLeafTLSMount,
 			ReadOnly:  true,
 		})
 	}
-	readOnlyRoot := true
-	runAsNonRoot := true
 	return corev1.Container{
 		Name:            "envoy",
 		Image:           cfg.EnvoyImage,
@@ -1238,8 +1385,8 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 		},
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities:           &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			ReadOnlyRootFilesystem: &readOnlyRoot,
-			RunAsNonRoot:           &runAsNonRoot,
+			ReadOnlyRootFilesystem: ptrBool(true),
+			RunAsNonRoot:           ptrBool(true),
 		},
 	}
 }

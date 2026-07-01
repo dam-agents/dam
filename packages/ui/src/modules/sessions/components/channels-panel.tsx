@@ -1,9 +1,11 @@
 import { Add as Plus, Close as X } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -157,10 +159,7 @@ function ChannelsForm({
 
           {slackEnabled && (
             <>
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-                  Channel ID
-                </label>
+              <FormField label="Channel ID" disableInset>
                 <Input
                   type="text"
                   value={channelId}
@@ -171,12 +170,10 @@ function ChannelsForm({
                   placeholder="C0..."
                   className="h-8"
                 />
-              </div>
+              </FormField>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-                  Allowed users
-                </label>
+                <SectionLabel>Allowed users</SectionLabel>
                 {users.length === 0 && (
                   <span className="text-[12px] text-muted-foreground italic">
                     Unrestricted — any linked Slack user can interact
@@ -252,9 +249,7 @@ function ChannelsForm({
 
           {telegramEnabled && (
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-                Bot token
-              </label>
+              <SectionLabel>Bot token</SectionLabel>
               {editingBotToken ? (
                 <>
                   <Input

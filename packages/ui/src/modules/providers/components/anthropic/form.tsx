@@ -6,7 +6,7 @@ import { Controller, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { useTestAnthropic } from "../../../secrets/api/mutations.js";
+import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,

@@ -15,7 +15,6 @@ import {
   agentCreateInputSchema,
   type ConnectionTemplateView,
   type ConnectionView,
-  isProviderPresetType,
   PROVIDER_PRESET_TYPES,
   PROVIDER_TEMPLATE_IDS,
   PROVIDERS,
@@ -40,10 +39,6 @@ import {
 import { waitForRunning } from "../services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import {
-  groupGithubPats,
-  type GithubPatPair,
-} from "../lib/group-github-pats.js";
 import {
   configInputsOf,
   validateConfigInputValue,
@@ -297,37 +292,16 @@ async function runCreate(
   // (matches the web UI's 5×/2s wait); if it exhausts, we surface a
   // hint pointing the user at the UI.
   //
-  // Connection grants and legacy-secret grants go through different calls;
-  // both are idempotent full replaces, so the retry can safely re-run both.
+  // Idempotent full replace, so the retry can safely re-run it.
   spin.message("Granting credentials...");
-  const connectionIds: string[] = [];
-  const secretIds: string[] = [];
-  if (provider.routing.kind === "connection") {
-    connectionIds.push(provider.routing.id);
-  } else {
-    secretIds.push(provider.routing.id);
-  }
-  if (githubPat) {
-    if (githubPat.source === "connection") {
-      connectionIds.push(githubPat.connectionId);
-    } else {
-      secretIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
-    }
-  }
+  const connectionIds: string[] = [provider.routing.id];
+  if (githubPat) connectionIds.push(githubPat.connectionId);
   try {
     await withRetry(async () => {
-      if (connectionIds.length > 0) {
-        await trpc.connections.setAgentConnections.mutate({
-          agentId: cleanup.agentId!,
-          connectionIds,
-        });
-      }
-      if (secretIds.length > 0) {
-        await trpc.secrets.setAgentAccess.mutate({
-          agentId: cleanup.agentId!,
-          secretIds,
-        });
-      }
+      await trpc.connections.setAgentConnections.mutate({
+        agentId: cleanup.agentId!,
+        connectionIds,
+      });
     });
   } catch (e) {
     spin.stop("Grant failed");
@@ -487,7 +461,7 @@ async function handleStage1Failure(
 }
 
 interface ProviderSelection {
-  routing: { kind: "connection"; id: string } | { kind: "secret"; id: string };
+  routing: { id: string };
   name: string;
   type: string;
 }
@@ -499,22 +473,14 @@ interface ExistingProviderConn {
   type: ProviderPresetType;
 }
 
-interface ExistingProviderSecret {
-  id: string;
-  name: string;
-  type: ProviderPresetType;
-}
-
 /**
- * Lists connections and legacy secrets together — both pickers dual-read the
- * two surfaces during the #1273 transition. A list failure is fatal: cancel,
- * flush the rollback ledger, and exit.
+ * Lists connections + templates for the pickers. A list failure is fatal:
+ * cancel, flush the rollback ledger, and exit.
  */
 async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
   try {
     return {
       conns: await trpc.connections.list.query(),
-      secrets: await trpc.secrets.list.query(),
       templates: await trpc.connections.listTemplates.query(),
     };
   } catch (e) {
@@ -525,25 +491,19 @@ async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
 }
 
 /**
- * Provider step. Offers existing provider connections plus legacy provider
- * secrets (dual-read), or "Add new..." which always creates a connection.
- * Singleton-per-type: adding a provider whose type already has a connection
- * offers to replace its credential instead.
+ * Provider step. Offers existing provider connections, or "Add new..." which
+ * creates a connection. Singleton-per-type: adding a provider whose type
+ * already has a connection offers to replace its credential instead.
  */
 async function pickProvider(
   trpc: TrpcClient,
   cleanup: Cleanup,
 ): Promise<ProviderSelection> {
-  const { conns, secrets, templates } = await listCredentials(trpc, cleanup);
+  const { conns, templates } = await listCredentials(trpc, cleanup);
 
   const existingConns = providerConns(conns);
-  const existingSecrets: ExistingProviderSecret[] = secrets
-    .filter((s): s is typeof s & { type: ProviderPresetType } =>
-      isProviderPresetType(s.type),
-    )
-    .map((s) => ({ id: s.id, name: s.name, type: s.type }));
 
-  if (existingConns.length === 0 && existingSecrets.length === 0) {
+  if (existingConns.length === 0) {
     log.info("No model providers configured yet — let's add one.");
     return addOrReplaceProvider(trpc, cleanup, existingConns, templates);
   }
@@ -556,10 +516,6 @@ async function pickProvider(
         value: `conn:${c.id}`,
         label: `${c.name} (${c.type})`,
       })),
-      ...existingSecrets.map((s) => ({
-        value: `secret:${s.id}`,
-        label: `${s.name} (${s.type}) (legacy)`,
-      })),
       { value: NEW, label: "Add new..." },
     ],
   });
@@ -569,17 +525,9 @@ async function pickProvider(
     return addOrReplaceProvider(trpc, cleanup, existingConns, templates);
   }
 
-  if (picked.startsWith("conn:")) {
-    const found = existingConns.find((c) => `conn:${c.id}` === picked)!;
-    return {
-      routing: { kind: "connection", id: found.id },
-      name: found.name,
-      type: found.type,
-    };
-  }
-  const found = existingSecrets.find((s) => `secret:${s.id}` === picked)!;
+  const found = existingConns.find((c) => `conn:${c.id}` === picked)!;
   return {
-    routing: { kind: "secret", id: found.id },
+    routing: { id: found.id },
     name: found.name,
     type: found.type,
   };
@@ -630,7 +578,7 @@ async function addOrReplaceProvider(
 
       if (!replace) {
         return {
-          routing: { kind: "connection", id: existingOfType.id },
+          routing: { id: existingOfType.id },
           name: existingOfType.name,
           type,
         };
@@ -660,7 +608,7 @@ async function addOrReplaceProvider(
           value,
         });
         return {
-          routing: { kind: "connection", id: existingOfType.id },
+          routing: { id: existingOfType.id },
           name: existingOfType.name,
           type,
         };
@@ -804,38 +752,32 @@ async function createProviderConnection(
   });
   if (!created) return null;
   return {
-    routing: { kind: "connection", id: created.id },
+    routing: { id: created.id },
     name: created.name,
     type,
   };
 }
 
-type GithubSelection =
-  | { source: "connection"; connectionId: string; name: string }
-  | {
-      source: "secret";
-      apiSecretId: string;
-      gitSecretId: string;
-      name: string;
-    };
+interface GithubSelection {
+  connectionId: string;
+  name: string;
+}
 
 // Default name for a new GitHub PAT connection (kebab-valid).
 const DEFAULT_GITHUB_PAT_NAME = GITHUB_PAT_TEMPLATE_ID;
 
 /**
- * Optional GitHub PAT step (returns null if skipped). New setup creates a
- * single `github-pat` connection; legacy twin-secret PATs are dual-read so
- * they stay grantable.
+ * Optional GitHub PAT step (returns null if skipped). Offers existing
+ * `github-pat` connections, or "Add new..." which creates one.
  */
 async function pickGithubPat(
   trpc: TrpcClient,
   cleanup: Cleanup,
 ): Promise<GithubSelection | null> {
-  const { conns, secrets } = await listCredentials(trpc, cleanup);
+  const { conns } = await listCredentials(trpc, cleanup);
   const patConns = conns.filter((c) => c.templateId === GITHUB_PAT_TEMPLATE_ID);
-  const pairs = groupGithubPats(secrets);
 
-  if (patConns.length === 0 && pairs.length === 0) {
+  if (patConns.length === 0) {
     log.info("No GitHub PAT configured yet.");
     const add = await confirm({ message: "Add one?", initialValue: true });
     if (isCancel(add)) return cancelAndCleanup(trpc, cleanup);
@@ -849,10 +791,6 @@ async function pickGithubPat(
     message: "GitHub PAT",
     options: [
       ...patConns.map((c) => ({ value: `conn:${c.id}`, label: c.name })),
-      ...pairs.map((p) => ({
-        value: `secret:${p.name}`,
-        label: `${p.name} (legacy)`,
-      })),
       { value: NEW, label: "Add new..." },
       { value: SKIP, label: "Skip" },
     ],
@@ -861,17 +799,8 @@ async function pickGithubPat(
   if (picked === SKIP) return null;
   if (picked === NEW) return addOrReplaceGithubPat(trpc, cleanup, patConns);
 
-  if (picked.startsWith("conn:")) {
-    const found = patConns.find((c) => `conn:${c.id}` === picked)!;
-    return { source: "connection", connectionId: found.id, name: found.name };
-  }
-  const found = pairs.find((p) => `secret:${p.name}` === picked)!;
-  return {
-    source: "secret",
-    apiSecretId: found.apiSecretId,
-    gitSecretId: found.gitSecretId,
-    name: found.name,
-  };
+  const found = patConns.find((c) => `conn:${c.id}` === picked)!;
+  return { connectionId: found.id, name: found.name };
 }
 
 async function addOrReplaceGithubPat(
@@ -893,11 +822,7 @@ async function addOrReplaceGithubPat(
       if (isCancel(replace)) return cancelAndCleanup(trpc, cleanup);
 
       if (!replace) {
-        return {
-          source: "connection",
-          connectionId: collide.id,
-          name: collide.name,
-        };
+        return { connectionId: collide.id, name: collide.name };
       }
 
       const token = await promptSecret("New GitHub personal access token");
@@ -905,11 +830,7 @@ async function addOrReplaceGithubPat(
 
       try {
         await trpc.connections.update.mutate({ id: collide.id, value: token });
-        return {
-          source: "connection",
-          connectionId: collide.id,
-          name: collide.name,
-        };
+        return { connectionId: collide.id, name: collide.name };
       } catch (e) {
         log.error(`Failed to replace GitHub PAT: ${errorReason(e)}`);
         continue;
@@ -926,11 +847,7 @@ async function addOrReplaceGithubPat(
       nameExample: "my-github",
     });
     if (created) {
-      return {
-        source: "connection",
-        connectionId: created.id,
-        name: created.name,
-      };
+      return { connectionId: created.id, name: created.name };
     }
     // Non-recoverable create error: loop re-prompts the token.
   }

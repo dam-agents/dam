@@ -12,6 +12,7 @@ export const platformSessionMetaSchema = z.object({
 const sessionMetaEntrySchema = z.object({
   meta: platformSessionMetaSchema.catch({}),
   createdAt: z.string(),
+  lastActivityAt: z.string().optional(),
 });
 
 // A malformed entry is dropped rather than discarding the whole store.
@@ -36,6 +37,7 @@ type SessionMetadataState = z.infer<typeof sessionMetadataStateSchema>;
 export interface SessionMetadataStore {
   get(sessionId: string): SessionMetaEntry | undefined;
   set(sessionId: string, meta: PlatformSessionMeta): void;
+  recordActivity(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   /** Soft delete: drop the entry and remember the id so list
    *  enrichment filters it out even while the harness still lists the JSONL. */
@@ -58,14 +60,29 @@ export function createSessionMetadataStore(
     },
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      const lastActivityAt = existing?.lastActivityAt;
       store.write({
         tombstones,
         sessions: {
           ...sessions,
           [sessionId]: {
             meta,
-            createdAt: sessions[sessionId]?.createdAt ?? now(),
+            createdAt: existing?.createdAt ?? now(),
+            ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
           },
+        },
+      });
+    },
+    recordActivity(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing) return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...existing, lastActivityAt: now() },
         },
       });
     },

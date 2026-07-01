@@ -16,6 +16,9 @@ export interface InjectionConfig {
   headerName: string;
   valueFormat?: string;
   queryParamName?: string;
+  // Terminate this host's gateway chain as HTTP/2 so injection lands on a gRPC
+  // stream (e.g. Modal). Omit for ordinary HTTP/1.1 REST hosts.
+  http2?: boolean;
 }
 
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -217,10 +218,7 @@ function PinField({
   register: UseFormRegisterReturn;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-semibold text-foreground">
-        {label}
-      </label>
+    <FormField label={label} hint={hint} error={error}>
       <Input
         type="text"
         autoComplete="off"
@@ -231,10 +229,6 @@ function PinField({
         className="font-mono text-[13px]"
         {...register}
       />
-      <div className="text-[11px] text-muted-foreground">{hint}</div>
-      {error && (
-        <div className="text-[11px] font-medium text-destructive">{error}</div>
-      )}
-    </div>
+    </FormField>
   );
 }

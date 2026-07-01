@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate the Agent + Fork CR spec TypeScript types from the controller's CRDs.
+# Generate the Agent + Fork + Run CR spec TypeScript types from the controller's CRDs.
 # Shared by api-server-api:gen:crd-types (writes the committed file)
 # and api-server-api:check:gen (writes a temp file, then diffs) so the drift
 # gate never rewrites the committed file that tsc consumers read.
@@ -21,6 +21,8 @@ emit() { # <crd-file> <TypeName> — the CRD's .spec subschema as a TS interface
   emit agent-platform.ai_agents.yaml AgentSpecCR
   echo
   emit agent-platform.ai_forks.yaml ForkSpecCR
+  echo
+  emit agent-platform.ai_runs.yaml RunSpecCR
 } >"$out"
 
 pnpm exec prettier --write --config "$root/.prettierrc" "$out" >/dev/null

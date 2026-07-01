@@ -10,9 +10,10 @@ import {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Textarea } from "@/components/ui/textarea";
 
 import { FormError } from "../../../components/form-error.js";
@@ -218,9 +219,7 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label className="text-[11px] font-semibold text-foreground/80">
-          Run
-        </Label>
+        <SectionLabel>Run</SectionLabel>
         <div className="flex flex-wrap gap-1">
           {(["minutely", "hourly", "daily", "custom"] as const).map((k) => (
             <button
@@ -308,24 +307,18 @@ export function CreateScheduleForm({
         )}
       </div>
 
-      <div>
-        <Label className="text-[11px] font-semibold text-foreground/80">
-          Timezone
-        </Label>
+      <FormField label="Timezone" error={tzError ?? undefined} disableInset>
         <Input
           className="h-8 text-[12px]"
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
           placeholder="Europe/Prague"
         />
-        <FormError message={tzError ?? undefined} />
-      </div>
+      </FormField>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Label className="text-[11px] font-semibold text-foreground/80">
-            Quiet hours
-          </Label>
+          <SectionLabel>Quiet hours</SectionLabel>
           <button
             type="button"
             onClick={addQuietHour}
@@ -396,9 +389,7 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold text-foreground/80">
-          Session:
-        </span>
+        <SectionLabel>Session:</SectionLabel>
         {(["fresh", "continuous"] as const).map((mode) => (
           <button
             key={mode}

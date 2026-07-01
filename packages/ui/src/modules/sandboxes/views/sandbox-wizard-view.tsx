@@ -94,17 +94,12 @@ export function SandboxWizardView() {
           ? { image }
           : { templateId: snapshot.templateId ?? undefined }),
         egressPreset: snapshot.egressPreset,
-        ...(snapshot.providerRef?.source === "secret"
-          ? { secretIds: [snapshot.providerRef.id] }
-          : {}),
         ...(() => {
           // Provider connections and catalog connections both grant via
           // appConnectionIds.
           const ids = [
             ...snapshot.connectionIds,
-            ...(snapshot.providerRef?.source === "connection"
-              ? [snapshot.providerRef.id]
-              : []),
+            ...(snapshot.providerRef ? [snapshot.providerRef.id] : []),
           ];
           return ids.length ? { appConnectionIds: ids } : {};
         })(),

@@ -44,6 +44,8 @@ export type {
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
+  /** Global default idle timeout in minutes; the per-agent override resolves against it. */
+  agentIdleTimeoutMinutes: number;
   /** `undefined` enables system-level composition (cross-owner) for the
    *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
@@ -55,15 +57,14 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Single-shot create; wired from secrets + connections. Omitted system-side. */
+  /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
-      secretIds: string[];
       connectionIds: string[];
-    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
-      sel: { secretIds: string[]; connectionIds: string[] },
+      sel: { connectionIds: string[] },
     ): Promise<void>;
   };
 }): {
@@ -83,6 +84,7 @@ export function composeAgentsModule(deps: {
     agents: createAgentsService({
       repo,
       agentEnvRepo,
+      agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,

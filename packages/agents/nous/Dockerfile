@@ -30,8 +30,25 @@ RUN uv python install 3.11 &&\
       "git+https://github.com/AI-native-Systems-Research/agentic-strategy-evolution.git@${NOUS_REF}" &&\
     chown -R 65532:0 /opt/nous-venv /opt/uv
 
+# Patch the installed campaign schema so `channels:` validates (Nous issue #296).
+# Nous's runtime reads campaign.channels at every DESIGN/FINDINGS gate, but the
+# v0.4.0 schema never declares the property while forbidding unknown top-level
+# keys — so any campaign using channels is rejected at pre-flight. That breaks
+# the channel bridge below, which *requires* a `channels:` webhook to relay gate
+# summaries into the agent's chat thread. The patch mutates the installed schema
+# in place (no vendoring); it is idempotent and self-verifying, so it becomes a
+# clean no-op once a Nous release ships the property and NOUS_REF is bumped.
+COPY --chmod=0755 patch-campaign-schema.py /usr/local/bin/nous-patch-campaign-schema
+RUN "$NOUS_VENV/bin/python" /usr/local/bin/nous-patch-campaign-schema
+
 # Put the venv (and thus `nous`, `python`, `pip`) ahead of the base tools.
 ENV PATH="/opt/nous-venv/bin:${PATH}"
+
+# Route Nous's OpenAI-format gate-summary calls through the in-pod model gateway
+# by extending the base model-gateway shim (see nous-model-gateway.sh), so the
+# shell env — chat/terminal harness and SSH login — also carries OPENAI_BASE_URL.
+RUN mv /usr/local/lib/model-gateway.sh /usr/local/lib/model-gateway-base.sh
+COPY nous-model-gateway.sh /usr/local/lib/model-gateway.sh
 
 # Every campaign in this pod runs `--auto-approve`; some Nous versions gate that
 # behind this env. Setting it here makes unattended/background runs unconditional

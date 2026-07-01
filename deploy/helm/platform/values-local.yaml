@@ -36,6 +36,7 @@ agentTemplates:
   - name: claude-code
     enabled: true
     description: "Default Claude Code agent"
+    telemetry: true
     image:
       repository: platform-claude-code
       tag: latest
@@ -73,8 +74,8 @@ agentTemplates:
         memory: "4Gi"
 
   - name: nous
-    enabled: true
-    category: harness
+    enabled: false
+    category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
     image:
@@ -90,7 +91,7 @@ agentTemplates:
         memory: "4Gi"
 
   - name: openevolve
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "OpenEvolve — evolutionary code-optimization agent"
@@ -109,6 +110,52 @@ agentTemplates:
     env:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
+
+  - name: k-search
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
+    image:
+      repository: platform-k-search
+      tag: latest
+    storageSize: "5Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  # Local-GPU variant. Disabled — the lima dev cluster has no GPU. See
+  # values.yaml for the GPU Kata runtime-class setup.
+  - name: k-search-local
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+    image:
+      repository: platform-k-search
+      tag: latest
+    storageSize: "10Gi"
+    # runtimeClassName: "kata-nvidia-gpu"
+    # nodeSelector:
+    #   nvidia.com/gpu.present: "true"
+    env:
+      - name: KSEARCH_EVAL_MODE
+        value: "local"
+      - name: KSEARCH_TARGET_GPU
+        value: "A100"
+    resources:
+      requests:
+        cpu: "1"
+        memory: "8Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "2"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable

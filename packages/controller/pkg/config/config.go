@@ -73,6 +73,15 @@ type Config struct {
 	// AuthorizationPolicy's targetRefs. Must match the Helm chart's
 	// `istio.waypointName`.
 	IstioWaypointName string
+	// TelemetryCollectorHost is the in-cluster DNS of the platform OTLP
+	// collector the gateway forwards agent telemetry to. Empty when the
+	// telemetry backend is disabled; the chart sets it from
+	// `clickstack.enabled`. When set, each gateway gains a collector egress
+	// chain that stamps the trusted `x-platform-agent-id` header so the
+	// collector can attribute telemetry to the producing instance.
+	TelemetryCollectorHost string
+	// TelemetryCollectorPort is the collector's OTLP/HTTP port (default 4318).
+	TelemetryCollectorPort int
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -144,6 +153,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
+	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
+	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -250,6 +261,13 @@ func (c *Config) ExtAuthzHostFor(instanceID string) string {
 func (c *Config) HarnessHost() string {
 	return fmt.Sprintf("%s-apiserver-harness.%s.svc.cluster.local", c.ReleaseName, c.ReleaseNamespace)
 }
+
+// TelemetryEnabled reports whether the agent-telemetry backend is configured
+// (collector host set by the chart from `clickstack.enabled`). When true, each
+// gateway renders a collector egress chain that stamps the trusted agent id,
+// and the leaf cert is issued (and mounted) even for an instance with no
+// credential Secrets.
+func (c *Config) TelemetryEnabled() bool { return c.TelemetryCollectorHost != "" }
 
 // PrincipalFor returns the SPIFFE principal string for `instanceID`,
 // matching how istiod stamps workload certs (`<td>/ns/<ns>/sa/<sa>`).

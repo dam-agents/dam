@@ -2047,7 +2047,7 @@ describe("createAcpRuntime", () => {
 
 // ── platform `_meta` round-trip ──
 
-function makeFakeStore(): {
+function makeFakeStore(now: () => string = () => "2026-03-03T00:00:00Z"): {
   store: SessionMetadataStore;
   sessions: Map<string, SessionMetaEntry>;
 } {
@@ -2059,10 +2059,17 @@ function makeFakeStore(): {
       get: (id) => sessions.get(id),
       set: (id, meta) => {
         const existing = sessions.get(id);
+        const lastActivityAt = existing?.lastActivityAt;
         sessions.set(id, {
           meta,
           createdAt: existing?.createdAt ?? "2026-01-01T00:00:00Z",
+          ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
         });
+      },
+      recordActivity: (id) => {
+        const existing = sessions.get(id);
+        if (!existing) return;
+        sessions.set(id, { ...existing, lastActivityAt: now() });
       },
       all: () => Object.fromEntries(sessions),
       tombstone: (id) => {
@@ -2286,6 +2293,54 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       ]),
     );
     expect(lastSent(c).result.sessions).toEqual([]);
+  });
+
+  it("session/list shows the last real message time, stable across a reload (issue #1999)", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    // Genuine activity: create and prompt a session (stamped 2026-03-03).
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    c.pushMessage(promptRequest(2));
+
+    // A plain reload re-attaches and writes bookkeeping (mode) — this must not
+    // bump the recorded activity time.
+    c.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/resume",
+        params: {
+          sessionId: SID,
+          cwd: ".",
+          _meta: { platform: { mode: "terminal" } },
+        },
+      }),
+    );
+
+    // The harness reports a "now" file mtime; the list must report the real
+    // last-message time instead, so it is stable across reloads.
+    c.pushMessage(listSessionsRequest(4));
+    const listFrame = fa.sent.find(
+      (f: any) => f.method === "session/list",
+    ) as object;
+    fa.pushLine(
+      listSessionsResponse(outboundId(listFrame), [
+        { sessionId: SID, title: "Hello", updatedAt: "2026-06-26T12:00:00Z" },
+      ]),
+    );
+
+    expect(lastSent(c).result.sessions[0].updatedAt).toBe(
+      "2026-03-03T00:00:00Z",
+    );
   });
 
   it("session/resume _meta.platform.mode updates mode, preserving other fields", () => {

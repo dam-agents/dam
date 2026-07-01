@@ -385,6 +385,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		Volumes:                       volumes,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
+	applyTemplateScheduling(&podSpec, agentSpec)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

@@ -13,8 +13,17 @@ import {
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
   connectionStartOAuthInputSchema,
+  connectionTestAnthropicInputSchema,
   connectionUpdateInputSchema,
 } from "./schemas.js";
+
+function messageForStatus(status: number): string {
+  if (status === 401) return "Invalid credential.";
+  if (status === 403) return "Credential lacks required permissions.";
+  if (status === 429) return "Rate limited by Anthropic.";
+  if (status >= 500) return "Anthropic is unavailable right now.";
+  return `Unexpected response (${status}).`;
+}
 
 export const connectionsRouter = t.router({
   // Global connection catalog + lifecycle — credentials:* scopes.
@@ -58,6 +67,36 @@ export const connectionsRouter = t.router({
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
+
+  // Validates a caller-supplied Anthropic key/token against Anthropic before
+  // save; reads no stored state, so it's a plain inline handler.
+  testAnthropic: readCredentialsProcedure
+    .input(connectionTestAnthropicInputSchema)
+    .mutation(async ({ input }) => {
+      const headers: Record<string, string> = {
+        "anthropic-version": "2023-06-01",
+      };
+      if (input.envName === "ANTHROPIC_API_KEY") {
+        headers["x-api-key"] = input.value;
+      } else {
+        headers["Authorization"] = `Bearer ${input.value}`;
+        headers["anthropic-beta"] = "oauth-2025-04-20";
+      }
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+          method: "GET",
+          headers,
+        });
+        if (res.ok) return { ok: true as const };
+        return {
+          ok: false as const,
+          status: res.status,
+          message: messageForStatus(res.status),
+        };
+      } catch {
+        return { ok: false as const, message: "Could not reach Anthropic." };
+      }
+    }),
 
   // Per-agent grant linkage is agent configuration: reading it needs an agent
   // scope; assigning is agents:manage (the agent is the resource being

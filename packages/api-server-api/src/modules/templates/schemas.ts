@@ -53,6 +53,8 @@ export const templateSpecSchema = z
     // pod can pull the image without the user entering registry credentials.
     imagePullSecretRef: z.string().optional(),
     storageSize: z.string().optional(),
+    runtimeClassName: z.string().optional(),
+    nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();

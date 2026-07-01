@@ -20,6 +20,8 @@ import {
   encodeDataFrame,
   encodeExit,
 } from "api-server-api";
+import { attachExec } from "./modules/exec.js";
+import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
@@ -51,6 +53,13 @@ const homeDir = config.PLATFORM_DEV
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
+
+// Set on ephemeral `dam-run` executor pods (Run CR). Such a pod exists only to
+// run one command over /api/exec: it exposes that endpoint and skips the
+// runtime-channel hello (its narrow gateway SA can't reach that path anyway —
+// credentials arrive via controller-injected env + on-wire gateway injection,
+// exactly as for forks).
+const EXEC_ONLY = process.env.PLATFORM_EXEC_ONLY === "1";
 
 // skill-ref driver paths from the manifest, $HOME expanded against home.
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
@@ -363,6 +372,7 @@ const server = http.createServer((req, res) => {
 const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
+const execWss = new WebSocketServer({ noServer: true });
 
 acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
@@ -389,6 +399,38 @@ server.on("upgrade", (req, socket, head) => {
       spawnSshd(ws, preparedSshd, envStore, (msg) =>
         process.stderr.write(`[ssh] ${msg}\n`),
       ),
+    );
+  } else if (url.pathname === "/api/exec" && EXEC_ONLY) {
+    // argv (+ cwd / tty size) arrive as query on the upgrade URL, forwarded
+    // verbatim by the api-server relay from the dam-run caller. The command is
+    // never persisted in the Run CR — it lives only on this connection.
+    const q = url.searchParams;
+    let argv: unknown;
+    try {
+      argv = JSON.parse(
+        Buffer.from(q.get("argv") ?? "", "base64").toString("utf8"),
+      );
+    } catch {
+      socket.destroy();
+      return;
+    }
+    if (
+      !Array.isArray(argv) ||
+      argv.length === 0 ||
+      !argv.every((a): a is string => typeof a === "string")
+    ) {
+      socket.destroy();
+      return;
+    }
+    execWss.handleUpgrade(req, socket, head, (ws) =>
+      attachExec(ws, {
+        argv,
+        cols: Number(q.get("cols")) || 80,
+        rows: Number(q.get("rows")) || 24,
+        cwd: q.get("cwd") || workDir,
+        env: mergedSpawnEnv(envStore),
+        log: (msg) => process.stderr.write(`[exec] ${msg}\n`),
+      }),
     );
   } else {
     socket.destroy();
@@ -421,10 +463,12 @@ server.listen(config.PORT, () => {
     process.stderr.write(`[import] ${msg}\n`),
   );
 
-  void runtimeChannel.helloOnBoot({
-    agentRuntimeVersion:
-      process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
-  });
+  if (!EXEC_ONLY) {
+    void runtimeChannel.helloOnBoot({
+      agentRuntimeVersion:
+        process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
+    });
+  }
 });
 
 // cgroup memory accounting is whole-container (agent-runtime + harness +

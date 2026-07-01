@@ -1,7 +1,9 @@
 import { ArrowRight } from "lucide-react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +17,6 @@ import type {
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
-import { FormField } from "../form-field.js";
 import {
   type RegistryCredential,
   RegistryCredentialSection,
@@ -79,8 +80,7 @@ export function SetupStep({
       />
 
       <section className="mb-8">
-        <SectionLabel spaced>Name</SectionLabel>
-        <FormField>
+        <FormField label="Name">
           <Input
             autoFocus
             value={name}
@@ -100,7 +100,7 @@ export function SetupStep({
               update({ providerRef: null });
           }}
           autoSelectFirst
-          listClassName="md:-ml-4"
+          listClassName={FIELD_INSET}
         />
       </section>
 

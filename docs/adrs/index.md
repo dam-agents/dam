@@ -76,6 +76,9 @@ This directory contains ADRs for the Platform project.
 | [069](069-runtime-env-injection.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
 | [070](070-api-keys-headless-auth.md)           | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |
 | [071](071-postgres-role-separation.md)        | Postgres role separation — no SUPERUSER on app roles | @pilartomas |
+| [072](072-grpc-credential-injection.md)       | Gateway credential injection for gRPC hosts | @xjacka |
+| [073](073-per-template-scheduling.md)         | Per-template scheduling for runtimeClassName and nodeSelector | @xjacka |
+
 
 ## Drafts
 

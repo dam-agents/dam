@@ -1,0 +1,33 @@
+["agents:k-search:image"]
+description = "Build the k-search workload image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-k-search:latest packages/agents/k-search
+'''
+
+["agents:k-search:scan"]
+depends = ["agents:k-search:scan:*"]
+
+["agents:k-search:scan:trivy"]
+dir = "{{config_root}}"
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/k-search:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/k-search:${usage_tag}"
+else
+  {{ mise_bin }} run agents:k-search:image
+  image="platform-k-search:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''

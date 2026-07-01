@@ -1,4 +1,4 @@
-import { type EnvMapping, PROVIDERS } from "../../../../types.js";
+import { PROVIDERS } from "../../../../types.js";
 
 // Toggle order, Zod enum source, and iteration order.
 export const MODE_KEYS = ["oauth", "api-key"] as const;
@@ -25,14 +25,12 @@ export const MODES = {
     placeholder: "sk-ant-oat-…",
     prefix: prefixFor("oauth"),
     templateId: modeFor("oauth").templateId,
-    mapping: modeFor("oauth").defaultEnvMappings[0],
   },
   "api-key": {
     label: modeFor("api-key").label,
     placeholder: "sk-ant-api-…",
     prefix: prefixFor("api-key"),
     templateId: modeFor("api-key").templateId,
-    mapping: modeFor("api-key").defaultEnvMappings[0],
   },
 } as const satisfies Record<
   Mode,
@@ -41,13 +39,8 @@ export const MODES = {
     placeholder: string;
     prefix: string;
     templateId: string;
-    mapping: EnvMapping;
   }
 >;
-
-export function detectMode(envName?: string): Mode {
-  return envName === MODES["api-key"].mapping.envName ? "api-key" : "oauth";
-}
 
 // `claude setup-token` output can pick up newlines on copy, so strip all whitespace.
 export function stripWhitespace(value: string): string {

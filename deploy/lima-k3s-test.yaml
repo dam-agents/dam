@@ -39,7 +39,9 @@ provision:
         - "container-log-max-files=3"
       EOF
       if [ ! -d /var/lib/rancher/k3s ]; then
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
+        # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
+        # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.36.1+k3s1" INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
       fi
       mkdir -p /var/lib/rancher/k3s/server/manifests
       cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'

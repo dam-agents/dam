@@ -10,6 +10,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -87,7 +88,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		// Active by activity annotations → not an idle candidate. This is the
 		// exact decision the reconciler uses to scale up, so the two
 		// can never disagree about whether an agent is idle.
-		if shouldRun(agent.GetAnnotations(), timeout, now) {
+		if shouldRun(agent.GetAnnotations(), effectiveIdleTimeout(hibernationOverride(agent), timeout), now) {
 			continue
 		}
 
@@ -111,6 +112,19 @@ func (c *IdleChecker) check(ctx context.Context) {
 	// shows when a sweep over unreachable pods runs long.
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+// hibernationOverride reads the per-agent spec.hibernationTimeout from the unstructured agent; nil when absent or unparseable (inherit the global).
+func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
+	s, found, err := unstructured.NestedString(agent.Object, "spec", "hibernationTimeout")
+	if err != nil || !found || s == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return nil
+	}
+	return &metav1.Duration{Duration: d}
 }
 
 // podIsBusy probes the agent runtime's /api/status endpoint. The runtime is

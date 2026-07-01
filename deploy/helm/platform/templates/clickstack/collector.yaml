@@ -1,0 +1,172 @@
+{{- if .Values.clickstack.enabled }}
+{{- /*
+Platform-owned OTel collector; replaces the subchart's OpAMP/token-gated one so collector
+access is gated by the Istio AuthorizationPolicy alongside. Reuses the subchart's
+clickstack-config/clickstack-secret for the ClickHouse connection.
+See docs/architecture/observability.md.
+*/ -}}
+{{- $name := include "platform.clickstack.collector.fullname" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+            # Retain request headers as client metadata so the
+            # resource/agent-identity processor can read the gateway-stamped
+            # x-platform-agent-id header.
+            include_metadata: true
+          http:
+            endpoint: 0.0.0.0:4318
+            include_metadata: true
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      # Trusted agent attribution. The paired gateway Envoy stamps the
+      # x-platform-agent-id header (overwriting anything the agent set) on the
+      # telemetry it forwards here; promote it to the platform.agent.id resource
+      # attribute. delete-then-set so a forged value can never survive a missing
+      # header: unconditionally drop any client-supplied platform.agent.id, then
+      # set it ONLY from the trusted header. MUST run before `batch`, which emits
+      # a new context and drops per-request client metadata. Telemetry with no
+      # header (platform components) ends up with no platform.agent.id, which is
+      # how the read path tells agent telemetry apart. See
+      # docs/architecture/observability.md.
+      resource/agent-identity:
+        attributes:
+          - key: platform.agent.id
+            action: delete
+          - key: platform.agent.id
+            from_context: "metadata.x-platform-agent-id"
+            action: upsert
+      batch: {}
+    exporters:
+      clickhouse:
+        endpoint: ${env:CLICKHOUSE_ENDPOINT}
+        username: ${env:CLICKHOUSE_USER}
+        password: ${env:CLICKHOUSE_PASSWORD}
+        database: default
+        create_schema: true
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    service:
+      extensions: [health_check]
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resource/agent-identity, batch]
+          exporters: [clickhouse]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource/agent-identity, batch]
+          exporters: [clickhouse]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource/agent-identity, batch]
+          exporters: [clickhouse]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+      name: otlp-grpc
+      appProtocol: grpc
+    - port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+      name: otlp-http
+  selector:
+    app.kubernetes.io/component: clickstack-collector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 2 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: clickstack-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: clickstack-collector
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: collector
+          image: {{ .Values.clickstack.collector.image }}
+          args: ["--config=/etc/otelcol/config.yaml"]
+          # ClickHouse conn from HyperDX's clickstack-config/secret (rendered with the subchart, not the
+          # disabled bundled collector), so co-gated with this collector under clickstack.enabled.
+          # OPAMP_SERVER_URL there is ignored (no opamp in our config).
+          envFrom:
+            - configMapRef:
+                name: clickstack-config
+            - secretRef:
+                name: clickstack-secret
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+            - containerPort: 4318
+              name: otlp-http
+            - containerPort: 13133
+              name: health
+          {{- if .Values.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          {{- end }}
+          resources:
+            {{- toYaml .Values.clickstack.collector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+{{- end }}

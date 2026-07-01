@@ -239,6 +239,66 @@ redis:
       cpu: 200m
       memory: 256Mi
 
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
+# chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
+# Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
+clickstack:
+  enabled: false
+
+  # Our own OTLP collector (replaces the subchart's OpAMP/token-gated one): static config,
+  # no auth, gated by the AuthorizationPolicy in templates/clickstack/.
+  collector:
+    annotations: {}
+    podAnnotations: {}
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+
+  # --- forwarded to the clickstack subchart ---
+  # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
+  #   hyperdx:2.27.0                 <- docker.hyperdx.io/hyperdx/hyperdx:2.27.0
+  #   clickhouse-server:25.7-alpine  <- clickhouse/clickhouse-server:25.7-alpine
+  #   clickhouse-keeper:25.7-alpine  <- clickhouse/clickhouse-keeper:25.7-alpine
+  #   busybox:1.37.0                 <- busybox
+  # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
+
+  otel-collector:
+    enabled: false        # we run our own collector (above)
+
+  hyperdx:
+    deployment:
+      image:
+        repository: quay.io/dam-agents/hyperdx
+        tag: "2.27.0"
+      waitForMongodb:
+        image: "quay.io/dam-agents/busybox:1.37.0"
+
+  clickhouse:
+    # Without an explicit image the operator injects its built-in default
+    # (docker.io/clickhouse/clickhouse-keeper:latest) — pin to the mirror and
+    # match the server tag. Merges over the subchart's keeper.spec defaults.
+    keeper:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-keeper
+            tag: "25.7-alpine"
+    cluster:
+      spec:
+        containerTemplate:
+          image:
+            repository: quay.io/dam-agents/clickhouse-server
+            tag: "25.7-alpine"
+        dataVolumeClaimSpec:
+          resources:
+            requests:
+              storage: 20Gi
+
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
@@ -686,6 +746,8 @@ controller:
       extraLabels: {}
       extraAnnotations: {}
       nodeSelector: {}
+      # If a GPU node is tainted, add a matching toleration here (applies to
+      # every agent pod, but only the GPU pod requests nvidia.com/gpu).
       tolerations: []
       affinity: {}
       topologySpreadConstraints: []
@@ -889,6 +951,7 @@ agentTemplates:
   - name: claude-code
     enabled: true
     description: "Default Claude Code agent"
+    telemetry: true
     image:
       repository: quay.io/dam-agents/claude-code
       tag: ""
@@ -928,11 +991,62 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: k-search
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "5Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  # Same image as k-search, evaluating on an in-cluster NVIDIA GPU
+  # (KSEARCH_EVAL_MODE=local). Disabled by default — stays Pending without a GPU.
+  # GPU passthrough under Kata needs a GPU-capable runtime class set per-template
+  # below (the chart-wide class can't carry the GPU VM config for every agent).
+  - name: k-search-local
+    enabled: false
+    category: preconfigured
+    experimental: true
+    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+    image:
+      repository: quay.io/dam-agents/k-search
+      tag: ""
+    storageSize: "10Gi"
+    # GPU Kata runtime class (cluster-specific; e.g. "kata-nvidia-gpu" on
+    # OpenShift). Adds a podFixed overhead (~1 CPU / 4Gi).
+    # runtimeClassName: "kata-nvidia-gpu"
+    # Optional — the GPU request already pins to the GPU node.
+    # nodeSelector:
+    #   nvidia.com/gpu.present: "true"
+    env:
+      - name: KSEARCH_EVAL_MODE
+        value: "local"
+      - name: KSEARCH_TARGET_GPU
+        value: "A100"
+    resources:
+      requests:
+        cpu: "1"
+        memory: "8Gi"
+        nvidia.com/gpu: "1"
+      limits:
+        cpu: "2"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"
+
   # Published by CI (build-nous / merge-nous in cd.yml). Experimental: the
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
   - name: nous
-    enabled: true
-    category: harness
+    enabled: false
+    category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
     image:
@@ -950,7 +1064,7 @@ agentTemplates:
         memory: "4Gi"
 
   - name: openevolve
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "OpenEvolve — evolutionary code-optimization agent"

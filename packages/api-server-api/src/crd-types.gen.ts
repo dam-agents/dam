@@ -6,9 +6,9 @@
  * sole writer.
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
- * but observed status the controller derives from activity. Security
- * context and scheduling are chart-only (config.AgentBase) and cannot be set
- * here by design.
+ * but observed status the controller derives from activity. Security context
+ * is chart-only (config.AgentBase); scheduling is chart-wide except
+ * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
  */
 export interface AgentSpecCR {
   /**
@@ -39,6 +39,10 @@ export interface AgentSpecCR {
    * controller into the credential set mounted on the gateway.
    */
   grantedSecretIds?: string[];
+  /**
+   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+   */
+  hibernationTimeout?: string;
   /**
    * Image is the agent container image.
    */
@@ -85,6 +89,12 @@ export interface AgentSpecCR {
    */
   name?: string;
   /**
+   * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   */
+  nodeSelector?: {
+    [k: string]: string;
+  };
+  /**
    * Resources are the agent container's resource requests and limits.
    */
   resources?: {
@@ -95,6 +105,10 @@ export interface AgentSpecCR {
       [k: string]: string;
     };
   };
+  /**
+   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   */
+  runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
    * agent container (operator-supplied envs).
@@ -125,4 +139,21 @@ export interface ForkSpecCR {
    * SessionID is the optional originating session.
    */
   sessionId?: string;
+}
+
+/**
+ * RunSpec is an ephemeral executor derived from an Agent, backing the in-pod
+ * `dam-run` CLI: it materializes a throwaway sandbox pod (same image, config,
+ * and RWX workspace as the parent) that runs one command streamed over
+ * /api/exec. Unlike a Fork it runs as the parent Agent's own owner. The command
+ * argv is deliberately NOT stored here — it travels only over the exec
+ * WebSocket — so the executor pod is generic and no command bytes land in etcd.
+ * The api-server is the sole writer of the spec and deletes the Run when the
+ * streaming connection ends.
+ */
+export interface RunSpecCR {
+  /**
+   * AgentName names the parent Agent this run derives from.
+   */
+  agentName: string;
 }

@@ -53,7 +53,7 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
-export type { AgentSpecCR, ForkSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,
@@ -117,18 +117,6 @@ export {
 export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
-  SecretType,
-  SecretView,
-  SecretCreateInput,
-  SecretCreateGithubPatInput,
-  CreateGithubPatOutput,
-  SecretUpdateGithubPatInput,
-  UpdateGithubPatOutput,
-  SecretUpdateInput,
-  AgentAccess,
-  SecretsService,
-} from "./modules/secrets/types.js";
-export type {
   ProviderPreset,
   ProviderPresetMode,
   ProviderPresetType,
@@ -136,18 +124,7 @@ export type {
   InjectionConfig,
   BobModelPins,
 } from "./modules/connections/providers.js";
-export {
-  secretCreateGithubPatInputSchema,
-  secretCreateInputSchema,
-  secretDeleteInputSchema,
-  secretGetAgentAccessInputSchema,
-  secretSetAgentAccessInputSchema,
-  secretTestAnthropicInputSchema,
-  secretUpdateGithubPatInputSchema,
-  secretUpdateInputSchema,
-} from "./modules/secrets/schemas.js";
-export { ENV_NAME_RE } from "./modules/shared.js";
-export { isValidEnvName } from "./modules/secrets/types.js";
+export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
@@ -163,7 +140,6 @@ export {
   providerTypeForTemplateId,
   templateIdForProvider,
 } from "./modules/connections/providers.js";
-export { hostPatternSchema } from "./modules/secrets/schemas.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

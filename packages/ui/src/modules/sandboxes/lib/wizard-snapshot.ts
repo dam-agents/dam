@@ -12,13 +12,15 @@ export const wizardSnapshotSchema = z.object({
   templateId: z.string().nullable(),
   customImage: z.string(),
   name: z.string(),
-  // A provider can be a Connection (new) or a legacy provider Secret.
+  // The selected provider Connection (the single credential model). A snapshot
+  // persisted by a pre-#1273 build carried a `{source, id}` shape where the id
+  // could be a legacy *secret* id; drop those to null rather than let a secret
+  // id leak through as a connection id on finish.
   providerRef: z
-    .discriminatedUnion("source", [
-      z.object({ source: z.literal("connection"), id: z.string() }),
-      z.object({ source: z.literal("secret"), id: z.string() }),
-    ])
-    .nullable()
+    .preprocess(
+      (v) => (v && typeof v === "object" && "source" in v ? null : v),
+      z.object({ id: z.string() }).nullable(),
+    )
     .default(null),
   egressPreset: egressPresetSchema,
   connectionIds: z.array(z.string()),

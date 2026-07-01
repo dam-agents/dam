@@ -126,7 +126,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// Per-pair agent egress NetworkPolicy — same shape and rationale as
 	// the long-lived pair: kernel-level boundary gating the agent → fork
 	// gateway hop, agent has no ambient enrolment.
-	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, ownerRef)); err != nil {
+	if err := applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(forkName, r.config, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 	timer.mark("authzAndNetpol")
@@ -139,7 +139,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, ownerRef)
 
-	if err := r.applyPod(ctx, gatewayPod); err != nil {
+	if err := createPodIfMissing(ctx, r.client, gatewayPod); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
 	}
 	// Apply gateway Service + migrate any legacy headless, capture
@@ -160,11 +160,11 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// `<mount>-<agent>-0` name BuildForkAgentJob assumes. Resolve each persisted
 	// mount's PVC by label and rewrite the fork's claim refs (no-op for
 	// pre-label agents — resolution falls back to the legacy name).
-	parentPVCs, err := r.resolveParentWorkspacePVCs(ctx, forkSpec.AgentName, agentSpec)
+	parentPVCs, err := resolveParentWorkspacePVCs(ctx, r.client, r.config, forkSpec.AgentName, agentSpec)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
 	}
-	applyForkParentPVCs(desired, parentPVCs)
+	rewriteParentPVCs(desired.Spec.Template.Spec.Volumes, parentPVCs)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -176,7 +176,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("reading job: %v", err))
 	}
 
-	pod, _ := r.findForkPod(ctx, forkName)
+	pod, _ := findEphemeralPod(ctx, r.client, r.config.Namespace, ForkLabelForkID, forkName)
 
 	if isJobFailed(job) {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonPodNotReady, withPodTermination(jobFailureReason(job), pod))
@@ -314,34 +314,6 @@ func (r *ForkReconciler) setForkFailed(ctx context.Context, name, reason, detail
 	return fmt.Errorf("fork %s: %s: %s", name, reason, detail)
 }
 
-// resolveParentWorkspacePVCs maps each persisted mount of the parent Agent to
-// the PVC name backing it, looked up by (agent, mount) label so a warm-pool
-// workspace — whose name is the pool's generated name, not the
-// `<mount>-<agent>-0` convention — resolves correctly (#692). For agents created
-// before the mount label existed, no labeled PVC is found and it falls back to
-// the legacy convention name, which is still the real name for those.
-func (r *ForkReconciler) resolveParentWorkspacePVCs(ctx context.Context, parentAgent string, agentSpec *types.AgentSpec) (map[string]string, error) {
-	out := map[string]string{}
-	for _, m := range resolveSpecMounts(agentSpec, r.config.AgentTemplateDefaults) {
-		if !m.Persist {
-			continue
-		}
-		volName := types.SanitizeMountName(m.Path)
-		list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: LabelAgent + "=" + parentAgent + "," + LabelMount + "=" + volName,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if len(list.Items) > 0 {
-			out[volName] = list.Items[0].Name
-		} else {
-			out[volName] = fmt.Sprintf("%s-%s-0", volName, parentAgent)
-		}
-	}
-	return out, nil
-}
-
 func (r *ForkReconciler) applyForkJob(ctx context.Context, desired *batchv1.Job) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := r.client.BatchV1().Jobs(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
@@ -351,35 +323,6 @@ func (r *ForkReconciler) applyForkJob(ctx context.Context, desired *batchv1.Job)
 		}
 		return err
 	})
-}
-
-// applyPod creates the fork's gateway Pod if missing. Bare Pods are immutable
-// in their key fields (image, args, volumes), so we treat existing Pods as
-// authoritative — a re-render with the same fork name keeps the running pod.
-// Owner references on the Pod GC it when the fork CM is deleted.
-func (r *ForkReconciler) applyPod(ctx context.Context, desired *corev1.Pod) error {
-	_, err := r.client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.CoreV1().Pods(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	return err
-}
-
-func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*corev1.Pod, error) {
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", ForkLabelForkID, forkName),
-	})
-	if err != nil {
-		return nil, err
-	}
-	for i := range pods.Items {
-		p := pods.Items[i]
-		if p.DeletionTimestamp == nil {
-			return &p, nil
-		}
-	}
-	return nil, nil
 }
 
 // withPodTermination appends the fork pod's abnormal-termination cause to a generic detail.

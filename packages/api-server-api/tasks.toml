@@ -40,6 +40,7 @@ depends = ["controller:generate", "common:setup:pnpm"]
 sources = [
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_forks.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_runs.yaml",
   "scripts/gen-crd-types.sh",
 ]
 outputs = ["src/crd-types.gen.ts"]
@@ -52,6 +53,7 @@ depends = ["common:setup:pnpm"]
 sources = [
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_forks.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_runs.yaml",
   "src/crd-types.gen.ts",
   "scripts/gen-crd-types.sh",
 ]

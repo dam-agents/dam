@@ -8,7 +8,6 @@ import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
 import type { FilesService } from "./modules/files/router.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
-import type { SecretsService } from "./modules/secrets/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
@@ -34,7 +33,6 @@ export interface ApiContext {
   repos: ReposService;
   agents: AgentsService;
   schedules: SchedulesService;
-  secrets: SecretsService;
   channels: ChannelsService;
   connections: ConnectionsService;
   skills: SkillsService;

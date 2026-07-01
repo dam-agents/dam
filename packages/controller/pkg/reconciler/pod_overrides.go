@@ -57,6 +57,26 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	}
 }
 
+// applyTemplateScheduling layers per-template RuntimeClassName / NodeSelector
+// over the chart-wide base. NodeSelector keys merge (onto a fresh copy, never
+// the shared config map); RuntimeClassName replaces.
+func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
+	if agentSpec.RuntimeClassName != "" {
+		rc := agentSpec.RuntimeClassName
+		spec.RuntimeClassName = &rc
+	}
+	if len(agentSpec.NodeSelector) > 0 {
+		merged := make(map[string]string, len(spec.NodeSelector)+len(agentSpec.NodeSelector))
+		for k, v := range spec.NodeSelector {
+			merged[k] = v
+		}
+		for k, v := range agentSpec.NodeSelector {
+			merged[k] = v
+		}
+		spec.NodeSelector = merged
+	}
+}
+
 // configMountsToTypes / configEnvToTypes shuttle the chart-side fallback
 // shapes (config.Mount / config.EnvVar) into the per-instance types the
 // reconciler already builds pods from. The shapes are identical bar the

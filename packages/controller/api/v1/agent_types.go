@@ -9,9 +9,9 @@ import (
 // sole writer.
 //
 // There is no desiredState field: running-vs-hibernated is not stored intent
-// but observed status the controller derives from activity. Security
-// context and scheduling are chart-only (config.AgentBase) and cannot be set
-// here by design.
+// but observed status the controller derives from activity. Security context
+// is chart-only (config.AgentBase); scheduling is chart-wide except
+// RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -35,6 +35,10 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
+	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+	// +optional
+	HibernationTimeout *metav1.Duration `json:"hibernationTimeout,omitempty"`
+
 	// ImagePullPolicy overrides the chart-wide default; empty = inherit.
 	// +optional
 	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
@@ -46,6 +50,13 @@ type AgentSpec struct {
 	// time, so the controller never sees $HOME.
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
+
+	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+	// +optional
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+	// NodeSelector overrides the chart-wide node selector; empty = inherit.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -144,7 +155,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=4
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

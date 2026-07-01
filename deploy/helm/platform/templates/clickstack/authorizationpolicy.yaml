@@ -1,0 +1,27 @@
+{{- if .Values.clickstack.enabled }}
+{{- /*
+Mesh gate for the collector: ALLOW only the release + agent namespaces (Istio ALLOW denies
+all else, L4 via ztunnel), replacing ClickStack's HyperDX-token gate.
+See docs/architecture/observability.md.
+*/ -}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-clickstack-collector-allow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: clickstack-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Release.Namespace | quote }}
+              - {{ .Values.agentNamespace | quote }}
+{{- end }}

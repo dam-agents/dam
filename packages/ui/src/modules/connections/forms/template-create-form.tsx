@@ -7,8 +7,11 @@ import {
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Inset } from "@/components/ui/inset";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 
 import { api } from "../../../api.js";
@@ -366,7 +369,7 @@ function OAuthAppHint({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-muted/40 p-3 flex flex-col gap-2">
+    <Inset className="rounded-lg border border-border bg-muted/40 p-4 flex flex-col gap-2">
       <p className="text-[12px] text-foreground/80">
         Register an OAuth app at the provider, then paste its client credentials
         below.
@@ -410,7 +413,7 @@ function OAuthAppHint({
           </div>
         </div>
       )}
-    </div>
+    </Inset>
   );
 }
 
@@ -433,12 +436,10 @@ function OverridableSection({
   // sense overridden together (your own app means all of its credentials, not
   // a mix of presets and custom values), so we don't expose them per-field.
   return (
-    <div className="rounded-lg border border-dashed border-border p-3">
+    <Inset className="rounded-lg border border-dashed border-border p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className="text-[12px] font-semibold text-foreground/80 block">
-            Customize defaults
-          </span>
+          <SectionLabel>Customize defaults</SectionLabel>
           <p className="text-[11px] text-muted-foreground mt-1">
             {fromFamily
               ? "Reused from another connection you've already set up. Leave off to share the same app, or turn on to use your own."
@@ -472,7 +473,7 @@ function OverridableSection({
           ))}
         </div>
       )}
-    </div>
+    </Inset>
   );
 }
 
@@ -510,10 +511,7 @@ function LabeledInput({
   help?: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-[12px] font-semibold text-foreground/80 block mb-1">
-        {label}
-      </span>
+    <FormField label={label} hint={help}>
       <Input
         type={type ?? "text"}
         data-testid={testId}
@@ -521,12 +519,7 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
-      {help && (
-        <span className="text-[11px] text-muted-foreground block mt-1">
-          {help}
-        </span>
-      )}
-    </label>
+    </FormField>
   );
 }
 

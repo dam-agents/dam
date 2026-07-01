@@ -347,6 +347,11 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
+# Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
+# clickstack.enabled=false.
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts >/dev/null 2>&1 || true
+helm dependency build deploy/helm/platform
+
 # 3. Load images into k3s (built by depends: image:*, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
@@ -431,6 +436,26 @@ echo "Installing/upgrading Platform chart..."
 kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f deploy/helm/platform/crds/
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f deploy/helm/platform/crds/
 
+# ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
+# CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
+# the quay.io/dam-agents mirror (their db/agent images stay upstream). The MongoDB operator
+# defaults to watching only its own namespace, so it must be pointed at the release ns
+# (default) where the MongoDBCommunity CR lives, or HyperDX hangs waiting on mongodb.
+if [ -n "${CLICKSTACK:-}" ]; then
+  echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
+  helm --kubeconfig="$KUBECONFIG" upgrade --install clickstack-operators clickstack/clickstack-operators \
+    --version 1.0.0 --namespace clickstack-operators --create-namespace --wait --timeout 5m \
+    --set clickhouse-operator.manager.image.repository=quay.io/dam-agents/clickhouse-operator \
+    --set clickhouse-operator.manager.image.tag=v0.0.1 \
+    --set mongodb-operator.registry.operator=quay.io/dam-agents \
+    --set mongodb-operator.operator.watchNamespace=default
+  kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=120s \
+    crd/clickhouseclusters.clickhouse.com \
+    crd/keeperclusters.clickhouse.com \
+    crd/mongodbcommunity.mongodbcommunity.mongodb.com
+  HELM_EXTRA_ARGS+=(--set clickstack.enabled=true)
+fi
+
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
 # before the hook runs.
@@ -454,6 +479,18 @@ fi
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
+
+# HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
+# long-lived monitor connection is closed, topology stuck Unknown, and it does not
+# self-heal). Once the stack is up and Mongo is ready, a warm restart connects cleanly and
+# stays healthy in-mesh — so restart it here. (Prod installs should likewise ensure HyperDX
+# (re)starts after Mongo is ready.)
+if [ -n "${CLICKSTACK:-}" ] && [ "$NO_RESTART" != true ]; then
+  echo "Restarting HyperDX onto a ready MongoDB..."
+  kubectl --kubeconfig="$KUBECONFIG" rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-clickstack-app
+  kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-clickstack-app --timeout=5m
+fi
 
 # 7. Prune dangling image layers (issue #244). After repeated reinstalls,
 # old `:latest` SHAs lose their tag to the freshly imported one and become

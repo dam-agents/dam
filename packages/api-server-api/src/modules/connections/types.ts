@@ -134,7 +134,13 @@ export interface ConnectionsService {
 
   getConnection(id: string): Promise<ConnectionView | null>;
 
-  createFromTemplate(input: ConnectionCreateInput): Promise<string>;
+  // The optional `id` lets the secrets→connections migration supply a
+  // deterministic id (derived from the legacy secret) for idempotent re-runs;
+  // the router never sets it (the create schema has no `id`), so interactive
+  // callers always get a random id.
+  createFromTemplate(
+    input: ConnectionCreateInput & { id?: string },
+  ): Promise<string>;
 
   discoverMcp(input: { url: string }): Promise<{
     auth: "oauth" | "none";

@@ -19,6 +19,8 @@ Platform persists state on three durable substrates, split cleanly between the p
 
 The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
 
+The optional agent-telemetry backend adds a fourth durable substrate, outside this split — see [observability](observability.md). It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
+
 ## Diagram
 
 ```mermaid
@@ -93,7 +95,7 @@ Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are deri
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
-- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart. The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's sole source of truth for per-session mode, type, `scheduleId`, `threadTs`, and `createdAt`, surfaced over ACP `_meta.platform` — alongside the trigger-binding and runtime-channel state files.
+- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart. The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's sole source of truth for per-session mode, type, `scheduleId`, `threadTs`, `createdAt`, and the time of the session's last genuine message, surfaced over ACP `_meta.platform` — alongside the trigger-binding and runtime-channel state files.
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`. Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).

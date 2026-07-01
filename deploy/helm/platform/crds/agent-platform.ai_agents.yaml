@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "2"
+    agent-platform.ai/crd-schema-generation: "4"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -64,9 +64,9 @@ spec:
               sole writer.
 
               There is no desiredState field: running-vs-hibernated is not stored intent
-              but observed status the controller derives from activity. Security
-              context and scheduling are chart-only (config.AgentBase) and cannot be set
-              here by design.
+              but observed status the controller derives from activity. Security context
+              is chart-only (config.AgentBase); scheduling is chart-wide except
+              RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
             properties:
               agentHome:
                 description: |-
@@ -107,6 +107,12 @@ spec:
                 items:
                   type: string
                 type: array
+              hibernationTimeout:
+                description: 'HibernationTimeout overrides the chart-wide idle timeout
+                  for this Agent: "0s" never hibernates, omitted inherits the default.
+                  The UI writes it (presented in minutes); the controller and api-server
+                  resolve the effective value.'
+                type: string
               image:
                 description: Image is the agent container image.
                 type: string
@@ -155,6 +161,12 @@ spec:
               name:
                 description: Name is an optional human-readable name.
                 type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector overrides the chart-wide node selector;
+                  empty = inherit.
+                type: object
               resources:
                 description: Resources are the agent container's resource requests
                   and limits.
@@ -168,6 +180,10 @@ spec:
                       type: string
                     type: object
                 type: object
+              runtimeClassName:
+                description: RuntimeClassName overrides the chart-wide runtime class;
+                  empty = inherit.
+                type: string
               secretRef:
                 description: |-
                   SecretRef names a K8s Secret whose keys are envFrom-projected into the

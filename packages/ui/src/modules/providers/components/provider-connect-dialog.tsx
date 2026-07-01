@@ -1,21 +1,13 @@
 import type { ConnectionCreateInput } from "api-server-api";
 
 import { Modal } from "../../../components/modal.js";
-import {
-  bobEnvMappings,
-  type BobModelPins,
-  bobPinsFromEnvMappings,
-  type EnvMapping,
-  ibmLitellmEnvMappings,
-  type ProviderPresetType,
-} from "../../../types.js";
+import type { BobModelPins, ProviderPresetType } from "../../../types.js";
 import {
   useCreateConnection,
   useUpdateConnection,
 } from "../../connections/api/mutations.js";
-import { useUpdateSecret } from "../../secrets/api/mutations.js";
 import { AnthropicForm } from "./anthropic/form.js";
-import { detectMode, type Mode, MODES } from "./anthropic/modes.js";
+import { type Mode, MODES } from "./anthropic/modes.js";
 import { BobForm } from "./bob/form.js";
 import { IbmLitellmForm } from "./ibm-litellm/form.js";
 import { OpenAIForm } from "./openai/form.js";
@@ -34,7 +26,7 @@ interface Props {
 
 // New setup writes a Connection. Editing rotates the value in place —
 // connections.update is value-only, so config-input changes on an existing
-// connection don't persist; legacy secrets still take a full value+env update.
+// connection don't persist.
 export function ProviderConnectDialog({
   provider,
   item,
@@ -43,46 +35,31 @@ export function ProviderConnectDialog({
 }: Props) {
   const createConnection = useCreateConnection();
   const updateConnection = useUpdateConnection();
-  const updateSecret = useUpdateSecret();
 
   const variant = item ? "edit" : "wizard";
 
   const persist = async (args: {
     value: string;
     createInput: ConnectionCreateInput;
-    secretEnvMappings?: EnvMapping[];
   }) => {
-    if (item?.source === "connection") {
+    if (item) {
       await updateConnection.mutateAsync({ id: item.id, value: args.value });
-      onConnected({ source: "connection", id: item.id });
-    } else if (item?.source === "secret") {
-      await updateSecret.mutateAsync({
-        id: item.id,
-        value: args.value,
-        envMappings: args.secretEnvMappings,
-      });
-      onConnected({ source: "secret", id: item.id });
+      onConnected({ id: item.id });
     } else {
       const created = await createConnection.mutateAsync(args.createInput);
-      onConnected({ source: "connection", id: created.id });
+      onConnected({ id: created.id });
     }
   };
 
-  const anthropicMode: Mode =
-    item?.source === "connection"
-      ? item.conn.templateId === "anthropic-oauth"
-        ? "oauth"
-        : "api-key"
-      : item?.source === "secret"
-        ? detectMode(item.secret.envMappings?.[0]?.envName)
-        : "oauth";
+  const anthropicMode: Mode = item
+    ? item.conn.templateId === "anthropic-oauth"
+      ? "oauth"
+      : "api-key"
+    : "oauth";
 
-  const bobPins: BobModelPins | undefined =
-    item?.source === "connection"
-      ? bobPinsFromConnection(item.conn)
-      : item?.source === "secret"
-        ? bobPinsFromEnvMappings(item.secret.envMappings)
-        : undefined;
+  const bobPins: BobModelPins | undefined = item
+    ? bobPinsFromConnection(item.conn)
+    : undefined;
 
   return (
     <Modal widthClass="w-[505px]">
@@ -91,7 +68,7 @@ export function ProviderConnectDialog({
           <AnthropicForm
             variant={variant}
             initialMode={anthropicMode}
-            lockMode={item?.source === "connection"}
+            lockMode={!!item}
             onCancel={onClose}
             onSave={({ mode, value }) =>
               persist({
@@ -102,7 +79,6 @@ export function ProviderConnectDialog({
                   authKind: "header",
                   value,
                 },
-                secretEnvMappings: [MODES[mode].mapping],
               })
             }
           />
@@ -122,7 +98,6 @@ export function ProviderConnectDialog({
                   value,
                   configInputs: bobConfigInputs(pins),
                 },
-                secretEnvMappings: bobEnvMappings(pins),
               })
             }
           />
@@ -157,7 +132,6 @@ export function ProviderConnectDialog({
                   authKind: "header",
                   value,
                 },
-                secretEnvMappings: ibmLitellmEnvMappings(),
               })
             }
           />

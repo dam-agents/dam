@@ -13,17 +13,11 @@ import {
 } from "../../../components/env-vars-editor.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
-import { isProviderPresetType, type SecretView } from "../../../types.js";
 import {
-  useSetAgentAccess,
   useSetAgentConnections,
   useUpdateAgent,
 } from "../../agents/api/mutations.js";
-import {
-  useAgentAccess,
-  useAgentConnections,
-  useAgents,
-} from "../../agents/api/queries.js";
+import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import type { InheritedEnv } from "../../agents/components/configure-agent/env-tab.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
@@ -37,11 +31,9 @@ import {
 } from "../../egress-rules/api/queries.js";
 import type { StagedNetworkAccessController } from "../../egress-rules/components/agent-egress-editor.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
-import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { confirmHibernationChange } from "../lib/hibernation.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
-
-const EMPTY_SECRETS: SecretView[] = [];
 
 const envVarSchema = z.object({ name: z.string(), value: z.string() });
 
@@ -49,11 +41,14 @@ const envVarSchema = z.object({ name: z.string(), value: z.string() });
 // arrays so React Hook Form's structural dirty check matches on content.
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Required"),
-  assigned: z.array(z.string()),
   assignedAppIds: z.array(z.string()),
   envVars: z
     .array(envVarSchema)
     .refine(allEnvVarsValid, "All env vars need a name and a value"),
+  hibernationTimeoutMin: z
+    .number({ message: "Enter a number of minutes (0 = never)" })
+    .int()
+    .nonnegative(),
 });
 type SettingsValues = z.infer<typeof settingsSchema>;
 
@@ -66,6 +61,7 @@ export type SandboxSettingsStatus =
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
   const agent = useMemo(
@@ -76,29 +72,18 @@ export function useSandboxSettingsForm() {
     [agentsQuery.data, agentId],
   );
 
-  const secretsQuery = useSecrets();
-  const secrets = secretsQuery.data ?? EMPTY_SECRETS;
   const { data: apps = [] } = useAppConnections();
   const { data: templates = [] } = useTemplates();
-  const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
 
   const updateAgent = useUpdateAgent();
-  const setAgentAccess = useSetAgentAccess();
   const setAgentConnections = useSetAgentConnections();
   const applyPreset = useApplyEgressPreset();
   const createRule = useCreateEgressRule();
   const revokeRule = useRevokeEgressRule();
 
-  const providerSecretIds = useMemo(
-    () =>
-      new Set(
-        secrets.filter((s) => isProviderPresetType(s.type)).map((s) => s.id),
-      ),
-    [secrets],
-  );
   const providerAppIds = useMemo(
     () =>
       new Set(
@@ -120,9 +105,9 @@ export function useSandboxSettingsForm() {
       mode: "onChange",
       defaultValues: {
         name: "",
-        assigned: [],
         assignedAppIds: [],
         envVars: [],
+        hibernationTimeoutMin: 60,
       },
     });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
@@ -146,89 +131,56 @@ export function useSandboxSettingsForm() {
     if (baselinedRef.current) return;
     // Grants/access refetch on mount; baselining off a stale cache would adopt
     // a since-deleted connection and render it as an unavailable grant.
-    if (accessQuery.isFetching || connectionsQuery.isFetching) return;
-    if (!agent || !accessQuery.data || !connectionsQuery.data) return;
+    if (connectionsQuery.isFetching) return;
+    if (!agent || !connectionsQuery.data) return;
     baselinedRef.current = true;
     reset({
       name: agent.name,
-      assigned: [...accessQuery.data.secretIds].sort(),
       assignedAppIds: connectionsQuery.data.connections
         .map((c) => c.connectionId)
         .sort(),
       envVars: userInitialEnv,
+      hibernationTimeoutMin: agent.hibernationTimeoutMin,
     });
     setFormReady(true);
   }, [
     agent,
-    accessQuery.data,
-    accessQuery.isFetching,
     connectionsQuery.data,
     connectionsQuery.isFetching,
     userInitialEnv,
     reset,
   ]);
 
-  const assigned = watch("assigned");
   const assignedAppIds = watch("assignedAppIds");
   const envVars = watch("envVars");
-  const assignedSet = useMemo(() => new Set(assigned), [assigned]);
+  const hibernationTimeoutMin = watch("hibernationTimeoutMin");
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // A provider can be a connection (assignedAppIds) or a legacy secret
-  // (assigned); prefer the connection.
   const selectedProvider = useMemo<ProviderRef | null>(() => {
     const connId = assignedAppIds.find((id) => providerAppIds.has(id));
-    if (connId) return { source: "connection", id: connId };
-    const secretId = assigned.find((id) => providerSecretIds.has(id));
-    if (secretId) return { source: "secret", id: secretId };
-    return null;
-  }, [assignedAppIds, providerAppIds, assigned, providerSecretIds]);
+    return connId ? { id: connId } : null;
+  }, [assignedAppIds, providerAppIds]);
 
-  // Selecting a provider swaps it in its own rail and clears any provider on
-  // the other rail, so an agent never carries two providers at once.
+  // Selecting a provider swaps it in, clearing any other provider connection so
+  // an agent never carries two providers at once.
   const selectProvider = (ref: ProviderRef) => {
-    if (ref.source === "connection") {
-      setValue(
-        "assignedAppIds",
-        [
-          ...new Set([
-            ...assignedAppIds.filter((id) => !providerAppIds.has(id)),
-            ref.id,
-          ]),
-        ].sort(),
-        { shouldDirty: true },
-      );
-      if (assigned.some((id) => providerSecretIds.has(id)))
-        setValue(
-          "assigned",
-          assigned.filter((id) => !providerSecretIds.has(id)).sort(),
-          { shouldDirty: true, shouldValidate: true },
-        );
-    } else {
-      setValue(
-        "assigned",
-        [...assigned.filter((id) => !providerSecretIds.has(id)), ref.id].sort(),
-        { shouldDirty: true, shouldValidate: true },
-      );
-      if (assignedAppIds.some((id) => providerAppIds.has(id)))
-        setValue(
-          "assignedAppIds",
-          assignedAppIds.filter((id) => !providerAppIds.has(id)).sort(),
-          { shouldDirty: true },
-        );
-    }
+    setValue(
+      "assignedAppIds",
+      [
+        ...new Set([
+          ...assignedAppIds.filter((id) => !providerAppIds.has(id)),
+          ref.id,
+        ]),
+      ].sort(),
+      { shouldDirty: true },
+    );
   };
   const dropProviderGrant = (ref: ProviderRef) => {
-    if (ref.source === "connection")
-      setValue(
-        "assignedAppIds",
-        assignedAppIds.filter((id) => id !== ref.id).sort(),
-        { shouldDirty: true },
-      );
-    else
-      setValue("assigned", assigned.filter((id) => id !== ref.id).sort(), {
-        shouldDirty: true,
-      });
+    setValue(
+      "assignedAppIds",
+      assignedAppIds.filter((id) => id !== ref.id).sort(),
+      { shouldDirty: true },
+    );
   };
   const toggleAppGrant = (id: string, on: boolean) =>
     setValue(
@@ -247,14 +199,6 @@ export function useSandboxSettingsForm() {
         value: e.value,
         source: "system" as const,
       }));
-    for (const s of secrets.filter((s) => assignedSet.has(s.id))) {
-      for (const m of s.envMappings ?? [])
-        items.push({
-          name: m.envName,
-          value: m.placeholder,
-          source: { secretName: s.name },
-        });
-    }
     const userEnvNames = new Set(envVars.map((e) => e.name));
     for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
       const envContribs = a.contributions.filter(
@@ -270,16 +214,12 @@ export function useSandboxSettingsForm() {
       }
     }
     return items;
-  }, [agent?.env, secrets, assignedSet, apps, appIdsSet, envVars]);
+  }, [agent?.env, apps, appIdsSet, envVars]);
 
-  // Connection-grant preview: staged secret/app toggles haven't hit the server,
-  // so diff against both baselines to render preview rows for newly-granted
-  // sources (and strike through rules whose grant is being revoked). Mirrors
-  // what `setAgentAccess` / `setAgentConnections` will produce on Save.
-  const baselineSecretIds = useMemo(
-    () => new Set(accessQuery.data?.secretIds ?? []),
-    [accessQuery.data?.secretIds],
-  );
+  // Connection-grant preview: staged app toggles haven't hit the server, so
+  // diff against the baseline to render preview rows for newly-granted
+  // connections (and strike through rules whose grant is being revoked).
+  // Mirrors what `setAgentConnections` will produce on Save.
   const baselineAppIds = useMemo(
     () =>
       new Set(
@@ -289,11 +229,6 @@ export function useSandboxSettingsForm() {
   );
   const pendingConnectionGrants = useMemo(() => {
     const out: { connectionId: string; host: string; label: string }[] = [];
-    for (const id of assigned) {
-      if (baselineSecretIds.has(id)) continue;
-      const s = secrets.find((x) => x.id === id);
-      if (s) out.push({ connectionId: id, host: s.hostPattern, label: s.name });
-    }
     for (const id of assignedAppIds) {
       if (baselineAppIds.has(id)) continue;
       const a = apps.find((x) => x.id === id);
@@ -302,26 +237,17 @@ export function useSandboxSettingsForm() {
         out.push({ connectionId: id, host, label: a.name });
     }
     return out;
-  }, [
-    assigned,
-    assignedAppIds,
-    baselineSecretIds,
-    baselineAppIds,
-    secrets,
-    apps,
-  ]);
+  }, [assignedAppIds, baselineAppIds, apps]);
   const pendingConnectionRevokes = useMemo(() => {
     const next = new Set<string>();
-    for (const id of baselineSecretIds) if (!assignedSet.has(id)) next.add(id);
     for (const id of baselineAppIds) if (!appIdsSet.has(id)) next.add(id);
     return next;
-  }, [baselineSecretIds, baselineAppIds, assignedSet, appIdsSet]);
+  }, [baselineAppIds, appIdsSet]);
   const connectionLabels = useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of secrets) m.set(s.id, s.name);
     for (const a of apps) m.set(a.id, a.name);
     return m;
-  }, [secrets, apps]);
+  }, [apps]);
 
   const dirty = isDirty || net.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
@@ -354,26 +280,40 @@ export function useSandboxSettingsForm() {
       .map((a) => a.host);
     if (
       restartingHosts.length > 0 &&
-      !window.confirm(
-        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement. Continue?`,
-      )
+      !(await showConfirm(
+        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement.`,
+        "Restart agent?",
+        { confirmLabel: "Save & restart" },
+      ))
+    ) {
+      return;
+    }
+    if (
+      dirtyFields.hibernationTimeoutMin &&
+      agent &&
+      !(await confirmHibernationChange(
+        agent.hibernationTimeoutMin,
+        values.hibernationTimeoutMin,
+        showConfirm,
+      ))
     ) {
       return;
     }
     try {
-      if (dirtyFields.assigned) {
-        await setAgentAccess.mutateAsync({
-          agentId,
-          secretIds: values.assigned,
-        });
-      }
-      if (dirtyFields.envVars || dirtyFields.name) {
+      if (
+        dirtyFields.envVars ||
+        dirtyFields.name ||
+        dirtyFields.hibernationTimeoutMin
+      ) {
         await updateAgent.mutateAsync({
           id: agentId,
           ...(dirtyFields.envVars
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.hibernationTimeoutMin
+            ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
+            : {}),
         });
       }
       if (net.stagedPreset !== null) {
@@ -398,9 +338,9 @@ export function useSandboxSettingsForm() {
       net.reset();
       reset({
         name: values.name.trim(),
-        assigned: values.assigned,
         assignedAppIds: values.assignedAppIds,
         envVars: values.envVars,
+        hibernationTimeoutMin: values.hibernationTimeoutMin,
       });
     } catch {
       // Mutation meta.errorToast surfaces the failure; stay on the page.
@@ -447,6 +387,7 @@ export function useSandboxSettingsForm() {
     currentPreset,
     egressStaged,
     inheritedEnvs,
+    hibernationTimeoutMin,
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:
