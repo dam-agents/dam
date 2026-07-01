@@ -8,10 +8,17 @@ import type {
   InitializeResponse,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
+import { getLogger } from "./logger.js";
 
 /** How often we ping the agent-runtime ws to prove the socket is alive.
  *  Mirrors the ssh-relay heartbeat. */
 const PING_INTERVAL_MS = 30_000;
+/** Consecutive unanswered pings before the socket is declared dead. A single
+ *  GC pause or event-loop stall on a healthy agent-runtime can delay one pong
+ *  past a 30s tick; requiring two misses (~90s of silence) rides that out
+ *  without killing a live turn, while still catching a real half-open socket
+ *  far inside the turn ceiling. */
+const MAX_MISSED_PONGS = 2;
 /** Fallback per-turn ceiling when a caller doesn't supply one (tests, direct
  *  use). Production wires config.acpTurnCeilingSeconds through the factories. */
 const DEFAULT_TURN_CEILING_MS = 60 * 60 * 1000;
@@ -129,21 +136,27 @@ async function withAcpConnection<T>(
   // Liveness is a transport signal, not an application one. The agent-runtime's
   // ws server auto-pongs, so a live-but-silent turn — an egress approval hold, a
   // long tool, a slow first token — stays connected; only a dead/half-open
-  // socket aborts. Mirrors the ssh-relay heartbeat.
-  let alive = true;
+  // socket aborts. Mirrors the ssh-relay heartbeat. A pong resets the miss
+  // counter; MAX_MISSED_PONGS consecutive unanswered pings aborts.
+  let missedPongs = 0;
   ws.on("pong", () => {
-    alive = true;
+    missedPongs = 0;
   });
   const heartbeat = setInterval(() => {
-    if (!alive) {
+    if (missedPongs >= MAX_MISSED_PONGS) {
       abortReason = "ACP connection lost (agent unreachable)";
       ac.abort();
       return;
     }
-    alive = false;
+    missedPongs += 1;
     try {
       ws.ping();
-    } catch {}
+    } catch (err) {
+      // A throw here means the socket is already broken; the next tick will
+      // trip the miss ceiling and abort. Log so a real transport failure
+      // isn't invisible.
+      getLogger().debug({ err, clientName }, "acp heartbeat ping failed");
+    }
   }, PING_INTERVAL_MS);
 
   // Absolute backstop against a wedged-but-still-ponging agent. Sized at/above
