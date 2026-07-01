@@ -14,7 +14,10 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only supersede PR runs. main/tag/schedule runs must finish: they publish the
+  # per-commit images (and Helm chart) that releases and the build-vs-reuse
+  # resolver depend on — a cancelled main run leaves that commit without images.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
