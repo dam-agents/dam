@@ -1,26 +1,23 @@
 import type { ConnectionView } from "api-server-api";
 
-import type { BobModelPins, SecretView } from "../../../types.js";
+import type { BobModelPins } from "../../../types.js";
 
-// A provider can be backed by a Connection (new setup) or, during the
-// transition, a legacy provider Secret. Selections are tagged by source so
-// each surface routes grants to the right rail.
-export type ProviderRef =
-  | { source: "connection"; id: string }
-  | { source: "secret"; id: string };
+// A provider is backed by a Connection — the single credential model.
+export interface ProviderRef {
+  id: string;
+}
 
-export type ProviderItem =
-  | { source: "connection"; id: string; conn: ConnectionView }
-  | { source: "secret"; id: string; secret: SecretView };
+export interface ProviderItem {
+  id: string;
+  conn: ConnectionView;
+}
 
 export function providerRef(item: ProviderItem): ProviderRef {
-  return item.source === "connection"
-    ? { source: "connection", id: item.id }
-    : { source: "secret", id: item.id };
+  return { id: item.id };
 }
 
 export function sameProviderRef(a: ProviderRef, b: ProviderRef): boolean {
-  return a.source === b.source && a.id === b.id;
+  return a.id === b.id;
 }
 
 // Bob's config inputs ride as `env` contributions whose placeholder holds the

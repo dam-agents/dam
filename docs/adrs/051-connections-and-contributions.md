@@ -1,7 +1,7 @@
 # ADR-051: Connections, Connection Templates, and Contributions — unified configuration model
 
-**Date:** 2026-05-21
-**Status:** Proposed
+**Date:** 2026-06-30
+**Status:** Accepted
 **Owner:** @jezekra1
 
 ## Context

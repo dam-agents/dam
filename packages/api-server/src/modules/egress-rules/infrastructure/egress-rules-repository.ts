@@ -1,4 +1,4 @@
-import { and, desc, eq, sql, type Db } from "db";
+import { and, desc, eq, inArray, sql, type Db } from "db";
 import { egressRules } from "db";
 import type {
   EgressPreset,
@@ -56,6 +56,16 @@ export interface EgressRulesRepository {
     input: PromoteToManualInput,
   ): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
+  /** Reassign an agent's active rules from any of `fromSources` to `toSource`,
+   *  in place. The secrets→connections migration uses this to hand a legacy
+   *  secret's egress rows to the new connection without a revoke-then-insert
+   *  coverage gap; `source` isn't in the active-row unique index, so the
+   *  relabel can't collide. */
+  reassignActiveSource(
+    agentId: string,
+    fromSources: string[],
+    toSource: EgressRuleSource,
+  ): Promise<void>;
   revoke(id: string): Promise<void>;
   /** Hard-delete all rows for an agent. Used by the cleanup hook on agent
    *  delete and by the orphan sweeper. Revoked rows are also removed —
@@ -301,6 +311,20 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         )
         .orderBy(desc(egressRules.decidedAt));
       return rows.map((r) => toRow(r as RawRule));
+    },
+
+    async reassignActiveSource(agentId, fromSources, toSource) {
+      if (fromSources.length === 0) return;
+      await db
+        .update(egressRules)
+        .set({ source: toSource })
+        .where(
+          and(
+            eq(egressRules.agentId, agentId),
+            eq(egressRules.status, "active"),
+            inArray(egressRules.source, fromSources),
+          ),
+        );
     },
 
     async revoke(id) {

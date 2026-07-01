@@ -124,9 +124,10 @@ export {
 } from "./infrastructure/k8s-allow-only-secrets-port.js";
 
 /**
- * System-level connection-rules sync, called from the secrets module's
- * setAgentAccess flow. The egress-rules module owns the diff/insert/revoke
- * logic; the secrets module hands over the desired (agent, granted) state.
+ * System-level connection-rules sync, called from `setAgentConnections` and
+ * the secrets→connections migration. The egress-rules module owns the
+ * diff/insert/revoke logic; the caller hands over the desired (agent, granted)
+ * state.
  */
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);

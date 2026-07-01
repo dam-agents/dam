@@ -7,7 +7,6 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { useSecrets } from "../../secrets/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
@@ -32,7 +31,6 @@ export function ListView() {
   const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
-  const secrets = useSecrets();
   const agents = agentsData?.list ?? [];
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
@@ -63,9 +61,8 @@ export function ListView() {
       connectionTemplateIdById: new Map(
         (connections.data ?? []).map((c) => [c.id, c.templateId]),
       ),
-      secretTypeById: new Map((secrets.data ?? []).map((s) => [s.id, s.type])),
     }),
-    [templates, connections.data, secrets.data],
+    [templates, connections.data],
   );
 
   const deleteSandbox = async (agent: AgentView) => {

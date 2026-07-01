@@ -1,16 +1,16 @@
 import { ArrowLeft } from "@carbon/icons-react";
 import { Controller } from "react-hook-form";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { FormError } from "../../../components/form-error.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
-import { FormField } from "../components/form-field.js";
 import { HibernationTimeoutField } from "../components/hibernation-timeout-field.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 
@@ -48,36 +48,35 @@ export function SandboxSettingsView() {
       </h1>
 
       <section className="mb-8">
-        <SectionLabel spaced>Name</SectionLabel>
-        <FormField>
+        <FormField label="Name" error={f.errors.name?.message}>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
-        <FormError message={f.errors.name?.message} />
       </section>
 
       <section className="mb-8">
-        <SectionLabel spaced>Image</SectionLabel>
         {/* Read-only: image/template are create-only — changing them would mean
             delete+recreate, destroying the workspace PVC. */}
-        <FormField>
+        <FormField
+          label="Image"
+          hint={
+            agent.templateId ? (
+              <span className="truncate font-mono">{agent.image}</span>
+            ) : undefined
+          }
+        >
           <div className={READ_ONLY_FIELD}>
             <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
               {f.templateName ?? agent.image}
             </span>
           </div>
         </FormField>
-        {agent.templateId && (
-          <p className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
-            {agent.image}
-          </p>
-        )}
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
         <ProviderSection
           variant="collapsible"
-          listClassName="md:-ml-4"
+          listClassName={FIELD_INSET}
           selected={f.selectedProvider}
           onSelect={f.selectProvider}
           onProviderRemoved={f.dropProviderGrant}
@@ -97,18 +96,18 @@ export function SandboxSettingsView() {
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>
-        <FormField className="rounded-lg border border-border p-4">
+        <Inset className="rounded-lg border border-border p-4">
           <AgentEgressEditor
             agentId={agent.id}
             currentPreset={f.currentPreset}
             staged={f.egressStaged}
           />
-        </FormField>
+        </Inset>
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Lifecycle</SectionLabel>
-        <FormField className="rounded-lg border border-border p-4">
+        <Inset className="rounded-lg border border-border p-4">
           <HibernationTimeoutField
             register={f.register("hibernationTimeoutMin", {
               valueAsNumber: true,
@@ -117,12 +116,12 @@ export function SandboxSettingsView() {
             error={f.errors.hibernationTimeoutMin?.message}
             disabled={f.saving}
           />
-        </FormField>
+        </Inset>
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Environment</SectionLabel>
-        <FormField className="rounded-lg border border-border p-4">
+        <Inset className="rounded-lg border border-border p-4">
           <Controller
             control={f.control}
             name="envVars"
@@ -135,7 +134,7 @@ export function SandboxSettingsView() {
               />
             )}
           />
-        </FormField>
+        </Inset>
       </section>
 
       <div className="flex items-center justify-end gap-3 pb-4">

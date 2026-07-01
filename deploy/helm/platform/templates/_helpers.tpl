@@ -328,3 +328,27 @@ API Server ServiceAccount name
 {{- define "platform.clickstack.collector.fullname" -}}
 {{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{- define "platform.agentTelemetry.env" -}}
+{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .) .Release.Namespace }}
+- name: CLAUDE_CODE_ENABLE_TELEMETRY
+  value: "1"
+- name: CLAUDE_CODE_ENHANCED_TELEMETRY_BETA
+  value: "1"
+- name: OTEL_METRICS_EXPORTER
+  value: "otlp"
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_TRACES_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: "http/protobuf"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
+- name: OTEL_METRIC_EXPORT_INTERVAL
+  value: "1000"
+- name: OTEL_LOGS_EXPORT_INTERVAL
+  value: "1000"
+- name: OTEL_TRACES_EXPORT_INTERVAL
+  value: "1000"
+{{- end }}

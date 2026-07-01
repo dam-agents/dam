@@ -51,3 +51,14 @@ export function useDiscoverMcp() {
     meta: { errorToast: "Couldn't reach MCP server" },
   });
 }
+
+/**
+ * Verifies an Anthropic credential against Anthropic before save. Returns
+ * `{ ok: true } | { ok: false; message }` rather than throwing — callers
+ * render the result inline, so no errorToast / invalidation here.
+ */
+export function useTestAnthropic() {
+  return useMutation({
+    ...trpc.connections.testAnthropic.mutationOptions(),
+  });
+}

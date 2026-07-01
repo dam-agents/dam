@@ -1,10 +1,10 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-06-29
+Last verified: 2026-06-30
 
 ## Overview
 
-The telemetry backend is an **optional, bundled subsystem** that receives and stores the OpenTelemetry signals (logs, traces, metrics) agents emit — the substrate for answering *how agents run*: token consumption, cost, per-sub-agent breakdown. It is the *receiving and storage* half only; configuring agents to export to it, and the user-facing read path, are separate concerns.
+The telemetry backend is an **optional, bundled subsystem** that receives and stores the OpenTelemetry signals (logs, traces, metrics) agents emit — the substrate for answering *how agents run*: token consumption, cost, per-sub-agent breakdown. This page covers the backend (receiving and storage) and the agent **export** path that feeds it (see [Agent export](#agent-export)); the user-facing read path is a separate concern.
 
 It is implemented with **ClickStack**: a columnar telemetry store (ClickHouse) fronted by an exploration UI (HyperDX), plus a separate document store backing that UI's own application state. Installing or upgrading the platform brings the stack up when it is enabled, but it is **disabled by default** — it is a heavy, multi-pod stack, and until agents are wired to export it would receive nothing, so operators opt in per install.
 
@@ -40,6 +40,14 @@ The telemetry store and the UI's app-state store are managed by Kubernetes **ope
 ClickStack's default posture secures the collector with an ingestion key the UI issues and manages — application-layer, token-based access control. The platform deliberately does **not** rely on that. The collector is gated the same way as the rest of the platform: by the **service mesh**, through an authorization policy that admits only the platform's own namespaces — the release namespace and the agent namespace — and denies everything else. This keeps telemetry access on the same SPIFFE-principal model as the rest of the system (see [security-and-credentials](security-and-credentials.md)) rather than introducing a parallel token scheme.
 
 Making the mesh the sole gate is why the collector is platform-owned. ClickStack's bundled collector takes its configuration — including the ingestion-key check — dynamically from the exploration UI, so that configuration cannot be the access boundary here. The platform instead runs its own collector with a fixed configuration and no key enforcement. The UI is unaffected: it reads the telemetry store directly, not the collector.
+
+## Agent export
+
+Harnesses produce telemetry by exporting it themselves over OTLP — the platform does not scrape or tap it. Export turns on with the backend: enabling `clickstack.enabled` stands up the collector, the gateway's collector egress chain, and the [trusted attribution](#trusted-attribution) below, and configures the harness to export to the collector. It is wired for the **Claude Code harness only** for now; a per-template `telemetry` flag opts a harness in, so others follow by flipping that flag.
+
+- **Rides the agent's ordinary egress.** The exporter honours the agent's `HTTPS_PROXY`, so telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below. No new network path, and no credential is injected into the export.
+- **Config travels the harness env rail.** The OTLP environment (enable flag, per-signal exporters, endpoint, protocol, flush intervals) reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
+- **Signals.** Metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP. **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
 
 ## Trusted attribution
 

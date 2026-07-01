@@ -4,14 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import {
-  bobPinsFromEnvMappings,
-  type ProviderPresetType,
-  type SecretView,
-} from "../../../types.js";
+import type { ProviderPresetType } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { useSecrets } from "../../secrets/api/queries.js";
-import { detectMode, MODES } from "./anthropic/modes.js";
+import { MODES } from "./anthropic/modes.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import {
   bobPinsFromConnection,
@@ -47,21 +42,6 @@ export const PROVIDER_ROWS: {
   },
 ];
 
-function secretSubtitle(
-  type: ProviderPresetType,
-  secret: SecretView,
-): string | undefined {
-  if (type === "anthropic") {
-    const mode = detectMode(secret.envMappings?.[0]?.envName);
-    return `Set up with ${MODES[mode].label}`;
-  }
-  if (type === "bob") {
-    const pins = bobPinsFromEnvMappings(secret.envMappings);
-    return pins.model ? `Model: ${pins.model}` : "Default model";
-  }
-  return undefined;
-}
-
 function connectionSubtitle(
   type: ProviderPresetType,
   conn: ConnectionView,
@@ -84,9 +64,7 @@ function itemSubtitle(
   type: ProviderPresetType,
   item: ProviderItem,
 ): string | undefined {
-  return item.source === "connection"
-    ? connectionSubtitle(type, item.conn)
-    : secretSubtitle(type, item.secret);
+  return connectionSubtitle(type, item.conn);
 }
 
 interface Props {
@@ -108,8 +86,7 @@ export function ProviderSection({
   manage = false,
   listClassName,
 }: Props) {
-  const { data: connections = [] } = useAppConnections();
-  const { data: secrets = [], isPending } = useSecrets();
+  const { data: connections = [], isPending } = useAppConnections();
   const providerActions = useProviderActions();
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
@@ -117,27 +94,19 @@ export function ProviderSection({
   } | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  // Prefer a provider connection; fall back to a legacy provider secret so
-  // existing agents keep showing their provider until #1273 migrates them.
   const itemByType = useMemo(() => {
     const connByType = new Map<ProviderPresetType, ConnectionView>();
     for (const c of connections) {
       const preset = providerTypeForTemplateId(c.templateId);
       if (preset && !connByType.has(preset)) connByType.set(preset, c);
     }
-    const secretByType = new Map(secrets.map((s) => [s.type, s]));
     const m = new Map<ProviderPresetType, ProviderItem>();
     for (const row of PROVIDER_ROWS) {
       const conn = connByType.get(row.type);
-      if (conn) {
-        m.set(row.type, { source: "connection", id: conn.id, conn });
-        continue;
-      }
-      const secret = secretByType.get(row.type);
-      if (secret) m.set(row.type, { source: "secret", id: secret.id, secret });
+      if (conn) m.set(row.type, { id: conn.id, conn });
     }
     return m;
-  }, [connections, secrets]);
+  }, [connections]);
 
   // Only acts while empty so a just-connected provider isn't nulled out during
   // the list refetch.

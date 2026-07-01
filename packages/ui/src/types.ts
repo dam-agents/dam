@@ -1,10 +1,4 @@
-import type {
-  EnvMapping,
-  EnvVar,
-  InjectionConfig,
-  SecretType,
-} from "api-server-api";
-import { isProviderPresetType } from "api-server-api";
+import type { EnvVar } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -155,28 +149,6 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-// `SecretType` is re-exported from `api-server-api` near the bottom of
-// this file alongside the rest of the secrets shared types — keeping
-// one source of truth so a new provider added to the api-server-api
-// union can't be silently missed here.
-
-/** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
-export const MCP_SECRET_PREFIX = "__mcp:";
-
-export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
-  return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
-}
-
-export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
-  return !isProviderPresetType(s.type) && !s.name.startsWith(MCP_SECRET_PREFIX);
-}
-
-export function mcpHostnameFromSecretName(name: string): string {
-  return name.startsWith(MCP_SECRET_PREFIX)
-    ? name.slice(MCP_SECRET_PREFIX.length)
-    : name;
-}
-
 export type {
   BobModelPins,
   EgressPreset,
@@ -186,30 +158,15 @@ export type {
   ProviderPreset,
   ProviderPresetMode,
   ProviderPresetType,
-  SecretType,
 } from "api-server-api";
 export {
   BOB_CHAT_MODES,
-  bobEnvMappings,
-  bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
-  ibmLitellmEnvMappings,
   isProviderPresetType,
   isValidEnvName,
   PROVIDER_PRESET_TYPES,
   PROVIDERS,
 } from "api-server-api";
-
-export interface SecretView {
-  id: string;
-  name: string;
-  type: SecretType;
-  hostPattern: string;
-  pathPattern?: string;
-  injectionConfig?: InjectionConfig;
-  createdAt: string;
-  envMappings?: EnvMapping[];
-}
 
 export interface McpConnection {
   hostname: string;

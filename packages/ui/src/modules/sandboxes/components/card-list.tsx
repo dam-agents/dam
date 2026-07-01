@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Inset } from "@/components/ui/inset";
 import { cn } from "@/lib/utils";
-
-import { FormField } from "./form-field.js";
 
 export function CardList({
   children,
@@ -12,8 +11,6 @@ export function CardList({
   className?: string;
 }) {
   return (
-    <FormField className={cn("flex flex-col gap-3", className)}>
-      {children}
-    </FormField>
+    <Inset className={cn("flex flex-col gap-3", className)}>{children}</Inset>
   );
 }

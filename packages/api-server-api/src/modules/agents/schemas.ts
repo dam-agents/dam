@@ -43,9 +43,9 @@ export const agentCreateInputSchema = z
     gitRepo: z
       .object({ url: z.url(), ref: z.string().min(1).optional() })
       .optional(),
-    // Initial grants, settled into the spec at create so credentials ride the
-    // first snapshot and the gateway renders its chains once (no readiness flap).
-    secretIds: z.array(z.string()).optional(),
+    // Initial connection grants, settled into the spec at create so credentials
+    // ride the first snapshot and the gateway renders its chains once (no
+    // readiness flap).
     connectionIds: z.array(z.string()).optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {

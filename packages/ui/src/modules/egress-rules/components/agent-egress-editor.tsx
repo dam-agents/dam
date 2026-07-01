@@ -62,10 +62,10 @@ export interface StagedNetworkAccessController {
   pendingAdds: ReadonlyArray<PendingAdd>;
   appendPendingAdd: (draft: AddRuleDraft) => void;
   removePendingAdd: (tempId: string) => void;
-  /** Mirrors the secret-grant diff in the parent dialog. The server's
-   *  `setAgentAccess` writes a `(host, *, *, allow, source=connection:<id>)`
-   *  rule per granted secret on Save — we render the same rows as preview
-   *  here so the user sees what their connection toggles will produce. */
+  /** Mirrors the connection-grant diff in the parent dialog. The server's
+   *  `setAgentConnections` writes a `(host, *, *, allow, source=connection:<id>)`
+   *  rule per granted connection host on Save — we render the same rows as
+   *  preview here so the user sees what their connection toggles will produce. */
   pendingConnectionGrants: ReadonlyArray<ConnectionGrantPreview>;
   /** Connection ids whose rules will be revoked on Save. Existing rows
    *  with `source = connection:<id>` for these ids are struck through to

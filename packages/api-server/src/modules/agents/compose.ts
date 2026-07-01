@@ -57,15 +57,14 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Single-shot create; wired from secrets + connections. Omitted system-side. */
+  /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
-      secretIds: string[];
       connectionIds: string[];
-    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
-      sel: { secretIds: string[]; connectionIds: string[] },
+      sel: { connectionIds: string[] },
     ): Promise<void>;
   };
 }): {

@@ -25,7 +25,6 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { stripStaleModelPins } from "./modules/secrets/infrastructure/strip-stale-model-pins.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -59,7 +58,6 @@ import {
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
-import { createSecretEnvSource } from "./modules/secrets/services/secret-env-source.js";
 import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
@@ -92,9 +90,15 @@ import {
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
 import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
+import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
+import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
+import { migrateSecretsToConnections } from "./modules/connections/migration/secrets-to-connections.js";
+import { createLegacySecretEnvSource } from "./modules/connections/migration/legacy-secret-env-source.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -156,7 +160,11 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
-  secretEnv: createSecretEnvSource({ k8sClient }),
+  // Inert safety (#1273): supplies credential env for any agent still on a
+  // legacy secret until the migration flips it to a Connection (which then
+  // carries its own env). Returns [] in the steady state. The controller's
+  // kept host-pattern branch covers gateway injection but not this env half.
+  secretEnv: createLegacySecretEnvSource({ k8sClient }),
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {
@@ -168,6 +176,61 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+// Drain legacy provider/PAT secrets into Connections (#1273). Same shape as
+// the user-env backfill: first pass awaited before serving, non-blocking
+// (agents keep working on legacy secrets until each is flipped), timer-retry
+// on partial failure, self-disarming once no legacy secrets remain. Runs with
+// the api-server's cross-owner K8s reach — no owner-scoped surface needed.
+const connectionsBoot = composeConnectionsAtBoot({
+  db,
+  secretStore: secretStores.default(),
+});
+const connectionsServiceFor = (ownerId: string) =>
+  composeConnectionsForOwner({
+    ownerId,
+    db,
+    templates: connectionsBoot.templates,
+    oauthEngine: connectionsBoot.oauthEngine,
+    secretStore: secretStores.default(),
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    agentsRepo,
+    connectionRulesSync: createConnectionRulesSyncAdapter(db),
+    oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+    brandName: config.brand.name,
+  });
+let secretsMigrationRetry: ReturnType<typeof setTimeout> | undefined;
+// Cap the retry chain so a credential that fails every pass (e.g. a genuinely
+// unreadable Secret that surfaces as a transient error) can't re-arm a 60s
+// timer forever. Past the cap we stop and log loud — an operator runs the
+// dry-run entrypoint to inspect what's stuck.
+const SECRETS_MIGRATION_MAX_RETRIES = 10;
+let secretsMigrationRetries = 0;
+async function runSecretsToConnectionsMigration(): Promise<void> {
+  const { failed } = await migrateSecretsToConnections({
+    k8sClient,
+    repo: createConnectionsRepository(db),
+    secretStore: secretStores.default(),
+    connectionsServiceFor,
+    connectionRulesSync: createConnectionRulesSyncAdapter(db),
+    log: (m) => getLogger().info(`[secrets-migration] ${m}`),
+  });
+  if (failed === 0) return;
+  if (secretsMigrationRetries >= SECRETS_MIGRATION_MAX_RETRIES) {
+    getLogger().error(
+      `[secrets-migration] still ${failed} failing after ` +
+        `${SECRETS_MIGRATION_MAX_RETRIES} retries; giving up — agents keep ` +
+        `working on legacy secrets, run the dry-run entrypoint to inspect`,
+    );
+    return;
+  }
+  secretsMigrationRetries++;
+  secretsMigrationRetry = setTimeout(
+    () => void runSecretsToConnectionsMigration(),
+    60_000,
+  );
+}
+await runSecretsToConnectionsMigration();
 
 const { service: termsService, isAcceptedPort: isTermsAccepted } =
   composeTermsModule({
@@ -475,19 +538,6 @@ try {
   );
 }
 
-stripStaleModelPins(k8sClient)
-  .then((n) => {
-    if (n)
-      process.stderr.write(
-        `[boot] stripped stale model pins from ${n} provider secret(s)\n`,
-      );
-  })
-  .catch((err) =>
-    process.stderr.write(
-      `[boot] stale-model-pin sweep failed: ${(err as Error).message}\n`,
-    ),
-  );
-
 const { server: apiServer } = startApiServerApp({
   config,
   api,
@@ -550,6 +600,7 @@ listChannelsByOwner(db, "")()
 async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
+  if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
   channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();

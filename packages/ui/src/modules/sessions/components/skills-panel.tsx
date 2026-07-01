@@ -20,9 +20,10 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -616,8 +617,7 @@ export function SkillsPanel({
 
       {showAdd && (
         <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
-          <div className="flex flex-col gap-1">
-            <Label className="text-[11px] text-text-muted">Name</Label>
+          <FormField label="Name" disableInset>
             <Input
               size="sm"
               placeholder='e.g. "My Skills"'
@@ -626,9 +626,8 @@ export function SkillsPanel({
                 setAddForm((f) => ({ ...f, name: e.target.value }))
               }
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-[11px] text-text-muted">Git URL</Label>
+          </FormField>
+          <FormField label="Git URL" disableInset>
             <Input
               size="sm"
               variant="monospace"
@@ -638,12 +637,10 @@ export function SkillsPanel({
                 setAddForm((f) => ({ ...f, gitUrl: e.target.value }))
               }
             />
-          </div>
+          </FormField>
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1">
-              <Label className="text-[11px] text-text-muted">
-                Path (optional)
-              </Label>
+              <SectionLabel>Path (optional)</SectionLabel>
               <Tooltip
                 side="right"
                 content={

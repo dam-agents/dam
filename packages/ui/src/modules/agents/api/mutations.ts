@@ -24,9 +24,6 @@ export interface CreateAgentInput {
   image?: string;
   description?: string;
   env?: EnvVar[];
-  /** Initial secret grants, settled into the Agent spec at create. Omitted or
-   *  empty ⇒ no secrets granted (grants are selective; there is no default). */
-  secretIds?: string[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   registryCredential?: { server: string; username: string; password: string };
@@ -53,7 +50,6 @@ export interface CreateAgentInput {
 export function useCreateAgent() {
   return useMutation({
     mutationFn: async ({
-      secretIds,
       appConnectionIds,
       egressPreset,
       importEntries,
@@ -65,7 +61,6 @@ export function useCreateAgent() {
       const agent = await api.agents.create.mutate({
         ...input,
         egressPreset,
-        secretIds,
         connectionIds: appConnectionIds,
       });
       void queryClient.invalidateQueries({
@@ -204,22 +199,6 @@ export function useDisconnectTelegram() {
   });
 }
 
-export function useSetAgentAccess() {
-  return useMutation({
-    ...trpc.secrets.setAgentAccess.mutationOptions(),
-    meta: {
-      // Server-side `setAgentAccess` syncs `egress_rules` with the new
-      // grant list (insert/revoke connection:* rows), so refetch the
-      // editor's view alongside the access query.
-      invalidates: [
-        trpc.secrets.getAgentAccess.queryKey(),
-        egressRulesKeys.all,
-      ],
-      errorToast: "Failed to update credential access",
-    },
-  });
-}
-
 export function useSetAgentConnections() {
   return useMutation({
     ...trpc.connections.setAgentConnections.mutationOptions(),
@@ -233,15 +212,5 @@ export function useSetAgentConnections() {
       ],
       errorToast: "Failed to update app connections",
     },
-  });
-}
-
-/**
- * Imperative fetch of per-agent access, used by consumers (e.g. MCP picker)
- * that need the data outside a component render.
- */
-export async function fetchAgentAccess(agentId: string) {
-  return queryClient.fetchQuery({
-    ...trpc.secrets.getAgentAccess.queryOptions({ agentId: agentId }),
   });
 }
