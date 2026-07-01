@@ -986,7 +986,7 @@ agentTemplates:
         memory: "4Gi"
 
   - name: k-search
-    enabled: true
+    enabled: false
     category: preconfigured
     experimental: true
     description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
