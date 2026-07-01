@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const experimentConfigSchema = z.record(z.string(), z.unknown());
+export const armVariationSchema = z.string();
 
 export const experimentIdInputSchema = z.object({
   id: z.string().min(1),
@@ -14,5 +14,5 @@ export const experimentCreateInputSchema = z.object({
 export const experimentAddArmInputSchema = z.object({
   experimentId: z.string().min(1),
   agentId: z.string().min(1),
-  armSpec: experimentConfigSchema.default({}),
+  armVariation: armVariationSchema.default(""),
 });

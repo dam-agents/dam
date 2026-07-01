@@ -27,7 +27,7 @@ export function ArmFieldCard({
     register,
     formState: { errors },
   } = useFormContext<ExperimentWizardValues>();
-  const error = errors.arms?.[index]?.configText;
+  const error = errors.arms?.[index]?.variation;
 
   return (
     <div className="rounded-lg border border-border p-3">
@@ -58,12 +58,13 @@ export function ArmFieldCard({
       </div>
       <Textarea
         spellCheck={false}
-        aria-label={`${agentName} config JSON`}
+        aria-label={`${agentName} variation`}
+        placeholder="Optional. What sets this arm apart — appended to the shared prompt as free text."
         className={cn(
           "mt-2 min-h-[72px] font-mono text-[12.5px]",
           error && "border-destructive focus-visible:ring-destructive",
         )}
-        {...register(`arms.${index}.configText`)}
+        {...register(`arms.${index}.variation`)}
       />
       {error && (
         <p className="mt-1 text-[12px] text-destructive">{error.message}</p>

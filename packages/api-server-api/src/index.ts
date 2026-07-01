@@ -74,7 +74,6 @@ export type {
   SchedulesService,
 } from "./modules/schedules/types.js";
 export type {
-  ExperimentConfig,
   ExperimentStatus,
   ArmStatus,
   Experiment,
@@ -91,8 +90,8 @@ export type {
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {
+  armVariationSchema,
   experimentAddArmInputSchema,
-  experimentConfigSchema,
   experimentCreateInputSchema,
   experimentIdInputSchema,
 } from "./modules/experiments/schemas.js";

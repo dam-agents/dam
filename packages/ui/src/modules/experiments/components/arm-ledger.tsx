@@ -52,9 +52,11 @@ export function ArmLedger({
             Open trial
           </Button>
         )}
-        <span className="ml-auto font-mono text-[12px] text-muted-foreground">
-          {JSON.stringify(arm.armSpec)}
-        </span>
+        {arm.armVariation.trim() && (
+          <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">
+            {arm.armVariation.replace(/\s+/g, " ").trim()}
+          </span>
+        )}
       </div>
 
       {arm.runs.length === 0 ? (

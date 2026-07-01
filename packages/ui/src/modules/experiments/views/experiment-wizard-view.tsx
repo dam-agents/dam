@@ -19,7 +19,6 @@ import { WizardStepIndicator } from "../components/wizard/wizard-step-indicator.
 import {
   experimentWizardSchema,
   type ExperimentWizardValues,
-  parseArmSpec,
 } from "../forms/experiment-wizard-schema.js";
 
 const STEP_FIELDS: Record<number, (keyof ExperimentWizardValues)[]> = {
@@ -69,7 +68,7 @@ export function ExperimentWizardView() {
         await addArm.mutateAsync({
           experimentId: created.id,
           agentId: arm.agentId,
-          armSpec: parseArmSpec(arm.configText),
+          armVariation: arm.variation,
         });
       }
       if (startAfter) await startExperiment.mutateAsync({ id: created.id });

@@ -5,15 +5,6 @@ import { useAgentLabels } from "../../hooks/use-agent-labels.js";
 import { armColor } from "../../lib/arm-color.js";
 import { WizardStepHeader } from "./wizard-step-header.js";
 
-function compactConfig(configText: string): string {
-  if (configText.trim() === "") return "{}";
-  try {
-    return JSON.stringify(JSON.parse(configText));
-  } catch {
-    return configText.replace(/\s+/g, " ").trim();
-  }
-}
-
 export function ReviewStep() {
   const { control } = useFormContext<ExperimentWizardValues>();
   const values = useWatch({ control });
@@ -46,9 +37,11 @@ export function ReviewStep() {
                 <span className="text-foreground">
                   {labels.get(arm?.agentId ?? "")?.name ?? arm?.agentId}
                 </span>
-                <span className="truncate font-mono text-[12px] text-muted-foreground">
-                  {compactConfig(arm?.configText ?? "")}
-                </span>
+                {arm?.variation?.trim() && (
+                  <span className="truncate font-mono text-[12px] text-muted-foreground">
+                    {arm.variation.replace(/\s+/g, " ").trim()}
+                  </span>
+                )}
               </div>
             ))}
           </div>

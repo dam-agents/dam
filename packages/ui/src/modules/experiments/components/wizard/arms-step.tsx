@@ -27,7 +27,7 @@ export function ArmsStep() {
       <WizardStepHeader
         step={2}
         title="Add the arms"
-        subtitle="Each arm is an existing agent plus its own JSON config. Add two agents off the same image to race two configs."
+        subtitle="Each arm is an existing agent plus an optional variation — free text appended to the shared prompt. Add two agents off the same image to race two variations."
       />
 
       <div className="flex flex-col gap-2">
@@ -58,7 +58,7 @@ export function ArmsStep() {
         </p>
         <AgentPicker
           items={available}
-          onAdd={(agentId) => append({ agentId, configText: "{}" })}
+          onAdd={(agentId) => append({ agentId, variation: "" })}
         />
       </div>
     </div>

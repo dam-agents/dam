@@ -17,7 +17,6 @@ import type {
   ArmStatus,
   Experiment,
   ExperimentArm,
-  ExperimentConfig,
   ExperimentListItem,
   ExperimentRun,
   ExperimentStatus,
@@ -50,7 +49,7 @@ export interface ExperimentsRepository {
   addArm(input: {
     experimentId: string;
     agentId: string;
-    armSpec: ExperimentConfig;
+    armVariation: string;
   }): Promise<ExperimentArm>;
   listArms(experimentId: string): Promise<ExperimentArm[]>;
   listRuns(experimentId: string): Promise<ExperimentRun[]>;
@@ -133,7 +132,7 @@ function rowToArm(row: ArmRow): ExperimentArm {
   return {
     experimentId: row.experimentId,
     agentId: row.agentId,
-    armSpec: (row.armSpec as ExperimentConfig) ?? {},
+    armVariation: row.armVariation,
     status: row.status as ArmStatus,
     createdAt: row.createdAt.toISOString(),
   };
@@ -375,7 +374,7 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
       await db.insert(experimentArmsTable).values({
         experimentId: input.experimentId,
         agentId: input.agentId,
-        armSpec: input.armSpec,
+        armVariation: input.armVariation,
       });
       const rows = await db
         .select()

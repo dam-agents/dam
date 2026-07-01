@@ -1,5 +1,3 @@
-import type { ExperimentConfig } from "api-server-api";
-
 /** Harness-agnostic framing every trial carries. A trial runs unattended: the
  *  one-shot prompt is the arm's only turn and no human will answer follow-ups,
  *  so a harness that pauses for confirmation (e.g. an approval / cost gate)
@@ -12,13 +10,12 @@ const AUTONOMOUS_TRIAL_DIRECTIVE =
 
 export function buildTrialPrompt(input: {
   prompt: string;
-  armSpec: ExperimentConfig;
+  armVariation: string;
 }): string {
   const parts = [input.prompt.trim()];
-  if (Object.keys(input.armSpec).length > 0) {
-    parts.push(
-      `Your arm configuration:\n${JSON.stringify(input.armSpec, null, 2)}`,
-    );
+  const variation = input.armVariation.trim();
+  if (variation.length > 0) {
+    parts.push(`Arm variation:\n${variation}`);
   }
   parts.push(AUTONOMOUS_TRIAL_DIRECTIVE);
   return parts.join("\n\n");
