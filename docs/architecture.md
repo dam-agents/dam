@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-06-12
+Last verified: 2026-07-01
 
 ## System context
 
@@ -64,6 +64,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [connections](architecture/connections.md) — unified Connection / Contribution model, runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, agent-side driver model.
+- [experiments](architecture/experiments.md) — group competing agent sessions under one goal as arms, and collect the scores and downloadable artifacts each reports for comparison.
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.

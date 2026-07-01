@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-25
+Last verified: 2026-07-01
 
 ## Overview
 
@@ -52,7 +52,7 @@ The wire payload carries:
 
 - **`version`** (top-level) — per-agent monotonic counter, the single ack cursor for the payload. Bumped on any contribution edit or event insert.
 - **`state`** — the agent's full desired configuration (Contributions). Reconciled by diff. `hash` short-circuits no-op pushes.
-- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding). Processed in order through per-kind handlers inside the agent-runtime.
+- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding, experiment-trial launches). Processed in order through per-kind handlers inside the agent-runtime.
 
 State changes write to the outbox, the worker reads and dispatches a fresh payload, the agent receives state + events and reconciles contributions + invokes event handlers, and the agent calls back on boot/wake to catch up.
 
@@ -114,7 +114,7 @@ Kinds are added by extending the union and gating on agent capabilities (see [Ve
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), and **workspace-seed** (clone a repo into the workspace). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), and **experiment-trigger** (open a Trial session for an Experiment Arm — see [experiments](experiments.md)). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 The `id` is the dedupe key. Redelivery is caught agent-side: the event loop settles without re-firing when the event's `version` is already covered by the applied cursor or its dedupe key already ran at the same or a later fire timestamp (tracked in the agent's local state store), and locally expires anything past its ttl.
 

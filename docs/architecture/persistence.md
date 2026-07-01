@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-26
+Last verified: 2026-07-01
 
 ## Overview
 
@@ -59,7 +59,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
-- **experiment candidates** — the downloadable Candidate artifact a Run produced, stored inline as a capped blob (`run_artifacts`). Living here rather than on a per-Agent PVC is what makes a Candidate downloadable while the producing agent is hibernated — Postgres is independent of agent pods, and the api-server (the sole reader/writer) is always running. Owned by Experiments.
+- **experiment candidates** — the downloadable Candidate artifact a Run produced, stored inline as a capped blob (`run_artifacts`). Living here rather than on a per-Agent PVC is what makes a Candidate downloadable while the producing agent is hibernated — Postgres is independent of agent pods, and the api-server (the sole reader/writer) is always running. Owned by [experiments](experiments.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 
