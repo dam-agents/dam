@@ -50,6 +50,10 @@ export {
 } from "./modules/skills/source-roots.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
+export type {
+  HarnessConfigCurrent,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
 export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
@@ -59,6 +63,9 @@ export {
   event,
   eventKind,
   capabilities,
+  harnessConfigChoice,
+  harnessConfigOptionGroup,
+  harnessConfigCatalog,
   mergeMode,
   fileFormat,
   envContribution,
@@ -71,6 +78,8 @@ export {
   triggerEventPayload,
   experimentTriggerEvent,
   experimentTriggerEventPayload,
+  harnessConfigEvent,
+  harnessConfigEventPayload,
   stateSlice,
   applyStateInput,
   applyStateResult,
@@ -84,11 +93,16 @@ export type {
   Event,
   EventKind,
   Capabilities,
+  HarnessConfigChoice,
+  HarnessConfigOptionGroup,
+  HarnessConfigCatalog,
   MergeMode,
   FileFormat,
   TriggerEventPayload,
   ExperimentTriggerEventPayload,
+  ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
+  HarnessConfigEventPayload,
   StateSlice,
   ApplyStateInput,
   ApplyStateResult,
@@ -101,6 +115,7 @@ export {
   PLUGIN_PROTOCOL_VERSION,
   type DispatchContext,
   type DriverBinding,
+  type EventHandler,
   type KindHandler,
   type Plugin,
   type PluginModule,

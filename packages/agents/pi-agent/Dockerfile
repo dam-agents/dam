@@ -18,6 +18,9 @@ ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+# Override platform-base's manifest to add the Pi-specific harnessConfig block.
+COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
+
 USER 65532
 
 ENV PI_SKIP_VERSION_CHECK=1

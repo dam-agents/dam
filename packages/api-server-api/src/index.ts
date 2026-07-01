@@ -24,6 +24,16 @@ export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
 
 export type {
+  HarnessConfigChange,
+  HarnessConfigStatus,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
+export {
+  agentConfigOptionsSchema,
+  harnessConfigApplyInputSchema,
+} from "./modules/harness-config/schemas.js";
+
+export type {
   Agent,
   AgentSpec,
   AgentState,
@@ -131,6 +141,7 @@ export {
   PROVIDER_PRESET_TYPES,
   isProviderPresetType,
   ibmLitellmEnvMappings,
+  openaiEnvMappings,
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,

@@ -1,0 +1,71 @@
+# Claude Code manifest. Built-in drivers are on by default; this declares only
+# the Claude-specific harness-config, writing model/mode/effort defaults into
+# $HOME/.claude/settings.json. Models use concrete aliases (opus/sonnet/haiku),
+# never Claude's `default` alias — that resolves to a model the account can't reach.
+manifestVersion: 1
+
+drivers:
+  harness-config:
+    file: "$HOME/.claude/settings.json"
+    keys:
+      model: "model"
+      mode: "permissions.defaultMode"
+      configOptions:
+        effort: "effortLevel"
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices:
+            - value: opus
+              name: "Opus (recommended)"
+              description: "Opus 4.8 · Best for everyday, complex tasks"
+            - value: sonnet
+              name: "Sonnet"
+              description: "Sonnet 4.6 · Efficient for routine tasks"
+            - value: haiku
+              name: "Haiku"
+              description: "Haiku 4.5 · Fastest for quick answers"
+        - id: mode
+          name: Mode
+          description: Session permission mode
+          category: mode
+          choices:
+            - value: auto
+              name: "Auto"
+              description: "Use a model classifier to approve/deny permission prompts"
+            - value: default
+              name: "Default"
+              description: "Standard behavior, prompts for dangerous operations"
+            - value: acceptEdits
+              name: "Accept Edits"
+              description: "Auto-accept file edit operations"
+            - value: plan
+              name: "Plan Mode"
+              description: "Planning mode, no actual tool execution"
+            - value: dontAsk
+              name: "Don't Ask"
+              description: "Don't prompt for permissions, deny if not pre-approved"
+            - value: bypassPermissions
+              name: "Bypass Permissions"
+              description: "Bypass all permission checks"
+        - id: effort
+          name: Effort
+          description: Reasoning effort level
+          category: thought_level
+          choices:
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: max
+              name: "Max"
+      # Haiku supports neither "auto" mode nor effort levels.
+      modelConstraints:
+        haiku:
+          mode: ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]
+          effort: []

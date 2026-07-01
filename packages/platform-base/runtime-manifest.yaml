@@ -1,60 +1,7 @@
-# Default runtime-manifest.yaml for platform-base. Concrete agent images
-# may override (by COPY-ing a different file at workspace/runtime-manifest.yaml).
-#
-# See docs/architecture/connections.md for the schema.
-# Capabilities are derived from the `drivers` map at boot — the agent
-# advertises whichever Contribution kinds are bound here on `hello`.
+# Default manifest for platform-base. Built-in drivers (env, file, mcp-entry,
+# skill-ref, trigger, schedule-reset, workspace-seed) are on by default, so this
+# declares nothing. Concrete images add a `drivers:` entry only to configure,
+# override, or disable a kind — see docs/architecture/connections.md.
 manifestVersion: 1
 
-drivers:
-  # `env` kind — credential-placeholder env vars written to a JSON file the spawn paths read.
-  env:
-    impl: env
-
-  # `file` kind — params per contribution; impl needs no extra config.
-  file:
-    impl: file
-
-  # `mcp-entry` kind — every entry merges into one $HOME/.mcp.json. The
-  # platform-outbound entry plus per-Connection MCP servers all converge
-  # here. Claude Code reads this path; harnesses that read elsewhere
-  # override by rebinding the kind in their own runtime-manifest.yaml.
-  mcp-entry:
-    impl: mcp-entry
-    path: "$HOME/.mcp.json"
-    keyPath: mcpServers
-
-  # `skill-ref` kind — installs into the shared .agents/skills tree;
-  # symlinks under .claude/skills and .pi/agent/skills surface them to
-  # both harnesses (platform-base/Dockerfile).
-  skill-ref:
-    impl: skill-install
-    paths:
-      - "$HOME/.agents/skills"
-
-# Out-of-tree plugin modules — declare here to extend the agent with
-# additional Contribution-kind handlers. Each entry is dynamic-imported
-# at boot; load failures stop the agent rather than half-apply. Impl
-# names MUST NOT collide with the built-ins above.
-#
-# To OVERRIDE a built-in: pick a fresh name for your extension and
-# rebind the kind in `drivers` above to point at it. The built-in
-# stays registered but isn't bound to any kind, so it never runs.
-# Example: replace `skill-install` with your own implementation —
-#
-#   drivers:
-#     skill-ref:
-#       impl: my-skill-installer       # was: skill-install
-#       <your-binding-config>
-#
-#   extensions:
-#     impls:
-#       - name: my-skill-installer
-#         module: "@my-org/agent-runtime-skill-installer"
-#         export: "default"
-#
-# extensions:
-#   impls:
-#     - name: my-driver
-#       module: "@my-org/agent-runtime-my-driver"
-#       export: "default"
+drivers: {}

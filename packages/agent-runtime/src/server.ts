@@ -43,6 +43,7 @@ import {
 } from "./modules/runtime-channel/index.js";
 import {
   loadManifest,
+  resolveDrivers,
   type RuntimeManifest,
 } from "./modules/runtime-channel/manifest.js";
 
@@ -61,9 +62,11 @@ const workDir = config.PLATFORM_DEV
 // exactly as for forks).
 const EXEC_ONLY = process.env.PLATFORM_EXEC_ONLY === "1";
 
-// skill-ref driver paths from the manifest, $HOME expanded against home.
+// skill-ref driver paths from the *resolved* manifest (the built-in default when
+// the manifest doesn't declare skill-ref), $HOME expanded against home. Must
+// match how composeRuntimeChannel resolves it — hence resolveDrivers, not the raw map.
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
-  const binding = manifest.drivers["skill-ref"] as
+  const binding = resolveDrivers(manifest)["skill-ref"] as
     | { paths?: unknown }
     | undefined;
   const raw = Array.isArray(binding?.paths) ? binding.paths : [];
@@ -127,6 +130,7 @@ const runtimeChannel = await composeRuntimeChannel({
   apiServerUrl: config.API_SERVER_URL,
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
   triggerDriver,
+  envReader: envStore,
   plugins: [
     createEnvPlugin({
       store: envStore,
@@ -172,6 +176,7 @@ const trpcHandler = createHTTPHandler({
     skills: skillsService,
     ssh: sshService,
     runtime: runtimeChannel.service,
+    harnessConfig: runtimeChannel.harnessConfig,
   }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });

@@ -113,5 +113,8 @@ function isPluginModule(value: unknown): value is PluginModule {
 function isPlugin(value: unknown): value is Plugin {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
-  return typeof obj.name === "string" && typeof obj.bind === "function";
+  return (
+    typeof obj.name === "string" &&
+    (typeof obj.bind === "function" || typeof obj.bindEvent === "function")
+  );
 }

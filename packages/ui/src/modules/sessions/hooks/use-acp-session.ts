@@ -10,7 +10,6 @@ import {
   listAgentSessions,
 } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/queries.js";
-import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
@@ -46,26 +45,15 @@ export function useAcpSession(
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
-  const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
-    useAcpConfigCache(selectedAgent, sessionId, agentOperable);
-
-  const { loadHistory } = useAcpHistory(
-    selectedAgent,
-    captureSessionConfig,
-    handleConfigUpdate,
-  );
+  const { loadHistory } = useAcpHistory(selectedAgent);
 
   const {
     engagedSessionIdRef,
     engage,
     clear: clearEngagement,
-  } = useAcpSessionEngagement(
-    selectedAgent,
-    captureSessionConfig,
-    applySavedPreferences,
-  );
+  } = useAcpSessionEngagement(selectedAgent);
 
-  const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
+  const makeUpdateHandler = useAcpUpdateHandler();
 
   const {
     ensureLive,
@@ -95,10 +83,6 @@ export function useAcpSession(
     resetConnection();
     setSessionId(null);
     setMessages([]);
-    const s = useStore.getState();
-    s.setSessionModes(null);
-    s.setSessionModels(null);
-    s.setSessionConfigOptions([]);
   }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(
@@ -161,11 +145,6 @@ export function useAcpSession(
   );
 
   return {
-    connectionRef,
-    /** Session id the live connection is currently bound to — exposed for
-     *  SessionConfigBar's optimistic mutate paths. */
-    engagedSessionIdRef,
-    ensureConnection: ensureLive,
     resetSession,
     resumeSession,
     sendPrompt,

@@ -39,6 +39,16 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   ];
 }
 
+// Standalone OpenAI (api.openai.com). OPENAI_BASE_URL is the SDK default, so it
+// doesn't change harness runtime — it gives harness-config model discovery a
+// base to GET /v1/models. Shared by PROVIDERS.openai and the connection catalog.
+export function openaiEnvMappings(): EnvMapping[] {
+  return [
+    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "OPENAI_BASE_URL", placeholder: "https://api.openai.com/v1" },
+  ];
+}
+
 export interface BobModelPins {
   model?: string;
   agentId?: string;
@@ -166,9 +176,7 @@ export const PROVIDERS = {
         key: "api-key",
         label: "API Key",
         templateId: "openai",
-        defaultEnvMappings: [
-          { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-        ],
+        defaultEnvMappings: openaiEnvMappings(),
       },
     ],
   },

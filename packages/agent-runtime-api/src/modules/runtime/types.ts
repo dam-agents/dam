@@ -15,6 +15,7 @@ export const eventKind = z.enum([
   "schedule-reset",
   "workspace-seed",
   "experiment-trigger",
+  "harness-config",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -26,7 +27,7 @@ export const mergeMode = z.enum([
 ]);
 export type MergeMode = z.infer<typeof mergeMode>;
 
-export const fileFormat = z.enum(["yaml", "json", "text", "ini"]);
+export const fileFormat = z.enum(["yaml", "json", "text", "ini", "toml"]);
 export type FileFormat = z.infer<typeof fileFormat>;
 
 export const envContribution = z.object({
@@ -159,17 +160,76 @@ export const experimentTriggerEvent = z.object({
   payload: experimentTriggerEventPayload,
 });
 
+// One-shot apply of a per-agent harness config change (model / mode / config
+// options) into the harness's own config file. Like workspace-seed: fire once on
+// a user action, apply, forget — never re-asserted, so the file stays the user's
+// to edit. `unset` lists logical fields to remove (a "Not set" / clear in the
+// UI). The agent's manifest owns the field → file/keyPath mapping.
+export const harnessConfigEventPayload = z.object({
+  model: z.string().min(1).optional(),
+  mode: z.string().min(1).optional(),
+  configOptions: z.record(z.string().min(1), z.string()).optional(),
+  unset: z.array(z.string().min(1)).optional(),
+});
+export type HarnessConfigEventPayload = z.infer<
+  typeof harnessConfigEventPayload
+>;
+
+export const harnessConfigEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("harness-config"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: harnessConfigEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
   experimentTriggerEvent,
+  harnessConfigEvent,
 ]);
 export type Event = z.infer<typeof event>;
+
+// The config catalog a harness offers (model/mode/effort/…), declared in its
+// manifest. Mirrors the ACP select-option shape so the UI renders it unchanged.
+export const harnessConfigChoice = z.object({
+  value: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+});
+export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
+
+export const harnessConfigOptionGroup = z.object({
+  // "model", "mode", or a configOption id (e.g. "effort").
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  // ACP-style category: "model" | "mode" | "thought_level" | …
+  category: z.string().min(1),
+  choices: z.array(harnessConfigChoice),
+});
+export type HarnessConfigOptionGroup = z.infer<typeof harnessConfigOptionGroup>;
+
+export const harnessConfigCatalog = z.object({
+  options: z.array(harnessConfigOptionGroup),
+  // Per-model validity: allowed choice values per gated group. Model absent =
+  // all allowed; empty array = group hidden for that model (e.g. Haiku effort).
+  modelConstraints: z
+    .record(z.string().min(1), z.record(z.string().min(1), z.array(z.string())))
+    .optional(),
+});
+export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
 
 export const capabilities = z.object({
   contributions: z.array(contributionKind),
   events: z.array(eventKind),
+  // Whether the harness declares a config mapping (gates the UI panel). Optional
+  // for forward-compat with agents that predate it.
+  harnessConfig: z.boolean().optional(),
+  // The option catalog from the harness's manifest (absent → UI hides the panel).
+  harnessConfigCatalog: harnessConfigCatalog.optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
 

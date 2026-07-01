@@ -2,27 +2,40 @@ import { join } from "node:path";
 import { eventKind } from "agent-runtime-api";
 import type {
   ContributionKind,
+  HarnessConfigService,
   Plugin,
   RuntimeChannelService,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import { loadManifest, type RuntimeManifest } from "./manifest.js";
+import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import {
+  contributionDrivers,
+  eventDrivers,
+  harnessConfigBinding,
+  loadManifest,
+  resolveDrivers,
+  type RuntimeManifest,
+} from "./manifest.js";
 import { createStateStore } from "./state-store.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
-import { createTriggerImpl } from "./drivers/trigger-impl.js";
-import { createExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
-import { createDispatcher } from "./dispatcher.js";
+import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
+import { createExperimentTriggerPlugin } from "./drivers/experiment-trigger-plugin.js";
+import { createDispatcher, type ContextEnv } from "./dispatcher.js";
+import { createEventDispatcher } from "./event-dispatcher.js";
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { createExtensionLoader } from "./infrastructure/extension-loader.js";
 import { createHarnessClient, type HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
-import { createSeedWorkspace } from "./seed-workspace.js";
+import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
+import { createOpenAiModelDiscovery } from "./infrastructure/model-discovery.js";
 import { runHello } from "./hello.js";
 import type { TriggerSessionDriver } from "../acp/index.js";
 
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   manifest: RuntimeManifest;
+  harnessConfig: HarnessConfigService;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
@@ -35,13 +48,14 @@ export interface ComposeRuntimeChannelOpts {
   agentId: string;
   triggerDriver: TriggerSessionDriver;
   plugins: readonly Plugin[];
+  envReader: RuntimeEnvReader;
   log?: (msg: string) => void;
 }
 
 export async function composeRuntimeChannel(
   opts: ComposeRuntimeChannelOpts,
 ): Promise<RuntimeChannelComposition> {
-  // Timestamp the in-pod seed/apply lines so the boot timeline is diagnosable (#695).
+  // Timestamp the boot timeline so it's diagnosable (#695).
   const log =
     opts.log ??
     ((m) =>
@@ -54,31 +68,51 @@ export async function composeRuntimeChannel(
     join(opts.agentHome, ".platform", "trigger"),
   );
 
+  const resolved = resolveDrivers(manifest);
+  const env: ContextEnv = {
+    agentHome: opts.agentHome,
+    pluginStateRoot: join(opts.agentHome, ".platform/plugins"),
+    log,
+  };
+
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
+  registry.register(
+    createTriggerPlugin({
+      driver: opts.triggerDriver,
+      stateStore: triggerStateStore,
+    }),
+  );
+  registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
+  registry.register(
+    createExperimentTriggerPlugin({ driver: opts.triggerDriver }),
+  );
+
+  const harnessConfigRaw = resolved["harness-config"];
+  const harnessConfigPlugin = createHarnessConfigPlugin({
+    binding: harnessConfigRaw
+      ? harnessConfigBinding.parse(harnessConfigRaw)
+      : undefined,
+    agentHome: opts.agentHome,
+    envReader: opts.envReader,
+    discoverModels: createOpenAiModelDiscovery({ log }),
+    log,
+  });
+  if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);
+
   const extensionLoader = createExtensionLoader();
   await extensionLoader.load(manifest.extensions?.impls ?? [], registry);
 
   const dispatcher = createDispatcher({
-    manifest,
+    drivers: contributionDrivers(resolved),
     registry,
-    env: {
-      agentHome: opts.agentHome,
-      pluginStateRoot: join(opts.agentHome, ".platform/plugins"),
-      log,
-    },
+    env,
   });
-
-  const triggerImpl = createTriggerImpl({
-    driver: opts.triggerDriver,
-    stateStore: triggerStateStore,
+  const eventDispatcher = createEventDispatcher({
+    drivers: eventDrivers(resolved),
+    registry,
+    env,
   });
-
-  const experimentTriggerImpl = createExperimentTriggerImpl({
-    driver: opts.triggerDriver,
-  });
-
-  const seedWorkspace = createSeedWorkspace({ workDir: opts.workDir, log });
 
   const harnessClient: HarnessClient = createHarnessClient({
     apiServerUrl: opts.apiServerUrl,
@@ -86,30 +120,30 @@ export async function composeRuntimeChannel(
   });
 
   const contributionKinds = Object.keys(
-    manifest.drivers,
+    contributionDrivers(resolved),
   ) as readonly ContributionKind[];
-  // Every event kind has a built-in handler (see event-loop invokeHandler), so
-  // the agent advertises the whole set — single-sourced from the schema enum.
+  // A kind with no active driver no-ops at dispatch, so advertise the whole set.
   const eventKinds = eventKind.options;
 
   const service = createRuntimeChannelService({
     dispatcher,
+    eventDispatcher,
     stateStore,
-    triggerImpl,
-    experimentTriggerImpl,
-    seedWorkspace,
     log,
   });
 
   return {
     service,
     manifest,
+    harnessConfig: harnessConfigPlugin,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
         contributions: contributionKinds as never,
         events: eventKinds as never,
+        harnessConfig: harnessConfigPlugin.supported,
+        harnessConfigCatalog: harnessConfigPlugin.catalog,
       };
-      // Retry until it lands: the harness path (agent → gateway Envoy → mesh → api-server) can be unconverged at boot; readiness hard-depends on hello, so one miss must not wedge it.
+      // Retry until it lands: the harness path can be unconverged at boot and readiness hard-depends on hello.
       for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
         if (
           await runHello({

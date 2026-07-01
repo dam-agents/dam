@@ -26,6 +26,7 @@ import {
   createKeycloakUserDirectory,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
+import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
@@ -111,6 +112,8 @@ export interface ApiServerAppDeps {
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Reads an agent's advertised runtime capabilities (owned by runtime-delivery). */
+  getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
@@ -140,6 +143,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     secretStores,
     runtimeMutator,
     contributionsSettled,
+    getAgentCapabilities,
     schedulesBoot,
     terms,
     isTermsAccepted,
@@ -781,6 +785,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
     const files = composeFilesModule(api, config.namespace, user.sub);
     const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
+    const { service: harnessConfig } = composeHarnessConfigModule({
+      runtimeMutator,
+      isOwnedAgent,
+      getCapabilities: getAgentCapabilities,
+      isSettled: (agentId) =>
+        contributionsSettled.status(agentId).then((s) => s.settled),
+    });
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -798,6 +809,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         egressRules,
         experiments,
         files,
+        harnessConfig,
         terms,
         e2e,
         apiKeys,

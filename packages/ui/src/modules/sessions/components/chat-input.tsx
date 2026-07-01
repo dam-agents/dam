@@ -7,7 +7,6 @@ import {
 } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
-  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -98,7 +97,6 @@ interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
-  footer?: ReactNode;
 }
 
 export function ChatInput({
@@ -107,7 +105,6 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
-  footer,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -308,10 +305,11 @@ export function ChatInput({
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-3 min-h-[24px]">
-          {footer}
-          {isComputing && <BusyIndicator />}
-        </div>
+        {isComputing && (
+          <div className="flex items-center gap-3">
+            <BusyIndicator />
+          </div>
+        )}
       </div>
     </div>
   );

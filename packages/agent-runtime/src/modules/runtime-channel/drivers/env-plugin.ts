@@ -53,5 +53,3 @@ function envEquals(
   if (ak.length !== Object.keys(b).length) return false;
   return ak.every((k) => a[k] === b[k]);
 }
-
-export const ENV_PLUGIN_NAME = IMPL_NAME;

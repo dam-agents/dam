@@ -6,7 +6,6 @@ import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 
 /**
  * Build the streaming-update callback fed to `openConnection`. The handler:
- *   - lets the config cache absorb mode/option updates,
  *   - drops any pending permission dialog whose tool call has moved past
  *     `pending` (another client answered, or the agent proceeded without one),
  *   - logs visible side effects (text/image chunks, tool-call starts), and
@@ -15,9 +14,7 @@ import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
  * Returns a *factory* — `openConnection` wants a fresh handler per WS, so the
  * orchestrator calls `make()` at the connect site.
  */
-export function useAcpUpdateHandler(
-  handleConfigUpdate: (update: AcpUpdate) => void,
-): () => UpdateHandler {
+export function useAcpUpdateHandler(): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
   const addLog = useStore((s) => s.addLog);
 
@@ -34,8 +31,6 @@ export function useAcpUpdateHandler(
 
   return useCallback(() => {
     return (update: AcpUpdate) => {
-      handleConfigUpdate(update);
-
       const { sessionUpdate: kind } = update;
 
       if (
@@ -60,5 +55,5 @@ export function useAcpUpdateHandler(
 
       setMessages((prev) => applyUpdate(prev, update));
     };
-  }, [handleConfigUpdate, dismissStalePermission, addLog, setMessages]);
+  }, [dismissStalePermission, addLog, setMessages]);
 }

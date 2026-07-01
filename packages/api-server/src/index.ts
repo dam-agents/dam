@@ -591,6 +591,10 @@ const { server: apiServer } = startApiServerApp({
   secretStores,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
+  getAgentCapabilities: (agentId) =>
+    runtimeDelivery.agentsRuntimeRepo
+      .get(agentId)
+      .then((r) => r?.runtimeCapabilities ?? null),
   schedulesBoot,
   mountUsageRoutes: usage.mount,
   terms: termsService,

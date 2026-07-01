@@ -8,6 +8,7 @@ import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
 import { filesRouter } from "./modules/files/router.js";
+import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { reposRouter } from "./modules/repos/router.js";
@@ -29,6 +30,7 @@ export const appRouter = t.router({
   terms: termsRouter,
   e2e: e2eRouter,
   apiKeys: apiKeysRouter,
+  harnessConfig: harnessConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

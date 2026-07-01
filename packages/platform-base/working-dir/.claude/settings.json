@@ -4,5 +4,6 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "opus"
 }

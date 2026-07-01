@@ -27,4 +27,7 @@ RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+# Override platform-base's manifest to add the Claude-specific harnessConfig block.
+COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
+
 USER 65532

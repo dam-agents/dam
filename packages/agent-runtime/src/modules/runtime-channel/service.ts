@@ -5,36 +5,26 @@ import type {
   RuntimeChannelService,
 } from "agent-runtime-api";
 import type { Dispatcher } from "./dispatcher.js";
+import type { EventDispatcher } from "./event-dispatcher.js";
 import type { StateStore } from "./state-store.js";
-import type { TriggerImpl } from "./drivers/trigger-impl.js";
-import type { ExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
-import type { SeedWorkspaceFn } from "./seed-workspace.js";
-import { processEvents, type EventHandlers } from "./event-loop.js";
+import { processEvents } from "./event-loop.js";
 
 export interface ApplyStateDeps {
   dispatcher: Dispatcher;
+  eventDispatcher: EventDispatcher;
   stateStore: StateStore;
-  triggerImpl: TriggerImpl;
-  experimentTriggerImpl: ExperimentTriggerImpl;
-  seedWorkspace: SeedWorkspaceFn;
   log: (msg: string) => void;
 }
 
 export function createRuntimeChannelService(
   deps: ApplyStateDeps,
 ): RuntimeChannelService {
-  // Serialize applies: the eventRuns/cursor read-modify-write spans an await, so concurrent dispatches (sweep + bump, no jobId dedup) would otherwise double-fire events.
+  // Serialize applies: the read-modify-write spans an await, so concurrent dispatches would double-fire events.
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(work: () => Promise<T>): Promise<T> => {
     const run = tail.then(work, work);
     tail = run.catch(() => {});
     return run;
-  };
-
-  const handlers: EventHandlers = {
-    triggerImpl: deps.triggerImpl,
-    experimentTriggerImpl: deps.experimentTriggerImpl,
-    seedWorkspace: deps.seedWorkspace,
   };
 
   return {
@@ -51,14 +41,14 @@ export function createRuntimeChannelService(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
 
-    // Contributions are caught up, but events carry their own version — still apply them.
+    // Contributions caught up, but events carry their own version — still apply them.
     if (input.version <= local.lastAppliedVersion) {
       deps.log(
         `[applyState] contributions stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; events only`,
       );
       const settledEvents = await processEvents(
         input.events,
-        handlers,
+        deps.eventDispatcher,
         deps.stateStore,
         deps.log,
       );
@@ -79,10 +69,9 @@ export function createRuntimeChannelService(
       deps.log(`[applyState] hash unchanged; skipping dispatch`);
     }
 
-    // Events apply in the same pass, independent of contribution outcome.
     const settledEvents = await processEvents(
       input.events,
-      handlers,
+      deps.eventDispatcher,
       deps.stateStore,
       deps.log,
     );
@@ -92,7 +81,7 @@ export function createRuntimeChannelService(
       deps.log(
         `[applyState] driver failure(s) — settling without advancing applied state; returning failures: ${summary}`,
       );
-      // Leave the contribution cursor/hash behind so the retry re-dispatches.
+      // Leave the cursor/hash behind so the retry re-dispatches.
       return {
         status: "ok",
         appliedVersion: local.lastAppliedVersion,

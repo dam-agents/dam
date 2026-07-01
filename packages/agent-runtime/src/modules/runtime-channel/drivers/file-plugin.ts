@@ -43,5 +43,4 @@ export function createFilePlugin(): Plugin {
   };
 }
 
-export const FILE_PLUGIN_NAME = IMPL_NAME;
 export type { Contribution };

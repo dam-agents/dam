@@ -20,10 +20,6 @@ import {
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
 import {
-  createSessionConfigSlice,
-  type SessionConfigSlice,
-} from "./modules/sessions/store/session-config.js";
-import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
@@ -41,7 +37,6 @@ export type PlatformStore = DialogSlice &
   NavigationSlice &
   AgentsSlice &
   SessionsSlice &
-  SessionConfigSlice &
   FilesSlice &
   PermissionsSlice;
 
@@ -51,7 +46,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createNavigationSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
-  ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),
   ...createPermissionsSlice(...a),
 }));

@@ -1,19 +1,11 @@
 import type { Event } from "agent-runtime-api";
-import type { TriggerImpl } from "./drivers/trigger-impl.js";
-import type { ExperimentTriggerImpl } from "./drivers/experiment-trigger-impl.js";
-import type { SeedWorkspaceFn } from "./seed-workspace.js";
+import type { EventDispatcher } from "./event-dispatcher.js";
 import type { StateStore } from "./state-store.js";
-
-export interface EventHandlers {
-  triggerImpl: TriggerImpl;
-  experimentTriggerImpl: ExperimentTriggerImpl;
-  seedWorkspace: SeedWorkspaceFn;
-}
 
 /** Apply one-shot events independent of contributions; returns the settled ids (failed ones stay pending). */
 export async function processEvents(
   events: Event[],
-  handlers: EventHandlers,
+  dispatcher: EventDispatcher,
   stateStore: StateStore,
   log: (msg: string) => void,
 ): Promise<string[]> {
@@ -22,7 +14,7 @@ export async function processEvents(
   for (const e of events) {
     const { key, ts } = splitEventId(e.id);
     const state = stateStore.read();
-    // Already run: a clean settle reached this version, or a >= fire for this key ran (dedup/supersede).
+    // Already run: settled past this version, or a >= fire for this key ran (dedup/supersede).
     if (
       e.version <= state.lastAppliedVersion ||
       ts <= (state.eventRuns[key] ?? 0)
@@ -40,7 +32,7 @@ export async function processEvents(
     }
 
     try {
-      await invokeHandler(e, handlers);
+      await dispatcher.invoke(e.kind, e.payload);
       const current = stateStore.read();
       stateStore.write({
         ...current,
@@ -60,21 +52,4 @@ export async function processEvents(
 function splitEventId(id: string): { key: string; ts: number } {
   const i = id.lastIndexOf(":");
   return { key: id.slice(0, i), ts: Number(id.slice(i + 1)) };
-}
-
-async function invokeHandler(e: Event, handlers: EventHandlers): Promise<void> {
-  switch (e.kind) {
-    case "trigger":
-      await handlers.triggerImpl.handle(e.payload);
-      return;
-    case "schedule-reset":
-      handlers.triggerImpl.reset(e.payload.scheduleId);
-      return;
-    case "experiment-trigger":
-      await handlers.experimentTriggerImpl.handle(e.payload);
-      return;
-    case "workspace-seed":
-      await handlers.seedWorkspace(e.payload);
-      return;
-  }
 }

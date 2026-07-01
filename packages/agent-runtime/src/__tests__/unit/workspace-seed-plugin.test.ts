@@ -2,20 +2,28 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
+import type { DispatchContext } from "agent-runtime-api";
 import {
-  createSeedWorkspace,
+  createWorkspaceSeedPlugin,
   type CloneFn,
-} from "../../modules/runtime-channel/seed-workspace.js";
+} from "../../modules/runtime-channel/drivers/workspace-seed-plugin.js";
 
 const URL = "https://github.com/dam-agents/google-workspace.git";
 
+const ctx: DispatchContext = {
+  agentHome: "",
+  pluginStateDir: "",
+  log: () => {},
+};
+
 function setup(clone: CloneFn) {
   const workDir = join(mkdtempSync(join(tmpdir(), "seed-ws-")), "work");
-  const seed = createSeedWorkspace({ workDir, clone, log: () => {} });
-  return { seed, workDir };
+  const seed = createWorkspaceSeedPlugin({ workDir, clone, log: () => {} })
+    .bindEvent!("workspace-seed", { impl: "workspace-seed" });
+  return { seed: (payload: unknown) => seed(payload, ctx), workDir };
 }
 
-describe("seed-workspace handler", () => {
+describe("workspace-seed plugin", () => {
   it("clones into an empty work dir", async () => {
     const clone = vi.fn<CloneFn>(async () => ({ ok: true, value: undefined }));
     const { seed, workDir } = setup(clone);

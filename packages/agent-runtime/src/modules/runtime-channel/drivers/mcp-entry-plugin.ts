@@ -116,5 +116,3 @@ function readKeyedObject(
     return {};
   }
 }
-
-export const MCP_ENTRY_PLUGIN_NAME = IMPL_NAME;

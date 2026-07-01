@@ -52,7 +52,7 @@ The wire payload carries:
 
 - **`version`** (top-level) — per-agent monotonic counter, the single ack cursor for the payload. Bumped on any contribution edit or event insert.
 - **`state`** — the agent's full desired configuration (Contributions). Reconciled by diff. `hash` short-circuits no-op pushes.
-- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding, experiment-trial launches). Processed in order through per-kind handlers inside the agent-runtime.
+- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding, experiment-trial launches, harness-config writes). Processed in order through per-kind handlers inside the agent-runtime.
 
 State changes write to the outbox, the worker reads and dispatches a fresh payload, the agent receives state + events and reconciles contributions + invokes event handlers, and the agent calls back on boot/wake to catch up.
 
@@ -114,11 +114,13 @@ Kinds are added by extending the union and gating on agent capabilities (see [Ve
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), and **experiment-trigger** (open a Trial session for an Experiment Arm — see [experiments](experiments.md)). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), **experiment-trigger** (open a Trial session for an Experiment Arm — see [experiments](experiments.md)), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+
+`harness-config` is the model/mode/config-defaults mechanism: a user action in the Config panel fires one event, the agent-runtime writes the mapped keys into the harness's config file (claude-code: `~/.claude/settings.json`) once, and — like `workspace-seed` — never re-asserts, so the file stays the user's to edit (a hand-edit via the Files panel or SSH is never reconciled away). The Config panel is driven entirely outbound, not over an ACP session: the agent's manifest declares a `harness-config` driver entry carrying both the field → file-keyPath mapping and an option **catalog** (the available model/mode/config choices and their per-model validity), and the agent advertises that catalog on `hello` (alongside a `harnessConfig` capability flag) for the api-server to serve to the UI; the *current* values are read back live from the config file via the agent-runtime `harnessConfig.current` query. When the manifest declares a `modelDiscovery` source (for a harness behind a model proxy whose available models vary by connection, e.g. pi), that same `harnessConfig.current` read fills the model list live from the provider's `/v1/models` rather than from a static catalog list. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section.
 
 The `id` is the dedupe key. Redelivery is caught agent-side: the event loop settles without re-firing when the event's `version` is already covered by the applied cursor or its dedupe key already ran at the same or a later fire timestamp (tracked in the agent's local state store), and locally expires anything past its ttl.
 
-All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events.
+All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events. (`harness-config` is the carve-out: every agent can receive the event, but only one whose manifest declares a `harness-config` driver has anywhere to write it — so it advertises a `harnessConfig` capability flag the UI gates on, and the handler no-ops without it.)
 
 ## Example Connections
 
@@ -257,7 +259,7 @@ runtime.v1.hello({
   lastAppliedHash?: string;
   protocolVersion: "v1";
   agentRuntimeVersion: string;
-  capabilities: { contributions: ContributionKind[]; events: EventKind[] };
+  capabilities: { contributions: ContributionKind[]; events: EventKind[]; harnessConfig?: boolean };
 }) => {
   events: Event[];
 }
@@ -422,27 +424,22 @@ Redis is the signal path; BullMQ stores job state in Redis with relaxed durabili
 
 ### The manifest
 
-Every agent image ships a `runtime-manifest.yaml` declaring which impl handles each Contribution kind, plus any custom impls registered by harness-specific code. The kinds advertised on `hello` are derived from this (contribution kinds from the driver keys; event kinds are the built-in set), not declared separately. Validated against a versioned schema at agent-runtime boot — fail-fast on malformed manifest.
+Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a kind — contribution **or** event — to an impl, resolved uniformly through the plugin registry. Built-in drivers are **on by default** with default bindings, so a manifest declares an entry only to *configure* a kind (e.g. `harness-config`'s file/keys/catalog), *override* its impl, or *disable* it with `false`; `impl` defaults to the kind name (so it's named only to override). The kinds advertised on `hello` are derived at boot from the resolved drivers — the built-in defaults, plus what the manifest declares, minus what it disables — never declared separately. Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
 ```yaml
 # packages/agents/example-agent/runtime-manifest.yaml
 manifestVersion: 1
 
+# env, file, mcp-entry, skill-ref, trigger, schedule-reset, workspace-seed are
+# all on by default — declare an entry only to configure, override, or disable.
 drivers:
-  mcp-entry:
-    impl: file                                # built-in
-    path: "$HOME/.claude/.mcp.json"
-    format: json
-    mergeMode: key-targeted
-    keyPath: "mcpServers"
-  skill-ref:
-    impl: skill-install                       # built-in
-    paths: ["$HOME/.claude/skills"]
-  file:
-    impl: file                                # built-in; per-Contribution params on the wire
+  harness-config:                             # config-bearing → active only when declared
+    file: "$HOME/.claude/settings.json"
+    keys: { model: "model", mode: "permissions.defaultMode" }
+  mcp-entry: false                            # opt a built-in out
 ```
 
-A harness that needs custom code declares it explicitly in the manifest under `extensions.impls`:
+A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name declared under `extensions.impls`:
 
 ```yaml
 # packages/agents/codex-agent/runtime-manifest.yaml
@@ -460,9 +457,9 @@ extensions:
       export: "codexMcpReloadImpl"
 ```
 
-The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block. The kinds an agent advertises on `hello` are derived at runtime — contribution kinds from the `drivers` keys, event kinds from the built-in set (every agent supports all event kinds).
+The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
 
-Custom contribution impl names may not collide with built-in names (`file`, `skill-install`, …) — registration rejects collision; runtime-channel boot fails loud. Event handlers are built-in per kind and not user-pluggable.
+Custom impl names may not collide with a built-in name (`file`, `skill-install`, …) — registration rejects collision; boot fails loud. To override a built-in — whether a contribution kind (`file`, `mcp-entry`, …) or an event kind (`trigger`, `harness-config`, …) — rebind that kind to a fresh impl name supplied via `extensions.impls`; the built-in stays registered but unbound.
 
 ### Built-in contribution impls
 

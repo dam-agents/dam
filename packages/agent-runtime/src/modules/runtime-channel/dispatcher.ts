@@ -4,10 +4,10 @@ import type {
   Contribution,
   ContributionKind,
   DispatchContext,
+  DriverBinding,
   DriverFailure,
   KindHandler,
 } from "agent-runtime-api";
-import type { RuntimeManifest } from "./manifest.js";
 import type { PluginRegistry } from "./infrastructure/plugin-registry.js";
 
 export interface ContextEnv {
@@ -21,7 +21,7 @@ export interface Dispatcher {
 }
 
 export function createDispatcher(deps: {
-  manifest: RuntimeManifest;
+  drivers: Record<string, DriverBinding>;
   registry: PluginRegistry;
   env: ContextEnv;
 }): Dispatcher {
@@ -40,12 +40,17 @@ export function createDispatcher(deps: {
     return dir;
   }
 
-  for (const [kindRaw, binding] of Object.entries(deps.manifest.drivers)) {
+  for (const [kindRaw, binding] of Object.entries(deps.drivers)) {
     const kind = kindRaw as ContributionKind;
     const plugin = deps.registry.get(binding.impl);
     if (!plugin) {
       throw new Error(
         `runtime-manifest binds kind "${kind}" to impl "${binding.impl}" but no plugin with that name is registered`,
+      );
+    }
+    if (!plugin.bind) {
+      throw new Error(
+        `plugin "${binding.impl}" bound to contribution kind "${kind}" does not handle contributions (no bind)`,
       );
     }
     const handler = plugin.bind(kind, binding);

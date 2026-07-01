@@ -2,6 +2,7 @@ import {
   type Contribution,
   type EnvMapping,
   ibmLitellmEnvMappings,
+  openaiEnvMappings,
   bobEnvMappings,
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
@@ -108,8 +109,9 @@ const OPENAI: HeaderConnectionTemplate = {
   host: "api.openai.com",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  // Env bundle sourced from the provider preset so they can't drift (cf. ibm-litellm).
   contributions: [
-    { kind: "env", name: "OPENAI_API_KEY", placeholder: "dummy-placeholder" },
+    ...envContributions(openaiEnvMappings()),
     {
       kind: "egress-inject",
       host: "api.openai.com",

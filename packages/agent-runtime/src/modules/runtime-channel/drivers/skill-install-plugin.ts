@@ -128,5 +128,3 @@ export function createSkillInstallPlugin(deps: {
     },
   };
 }
-
-export const SKILL_INSTALL_PLUGIN_NAME = IMPL_NAME;

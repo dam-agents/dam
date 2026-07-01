@@ -39,7 +39,6 @@ import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { LogPanel } from "../components/log-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
-import { SessionConfigBar } from "../components/session-config-popover.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
@@ -104,13 +103,11 @@ export function ChatView() {
 
   // ── Hooks ──
   const {
-    ensureConnection,
     resetSession,
     resumeSession,
     sendPrompt,
     stopAgent,
     busy,
-    engagedSessionIdRef,
     loadingSession,
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
@@ -645,15 +642,6 @@ export function ChatView() {
                 loadingSession={loadingSession}
                 onSend={sendPrompt}
                 onStop={stopAgent}
-                footer={
-                  !loadingSession && (
-                    <SessionConfigBar
-                      ensureConnection={ensureConnection}
-                      engagedSessionIdRef={engagedSessionIdRef}
-                      agentId={selectedAgent ?? ""}
-                    />
-                  )
-                }
               />
             )}
           </>
