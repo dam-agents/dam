@@ -114,6 +114,12 @@ const configSchema = z.object({
   /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
    *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
+  /** Absolute per-turn ceiling for the ACP sendPrompt path (Slack/Telegram/
+   *  forks), in seconds. Turn liveness is a ws ping/pong signal; this only caps
+   *  a wedged-but-still-ponging agent. Enforced >= approvalHoldSeconds (see
+   *  configSchema refine) so a turn blocked on an egress approval outlives the
+   *  hold rather than dying mid-approval. Helm-configurable; default 1h. */
+  acpTurnCeilingSeconds: z.coerce.number().int().positive().default(3600),
   /** Minimum CLI version this server accepts. Optional — when unset, no
    *  floor is advertised and every CLI is accepted (a soft-warn fires on
    *  the CLI side when the local CLI is behind the current server). */
@@ -162,8 +168,19 @@ const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
+// A turn blocked on an egress approval must outlive the hold, else the ceiling
+// kills the connection before the human can respond.
+const validatedConfigSchema = configSchema.refine(
+  (c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds,
+  {
+    message:
+      "acpTurnCeilingSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval does not die before the hold resolves",
+    path: ["acpTurnCeilingSeconds"],
+  },
+);
+
 export function loadConfig(): Config {
-  return configSchema.parse({
+  return validatedConfigSchema.parse({
     serverVersion: pkg.version,
     appVersion: process.env.PLATFORM_APP_VERSION ?? "0.0.0",
     namespace: process.env.NAMESPACE,
@@ -214,6 +231,7 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
+    acpTurnCeilingSeconds: process.env.ACP_TURN_CEILING_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,

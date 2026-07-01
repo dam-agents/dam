@@ -9,7 +9,7 @@ import type {
   StoredTelegramChannel,
 } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
-import { createAcpClient } from "../../../core/acp-client.js";
+import { type AcpClientFactory } from "../../../core/acp-client.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
   buildAuthorizeUrl,
@@ -118,7 +118,7 @@ async function fetchTelegramChatTitle(
 }
 
 export function createTelegramWorker(
-  namespace: string,
+  makeAcpClient: AcpClientFactory,
   state: StateAdapter,
   agents: () => AgentsService,
   threads: TelegramThreadsRepo,
@@ -134,7 +134,7 @@ export function createTelegramWorker(
   // The thread's session carries this threadId in `_meta.platform.threadTs`
   // — resolved off the agent, no server store.
   async function findThreadSession(instanceName: string, threadId: string) {
-    const acp = createAcpClient({ namespace, instanceName });
+    const acp = makeAcpClient(instanceName);
     const sessions = await acp.listSessions().catch((err) => {
       process.stderr.write(
         `[telegram:${instanceName}] listSessions failed: ${err}\n`,
@@ -167,7 +167,7 @@ export function createTelegramWorker(
     let outcome: TurnOutcome = "failure";
     try {
       await agents().ensureReady(instanceName);
-      const acp = createAcpClient({ namespace, instanceName });
+      const acp = makeAcpClient(instanceName);
 
       const existing = await findThreadSession(instanceName, thread.id);
       if (existing) {

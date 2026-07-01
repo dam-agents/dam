@@ -5,9 +5,9 @@ import type { StoredChannelConfig } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
-  createAcpClient,
-  createForkAcpClient,
   type AcpClient,
+  type AcpClientFactory,
+  type ForkAcpClientFactory,
 } from "../../../core/acp-client.js";
 import {
   EventType,
@@ -166,7 +166,7 @@ export interface SlackOAuthPending {
 }
 
 export function createSlackWorker(
-  namespace: string,
+  makeAcpClient: AcpClientFactory,
   createGateway: () => SlackGateway,
   agents: () => AgentsService,
   identityLinks: IdentityLinkService,
@@ -179,6 +179,7 @@ export function createSlackWorker(
   brandShort: string,
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
+  makeForkAcpClient: ForkAcpClientFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   let gateway: SlackGateway | null = null;
@@ -244,7 +245,7 @@ export function createSlackWorker(
       );
     try {
       await agents().ensureReady(instanceName);
-      const acp = createAcpClient({ namespace, instanceName });
+      const acp = makeAcpClient(instanceName);
       const platformMeta = {
         type: SessionType.ChannelSlack,
         threadTs: ctx.threadTs,
@@ -444,7 +445,7 @@ export function createSlackWorker(
             "This agent can't process images yet — answering text only.",
           );
         try {
-          const acp = createForkAcpClient({ podIP: event.podIP });
+          const acp = makeForkAcpClient(event.podIP);
           const existing = await findThreadSession(acp, ctx.threadTs);
           const response = existing
             ? await acp.sendPrompt(ctx.prompt, {

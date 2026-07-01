@@ -25,6 +25,12 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAcpClient,
+  createForkAcpClient,
+  type AcpClientFactory,
+  type ForkAcpClientFactory,
+} from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -358,9 +364,21 @@ const slackGatewayFactory = slackTokens
     ? () => fakeSlackGateway
     : undefined;
 
+// Bind the ACP turn ceiling (and namespace) into the client factories at the
+// composition root; workers get pre-wired factories and stay ignorant of both.
+const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
+const makeAcpClient: AcpClientFactory = (instanceName) =>
+  createAcpClient({
+    namespace: config.namespace,
+    instanceName,
+    turnCeilingMs: acpTurnCeilingMs,
+  });
+const makeForkAcpClient: ForkAcpClientFactory = (podIP) =>
+  createForkAcpClient({ podIP, turnCeilingMs: acpTurnCeilingMs });
+
 const slackWorker = slackGatewayFactory
   ? createSlackWorker(
-      config.namespace,
+      makeAcpClient,
       slackGatewayFactory,
       () => systemAgents,
       identityLinkService,
@@ -377,13 +395,14 @@ const slackWorker = slackGatewayFactory
       config.brand.short,
       isTermsAccepted,
       config.uiBaseUrl,
+      makeForkAcpClient,
     )
   : undefined;
 
 const telegramWorker =
   config.telegramEnabled && chatSdkState
     ? createTelegramWorker(
-        config.namespace,
+        makeAcpClient,
         chatSdkState,
         () => systemAgents,
         {

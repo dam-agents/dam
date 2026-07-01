@@ -570,6 +570,13 @@ apiServer:
   # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
 
+  # -- Absolute per-turn ceiling (seconds) for the ACP sendPrompt path
+  # (Slack/Telegram/forks). Turn liveness is a ws ping/pong signal, so a
+  # silent-but-alive turn stays connected; this only caps a wedged agent.
+  # Must be >= approvalHoldSeconds so a turn blocked on an egress approval
+  # outlives the hold. Default 1 hour.
+  acpTurnCeilingSeconds: 3600
+
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
   # the api-server proxy boundary (rejects oversized Content-Length AND
   # destroys the upstream pipe when streamed bytes pass the cap). The
