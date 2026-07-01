@@ -346,9 +346,9 @@ API Server ServiceAccount name
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ printf "https://%s:4318" $host | quote }}
 - name: OTEL_METRIC_EXPORT_INTERVAL
-  value: "30000"
+  value: "1000"
 - name: OTEL_LOGS_EXPORT_INTERVAL
-  value: "5000"
+  value: "1000"
 - name: OTEL_TRACES_EXPORT_INTERVAL
-  value: "5000"
+  value: "1000"
 {{- end }}
