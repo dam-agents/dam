@@ -77,13 +77,77 @@ jobs:
           echo "composite=$composite" >> "$GITHUB_OUTPUT"
           echo "::notice::composite app version: $composite"
 
+  changes:
+    name: detect stale images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platform_base: ${{ steps.d.outputs.platform_base }}
+      platform_base_tag: ${{ steps.d.outputs.platform_base_tag }}
+      agents: ${{ steps.d.outputs.agents }}
+      archs: ${{ steps.d.outputs.archs }}
+      nous: ${{ steps.d.outputs.nous }}
+      openevolve: ${{ steps.d.outputs.openevolve }}
+      claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: d
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "platform_base=true" >> "$GITHUB_OUTPUT"
+            echo "platform_base_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo 'agents=["claude-code","codex","pi-agent","bob","k-search"]' >> "$GITHUB_OUTPUT"
+            echo 'archs=["amd64","arm64"]' >> "$GITHUB_OUTPUT"
+            echo "nous=true" >> "$GITHUB_OUTPUT"
+            echo "openevolve=true" >> "$GITHUB_OUTPUT"
+            echo "claude_code_base_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mb="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          echo "::notice::PR merge-base $mb"
+          changed() { ! git diff --quiet "$mb" "$HEAD_SHA" -- "$@"; }
+
+          pb=false
+          changed packages/platform-base packages/agent-runtime \
+                  packages/agent-runtime-api packages/api-server-api \
+                  packages/dev-config scripts/install-pnpm.js \
+                  package.json pnpm-workspace.yaml pnpm-lock.yaml && pb=true
+
+          agents="$(for a in claude-code codex pi-agent bob k-search; do
+            { [ "$pb" = true ] || changed "packages/agents/$a"; } && echo "$a" || true
+          done | jq -R . | jq -cs .)"
+          cc=false; echo "$agents" | jq -e 'index("claude-code")' >/dev/null && cc=true
+
+          nous=false;       { [ "$cc" = true ] || changed packages/agents/nous; }       && nous=true
+          openevolve=false; { [ "$cc" = true ] || changed packages/agents/openevolve; } && openevolve=true
+
+          pb_tag="$mb"; [ "$pb" = true ] && pb_tag="$GITHUB_SHA"
+          cc_tag="$mb"; [ "$cc" = true ] && cc_tag="$GITHUB_SHA"
+
+          echo "platform_base=$pb" >> "$GITHUB_OUTPUT"
+          echo "platform_base_tag=$pb_tag" >> "$GITHUB_OUTPUT"
+          echo "agents=$agents" >> "$GITHUB_OUTPUT"
+          echo 'archs=["amd64"]' >> "$GITHUB_OUTPUT"
+          echo "nous=$nous" >> "$GITHUB_OUTPUT"
+          echo "openevolve=$openevolve" >> "$GITHUB_OUTPUT"
+          echo "claude_code_base_tag=$cc_tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::platform_base=$pb agents=$agents nous=$nous openevolve=$openevolve pb_tag=$pb_tag cc_tag=$cc_tag"
+
   build-images:
     needs: [check]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       matrix:
-        component: [controller, api-server, ui, platform-base, keycloak]
+        component: [controller, api-server, ui, keycloak]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -98,9 +162,6 @@ jobs:
             context: .
           - component: ui
             dockerfile: packages/ui/Dockerfile
-            context: .
-          - component: platform-base
-            dockerfile: packages/platform-base/Dockerfile
             context: .
           - component: keycloak
             dockerfile: packages/keycloak-theme/Dockerfile
@@ -148,7 +209,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [controller, api-server, ui, platform-base, keycloak]
+        component: [controller, api-server, ui, keycloak]
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -181,34 +242,14 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
 
-  build-agents:
-    needs: [merge-images]
-    runs-on: ${{ matrix.runner }}
+  build-platform-base:
+    needs: [check, changes]
+    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        component: [claude-code, codex, pi-agent, bob, k-search]
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-          - component: claude-code
-            dockerfile: packages/agents/claude-code/Dockerfile
-            context: packages/agents/claude-code
-          - component: codex
-            dockerfile: packages/agents/codex/Dockerfile
-            context: packages/agents/codex
-          - component: pi-agent
-            dockerfile: packages/agents/pi-agent/Dockerfile
-            context: packages/agents/pi-agent
-          - component: bob
-            dockerfile: packages/agents/bob/Dockerfile
-            context: packages/agents/bob
-          - component: k-search
-            dockerfile: packages/agents/k-search/Dockerfile
-            context: packages/agents/k-search
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -222,12 +263,91 @@ jobs:
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
+          file: packages/platform-base/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=platform-base-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=platform-base-${{ matrix.arch }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-platform-base-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-platform-base:
+    name: merge multi-arch platform-base manifest
+    needs: [build-platform-base, appversion, changes]
+    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: digests-platform-base-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/platform-base
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Create manifest list and push
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/platform-base
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+  build-agents:
+    needs: [merge-platform-base, changes]
+    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.agents) }}
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: packages/agents/${{ matrix.component }}
+          file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ github.sha }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
           cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
       - name: Export digest
@@ -245,12 +365,13 @@ jobs:
 
   merge-agents:
     name: merge multi-arch agent manifests
-    needs: [build-agents, appversion]
+    needs: [build-agents, appversion, changes]
+    if: ${{ needs.changes.outputs.agents != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [claude-code, codex, pi-agent, bob, k-search]
+        component: ${{ fromJSON(needs.changes.outputs.agents) }}
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -284,19 +405,13 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
 
   build-nous:
-    # nous builds FROM claude-code (not platform-base), so it runs after the
-    # agent manifests are merged and pulls its base by the same per-commit tag.
-    needs: [merge-agents]
-    runs-on: ${{ matrix.runner }}
+    needs: [merge-agents, changes]
+    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -315,7 +430,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/nous,push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ github.sha }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
           cache-from: type=gha,scope=nous-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=nous-${{ matrix.arch }}
       - name: Export digest
@@ -333,7 +448,8 @@ jobs:
 
   merge-nous:
     name: merge multi-arch nous manifest
-    needs: [build-nous, appversion]
+    needs: [build-nous, appversion, changes]
+    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -369,19 +485,13 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
 
   build-openevolve:
-    # openevolve builds FROM claude-code (not platform-base), so it runs after
-    # the agent manifests are merged and pulls its base by the same per-commit tag.
-    needs: [merge-agents]
-    runs-on: ${{ matrix.runner }}
+    needs: [merge-agents, changes]
+    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -400,7 +510,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/openevolve,push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ github.sha }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
           cache-from: type=gha,scope=openevolve-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=openevolve-${{ matrix.arch }}
       - name: Export digest
@@ -418,7 +528,8 @@ jobs:
 
   merge-openevolve:
     name: merge multi-arch openevolve manifest
-    needs: [build-openevolve, appversion]
+    needs: [build-openevolve, appversion, changes]
+    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -455,8 +566,8 @@ jobs:
 
   build-mock:
     name: build mock (e2e fixture)
-    needs: [merge-images]
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    needs: [merge-platform-base, changes]
+    if: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -477,13 +588,13 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ github.sha }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
           cache-from: type=gha,scope=mock
           cache-to: type=gha,mode=max,scope=mock
 
   e2e:
     name: mise e2e
-    needs: [merge-images, merge-agents, build-mock]
+    needs: [merge-images, build-mock]
     if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -507,7 +618,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for c in controller api-server ui keycloak claude-code codex pi-agent bob mock; do
+          for c in controller api-server ui keycloak mock; do
             docker pull "$IMAGE_PREFIX/$c:$SHA"
             docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
           done
@@ -785,7 +896,15 @@ jobs:
 
   container-scan:
     name: mise run ${{ matrix.task }}
-    needs: [trivy-tasks, merge-images, merge-agents, merge-nous, merge-openevolve]
+    needs:
+      [
+        trivy-tasks,
+        merge-images,
+        merge-platform-base,
+        merge-agents,
+        merge-nous,
+        merge-openevolve,
+      ]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
