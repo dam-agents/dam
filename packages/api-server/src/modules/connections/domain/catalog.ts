@@ -265,7 +265,7 @@ function githubEnterprise(
     isCustom: false,
     description:
       "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
-    iconSlug: "github",
+    iconSlug: "github-enterprise",
     authKind: "oauth",
     ...(creds?.host ? { host: creds.host } : {}),
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
