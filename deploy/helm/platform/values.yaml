@@ -731,7 +731,7 @@ controller:
   #                           to every agent + fork agent pod.
   #   2. `templateDefaults` — chart-wide fallbacks for fields a template
   #                           can override (template wins when set).
-  #   3. agentTemplates[]   — per-template values (further down).
+  #   3. agentTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
   # it at render time with the template's `agentHome` if set, else
   # `templateDefaults.agentHome`.
@@ -926,9 +926,10 @@ controller:
       cpu: 500m
       memory: 256Mi
 
-# -- Agent templates. Each enabled entry renders an agent-template ConfigMap
-# in `agentNamespace`. Fields named identically to `controller.agent.templateDefaults.*`
-# override the chart-wide default for agents created from this template.
+# -- Agent templates, keyed by template name. Override values files merge
+# per entry; set an entry to `null` to drop it. Fields named identically to
+# `controller.agent.templateDefaults.*` override the chart-wide default for
+# agents created from this template.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 # `category` groups the entry in the creation wizard's Step 1: "harness"
@@ -940,7 +941,7 @@ controller:
 # just pick from the template list, with no manual "Private registry" entry),
 # add an entry with `imagePullSecret`:
 #
-#   - name: bugstone
+#   bugstone:
 #     enabled: true
 #     category: preconfigured
 #     experimental: true
@@ -955,7 +956,7 @@ controller:
 #       password: "<registry-api-key>" # keep out of plaintext values in prod (sealed/SOPS/external secret)
 #
 agentTemplates:
-  - name: claude-code
+  claude-code:
     enabled: true
     description: "Default Claude Code agent"
     telemetry: true
@@ -964,7 +965,7 @@ agentTemplates:
       tag: ""
     storageSize: "5Gi"
 
-  - name: codex
+  codex:
     enabled: true
     description: "OpenAI Codex coding agent"
     image:
@@ -972,7 +973,7 @@ agentTemplates:
       tag: ""
     storageSize: "5Gi"
 
-  - name: pi-agent
+  pi-agent:
     enabled: true
     description: "Pi coding agent with multi-LLM support"
     image:
@@ -980,7 +981,7 @@ agentTemplates:
       tag: ""
     storageSize: "5Gi"
 
-  - name: bob
+  bob:
     enabled: true
     description: "Bob shell agent"
     image:
@@ -998,8 +999,8 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
-  - name: k-search
-    enabled: false
+  k-search:
+    enabled: true
     category: preconfigured
     experimental: true
     description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
@@ -1019,7 +1020,7 @@ agentTemplates:
   # (KSEARCH_EVAL_MODE=local). Disabled by default — stays Pending without a GPU.
   # GPU passthrough under Kata needs a GPU-capable runtime class set per-template
   # below (the chart-wide class can't carry the GPU VM config for every agent).
-  - name: k-search-local
+  k-search-local:
     enabled: false
     category: preconfigured
     experimental: true
@@ -1051,8 +1052,8 @@ agentTemplates:
 
   # Published by CI (build-nous / merge-nous in cd.yml). Experimental: the
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
-  - name: nous
-    enabled: false
+  nous:
+    enabled: true
     category: preconfigured
     experimental: true
     description: "Nous hypothesis-driven experimentation agent"
@@ -1070,8 +1071,8 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
-  - name: openevolve
-    enabled: false
+  openevolve:
+    enabled: true
     category: preconfigured
     experimental: true
     description: "OpenEvolve — evolutionary code-optimization agent"
@@ -1079,17 +1080,6 @@ agentTemplates:
       repository: quay.io/dam-agents/openevolve
       tag: ""
     storageSize: "5Gi"
-
-  # Test-only mock agent. Scripted ACP emitter; receives prompts
-  # into an in-pod buffer and emits a pre-set sequence of session/update
-  # frames in response. Default off — flipped on by the e2e/local install.
-  - name: mock
-    enabled: false
-    description: "Scripted mock agent (E2E test fixture)"
-    image:
-      repository: quay.io/dam-agents/mock
-      tag: ""
-    storageSize: "1Gi"
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

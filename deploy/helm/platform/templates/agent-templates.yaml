@@ -23,10 +23,10 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 data:
-  {{- range $tmpl := .Values.agentTemplates }}
-  {{- if $tmpl.enabled }}
+  {{- range $name, $tmpl := .Values.agentTemplates }}
+  {{- if and $tmpl $tmpl.enabled }}
   {{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
-  {{ $tmpl.name }}.yaml: |
+  {{ $name }}.yaml: |
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
@@ -51,7 +51,7 @@ data:
       {{- toYaml . | nindent 6 }}
     {{- end }}
     {{- if $tmpl.imagePullSecret }}
-    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $tmpl.name | quote }}
+    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
     {{- end }}
     {{- with $tmpl.resources }}
     resources:

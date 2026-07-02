@@ -28,79 +28,47 @@ controller:
 nfsProvisioner:
   enabled: true
 
-# Helm replaces lists wholesale — this `agentTemplates` array fully
-# overrides the one in values.yaml. Every field that the chart sets on
-# bundled templates must be repeated here, plus the locally-built image.
-# All four templates are enabled by default for local dev.
+# Merges over the values.yaml catalog. Every template gets a local image
+# override so enabling one later never pulls from quay.
 agentTemplates:
-  - name: claude-code
-    enabled: true
-    description: "Default Claude Code agent"
-    telemetry: true
+  claude-code:
     image:
       repository: platform-claude-code
       tag: latest
-    storageSize: "5Gi"
 
-  - name: codex
+  codex:
     enabled: false
-    description: "OpenAI Codex coding agent"
     image:
       repository: platform-codex
       tag: latest
-    storageSize: "5Gi"
 
-  - name: pi-agent
-    enabled: true
-    description: "Pi coding agent with multi-LLM support"
+  pi-agent:
+    enabled: false
     image:
       repository: platform-pi-agent
       tag: latest
-    storageSize: "2Gi"
 
-  - name: bob
+  bob:
     enabled: false
-    description: "Bob shell agent"
     image:
       repository: platform-bob
       tag: latest
-    storageSize: "2Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
 
-  - name: nous
+  nous:
     enabled: false
-    category: preconfigured
-    experimental: true
-    description: "Nous hypothesis-driven experimentation agent"
     image:
       repository: platform-nous
       tag: latest
-    storageSize: "10Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
 
-  - name: openevolve
+  openevolve:
     enabled: false
-    category: preconfigured
-    experimental: true
-    description: "OpenEvolve — evolutionary code-optimization agent"
     image:
       repository: platform-openevolve
       tag: latest
-    storageSize: "5Gi"
 
-  - name: mock
+  # Test fixture; not in the values.yaml catalog — the mock image is never
+  # release-tagged (CI pushes per-commit shas for the e2e job only).
+  mock:
     enabled: true
     description: "Scripted mock agent (E2E test fixture)"
     image:
@@ -111,51 +79,16 @@ agentTemplates:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
 
-  - name: k-search
+  k-search:
     enabled: false
-    category: preconfigured
-    experimental: true
-    description: "K-Search — LLM-driven GPU kernel optimization (Modal eval)"
     image:
       repository: platform-k-search
       tag: latest
-    storageSize: "5Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
 
-  # Local-GPU variant. Disabled — the lima dev cluster has no GPU. See
-  # values.yaml for the GPU Kata runtime-class setup.
-  - name: k-search-local
-    enabled: false
-    category: preconfigured
-    experimental: true
-    description: "K-Search — LLM-driven GPU kernel optimization (local GPU eval)"
+  k-search-local:
     image:
       repository: platform-k-search
       tag: latest
-    storageSize: "10Gi"
-    # runtimeClassName: "kata-nvidia-gpu"
-    # nodeSelector:
-    #   nvidia.com/gpu.present: "true"
-    env:
-      - name: KSEARCH_EVAL_MODE
-        value: "local"
-      - name: KSEARCH_TARGET_GPU
-        value: "A100"
-    resources:
-      requests:
-        cpu: "1"
-        memory: "8Gi"
-        nvidia.com/gpu: "1"
-      limits:
-        cpu: "2"
-        memory: "16Gi"
-        nvidia.com/gpu: "1"
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable

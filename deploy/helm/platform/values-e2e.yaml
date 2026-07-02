@@ -14,18 +14,8 @@ keycloak:
     username: dev2
     password: dev2
 
-# Helm replaces lists wholesale — narrow values-local.yaml's agentTemplates
-# down to just `mock`. The e2e task builds only platform-base + mock images,
-# so registering claude-code / codex / pi-agent / bob would
-# leave the chart pointing at images that aren't loaded in the test cluster.
+# Only the mock image is built for the e2e cluster — disable claude-code,
+# the one other template values-local.yaml leaves enabled.
 agentTemplates:
-  - name: mock
-    enabled: true
-    description: "Scripted mock agent (E2E test fixture)"
-    image:
-      repository: platform-mock
-      tag: latest
-    storageSize: "1Gi"
-    env:
-      - name: MOCK_DEFAULT_REPLY
-        value: "Hello from the mock agent."
+  claude-code:
+    enabled: false
