@@ -76,6 +76,10 @@ func main() {
 	}
 	slog.Info("kube client rate limits", "qps", restCfg.QPS, "burst", restCfg.Burst)
 
+	// Client spans for every K8s API call, parented to the reconcile span in
+	// the request context. Identity when telemetry is disabled.
+	restCfg.Wrap(telemetry.WrapTransport)
+
 	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		slog.Error("creating k8s client", "error", err)

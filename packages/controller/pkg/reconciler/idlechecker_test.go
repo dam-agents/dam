@@ -146,7 +146,7 @@ func TestIdleChecker_SkipsBusyAgent(t *testing.T) {
 	agent := idleAgentCR("busy-agent", staleTime, nil)
 	ss := agentStatefulSet("busy-agent", 1)
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-	checker.busyProbe = func(string) bool { return true }
+	checker.busyProbe = func(context.Context, string) bool { return true }
 
 	checker.check(context.Background())
 

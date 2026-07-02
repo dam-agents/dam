@@ -93,6 +93,7 @@ func Setup(ctx context.Context) (shutdown func(context.Context) error, enabled b
 		errLogger.Warn("otel runtime metrics unavailable", "error", err)
 	}
 	workqueue.SetProvider(newWorkqueueMetricsProvider(mp.Meter(ScopeName)))
+	exportEnabled.Store(true)
 
 	return func(ctx context.Context) error {
 		return errors.Join(tp.Shutdown(ctx), mp.Shutdown(ctx), lp.Shutdown(ctx))
