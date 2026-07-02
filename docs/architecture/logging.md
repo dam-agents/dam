@@ -50,7 +50,7 @@ Two disjoint mechanisms feed the one logger:
 
 ## Controller logging
 
-The controller logs through Go's standard-library `log/slog`, configured once at startup ([`packages/controller/main.go`](../../packages/controller/main.go), `setupLogger`). Output is one JSON object per line on **stderr** at the `LOG_LEVEL` level (`debug|info|warn|error`, default `info`); `debug` surfaces per-reconcile phase timing. As with the api-server, the level is the only knob — there is no per-feature toggle. The controller logs to stderr rather than stdout because its lines are pure diagnostics, not program output; Kubernetes merges both streams into the one container log, so a collector sees it either way.
+The controller logs through Go's standard-library `log/slog`, configured once at startup ([`packages/controller/main.go`](../../packages/controller/main.go)). Output is one JSON object per line on **stderr** at the `LOG_LEVEL` level (`debug|info|warn|error`, default `info`); `debug` surfaces per-reconcile phase timing. As with the api-server, the level is the only knob — there is no per-feature toggle. The controller logs to stderr rather than stdout because its lines are pure diagnostics, not program output; Kubernetes merges both streams into the one container log, so a collector sees it either way.
 
 The controller carries **no audit trail**. It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
 
