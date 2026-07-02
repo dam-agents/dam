@@ -74,6 +74,7 @@ import {
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { composeTelemetryReader } from "./modules/telemetry/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
@@ -597,6 +598,7 @@ const { server: apiServer } = startApiServerApp({
       .then((r) => r?.runtimeCapabilities ?? null),
   schedulesBoot,
   mountUsageRoutes: usage.mount,
+  telemetryReader: composeTelemetryReader(config),
   terms: termsService,
   isTermsAccepted,
   e2e: e2eService,

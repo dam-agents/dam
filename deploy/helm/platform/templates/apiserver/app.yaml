@@ -130,6 +130,24 @@ spec:
             - name: DATABASE_CA_CERT_PATH
               value: /etc/platform/pg-ca/ca.crt
             {{- end }}
+            {{- if .Values.clickstack.enabled }}
+            # Agent-telemetry read path: HTTP-query the ClickStack ClickHouse
+            # store using the same credentials the collector writes with
+            # (clickstack-config/secret). Unset when clickstack is disabled, so
+            # the telemetry API fails closed. See docs/architecture/observability.md.
+            - name: CLICKHOUSE_URL
+              value: {{ include "platform.clickstack.clickhouse.httpUrl" . | quote }}
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clickstack-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickstack-secret
+                  key: CLICKHOUSE_PASSWORD
+            {{- end }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
             # api-server parses agent ID out of the per-agent

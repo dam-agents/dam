@@ -11,6 +11,7 @@ import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { ReposService } from "./modules/repos/types.js";
+import type { TelemetryService } from "./modules/telemetry/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 
@@ -42,6 +43,7 @@ export interface ApiContext {
   experiments: ExperimentsService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
+  telemetry: TelemetryService;
   terms: TermsService;
   e2e: E2eService;
   apiKeys: ApiKeysService;

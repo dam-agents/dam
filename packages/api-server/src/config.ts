@@ -51,6 +51,15 @@ const configSchema = z.object({
    *  mounts the CA and sets this; unset means no custom CA. */
   databaseCaCertPath: z.string().optional(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
+  /** ClickHouse HTTP endpoint for the agent-telemetry read path (the
+   *  ClickStack store). Unset means the telemetry backend is disabled — the
+   *  telemetry API then fails closed with PRECONDITION_FAILED. The Helm chart
+   *  sets these only when `clickstack.enabled`, from the same service/secret
+   *  the collector writes through. */
+  clickhouseUrl: z.string().optional(),
+  clickhouseUser: z.string().default("default"),
+  clickhousePassword: z.string().default(""),
+  clickhouseDatabase: z.string().default("default"),
   slackBotToken: z.string().nullable().default(null),
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
@@ -217,6 +226,10 @@ export function loadConfig(): Config {
     databaseUrl: process.env.DATABASE_URL,
     databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,
     migrationsPath: process.env.MIGRATIONS_PATH,
+    clickhouseUrl: process.env.CLICKHOUSE_URL,
+    clickhouseUser: process.env.CLICKHOUSE_USER,
+    clickhousePassword: process.env.CLICKHOUSE_PASSWORD,
+    clickhouseDatabase: process.env.CLICKHOUSE_DATABASE,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,

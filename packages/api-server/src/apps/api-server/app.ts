@@ -28,6 +28,11 @@ import {
 } from "../../modules/agents/index.js";
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
+import {
+  createDisabledTelemetryService,
+  createTelemetryService,
+  type TelemetryReader,
+} from "../../modules/telemetry/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
 import {
@@ -118,6 +123,9 @@ export interface ApiServerAppDeps {
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
+  /** ClickHouse-backed agent-telemetry reader; `null` when the telemetry
+   *  backend is disabled (the telemetry API then fails closed). */
+  telemetryReader: TelemetryReader | null;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
@@ -145,6 +153,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     contributionsSettled,
     getAgentCapabilities,
     schedulesBoot,
+    telemetryReader,
     terms,
     isTermsAccepted,
     e2e,
@@ -792,6 +801,19 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       isSettled: (agentId) =>
         contributionsSettled.status(agentId).then((s) => s.settled),
     });
+    // Owner-scoped telemetry: resolve this user's agent IDs (narrowed to the
+    // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
+    const telemetry = telemetryReader
+      ? createTelemetryService({
+          reader: telemetryReader,
+          listOwnedAgentIds: async () => {
+            const ids = (await agents.list()).map((a) => a.id);
+            return user.agentIds === "*"
+              ? ids
+              : ids.filter((id) => user.agentIds.includes(id));
+          },
+        })
+      : createDisabledTelemetryService();
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -810,6 +832,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         experiments,
         files,
         harnessConfig,
+        telemetry,
         terms,
         e2e,
         apiKeys,
