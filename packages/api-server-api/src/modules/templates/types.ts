@@ -52,6 +52,12 @@ export interface TemplateSpec {
    *  Carried onto the agent spec so the pod pulls without the user supplying
    *  registry credentials. Empty = none. */
   imagePullSecretRef?: string;
+  /** Seeds the created agent's per-agent hibernation override (Go duration on
+   *  the Agent spec): "0s" never hibernates, omitted inherits the chart-wide
+   *  default. A user's explicit choice at create time still wins over this.
+   *  Suits workload images that run background work off the session (e.g. Nous
+   *  campaigns), which the idle checker would otherwise hibernate mid-job. */
+  hibernationTimeout?: string;
   /** Overrides `controller.agent.templateDefaults.storageSize` for the
    *  persistent home mount. Per-mount `size` (if set) wins over this. */
   storageSize?: string;

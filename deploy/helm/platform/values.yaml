@@ -1078,6 +1078,13 @@ agentTemplates:
     image:
       repository: quay.io/dam-agents/nous
       tag: ""
+    # Never auto-hibernate ("0s"). A Nous campaign runs as a background process
+    # detached from any session, which the idle checker can't see (see the
+    # "background work" blind spot in docs/architecture/agent-lifecycle.md), so
+    # it would otherwise hibernate the pod mid-campaign and kill the run. The
+    # cost is no scale-to-zero: a nous agent holds CPU/memory until deleted or
+    # its timeout is raised by hand. Users can still override this per agent.
+    hibernationTimeout: "0s"
     # Campaigns clone, build, and run target systems (plus per-arm git
     # worktrees and a Python venv), so give it more disk than a chat agent.
     storageSize: "10Gi"

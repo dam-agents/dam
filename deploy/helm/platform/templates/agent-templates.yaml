@@ -58,6 +58,9 @@ data:
     {{- with $tmpl.storageSize }}
     storageSize: {{ . | quote }}
     {{- end }}
+    {{- with $tmpl.hibernationTimeout }}
+    hibernationTimeout: {{ . | quote }}
+    {{- end }}
     {{- with $tmpl.runtimeClassName }}
     runtimeClassName: {{ . | quote }}
     {{- end }}

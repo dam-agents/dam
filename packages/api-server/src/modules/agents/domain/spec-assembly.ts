@@ -26,6 +26,10 @@ export function assembleSpecFromTemplate(
     resources: tmplSpec.resources,
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
+    // Template-seeded hibernation default ("0s" = never). The create flow
+    // overwrites this when the user passes an explicit hibernationTimeoutMin,
+    // so the template only supplies the default when the user doesn't choose.
+    hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
     runtimeClassName: tmplSpec.runtimeClassName,
     nodeSelector: tmplSpec.nodeSelector,

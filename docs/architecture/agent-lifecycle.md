@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-07-01
+Last verified: 2026-07-02
 
 ## Overview
 
@@ -164,7 +164,7 @@ None of this depends on *who* opened the session: the UI, a connected channel, a
 
 This is deliberate, not a gap to close. The platform *can* see that processes are running in the pod — what it can't do is tell *what* they are: a working batch job looks no different from an always-on model gateway, a language server, or an orphan a dead session left behind. A process-based keep-awake signal inherits that ambiguity — it would pin the pod open forever on idle infrastructure, or let one leaked process defeat hibernation outright. So the platform keys only on sessions and connections, which it *can* attribute, and accepts the blind spot as the cost.
 
-**The per-agent hibernation timeout.** Since the platform can't *detect* this work, it lets an operator *budget* for it. Each Agent carries an optional timeout override: unset inherits the cluster-wide default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never scales down. The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down. The sandbox settings expose it as a minutes field showing that *effective* value, so an Agent with no override displays the inherited default, not a blank.
+**The per-agent hibernation timeout.** Since the platform can't *detect* this work, it lets an operator *budget* for it. Each Agent carries an optional timeout override: unset inherits the cluster-wide default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never scales down. A Template can seed this override, so every Agent created from it starts with a chosen default rather than the cluster-wide one — a workload image whose real work runs off-session (e.g. a Nous experimentation campaign) ships a *never-hibernate* default so the idle checker can't reclaim its pod mid-run; a user's explicit choice at create time still wins. The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down. The sandbox settings expose it as a minutes field showing that *effective* value, so an Agent with no override displays the inherited default, not a blank.
 
 It's a blunt instrument, not a fix for the blind spot: a longer window (or `0`) on an Agent with known no-session work keeps it alive to finish, but doesn't make that work visible. The cost is real — there's no auto-reclaim, so a long or disabled timeout holds CPU, memory, and the harness open until lowered by hand; on an interactive Agent it just forfeits scale-to-zero for nothing.
 

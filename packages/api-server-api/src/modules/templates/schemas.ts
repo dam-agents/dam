@@ -56,6 +56,10 @@ export const templateSpecSchema = z
     // (e.g. experimental external agents). Carried onto the agent spec so the
     // pod can pull the image without the user entering registry credentials.
     imagePullSecretRef: z.string().optional(),
+    // Seeds the created agent's per-agent hibernation override (Go duration):
+    // "0s" never hibernates, omitted inherits the chart-wide default. A user's
+    // explicit choice at create time still wins over this.
+    hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
     runtimeClassName: z.string().optional(),
     nodeSelector: z.record(z.string(), z.string()).optional(),
