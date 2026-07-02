@@ -31,7 +31,7 @@ SDK calls work **with no API key in this pod**. Never ask the user for a
 credential, never write one to disk, and never `pip install` Nous yourself.
 
 The pod-level workflow (per-campaign directories, unique run ids, always
-`--auto-approve`, running campaigns in the background, resume-on-wake) is
+`--auto-approve`, running campaigns in the background, resume-on-restart) is
 defined in this pod's system context (`AGENTS.md`). **This skill is the CLI and
 campaign-authoring reference**; follow `AGENTS.md` for *how* to drive a campaign
 in this environment.
@@ -292,7 +292,7 @@ NOUS_ALLOW_AUTO_APPROVE=0 nous run campaign.yaml --max-iterations 10 --timeout 1
 # Skip DESIGN with a pre-authored hypothesis bundle.
 nous run campaign.yaml --bundle ./bundle.yaml --auto-approve
 
-# Resume an interrupted campaign (timeout/crash/hibernation) at the last checkpoint.
+# Resume an interrupted campaign (timeout/crash/pod restart) at the last checkpoint.
 nous resume campaign.yaml --auto-approve
 
 # Live status (STUCK marker after ~5 min silence); single-line for prompts.
@@ -348,7 +348,7 @@ on-demand approval, not just for progress reporting.
 
 The agent wires this in **automatically when a channel is bound** to the agent
 (it checks `describe_channel` before each run); you don't have to ask. See
-`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-wake).
+`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-restart).
 
 One bridge serves the whole pod — it's stateless per request (each POST carries
 its own `channel` + text and does a fresh MCP call), so every campaign and
@@ -373,7 +373,7 @@ How it holds together: `NO_PROXY=127.0.0.1` (set in the image) keeps Nous's POST
 local; the bridge's own call to the MCP endpoint routes back out through the
 egress gateway and is authorized by the pod's mesh identity (no token). Delivery
 is best-effort — a hiccup logs a warning and never blocks the campaign. See
-`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-wake).
+`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-restart).
 
 ## Output artifacts
 

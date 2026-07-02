@@ -52,8 +52,9 @@ existing campaigns and offer to act on them. Scan `$NOUS_CAMPAIGN_PARENT`
 classify each as:
 
 - **running** — its `run.pid` names a live process (`kill -0 "$(cat run.pid)"`).
-- **not running** — no live process (finished, stopped, or paused by a pod
-  hibernation — see below).
+- **not running** — no live process (finished, stopped, or interrupted by a pod
+  restart — see below; this pod does not idle-hibernate, so this is rarer than it
+  used to be).
 
 Present the grouped list, then ask whether they want a status pull on one or to
 resume one. When you pull detail, run `nous status <run_id> --line` and say
@@ -84,11 +85,10 @@ campaign in one line.
    Never run a campaign the user hasn't seen and confirmed.
 5. **Make it lean and fast** — declare `observable_metrics` and schedule a
    rehearsal iteration (below); both cut DESIGN time and cost.
-6. **State the keep-awake tradeoff up front** (see "Surviving hibernation").
-   Before launching, tell the user the rough wall-clock and that an idle session
-   hibernates the pod — so either they keep a terminal/SSH session open for an
-   uninterrupted run, or you'll resume after each idle gap and it stretches out.
-   Say this *first*, not after the first death.
+6. **State the rough wall-clock up front.** Tell the user roughly how long the
+   campaign will take before you launch. This pod is configured **not to
+   hibernate** (see "Long runs & recovery"), so a backgrounded run progresses to
+   completion on its own — the user does *not* need to keep a session open.
 
 Give **every campaign its own directory** under `$NOUS_CAMPAIGN_PARENT`, and
 clone the target repo **inside** it. Never create campaign files or clone repos
@@ -192,8 +192,8 @@ hard validation failure. That inventory is what keeps a run defensible.
 
 **Always launch the campaign as a background process** so you stay responsive and
 can query state with `nous` while it runs. Keep the PID, the log, and the chosen
-mode in the campaign directory (`run.mode` lets resume-on-wake pick the right
-flags after a hibernation — see below):
+mode in the campaign directory (`run.mode` lets the recovery path pick the right
+flags after a pod restart — see below):
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
@@ -213,18 +213,22 @@ Then report status without blocking: `nous status <run_id> --line` (see
 "Monitoring" for the right liveness signals). Use `nous stop <run_id>` to halt
 cleanly.
 
-## Surviving hibernation (resume-on-wake)
+## Long runs & recovery
 
-The pod **scales to zero when the session goes idle** — no active turn, no
-queued prompt, no open terminal/SSH session. That kills any background
-`nous run`. Campaign artifacts live on the persistent `$HOME`, so the run is
-recoverable but **does not progress while you're not engaged**.
+This agent is configured to **never hibernate** (the nous template sets its idle
+timeout to `0`), so an idle session no longer scales the pod to zero. A
+backgrounded `nous run` therefore **progresses to completion on its own** — the
+user does not need to keep a terminal or SSH session open, and there are no idle
+"gaps" to resume across. Long overnight campaigns just run.
 
-Therefore, **at the start of every turn**, for each campaign the user cares
-about (or any you launched this session): if `run.pid` is dead but
-`nous status` shows the campaign is not `DONE`, resume it in the background —
-**with the same approval mode it launched with** (read `run.mode`; on-demand also
-needs the channel bridge back up, so re-run the bridge check first):
+The pod can still go away for reasons *other* than idle hibernation — an image
+upgrade, a node drain/eviction, an OOM, or a plain crash. Campaign artifacts live
+on the persistent `$HOME`, so the run survives and is resumable. Therefore **at
+the start of every turn**, for each campaign the user cares about (or any you
+launched this session): if `run.pid` is dead but `nous status` shows the campaign
+is not `DONE`, resume it in the background — **with the same approval mode it
+launched with** (read `run.mode`; on-demand also needs the channel bridge back
+up, so re-run the bridge check first):
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
@@ -236,10 +240,9 @@ fi
 echo $! > run.pid
 ```
 
-**Keep-awake escape hatch:** for a long campaign that must progress
-continuously (e.g. overnight), tell the user to keep a **terminal or SSH session
-open** to this agent — an open session pins the pod awake, so a backgrounded
-`nous run` runs to completion without hibernation interruptions.
+There is no keep-awake step any more: because the pod doesn't idle-hibernate,
+you never need a terminal or SSH session held open to finish a run. Resume is
+only for the rarer non-idle restart above.
 
 ## Monitoring a running campaign
 
@@ -307,8 +310,9 @@ mode") the same relay carries the gate's **approval request**, and the gate then
 on-demand needs a bound channel: it's the only place the request can surface and
 be answered. Watch the thread for the user's approval and keep the run moving.
 
-**Resume-on-wake:** the bridge dies with the pod on hibernation, like the
-campaign. When you resume a campaign that uses channels, re-run the bridge check.
+**After a pod restart:** the bridge dies with the pod, like the campaign — not on
+idle (this pod doesn't hibernate), but on an upgrade, eviction, or crash. When
+you resume a campaign that uses channels, re-run the bridge check.
 
 ## After a campaign: harvest knowledge into the wiki
 
@@ -337,5 +341,6 @@ first. These slash commands ship with the agent (`~/.claude/commands/`); the
   rather than a repo, set `target_system.live_target: true` so arms are probes
   and no worktree is created. The target must be reachable from this pod's
   egress rules.
-- Long campaigns can run for hours; rely on resume-on-wake (above) when the user
-  is intermittently engaged, or the keep-awake escape hatch for uninterrupted runs.
+- Long campaigns can run for hours. Because this pod doesn't hibernate, a
+  backgrounded run finishes on its own — you only resume (above) if the pod
+  restarted for some other reason (upgrade, eviction, crash).

@@ -14,7 +14,7 @@ container: the agent pod holds **no** credentials, and Nous's Claude Agent SDK
 calls authenticate through the Envoy credential gateway — the same keyless path
 the `claude-code` harness uses. `git`/`gh` for cloning and publishing target
 repos go through the same gateway. The per-agent PVC persists campaign state
-across hibernation, so `nous resume` recovers a long run.
+across pod restarts, so `nous resume` recovers a long run.
 
 ## Image
 
@@ -36,7 +36,7 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
   agent overrides it to `0` per-run for **on-demand approval**, where each gate
   is instead relayed to a bound Slack/Telegram channel (see `AGENTS.md`).
 - `NOUS_CAMPAIGN_PARENT=/home/agent/nous-campaigns` (on the persist:true `$HOME`
-  mount) so campaign artifacts survive hibernation and stay out of target repos
+  mount) so campaign artifacts survive pod restarts and stay out of target repos
   (Nous issue #239).
 - A Nous-oriented [`AGENTS.md`](./AGENTS.md) as the chat-mode system context,
   plus the [`nous` skill](./workspace/.agents/skills/nous/SKILL.md) (CLI +
@@ -67,16 +67,16 @@ harness scripts. The chat harness drives `nous` per `AGENTS.md`:
   **on-demand approval** (`NOUS_ALLOW_AUTO_APPROVE=0`), where each gate pauses and
   is relayed to the channel for the user to approve.
 
-### Hibernation & resume
+### Never hibernates; resume-on-restart
 
-The pod scales to zero when the session goes idle (no active turn, queued
-prompt, or open terminal/SSH session — see
-[agent-lifecycle](../../../docs/architecture/agent-lifecycle.md)), which kills a
-background `nous run`. Artifacts persist on `$HOME`, so the agent **resumes on
-the next turn** (`nous resume --auto-approve`) when it finds a dead `run.pid`
-whose campaign isn't `DONE`. For uninterrupted long runs, keep a **terminal or
-SSH session open** — that pins the pod awake so the background run completes
-without hibernation gaps.
+The nous template ships this agent with hibernation **disabled** (idle timeout
+`0` — see [agent-lifecycle](../../../docs/architecture/agent-lifecycle.md)), so an
+idle session does **not** scale the pod to zero. A background `nous run` runs to
+completion on its own; no one needs to keep a terminal or SSH session open. Should
+the pod restart for another reason (image upgrade, node eviction, OOM, crash),
+artifacts persist on `$HOME`, so the agent **resumes on the next turn**
+(`nous resume --auto-approve`) when it finds a dead `run.pid` whose campaign isn't
+`DONE`.
 
 ### Progress to Slack/Telegram — the channel bridge
 
@@ -111,8 +111,8 @@ OpenAI endpoint is left alone).
 
 | Mode | Entrypoint | Behavior |
 |---|---|---|
-| **chat** | inherited claude-code (`claude-agent-acp`) | Claude Code with `nous` installed, the `nous` skill, and the Nous-oriented `AGENTS.md` — chat "run a campaign on …" and Claude drives the `nous` CLI (auto-approve, background, resume-on-wake). The primary path. |
-| **terminal** | inherited claude-code | The Claude Code TUI in a terminal (same harness as the base image). For a hands-on shell, use **SSH** — it drops into a plain login shell with `nous` on `PATH`. An open terminal or SSH session also pins the pod awake, useful for uninterrupted long runs. |
+| **chat** | inherited claude-code (`claude-agent-acp`) | Claude Code with `nous` installed, the `nous` skill, and the Nous-oriented `AGENTS.md` — chat "run a campaign on …" and Claude drives the `nous` CLI (auto-approve, background, resume-on-restart). The primary path. |
+| **terminal** | inherited claude-code | The Claude Code TUI in a terminal (same harness as the base image). For a hands-on shell, use **SSH** — it drops into a plain login shell with `nous` on `PATH`. |
 
 ## Build
 
@@ -143,11 +143,11 @@ on `merge-nous`. The template is enabled by default in `values.yaml` under
 
 ## Known follow-ups (not yet wired)
 
-- **Schedule-driven unattended resume**: today a long campaign progresses while
-  the session is engaged (resume-on-wake) or while a terminal/SSH session pins
-  the pod awake. Mapping a platform *schedule trigger* → a "resume any running
-  campaigns" turn would give true overnight progress across hibernations; Nous
-  also ships a stubbed "Routines" payload builder for this.
+- **Schedule-driven unattended resume**: now that this pod doesn't hibernate, a
+  backgrounded campaign already runs to completion unattended. A platform
+  *schedule trigger* → a "resume any running campaigns" turn would still add
+  belt-and-suspenders recovery after a non-idle pod restart (upgrade, eviction,
+  crash); Nous also ships a stubbed "Routines" payload builder for this.
 - **MCP**: Nous ships a read-only MCP server (`bin/nous-mcp`). Registering it in
   the chat harness would make campaign data `@`-referenceable; left out of this
   cut to avoid perturbing Claude Code startup. (The campaign-authoring/CLI
