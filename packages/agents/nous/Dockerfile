@@ -50,10 +50,12 @@ ENV PATH="/opt/nous-venv/bin:${PATH}"
 RUN mv /usr/local/lib/model-gateway.sh /usr/local/lib/model-gateway-base.sh
 COPY nous-model-gateway.sh /usr/local/lib/model-gateway.sh
 
-# Every campaign in this pod runs `--auto-approve`; some Nous versions gate that
-# behind this env. Setting it here makes unattended/background runs unconditional
-# (the design/findings human gates auto-pass). `locked_parameters` is still
-# required per campaign — see AGENTS.md / the nous skill.
+# Auto-approve is the default in this pod; some Nous versions gate that behind
+# this env, so set it to 1 here (design/findings human gates auto-pass, and
+# unattended/background runs are unconditional). The agent overrides it to 0
+# per-run for on-demand approval, where each gate is instead relayed to a bound
+# Slack/Telegram channel for the user to approve — see AGENTS.md / the nous skill.
+# `locked_parameters` is still required per campaign.
 ENV NOUS_ALLOW_AUTO_APPROVE=1
 
 # Never proxy localhost. The pod's HTTP(S)_PROXY points at the egress gateway;

@@ -52,8 +52,12 @@ INIT → DESIGN → HUMAN_DESIGN_GATE → EXECUTE_ANALYZE → HUMAN_FINDINGS_GAT
   isolated git worktree, collects metrics, classifies prediction errors.
 - **HUMAN_FINDINGS_GATE** — approve findings before they enter the knowledge base.
 
-In this pod we always run with `--auto-approve` (both gates auto-pass), so
-front-loading `locked_parameters` is what keeps a run defensible — see below.
+By default this pod runs `--auto-approve` (both gates auto-pass). When a
+Slack/Telegram channel is bound, the user can instead choose **on-demand
+approval** (`NOUS_ALLOW_AUTO_APPROVE=0`): each gate pauses and is relayed to the
+channel for the user to approve before the run proceeds (`AGENTS.md` → "Approval
+mode"). Either way, front-loading `locked_parameters` is what keeps a run
+defensible — see below.
 
 ## Quick start (full workflow)
 
@@ -233,9 +237,30 @@ Use the IDs **verbatim** (they may be namespaced, e.g.
 `report` → newest **sonnet**. If a tier is absent, fall back to the most capable
 model the catalog does list (opus → sonnet → anything).
 
-When the user asks to author a campaign, **read [`reference/campaign-schema.md`](reference/campaign-schema.md)**
-for the complete field set, then walk them through research question →
-target_system.description → what to lock.
+### Author *with* the user (assume they're a Nous beginner)
+
+Assume the user has never run a Nous campaign and doesn't know its knobs. **Don't
+silently pick everything and launch** — propose, explain briefly, confirm, then
+run. A good flow:
+
+1. **Gather what you can decide yourself.** Read
+   [`reference/campaign-schema.md`](reference/campaign-schema.md) for the full
+   field set, and discover the gateway model catalog (above, "Selecting models")
+   so you already know which model IDs are usable — never make the user supply a
+   model. Skim the target repo for likely `observable_metrics` /
+   `controllable_knobs`.
+2. **Draft a full `campaign.yaml` from what you inferred** — research question,
+   `target_system.description`, gateway-served `models`, a rehearsal+real
+   `iterations` schedule, and a first pass at `locked_parameters`.
+3. **Ask the user to make the vague parts concrete**, in plain language and one
+   short round — e.g. *how many real iterations* (more = more confidence, more
+   cost/time), *how long each run / how many seeds*, *which knob they actually
+   care about*, *which parameters must stay fixed*. Explain the tradeoff behind
+   each question rather than dumping schema jargon on them.
+4. **Show the final `campaign.yaml` and get an explicit go-ahead before
+   `nous run`.** Call out the approval mode (`AGENTS.md` → "Approval mode"), the
+   rough cost/time, and the model IDs you pinned. Never launch a campaign the
+   user hasn't seen and confirmed.
 
 ## The five hypothesis arms
 
@@ -255,8 +280,14 @@ Fast-fail rules skip wasted compute on ablations/robustness when `H-main` is ref
 
 ```bash
 # Unattended run — REQUIRES locked_parameters declared (safety precondition).
-# This is the default in this pod; NOUS_ALLOW_AUTO_APPROVE=1 is set in the image.
+# The default in this pod; NOUS_ALLOW_AUTO_APPROVE=1 is set in the image.
 nous run campaign.yaml --auto-approve --max-iterations 10 --timeout 1800 --max-cli-retries 50
+
+# On-demand approval — pauses at each gate and relays it to a bound channel for
+# the user to approve (AGENTS.md → "Approval mode"). No --auto-approve, and
+# NOUS_ALLOW_AUTO_APPROVE=0 overrides the image default. Needs a bound channel:
+# with none, a backgrounded run just halts at the first gate.
+NOUS_ALLOW_AUTO_APPROVE=0 nous run campaign.yaml --max-iterations 10 --timeout 1800
 
 # Skip DESIGN with a pre-authored hypothesis bundle.
 nous run campaign.yaml --bundle ./bundle.yaml --auto-approve
@@ -285,6 +316,9 @@ Notes:
 - If `--auto-approve` refuses to proceed, the run is missing required
   `locked_parameters` — declare the locks first. (`NOUS_ALLOW_AUTO_APPROVE=1` is
   already set in this image, so that gate is not the cause here.)
+- On-demand approval (`NOUS_ALLOW_AUTO_APPROVE=0`) only works with a bound
+  Slack/Telegram channel to relay and answer the gate. Without one, a
+  backgrounded run halts at the first gate — use `--auto-approve` instead.
 
 **Reading liveness (don't be fooled):** `nous status --line` gives phase/iteration;
 for fine-grained progress watch the executor log mtime under `runs/iter-N/` (e.g.
@@ -305,6 +339,12 @@ don't point it at an external webhook (that needs egress allowlisting + a secret
 on disk); point it at the in-pod **channel bridge**, which relays each summary to
 the agent's bound Slack/Telegram thread via the platform's `send_channel_message`
 — no external egress, no secret.
+
+The same bridge is what makes **on-demand approval** possible: with
+`NOUS_ALLOW_AUTO_APPROVE=0` the gate doesn't auto-pass — the relayed card is an
+approval request the user answers from the thread, and the campaign waits
+(`AGENTS.md` → "Approval mode"). A channel is therefore a prerequisite for
+on-demand approval, not just for progress reporting.
 
 The agent wires this in **automatically when a channel is bound** to the agent
 (it checks `describe_channel` before each run); you don't have to ask. See
