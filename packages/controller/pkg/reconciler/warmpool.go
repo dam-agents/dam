@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
 )
 
 // defaultReplenishInterval is used when controller.warmPool.replenishInterval
@@ -88,6 +89,8 @@ func (m *WarmPoolManager) maxPendingAge() time.Duration {
 // size is no longer configured. Each step logs and continues on error; the next
 // tick retries.
 func (m *WarmPoolManager) reconcile(ctx context.Context) {
+	ctx, finish := telemetry.StartPass(ctx, "warm pool sweep")
+	defer finish(nil)
 	start := time.Now()
 	configured := make(map[string]bool, len(m.config.WarmPool.Sizes))
 	for _, s := range m.config.WarmPool.Sizes {

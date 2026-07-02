@@ -52,7 +52,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return nil
 	}
 
-	timer := newReconcileTimer("fork", forkName)
+	timer := newReconcileTimer(ctx, "fork", forkName)
 	defer timer.done()
 
 	// K8s validated the spec at admission, so the controller trusts

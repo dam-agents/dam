@@ -17,6 +17,7 @@ import (
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
 )
 
 type IdleChecker struct {
@@ -72,10 +73,14 @@ func (c *IdleChecker) checkInterval() time.Duration {
 }
 
 func (c *IdleChecker) check(ctx context.Context) {
+	ctx, finish := telemetry.StartPass(ctx, "idle check")
+	var passErr error
+	defer func() { finish(passErr) }()
 	start := time.Now()
 	agents, err := c.dynamic.Resource(AgentsGVR).Namespace(c.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Error("idle checker: listing agents", "error", err)
+		slog.ErrorContext(ctx, "idle checker: listing agents", "error", err)
+		passErr = err
 		return
 	}
 

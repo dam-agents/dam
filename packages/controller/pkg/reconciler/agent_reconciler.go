@@ -67,7 +67,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	ownerRef := agentOwnerRef(agent)
 	agentSpec := &agent.Spec
 
-	timer := newReconcileTimer("agent", name)
+	timer := newReconcileTimer(ctx, "agent", name)
 	defer timer.done()
 
 	// K8s validated the spec at admission, so the controller trusts

@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-06-30
+Last verified: 2026-07-02
 
 ## Overview
 
@@ -48,6 +48,10 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 - **Rides the agent's ordinary egress.** The exporter honours the agent's `HTTPS_PROXY`, so telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below. No new network path, and no credential is injected into the export.
 - **Config travels the harness env rail.** The OTLP environment (enable flag, per-signal exporters, endpoint, protocol, flush intervals) reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
 - **Signals.** Metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP. **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
+
+## Platform-service export
+
+The **controller** emits its own operational telemetry — one trace per reconcile pass and background sweep, reconcile and workqueue metrics, and its structured logs with trace correlation — through an in-process OpenTelemetry SDK. Enabling the backend sets the standard OTLP endpoint environment on the controller deployment, pointing straight at the bundled collector over plain HTTP inside the mesh (ztunnel supplies mTLS, and the collector's authorization policy already admits the release namespace); without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 ## Trusted attribution
 

@@ -88,6 +88,17 @@ spec:
               value: "{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local"
             - name: PLATFORM_TELEMETRY_COLLECTOR_PORT
               value: "4318"
+            # The controller's own operational telemetry (reconcile traces,
+            # queue metrics, logs) exports OTLP straight to the same collector.
+            # In-mesh and plain http — ztunnel supplies mTLS; the collector's
+            # AuthorizationPolicy already admits this namespace. The SDK only
+            # activates when this endpoint env is present.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "platform-controller"
             {{- end }}
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"

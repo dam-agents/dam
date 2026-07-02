@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-06-19
+Last verified: 2026-07-02
 
 ## Overview
 
@@ -54,4 +54,4 @@ The controller logs through Go's standard-library `log/slog`, configured once at
 
 The controller carries **no audit trail**. It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
 
-The controller wires up no in-process OpenTelemetry SDK and registers no global `TracerProvider`, which keeps it ready for **zero-code instrumentation**: the OpenTelemetry Operator injects an eBPF auto-instrumentation sidecar whose `log/slog` probe captures these JSON records and exports them with trace correlation (the Go counterpart of Pino log auto-instrumentation). Registering a `TracerProvider` in-process would conflict with the injected auto-SDK and break that correlation, so the binary deliberately stays free of OTel setup.
+When operational telemetry is enabled (see [observability](observability.md)), the controller runs an **in-process OpenTelemetry SDK** and its `slog` records fan out to two destinations at the same level: the stderr JSON stream stays byte-identical (gaining `trace_id`/`span_id` fields on lines logged inside a reconcile span), and each record is additionally exported over OTLP with trace correlation. The SDK activates only when the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment is present — without it the logger is exactly the plain stderr handler and no OTel component exists in the process. (An earlier design kept the binary free of any in-process SDK in anticipation of operator-injected zero-code instrumentation; that was revised because zero-code hooks only known libraries and cannot produce the controller's reconcile-pass spans or queue metrics.)

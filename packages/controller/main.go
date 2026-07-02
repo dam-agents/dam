@@ -25,10 +25,35 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
+	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
 )
 
 func main() {
-	setupLogger()
+	level := logLevel()
+
+	// Telemetry before the logger: the slog handler fans out to the OTel log
+	// bridge, so the SDK must exist when the handler is built. Runs on every
+	// replica, before leader election — standbys export runtime metrics and
+	// logs too (spans only happen on the leader, inside run()). A no-op
+	// unless an OTLP endpoint is configured via the standard OTEL_* env.
+	telemetryShutdown, telemetryEnabled, telemetryErr := telemetry.Setup(context.Background())
+	slog.SetDefault(slog.New(telemetry.NewHandler(level, telemetryEnabled)))
+	if telemetryErr != nil {
+		slog.Warn("telemetry setup failed; continuing without export", "error", telemetryErr)
+	}
+	if telemetryEnabled {
+		slog.Info("telemetry export enabled")
+		// Flush buffered spans/metrics/logs on the way out (after
+		// leader-election returns on SIGTERM). os.Exit paths skip this —
+		// nothing worth flushing has happened by then.
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := telemetryShutdown(shutdownCtx); err != nil {
+				slog.Warn("telemetry shutdown", "error", err)
+			}
+		}()
+	}
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -97,12 +122,11 @@ func main() {
 	})
 }
 
-// setupLogger installs the JSON slog handler at the LOG_LEVEL level (debug|info|
-// warn|error, default info) — debug surfaces the per-reconcile phase timing.
-// JSON on stderr keeps the controller ready for OTel zero-code instrumentation;
-// keep it free of an in-process OTel TracerProvider, which would conflict with
-// the Operator-injected eBPF auto-SDK.
-func setupLogger() {
+// logLevel parses LOG_LEVEL (debug|info|warn|error, default info) — debug
+// surfaces the per-reconcile phase timing. The level governs both log streams:
+// the JSON handler on stderr and, when telemetry is enabled, the OTLP export
+// (see pkg/telemetry).
+func logLevel() slog.Level {
 	level := slog.LevelInfo
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		if err := level.UnmarshalText([]byte(v)); err != nil {
@@ -110,7 +134,7 @@ func setupLogger() {
 			level = slog.LevelInfo
 		}
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	return level
 }
 
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
@@ -156,11 +180,16 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	// owner-references were added) are eventually cleaned up.
 	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
 
-	agentQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	// Named queues: client-go only records workqueue metrics (depth, latency,
+	// retries — see pkg/telemetry) for queues that carry a name.
+	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
+		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
-	forkQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	forkQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
+		workqueue.TypedRateLimitingQueueConfig[string]{Name: "fork"})
 	defer forkQueue.ShutDown()
-	runQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	runQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
+		workqueue.TypedRateLimitingQueueConfig[string]{Name: "run"})
 	defer runQueue.ShutDown()
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -239,35 +268,41 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 			return
 		}
 		// queueDepth separates a slow reconcile from a backed-up queue.
-		slog.Debug("agent reconcile dequeued", "name", name, "queueDepth", queue.Len())
+		slog.DebugContext(ctx, "agent reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
+			rctx, finish := telemetry.StartReconcile(ctx, "agent", name)
 			agent, err := getter.Get(name)
 			if err != nil {
 				// Gone from cache (deleted) — Delete handler owns teardown.
 				queue.Forget(name)
+				finish(telemetry.OutcomeNotFound, nil)
 				return
 			}
-			if err := r.Reconcile(ctx, agent); err != nil {
+			if err := r.Reconcile(rctx, agent); err != nil {
 				// Keep requeuing — the rate limiter caps the delay (~1000s) and
 				// the resync still retries, so a transient cause recovers. Don't
 				// Forget here: that resets the limiter to fast retries.
 				queue.AddRateLimited(name)
 				requeues := queue.NumRequeues(name)
+				telemetry.SetRequeues(rctx, requeues)
 				if requeues >= maxReconcileRetries {
 					// Surface the persistent failure on the condition; retries
 					// continue at the capped cadence. setError won't downgrade
 					// this back, so the agent settles instead of flip-flopping.
-					r.SetBackoffExceeded(ctx, name, requeues, err)
-					slog.Error("reconcile agent: backoff limit exceeded",
+					r.SetBackoffExceeded(rctx, name, requeues, err)
+					slog.ErrorContext(rctx, "reconcile agent: backoff limit exceeded",
 						"name", name, "requeues", requeues, "error", err)
+					finish(telemetry.OutcomeBackoffExceeded, err)
 					return
 				}
-				slog.Error("reconcile agent; requeued",
+				slog.ErrorContext(rctx, "reconcile agent; requeued",
 					"name", name, "requeues", requeues, "error", err)
+				finish(telemetry.OutcomeError, err)
 				return
 			}
 			queue.Forget(name)
+			finish(telemetry.OutcomeSuccess, nil)
 		}()
 	}
 }
@@ -283,26 +318,32 @@ func runCachedWorker[T any](ctx context.Context, kind string, lister cache.Gener
 		if shutdown {
 			return
 		}
-		slog.Debug(kind+" reconcile dequeued", "name", name, "queueDepth", queue.Len())
+		slog.DebugContext(ctx, kind+" reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
+			rctx, finish := telemetry.StartReconcile(ctx, kind, name)
 			obj, err := lister.ByNamespace(namespace).Get(name)
 			if err != nil {
 				queue.Forget(name)
+				finish(telemetry.OutcomeNotFound, nil)
 				return
 			}
 			typed, err := decode(obj)
 			if err != nil {
-				slog.Error("decode "+kind, "name", name, "error", err)
+				slog.ErrorContext(rctx, "decode "+kind, "name", name, "error", err)
 				queue.Forget(name)
+				finish(telemetry.OutcomeDecodeError, err)
 				return
 			}
-			if err := reconcile(ctx, typed); err != nil {
-				slog.Error("reconcile "+kind, "name", name, "error", err)
+			if err := reconcile(rctx, typed); err != nil {
 				queue.AddRateLimited(name)
+				telemetry.SetRequeues(rctx, queue.NumRequeues(name))
+				slog.ErrorContext(rctx, "reconcile "+kind, "name", name, "error", err)
+				finish(telemetry.OutcomeError, err)
 				return
 			}
 			queue.Forget(name)
+			finish(telemetry.OutcomeSuccess, nil)
 		}()
 	}
 }
@@ -366,10 +407,12 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 	sweep := func() {
 		// Both passes list every PVC / Secret in the namespace; time them so a
 		// heavy sweep eating the shared QPS budget shows up.
+		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
 		start := time.Now()
-		r.ReconcileOrphanPVCs(ctx)
-		r.ReconcileOrphanLeafSecrets(ctx)
-		slog.Debug("orphan sweep complete", "duration", time.Since(start))
+		r.ReconcileOrphanPVCs(sctx)
+		r.ReconcileOrphanLeafSecrets(sctx)
+		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
+		finish(nil)
 	}
 	sweep()
 	t := time.NewTicker(interval)
