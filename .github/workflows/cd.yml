@@ -339,7 +339,11 @@ jobs:
   merge-agents:
     name: merge multi-arch agent manifests
     needs: [build-agents, appversion, changes]
-    if: ${{ needs.changes.outputs.agents != '[]' }}
+    # !cancelled() && !failure() so this still runs when merge-platform-base was
+    # skipped (platform-base reused) — build-agents runs via the same guard, and
+    # without it here GitHub's implicit success() gate skips this merge (leaving
+    # claude-code untagged, which breaks build-nous/build-openevolve).
+    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
