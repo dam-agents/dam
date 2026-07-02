@@ -323,6 +323,20 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            {{- if .Values.clickstack.enabled }}
+            # The api-server's own operational telemetry (request traces,
+            # per-procedure metrics, logs) exports OTLP straight to the
+            # bundled collector. In-mesh and plain http — ztunnel supplies
+            # mTLS; the collector's AuthorizationPolicy already admits this
+            # namespace. The SDK only activates when this endpoint env is
+            # present.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "platform-apiserver"
+            {{- end }}
           volumeMounts:
             - name: trusted-hosts
               mountPath: /etc/platform/trusted-hosts

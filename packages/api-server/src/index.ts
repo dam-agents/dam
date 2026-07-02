@@ -659,6 +659,15 @@ async function shutdown() {
   extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();
   apiServer.close();
+  // Flush OTel if the --import bootstrap (dist/telemetry.js) registered it.
+  // Reached via Symbol lookup — importing telemetry.ts here would evaluate a
+  // second copy of that bundle and split the SDK singleton.
+  const flushOtel = (globalThis as Record<symbol, unknown>)[
+    Symbol.for("platform.otel.shutdown")
+  ];
+  if (typeof flushOtel === "function") {
+    await (flushOtel as () => Promise<void>)();
+  }
   process.exit(0);
 }
 process.on("SIGTERM", shutdown);

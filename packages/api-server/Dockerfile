@@ -39,4 +39,6 @@ COPY --from=builder --chown=65532:0 /app/packages/db/drizzle /app/packages/db/dr
 
 EXPOSE 4000
 
-CMD ["node", "dist/index.js"]
+# The --import preload wires OpenTelemetry before the app evaluates; it is a
+# no-op unless an OTLP endpoint is configured in the environment.
+CMD ["node", "--import", "./dist/telemetry.js", "dist/index.js"]

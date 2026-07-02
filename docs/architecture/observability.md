@@ -51,7 +51,10 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 
 ## Platform-service export
 
-The **controller** emits its own operational telemetry — one trace per reconcile pass and background sweep, reconcile and workqueue metrics, and its structured logs with trace correlation — through an in-process OpenTelemetry SDK. Enabling the backend sets the standard OTLP endpoint environment on the controller deployment, pointing straight at the bundled collector over plain HTTP inside the mesh (ztunnel supplies mTLS, and the collector's authorization policy already admits the release namespace); without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
+The platform's own services emit their operational telemetry through an in-process OpenTelemetry SDK apiece. Enabling the backend sets the standard OTLP endpoint environment on each deployment, pointing straight at the bundled collector over plain HTTP inside the mesh (ztunnel supplies mTLS, and the collector's authorization policy already admits the release namespace); without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
+
+- The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
+- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), and its structured logs with trace correlation. Health-probe requests are not traced. The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
 
 ## Trusted attribution
 
