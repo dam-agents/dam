@@ -75,8 +75,9 @@ var testOwnerCM = &corev1.ConfigMap{
 
 func credSecret(name, host string) corev1.Secret {
 	ann := map[string]string{
-		"agent-platform.ai/host-pattern":          host,
-		"agent-platform.ai/injection-header-name": "Authorization",
+		"agent-platform.ai/injection-hosts": `[{"host":"` + host +
+			`","headerName":"Authorization","valueFormat":"Bearer {value}","sdsKey":"` +
+			sdsFileKeyForHost(host) + `"}]`,
 	}
 	// Fixtures targeting github hosts also declare GH_TOKEN in their
 	// env-mappings — mirrors what the api-server's github descriptor
@@ -88,15 +89,17 @@ func credSecret(name, host string) corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: ann,
-			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
+			Labels: map[string]string{
+				"agent-platform.ai/owner":       "owner-1",
+				"agent-platform.ai/managed-by":  "api-server",
+				"agent-platform.ai/secret-type": "connection",
+				"agent-platform.ai/connection":  name,
+			},
 		},
 		// Real api-server-written Secrets always carry the SDS file the
 		// bootstrap references; chain rendering degrades to allow-only
 		// without it.
-		Data: map[string][]byte{
-			"value":               []byte("Bearer abc"),
-			envoyCredentialKeySDS: []byte("resources: []"),
-		},
+		Data: map[string][]byte{sdsFileKeyForHost(host): []byte("resources: []")},
 	}
 }
 
@@ -447,7 +450,7 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Contains(t, yaml, "0.0.0.0")
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
-	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
+	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/"+sdsFileKeyForHost("api.example.com"))
 	// path_config_source must declare `watched_directory` pointing at the
 	// Secret-volume mount root — otherwise Envoy never observes the kubelet
 	// symlink swap that delivers a rotated token. Regression for the

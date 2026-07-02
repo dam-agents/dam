@@ -244,7 +244,7 @@ func credentialedChain(secretName, host string) envoyHostChain {
 			SecretName: secretName,
 			HeaderName: "Authorization",
 			VolumeName: "cred-" + secretName,
-			SDSFileKey: envoyCredentialKeySDS,
+			SDSFileKey: sdsFileKeyForHost(host),
 		}},
 	}
 }
@@ -268,7 +268,7 @@ func queryParamChain(secretName, host, headerName, queryParamName string) envoyH
 			HeaderName:     headerName,
 			QueryParamName: queryParamName,
 			VolumeName:     "cred-" + secretName,
-			SDSFileKey:     envoyCredentialKeySDS,
+			SDSFileKey:     sdsFileKeyForHost(host),
 		}},
 	}
 }
@@ -287,13 +287,13 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 				SecretName: firstName,
 				HeaderName: "Authorization",
 				VolumeName: "cred-" + firstName,
-				SDSFileKey: envoyCredentialKeySDS,
+				SDSFileKey: sdsFileKeyForHost(host),
 			},
 			{
 				SecretName:     secondName,
 				HeaderName:     "X-Internal-Query-" + secondName,
 				QueryParamName: "key",
-				SDSFileKey:     envoyCredentialKeySDS,
+				SDSFileKey:     sdsFileKeyForHost(host),
 				VolumeName:     "cred-" + secondName,
 			},
 		},
@@ -607,30 +607,6 @@ func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
 	assert.Len(t, envs, 1)
 }
 
-func TestCredentialEnvVars_MalformedJSONFallsBackToLegacySwitch(t *testing.T) {
-	// Parse-tolerant fallback: malformed JSON should not hide the canonical
-	// Anthropic env. Hand-edited Secrets and legacy fixtures rely on
-	// this path.
-	s := ownerSecret("platform-cred-aaa", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "api-key"
-	s.Annotations[envoyEnvMappingsAnn] = "{not-json}"
-	got := credentialEnvVars([]corev1.Secret{s})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
-}
-
-func TestCredentialEnvVars_AnthropicFallsBackToLegacySwitch(t *testing.T) {
-	// Anthropic Secret with no `env-mappings` annotation (e.g. created
-	// via raw `kubectl apply`) — legacy switch fills in
-	// `CLAUDE_CODE_OAUTH_TOKEN`.
-	oauthSecret := ownerSecret("platform-cred-aaa", "anthropic", "")
-	oauthSecret.Annotations[envoyAuthModeAnn] = "oauth"
-
-	got := credentialEnvVars([]corev1.Secret{oauthSecret})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["CLAUDE_CODE_OAUTH_TOKEN"])
-}
-
 func TestCredentialEnvVars_ConnectionEnvMappingsDeclareTheVars(t *testing.T) {
 	// Connection env vars come from the api-server's `env-mappings`
 	// annotation (declarative), not from a host-specific hardcode. A
@@ -680,8 +656,6 @@ func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 		cred := c.Credentials[0]
 		assert.Equal(t, "cred-platform-conn-github", cred.VolumeName)
 		assert.Equal(t, sdsFileKeyForHost(c.Host), cred.SDSFileKey)
-		assert.NotEqual(t, envoyCredentialKeySDS, cred.SDSFileKey,
-			"connection Secrets must use per-host SDS files, not the legacy sds.yaml key")
 	}
 }
 
@@ -757,41 +731,12 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	assert.False(t, byHost["github.com"].Credentialed())
 }
 
-func TestChainsFromSecrets_SingleHostSecretMissingSDSYamlDegradesToAllowOnly(t *testing.T) {
-	// Same guard for the legacy single-host shape: no sds.yaml in data →
-	// allow-only chain, never a bootstrap path Envoy can't open.
-	s := ownerSecret("platform-cred-aaa", "generic", "")
-	s.Annotations[envoyHeaderNameAnn] = "Authorization"
-	s.Data = map[string][]byte{"value": []byte("Bearer abc")}
-
-	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
-	require.Len(t, chains, 1)
-	assert.Equal(t, "api.example.com", chains[0].Host)
-	assert.False(t, chains[0].Credentialed())
-}
-
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 	// Pinned against the api-server's `sdsFileKeyForHost`. Mismatch =
 	// gateway reads a missing file.
 	assert.Equal(t, "host-YXBpLmdpdGh1Yi5jb20.sds.yaml", sdsFileKeyForHost("api.github.com"))
 	assert.Equal(t, "host-Z2l0aHViLmNvbQ.sds.yaml", sdsFileKeyForHost("github.com"))
 	assert.Equal(t, "host-cmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbQ.sds.yaml", sdsFileKeyForHost("raw.githubusercontent.com"))
-}
-
-func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
-	// Anthropic Secret carrying an explicit annotation overrides what the
-	// legacy auth-mode switch would have produced. Tests the annotation-driven path
-	// for the typical UI-created Anthropic secret.
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"anthropic",
-			`[{"envName":"ANTHROPIC_API_KEY","placeholder":"dummy-placeholder"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
-	assert.Len(t, envs, 1)
 }
 
 func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T) {
@@ -900,14 +845,15 @@ func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
 	// Two granted Secrets on the same host → one chain with two
 	// envoyCredential entries (in name-sorted order, which the upstream
 	// `listOwnerCredentialSecrets` guarantees).
-	hdr := ownerSecret("platform-cred-aaa-header", "generic", "")
-	hdr.Annotations[envoyHostPatternAnn] = "bob.example.com"
-	hdr.Annotations[envoyHeaderNameAnn] = "Authorization"
+	hdr := ownerSecret("platform-conn-aaa-header", "connection", "conn-a")
+	delete(hdr.Annotations, envoyHostPatternAnn)
+	hdr.Annotations[envoyInjectionHostsAnn] = `[{"host":"bob.example.com","headerName":"Authorization"}]`
+	hdr = withHostSDS(hdr, "bob.example.com")
 
-	qry := ownerSecret("platform-cred-bbb-query", "generic", "")
-	qry.Annotations[envoyHostPatternAnn] = "bob.example.com"
-	qry.Annotations[envoyHeaderNameAnn] = "X-Query-Cred"
-	qry.Annotations[envoyQueryParamAnn] = "key"
+	qry := ownerSecret("platform-conn-bbb-query", "connection", "conn-b")
+	delete(qry.Annotations, envoyHostPatternAnn)
+	qry.Annotations[envoyInjectionHostsAnn] = `[{"host":"bob.example.com","headerName":"X-Query-Cred","queryParamName":"key"}]`
+	qry = withHostSDS(qry, "bob.example.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{hdr, qry}, nil)
 	require.Len(t, chains, 1)
@@ -924,28 +870,20 @@ func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) 
 	// silently. Drop the later one (input is name-sorted upstream) and
 	// emit a warning. api-server should also reject this at create time
 	// but defense-in-depth here keeps the gateway up.
-	first := ownerSecret("platform-cred-a-first", "generic", "")
-	first.Annotations[envoyHostPatternAnn] = "api.example.com"
-	first.Annotations[envoyHeaderNameAnn] = "Authorization"
+	first := ownerSecret("platform-conn-a-first", "connection", "conn-a")
+	delete(first.Annotations, envoyHostPatternAnn)
+	first.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	first = withHostSDS(first, "api.example.com")
 
-	second := ownerSecret("platform-cred-b-second", "generic", "")
-	second.Annotations[envoyHostPatternAnn] = "api.example.com"
-	second.Annotations[envoyHeaderNameAnn] = "Authorization"
+	second := ownerSecret("platform-conn-b-second", "connection", "conn-b")
+	delete(second.Annotations, envoyHostPatternAnn)
+	second.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	second = withHostSDS(second, "api.example.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{first, second}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
-}
-
-func TestChainsFromSecrets_DistinctHostsEachGetTheirOwnChain(t *testing.T) {
-	a := ownerSecret("platform-cred-a", "generic", "")
-	a.Annotations[envoyHostPatternAnn] = "api.first.com"
-	b := ownerSecret("platform-cred-b", "generic", "")
-	b.Annotations[envoyHostPatternAnn] = "api.second.com"
-
-	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
-	assert.Len(t, chains, 2)
 }
 
 func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.T) {
@@ -978,9 +916,10 @@ func TestChainsFromSecrets_L7HostDedupesAgainstCredentialedChain(t *testing.T) {
 	// A host that is both credentialed and promoted renders once, as the
 	// credentialed chain — promotion is a policy hint, not an instruction
 	// to skip injection.
-	cred := ownerSecret("platform-cred-a", "generic", "")
-	cred.Annotations[envoyHostPatternAnn] = "api.example.com"
-	cred.Annotations[envoyHeaderNameAnn] = "Authorization"
+	cred := ownerSecret("platform-conn-a", "connection", "conn-a")
+	delete(cred.Annotations, envoyHostPatternAnn)
+	cred.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	cred = withHostSDS(cred, "api.example.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{cred}, []string{"api.example.com", "api.other.com"})
 	require.Len(t, chains, 2)
@@ -1004,9 +943,10 @@ func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
 	// credentialed Secret renders as a credentialed chain. Allow-only
 	// contributes nothing — it's a path-policy hint, not an instruction
 	// to skip injection.
-	cred := ownerSecret("platform-cred-a", "generic", "")
-	cred.Annotations[envoyHostPatternAnn] = "api.example.com"
-	cred.Annotations[envoyHeaderNameAnn] = "Authorization"
+	cred := ownerSecret("platform-conn-a", "connection", "conn-a")
+	delete(cred.Annotations, envoyHostPatternAnn)
+	cred.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	cred = withHostSDS(cred, "api.example.com")
 
 	allowOnly := ownerSecret("platform-allow-only-b", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "api.example.com"
@@ -1108,35 +1048,19 @@ func TestCredentialEnvVars_RespectsEnvMappingsAnnotation(t *testing.T) {
 	assert.Equal(t, "ph", got["OTHER"])
 }
 
-func TestCredentialEnvVars_DedupesAcrossAnnotationAndHardcoded(t *testing.T) {
-	// The anthropic hardcoded path and the env-mappings annotation can
-	// agree on the same envName. Dedup must keep a single entry.
-	s := ownerSecret("platform-cred-anth", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "oauth"
-	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"CLAUDE_CODE_OAUTH_TOKEN","placeholder":"dummy-placeholder"}]`
+func TestCredentialEnvVars_MalformedAnnotationContributesNothing(t *testing.T) {
+	// A malformed env-mappings JSON must not take down the reconcile loop —
+	// the secret contributes no env and the rest keep working.
+	broken := ownerSecret("platform-conn-broken", "connection", "broken")
+	broken.Annotations[envoyEnvMappingsAnn] = "not json"
 
-	envs := credentialEnvVars([]corev1.Secret{s})
+	ok := ownerSecret("platform-conn-ok", "connection", "ok")
+	ok.Annotations[envoyEnvMappingsAnn] = `[{"envName":"FOO","placeholder":"ph"}]`
 
-	count := 0
-	for _, e := range envs {
-		if e.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
-			count++
-		}
-	}
-	assert.Equal(t, 1, count)
-}
-
-func TestCredentialEnvVars_MalformedAnnotationFallsBackCleanly(t *testing.T) {
-	// A malformed env-mappings JSON must not skip the per-type fallback or
-	// take down the reconcile loop.
-	s := ownerSecret("platform-cred-broken", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "api-key"
-	s.Annotations[envoyEnvMappingsAnn] = "not json"
-
-	envs := credentialEnvVars([]corev1.Secret{s})
+	envs := credentialEnvVars([]corev1.Secret{broken, ok})
 
 	require.Len(t, envs, 1)
-	assert.Equal(t, "ANTHROPIC_API_KEY", envs[0].Name)
+	assert.Equal(t, "FOO", envs[0].Name)
 }
 
 func http2CredentialedChain(secretName, host string) envoyHostChain {
@@ -1170,22 +1094,6 @@ func TestRenderEnvoyBootstrap_RestChainStaysHTTP1(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, got, "alpn_protocols")
 	assert.NotContains(t, got, "use_downstream_protocol_config")
-}
-
-func TestChainsFromSecrets_HTTP2AnnotationMarksChain(t *testing.T) {
-	s := ownerSecret("platform-cred-modal-id", "generic", "api.modal.com")
-	s.Annotations[envoyHeaderNameAnn] = "x-modal-token-id"
-	s.Annotations[envoyInjectionHTTP2Ann] = "true"
-
-	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
-	require.Len(t, chains, 1)
-	assert.True(t, chains[0].HTTP2, "http2 annotation must mark the chain")
-
-	// Same secret without the annotation stays HTTP/1.1.
-	delete(s.Annotations, envoyInjectionHTTP2Ann)
-	chains = chainsFromSecrets([]corev1.Secret{s}, nil)
-	require.Len(t, chains, 1)
-	assert.False(t, chains[0].HTTP2)
 }
 
 func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
