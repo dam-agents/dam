@@ -62,9 +62,6 @@ agentTemplates:
 
   openevolve:
     enabled: false
-    setupNote:
-      title: "GPT-5 model recommended"
-      body: "gpt-5 is available by connecting to IBM LiteLLM ETE Proxy, or OpenAI as a provider"
     image:
       repository: platform-openevolve
       tag: latest
