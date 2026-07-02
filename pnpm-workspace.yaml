@@ -69,14 +69,11 @@ minimumReleaseAgeExclude:
   # @0.79.10 (the pi-coding-agent bump above); published 2026-06-16 (<7 days).
   # Safe to drop once it ages past 7 days.
   - "@mistralai/mistralai@2.2.6"
-allowBuilds:
-  # grpc-tools downloads the protoc binary in a postinstall step; needed
-  # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).
-  grpc-tools: true
-  koffi: true
-  protobufjs: true
-  sharp: true
-  # esbuild's postinstall extracts the per-platform native binary; without
-  # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
-  # scripts even when `--frozen-lockfile`, so we have to list it.
-  esbuild: true
+# Run dependency build scripts (preinstall/install/postinstall) for all
+# packages automatically — including transitive deps, now and in the future —
+# instead of gating them behind an `allowBuilds` allowlist. This supersedes
+# the previous per-package allowlist (grpc-tools, esbuild, koffi, protobufjs,
+# sharp, …). Note: this disables pnpm's default protection against untrusted
+# postinstall scripts; the tree stays defended by `minimumReleaseAge`,
+# `trustPolicy: no-downgrade`, and the lockfile pins above.
+dangerouslyAllowAllBuilds: true
