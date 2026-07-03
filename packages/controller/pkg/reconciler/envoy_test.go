@@ -964,9 +964,9 @@ func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 	assert.Contains(t, otelTracerBlock(got), "grpc_service")
 	assert.NotContains(t, otelTracerBlock(got), "http_service")
 
-	// Default full sampling.
-	assert.Contains(t, got, "random_sampling")
-	assert.Contains(t, got, "value: 100")
+	// Default full sampling. Anchored to the random_sampling key — a bare
+	// "value: 100" is a substring of the listener's "port_value: 10000".
+	assert.Regexp(t, `random_sampling:\s*\n\s*value: 100\n`, got)
 
 	// Metrics: OTLP stats sink, no admin interface needed.
 	assert.Contains(t, got, "stats_sinks")
@@ -1023,8 +1023,8 @@ func TestRenderEnvoyBootstrap_SamplingFromEnv(t *testing.T) {
 		"OTEL_TRACES_SAMPLER_ARG":     "0.1",
 	}), nil)
 	require.NoError(t, err)
-	assert.Contains(t, got, "random_sampling")
-	assert.Contains(t, got, "value: 10")
+	// Anchored: a bare "value: 10" is a substring of "port_value: 10000".
+	assert.Regexp(t, `random_sampling:\s*\n\s*value: 10\n`, got)
 }
 
 func TestRenderEnvoyBootstrap_PlaintextCollectorNoUpstreamTLS(t *testing.T) {
@@ -1087,7 +1087,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 	// The controller relays its inherited OTEL_* env onto the gateway generically,
 	// but the gateway's own identity overrides the controller's: service.name is
 	// owned by the tracer config (OTEL_SERVICE_NAME not relayed), and
-	// OTEL_RESOURCE_ATTRIBUTES is set fresh with the bounded agent.id.
+	// OTEL_RESOURCE_ATTRIBUTES is set fresh with the bounded platform.gateway.id.
 	cfg := *bootstrapTestCfg
 	cfg.OTelEnv = map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel:4317",
@@ -1106,7 +1106,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 	assert.False(t, relayedServiceName, "controller's service.name must not ride onto the gateway")
 	_, relayedHeaders := env["OTEL_EXPORTER_OTLP_HEADERS"]
 	assert.False(t, relayedHeaders, "collector auth headers (Envoy can't use them, may hold a token) must not ride onto the gateway")
-	assert.Equal(t, "agent.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"])
+	assert.Equal(t, "platform.gateway.id=agent-7,k8s.namespace.name=agents", env["OTEL_RESOURCE_ATTRIBUTES"])
 }
 
 func TestEnvoyContainer_NoOTelEnvWhenDisabled(t *testing.T) {
@@ -1150,4 +1150,54 @@ func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
 	}
 	assert.True(t, seen["otel_collector"], "transit cluster must render")
 	assert.True(t, seen["otel_export"], "own-telemetry exporter cluster must render")
+}
+
+func TestEnvoyVolumes_NoLeafWhenOTelOnlyNoSecrets(t *testing.T) {
+	// OTel-only (no transit telemetry, no Secrets): the gateway's own export
+	// terminates no TLS, so the leaf cert must NOT be required — a missing
+	// leaf Secret would otherwise block the pod on a volume that never fills.
+	cfg := otelCfg(testOTLPEndpoint)
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume))
+}
+
+func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
+	// With transit + OTel both on, collector-bound CONNECTs get a dedicated
+	// route sampled to zero — the pipeline must not trace its own pushes.
+	cfg := telemetryTestCfg()
+	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", cfg, nil)
+	require.NoError(t, err)
+	assert.Contains(t, got, `exact: "platform-clickstack-collector.platform.svc.cluster.local:4318"`)
+	assert.Regexp(t, `tracing:\s*\n\s*random_sampling:\s*\n\s*numerator: 0\n\s*overall_sampling:\s*\n\s*numerator: 0`, got)
+
+	// Transit without OTel tracing: no tracer, so no exclusion route either.
+	got, err = renderEnvoyBootstrap("agent-7", "agent-7", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "numerator: 0")
+}
+
+func TestRenderEnvoyBootstrap_TransitChainErrorOnlyAccessLog(t *testing.T) {
+	// Delivery failures on the transit chain must reach the pod log (the chain
+	// has no tracing by design and stats are off on OTLP/HTTP), but success
+	// traffic must not be logged — the filter admits errors only.
+	cfg := telemetryTestCfg()
+	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", cfg, nil)
+	require.NoError(t, err)
+	cs := strings.Index(got, "- name: terminate_otel_collector")
+	ce := strings.Index(got, "# SNI miss")
+	require.True(t, cs >= 0 && ce > cs)
+	chain := got[cs:ce]
+	assert.Contains(t, chain, "access_log")
+	assert.Contains(t, chain, "status_code_filter")
+	assert.Contains(t, chain, "response_flag_filter")
+
+	// Without OTel, the transit chain renders as on main — no access log.
+	got, err = renderEnvoyBootstrap("agent-7", "agent-7", telemetryTestCfg(), nil)
+	require.NoError(t, err)
+	cs = strings.Index(got, "- name: terminate_otel_collector")
+	ce = strings.Index(got, "# SNI miss")
+	require.True(t, cs >= 0 && ce > cs)
+	assert.NotContains(t, got[cs:ce], "access_log")
 }
