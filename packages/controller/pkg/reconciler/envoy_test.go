@@ -977,8 +977,10 @@ func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 	assert.Contains(t, got, "address: otel-collector.platform.svc.cluster.local")
 	assert.Contains(t, got, "port_value: 4317")
 
-	// Access logs present and credential-safe.
+	// Access logs present and credential-safe — on stdout AND exported over
+	// OTLP so they land in the telemetry backend.
 	assert.Contains(t, got, "envoy.access_loggers.file")
+	assert.Contains(t, got, "envoy.access_loggers.open_telemetry")
 	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
 }
 
@@ -995,6 +997,11 @@ func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
 	assert.Contains(t, tracer, `uri: "http://otel.platform.svc:4318/v1/traces"`)
 	assert.NotContains(t, tracer, "grpc_service") // ext_authz uses grpc_service; the tracer must not
 	assert.NotContains(t, got, "stats_sinks")
+	// OTLP access logs work over HTTP too (unlike the stats sink).
+	assert.Contains(t, got, "envoy.access_loggers.open_telemetry")
+	assert.Contains(t, got, `uri: "http://otel.platform.svc:4318/v1/logs"`)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "OTLP/HTTP render must stay valid YAML")
 	// HTTP/1.1 collector — no http2 protocol options on the cluster.
 	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
 	assert.NotContains(t, collectorBlock, "http2_protocol_options")
@@ -1200,4 +1207,35 @@ func TestRenderEnvoyBootstrap_TransitChainErrorOnlyAccessLog(t *testing.T) {
 	ce = strings.Index(got, "# SNI miss")
 	require.True(t, cs >= 0 && ce > cs)
 	assert.NotContains(t, got[cs:ce], "access_log")
+}
+
+func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testing.T) {
+	// Bundled-backend shape: the controller SDK env stays OTLP/HTTP :4318
+	// while PLATFORM_GATEWAY_OTLP_* points gateways at gRPC :4317 — all three
+	// signals render over gRPC and the controller env is never consulted for
+	// transport.
+	cfg := *bootstrapTestCfg
+	cfg.OTelEnv = map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.platform.svc:4318",
+		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+	}
+	cfg.GatewayOTLPEndpoint = "http://collector.platform.svc:4317"
+	cfg.GatewayOTLPProtocol = "grpc"
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", &cfg, nil)
+	require.NoError(t, err)
+
+	assert.Contains(t, got, "stats_sinks", "gRPC override must enable the stats sink")
+	assert.Contains(t, otelTracerBlock(got), "grpc_service")
+	assert.Contains(t, got, "envoy.access_loggers.open_telemetry")
+	assert.NotContains(t, got, "/v1/traces", "no OTLP/HTTP branch may render under the gRPC override")
+	assert.Contains(t, got, "port_value: 4317")
+
+	// The pod env states the effective exporter, not the controller's own —
+	// truthful, and the roll trigger when the override changes.
+	env := map[string]string{}
+	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "http://collector.platform.svc:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
+	assert.Equal(t, "grpc", env["OTEL_EXPORTER_OTLP_PROTOCOL"])
 }

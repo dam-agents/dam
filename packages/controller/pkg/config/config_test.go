@@ -358,3 +358,36 @@ func TestTraceSamplingPercent(t *testing.T) {
 		assert.Equal(t, tc.want, cfg.TraceSamplingPercent(), "%s/%s", tc.sampler, tc.arg)
 	}
 }
+
+func TestOTelExporter_GatewayOverrideWins(t *testing.T) {
+	// The chart points gateways at the collector's gRPC port while the
+	// controller SDK keeps its OTLP/HTTP env — the override must win and
+	// default to gRPC when the protocol var is unset.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":          "platform",
+		"POD_NAME":                       "controller-0",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":    "http://collector:4318",
+		"OTEL_EXPORTER_OTLP_PROTOCOL":    "http/protobuf",
+		"PLATFORM_GATEWAY_OTLP_ENDPOINT": "http://collector:4317",
+		"PLATFORM_GATEWAY_OTLP_PROTOCOL": "grpc",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	exp, ok := cfg.OTelExporter()
+	require.True(t, ok)
+	assert.True(t, exp.GRPC)
+	assert.Equal(t, 4317, exp.Port)
+
+	// Protocol unset on the override → gRPC (the OTLP spec default).
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":          "platform",
+		"POD_NAME":                       "controller-0",
+		"PLATFORM_GATEWAY_OTLP_ENDPOINT": "http://collector:4317",
+	})
+	cfg, err = LoadFromEnv()
+	require.NoError(t, err)
+	assert.True(t, cfg.OTelEnabled(), "override alone must activate gateway telemetry")
+	exp, ok = cfg.OTelExporter()
+	require.True(t, ok)
+	assert.True(t, exp.GRPC)
+}

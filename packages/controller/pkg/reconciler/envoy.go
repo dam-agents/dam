@@ -636,6 +636,62 @@ static_resources:
                           bytes_received: "%BYTES_RECEIVED%"
                           bytes_sent: "%BYTES_SENT%"
                           x_request_id: "%REQ(X-REQUEST-ID)%"
+                  # Same records to the collector over OTLP so gateway access
+                  # logs land in the telemetry backend beside every other
+                  # platform service's logs; stdout above stays the pod log.
+                  - name: envoy.access_loggers.open_telemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.LogsURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      stat_prefix: egress
+                      disable_builtin_labels: true
+                      formatters:
+                        - name: envoy.formatter.req_without_query
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
+                      resource_attributes:
+                        values:
+                          - key: service.name
+                            value: { string_value: "{{ $.OTel.ServiceName }}" }
+                          - key: platform.gateway.id
+                            value: { string_value: "{{ $.OTel.AgentID }}" }
+                      body:
+                        string_value: "%REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE%"
+                      attributes:
+                        values:
+                          - key: chain
+                            value: { string_value: agent_egress }
+                          - key: method
+                            value: { string_value: "%REQ(:METHOD)%" }
+                          - key: authority
+                            value: { string_value: "%REQ(:AUTHORITY)%" }
+                          - key: path
+                            value: { string_value: "%REQ_WITHOUT_QUERY(:PATH)%" }
+                          - key: response_code
+                            value: { string_value: "%RESPONSE_CODE%" }
+                          - key: response_flags
+                            value: { string_value: "%RESPONSE_FLAGS%" }
+                          - key: duration_ms
+                            value: { string_value: "%DURATION%" }
+                          - key: upstream_host
+                            value: { string_value: "%UPSTREAM_HOST%" }
+                          - key: bytes_received
+                            value: { string_value: "%BYTES_RECEIVED%" }
+                          - key: bytes_sent
+                            value: { string_value: "%BYTES_SENT%" }
+                          - key: x_request_id
+                            value: { string_value: "%REQ(X-REQUEST-ID)%" }
 {{- end }}
                 upgrade_configs:
                   - upgrade_type: CONNECT
@@ -866,6 +922,63 @@ static_resources:
                           bytes_received: "%BYTES_RECEIVED%"
                           bytes_sent: "%BYTES_SENT%"
                           x_request_id: "%REQ(X-REQUEST-ID)%"
+                  # The L7 detail for intercepted flows lives only on these
+                  # chains (the outer listener sees just the CONNECT), so this
+                  # OTLP copy is what makes credentialed egress explorable in
+                  # the telemetry backend. Same redaction as the file log.
+                  - name: envoy.access_loggers.open_telemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.LogsURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      stat_prefix: chains
+                      disable_builtin_labels: true
+                      formatters:
+                        - name: envoy.formatter.req_without_query
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
+                      resource_attributes:
+                        values:
+                          - key: service.name
+                            value: { string_value: "{{ $.OTel.ServiceName }}" }
+                          - key: platform.gateway.id
+                            value: { string_value: "{{ $.OTel.AgentID }}" }
+                      body:
+                        string_value: "%REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE%"
+                      attributes:
+                        values:
+                          - key: chain
+                            value: { string_value: terminate_{{ $chain.ChainID }} }
+                          - key: method
+                            value: { string_value: "%REQ(:METHOD)%" }
+                          - key: authority
+                            value: { string_value: "%REQ(:AUTHORITY)%" }
+                          - key: path
+                            value: { string_value: "%REQ_WITHOUT_QUERY(:PATH)%" }
+                          - key: response_code
+                            value: { string_value: "%RESPONSE_CODE%" }
+                          - key: response_flags
+                            value: { string_value: "%RESPONSE_FLAGS%" }
+                          - key: duration_ms
+                            value: { string_value: "%DURATION%" }
+                          - key: upstream_host
+                            value: { string_value: "%UPSTREAM_HOST%" }
+                          - key: bytes_received
+                            value: { string_value: "%BYTES_RECEIVED%" }
+                          - key: bytes_sent
+                            value: { string_value: "%BYTES_SENT%" }
+                          - key: x_request_id
+                            value: { string_value: "%REQ(X-REQUEST-ID)%" }
 {{- end }}
                 http_filters:
                   # HITL gate. gRPC ext_authz to the
@@ -1083,6 +1196,65 @@ static_resources:
                                   default_value: 400
                                   runtime_key: access_log.otel_collector.min_status
                           - response_flag_filter: {}
+                  # OTLP twin for partial failures (collector up but rejecting,
+                  # e.g. 4xx schema errors). The stdout copy above is the
+                  # outage-proof record — when the collector is down this
+                  # export fails with it.
+                  - name: envoy.access_loggers.open_telemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.LogsURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      stat_prefix: otel_transit
+                      disable_builtin_labels: true
+                      formatters:
+                        - name: envoy.formatter.req_without_query
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.formatter.req_without_query.v3.ReqWithoutQuery
+                      resource_attributes:
+                        values:
+                          - key: service.name
+                            value: { string_value: "{{ $.OTel.ServiceName }}" }
+                          - key: platform.gateway.id
+                            value: { string_value: "{{ $.OTel.AgentID }}" }
+                      body:
+                        string_value: "telemetry delivery failure %REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE% %RESPONSE_FLAGS%"
+                      attributes:
+                        values:
+                          - key: chain
+                            value: { string_value: terminate_otel_collector }
+                          - key: method
+                            value: { string_value: "%REQ(:METHOD)%" }
+                          - key: path
+                            value: { string_value: "%REQ_WITHOUT_QUERY(:PATH)%" }
+                          - key: response_code
+                            value: { string_value: "%RESPONSE_CODE%" }
+                          - key: response_flags
+                            value: { string_value: "%RESPONSE_FLAGS%" }
+                          - key: duration_ms
+                            value: { string_value: "%DURATION%" }
+                          - key: upstream_host
+                            value: { string_value: "%UPSTREAM_HOST%" }
+                    filter:
+                      or_filter:
+                        filters:
+                          - status_code_filter:
+                              comparison:
+                                op: GE
+                                value:
+                                  default_value: 400
+                                  runtime_key: access_log.otel_collector.min_status
+                          - response_flag_filter: {}
 {{- end }}
                 http_filters:
                   - name: envoy.filters.http.router
@@ -1170,6 +1342,47 @@ static_resources:
                           duration_ms: "%DURATION%"
                           bytes_received: "%BYTES_RECEIVED%"
                           bytes_sent: "%BYTES_SENT%"
+                  - name: envoy.access_loggers.open_telemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.LogsURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      stat_prefix: l4
+                      disable_builtin_labels: true
+                      resource_attributes:
+                        values:
+                          - key: service.name
+                            value: { string_value: "{{ $.OTel.ServiceName }}" }
+                          - key: platform.gateway.id
+                            value: { string_value: "{{ $.OTel.AgentID }}" }
+                      body:
+                        string_value: "SNI %REQUESTED_SERVER_NAME%"
+                      attributes:
+                        values:
+                          - key: chain
+                            value: { string_value: l4_authz_passthrough }
+                          - key: requested_server_name
+                            value: { string_value: "%REQUESTED_SERVER_NAME%" }
+                          - key: upstream_host
+                            value: { string_value: "%UPSTREAM_HOST%" }
+                          - key: response_flags
+                            value: { string_value: "%RESPONSE_FLAGS%" }
+                          - key: duration_ms
+                            value: { string_value: "%DURATION%" }
+                          - key: bytes_received
+                            value: { string_value: "%BYTES_RECEIVED%" }
+                          - key: bytes_sent
+                            value: { string_value: "%BYTES_SENT%" }
 {{- end }}
 
   clusters:
@@ -1438,6 +1651,7 @@ type envoyOTelView struct {
 	CollectorHost   string
 	CollectorPort   int
 	TracesURI       string // OTLP/HTTP traces endpoint (only when !GRPC)
+	LogsURI         string // OTLP/HTTP logs endpoint (only when !GRPC)
 }
 
 // newEnvoyOTelView derives the gateway's telemetry config from the OTLP
@@ -1469,6 +1683,7 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 			scheme = "https"
 		}
 		v.TracesURI = fmt.Sprintf("%s://%s:%d/v1/traces", scheme, exp.Host, exp.Port)
+		v.LogsURI = fmt.Sprintf("%s://%s:%d/v1/logs", scheme, exp.Host, exp.Port)
 	}
 	return v
 }
@@ -1728,7 +1943,19 @@ func gatewayOTelEnv(instanceName string, cfg *config.Config) []corev1.EnvVar {
 	if !cfg.OTelEnabled() {
 		return nil
 	}
-	keys := make([]string, 0, len(cfg.OTelEnv))
+	// Effective exporter pair: the gateway-specific override (when set) beats
+	// the relayed values, so the pod env states what the bootstrap actually
+	// dials — and an override change rolls the pod like any other env change.
+	effective := map[string]string{}
+	if cfg.GatewayOTLPEndpoint != "" {
+		effective["OTEL_EXPORTER_OTLP_ENDPOINT"] = cfg.GatewayOTLPEndpoint
+		proto := cfg.GatewayOTLPProtocol
+		if proto == "" {
+			proto = "grpc"
+		}
+		effective["OTEL_EXPORTER_OTLP_PROTOCOL"] = proto
+	}
+	keys := make([]string, 0, len(cfg.OTelEnv)+len(effective))
 	for k := range cfg.OTelEnv {
 		// Drop the controller's own identity vars; the gateway sets its own.
 		if k == "OTEL_RESOURCE_ATTRIBUTES" || k == "OTEL_SERVICE_NAME" {
@@ -1741,12 +1968,22 @@ func gatewayOTelEnv(instanceName string, cfg *config.Config) []corev1.EnvVar {
 		if strings.HasSuffix(k, "HEADERS") {
 			continue
 		}
+		if _, ok := effective[k]; ok {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	for k := range effective {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	env := make([]corev1.EnvVar, 0, len(keys)+1)
 	for _, k := range keys {
-		env = append(env, corev1.EnvVar{Name: k, Value: cfg.OTelEnv[k]})
+		v, ok := effective[k]
+		if !ok {
+			v = cfg.OTelEnv[k]
+		}
+		env = append(env, corev1.EnvVar{Name: k, Value: v})
 	}
 	env = append(env, corev1.EnvVar{
 		// platform.gateway.id, not agent.id: observability.md reserves the

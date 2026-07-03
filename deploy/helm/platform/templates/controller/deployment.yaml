@@ -99,6 +99,15 @@ spec:
               value: "http/protobuf"
             - name: OTEL_SERVICE_NAME
               value: "platform-controller"
+            # The gateways' OWN telemetry exporter (rendered into each Envoy
+            # bootstrap). gRPC, unlike the controller SDK env above: Envoy's
+            # stats sink speaks nothing else, and one transport then carries
+            # all three gateway signals. Separate vars so the two consumers
+            # never constrain each other (the Go SDK is OTLP/HTTP-only).
+            - name: PLATFORM_GATEWAY_OTLP_ENDPOINT
+              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4317"
+            - name: PLATFORM_GATEWAY_OTLP_PROTOCOL
+              value: "grpc"
             {{- end }}
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"
