@@ -21,6 +21,11 @@
  * Secret in place lets every gateway roll cleanly; the #1273 follow-up (#2198)
  * sweeps the drained Secrets once the field confirms no gateway still mounts them.
  *
+ * Because the Secret lingers, a connection is (re)created only while an agent
+ * still grants the legacy secret. After the first flip the secret is ungranted,
+ * so a connection the user then deletes stays deleted instead of being rebuilt
+ * on the next boot — the deferred-deletion window can't resurrect user deletes.
+ *
  * Non-blocking and self-disarming: a transient failure leaves the legacy secret
  * intact and re-arms a retry; a permanent skip (malformed / unrecoverable /
  * orphan half) is logged and left alone. A pass with nothing to migrate is a
@@ -206,6 +211,24 @@ async function ensureConnection(
   const connId = deterministicId("conn-", cred.primary.id);
   const existing = await deps.repo.get(connId, cred.owner);
   const granting = await findGrantingAgents(deps, cred);
+
+  // Only (re)create a connection while an agent still grants the legacy secret.
+  // Once the first pass flips an agent, the legacy secret is ungranted — so a
+  // connection the user later deletes must NOT be rebuilt. Because deletion is
+  // deferred to #2198, the legacy Secret lingers, and a bare "no connection
+  // yet" check would resurrect the deleted connection on every boot (or the
+  // 60s retry). An ungranted secret with no connection is either that
+  // user-deleted case or an unused orphan; log and leave it for the #2198 sweep
+  // rather than migrate it into a connection nothing uses.
+  if (!existing && granting.length === 0) {
+    report.push(
+      `SKIP [${cred.owner}] ${cred.primary.id}: no connection and no granting agent (deleted or unused)`,
+    );
+    deps.log(
+      `secrets→connections: skip ${cred.primary.id} — no connection, no granting agent`,
+    );
+    return null;
+  }
 
   if (deps.dryRun) {
     report.push(
