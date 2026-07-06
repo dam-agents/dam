@@ -51,8 +51,16 @@ export interface InfraAgent {
   hibernated: boolean;
   /** Last reconcile error, surfaced from the Reconciled condition. */
   error?: string;
+  /** Reconciled condition reason when False (ReconcileError |
+   *  BackoffLimitExceeded). */
+  reconciledReason?: string;
   /** Abnormal pod-termination cause, from the AgentPodReady condition message. */
   podTerminationReason?: string;
+  /** AgentPodReady condition reason token when False (PodNotReady, or a
+   *  termination token like ImagePullFailure / OutOfMemory). */
+  agentPodNotReadyReason?: string;
+  /** GatewayPodReady condition is True. Undefined until published. */
+  gatewayPodReady?: boolean;
 }
 
 /** Map the controller's conditions to the public-facing AgentState. Mostly
@@ -117,6 +125,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? reconciled.message || undefined
       : undefined;
 
+  const agentPod = status.conditions?.find((c) => c.type === "AgentPodReady");
+  const gatewayPod = status.conditions?.find(
+    (c) => c.type === "GatewayPodReady",
+  );
+
   const ready = readyCondition(obj);
   return {
     id,
@@ -127,7 +140,12 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated:
       ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED,
     error,
+    reconciledReason:
+      reconciled?.status === "False" ? reconciled.reason : undefined,
     podTerminationReason: agentPodTerminationMessage(obj),
+    agentPodNotReadyReason:
+      agentPod?.status === "False" ? agentPod.reason : undefined,
+    gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
   };
 }
 

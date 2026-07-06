@@ -20,6 +20,12 @@ import {
   WAKE_POLL_MAX_MS,
   WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
+import {
+  AgentWakeTimeoutError,
+  classifyWakeFailure,
+  wakeFailureReasonToken,
+} from "../domain/wake-failure.js";
+import { getLogger } from "../../../core/logger.js";
 
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
@@ -57,8 +63,12 @@ export interface AgentsRepository {
    *  api-server never reads pods. */
   isReady(id: string): Promise<boolean>;
   /** Make the agent's pod reachable. Idempotent, single-flight per id; bumps
-   *  `agent-platform.ai/last-activity` on success to keep the pod warm. */
-  ensureReady(id: string): Promise<void>;
+   *  `agent-platform.ai/last-activity` on success to keep the pod warm.
+   *  `onWaking` fires when the call enters (or joins) a cold-start wait —
+   *  never on the already-ready fast path — so callers can tell their user
+   *  a wake is underway. Throws `AgentWakeTimeoutError` (with the
+   *  classified condition snapshot) when the budget expires. */
+  ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
 export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
@@ -202,15 +212,23 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       return obj !== null && readyConditionStatus(obj) === "True";
     },
 
-    async ensureReady(id) {
+    async ensureReady(id, opts) {
       const existing = inflight.get(id);
-      if (existing) return existing;
+      if (existing) {
+        // A joiner shares the in-flight wake but still gets the slow-path
+        // signal — its user is waiting on the same cold start.
+        opts?.onWaking?.();
+        return existing;
+      }
 
       const work = (async () => {
         if (await repo.isReady(id)) {
           await bumpLastActivity(id);
           return;
         }
+        opts?.onWaking?.();
+        const startedAt = Date.now();
+        getLogger().info({ agentId: id }, "agent.wake.begin");
         await repo.wakeIfHibernated(id);
         const ready = await pollUntilReady(
           () => repo.isReady(id),
@@ -218,11 +236,43 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
           WAKE_POLL_MAX_MS,
           WAKE_TIMEOUT_MS,
         );
+        const durationMs = Date.now() - startedAt;
         if (!ready) {
-          throw new Error(
-            `agent ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`,
+          // The poll watched a boolean; the CR carries the controller's
+          // full diagnosis. One extra read, only on the failure path.
+          const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+          const infra = obj ? parseInfraAgent(obj) : null;
+          if (infra?.ready) {
+            // Won the race at the deadline — don't fail a turn that works.
+            getLogger().info(
+              { agentId: id, durationMs, lateReady: true },
+              "agent.wake.ready",
+            );
+            await bumpLastActivity(id);
+            return;
+          }
+          const failure = classifyWakeFailure(infra);
+          getLogger().warn(
+            {
+              agentId: id,
+              durationMs,
+              cause: wakeFailureReasonToken(failure),
+              hibernated: infra?.hibernated,
+              agentPodNotReadyReason: infra?.agentPodNotReadyReason,
+              gatewayPodReady: infra?.gatewayPodReady,
+              reconciledReason: infra?.reconciledReason,
+              podTerminationReason: infra?.podTerminationReason,
+            },
+            "agent.wake.timeout",
           );
+          throw new AgentWakeTimeoutError({
+            agentId: id,
+            timeoutMs: WAKE_TIMEOUT_MS,
+            durationMs,
+            failure,
+          });
         }
+        getLogger().info({ agentId: id, durationMs }, "agent.wake.ready");
         await bumpLastActivity(id);
       })().finally(() => {
         inflight.delete(id);

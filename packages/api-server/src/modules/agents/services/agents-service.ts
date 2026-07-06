@@ -578,11 +578,11 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async ensureReady(id) {
+    async ensureReady(id, opts) {
       if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
         throw new Error(`agent ${id}: not found or not owned`);
       }
-      await deps.repo.ensureReady(id);
+      await deps.repo.ensureReady(id, opts);
     },
 
     async connectSlack(id, slackChannelId) {

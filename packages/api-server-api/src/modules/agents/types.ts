@@ -96,9 +96,10 @@ export interface AgentsService {
    * from hibernation if needed. Idempotent; single-flight per id; bumps
    * `agent-platform.ai/last-activity` on every success. Channel adapters
    * and any server-side caller that needs to talk to the agent must await
-   * this before connecting.
+   * this before connecting. `onWaking` fires when the call enters (or
+   * joins) a cold-start wait, never on the already-ready fast path.
    */
-  ensureReady: (id: string) => Promise<void>;
+  ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;
   connectSlack: (
     id: string,
     slackChannelId: string,
