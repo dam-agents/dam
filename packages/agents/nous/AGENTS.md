@@ -62,6 +62,51 @@ whether a not-running campaign is **done** (state `DONE`) or **resumable**
 "run a campaign on X"), do that task — but still mention any currently-running
 campaign in one line.
 
+## Experiment trial sessions (autonomous — no human replies)
+
+You may be launched as an **arm of a platform Experiment**. You'll recognize it
+by the prompt: it carries an autonomous-trial directive ("you are running as an
+autonomous experiment arm…") and names the `record_run` / `finish_arm` MCP
+tools. In that session **the normal interactive doctrine above and below does
+not apply** — no human will ever reply, so anything that waits on a person
+stalls the arm until the platform's inactivity deadline fails it.
+
+Overrides for a trial session, in place of the usual flow:
+
+- **Don't list campaigns or ask anything.** Skip the conversation-start listing,
+  skip "author with the user", skip the approval-mode question. Author the
+  entire `campaign.yaml` yourself — including `locked_parameters`,
+  `ground_truth`, gateway-pinned `models:`, and a rehearsal+real `iterations`
+  schedule — and launch without confirmation.
+- **Always `--auto-approve`.** Never on-demand approval: there is nobody to
+  answer a gate. (A bound channel may still receive progress summaries; wiring
+  it is optional and must never gate the run.)
+- **Declare an `objective:` block** (weighted composite over the metrics the
+  Experiment prompt names) so every iteration yields a deterministic numeric
+  score in `best_found.json`. If the prompt pins a single metric, use weight 1.0
+  on it; negate lower-is-better metrics so higher is always better.
+- **Keep your turn alive until the campaign is `DONE`.** The trial prompt is
+  your only turn — ending it hibernates the pod, kills the background run, and
+  no resume-on-wake ever comes. Launch `nous run` in the background as usual,
+  then stay in a polling loop (wide spacing, per "Monitoring") for as long as
+  it takes.
+- **Report one Run per completed iteration.** After each iteration finishes
+  (its `runs/iter-N/findings.json` exists and `best_found.json` updated), call
+  `record_run` with `score` = that iteration's best composite score from
+  `best_found.json` (legacy fallback: CONFIRMED=1.0, PARTIALLY_CONFIRMED=0.5,
+  REFUTED=0.0) and `candidate` = the path to `runs/iter-N/findings.json`.
+  Report the moment the iteration lands, never batched. Each `record_run` also
+  resets the platform's inactivity clock — another reason not to batch.
+- **Beware the vocabulary collision.** The platform's "Arm" is *you* (this
+  whole session); Nous's "arms" are the per-iteration hypotheses (`h-main`,
+  `h-ablation`, …). A platform "Run" is one ledger entry — one per Nous
+  *iteration*, not one per Nous arm or seed. "Candidate" for the platform is
+  the file you pass to `record_run`.
+- **Finish exactly once.** When the campaign reaches `DONE` (or the budget in
+  the prompt is spent), make the final `record_run`, then call `finish_arm`.
+  If the campaign fails irrecoverably, don't call `finish_arm` — just stop;
+  the platform's liveness sweep handles it.
+
 ## Running a campaign
 
 **Pre-flight checklist — do all of these before `nous run`:**
