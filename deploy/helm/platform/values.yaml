@@ -1077,6 +1077,10 @@ agentTemplates:
     experimental: true
     displayName: "NOUS"
     description: "Nous hypothesis-driven experimentation agent"
+    # The image is claude-code-based and Nous drives campaigns through the
+    # Claude Agent SDK, whose subprocesses inherit the pod env — so the
+    # standard telemetry env rail covers campaign turns, not just chat.
+    telemetry: true
     tags: ["Any provider"]
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
     image:

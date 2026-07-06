@@ -16,6 +16,16 @@ the `claude-code` harness uses. `git`/`gh` for cloning and publishing target
 repos go through the same gateway. The per-agent PVC persists campaign state
 across hibernation, so `nous resume` recovers a long run.
 
+The same inheritance makes agent telemetry work without any image change: the
+template sets `telemetry: true`, and when the telemetry backend is installed
+(`clickstack.enabled`) the pod receives the standard Claude Code OTLP env.
+Both of Nous's dispatch paths — the Claude Agent SDK (which builds its
+subprocess env from `os.environ`) and the legacy `claude -p` fallback — pass
+that env through to the harness, so every planner/executor turn of a campaign
+exports token/cost/duration telemetry with trusted per-agent attribution.
+Gate summaries go through the OpenAI-format endpoint instead of the Claude
+CLI and are the one dispatch path that does not export.
+
 ## Image
 
 Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
@@ -66,6 +76,13 @@ harness scripts. The chat harness drives `nous` per `AGENTS.md`:
   **auto-approve** by default, or — when a Slack/Telegram channel is bound —
   **on-demand approval** (`NOUS_ALLOW_AUTO_APPROVE=0`), where each gate pauses and
   is relayed to the channel for the user to approve.
+
+- **Experiment trial** → when launched as an arm of a platform Experiment
+  (the Trial prompt carries the autonomous-trial directive), the interactive
+  doctrine is suspended: the agent self-authors the campaign, runs
+  `--auto-approve`, keeps its turn alive until `DONE`, and reports one
+  `record_run` per iteration (composite score from `best_found.json`) before
+  `finish_arm` — see `AGENTS.md` → "Experiment trial sessions".
 
 ### Hibernation & resume
 
