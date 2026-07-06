@@ -31,6 +31,7 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentWakeTimeoutError,
   isTransientWakeFailure,
+  wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import type {
@@ -243,6 +244,7 @@ export function createSlackWorker(
     });
 
     let outcome: TurnOutcome = "failure";
+    let failureReason: string | undefined;
     const onImagesDropped = () =>
       ephemeral(
         ctx.channel,
@@ -314,8 +316,15 @@ export function createSlackWorker(
     };
 
     const postFailure = async (err: unknown) => {
+      failureReason = isAgentWakeTimeoutError(err)
+        ? wakeFailureReasonToken(err.failure)
+        : "acp-error";
       getLogger().warn(
-        { agentId: instanceName, error: formatError(err) },
+        {
+          agentId: instanceName,
+          reason: failureReason,
+          error: formatError(err),
+        },
         "slack.turn.failed",
       );
       // Wake timeouts get human copy mapped from the classified cause;
@@ -359,6 +368,7 @@ export function createSlackWorker(
         agentId: instanceName,
         actorSub: ctx.actorSub,
         outcome,
+        ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
     }
   }
@@ -537,6 +547,7 @@ export function createSlackWorker(
             actorSub: ctx.actorSub,
             outcome: turnOutcome,
             forkId: event.forkId,
+            ...(turnOutcome === "failure" ? { reason: "acp-error" } : {}),
           });
         }
       })
@@ -562,6 +573,7 @@ export function createSlackWorker(
           actorSub: ctx.actorSub,
           outcome: "failure",
           forkId: event.forkId,
+          reason: `fork-failed:${event.reason}`,
         });
       })
       .exhaustive();

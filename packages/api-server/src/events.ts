@@ -142,6 +142,11 @@ export type ChannelTurnRelayed = {
    *  channel-turn views. */
   outcome: TurnOutcome;
   forkId?: string;
+  /** Low-cardinality failure classifier (e.g.
+   *  "wake-timeout:agent-pod-failed:ImagePullFailure",
+   *  "fork-failed:PodNotReady", "acp-error"); absent on success. Makes
+   *  failed turns diagnosable from the audit trail. */
+  reason?: string;
 };
 
 export type ScheduleFired = {

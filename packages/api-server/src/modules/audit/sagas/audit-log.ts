@@ -73,6 +73,7 @@ export function startAuditLogSaga(): Subscription {
       surface: e.channel,
       agentId: e.agentId,
       result: e.outcome,
+      ...(e.reason ? { reason: e.reason } : {}),
       ...(e.forkId ? { detail: { forkId: e.forkId } } : {}),
     }),
   );

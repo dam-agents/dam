@@ -72,7 +72,10 @@ export function startPersistActivitySaga(
               agentId: event.agentId,
               surface: event.channel,
               outcome: event.outcome,
-              payload: event.forkId ? { forkId: event.forkId } : {},
+              payload: {
+                ...(event.forkId ? { forkId: event.forkId } : {}),
+                ...(event.reason ? { reason: event.reason } : {}),
+              },
             });
           } catch (err) {
             process.stderr.write(

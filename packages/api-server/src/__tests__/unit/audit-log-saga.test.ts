@@ -76,6 +76,22 @@ describe("audit-log saga", () => {
     const rec = h.records()[0]!;
     expect(rec.level).toBe("warn");
     expect(rec.result).toBe("failure");
+    expect(rec.reason).toBeUndefined();
+  });
+
+  it("projects the failure reason onto the channel.turn line", () => {
+    const h = harness();
+    active = h.sub;
+    emit({
+      type: EventType.ChannelTurnRelayed,
+      channel: "slack",
+      agentId: "agent-3",
+      actorSub: "kc-1",
+      outcome: "failure",
+      reason: "wake-timeout:agent-pod-failed:ImagePullFailure",
+    });
+    const rec = h.records()[0]!;
+    expect(rec.reason).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
   });
 
   it("does not log auth.login: per-request UserAuthenticated is intentionally ignored", () => {

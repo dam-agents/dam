@@ -97,7 +97,9 @@ describe("slack wake-failure surfacing", () => {
     expect(joined).toContain("its image can't be pulled");
     expect(joined).not.toContain("did not become ready within");
     expect(h.turnEvents()).toHaveLength(1);
-    expect((h.turnEvents()[0] as { outcome: string }).outcome).toBe("failure");
+    const turn = h.turnEvents()[0] as { outcome: string; reason?: string };
+    expect(turn.outcome).toBe("failure");
+    expect(turn.reason).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
   });
 
   it("transient failure: posts the still-starting note, retries once, answers", async () => {
