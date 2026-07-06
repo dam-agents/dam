@@ -87,7 +87,13 @@ func credSecret(name, host string) corev1.Secret {
 			Annotations: ann,
 			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
 		},
-		Data: map[string][]byte{"value": []byte("Bearer abc")},
+		// Real api-server-written Secrets always carry the SDS file the
+		// bootstrap references; chain rendering degrades to allow-only
+		// without it.
+		Data: map[string][]byte{
+			"value":               []byte("Bearer abc"),
+			envoyCredentialKeySDS: []byte("resources: []"),
+		},
 	}
 }
 

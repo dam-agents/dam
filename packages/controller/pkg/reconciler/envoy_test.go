@@ -28,7 +28,23 @@ func ownerSecret(name, secretType, connection string) corev1.Secret {
 			Annotations: map[string]string{envoyHostPatternAnn: "api.example.com"},
 			Labels:      labels,
 		},
+		// Healthy Secrets carry the SDS file the bootstrap references;
+		// chain rendering degrades to allow-only without it. Connection
+		// fixtures add their per-host keys via withHostSDS.
+		Data: map[string][]byte{envoyCredentialKeySDS: []byte("resources: []")},
 	}
+}
+
+// withHostSDS stamps the per-host SDS data keys a connection Secret's
+// injection-hosts entries reference (api-server naming, no sdsKey override).
+func withHostSDS(s corev1.Secret, hosts ...string) corev1.Secret {
+	if s.Data == nil {
+		s.Data = map[string][]byte{}
+	}
+	for _, h := range hosts {
+		s.Data[sdsFileKeyForHost(h)] = []byte("resources: []")
+	}
+	return s
 }
 
 func names(in []corev1.Secret) []string {
@@ -517,6 +533,7 @@ func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"},
 		{"host":"raw.githubusercontent.com"}
 	]`
+	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{s})
 	require.Len(t, chains, 3)
@@ -550,6 +567,7 @@ func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.
 		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"},
 		{"host":"raw.githubusercontent.com"}
 	]`
+	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{s})
 	require.Len(t, chains, 3)
@@ -564,6 +582,63 @@ func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.
 		clusters[c.UpstreamCluster] = true
 		chainIDs[c.ChainID] = true
 	}
+}
+
+func TestChainsFromSecrets_ConnectionMissingSDSKeyDegradesToAllowOnly(t *testing.T) {
+	// Regression for the fork-gateway boot crash: a stale pre-cutover
+	// connection Secret carries an injection-hosts annotation without
+	// sdsKey entries, and data keys under a naming scheme older than the
+	// fallback computes (here the sha8-era `host-<hex8>.sds.yaml`). A
+	// bootstrap referencing the missing base64url file is a fatal Envoy
+	// config error that crash-loops the gateway — render the host
+	// allow-only instead.
+	s := ownerSecret("platform-conn-347e511ae0055405-64b2b6d12bfe4baa", "connection", "github")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.github.com"}]`
+	s.Data = map[string][]byte{
+		"access_token":           []byte("gho_abc"),
+		"host-1a2b3c4d.sds.yaml": []byte("resources: []"),
+	}
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Equal(t, "api.github.com", chains[0].Host)
+	assert.False(t, chains[0].Credentialed(),
+		"missing SDS data key must degrade to allow-only, not render an unbootable bootstrap")
+}
+
+func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) {
+	// Only the host whose SDS file is missing degrades; the healthy host
+	// keeps its credential.
+	s := ownerSecret("platform-conn-github", "connection", "github")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.github.com"},
+		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"}
+	]`
+	s = withHostSDS(s, "api.github.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 2)
+	byHost := map[string]envoyHostChain{}
+	for _, c := range chains {
+		byHost[c.Host] = c
+	}
+	assert.True(t, byHost["api.github.com"].Credentialed())
+	assert.False(t, byHost["github.com"].Credentialed())
+}
+
+func TestChainsFromSecrets_SingleHostSecretMissingSDSYamlDegradesToAllowOnly(t *testing.T) {
+	// Same guard for the legacy single-host shape: no sds.yaml in data →
+	// allow-only chain, never a bootstrap path Envoy can't open.
+	s := ownerSecret("platform-cred-aaa", "generic", "")
+	s.Annotations[envoyHeaderNameAnn] = "Authorization"
+	s.Data = map[string][]byte{"value": []byte("Bearer abc")}
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Equal(t, "api.example.com", chains[0].Host)
+	assert.False(t, chains[0].Credentialed())
 }
 
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
@@ -779,6 +854,26 @@ func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T)
 	)
 }
 
+func TestEnvoySecretsRev_SDSDataKeysRollExistingPods(t *testing.T) {
+	// Chain rendering degrades a host to allow-only when its SDS data key
+	// is missing, so a Secret gaining the key back (re-bake, reconnect)
+	// changes the chain shape and must roll the gateway.
+	missing := ownerSecret("platform-conn-github", "connection", "github")
+	missing.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.github.com"}]`
+	missing.Data = map[string][]byte{"access_token": []byte("gho_abc")}
+
+	healed := ownerSecret("platform-conn-github", "connection", "github")
+	healed.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.github.com"}]`
+	healed.Data = map[string][]byte{"access_token": []byte("gho_abc")}
+	healed = withHostSDS(healed, "api.github.com")
+
+	assert.NotEqual(t,
+		envoySecretsRev([]corev1.Secret{missing}),
+		envoySecretsRev([]corev1.Secret{healed}),
+		"SDS data-key changes must change the rev so the StatefulSet rolls",
+	)
+}
+
 func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	// The rev hash must include a template-revision marker so any structural
 	// template change rolls existing pods on chart upgrade. Without it, the
@@ -899,6 +994,7 @@ func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
 	s.Annotations[envoyInjectionHostsAnn] = `[
 		{"host":"api.modal.com","headerName":"x-modal-token-id","http2":true}
 	]`
+	s = withHostSDS(s, "api.modal.com")
 
 	chains := chainsFromSecrets([]corev1.Secret{s})
 	require.Len(t, chains, 1)

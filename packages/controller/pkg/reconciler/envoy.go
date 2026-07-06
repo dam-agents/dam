@@ -86,8 +86,9 @@ type envoyCredential struct {
 	QueryParamName string
 	VolumeName     string // pod-level volume name for this Secret
 	// SDS file key inside the Secret's volume. Single-host
-	// Secrets use `sds.yaml`; connection Secrets use `host-<sha8>.sds.yaml`
-	// so one Secret carries N chains' credentials (issue #219).
+	// Secrets use `sds.yaml`; connection Secrets use the api-server's
+	// `sdsKey` (host-<base64url>.sds.yaml) so one Secret carries N
+	// chains' credentials (issue #219).
 	SDSFileKey string
 }
 
@@ -433,6 +434,18 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		case "connection":
 			for _, hc := range expandConnectionSecret(s) {
 				cred := hc.cred
+				// A bootstrap referencing an SDS file absent from the mounted
+				// Secret is a fatal Envoy boot error (crash-loops the whole
+				// gateway). Stale Secrets with mismatched data keys exist
+				// (pre-cutover writers used a different key naming), so
+				// degrade the host to allow-only instead of rendering an
+				// unbootable config.
+				if len(s.Data[cred.SDSFileKey]) == 0 {
+					slog.Warn("connection Secret missing SDS data key; rendering host allow-only (no credential injection)",
+						"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "sdsKey", cred.SDSFileKey)
+					add(hc.host, s.Name, nil, hc.http2)
+					continue
+				}
 				add(hc.host, s.Name, &cred, hc.http2)
 			}
 			continue
@@ -447,6 +460,12 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		}
 		http2 := s.Annotations[envoyInjectionHTTP2Ann] == "true"
 		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			add(host, s.Name, nil, http2)
+			continue
+		}
+		if len(s.Data[envoyCredentialKeySDS]) == 0 {
+			slog.Warn("credential Secret missing sds.yaml data key; rendering host allow-only (no credential injection)",
+				"namespace", s.Namespace, "secret", s.Name, "host", host)
 			add(host, s.Name, nil, http2)
 			continue
 		}
@@ -1858,22 +1877,39 @@ const envoyBootstrapTemplateRev = "v13-gateway-otel"
 // rendering. Includes `injection-hosts` JSON so a descriptor change
 // (host added / removed / retargeted on a connection) rolls the gateway —
 // Envoy reads the bootstrap once at boot, so without a roll the chain
-// shape goes stale.
+// shape goes stale. The SDS data-key set is included too: chain rendering
+// degrades a host to allow-only when its SDS key is missing, so a Secret
+// gaining (or losing) an SDS key changes the chain shape and must roll.
 func envoySecretsRev(secrets []corev1.Secret) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
 			s.Name,
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
 			s.Annotations[envoyHeaderNameAnn],
 			s.Annotations[envoyQueryParamAnn],
 			s.Annotations[envoyInjectionHostsAnn],
+			strings.Join(sdsDataKeys(s), ","),
 		))
 	}
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])
+}
+
+// sdsDataKeys returns the sorted SDS file keys present in a Secret's data —
+// the only data keys that shape chain rendering (token fields hot-reload
+// via SDS and never require a roll).
+func sdsDataKeys(s corev1.Secret) []string {
+	var keys []string
+	for k := range s.Data {
+		if k == envoyCredentialKeySDS || strings.HasSuffix(k, ".sds.yaml") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // envoyContainer returns the gateway pod's Envoy container spec. Drops all caps,
