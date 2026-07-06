@@ -249,7 +249,7 @@ describe("ensureReady", () => {
   });
 
   it("late ready at the deadline counts as success", async () => {
-    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
     // Never Ready during the poll; flip Ready just as the deadline passes
     // by making the final read see a Ready CR: replace isReady's view via
     // a poll that always misses, then set Ready right before the final GET.
