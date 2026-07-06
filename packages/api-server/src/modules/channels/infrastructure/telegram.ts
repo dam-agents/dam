@@ -10,7 +10,13 @@ import type {
 } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import { type AcpClientFactory } from "../../../core/acp-client.js";
+import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
+import {
+  isAgentWakeTimeoutError,
+  wakeFailureReasonToken,
+} from "../../agents/index.js";
+import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -165,6 +171,7 @@ export function createTelegramWorker(
     ].join("\n");
 
     let outcome: TurnOutcome = "failure";
+    let failureReason: string | undefined;
     try {
       await agents().ensureReady(instanceName);
       const acp = makeAcpClient(instanceName);
@@ -189,13 +196,28 @@ export function createTelegramWorker(
       });
       outcome = "success";
     } catch (err) {
-      process.stderr.write(`[telegram:${instanceName}] ACP error: ${err}\n`);
+      failureReason = isAgentWakeTimeoutError(err)
+        ? wakeFailureReasonToken(err.failure)
+        : "acp-error";
+      getLogger().warn(
+        { agentId: instanceName, reason: failureReason, error: String(err) },
+        "telegram.turn.failed",
+      );
+      // Wake timeouts get a human reply; other errors stay log-only as
+      // before (out of scope here).
+      if (isAgentWakeTimeoutError(err)) {
+        await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
+      }
     } finally {
-      emitTurn(instanceName, outcome);
+      emitTurn(instanceName, outcome, failureReason);
     }
   }
 
-  function emitTurn(instanceName: string, outcome: TurnOutcome) {
+  function emitTurn(
+    instanceName: string,
+    outcome: TurnOutcome,
+    reason?: string,
+  ) {
     // Only the instance owner runs /login, so we can't attribute Telegram turns to a real actor.
     emit({
       type: EventType.ChannelTurnRelayed,
@@ -203,6 +225,7 @@ export function createTelegramWorker(
       agentId: instanceName,
       actorSub: null,
       outcome,
+      ...(reason !== undefined ? { reason } : {}),
     });
   }
 

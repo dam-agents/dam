@@ -4,6 +4,10 @@ import {
   computeAgentState,
   type InfraAgent,
 } from "../../agents/infrastructure/agent-mappers.js";
+import {
+  isAgentWakeTimeoutError,
+  isTransientWakeFailure,
+} from "../../agents/index.js";
 
 /**
  * Make an agent's pod reachable for a skills-management call, or fail clearly.
@@ -32,8 +36,12 @@ export async function ensureAgentReachable(
   try {
     await repo.ensureReady(agentId);
   } catch (err) {
+    // A hard wake-failure cause (pod crash, bad image, reconcile error) is a
+    // precondition the caller must fix, not a server fault.
+    const hardFailure =
+      isAgentWakeTimeoutError(err) && !isTransientWakeFailure(err.failure);
     throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
+      code: hardFailure ? "PRECONDITION_FAILED" : "INTERNAL_SERVER_ERROR",
       message: `agent could not be made ready: ${(err as Error).message}`,
     });
   }
