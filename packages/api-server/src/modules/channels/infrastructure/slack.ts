@@ -26,7 +26,13 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
+import {
+  isAgentWakeTimeoutError,
+  isTransientWakeFailure,
+} from "../../agents/index.js";
+import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import type {
   SlackAck,
   SlackGateway,
@@ -227,9 +233,10 @@ export function createSlackWorker(
     images: FetchedImage[];
   }) {
     if (!gateway) return;
+    const gw = gateway;
     const { instanceName } = ctx;
 
-    await gateway.addReaction({
+    await gw.addReaction({
       channel: ctx.channel,
       ts: ctx.eventTs,
       name: "eyes",
@@ -243,8 +250,23 @@ export function createSlackWorker(
         ctx.hasThread ? ctx.threadTs : undefined,
         "This agent can't process images yet — answering text only.",
       );
-    try {
-      await agents().ensureReady(instanceName);
+
+    // Requester-only heads-up on a cold start; suppressed on the retry
+    // pass so a second window doesn't re-announce the same wake.
+    let coldNoticePosted = false;
+    const onWaking = () => {
+      if (coldNoticePosted) return;
+      coldNoticePosted = true;
+      ephemeral(
+        ctx.channel,
+        ctx.slackUserId,
+        ctx.hasThread ? ctx.threadTs : undefined,
+        "Waking the agent — this can take a minute or two.",
+      );
+    };
+
+    const runTurn = async () => {
+      await agents().ensureReady(instanceName, { onWaking });
       const acp = makeAcpClient(instanceName);
       const platformMeta = {
         type: SessionType.ChannelSlack,
@@ -268,14 +290,14 @@ export function createSlackWorker(
             onImagesDropped,
           });
         } catch {
-          const prompt = await buildThreadPrompt(gateway, ctx);
+          const prompt = await buildThreadPrompt(gw, ctx);
           response = await acp.sendPrompt(prompt, {
             platformMeta,
             onImagesDropped,
           });
         }
       } else {
-        const prompt = await buildThreadPrompt(gateway, ctx);
+        const prompt = await buildThreadPrompt(gw, ctx);
         response = await acp.sendPrompt(prompt, {
           platformMeta,
           onImagesDropped,
@@ -289,15 +311,47 @@ export function createSlackWorker(
         response,
       );
       outcome = "success";
-    } catch (err) {
-      process.stderr.write(
-        `[${instanceName}] ACP error: ${formatError(err)}\n`,
+    };
+
+    const postFailure = async (err: unknown) => {
+      getLogger().warn(
+        { agentId: instanceName, error: formatError(err) },
+        "slack.turn.failed",
       );
-      await gateway.postMessage({
+      // Wake timeouts get human copy mapped from the classified cause;
+      // everything else keeps the raw path (out of scope here).
+      const text = isAgentWakeTimeoutError(err)
+        ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx.images)}`
+        : `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`;
+      await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,
-        text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
+        text,
       });
+    };
+
+    try {
+      try {
+        await runTurn();
+      } catch (err) {
+        // A transient timeout means the pods are progressing (e.g. a slow
+        // image pull that legitimately outruns one window) — tell the
+        // thread and wait one more window instead of losing the turn.
+        if (
+          !isAgentWakeTimeoutError(err) ||
+          !isTransientWakeFailure(err.failure)
+        ) {
+          throw err;
+        }
+        await gw.postMessage({
+          channel: ctx.channel,
+          threadTs: ctx.threadTs,
+          text: "The agent is still starting — hang on, answering as soon as it's up…",
+        });
+        await runTurn();
+      }
+    } catch (err) {
+      await postFailure(err);
     } finally {
       emit({
         type: EventType.ChannelTurnRelayed,
