@@ -172,6 +172,75 @@ describe("ForksService.openFork", () => {
     ]);
   });
 
+  it("deletes the K8s fork state when the orchestrator reports Failed", async () => {
+    const h = makeHarness({});
+    await h.service.openFork({
+      agentId: "inst-1",
+      foreignSub: "kc|user-42",
+      replyId: "reply-1",
+    });
+    h.statusStream("fork-1", [
+      {
+        phase: "Failed",
+        error: { reason: "PodNotReady", detail: "CrashLoopBackOff" },
+      },
+    ]);
+    await h.streamDone();
+
+    // The gateway pod is owner-refed to the Fork CR; without this delete a
+    // failed fork's crash-looping gateway would outlive the turn forever.
+    expect(h.calls.deletedForks).toEqual(["fork-1"]);
+    // A later ChannelTurnRelayed-driven closeFork must not re-emit anything.
+    await h.service.closeFork("fork-1");
+    expect(h.events.filter((e) => e.type === EventType.ForkCompleted)).toEqual(
+      [],
+    );
+  });
+
+  it("deletes the K8s fork state when createFork errors", async () => {
+    const h = makeHarness({
+      orchestrator: {
+        createFork: async () =>
+          err({ kind: "WriteFailed", detail: "apiserver 503" }),
+      },
+    });
+    await h.service.openFork({
+      agentId: "inst-1",
+      foreignSub: "kc|user-42",
+      replyId: "reply-1",
+    });
+
+    expect(h.calls.deletedForks).toEqual(["fork-1"]);
+  });
+
+  it("still emits ForkFailed when the failure-path delete throws", async () => {
+    const h = makeHarness({
+      orchestrator: {
+        deleteFork: async () => {
+          throw new Error("apiserver 503");
+        },
+      },
+    });
+    await h.service.openFork({
+      agentId: "inst-1",
+      foreignSub: "kc|user-42",
+      replyId: "reply-1",
+    });
+    h.statusStream("fork-1", [
+      { phase: "Failed", error: { reason: "Timeout" } },
+    ]);
+    await h.streamDone();
+
+    expect(h.events).toEqual([
+      {
+        type: EventType.ForkFailed,
+        forkId: "fork-1",
+        replyId: "reply-1",
+        reason: "Timeout",
+      },
+    ]);
+  });
+
   it("rejects empty foreignSub", async () => {
     const h = makeHarness({});
     await expect(

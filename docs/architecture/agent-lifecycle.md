@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-07-01
+Last verified: 2026-07-06
 
 ## Overview
 
@@ -179,6 +179,8 @@ Schedules are independent Postgres rows and survive Agent deletion as orphans un
 ## Forks
 
 Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
+
+Fork teardown mirrors the Run executor's two-layer model: the api-server deletes the Fork CR when the fork's turn completes **or fails**, and K8s GC cascades to everything owner-refed to it — including the paired gateway pod, which as a bare always-restarting Pod has no terminal state of its own and lives exactly as long as the CR. A controller hard-lifetime reaper backstops any fork the api-server never cleaned up (crash mid-fork, lost in-memory state), reaping over-age CRs regardless of phase.
 
 ## Run executors (`dam-run`)
 
