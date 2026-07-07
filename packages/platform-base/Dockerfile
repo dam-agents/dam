@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     set -eu; \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
-    cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
+    cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise mise install node
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
@@ -91,11 +91,14 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
+# The chmod restores world-readability: mise rewrites the lock 0600, which
+# would lock the runtime agent user out after a root-run install in a derived
+# image build — an unreadable lock degrades every shim call to API lookups.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in jq fd rg gh uv uv=uvx python 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
