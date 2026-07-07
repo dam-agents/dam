@@ -1,21 +1,22 @@
+import { Code } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
-import { Trash2 } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import {
-  SESSION_STATUS_DISPLAY,
-  type SessionStatus,
-} from "../session-status.js";
+import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
 
 interface Props {
   session: SessionView;
   active: boolean;
-  status: SessionStatus;
+  working: boolean;
+  needsApproval: boolean;
+  /** Bold title for a session with activity the user hasn't seen. Not yet wired — see follow-up. */
+  unread?: boolean;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -23,7 +24,9 @@ interface Props {
 export function SessionRow({
   session: s,
   active,
-  status,
+  working,
+  needsApproval,
+  unread = false,
   onResume,
   onDelete,
 }: Props) {
@@ -73,20 +76,24 @@ export function SessionRow({
   // Show "(no title · abcd1234)" while the harness hasn't named the session
   // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
-  const titleClass = s.title
-    ? active
-      ? "text-accent font-bold"
-      : "text-text font-medium"
-    : "text-text-muted italic";
+  const titleClass = !s.title
+    ? "text-text-muted italic"
+    : unread
+      ? "font-semibold text-text"
+      : "font-normal text-text";
 
-  const statusStyle = SESSION_STATUS_DISPLAY[status];
+  const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const terminal = s.mode === SessionMode.Terminal;
 
   return (
     <div
       data-testid="session-row"
       data-session-id={s.sessionId}
       data-active={active ? "true" : "false"}
-      className={`group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border-light transition-colors hover:bg-accent-light select-none ${active ? "bg-accent-light border-l-[3px] border-l-accent" : ""}`}
+      className={cn(
+        "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border-light transition-colors select-none",
+        active ? "bg-muted" : "hover:bg-muted/60",
+      )}
       onClick={handleClick}
       onTouchStart={startPress}
       onTouchEnd={endPress}
@@ -98,30 +105,21 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          <span
-            data-testid="session-status-dot"
-            data-status={status}
-            className={cn(
-              "w-2 h-2 rounded-full shrink-0",
-              statusStyle.dotClass,
-              statusStyle.pulse && "anim-pulse",
-            )}
-            title={statusStyle.label}
-          />
-          <span className={`text-[13px] truncate ${titleClass}`}>
+          <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
-          {s.mode === SessionMode.Terminal && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-accent bg-accent-light rounded px-1 py-0.5 shrink-0">
-              terminal
-            </span>
-          )}
           {(s.type === SessionType.ChannelSlack ||
             s.type === SessionType.ChannelTelegram) && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
               {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
             </span>
           )}
+          <SessionIndicators
+            scheduled={scheduled}
+            terminal={terminal}
+            needsApproval={needsApproval}
+            working={working}
+          />
         </div>
         <span className="text-[11px] text-text-muted">
           {new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
@@ -164,5 +162,38 @@ export function SessionRow({
         </div>
       )}
     </div>
+  );
+}
+
+function SessionIndicators({
+  scheduled,
+  terminal,
+  needsApproval,
+  working,
+}: {
+  scheduled: boolean;
+  terminal: boolean;
+  needsApproval: boolean;
+  working: boolean;
+}) {
+  if (!scheduled && !terminal && !needsApproval && !working) return null;
+  return (
+    <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
+      {terminal && (
+        <Code size={14} className="text-text-muted" aria-label="Terminal" />
+      )}
+      {scheduled && (
+        <Clock size={14} className="text-text-muted" aria-label="Scheduled" />
+      )}
+      {needsApproval ? (
+        <span
+          data-testid="session-approval-dot"
+          className="w-2 h-2 rounded-full bg-accent shrink-0"
+          title="Needs your approval"
+        />
+      ) : working ? (
+        <WorkingDots className="text-accent" title="Working" />
+      ) : null}
+    </span>
   );
 }

@@ -1,4 +1,4 @@
-import { SessionMode } from "api-server-api";
+import type { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
@@ -9,7 +9,6 @@ import { useAgentRunState } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { useAcpSessions } from "../api/queries.js";
-import { resolveSessionStatus } from "../session-status.js";
 import { SessionRow } from "./session-row.js";
 
 const EMPTY: never[] = [];
@@ -120,11 +119,8 @@ export function SessionsSidebar({
               key={s.sessionId}
               session={s}
               active={isOpen}
-              status={resolveSessionStatus({
-                working,
-                needsApproval,
-                isTerminal: s.mode === SessionMode.Terminal,
-              })}
+              working={working}
+              needsApproval={needsApproval}
               onResume={() => onResumeSession(s.sessionId, s.mode)}
               onDelete={() => confirmDelete(s.sessionId, s.title)}
             />
