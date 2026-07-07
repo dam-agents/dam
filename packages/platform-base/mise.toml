@@ -4,10 +4,7 @@ minimum_release_age = "7d"
 python.compile = false
 
 [tools]
-# Exact pin (not "24") so minimum_release_age doesn't gate it: node's bundled npm
-# vendors the patched brace-expansion/tar/picomatch/ip-address/minimatch only from
-# 24.18.0 (npm 11.16.0) onward. Bump in lockstep when patching those CVEs.
-node = "24.18.0"
+node = "24"
 jq = "latest"
 fd = "latest"
 rg = "latest"
