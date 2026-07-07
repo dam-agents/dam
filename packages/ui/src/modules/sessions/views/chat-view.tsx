@@ -37,7 +37,6 @@ import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
-import { LogPanel } from "../components/log-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -321,7 +320,7 @@ export function ChatView() {
   const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
 
   // ── Right panel ──
-  const rightTabs = ["files", "log", "configuration"] as const;
+  const rightTabs = ["files", "configuration"] as const;
   const rightPanelContent = (
     <>
       <div className="flex border-b border-border-light shrink-0">
@@ -345,7 +344,6 @@ export function ChatView() {
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
-        {rightTab === "log" && <LogPanel />}
         <div
           className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}
         >

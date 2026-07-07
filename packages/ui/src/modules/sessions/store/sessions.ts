@@ -5,7 +5,7 @@ import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
-import type { LogEntry, Message } from "../../../types.js";
+import type { Message } from "../../../types.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 
@@ -21,7 +21,6 @@ export interface SessionsSlice {
   sessionId: string | null;
   sessionMode: SessionMode | null;
   messages: Message[];
-  log: LogEntry[];
   sessionError: SessionError | null;
   includeChannelSessions: boolean;
   queuedMessage: string | null;
@@ -39,7 +38,6 @@ export interface SessionsSlice {
   setQueuedMessage: (msg: string | null) => void;
   setBusy: (busy: boolean) => void;
 
-  addLog: (type: string, payload: object) => void;
   /** Delete a session via the platform API, drop it from the sidebar list
    *  cache immediately, then invalidate to reconcile. Resets the chat context
    *  if the deleted session was active. */
@@ -47,7 +45,7 @@ export interface SessionsSlice {
 
   /**
    * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, log, queued prompt). Callers like `selectInstance`,
+   * session config, queued prompt). Callers like `selectInstance`,
    * `goBack`, and the popstate handler invoke this so every entry point
    * leaves chat state in the same clean shape.
    */
@@ -63,7 +61,6 @@ export const createSessionsSlice: StateCreator<
   sessionId: null,
   sessionMode: null,
   messages: [],
-  log: [],
   sessionError: null,
   includeChannelSessions: false,
   queuedMessage: null,
@@ -92,18 +89,10 @@ export const createSessionsSlice: StateCreator<
       sessionError: null,
       terminalPaused: false,
       openFilePath: null,
-      log: [],
       pendingPermissions: [],
       queuedMessage: null,
       pendingResumeSessionId: null,
     }),
-
-  addLog: (type, payload) => {
-    const ts = new Date().toISOString().slice(11, 23);
-    set((s) => ({
-      log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
-    }));
-  },
 
   deleteSession: async (sessionId) => {
     const agentId = get().selectedAgent;

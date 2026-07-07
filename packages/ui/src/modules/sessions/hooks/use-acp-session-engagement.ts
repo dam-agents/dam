@@ -26,7 +26,6 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
   clear: () => void;
 } {
   const setSessionId = useStore((s) => s.setSessionId);
-  const addLog = useStore((s) => s.addLog);
 
   const engagedSessionIdRef = useRef<string | null>(null);
 
@@ -55,11 +54,10 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
         });
         setSessionId(s.sessionId);
         engagedSessionIdRef.current = s.sessionId;
-        addLog("session", { sessionId: s.sessionId });
         optimisticInsertSession(selectedAgent, s.sessionId, SessionMode.Chat);
       }
     },
-    [selectedAgent, setSessionId, addLog],
+    [selectedAgent, setSessionId],
   );
 
   const clear = useCallback(() => {

@@ -45,7 +45,6 @@ export function useAcpPrompt(
   stopAgent: () => Promise<void>;
 } {
   const setMessages = useStore((s) => s.setMessages);
-  const addLog = useStore((s) => s.addLog);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendPrompt = useCallback(
@@ -93,14 +92,12 @@ export function useAcpPrompt(
         uMsg,
         aMsg,
       ]);
-      addLog("prompt", { text });
 
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
       watchdogRef.current = setTimeout(() => {
         const msgs = useStore.getState().messages;
         const bubble = msgs.find((m) => m.id === aId);
         if (bubble?.streaming && bubble.parts.length === 0) {
-          addLog("error", { message: "Delivery watchdog fired" });
           setMessages((p) =>
             p.map((m) =>
               m.id === aId
@@ -133,8 +130,7 @@ export function useAcpPrompt(
           text,
           attachments,
         );
-        const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
-        addLog("done", { stopReason: r.stopReason });
+        await conn.prompt({ sessionId: sid, prompt: promptBlocks });
 
         // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
         // variant without our extension), force-close our bubble anyway.
@@ -145,7 +141,6 @@ export function useAcpPrompt(
         );
       } catch (err: unknown) {
         const errMsg = extractErrorMessage(err);
-        addLog("error", { message: errMsg });
         setMessages((p) =>
           p.map((m) =>
             m.id === aId
@@ -172,7 +167,6 @@ export function useAcpPrompt(
       selectedAgent,
       ensureConnection,
       engagedSessionIdRef,
-      addLog,
       setMessages,
       textareaRef,
     ],
