@@ -1150,18 +1150,37 @@ func TestRenderEnvoyBootstrap_HTTPSCollectorGetsUpstreamTLS(t *testing.T) {
 	assert.Contains(t, collectorBlock, "sni: otel.example.com")
 }
 
-func TestRenderEnvoyBootstrap_TracingNotOnCredentialChains(t *testing.T) {
-	// The post-MITM credential-injection chains must NOT get a tracing provider:
-	// their :path can hold a query-param credential and Envoy has no span-tag
-	// query stripper. Tracing lives only on the outer agent_egress HCM, so the
-	// provider appears exactly once even with two credentialed chains.
+func TestRenderEnvoyBootstrap_TracingOnHeaderCredentialChains(t *testing.T) {
+	// Header-credential chains get a tracing provider: they see the agent's
+	// decrypted traceparent, so their spans join the harness trace and ext_authz
+	// carries the context to the api-server. Expect one provider on the outer
+	// agent_egress HCM plus one per chain.
 	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
 	})
 	require.NoError(t, err)
+	assert.Equal(t, 3, strings.Count(got, "OpenTelemetryConfig"),
+		"tracing provider must be on the outer egress HCM and each header-credential chain")
+	// Chain spans must not tag the agent-authored path/query (may hold
+	// agent-side secrets, e.g. presigned URLs); only the outer HCM — where
+	// spans see CONNECT or plaintext egress — keeps the longer path tag.
+	assert.Equal(t, 2, strings.Count(got, "max_path_tag_length: 1\n"),
+		"each traced chain suppresses the path tag")
+	assert.Equal(t, 1, strings.Count(got, "max_path_tag_length: 256\n"),
+		"outer egress HCM keeps its path tag")
+}
+
+func TestRenderEnvoyBootstrap_TracingNotOnQueryParamChains(t *testing.T) {
+	// Chains that move a credential into a URL query parameter must NOT get a
+	// tracing provider: post-injection :path carries the credential and Envoy
+	// has no span-tag query stripper. Only the outer HCM's provider renders.
+	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), []envoyHostChain{
+		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
+	})
+	require.NoError(t, err)
 	assert.Equal(t, 1, strings.Count(got, "OpenTelemetryConfig"),
-		"tracing provider must be on the outer egress HCM only, not per credential chain")
+		"query-param chains must stay untraced")
 }
 
 func TestRenderEnvoyBootstrap_AccessLogNeverLogsCredentials(t *testing.T) {

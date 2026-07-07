@@ -122,6 +122,19 @@ type envoyHostChain struct {
 // via dynamic_forward_proxy — there's no credential to misroute.
 func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
 
+// HasQueryParamCredential reports whether any credential on the chain is
+// moved into a URL query parameter. Such chains must stay untraced: the
+// post-injection :path carries the credential and Envoy has no
+// query-stripper for span tags.
+func (c envoyHostChain) HasQueryParamCredential() bool {
+	for _, cred := range c.Credentials {
+		if cred.QueryParamName != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // envoySecretTypeAllowOnly marks Secrets that exist solely to extend the
 // cert SAN list and force a host onto the L7 path so path-specific egress
 // rules can be enforced. They carry no credential payload.
@@ -909,13 +922,51 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
+{{- if and $.OTel.Traces (not $chain.HasQueryParamCredential) }}
+                # Traced: this chain sees the agent's decrypted traceparent, so
+                # its span joins the harness trace and ext_authz carries that
+                # context to the api-server — the one place harness, gateway,
+                # and egress-approval spans can meet in a single trace. Safe
+                # only because every credential here is header-injected and
+                # span tags never record headers; chains with a query-param
+                # credential stay untraced (post-injection :path carries the
+                # credential; Envoy has no query-stripper for span tags).
+                # max_path_tag_length 1 keeps the agent-authored path/query —
+                # which may hold agent-side secrets such as presigned URLs —
+                # out of the http.url tag; per-request detail stays in the
+                # query-stripped access log, joinable via the x-request-id tag.
+                tracing:
+                  spawn_upstream_span: false
+                  max_path_tag_length: 1
+                  random_sampling:
+                    value: {{ $.OTel.SamplingPercent }}
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      service_name: "{{ $.OTel.ServiceName }}"
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.TracesURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      resource_detectors:
+                        - name: envoy.tracers.opentelemetry.resource_detectors.environment
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.tracers.opentelemetry.resource_detectors.v3.EnvironmentResourceDetectorConfig
+{{- end }}
 {{- if $.OTel.AccessLogs }}
-                # No tracing block on the credential-injection chains: post-MITM
-                # the :path can carry a query-param credential and Envoy has no
-                # query-stripper for span tags. Access logs are safe — they use
-                # REQ_WITHOUT_QUERY and never name the Authorization header — and
-                # the api-server ext_authz decision log already records the egress
-                # verdict for every credentialed request.
+                # Access logs are credential-safe on every chain — they use
+                # REQ_WITHOUT_QUERY and never name the Authorization header —
+                # and the api-server ext_authz decision log already records the
+                # egress verdict for every credentialed request.
                 access_log:
                   - name: envoy.access_loggers.file
                     typed_config:
