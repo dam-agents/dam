@@ -15,7 +15,7 @@ interface Props {
   active: boolean;
   working: boolean;
   needsApproval: boolean;
-  /** Bold title for a session with activity the user hasn't seen. Not yet wired — see follow-up. */
+  /** Bold title for a session with activity the user hasn't seen. Not yet wired — see #2427. */
   unread?: boolean;
   onResume: () => void;
   onDelete: () => void;
@@ -180,10 +180,10 @@ function SessionIndicators({
   return (
     <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
       {terminal && (
-        <Code size={14} className="text-text-muted" aria-label="Terminal" />
+        <Code size={16} className="text-text" aria-label="Terminal" />
       )}
       {scheduled && (
-        <Clock size={14} className="text-text-muted" aria-label="Scheduled" />
+        <Clock size={16} className="text-text" aria-label="Scheduled" />
       )}
       {needsApproval ? (
         <span
