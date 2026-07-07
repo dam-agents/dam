@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-07-02
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -48,6 +48,7 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 - **Rides the agent's ordinary egress.** The exporter honours the agent's `HTTPS_PROXY`, so telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below. No new network path, and no credential is injected into the export.
 - **Config travels the harness env rail.** The OTLP environment (enable flag, per-signal exporters, endpoint, protocol, flush intervals) reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
 - **Signals.** Metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP. **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
+- **Trace context propagates internally, never outward.** The harness is configured to keep W3C trace-context propagation on even when it fronts a custom model upstream — a case where it would otherwise switch propagation off — so its request spans, its subprocesses, and the gateway's egress spans join one trace. Nothing leaks: the gateway strips `traceparent`/`tracestate` before any request reaches an external upstream (see [logging — gateway telemetry](logging.md#gateway-telemetry)).
 
 ## Platform-service export
 
