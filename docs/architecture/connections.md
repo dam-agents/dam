@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-03
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -175,15 +175,23 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 The external-cluster connection (#2314). The user supplies the cluster API
 endpoint (as an `oc login`-style URL or bare `host[:port]`), a service-account
 token, and — only when the API cert isn't publicly trusted — the cluster's CA.
-The build synthesizes two contributions: an `egress-inject` carrying the port,
+The build synthesizes three contributions: an `egress-inject` carrying the port,
 the streaming-upgrade opt-in, and (when a CA was given) the upstream-CA marker;
-and a `file` contribution writing a ready-to-use kubeconfig. The kubeconfig's
-trust anchor is the platform MITM CA already mounted in every agent pod, and
-its user carries only an **inert placeholder token** — the gateway overwrites
-it with the real service-account token on the wire, so `kubectl`/`oc` work out
-of the box while the real token only ever exists gateway-side. (The placeholder
-exists because `kubectl` refuses to issue a request with a credential-less
-user; `oc` would send an anonymous one.)
+a `file` contribution writing a ready-to-use kubeconfig at a **per-connection
+path**; and a `KUBECONFIG` `env` pointing at that file. The kubeconfig's trust
+anchor is the platform MITM CA already mounted in every agent pod, and its user
+carries only an **inert placeholder token** — the gateway overwrites it with
+the real service-account token on the wire, so `kubectl`/`oc` work out of the
+box while the real token only ever exists gateway-side. (The placeholder exists
+because `kubectl` refuses to issue a request with a credential-less user; `oc`
+would send an anonymous one.)
+
+Multiple cluster connections compose rather than clobber: each writes its own
+kubeconfig file, and the `env` driver joins their `KUBECONFIG` entries into the
+`:`-separated list `kubectl`/`oc` merge at load time (kubeconfig has no
+include-another-file mechanism, so this is the idiomatic route). The driver
+resolves `$HOME` and dedups; the first-granted connection's context is the
+default.
 
 The CA is optional and never reaches the agent — it configures the gateway's
 upstream validation only. Publicly-trusted endpoints (most managed clusters)
@@ -203,7 +211,8 @@ blindly.
     { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
       "headerName": "Authorization", "valueFormat": "Bearer {value}",
       "upgrades": true, "upstreamCa": true },
-    { "kind": "file", "path": "$HOME/.kube/config", "format": "yaml",
+    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/api.prod.example-6443.config" },
+    { "kind": "file", "path": "$HOME/.kube/connections/api.prod.example-6443.config", "format": "yaml",
       "mergeMode": "overwrite",
       "content": { "clusters": [ { "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "user": { "token": "injected-by-gateway" } } ], "…": "…" } }
   ]

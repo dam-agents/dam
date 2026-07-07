@@ -74,6 +74,12 @@ function fileOf(contributions: Contribution[]) {
   return c;
 }
 
+function envOf(contributions: Contribution[], name: string) {
+  const c = contributions.find((c) => c.kind === "env" && c.name === name);
+  if (c?.kind !== "env") throw new Error(`no env contribution ${name}`);
+  return c;
+}
+
 describe("kubernetes connection template", () => {
   it("splits host:port and injects Bearer with upgrade tunneling", async () => {
     const built = await buildKubernetes({ host: "api.cluster.example:6443" });
@@ -87,10 +93,17 @@ describe("kubernetes connection template", () => {
     });
   });
 
-  it("writes a tokenless kubeconfig pointed at the platform MITM CA", async () => {
+  it("writes a per-connection kubeconfig and points KUBECONFIG at it", async () => {
     const built = await buildKubernetes({ host: "api.cluster.example:6443" });
     const file = fileOf(built.contributions);
-    expect(file.path).toBe("$HOME/.kube/config");
+    expect(file.path).toBe(
+      "$HOME/.kube/connections/api.cluster.example-6443.config",
+    );
+    // The env driver joins KUBECONFIG across connections, so it must point at
+    // this connection's own file.
+    expect(envOf(built.contributions, "KUBECONFIG").placeholder).toBe(
+      file.path,
+    );
     expect(file.format).toBe("yaml");
     expect(file.mergeMode).toBe("overwrite");
     const content = file.content as {
@@ -108,6 +121,16 @@ describe("kubernetes connection template", () => {
     // Real token stays gateway-side; user holds only the placeholder.
     expect(JSON.stringify(content)).not.toContain("sa-token");
     expect(content.users[0].user.token).toBe("injected-by-gateway");
+  });
+
+  it("gives distinct clusters distinct kubeconfig files (so they compose)", async () => {
+    const a = fileOf(
+      (await buildKubernetes({ host: "api.a.example:6443" })).contributions,
+    );
+    const b = fileOf(
+      (await buildKubernetes({ host: "api.b.example" })).contributions,
+    );
+    expect(a.path).not.toBe(b.path);
   });
 
   it("normalizes :443 away and omits the port field", async () => {

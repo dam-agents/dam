@@ -3,7 +3,9 @@ import type { Contribution } from "api-server-api";
 
 export const KUBERNETES_TEMPLATE_ID = "kubernetes";
 
-const KUBECONFIG_PATH = "$HOME/.kube/config";
+// One kubeconfig per connection at its own path; the env driver joins their
+// KUBECONFIG entries so kubectl/oc merges them (multiple clusters compose).
+const KUBECONFIG_DIR = "$HOME/.kube/connections";
 
 // kubectl's TLS peer is the gateway's intercept cert, not the real cluster.
 const PLATFORM_CA_PATH = "/etc/platform/ca/ca.crt";
@@ -55,6 +57,7 @@ export function buildKubernetesContributions(
     );
   }
   const server = `https://${target.host}${target.port ? `:${target.port}` : ""}`;
+  const kubeconfigPath = `${KUBECONFIG_DIR}/${fileSlug(target.host, target.port)}.config`;
   return [
     {
       kind: "egress-inject",
@@ -65,9 +68,10 @@ export function buildKubernetesContributions(
       upgrades: true,
       ...(target.hasUpstreamCa ? { upstreamCa: true } : {}),
     },
+    { kind: "env", name: "KUBECONFIG", placeholder: kubeconfigPath },
     {
       kind: "file",
-      path: KUBECONFIG_PATH,
+      path: kubeconfigPath,
       format: "yaml",
       mergeMode: "overwrite",
       content: {
@@ -122,4 +126,9 @@ export function decodeCaData(caData: string): string {
 // Host is already bracket-stripped, so a remaining ':' means bare IPv6.
 function isIpLiteral(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
+}
+
+// Per-endpoint kubeconfig filename; distinct endpoints get distinct files.
+function fileSlug(host: string, port?: number): string {
+  return `${host}${port ? `-${port}` : ""}`.replace(/[^a-zA-Z0-9.-]/g, "_");
 }
