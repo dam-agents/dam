@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-07-03
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -69,4 +69,4 @@ Because the gateway injects upstream credentials on the wire, its telemetry is b
 - **No credential in any record.** The access log never names the `Authorization` header, and it renders the request path through Envoy's `REQ_WITHOUT_QUERY` operator so the query string — where the credential injector parks query-parameter credentials — is dropped before the path is written.
 - **No spans on the credential-injection chains.** The per-host TLS-terminating chains carry no tracing provider: post-interception their `:path` can hold a query-parameter credential and Envoy has no query stripper for span tags. Tracing lives only on the outer listener, where every request is a `CONNECT` (host and port, no path) or plaintext egress. The egress decision for each credentialed request is already on the api-server's audit trail (`egress.decision`), so this loses no forensic coverage.
 - **Bounded cardinality.** Every gateway shares one trace/metric `service.name`; per-gateway identity rides as a bounded `platform.gateway.id` resource attribute, so cardinality does not scale with the agent count.
-- **No internal trace context leaks outward.** The gateway strips `traceparent`/`tracestate` before a request reaches an external upstream; it keeps them on the internal harness route so a gateway span still links to the api-server's trace.
+- **Trace context is stripped where the gateway can see it.** Plain-HTTP egress has `traceparent`/`tracestate` removed before the request reaches an external upstream; the internal harness route keeps them so a gateway span still links to the api-server's trace. TLS-intercepted requests are the exception: the credential-injection chains forward the agent's decrypted headers — trace context included — to the upstream, and passthrough tunnels are opaque to the gateway entirely. So an upstream the agent talks to over TLS can observe the agent's trace IDs; what it can never observe is platform-side span data, which only ever goes to the collector.
