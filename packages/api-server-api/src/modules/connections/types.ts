@@ -127,12 +127,9 @@ export const agentConnections = z.object({
 });
 export type AgentConnections = z.infer<typeof agentConnections>;
 
-/** Outcome of dialing a cluster API endpoint's TLS with full validation.
- *  - `trusted` — the serving cert chains to a public root; the gateway needs
- *    no explicit CA.
- *  - `reachable && !trusted` — the endpoint was reached but its cert isn't
- *    publicly trusted (self-signed / private CA); the user must supply the CA.
- *  - `!reachable` — the dial itself failed (DNS / refused / timeout). */
+/** Cluster API TLS probe. `trusted`: chains to a public root (no CA needed).
+ *  `reachable && !trusted`: self-signed/private CA — user must supply it.
+ *  `!reachable`: dial failed. */
 export interface ClusterCaProbe {
   reachable: boolean;
   trusted: boolean;

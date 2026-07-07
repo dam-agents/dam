@@ -115,23 +115,12 @@ type envoyHostChain struct {
 	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
 	HTTP2           bool
-	// Upstream TCP port the pinned cluster dials; 0 means 443 (the
-	// template renders via UpstreamPortValue). Only meaningful on
-	// credentialed chains — allow-only chains forward via
-	// dynamic_forward_proxy, which honors the inner request's Host:port.
-	UpstreamPort int
-	// Tunnel HTTP Upgrade flows (WebSocket, SPDY/3.1) through the
-	// chain's HCM — kubectl exec/port-forward-style streaming. Also
-	// relaxes the route idle timeout so long-lived tunnels survive.
-	Upgrades bool
-	// Absolute path of an upstream CA bundle inside the gateway pod (a
-	// field of the mounted connection Secret). Empty → system bundle.
-	// Lets the gateway validate upstreams signed by a private CA
-	// (self-signed cluster CAs) without weakening SAN pinning.
+	UpstreamPort    int // 0 → 443
+	Upgrades        bool
+	// Path to a CA bundle inside the gateway pod; empty → system bundle.
 	UpstreamCAFile string
 }
 
-// UpstreamPortValue is the port the pinned cluster dials; unset means 443.
 func (c envoyHostChain) UpstreamPortValue() int {
 	if c.UpstreamPort == 0 {
 		return 443
@@ -139,9 +128,7 @@ func (c envoyHostChain) UpstreamPortValue() int {
 	return c.UpstreamPort
 }
 
-// HostRewrite is the Host header presented upstream: bare host on 443,
-// host:port otherwise, so upstreams behind non-default ports see the
-// authority they expect.
+// Authority presented upstream: bare host on 443, host:port otherwise.
 func (c envoyHostChain) HostRewrite() string {
 	if p := c.UpstreamPortValue(); p != 443 {
 		return fmt.Sprintf("%s:%d", c.Host, p)
@@ -343,13 +330,9 @@ type connectionHostInjection struct {
 	Encoding       string `json:"encoding,omitempty"`
 	QueryParamName string `json:"queryParamName,omitempty"`
 	HTTP2          bool   `json:"http2,omitempty"`
-	// Upstream TCP port for the pinned cluster. 0 → 443.
-	Port int `json:"port,omitempty"`
-	// Tunnel WebSocket/SPDY upgrades through the chain (kubectl streaming).
-	Upgrades bool `json:"upgrades,omitempty"`
-	// Secret field holding the upstream's CA bundle; the chain validates
-	// upstream TLS against it instead of the system store.
-	CAKey string `json:"caKey,omitempty"`
+	Port           int    `json:"port,omitempty"` // 0 → 443
+	Upgrades       bool   `json:"upgrades,omitempty"`
+	CAKey          string `json:"caKey,omitempty"` // Secret field holding the upstream CA bundle
 	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
 	SDSKey string `json:"sdsKey,omitempty"`
 }
@@ -376,9 +359,8 @@ type hostCredential struct {
 	cred envoyCredential
 }
 
-// chainOpts are the chain-level attributes an injection entry contributes
-// beyond its credential. Merged across a host's entries in
-// `chainsFromSecrets` (bools OR; port/CA first-wins with a warning).
+// Chain-level attributes beyond the credential. Merged across a host's
+// entries: bools OR, port/CA first-wins.
 type chainOpts struct {
 	http2    bool
 	port     int
@@ -411,19 +393,14 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		seen[key] = struct{}{}
 		caFile := ""
 		if e.CAKey != "" {
-			// The key names a file inside the Secret's volume mount; a
-			// separator would escape it.
 			switch {
+			// A separator would escape the Secret mount; a missing data key
+			// would make Envoy fail to boot. Both degrade to system trust
+			// (fail-closed for a private CA) rather than crash the gateway.
 			case strings.ContainsAny(e.CAKey, "/\\") || strings.Contains(e.CAKey, ".."):
 				slog.Warn("invalid caKey in injection-hosts; ignoring",
 					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
 			case len(s.Data[e.CAKey]) == 0:
-				// Referencing a file absent from the mounted Secret is a fatal
-				// Envoy boot error (crash-loops the whole gateway). Stale or
-				// hand-edited Secrets are the known trigger, so fall back to the
-				// system trust store — the upstream handshake then fails closed
-				// for a private CA, but the gateway stays up. Mirrors the SDS
-				// missing-key degrade below.
 				slog.Warn("connection Secret missing CA data key; validating host against system trust instead",
 					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
 			default:
@@ -943,13 +920,9 @@ static_resources:
                               - upgrade_type: CONNECT
                                 connect_config: {}
 {{- if $.AnyUpgrades }}
-                            # Every inner byte also traverses this outer CONNECT
-                            # tunnel, so the inner streaming chain's long idle
-                            # timeout is unreachable unless the tunnel itself
-                            # gets one — otherwise the default 5-minute stream
-                            # idle timer cuts a quiet kubectl port-forward /
-                            # logs -f. Raised only when some host opts into
-                            # streaming; other gateways keep the default.
+                            # Outer tunnel carries the inner streaming bytes, so
+                            # its idle timeout must match or the default 5-min
+                            # timer cuts a quiet port-forward / logs -f first.
                             idle_timeout: 14400s
 {{- end }}
                           typed_per_filter_config:
@@ -1034,11 +1007,8 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
 {{- if $chain.Upgrades }}
-                # Streaming chain (kubectl exec / port-forward / logs -f):
-                # tunnel HTTP Upgrade flows instead of rejecting them. After
-                # the 101 Envoy splices bytes; credential injection covered
-                # the upgrade request itself. SPDY/3.1 is the legacy k8s
-                # streaming protocol still used as a fallback by client-go.
+                # kubectl exec/port-forward/logs -f; spdy/3.1 is the legacy
+                # client-go fallback. Injection covered the upgrade request.
                 upgrade_configs:
                   - upgrade_type: websocket
                   - upgrade_type: spdy/3.1
@@ -1324,10 +1294,8 @@ static_resources:
 {{- end }}
                             timeout: 0s
 {{- if $chain.Upgrades }}
-                            # Long-lived tunnels (port-forward) can sit idle;
-                            # override the HCM's 5-minute stream-idle default.
-                            # 4h matches the kubelet's own streaming idle
-                            # timeout, bounding leaked half-open tunnels.
+                            # 4h (kubelet's streaming default) so idle tunnels
+                            # survive the HCM's 5-min stream-idle default.
                             idle_timeout: 14400s
 {{- end }}
 {{- end }}
@@ -1717,9 +1685,7 @@ static_resources:
             validation_context:
               trusted_ca:
 {{- if $chain.UpstreamCAFile }}
-                # Private upstream CA carried by the connection Secret
-                # (self-signed cluster CAs). Replaces the system bundle for
-                # this chain only; SAN pinning below is unchanged.
+                # Private CA for this chain only; SAN pinning below unchanged.
                 filename: {{ $chain.UpstreamCAFile }}
 {{- else }}
                 filename: /etc/ssl/certs/ca-certificates.crt

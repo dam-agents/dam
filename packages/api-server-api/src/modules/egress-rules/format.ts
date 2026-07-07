@@ -42,8 +42,7 @@ function joinHostPath(
   return `${normalizedHost}${normalizedPath}`;
 }
 
-// Index-based instead of `/\/+$/`: hosts are user-typed, and that regex is
-// quadratic on a long run of slashes that isn't at the end of the string.
+// Index-based, not `/\/+$/` — that regex is quadratic on user-typed input.
 function stripTrailingSlashes(s: string): string {
   let end = s.length;
   while (end > 0 && s[end - 1] === "/") end--;

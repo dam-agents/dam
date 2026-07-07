@@ -4,18 +4,11 @@ import { parseClusterEndpoint } from "../domain/kubernetes-contributions.js";
 
 const PROBE_TIMEOUT_MS = 5000;
 
-/** Dial `host[:port]` (default 443) over TLS with full certificate validation
- *  and report whether the cluster API endpoint is publicly trusted. It sends
- *  no credential and fetches nothing — it completes the handshake and closes.
- *
- *  - `trusted` — the serving cert validates against the system trust store, so
- *    the gateway needs no explicit CA.
- *  - `reachable && !trusted` — the endpoint was reached but its cert isn't
- *    publicly trusted (self-signed / private CA); the caller must supply the CA.
- *  - `!reachable` — the dial itself failed (DNS / refused / timeout).
- *
- *  Validation stays ON (no `rejectUnauthorized: false`): we no longer fetch an
- *  untrusted cert to pin it, so there is nothing to inspect insecurely. */
+/** Dial `host[:port]` (default 443) with full TLS validation and report
+ *  whether the endpoint is publicly trusted — nothing sent, nothing fetched.
+ *  Validation stays on (no `rejectUnauthorized: false`): we don't pin
+ *  untrusted certs, so there's nothing to inspect insecurely. See
+ *  ClusterCaProbe for the trusted/reachable outcomes. */
 export async function probeClusterCa(host: string): Promise<ClusterCaProbe> {
   const parsed = parseClusterEndpoint(host);
   const hostname = parsed.host;
@@ -35,10 +28,8 @@ export async function probeClusterCa(host: string): Promise<ClusterCaProbe> {
       () => done({ reachable: true, trusted: true }),
     );
 
-    // The underlying TCP connect fires before the TLS handshake, so a later
-    // error means the host was reached but its cert failed validation — a
-    // reachable-but-untrusted endpoint, distinct from a connection-level
-    // failure (DNS / refused / timeout) where TCP never completed.
+    // TCP connect fires before the TLS handshake, so a later error means
+    // reached-but-untrusted rather than a connection-level failure.
     socket.on("connect", () => {
       tcpConnected = true;
     });

@@ -228,9 +228,7 @@ function inputsFor(
         );
       }
       out.push(required("value", { secret: true }));
-      // Cluster API certs are usually signed by a private CA the gateway
-      // can't verify from the system store; the CA bundle rides the
-      // connection Secret. CA certs are public material — not a secret input.
+      // CA is public material (not secret) and optional per endpoint.
       if (t.id === "kubernetes") {
         out.push({
           name: "caData",

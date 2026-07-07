@@ -1377,9 +1377,8 @@ func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
 }
 
 func TestChainsFromSecrets_MissingCADataKeyDegradesToSystemTrust(t *testing.T) {
-	// caKey names a data key the Secret doesn't carry (stale/hand-edited).
-	// The chain must drop the CA file rather than render an unbootable
-	// `trusted_ca` — mirrors the SDS missing-key degrade.
+	// caKey present but data key absent → must drop the CA, not render an
+	// unbootable trusted_ca.
 	s := ownerSecret("platform-conn-k8s", "connection", "k8s")
 	delete(s.Annotations, envoyHostPatternAnn)
 	s.Annotations[envoyInjectionHostsAnn] = `[

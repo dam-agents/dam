@@ -105,9 +105,7 @@ describe("kubernetes connection template", () => {
     expect(content.clusters[0].cluster["certificate-authority"]).toBe(
       "/etc/platform/ca/ca.crt",
     );
-    // The real token must never land in the agent-visible kubeconfig — the
-    // gateway injects it on the wire. The user carries only an inert
-    // placeholder so kubectl issues a request the gateway can augment.
+    // Real token stays gateway-side; user holds only the placeholder.
     expect(JSON.stringify(content)).not.toContain("sa-token");
     expect(content.users[0].user.token).toBe("injected-by-gateway");
   });
@@ -199,8 +197,7 @@ describe("kubernetes connection template", () => {
   });
 
   it("rejects a PEM that isn't a certificate (e.g. a private key)", async () => {
-    // A wrong-but-PEM blob would otherwise be stored and crash-loop the
-    // gateway when Envoy tries to load it as trusted_ca.
+    // A wrong-but-PEM blob would crash-loop the gateway as a bad trusted_ca.
     await expect(
       buildKubernetes({
         host: "api.cluster.example:6443",

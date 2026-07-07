@@ -29,10 +29,8 @@ export interface CreateEgressRulesServiceDeps {
   ownerSub: string;
 }
 
-/** A rule needs the L7 (HTTP) ext_authz path — and therefore MITM — when
- *  it constrains method or path, or targets a non-443 port. Wildcard-only
- *  443 rules stay on the L4 path where the API server gates by SNI alone —
- *  a path that always dials 443, so port-carrying rules must promote. */
+/** Needs the L7/MITM path when it constrains method/path or a non-443 port;
+ *  wildcard 443 rules stay on the L4 (SNI-only) path. */
 function needsL7Promotion(
   method: string,
   pathPattern: string,

@@ -5,17 +5,11 @@ export const KUBERNETES_TEMPLATE_ID = "kubernetes";
 
 const KUBECONFIG_PATH = "$HOME/.kube/config";
 
-// The MITM CA the controller mounts into every agent pod. kubectl's TLS peer
-// is the paired gateway's intercept cert, never the real cluster — the
-// cluster's own CA (if any) lives gateway-side via `upstreamCa`.
+// kubectl's TLS peer is the gateway's intercept cert, not the real cluster.
 const PLATFORM_CA_PATH = "/etc/platform/ca/ca.crt";
 
-// kubectl/client-go refuses to send a request when its kubeconfig user has no
-// credential at all — it drops to an interactive username prompt instead of
-// issuing an anonymous call (oc does issue one). So the user carries a
-// non-secret placeholder Bearer token; the gateway's credential injector
-// (overwrite: true) replaces it with the real service-account token on the
-// wire. The token never leaves the gateway; this string is inert.
+// kubectl won't send a request with a credential-less user (oc will), so the
+// user carries an inert placeholder the gateway overwrites on the wire.
 const KUBECONFIG_PLACEHOLDER_TOKEN = "injected-by-gateway";
 
 export interface KubernetesTarget {
@@ -24,28 +18,21 @@ export interface KubernetesTarget {
   hasUpstreamCa: boolean;
 }
 
-/** Parse a cluster API endpoint the way `oc login` / `kubectl` accept it: an
- *  optional `http(s)://` scheme, a host (DNS name, IPv4, or bracketed IPv6),
- *  an optional `:port`, and an ignored path. Returns the bare host (IPv6
- *  without brackets) and the explicit port if one was given. `:443`
- *  normalizes away since it's the default everywhere downstream. */
+/** Parse an `oc login`-style endpoint: optional scheme, host, optional
+ *  `:port`, ignored path. Returns the bare host (IPv6 debracketed) and the
+ *  port unless 443. String ops, not regex, to avoid ReDoS over user input. */
 export function parseClusterEndpoint(raw: string): {
   host: string;
   port?: number;
 } {
   const trimmed = raw.trim();
-  // Scheme detection without a regex over user input: a `://` means it's
-  // already a URL; otherwise it's a bare host[:port] and we add https. `URL`
-  // does the actual (bounded, non-backtracking) parsing.
   const withScheme = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
   let url: URL;
   try {
     url = new URL(withScheme);
   } catch {
-    // Not URL-shaped — hand the raw string on so validation reports it.
     return { host: trimmed };
   }
-  // Strip IPv6 brackets by slice, not regex.
   const raw6 = url.hostname;
   const host =
     raw6.startsWith("[") && raw6.endsWith("]") ? raw6.slice(1, -1) : raw6;
@@ -53,10 +40,8 @@ export function parseClusterEndpoint(raw: string): {
   return port && port !== 443 ? { host, port } : { host };
 }
 
-/** Contributions for a Kubernetes/OpenShift API-server connection: one
- *  wire-injected bearer credential and a ready-to-use kubeconfig. The
- *  kubeconfig's user entry is deliberately empty — the token never reaches
- *  the agent pod; the gateway injects `Authorization` on the wire. */
+/** A wire-injected bearer credential plus a ready-to-use kubeconfig. The real
+ *  token never reaches the pod — the gateway injects it on the wire. */
 export function buildKubernetesContributions(
   target: KubernetesTarget,
 ): Contribution[] {
@@ -112,11 +97,9 @@ export function buildKubernetesContributions(
   ];
 }
 
-/** Accepts PEM directly or base64-of-PEM (kubeconfig
- *  `certificate-authority-data`); returns PEM. Rejects anything that isn't a
- *  parseable X.509 certificate — a wrong blob (a private key, a CSR, garbage)
- *  would otherwise be stored and later crash-loop the gateway when Envoy fails
- *  to load it as a `trusted_ca`. */
+/** Accepts PEM or base64-of-PEM (kubeconfig `certificate-authority-data`),
+ *  returns PEM. Rejects non-certificates, which would crash-loop the gateway
+ *  when Envoy failed to load them as `trusted_ca`. */
 export function decodeCaData(caData: string): string {
   const trimmed = caData.trim();
   const pem = trimmed.startsWith("-----BEGIN ")
@@ -129,8 +112,6 @@ export function decodeCaData(caData: string): string {
     );
   }
   try {
-    // Validates the leaf block parses as a real certificate. A bundle's first
-    // block is enough to reject a private key / CSR / corrupted paste.
     new X509Certificate(pem);
   } catch {
     throw new Error("CA certificate is not a valid X.509 certificate.");
@@ -138,8 +119,7 @@ export function decodeCaData(caData: string): string {
   return pem;
 }
 
-// The host here is already scheme- and bracket-stripped by
-// parseClusterEndpoint, so a remaining ':' means a bare IPv6 literal.
+// Host is already bracket-stripped, so a remaining ':' means bare IPv6.
 function isIpLiteral(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
 }

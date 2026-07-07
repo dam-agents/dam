@@ -179,10 +179,8 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      // Kubernetes/OpenShift: unless the CA was pasted explicitly, probe the
-      // endpoint so a private-CA cluster fails here with a clear instruction
-      // instead of a cryptic connection error at use time. Publicly-trusted
-      // endpoints need nothing.
+      // Probe (unless a CA was pasted) so a private-CA cluster fails here, not
+      // cryptically at use time.
       if (
         template.id === "kubernetes" &&
         payload.authKind === "header" &&
@@ -473,11 +471,8 @@ function buildPayload(
   }
 }
 
-// Check a Kubernetes endpoint's cert trust from a probe result. Returns
-// whether to proceed: publicly-trusted proceeds silently; a reachable but
-// untrusted endpoint blocks with an instruction to paste the CA; an
-// unreachable probe (the paired gateway may still reach it) warns and
-// proceeds; a failed probe RPC is non-fatal.
+// Returns whether to proceed: trusted proceeds; reachable-but-untrusted blocks
+// (must paste a CA); unreachable/probe-failure warns and proceeds.
 function checkClusterTrust(
   probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
   host: string,

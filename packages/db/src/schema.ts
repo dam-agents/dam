@@ -100,9 +100,7 @@ export const egressRules = pgTable(
     id: text("id").primaryKey(),
     agentId: text("agent_id").notNull(),
     host: text("host").notNull(),
-    // Upstream port when not 443. Transparency only — outside the lookup
-    // key, and ext-authz matching stays host-based (the L4 path has no
-    // port to match on).
+    // Upstream port; NULL = 443. Transparency only, outside the lookup key.
     port: integer("port"),
     method: text("method").notNull(),
     pathPattern: text("path_pattern").notNull(),

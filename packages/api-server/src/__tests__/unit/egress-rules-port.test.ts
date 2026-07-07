@@ -21,8 +21,7 @@ function rowFrom(r: NewEgressRule): EgressRuleRow {
   };
 }
 
-/** Repository fake capturing inserted rows; unused methods throw so a test
- *  that hits an unexpected path fails loudly rather than silently passing. */
+/** Repository fake capturing inserted rows. */
 function fakeRepo(overrides: Partial<EgressRulesRepository> = {}) {
   const inserted: NewEgressRule[] = [];
   const base: EgressRulesRepository = {
@@ -76,9 +75,8 @@ describe("egress-rules-service: port promotes a manual rule onto the L7 chain", 
       verdict: "allow",
     });
 
-    // Without promotion the rule would fall to the L4 catch-all, which always
-    // dials 443 — so a 6443 rule that didn't promote would silently never
-    // reach the cluster.
+    // Without promotion the rule falls to the L4 catch-all, which always
+    // dials 443 — the port would silently never take effect.
     expect(ensured).toEqual([{ owner: "sub-1", host: "api.cluster.example" }]);
   });
 

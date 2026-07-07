@@ -3,10 +3,7 @@ import { encodeAccessToken } from "./host-injection.js";
 
 const PLACEHOLDER_TOKEN = "dummy-placeholder";
 
-/** Secret field carrying the upstream's CA bundle (PEM) for chains whose
- *  egress-inject sets `upstreamCa`. The controller mounts the connection
- *  Secret into the gateway pod, so Envoy validates the upstream handshake
- *  against this file instead of the system trust store. */
+/** Secret field holding the upstream CA (PEM) for `upstreamCa` chains. */
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
 export function sdsFileKeyForHost(host: string): string {

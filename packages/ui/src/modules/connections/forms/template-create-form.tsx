@@ -256,12 +256,9 @@ export function TemplateCreateForm({
       }
       return;
     }
-    // Kubernetes/OpenShift: unless a CA was pasted, probe the endpoint so a
-    // private-CA cluster fails here with a clear instruction rather than a
-    // cryptic connection error at use time. Publicly-trusted endpoints need
-    // nothing. A reachable-but-untrusted endpoint means the user must supply
-    // the CA; an unreachable probe (the gateway may still reach it) or a probe
-    // failure falls through and lets create proceed.
+    // Probe the endpoint (unless a CA was pasted) so a private-CA cluster
+    // fails here with a clear instruction instead of at use time. Reachable
+    // but untrusted → must supply the CA; unreachable/failure falls through.
     if (
       template.id === "kubernetes" &&
       payload.authKind === "header" &&

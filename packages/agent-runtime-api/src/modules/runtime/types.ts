@@ -36,10 +36,8 @@ export const envContribution = z.object({
   placeholder: z.string(),
 });
 
-// Upstream TCP port for the host. Omit for 443. Ports only take effect on
-// L7 gateway chains (credentialed, or allow-only promoted); the SNI-miss L4
-// catch-all always dials 443 because a CONNECT's authority port is not
-// recoverable after the tunnel handoff.
+// Upstream port; omit for 443. Only L7 chains honor it — the L4 catch-all
+// always dials 443 (a CONNECT's authority port is lost at the tunnel handoff).
 const egressPort = z.number().int().min(1).max(65535).optional();
 
 export const egressAllowContribution = z.object({
@@ -66,13 +64,10 @@ export const egressInjectContribution = z.object({
   // annotation the controller reads. Omit for HTTP/1.1 REST hosts.
   http2: z.boolean().optional(),
   port: egressPort,
-  // Tunnel HTTP Upgrade flows (WebSocket, SPDY) through this host's gateway
-  // chain — required for kubectl exec/port-forward-style streaming. Keep the
-  // chain HTTP/1.1 (mutually exclusive with http2 in practice).
+  // Tunnel WebSocket/SPDY upgrades (kubectl streaming); keeps the chain h1.
   upgrades: z.boolean().optional(),
-  // The connection Secret carries the upstream's CA bundle (self-signed
-  // cluster CAs); the gateway validates the upstream TLS handshake against it
-  // instead of the system trust store.
+  // Validate the upstream against the CA in the connection Secret, not the
+  // system store (self-signed cluster CAs).
   upstreamCa: z.boolean().optional(),
 });
 

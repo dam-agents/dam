@@ -67,9 +67,7 @@ export interface ConnectionRulesSync {
  */
 export interface EgressHostRule {
   host: string;
-  /** Upstream port when not 443. Recorded on the rule for transparency
-   *  (rule list, approval surfaces); ext-authz matching stays host-based. */
-  port?: number;
+  port?: number; // transparency only; ext-authz matches host
   pathPattern?: string;
 }
 
