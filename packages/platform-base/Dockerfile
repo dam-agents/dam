@@ -96,7 +96,7 @@ COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
 # image build — an unreadable lock degrades every shim call to API lookups.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in jq fd rg gh uv uv=uvx python 'npm:@googleworkspace/cli=gws'; do \
+    for spec in jq fd rg gh uv uv=uvx python kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
