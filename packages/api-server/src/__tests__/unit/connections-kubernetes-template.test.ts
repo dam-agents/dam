@@ -147,16 +147,16 @@ describe("kubernetes connection template", () => {
 
   it("accepts an oc login-style https:// URL and strips the scheme", async () => {
     const built = await buildKubernetes({
-      host: "https://c111-e.us-east.containers.cloud.ibm.com:30767",
+      host: "https://api.my-cluster.example:6443",
     });
     const inject = injectOf(built.contributions);
-    expect(inject.host).toBe("c111-e.us-east.containers.cloud.ibm.com");
-    expect(inject.port).toBe(30767);
+    expect(inject.host).toBe("api.my-cluster.example");
+    expect(inject.port).toBe(6443);
     const file = fileOf(built.contributions);
     expect(
       (file.content as { clusters: { cluster: { server: string } }[] })
         .clusters[0].cluster.server,
-    ).toBe("https://c111-e.us-east.containers.cloud.ibm.com:30767");
+    ).toBe("https://api.my-cluster.example:6443");
   });
 
   it("ignores a trailing path on the URL", async () => {
@@ -187,7 +187,7 @@ describe("kubernetes connection template", () => {
 
   it("rejects an https:// IP URL too", async () => {
     await expect(
-      buildKubernetes({ host: "https://169.51.0.1:30767" }),
+      buildKubernetes({ host: "https://203.0.113.10:6443" }),
     ).rejects.toThrow(/IP address/);
   });
 

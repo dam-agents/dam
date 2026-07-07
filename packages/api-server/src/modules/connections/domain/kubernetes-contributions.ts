@@ -53,7 +53,7 @@ export function buildKubernetesContributions(
         "must be given as a DNS hostname — the gateway routes upstream by TLS " +
         "SNI, which clients don't send for IPs. Managed clusters (IBM Cloud, " +
         "EKS, GKE, AKS, OpenShift) all expose a DNS endpoint; use that " +
-        "(e.g. https://c111-e.us-east.containers.cloud.ibm.com:30767).",
+        "(e.g. https://api.my-cluster.example:6443).",
     );
   }
   const server = `https://${target.host}${target.port ? `:${target.port}` : ""}`;

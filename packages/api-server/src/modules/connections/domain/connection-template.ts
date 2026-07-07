@@ -211,7 +211,7 @@ function inputsFor(
             name: "host",
             state: "required",
             label: "API server URL",
-            hint: "The cluster API endpoint, exactly as you'd pass to `oc login` / `kubectl` — e.g. https://c111-e.us-east.containers.cloud.ibm.com:30767. A bare host[:port] works too.",
+            hint: "The cluster API endpoint, exactly as you'd pass to `oc login` / `kubectl` — e.g. https://api.my-cluster.example:6443. A bare host[:port] works too.",
           });
         } else {
           out.push(t.host ? overridable("host", t.host) : required("host"));
