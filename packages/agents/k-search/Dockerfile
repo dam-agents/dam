@@ -5,10 +5,11 @@ USER root
 
 ARG KSEARCH_REF=main
 ARG KERNELBENCH_REF=main
+# No UV_PYTHON_INSTALL_DIR: uv resolves the mise-managed CPython (installed
+# lazily via the base image's python shim) instead of downloading its own.
 ENV KSEARCH_ROOT=/opt/k-search \
     VIRTUAL_ENV=/opt/ksearch-venv \
-    PATH=/opt/ksearch-venv/bin:$PATH \
-    UV_PYTHON_INSTALL_DIR=/opt/uv-python
+    PATH=/opt/ksearch-venv/bin:$PATH
 
 RUN git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search.git "${KSEARCH_ROOT}" && \
     git clone --depth 1 -b "${KERNELBENCH_REF}" https://github.com/ScalingIntelligence/KernelBench.git /opt/kernelbench && \
@@ -22,7 +23,7 @@ RUN git clone --depth 1 -b "${KSEARCH_REF}" https://github.com/caoshiyi/K-Search
     sed -i 's/dataset_src: str = "huggingface"/dataset_src: str = "local"/g' "${KSEARCH_ROOT}/k_search/tasks/kernelbench_task.py" && \
     sed -i 's/self.dataset_src = "huggingface"/self.dataset_src = "local"/g' "${KSEARCH_ROOT}/k_search/tasks/kernelbench/run_and_check.py" && \
     ! grep -nE '(dataset_src: str|self\.dataset_src) = "huggingface"' "${KSEARCH_ROOT}/k_search/tasks/kernelbench_task.py" "${KSEARCH_ROOT}/k_search/tasks/kernelbench/run_and_check.py" && \
-    chown -R 65532:0 "${KSEARCH_ROOT}" "${VIRTUAL_ENV}" "${UV_PYTHON_INSTALL_DIR}"
+    chown -R 65532:0 "${KSEARCH_ROOT}" "${VIRTUAL_ENV}"
 
 # ACP shim deps (agent-runtime requires a live harness-chat).
 RUN --mount=type=cache,target=/root/.npm \
