@@ -3,21 +3,6 @@ description = "Build the platform-base image (shared base layer for every agent 
 dir = "{{config_root}}"
 run = "scripts/resolve-image.sh build-or-reuse platform-base -- -f packages/platform-base/Dockerfile ."
 
-["platform-base:stubs:relock"]
-description = "Re-lock tool-stubs to the newest allowed versions (stub equivalent of `mise up`)"
-dir = "{{config_root}}/packages/platform-base/tool-stubs"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-# mise pins the resolved version into the stub's `version` field at lock time,
-# so bumping means resetting the range first and re-locking.
-for s in *; do
-  v=latest; [ "$s" = python ] && v=3.12
-  sed -i.bak "s/^version = .*/version = \"$v\"/" "$s" && rm "$s.bak"
-  mise generate tool-stub "$s" --lock
-done
-'''
-
 ["platform-base:scan"]
 depends = ["platform-base:scan:*"]
 

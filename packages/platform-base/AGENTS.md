@@ -13,7 +13,7 @@ directory is persistent; the rest of the filesystem is reset on pod restart.
 - `jq` — JSON processor
 - `python` — Python 3.12
 - `uv` / `uvx` — Python package and environment manager; prefer `uv venv`,
-  `uv pip`, `uv run`, and `uvx <tool>` for Python work (no system `pip`)
+  `uv pip`, `uv run`, and `uvx <tool>` for Python work
 - `gws` — Google Workspace CLI
 - `curl`, `tar`, `gzip` — standard fetching and archiving utilities
 - `dam-run <cmd>` — run a command in a fresh, separate sandbox pod that shares

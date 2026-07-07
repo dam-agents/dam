@@ -1,9 +1,0 @@
-#!/usr/bin/env -S mise tool-stub
-
-tool = "npm:@googleworkspace/cli"
-version = "0.22.5"
-bin = "gws"
-
-[lock]
-
-[lock.platforms]

@@ -20,8 +20,13 @@ RUN dnf install -y git tar gzip && dnf clean all &&\
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
-COPY packages/platform-base/mise.lock /etc/mise/mise.lock
-RUN --mount=type=cache,target=/root/.cache/mise mise install
+RUN --mount=type=cache,target=/root/.cache/mise \
+    --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
+    set -eu; \
+    mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
+    cd /tmp/lockgen; mise trust -q; mise lock; \
+    cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
+RUN --mount=type=cache,target=/root/.cache/mise mise install node
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
@@ -76,7 +81,7 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 USER root
 WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/tool-stubs"
+    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
@@ -86,7 +91,18 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
-COPY --chmod=755 packages/platform-base/tool-stubs/ /usr/local/share/tool-stubs/
+# Lazy installers at the very end of PATH: first use installs the tool from
+# the build-time lock (no API calls) and reshims, so the mise shim — earlier
+# on PATH and overridable via `mise use -g` — serves every later call.
+# MISE_AUTO_INSTALL=false keeps the other configured-but-absent tools (and any
+# project mise.toml in cwd) from getting bulk-installed as a side effect.
+RUN set -eu; \
+    mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
+    for spec in jq fd rg gh uv uv=uvx python 'npm:@googleworkspace/cli=gws'; do \
+    tool="${spec%%=*}"; bin="${spec##*=}"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
+    chmod 755 "$bin"; \
+    done
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
