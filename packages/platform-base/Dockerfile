@@ -91,11 +91,6 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
-# Lazy installers at the very end of PATH: first use installs the tool from
-# the build-time lock (no API calls) and reshims, so the mise shim — earlier
-# on PATH and overridable via `mise use -g` — serves every later call.
-# MISE_AUTO_INSTALL=false keeps the other configured-but-absent tools (and any
-# project mise.toml in cwd) from getting bulk-installed as a side effect.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in jq fd rg gh uv uv=uvx python 'npm:@googleworkspace/cli=gws'; do \
