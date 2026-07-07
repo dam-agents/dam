@@ -158,10 +158,10 @@ export interface ConnectionsService {
     auth: "oauth" | "none";
   }>;
 
-  // Dials a cluster API endpoint and reports whether its serving cert is
-  // publicly trusted. When it isn't, returns the presented CA (PEM) and a
-  // SHA-256 fingerprint so the caller can confirm and pin it — no manual
-  // paste. `host` may include a `:port`.
+  // Dials a cluster API endpoint with full TLS validation and reports whether
+  // its serving cert is publicly trusted, so the caller can require an explicit
+  // CA paste for an untrusted endpoint rather than trusting it blindly. `host`
+  // may include a `:port`. See ClusterCaProbe.
   probeClusterCa(input: { host: string }): Promise<ClusterCaProbe>;
 
   startOAuth(

@@ -1364,6 +1364,7 @@ func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
 		{"host":"api.cluster.example","headerName":"Authorization","port":6443,"upgrades":true,"caKey":"upstream-ca.crt"}
 	]`
 	s = withHostSDS(s, "api.cluster.example")
+	s.Data["upstream-ca.crt"] = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
 
 	chains := chainsFromSecrets([]corev1.Secret{s})
 	require.Len(t, chains, 1)
@@ -1373,6 +1374,24 @@ func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
 		"/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt",
 		chains[0].UpstreamCAFile)
 	assert.Equal(t, "api.cluster.example:6443", chains[0].HostRewrite())
+}
+
+func TestChainsFromSecrets_MissingCADataKeyDegradesToSystemTrust(t *testing.T) {
+	// caKey names a data key the Secret doesn't carry (stale/hand-edited).
+	// The chain must drop the CA file rather than render an unbootable
+	// `trusted_ca` — mirrors the SDS missing-key degrade.
+	s := ownerSecret("platform-conn-k8s", "connection", "k8s")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"Authorization","port":6443,"caKey":"upstream-ca.crt"}
+	]`
+	s = withHostSDS(s, "api.cluster.example") // SDS present, CA data key absent
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Empty(t, chains[0].UpstreamCAFile,
+		"missing CA data key must degrade to system trust, not reference an absent file")
+	assert.Equal(t, 6443, chains[0].UpstreamPortValue(), "other opts unaffected")
 }
 
 func TestChainsFromSecrets_PortDefaultsTo443AndBareHostRewrite(t *testing.T) {
@@ -1457,7 +1476,12 @@ func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T)
 	// (legacy fallback); the chain must tunnel both, and long-lived tunnels
 	// get the relaxed idle timeout instead of the 5-minute HCM default.
 	assert.Contains(t, got, "upgrade_type: spdy/3.1")
-	assert.Contains(t, got, "idle_timeout: 14400s")
+	// The idle-timeout override must appear on BOTH the inner streaming chain
+	// route AND the outer CONNECT tunnel route — the inner one alone is
+	// unreachable because the outer 5-minute default would fire first on an
+	// idle tunnel.
+	assert.Equal(t, 2, strings.Count(got, "idle_timeout: 14400s"),
+		"idle_timeout must cover both the inner chain and the outer CONNECT tunnel")
 }
 
 func TestRenderEnvoyBootstrap_NonUpgradesChainOmitsTunneling(t *testing.T) {

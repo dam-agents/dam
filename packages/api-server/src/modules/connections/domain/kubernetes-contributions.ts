@@ -1,3 +1,4 @@
+import { X509Certificate } from "node:crypto";
 import type { Contribution } from "api-server-api";
 
 export const KUBERNETES_TEMPLATE_ID = "kubernetes";
@@ -112,23 +113,29 @@ export function buildKubernetesContributions(
 }
 
 /** Accepts PEM directly or base64-of-PEM (kubeconfig
- *  `certificate-authority-data`); returns PEM. */
+ *  `certificate-authority-data`); returns PEM. Rejects anything that isn't a
+ *  parseable X.509 certificate — a wrong blob (a private key, a CSR, garbage)
+ *  would otherwise be stored and later crash-loop the gateway when Envoy fails
+ *  to load it as a `trusted_ca`. */
 export function decodeCaData(caData: string): string {
   const trimmed = caData.trim();
-  if (trimmed.startsWith("-----BEGIN ")) return trimmed;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(trimmed, "base64").toString("utf8");
-  } catch {
-    throw new Error("CA certificate must be PEM or base64-encoded PEM");
-  }
-  if (!decoded.trimStart().startsWith("-----BEGIN ")) {
+  const pem = trimmed.startsWith("-----BEGIN ")
+    ? trimmed
+    : Buffer.from(trimmed, "base64").toString("utf8").trim();
+  if (!pem.startsWith("-----BEGIN CERTIFICATE-----")) {
     throw new Error(
-      "CA certificate must be PEM or base64-encoded PEM (the " +
-        "certificate-authority-data value from a kubeconfig)",
+      "CA must be one or more PEM certificates, or the base64 " +
+        "certificate-authority-data value from a kubeconfig.",
     );
   }
-  return decoded;
+  try {
+    // Validates the leaf block parses as a real certificate. A bundle's first
+    // block is enough to reject a private key / CSR / corrupted paste.
+    new X509Certificate(pem);
+  } catch {
+    throw new Error("CA certificate is not a valid X.509 certificate.");
+  }
+  return pem;
 }
 
 // The host here is already scheme- and bracket-stripped by

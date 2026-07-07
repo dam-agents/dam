@@ -8,7 +8,28 @@ import {
 } from "../../modules/connections/domain/connection-sds.js";
 import { contributionHash } from "../../modules/runtime-delivery/domain/contribution-hash.js";
 
-const CA_PEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----";
+// Real self-signed X.509 (test-only) so decodeCaData's cert validation passes.
+const CA_PEM = `-----BEGIN CERTIFICATE-----
+MIIDMjCCAhqgAwIBAgIUMiX4bseuRVT+8L+EjCMZs2MIUAMwDQYJKoZIhvcNAQEL
+BQAwIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1jbHVzdGVyMB4XDTI2MDcwMjEy
+MjM1MloXDTM2MDYyOTEyMjM1MlowIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1j
+bHVzdGVyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwI5z1cP2t3k2
+wu/2LlckhwjH5UhC7WJ6hgTh9bFnvK3IKa3dvy3/yqECvK93JRMh/ADSaM9w0F3d
+9q1UMidXy8T/ulb4BFNDOh07DE0W8WVbrHHZ6mXVwdSfKyB40zZ37yW0LzTLUjv7
+fAbnABEmcHl7nbTKf2AfidjiU+wOr7QC/R66aLkgC3uqU45mq01bnaEwjmWTb6RY
+c1GTg29HxpuBsAgCZwmwiQFYMqUbEu1i5pxL5vTIkCMw3PuPi3sOR4gF9OKs5FmW
+7S+Hr9wUE1LEx6au0fVEhgDwTBPzqHCx/VXdqw3tkv1fP/TS+K4pTLXNinXwwZ2C
+PF4DLJHsuQIDAQABo2QwYjAdBgNVHQ4EFgQUrbEUzJTKwRH5SYZEEFswPNzV53Qw
+HwYDVR0jBBgwFoAUrbEUzJTKwRH5SYZEEFswPNzV53QwDwYDVR0TAQH/BAUwAwEB
+/zAPBgNVHREECDAGhwR/AAABMA0GCSqGSIb3DQEBCwUAA4IBAQB9MglpUjdZ2vUg
+5li/5lKmV3I+6SvxD40fjuNAMGTxcPWsiYDh75C4LhhlykosPRXPIDYrB//gHbLp
+hvl64Ektlaoqdg8Fgy7hlJWCyLtZfCS1g3Z0oZ8nbHCNt+zuT1cFKdzeHKzAHSrD
+odtUCpQz+iQ0G+u48thi1UJ+NGCkcXC72F+wYYQsKteY2qqI1R/SaXTf0zWOFUMR
+iRE24pgARhd1wueI7Cpdk7FG9lZAHawuOXWODa4sbT182EcVzjG7/Ncwvjpq1Owi
+JG2IiAQ+BegQRj1cxNtzkakdTQWYSSw9TdnevQSjjcjPN3jh0kbj0PnSLqhEUNzv
+HUAT/xFb
+-----END CERTIFICATE-----
+`;
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -156,7 +177,7 @@ describe("kubernetes connection template", () => {
     });
     expect(injectOf(built.contributions).upstreamCa).toBe(true);
     const fields = built.secrets.get("secret-connection:kubernetes")!;
-    expect(fields[UPSTREAM_CA_SECRET_FIELD]).toBe(CA_PEM);
+    expect(fields[UPSTREAM_CA_SECRET_FIELD]).toBe(CA_PEM.trim());
   });
 
   it("accepts base64 caData (kubeconfig certificate-authority-data)", async () => {
@@ -165,7 +186,7 @@ describe("kubernetes connection template", () => {
       caData: Buffer.from(CA_PEM, "utf8").toString("base64"),
     });
     const fields = built.secrets.get("secret-connection:kubernetes")!;
-    expect(fields[UPSTREAM_CA_SECRET_FIELD]).toBe(CA_PEM);
+    expect(fields[UPSTREAM_CA_SECRET_FIELD]).toBe(CA_PEM.trim());
   });
 
   it("rejects caData that is neither PEM nor base64 PEM", async () => {
@@ -175,6 +196,28 @@ describe("kubernetes connection template", () => {
         caData: "not-a-certificate",
       }),
     ).rejects.toThrow(/PEM/);
+  });
+
+  it("rejects a PEM that isn't a certificate (e.g. a private key)", async () => {
+    // A wrong-but-PEM blob would otherwise be stored and crash-loop the
+    // gateway when Envoy tries to load it as trusted_ca.
+    await expect(
+      buildKubernetes({
+        host: "api.cluster.example:6443",
+        caData:
+          "-----BEGIN PRIVATE KEY-----\nMIIBVQ==\n-----END PRIVATE KEY-----",
+      }),
+    ).rejects.toThrow(/certificate/i);
+  });
+
+  it("rejects a malformed CERTIFICATE PEM", async () => {
+    await expect(
+      buildKubernetes({
+        host: "api.cluster.example:6443",
+        caData:
+          "-----BEGIN CERTIFICATE-----\nnot-base64-der!!!\n-----END CERTIFICATE-----",
+      }),
+    ).rejects.toThrow(/valid X\.509/);
   });
 });
 

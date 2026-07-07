@@ -413,10 +413,20 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		if e.CAKey != "" {
 			// The key names a file inside the Secret's volume mount; a
 			// separator would escape it.
-			if strings.ContainsAny(e.CAKey, "/\\") || strings.Contains(e.CAKey, "..") {
+			switch {
+			case strings.ContainsAny(e.CAKey, "/\\") || strings.Contains(e.CAKey, ".."):
 				slog.Warn("invalid caKey in injection-hosts; ignoring",
 					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
-			} else {
+			case len(s.Data[e.CAKey]) == 0:
+				// Referencing a file absent from the mounted Secret is a fatal
+				// Envoy boot error (crash-loops the whole gateway). Stale or
+				// hand-edited Secrets are the known trigger, so fall back to the
+				// system trust store — the upstream handshake then fails closed
+				// for a private CA, but the gateway stays up. Mirrors the SDS
+				// missing-key degrade below.
+				slog.Warn("connection Secret missing CA data key; validating host against system trust instead",
+					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
+			default:
 				caFile = envoyCredentialsRoot + "/cred-" + s.Name + "/" + e.CAKey
 			}
 		}
@@ -932,6 +942,16 @@ static_resources:
                             upgrade_configs:
                               - upgrade_type: CONNECT
                                 connect_config: {}
+{{- if $.AnyUpgrades }}
+                            # Every inner byte also traverses this outer CONNECT
+                            # tunnel, so the inner streaming chain's long idle
+                            # timeout is unreachable unless the tunnel itself
+                            # gets one — otherwise the default 5-minute stream
+                            # idle timer cuts a quiet kubectl port-forward /
+                            # logs -f. Raised only when some host opts into
+                            # streaming; other gateways keep the default.
+                            idle_timeout: 14400s
+{{- end }}
                           typed_per_filter_config:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
@@ -1910,6 +1930,13 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 	// structurally rather than crash-loop the gateway. The credentialed chain
 	// for that host still wins, and the host is in the leaf SAN regardless.
 	telemetry := cfg.TelemetryEnabled() && !hostInChains(chains, cfg.TelemetryCollectorHost)
+	anyUpgrades := false
+	for _, c := range chains {
+		if c.Upgrades {
+			anyUpgrades = true
+			break
+		}
+	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
@@ -1930,6 +1957,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost string
 		TelemetryCollectorPort int
 		InstanceID             string
+		AnyUpgrades            bool
 		OTel                   envoyOTelView
 	}{
 		ListenAddress:          envoyListenAddress,
@@ -1950,6 +1978,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost: cfg.TelemetryCollectorHost,
 		TelemetryCollectorPort: cfg.TelemetryCollectorPort,
 		InstanceID:             instanceID,
+		AnyUpgrades:            anyUpgrades,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}); err != nil {
 		return "", err

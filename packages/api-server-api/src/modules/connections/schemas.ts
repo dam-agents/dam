@@ -28,8 +28,9 @@ export const connectionDiscoverMcpInputSchema = z.object({
   url: z.string().url(),
 });
 
-// Probe an API server's TLS cert so the UI/CLI can auto-configure the
-// upstream CA (host may carry a `:port`).
+// Probe an API server's TLS so the UI/CLI can tell a publicly-trusted endpoint
+// (no CA needed) from one that requires an explicit CA paste (host may carry a
+// `:port`).
 export const connectionProbeClusterCaInputSchema = z.object({
   host: z.string().min(1),
 });
