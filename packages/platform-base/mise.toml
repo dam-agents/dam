@@ -2,8 +2,6 @@
 lockfile = true
 minimum_release_age = "7d"
 
-# Convenience CLIs (jq, uv, gh, ...) are not preinstalled — they ship as lazy
-# mise tool-stubs in tool-stubs/, placed at the end of PATH (see Dockerfile).
 [tools]
 # Exact pin (not "24") so minimum_release_age doesn't gate it: node's bundled npm
 # vendors the patched brace-expansion/tar/picomatch/ip-address/minimatch only from

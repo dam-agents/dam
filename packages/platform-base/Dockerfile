@@ -6,11 +6,11 @@ ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
 RUN dnf install -y git tar gzip && dnf clean all &&\
-set -eu; \
+    set -eu; \
     case "$(uname -m)" in \
-      x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
-      aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
-      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
+    aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
+    *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
     echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
@@ -26,19 +26,19 @@ RUN --mount=type=cache,target=/root/.cache/mise mise install
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
 RUN dnf install \
-      -y \
-      --installroot=/sysroot \
-      --use-host-config \
-      --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
-      --setopt=install_weak_deps=0 \
-      catatonit \
-      curl \
-      git \
-      gzip \
-      openssh-server \
-      tar \
-      xz-libs \
-      &&\
+    -y \
+    --installroot=/sysroot \
+    --use-host-config \
+    --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
+    --setopt=install_weak_deps=0 \
+    catatonit \
+    curl \
+    git \
+    gzip \
+    openssh-server \
+    tar \
+    xz-libs \
+    &&\
     rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 FROM base AS builder
@@ -75,10 +75,6 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
 WORKDIR /app
-# tool-stubs sits at the very end of PATH: the stubs lazily install their tool
-# via mise on first use, and anything installed explicitly (dnf, mise use,
-# derived images) shadows them. Bump a tool by rewriting its stub's version +
-# platform urls + checksums (`mise generate tool-stub` does this for you).
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/tool-stubs"
 
