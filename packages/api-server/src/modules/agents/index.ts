@@ -25,6 +25,13 @@ export { startChannelSecretCleanupSaga } from "./sagas/channel-secret-cleanup.js
 export { startChannelCleanupSaga } from "./sagas/channel-cleanup.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export {
+  AgentWakeTimeoutError,
+  isAgentWakeTimeoutError,
+  isTransientWakeFailure,
+  wakeFailureReasonToken,
+  type WakeFailureCause,
+} from "./domain/wake-failure.js";
+export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,

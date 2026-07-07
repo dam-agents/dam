@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-07-03
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -67,6 +67,6 @@ The gateway's own telemetry is **platform telemetry, not agent telemetry**: it e
 Because the gateway injects upstream credentials on the wire, its telemetry is built so credential bytes never reach a span or a log line:
 
 - **No credential in any record.** The access log never names the `Authorization` header, and it renders the request path through Envoy's `REQ_WITHOUT_QUERY` operator so the query string — where the credential injector parks query-parameter credentials — is dropped before the path is written.
-- **No spans on the credential-injection chains.** The per-host TLS-terminating chains carry no tracing provider: post-interception their `:path` can hold a query-parameter credential and Envoy has no query stripper for span tags. Tracing lives only on the outer listener, where every request is a `CONNECT` (host and port, no path) or plaintext egress. The egress decision for each credentialed request is already on the api-server's audit trail (`egress.decision`), so this loses no forensic coverage.
+- **Spans on the TLS-terminating chains, path-blind, and only where credentials are header-injected.** Chains whose credentials all inject into headers carry a tracing provider: they see the agent's decrypted `traceparent`, so their spans join the agent's trace and the ext_authz check inherits that context — this is what ties harness, gateway, and egress-approval spans into one trace. Their spans suppress the path tag (`max_path_tag_length: 1`), keeping agent-authored paths and query strings — which can hold agent-side secrets such as presigned URLs — out of span attributes; per-request detail stays in the query-stripped access log, joinable via the `x-request-id` span tag. Chains that move a credential into a URL query parameter stay untraced: post-injection `:path` carries the credential and Envoy has no query stripper for span tags. The egress decision for every credentialed request is on the api-server's audit trail (`egress.decision`) regardless.
 - **Bounded cardinality.** Every gateway shares one trace/metric `service.name`; per-gateway identity rides as a bounded `platform.gateway.id` resource attribute, so cardinality does not scale with the agent count.
-- **No internal trace context leaks outward.** The gateway strips `traceparent`/`tracestate` before a request reaches an external upstream; it keeps them on the internal harness route so a gateway span still links to the api-server's trace.
+- **Trace context is stripped where the gateway can see it.** Plain-HTTP egress has `traceparent`/`tracestate` removed before the request reaches an external upstream; the internal harness route keeps them so a gateway span still links to the api-server's trace. TLS-intercepted requests are the exception: the credential-injection chains forward trace context to the upstream (on traced chains rewritten to the gateway's own span, same trace ID), and passthrough tunnels are opaque to the gateway entirely. So an upstream the agent talks to over TLS can observe the request's trace ID; what it can never observe is platform-side span data, which only ever goes to the collector.

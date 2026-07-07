@@ -335,6 +335,11 @@ API Server ServiceAccount name
   value: "1"
 - name: CLAUDE_CODE_ENHANCED_TELEMETRY_BETA
   value: "1"
+# Keep traceparent propagation on when the harness fronts a custom upstream
+# (non-Anthropic ANTHROPIC_BASE_URL disables it by default); the gateway strips
+# traceparent/tracestate before any external upstream, so nothing leaks outward.
+- name: CLAUDE_CODE_PROPAGATE_TRACEPARENT
+  value: "1"
 - name: OTEL_METRICS_EXPORTER
   value: "otlp"
 - name: OTEL_LOGS_EXPORTER

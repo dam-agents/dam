@@ -203,6 +203,35 @@ func TestForkReconcile_MissingAgentEmitsOrchestrationFailed(t *testing.T) {
 	assert.Equal(t, types.ForkReasonOrchestrationFailed, status.Error.Reason)
 }
 
+func TestForkReconcile_OverAgeForkIsReaped(t *testing.T) {
+	// Hard GC backstop: an api-server crash mid-fork loses its in-memory
+	// fork state, so nothing would ever delete the CR — and the gateway
+	// Pod owner-refed to it would crash-loop forever.
+	fork := forkCR("fork-old", minimalForkSpec("my-agent"), time.Unix(1_000_000, 0).Add(-ForkMaxLifetime-time.Minute))
+	r, client := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
+
+	require.NoError(t, r.Reconcile(context.Background(), fork))
+
+	_, err := r.dynamic.Resource(ForksGVR).Namespace("test-agents").Get(context.Background(), "fork-old", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "over-age fork CR must be deleted")
+	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-old", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "no job should be created for a reaped fork")
+}
+
+func TestForkReconcile_OverAgeTerminalForkIsReaped(t *testing.T) {
+	// The reaper must run ahead of the terminal-phase short-circuit: a
+	// Failed CR the api-server never deleted still owns a crash-looping
+	// gateway Pod.
+	fork := forkCR("fork-old-failed", minimalForkSpec("my-agent"), time.Unix(1_000_000, 0).Add(-ForkMaxLifetime-time.Minute))
+	fork.Status.Phase = apiv1.ForkPhaseFailed
+	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
+
+	require.NoError(t, r.Reconcile(context.Background(), fork))
+
+	_, err := r.dynamic.Resource(ForksGVR).Namespace("test-agents").Get(context.Background(), "fork-old-failed", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "over-age Failed fork CR must be deleted")
+}
+
 func TestForkReconcile_TerminalPhasesAreNoOp(t *testing.T) {
 	fork := forkCR("fork-7", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	fork.Status.Phase = apiv1.ForkPhaseCompleted

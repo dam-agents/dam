@@ -658,6 +658,10 @@ apiServer:
     - cdn.mise.run
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
+    # DuckDuckGo — backend for the claude-code harness's `websearch` skill, the
+    # replacement for the built-in WebSearch tool on non-Anthropic backends
+    # (#1087). `lite.duckduckgo.com` is the only host the bundle contacts.
+    - lite.duckduckgo.com
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding

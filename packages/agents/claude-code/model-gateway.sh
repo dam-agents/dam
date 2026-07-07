@@ -19,6 +19,12 @@ _gateway_wait_env() {
 }
 
 if _gateway_custom_upstream; then
+	# A custom (non-Anthropic) upstream means Claude's built-in WebSearch/WebFetch
+	# — Anthropic server-side tools — won't work. The cc-websearch managed hooks
+	# read this marker to deny them and route to the DDG-backed replacement skills
+	# (#1087); on genuine Anthropic backends it stays unset and the built-ins work.
+	# Set before the readiness wait so it holds on the gateway-not-ready path too.
+	export PLATFORM_CUSTOM_BACKEND=1
 	if _gateway_wait_env; then
 		export ANTHROPIC_BASE_URL="$_GATEWAY_BASE"
 		export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"

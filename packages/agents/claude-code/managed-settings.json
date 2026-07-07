@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/cc-websearch/deny-web-tool.sh WebSearch websearch"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/cc-websearch/deny-web-tool.sh WebFetch webfetch"
+          }
+        ]
+      }
+    ]
+  }
+}

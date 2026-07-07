@@ -86,8 +86,9 @@ type envoyCredential struct {
 	QueryParamName string
 	VolumeName     string // pod-level volume name for this Secret
 	// SDS file key inside the Secret's volume. Single-host
-	// Secrets use `sds.yaml`; connection Secrets use `host-<sha8>.sds.yaml`
-	// so one Secret carries N chains' credentials (issue #219).
+	// Secrets use `sds.yaml`; connection Secrets use the api-server's
+	// `sdsKey` (host-<base64url>.sds.yaml) so one Secret carries N
+	// chains' credentials (issue #219).
 	SDSFileKey string
 }
 
@@ -120,6 +121,19 @@ type envoyHostChain struct {
 // Allow-only chains (no credentials) skip credential_injector and forward
 // via dynamic_forward_proxy — there's no credential to misroute.
 func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
+
+// HasQueryParamCredential reports whether any credential on the chain is
+// moved into a URL query parameter. Such chains must stay untraced: the
+// post-injection :path carries the credential and Envoy has no
+// query-stripper for span tags.
+func (c envoyHostChain) HasQueryParamCredential() bool {
+	for _, cred := range c.Credentials {
+		if cred.QueryParamName != "" {
+			return true
+		}
+	}
+	return false
+}
 
 // envoySecretTypeAllowOnly marks Secrets that exist solely to extend the
 // cert SAN list and force a host onto the L7 path so path-specific egress
@@ -433,6 +447,18 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		case "connection":
 			for _, hc := range expandConnectionSecret(s) {
 				cred := hc.cred
+				// A bootstrap referencing an SDS file absent from the mounted
+				// Secret is a fatal Envoy boot error (crash-loops the whole
+				// gateway). Stale Secrets with mismatched data keys exist
+				// (pre-cutover writers used a different key naming), so
+				// degrade the host to allow-only instead of rendering an
+				// unbootable config.
+				if len(s.Data[cred.SDSFileKey]) == 0 {
+					slog.Warn("connection Secret missing SDS data key; rendering host allow-only (no credential injection)",
+						"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "sdsKey", cred.SDSFileKey)
+					add(hc.host, s.Name, nil, hc.http2)
+					continue
+				}
 				add(hc.host, s.Name, &cred, hc.http2)
 			}
 			continue
@@ -447,6 +473,12 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		}
 		http2 := s.Annotations[envoyInjectionHTTP2Ann] == "true"
 		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			add(host, s.Name, nil, http2)
+			continue
+		}
+		if len(s.Data[envoyCredentialKeySDS]) == 0 {
+			slog.Warn("credential Secret missing sds.yaml data key; rendering host allow-only (no credential injection)",
+				"namespace", s.Namespace, "secret", s.Name, "host", host)
 			add(host, s.Name, nil, http2)
 			continue
 		}
@@ -890,13 +922,51 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
+{{- if and $.OTel.Traces (not $chain.HasQueryParamCredential) }}
+                # Traced: this chain sees the agent's decrypted traceparent, so
+                # its span joins the harness trace and ext_authz carries that
+                # context to the api-server — the one place harness, gateway,
+                # and egress-approval spans can meet in a single trace. Safe
+                # only because every credential here is header-injected and
+                # span tags never record headers; chains with a query-param
+                # credential stay untraced (post-injection :path carries the
+                # credential; Envoy has no query-stripper for span tags).
+                # max_path_tag_length 1 keeps the agent-authored path/query —
+                # which may hold agent-side secrets such as presigned URLs —
+                # out of the http.url tag; per-request detail stays in the
+                # query-stripped access log, joinable via the x-request-id tag.
+                tracing:
+                  spawn_upstream_span: false
+                  max_path_tag_length: 1
+                  random_sampling:
+                    value: {{ $.OTel.SamplingPercent }}
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      service_name: "{{ $.OTel.ServiceName }}"
+{{- if $.OTel.GRPC }}
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: otel_export
+                        timeout: 5s
+{{- else }}
+                      http_service:
+                        http_uri:
+                          uri: "{{ $.OTel.TracesURI }}"
+                          cluster: otel_export
+                          timeout: 5s
+{{- end }}
+                      resource_detectors:
+                        - name: envoy.tracers.opentelemetry.resource_detectors.environment
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.tracers.opentelemetry.resource_detectors.v3.EnvironmentResourceDetectorConfig
+{{- end }}
 {{- if $.OTel.AccessLogs }}
-                # No tracing block on the credential-injection chains: post-MITM
-                # the :path can carry a query-param credential and Envoy has no
-                # query-stripper for span tags. Access logs are safe — they use
-                # REQ_WITHOUT_QUERY and never name the Authorization header — and
-                # the api-server ext_authz decision log already records the egress
-                # verdict for every credentialed request.
+                # Access logs are credential-safe on every chain — they use
+                # REQ_WITHOUT_QUERY and never name the Authorization header —
+                # and the api-server ext_authz decision log already records the
+                # egress verdict for every credentialed request.
                 access_log:
                   - name: envoy.access_loggers.file
                     typed_config:
@@ -1858,22 +1928,39 @@ const envoyBootstrapTemplateRev = "v13-gateway-otel"
 // rendering. Includes `injection-hosts` JSON so a descriptor change
 // (host added / removed / retargeted on a connection) rolls the gateway —
 // Envoy reads the bootstrap once at boot, so without a roll the chain
-// shape goes stale.
+// shape goes stale. The SDS data-key set is included too: chain rendering
+// degrades a host to allow-only when its SDS key is missing, so a Secret
+// gaining (or losing) an SDS key changes the chain shape and must roll.
 func envoySecretsRev(secrets []corev1.Secret) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
 			s.Name,
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
 			s.Annotations[envoyHeaderNameAnn],
 			s.Annotations[envoyQueryParamAnn],
 			s.Annotations[envoyInjectionHostsAnn],
+			strings.Join(sdsDataKeys(s), ","),
 		))
 	}
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])
+}
+
+// sdsDataKeys returns the sorted SDS file keys present in a Secret's data —
+// the only data keys that shape chain rendering (token fields hot-reload
+// via SDS and never require a roll).
+func sdsDataKeys(s corev1.Secret) []string {
+	var keys []string
+	for k := range s.Data {
+		if k == envoyCredentialKeySDS || strings.HasSuffix(k, ".sds.yaml") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // envoyContainer returns the gateway pod's Envoy container spec. Drops all caps,

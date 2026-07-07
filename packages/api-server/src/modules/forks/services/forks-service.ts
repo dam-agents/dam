@@ -40,14 +40,25 @@ export function createForksService(deps: {
   const generateForkId = deps.generateForkId ?? (() => `fork-${randomUUID()}`);
   const open = new Map<string, Fork>();
 
-  function emitFailed(
+  async function emitFailed(
     fork: Fork,
     reason: ForkFailureReason,
     detail?: string,
-  ): void {
+  ): Promise<void> {
     const next = markFailed(fork, reason, detail);
     if (!next.ok) return;
     open.delete(fork.forkId);
+    // A failed fork never reaches closeFork (the saga's map lookup misses
+    // the entry deleted above, and markCompleted rejects Failed), so tear
+    // down the Fork CR here — K8s GC cascades to the paired gateway pod,
+    // which otherwise crash-loops forever.
+    try {
+      await deps.orchestrator.deleteFork(fork.forkId);
+    } catch (err) {
+      process.stderr.write(
+        `[forks] deleting failed fork ${fork.forkId}: ${err}\n`,
+      );
+    }
     emit({
       type: EventType.ForkFailed,
       forkId: fork.forkId,
@@ -74,7 +85,7 @@ export function createForksService(deps: {
         continue;
       }
       if (status.phase === "Failed") {
-        emitFailed(
+        await emitFailed(
           current,
           status.error?.reason ?? "OrchestrationFailed",
           status.error?.detail,
@@ -112,7 +123,7 @@ export function createForksService(deps: {
           created.error.kind === "WriteFailed"
             ? created.error.detail
             : created.error.kind;
-        emitFailed(fork, "OrchestrationFailed", detail);
+        await emitFailed(fork, "OrchestrationFailed", detail);
         return;
       }
 

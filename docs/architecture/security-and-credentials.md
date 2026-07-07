@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-06-30
+Last verified: 2026-07-06
 
 ## Overview
 
@@ -331,6 +331,14 @@ On the wire:
 Hosts the api-server has issued a credential for surface as L7 chains (SNI
 match, header injection); hosts with no credential surface as L4
 passthrough chains.
+
+A referenced SDS file missing from the mounted Secret is a fatal Envoy
+boot error, so the controller verifies each credential's SDS key against
+the Secret's data at render time and degrades that host to an allow-only
+chain (logged as a warning) rather than emit an unbootable bootstrap.
+Requests to the host then go out uncredentialed — failing upstream auth
+for that host only — instead of crash-looping the whole gateway. Stale
+Secrets written by since-replaced code paths are the known trigger.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.

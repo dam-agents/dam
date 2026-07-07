@@ -29,10 +29,17 @@ metadata:
 rules:
   # the reconciled resources are agent-platform.ai/v1 Agent + Fork
   # custom resources. The controller watches them and is the sole writer of
-  # their status subresource; the api-server owns spec.
+  # their status subresource; the api-server owns spec, so Agents stay
+  # read-only here.
   - apiGroups: ["agent-platform.ai"]
-    resources: ["agents", "forks"]
+    resources: ["agents"]
     verbs: ["get", "list", "watch"]
+  # Forks additionally need update/patch (the controller stamps the
+  # parent-Agent owner reference onto the Fork CR) and delete (the over-age
+  # fork reaper), mirroring the runs grant below.
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["forks"]
+    verbs: ["get", "list", "watch", "update", "patch", "delete"]
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents/status", "forks/status"]
     verbs: ["get", "update", "patch"]

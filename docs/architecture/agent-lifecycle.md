@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-07-02
+Last verified: 2026-07-06
 
 ## Overview
 
@@ -81,7 +81,7 @@ Four paths trigger a wake:
 - **Experiment-driven** — starting an Experiment pokes each Arm's Agent awake the same way, committing an `experiment-trigger` event that opens the Arm's Trial session on delivery. See [experiments](experiments.md).
 - **Skills-management-driven** — install / uninstall / private-source scan / publish all route through the same primitive before reaching the agent (scan and publish reach agent-runtime directly over the harness port; install/uninstall keep the pod warm so the apply worker dispatches the bumped outbox). See [skills](skills.md).
 
-Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, surfacing a loud error to its caller (WS close code, channel log, or skills call error). The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
+Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes. On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause), pods still progressing, gateway not up, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error). The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention). The primitive also records wake begin/success/timeout with duration and the condition snapshot, so wake latency and failures are diagnosable from the log store. Callers can additionally register for a cold-start signal, fired when a call enters (or joins) a wake wait, to tell their user a wake is underway. The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
 
 ### Trigger fire
 
@@ -179,6 +179,8 @@ Schedules are independent Postgres rows and survive Agent deletion as orphans un
 ## Forks
 
 Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
+
+Fork teardown mirrors the Run executor's two-layer model: the api-server deletes the Fork CR when the fork's turn completes **or fails**, and K8s GC cascades to everything owner-refed to it — including the paired gateway pod, which as a bare always-restarting Pod has no terminal state of its own and lives exactly as long as the CR. A controller hard-lifetime reaper backstops any fork the api-server never cleaned up (crash mid-fork, lost in-memory state), reaping over-age CRs regardless of phase.
 
 ## Run executors (`dam-run`)
 

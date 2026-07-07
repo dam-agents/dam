@@ -24,6 +24,13 @@ import (
 
 const ForkPodReadyTimeout = 120 * time.Second
 
+// ForkMaxLifetime is a hard GC backstop, mirroring RunMaxLifetime: the
+// api-server deletes a Fork CR when its turn ends or fails, but if it
+// crashes (or its in-memory fork state is lost) the CR — and the gateway
+// Pod, Job, Service, SA, netpol, bootstrap CM and leaf Cert owner-refed to
+// it — would otherwise leak until the parent Agent is deleted.
+const ForkMaxLifetime = 60 * time.Minute
+
 type ForkReconciler struct {
 	client   kubernetes.Interface
 	dynamic  dynamic.Interface // required to apply per-fork cert-manager Certificates
@@ -46,6 +53,19 @@ func (r *ForkReconciler) WithDynamicClient(d dynamic.Interface) *ForkReconciler 
 func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error {
 	forkName := fork.Name
 	ownerRef := forkOwnerRef(fork)
+
+	// Over-age reaper runs before the terminal-phase short-circuit so a
+	// Failed/Completed CR the api-server never deleted is reaped too —
+	// its gateway Pod crash-loops (RestartPolicy=Always) for as long as
+	// the CR exists.
+	if age := r.now().Sub(fork.CreationTimestamp.Time); age > ForkMaxLifetime {
+		slog.Warn("reaping over-age fork", "fork", forkName, "age", age.String())
+		if err := r.dynamic.Resource(ForksGVR).Namespace(r.config.Namespace).
+			Delete(ctx, forkName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("reaping fork %s: %w", forkName, err)
+		}
+		return nil
+	}
 
 	currentPhase := fork.Status.Phase
 	if currentPhase == apiv1.ForkPhaseFailed || currentPhase == apiv1.ForkPhaseCompleted {

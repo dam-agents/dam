@@ -20,10 +20,12 @@ import {
   createK8sClient,
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
+import { getLogger } from "../../core/logger.js";
 import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
+  isAgentWakeTimeoutError,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
@@ -434,10 +436,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     try {
       await agentsRepo.ensureReady(agentId);
     } catch (err) {
-      process.stderr.write(
-        `[trpc-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
+      getLogger().warn(
+        { agentId, error: (err as Error).message },
+        "trpc-proxy.ensure-ready.failed",
       );
-      return c.json({ error: "agent unreachable" }, 502);
+      return c.json(
+        {
+          error: "agent unreachable",
+          ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+        },
+        502,
+      );
     }
 
     // No Bearer swap needed: ownership is verified above, and the agent
@@ -577,11 +586,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     try {
       await agentsRepo.ensureReady(agentId);
     } catch (err) {
-      process.stderr.write(
-        `[import-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
+      getLogger().warn(
+        { agentId, error: (err as Error).message },
+        "import-proxy.ensure-ready.failed",
       );
       fireEmit("failure");
-      return c.json({ error: "instance unreachable" }, 502);
+      return c.json(
+        {
+          error: "instance unreachable",
+          ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+        },
+        502,
+      );
     }
     const upstreamUrl = new URL(
       `http://${podBaseUrl(agentId, config.namespace)}/api/import`,

@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
 
@@ -102,8 +103,12 @@ export function createSshRelay(
 
       try {
         await repo.ensureReady(agentId);
-      } catch {
-        client.close(1011, "agent unavailable");
+      } catch (err) {
+        // Close reasons cap at 123 bytes — carry the short cause kind.
+        const reason = isAgentWakeTimeoutError(err)
+          ? `agent not ready: ${err.failure.kind}`
+          : "agent unavailable";
+        client.close(1011, reason);
         return;
       }
       if (clientGone || overflow) return;
