@@ -14,6 +14,7 @@ import type {
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
 } from "./connection-template.js";
+import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
 
 // Project a provider preset's env bundle into `env` contributions
 function envContributions(mappings: EnvMapping[]): Contribution[] {
@@ -69,6 +70,23 @@ const ANTHROPIC: HeaderConnectionTemplate = {
       valueFormat: "{value}",
     },
   ],
+};
+
+// Contributions are synthesized at build time from the user's API host —
+// see `buildKubernetesContributions`: a Bearer egress-inject (with port and
+// upgrade tunneling for exec/port-forward) plus a ready-to-use kubeconfig.
+const KUBERNETES: HeaderConnectionTemplate = {
+  id: KUBERNETES_TEMPLATE_ID,
+  name: "Kubernetes / OpenShift",
+  category: "app",
+  isCustom: false,
+  description:
+    "kubectl/oc access to a cluster's API server with a service-account token.",
+  iconSlug: "kubernetes",
+  authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [],
 };
 
 const ANTHROPIC_OAUTH: HeaderConnectionTemplate = {
@@ -750,6 +768,7 @@ export function buildCatalog(
     github(creds.github),
     GITHUB_PAT,
     githubEnterprise(creds.githubEnterprise),
+    KUBERNETES,
     spotify(creds.spotify),
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),

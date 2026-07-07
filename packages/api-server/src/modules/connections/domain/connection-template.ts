@@ -206,7 +206,16 @@ function inputsFor(
         out.push(required("headerName", { presetValue: t.headerName }));
         out.push(required("valueFormat", { presetValue: t.valueFormat }));
       } else {
-        out.push(t.host ? overridable("host", t.host) : required("host"));
+        if (t.id === "kubernetes") {
+          out.push({
+            name: "host",
+            state: "required",
+            label: "API server URL",
+            hint: "The cluster API endpoint, exactly as you'd pass to `oc login` / `kubectl` — e.g. https://c111-e.us-east.containers.cloud.ibm.com:30767. A bare host[:port] works too.",
+          });
+        } else {
+          out.push(t.host ? overridable("host", t.host) : required("host"));
+        }
         out.push(
           t.headerName
             ? overridable("headerName", t.headerName)
@@ -219,6 +228,17 @@ function inputsFor(
         );
       }
       out.push(required("value", { secret: true }));
+      // Cluster API certs are usually signed by a private CA the gateway
+      // can't verify from the system store; the CA bundle rides the
+      // connection Secret. CA certs are public material — not a secret input.
+      if (t.id === "kubernetes") {
+        out.push({
+          name: "caData",
+          state: "optional",
+          label: "Cluster CA certificate",
+          hint: "Leave blank for a publicly-trusted API endpoint (most managed clusters). For a private or self-signed CA, paste certificate-authority-data from your kubeconfig (base64 or PEM).",
+        });
+      }
       // Custom credential can also be exposed to the agent as an env var
       // (placeholder in-pod; Envoy injects the real value on egress).
       if (t.isCustom) out.push(optional("envName"));

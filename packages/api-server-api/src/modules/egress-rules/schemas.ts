@@ -19,6 +19,10 @@ export const egressRuleCurrentPresetInputSchema = z.object({
 export const egressRuleCreateInputSchema = z.object({
   agentId: z.string().min(1),
   host: z.string().min(1),
+  // Upstream port when not 443. Port-carrying rules promote the host onto
+  // the gateway's L7 chain, which honors the requested port; the L4
+  // SNI-catch-all always dials 443.
+  port: z.number().int().min(1).max(65535).optional(),
   method: z.string().min(1).default("*"),
   pathPattern: z.string().min(1).default("*"),
   verdict: ruleVerdictSchema,

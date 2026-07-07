@@ -22,6 +22,7 @@ import {
   useRevokeEgressRule,
 } from "../api/mutations.js";
 import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
+import { formatHostPort, splitHostPort } from "../host-port.js";
 
 const EMPTY: EgressRuleView[] = [];
 const EMPTY_HOSTS: readonly string[] = [];
@@ -117,14 +118,17 @@ export function AgentEgressEditor({
 
   const stagedMode = staged !== undefined;
 
-  // Path-specific rules need MITM, which means the controller has to
-  // re-issue the leaf cert and roll the agent pod. The L4 (host-only) path
-  // is a pure DB write — no roll. Warn the user so they own the timing.
-  const draftIsPathSpecific =
-    draft.method !== "*" || draft.pathPattern.trim() !== "*";
+  // Path-specific and port-carrying rules need MITM, which means the
+  // controller has to re-issue the leaf cert and roll the agent pod. The
+  // L4 (host-only, 443) path is a pure DB write — no roll. Warn the user
+  // so they own the timing.
+  const draftNeedsMitm =
+    draft.method !== "*" ||
+    draft.pathPattern.trim() !== "*" ||
+    splitHostPort(draft.host.trim()).port != null;
   const draftRequiresRestart =
     draft.host.trim().length > 0 &&
-    draftIsPathSpecific &&
+    draftNeedsMitm &&
     !serverRules.some(
       (r) =>
         r.host === draft.host.trim() &&
@@ -160,7 +164,7 @@ export function AgentEgressEditor({
     )
       return;
     createRule.mutate(
-      { agentId, ...next },
+      { agentId, ...next, ...splitHostPort(next.host) },
       { onSuccess: () => setDraft(EMPTY_DRAFT) },
     );
   };
@@ -493,7 +497,7 @@ function RuleRow({
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {rule.method}
       </span>
-      <span className="font-medium truncate">{rule.host}</span>
+      <span className="font-medium truncate">{formatHostPort(rule)}</span>
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {rule.pathPattern}
       </span>

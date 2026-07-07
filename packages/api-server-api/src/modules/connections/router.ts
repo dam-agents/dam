@@ -9,6 +9,7 @@ import {
 import {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
+  connectionProbeClusterCaInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
@@ -57,6 +58,10 @@ export const connectionsRouter = t.router({
   discoverMcp: manageCredentialsProcedure
     .input(connectionDiscoverMcpInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.discoverMcp(input)),
+
+  probeClusterCa: manageCredentialsProcedure
+    .input(connectionProbeClusterCaInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.probeClusterCa(input)),
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)

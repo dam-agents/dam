@@ -6,7 +6,10 @@ export interface FanOutPort {
   syncEgressHosts(input: {
     agentId: string;
     decidedBy: string;
-    grants: Map<string, { hosts: { host: string; pathPattern?: string }[] }>;
+    grants: Map<
+      string,
+      { hosts: { host: string; port?: number; pathPattern?: string }[] }
+    >;
     ownedSourceIds: ReadonlySet<string>;
   }): Promise<void>;
 }
@@ -38,7 +41,7 @@ export function createContributionFanOut(deps: {
 
       const egressGrants = new Map<
         string,
-        { hosts: { host: string; pathPattern?: string }[] }
+        { hosts: { host: string; port?: number; pathPattern?: string }[] }
       >();
       for (const conn of grantedConnections) {
         const hosts = conn.contributions
@@ -52,6 +55,7 @@ export function createContributionFanOut(deps: {
           )
           .map((c) => ({
             host: c.host,
+            ...(c.port ? { port: c.port } : {}),
             ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
           }));
         if (hosts.length > 0) {

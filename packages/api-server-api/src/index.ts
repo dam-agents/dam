@@ -158,6 +158,7 @@ export type {
   AgentAppConnections,
   AppConnectionStatus,
   AppConnectionView,
+  ClusterCaProbe,
   ConnectionsService,
   Connection,
   ConnectionStatus,
@@ -182,6 +183,7 @@ export {
 export {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
+  connectionProbeClusterCaInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionNameSchema,
   connectionSetAgentConnectionsInputSchema,

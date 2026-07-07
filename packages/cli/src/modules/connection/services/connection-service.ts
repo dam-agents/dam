@@ -1,4 +1,5 @@
 import type {
+  ClusterCaProbe,
   ConnectionCreateInput,
   ConnectionTemplateView,
   ConnectionView,
@@ -27,6 +28,8 @@ export interface ConnectionService {
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
   /** Probe an MCP server URL for its auth requirement. */
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
+  /** Probe a cluster API endpoint's TLS to auto-configure the upstream CA. */
+  probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   /** A single connection by id, or null if the caller doesn't own it. */
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
   /** Connection ids currently granted to an agent. */
@@ -81,6 +84,11 @@ export function createConnectionService(deps: {
     },
     async discoverMcp(url) {
       return trpcCall(() => deps.trpc.connections.discoverMcp.mutate({ url }));
+    },
+    async probeClusterCa(host) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeClusterCa.mutate({ host }),
+      );
     },
     async getConnection(id) {
       return trpcCall(() => deps.trpc.connections.get.query({ id }));

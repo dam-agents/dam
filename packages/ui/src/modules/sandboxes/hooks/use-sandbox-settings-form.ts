@@ -30,6 +30,7 @@ import {
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
 import type { StagedNetworkAccessController } from "../../egress-rules/components/agent-egress-editor.js";
+import { splitHostPort } from "../../egress-rules/host-port.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
@@ -329,7 +330,7 @@ export function useSandboxSettingsForm() {
       for (const add of net.pendingAdds) {
         await createRule.mutateAsync({
           agentId,
-          host: add.host,
+          ...splitHostPort(add.host),
           method: add.method,
           pathPattern: add.pathPattern,
           verdict: add.verdict,

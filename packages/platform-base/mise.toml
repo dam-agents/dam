@@ -12,4 +12,8 @@ ripgrep = "latest"
 fd = "latest"
 jq = "latest"
 uv = "latest"
+# Kubernetes/OpenShift connection (#2314): kubeconfig lands via a file
+# contribution; these make it usable out of the box.
+kubectl = "latest"
+oc = "latest"
 "npm:@googleworkspace/cli" = "latest"

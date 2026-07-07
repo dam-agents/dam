@@ -28,6 +28,12 @@ export const connectionDiscoverMcpInputSchema = z.object({
   url: z.string().url(),
 });
 
+// Probe an API server's TLS cert so the UI/CLI can auto-configure the
+// upstream CA (host may carry a `:port`).
+export const connectionProbeClusterCaInputSchema = z.object({
+  host: z.string().min(1),
+});
+
 export const connectionGetAgentConnectionsInputSchema = z.object({
   agentId: z.string().min(1),
 });
@@ -77,6 +83,10 @@ const headerCreateInput = z.object({
   // Values for the template's declared config inputs, keyed by input name.
   configInputs: z.record(z.string(), z.string()).optional(),
   value: z.string().min(1),
+  // Upstream CA bundle for hosts whose TLS cert a public root can't verify
+  // (self-signed cluster CAs). PEM, or base64 of PEM (kubeconfig
+  // `certificate-authority-data`).
+  caData: z.string().optional(),
 });
 
 const noneCreateInput = z.object({

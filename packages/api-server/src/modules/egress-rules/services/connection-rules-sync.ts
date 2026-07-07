@@ -67,6 +67,9 @@ export interface ConnectionRulesSync {
  */
 export interface EgressHostRule {
   host: string;
+  /** Upstream port when not 443. Recorded on the rule for transparency
+   *  (rule list, approval surfaces); ext-authz matching stays host-based. */
+  port?: number;
   pathPattern?: string;
 }
 
@@ -153,6 +156,7 @@ export function createConnectionRulesSync(
             id: randomUUID(),
             agentId,
             host: rule.host,
+            ...(rule.port ? { port: rule.port } : {}),
             method: "*",
             pathPattern,
             verdict: "allow",

@@ -27,6 +27,7 @@ import {
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
+import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { emit, EventType } from "../../../events.js";
@@ -428,6 +429,10 @@ export function createConnectionsService(deps: {
       } catch {
         return { auth: "none" };
       }
+    },
+
+    probeClusterCa(input) {
+      return probeClusterCa(input.host);
     },
   };
 }
