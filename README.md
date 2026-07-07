@@ -79,7 +79,7 @@ git clone https://github.com/dam-agents/dam && cd dam
 
 mise install
 mise run cluster:install
-````
+```
 
 Open [localhost:4444](http://localhost:4444) and log in with:
 
