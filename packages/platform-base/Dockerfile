@@ -75,8 +75,12 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
 WORKDIR /app
+# tool-stubs sits at the very end of PATH: the stubs lazily install their tool
+# via mise on first use, and anything installed explicitly (dnf, mise use,
+# derived images) shadows them. Bump a tool by rewriting its stub's version +
+# platform urls + checksums (`mise generate tool-stub` does this for you).
 ENV MISE_DATA_DIR=/usr/local/share/mise \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH"
+    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/tool-stubs"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
@@ -86,6 +90,7 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
+COPY --chmod=755 packages/platform-base/tool-stubs/ /usr/local/share/tool-stubs/
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run

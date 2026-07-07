@@ -76,9 +76,24 @@ checksum = "sha256:06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf
 url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_arm64.tar.gz"
 provenance = "github-attestations"
 
+[tools.gh."platforms.linux-arm64-musl"]
+provenance = "github-attestations"
+
 [tools.gh."platforms.linux-x64"]
 checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
 url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64-musl"]
+provenance = "github-attestations"
+
+[tools.gh."platforms.macos-arm64"]
+provenance = "github-attestations"
+
+[tools.gh."platforms.macos-x64"]
+provenance = "github-attestations"
+
+[tools.gh."platforms.windows-x64"]
 provenance = "github-attestations"
 
 [[tools.go]]

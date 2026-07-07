@@ -5,6 +5,9 @@ directory is persistent; the rest of the filesystem is reset on pod restart.
 
 ## Available tools
 
+Some tools are lazy stubs that download themselves on first use — a one-time
+install message on stderr is normal.
+
 - `node` / `npm` — Node.js 24 runtime and package manager
 - `git` — version control
 - `gh` — GitHub CLI

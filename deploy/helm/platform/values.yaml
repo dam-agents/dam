@@ -268,7 +268,7 @@ clickstack:
   # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
 
   otel-collector:
-    enabled: false        # we run our own collector (above)
+    enabled: false # we run our own collector (above)
 
   hyperdx:
     deployment:
@@ -639,6 +639,7 @@ apiServer:
     - codeload.github.com
     - objects.githubusercontent.com
     - raw.githubusercontent.com
+    - release-assets.githubusercontent.com
     # Container registries
     - quay.io
     - registry-1.docker.io
