@@ -3,6 +3,7 @@ import type {
   SessionRuntime,
   TokenSpendByModel,
 } from "api-server-api";
+import { useState } from "react";
 
 import { useTelemetryOverview } from "../api/queries.js";
 import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
@@ -12,42 +13,114 @@ interface Props {
   sessionId: string | null;
 }
 
-/** Right-sidebar telemetry tab: last-24h token spend per model, current
- *  session totals, and the most recent LLM calls for the selected agent. */
+type TelemetryScope = "session" | "all";
+
+/** Right-sidebar telemetry tab: token spend per model, session totals, and
+ *  the most recent LLM calls for the selected agent, all-time. Scoped to the
+ *  current session or to all of the agent's sessions. */
 export function TelemetryPanel({ agentId, sessionId }: Props) {
+  const [scope, setScope] = useState<TelemetryScope>("session");
+  const sessionScope = sessionId !== null && scope === "session";
   const { data, isPending, isError } = useTelemetryOverview(agentId, {
     limit: 25,
+    ...(sessionScope ? { sessionId } : {}),
   });
 
   if (!agentId)
-    return <PanelNotice>Select an agent to see telemetry</PanelNotice>;
-  if (isError)
-    return <PanelNotice>Telemetry is unavailable right now</PanelNotice>;
-  if (isPending) return <PanelNotice>Loading telemetry…</PanelNotice>;
-  if (data.tokenSpendByModel.length === 0)
-    return <PanelNotice>No LLM calls in the last 24 hours</PanelNotice>;
+    return (
+      <PanelBody toggle={null}>
+        <PanelNotice>Select an agent to see telemetry</PanelNotice>
+      </PanelBody>
+    );
 
-  const session =
-    data.runtimeBySession.find((s) => s.sessionId === sessionId) ?? null;
+  const scopeToggle = sessionId !== null && (
+    <ScopeToggle scope={scope} onChange={setScope} />
+  );
+
+  if (isError)
+    return (
+      <PanelBody toggle={scopeToggle}>
+        <PanelNotice>Telemetry is unavailable right now</PanelNotice>
+      </PanelBody>
+    );
+  if (isPending)
+    return (
+      <PanelBody toggle={scopeToggle}>
+        <PanelNotice>Loading telemetry…</PanelNotice>
+      </PanelBody>
+    );
+  if (data.tokenSpendByModel.length === 0)
+    return (
+      <PanelBody toggle={scopeToggle}>
+        <PanelNotice>
+          {sessionScope
+            ? "No LLM calls in this session"
+            : "No LLM calls from this agent yet"}
+        </PanelNotice>
+      </PanelBody>
+    );
+
+  const session = sessionScope ? (data.runtimeBySession[0] ?? null) : null;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 text-[12px]">
-      <SectionHeading>Spend by model · 24h</SectionHeading>
+    <PanelBody toggle={scopeToggle}>
+      <SectionHeading>Spend by model</SectionHeading>
       <ModelSpendTable rows={data.tokenSpendByModel} />
       {session && (
         <>
-          <SectionHeading>This session</SectionHeading>
+          <SectionHeading>Session totals</SectionHeading>
           <SessionStats session={session} />
         </>
       )}
       <SectionHeading>Recent calls</SectionHeading>
       <RecentCallsTable rows={data.contextPerCall} />
+    </PanelBody>
+  );
+}
+
+function PanelBody({
+  toggle,
+  children,
+}: {
+  toggle: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-3 text-[12px]">
+      {toggle}
+      {children}
+    </div>
+  );
+}
+
+function ScopeToggle({
+  scope,
+  onChange,
+}: {
+  scope: TelemetryScope;
+  onChange: (scope: TelemetryScope) => void;
+}) {
+  const options: [TelemetryScope, string][] = [
+    ["session", "This session"],
+    ["all", "All sessions"],
+  ];
+  return (
+    <div className="mb-3 flex rounded border border-border-light p-0.5">
+      {options.map(([value, label]) => (
+        <button
+          key={value}
+          onClick={() => onChange(value)}
+          className={`flex-1 rounded px-2 py-1 text-[11px] font-semibold transition-colors ${scope === value ? "bg-accent-light text-accent" : "text-text-muted hover:text-text-secondary"}`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
 
 function PanelNotice({ children }: { children: React.ReactNode }) {
-  return <p className="px-4 py-5 text-[12px] text-text-muted">{children}</p>;
+  return <p className="py-2 text-[12px] text-text-muted">{children}</p>;
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {

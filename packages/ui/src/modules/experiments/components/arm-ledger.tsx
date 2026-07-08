@@ -28,12 +28,9 @@ export function ArmLedger({
   const openAgentSession = useStore((s) => s.openAgentSession);
   const trialSessionId = arm.runs[arm.runs.length - 1]?.sessionId ?? null;
 
-  // Max lookback (30 days) — experiments outlive the default 24h window. The
-  // agent-scoped overview can include non-experiment sessions, so totals are
-  // summed only over this arm's run sessions.
-  const { data: telemetry } = useTelemetryOverview(arm.agentId, {
-    sinceHours: 720,
-  });
+  // The agent-scoped overview can include non-experiment sessions, so totals
+  // are summed only over this arm's run sessions.
+  const { data: telemetry } = useTelemetryOverview(arm.agentId);
   const runtimeBySession = new Map(
     telemetry?.runtimeBySession.map((s) => [s.sessionId, s]) ?? [],
   );

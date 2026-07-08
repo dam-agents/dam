@@ -3,22 +3,34 @@ import {
   createDisabledTelemetryService,
   createTelemetryService,
   type TelemetryReader,
+  type TelemetryWindow,
 } from "../../modules/telemetry/index.js";
 
-// Records the agent-id allowlist each reader method is called with, so we can
-// assert the ownership gate resolved the right scope before touching ClickHouse.
-function spyReader(): { reader: TelemetryReader; calls: string[][] } {
+// Records the agent-id allowlist and window each reader method is called with,
+// so we can assert the ownership gate resolved the right scope before touching
+// ClickHouse.
+function spyReader(): {
+  reader: TelemetryReader;
+  calls: string[][];
+  windows: TelemetryWindow[];
+} {
   const calls: string[][] = [];
-  const record = async (agentIds: readonly string[]) => {
+  const windows: TelemetryWindow[] = [];
+  const record = async (
+    agentIds: readonly string[],
+    window: TelemetryWindow,
+  ) => {
     calls.push([...agentIds]);
+    windows.push(window);
     return [];
   };
   return {
     calls,
+    windows,
     reader: {
-      tokenSpendByModel: (ids) => record(ids),
-      runtimeBySession: (ids) => record(ids),
-      contextPerCall: (ids) => record(ids),
+      tokenSpendByModel: (ids, w) => record(ids, w),
+      runtimeBySession: (ids, w) => record(ids, w),
+      contextPerCall: (ids, w) => record(ids, w),
       close: async () => {},
     },
   };
@@ -55,6 +67,13 @@ describe("telemetry ownership gate", () => {
       contextPerCall: [],
     });
     expect(calls).toEqual([]); // ClickHouse never touched — the ownership guarantee
+  });
+
+  it("passes the session filter through to every reader query", async () => {
+    const { reader, windows } = spyReader();
+    const svc = createTelemetryService({ reader, listOwnedAgentIds: owned });
+    await svc.overview({ ...query, sessionId: "sess-1" });
+    expect(windows).toEqual(Array(3).fill({ hours: 24, sessionId: "sess-1" }));
   });
 
   it("returns nothing when the caller owns no agents", async () => {

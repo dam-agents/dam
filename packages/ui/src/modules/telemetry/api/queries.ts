@@ -5,7 +5,7 @@ import { trpc } from "../../../trpc.js";
 /** Telemetry overview for one agent. Disabled while no agent is selected. */
 export function useTelemetryOverview(
   agentId: string | null,
-  opts?: { sinceHours?: number; limit?: number },
+  opts?: { sinceHours?: number; sessionId?: string; limit?: number },
 ) {
   return useQuery({
     ...trpc.telemetry.overview.queryOptions(

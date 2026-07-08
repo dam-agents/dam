@@ -7,20 +7,27 @@ import type {
   TokenSpendByModel,
 } from "api-server-api";
 
+/** Row filters beyond ownership, independent and composable: an optional
+ *  lookback window and an optional exact session. Both absent = all rows. */
+export interface TelemetryWindow {
+  hours?: number;
+  sessionId?: string;
+}
+
 /** Port: the raw ClickHouse read surface. Takes an already-resolved,
  *  ownership-checked agent-id allowlist — it does no scoping of its own. */
 export interface TelemetryReader {
   tokenSpendByModel(
     agentIds: readonly string[],
-    hours: number,
+    window: TelemetryWindow,
   ): Promise<TokenSpendByModel[]>;
   runtimeBySession(
     agentIds: readonly string[],
-    hours: number,
+    window: TelemetryWindow,
   ): Promise<SessionRuntime[]>;
   contextPerCall(
     agentIds: readonly string[],
-    hours: number,
+    window: TelemetryWindow,
     limit: number,
   ): Promise<CallContext[]>;
   close(): Promise<void>;
@@ -53,11 +60,12 @@ export function createTelemetryService(deps: {
           contextPerCall: [],
         };
       }
+      const window = { hours: query.sinceHours, sessionId: query.sessionId };
       const [tokenSpendByModel, runtimeBySession, contextPerCall] =
         await Promise.all([
-          deps.reader.tokenSpendByModel(ids, query.sinceHours),
-          deps.reader.runtimeBySession(ids, query.sinceHours),
-          deps.reader.contextPerCall(ids, query.sinceHours, query.limit),
+          deps.reader.tokenSpendByModel(ids, window),
+          deps.reader.runtimeBySession(ids, window),
+          deps.reader.contextPerCall(ids, window, query.limit),
         ]);
       return { tokenSpendByModel, runtimeBySession, contextPerCall };
     },
