@@ -71,6 +71,19 @@ cleanup() {
         echo ""
       done
     done
+    echo ""
+    echo "--- Mesh cert-expiry check (ztunnel) ---"
+    # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+    # keep the regex in sync. Rules mesh certs in or out as the failure cause.
+    CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
+        -l app=ztunnel --since=6h --tail=5000 --prefix 2>/dev/null \
+      | grep -iE 'certificate expired|AlertReceived\(CertificateExpired\)' | tail -5 || true)
+    if [ -n "$CERT_HITS" ]; then
+      echo "expired-cert signature PRESENT — mesh certs are a likely failure cause:"
+      printf '%s\n' "$CERT_HITS"
+    else
+      echo "no expired-cert signature (mesh certs are not the failure cause)"
+    fi
     echo "=== End diagnostics ==="
   fi
 
@@ -285,7 +298,13 @@ done
 if [ "$READY" != true ]; then
   echo "ERROR: warm e2e cluster is up but not routing on http://localhost:5555." >&2
   echo "Traefik/ingress likely failed to install. e2e:loop does not auto-heal —" >&2
-  echo "reprovision with 'mise run e2e', or check 'mise run cluster:fix-certs'." >&2
+  echo "reprovision with 'mise run e2e', or check 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
+  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+  # keep the regex in sync. Turns the generic advice above into a verdict.
+  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
+      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun e2e:loop." >&2
+  fi
   exit 1
 fi
 
