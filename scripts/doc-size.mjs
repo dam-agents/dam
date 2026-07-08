@@ -26,10 +26,10 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Caps in characters, calibrated once and left. The index (the always-loaded
 // landing page) is the hot working set, so it carries the hardest cap. The
-// per-page cap is the day-one lint ceiling; cli.md (~67k today) sits just under
-// it on purpose, so the most bloated page feels pressure first while the rest
-// keep headroom. Tighten here as pages are consolidated.
-export const CAPS = { page: 70000, index: 8000 };
+// per-page cap is the day-one lint ceiling: connections.md (~38k today) is the
+// largest page and sits just under it, so the next-most-bloated page feels
+// pressure first while the rest keep headroom. Tighten here as pages are consolidated.
+export const CAPS = { page: 40000, index: 8000 };
 
 const ARCH_DIR = join(REPO_ROOT, "docs", "architecture");
 export const INDEX_PATH = join(REPO_ROOT, "docs", "architecture.md");
