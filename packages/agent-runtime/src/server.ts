@@ -181,12 +181,18 @@ const trpcHandler = createHTTPHandler({
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
+// A detached PTY is reaped on harness quietness, not viewer loss, so in-flight
+// work survives switching away. The grace stays short for tab-refresh reattach.
+const PTY_DETACH_GRACE_MS = 30_000;
+const PTY_IDLE_REAP_MS = 5 * 60_000;
+
 interface PtySlot {
   pty: nodePty.IPty | null;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: InstanceType<typeof SerializeAddon>;
   client: WsWebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  lastOutputAt: number;
 }
 
 const ptySlots = new Map<string, PtySlot>();
@@ -203,6 +209,20 @@ function killPtySlot(sessionId: string): void {
   slot.headless.dispose();
   ptySlots.delete(sessionId);
   ptyLog(sessionId, "killed");
+}
+
+function reapPtySlotIfIdle(sessionId: string): void {
+  const slot = ptySlots.get(sessionId);
+  if (!slot || slot.client || !slot.pty) return;
+  const quietMs = Date.now() - slot.lastOutputAt;
+  if (quietMs >= PTY_IDLE_REAP_MS) {
+    killPtySlot(sessionId);
+    return;
+  }
+  slot.graceTimer = setTimeout(
+    () => reapPtySlotIfIdle(sessionId),
+    PTY_IDLE_REAP_MS - quietMs,
+  );
 }
 
 function attachPty(
@@ -223,7 +243,10 @@ function attachPty(
     if (!slot || slot.client !== ws) return;
     slot.client = null;
     if (!slot.pty) return;
-    slot.graceTimer = setTimeout(() => killPtySlot(sessionId), 30_000);
+    slot.graceTimer = setTimeout(
+      () => reapPtySlotIfIdle(sessionId),
+      PTY_DETACH_GRACE_MS,
+    );
   });
 
   ws.on("message", (raw: Buffer) => {
@@ -296,11 +319,13 @@ function attachPty(
         serialize,
         client: ws,
         graceTimer: null,
+        lastOutputAt: Date.now(),
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
 
       pty.onData((data) => {
+        slot.lastOutputAt = Date.now();
         slot.headless.write(data);
         if (slot.client?.readyState === 1)
           slot.client.send(encodeDataFrame(OP_OUTPUT, data));
