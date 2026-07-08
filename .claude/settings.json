@@ -56,6 +56,17 @@
     }
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/doc-size-hook.mjs"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
