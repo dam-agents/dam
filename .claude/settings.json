@@ -39,9 +39,7 @@
       "Bash(gh run list*)",
       "Bash(gh run view*)"
     ],
-    "deny": [
-      "Read(docs/adrs/**)"
-    ]
+    "deny": []
   },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
