@@ -29,20 +29,27 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # keep in sync with packages/platform-base/Dockerfile.
 PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/dev-config scripts/install-pnpm.js package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
+# claude-code-derived workloads; single registration point, also emitted as
+# CI's `workloads` build/merge matrix
+WORKLOADS="nous openevolve shinkaevolve"
+
+is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
+
 own_paths() {
+  if is_workload "$1"; then echo "packages/agents/$1"; return; fi
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
-    claude-code|codex|pi-agent|bob|k-search|nous|openevolve) echo "packages/agents/$1" ;;
+    claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
     mock) echo "packages/e2e/agents/mock" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
 
 base_of() {
+  if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
     platform-base) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
-    nous|openevolve) echo "claude-code" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -92,7 +99,7 @@ tag_for() {
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag nous oe
+  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
   pb_tag="$(tag_for platform-base)"
@@ -102,10 +109,13 @@ gha_outputs() {
   done
   agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
   cc_tag="$(tag_for claude-code)"
-  nous=false; [ "$(resolve nous | cut -d' ' -f1)" = BUILD ] && nous=true
-  oe=false;   [ "$(resolve openevolve | cut -d' ' -f1)" = BUILD ] && oe=true
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nnous=%s\nopenevolve=%s\nclaude_code_base_tag=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$nous" "$oe" "$cc_tag"
+  wl_built=()
+  for w in $WORKLOADS; do
+    [ "$(resolve "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
+  done
+  workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
+  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\n' \
+    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag"
 }
 
 self_check() {
@@ -113,6 +123,7 @@ self_check() {
   chk() { if [ "$1" != "$2" ]; then echo "FAIL: expected [$2] got [$1]" >&2; f=1; fi; }
   has() { case "$1" in *"$2"*) ;; *) echo "FAIL: [$1] missing [$2]" >&2; f=1 ;; esac; }
   chk "$(base_of nous)" claude-code
+  chk "$(base_of shinkaevolve)" claude-code
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
   chk "$(local_tag platform-base)" platform-base
@@ -120,10 +131,13 @@ self_check() {
   has "$(effective_paths nous)" packages/platform-base
   has "$(effective_paths nous)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/nous
+  has "$(effective_paths shinkaevolve)" packages/agents/shinkaevolve
+  has "$(effective_paths shinkaevolve)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (main/tag) output without git/docker.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'platform_base=true'
   has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
+  has "$out" 'workloads=["nous","openevolve","shinkaevolve"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1

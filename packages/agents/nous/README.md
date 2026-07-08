@@ -145,17 +145,19 @@ NOUS_REF=main mise run agents:nous:image     # track a branch
 NOUS_REF=v0.4.1 mise run agents:nous:image   # or a different tag
 ```
 
-`values-local.yaml` enables the nous template against the locally-built
-`platform-nous:latest`.
+`values-local.yaml` points the nous template at the locally-built
+`platform-nous:latest` but keeps it `enabled: false`; flip that to `true` to
+show it in the local catalog.
 
 ## CI / publishing
 
-The nous image is published by CI (`.github/workflows/cd.yml`): `build-nous`
-(per-arch) runs after `merge-agents` — nous builds `FROM` claude-code, so it
-pulls its base by the same per-commit tag — and `merge-nous` publishes the
-multi-arch manifest to `quay.io/dam-agents/nous`. The `publish` (Helm) job waits
-on `merge-nous`. The template is enabled by default in `values.yaml` under
-"Pre-configured Images" (`category: preconfigured`, `experimental: true`).
+The nous image is published by CI (`.github/workflows/cd.yml`): the matrixed
+`build-workloads` job (per-arch) runs after `merge-agents` — nous builds `FROM`
+claude-code, so it pulls its base by the same per-commit tag — and
+`merge-workloads` publishes the multi-arch manifest to
+`quay.io/dam-agents/nous`. The `publish` (Helm) job waits on `merge-workloads`.
+The template is enabled by default in `values.yaml` under "Pre-configured
+Images" (`category: preconfigured`, `experimental: true`).
 
 ## Known follow-ups (not yet wired)
 

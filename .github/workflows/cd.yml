@@ -89,8 +89,7 @@ jobs:
       platform_base_tag: ${{ steps.d.outputs.platform_base_tag }}
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
-      nous: ${{ steps.d.outputs.nous }}
-      openevolve: ${{ steps.d.outputs.openevolve }}
+      workloads: ${{ steps.d.outputs.workloads }}
       claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -342,7 +341,7 @@ jobs:
     # !cancelled() && !failure() so this still runs when merge-platform-base was
     # skipped (platform-base reused) — build-agents runs via the same guard, and
     # without it here GitHub's implicit success() gate skips this merge (leaving
-    # claude-code untagged, which breaks build-nous/build-openevolve).
+    # claude-code untagged, which breaks build-workloads).
     if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -381,13 +380,15 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
 
-  build-nous:
+  # all claude-code-derived workload images; list = resolve-image.sh WORKLOADS
+  build-workloads:
     needs: [merge-agents, changes]
-    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
+    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
+        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
         arch: ${{ fromJSON(needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -402,14 +403,14 @@ jobs:
       - id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
-          context: packages/agents/nous
-          file: packages/agents/nous/Dockerfile
+          context: packages/agents/${{ matrix.component }}
+          file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/nous,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: type=gha,scope=nous-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=nous-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -418,101 +419,24 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digests-nous-${{ matrix.arch }}
+          name: digests-${{ matrix.component }}-${{ matrix.arch }}
           path: /tmp/digests/*
           retention-days: 1
           if-no-files-found: error
 
-  merge-nous:
-    name: merge multi-arch nous manifest
-    needs: [build-nous, appversion, changes]
-    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
+  merge-workloads:
+    name: merge multi-arch workload manifests
+    needs: [build-workloads, appversion, changes]
+    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    steps:
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          pattern: digests-nous-*
-          path: /tmp/digests
-          merge-multiple: true
-      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/nous
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ needs.appversion.outputs.composite }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - name: Create manifest list and push
-        env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/nous
-        run: |
-          set -euo pipefail
-          cd /tmp/digests
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$IMAGE@sha256:%s " *)
-
-  build-openevolve:
-    needs: [merge-agents, changes]
-    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 30
     strategy:
       matrix:
-        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - id: build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-        with:
-          context: packages/agents/openevolve
-          file: packages/agents/openevolve/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/openevolve,push-by-digest=true,name-canonical=true,push=true
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: type=gha,scope=openevolve-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=openevolve-${{ matrix.arch }}
-      - name: Export digest
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: digests-openevolve-${{ matrix.arch }}
-          path: /tmp/digests/*
-          retention-days: 1
-          if-no-files-found: error
-
-  merge-openevolve:
-    name: merge multi-arch openevolve manifest
-    needs: [build-openevolve, appversion, changes]
-    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: digests-openevolve-*
+          pattern: digests-${{ matrix.component }}-*
           path: /tmp/digests
           merge-multiple: true
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -524,7 +448,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: ${{ env.IMAGE_PREFIX }}/openevolve
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
@@ -533,7 +457,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - name: Create manifest list and push
         env:
-          IMAGE: ${{ env.IMAGE_PREFIX }}/openevolve
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
         run: |
           set -euo pipefail
           cd /tmp/digests
@@ -617,7 +541,7 @@ jobs:
           if-no-files-found: ignore
 
   publish:
-    needs: [merge-agents, merge-nous, merge-openevolve, appversion]
+    needs: [merge-agents, merge-workloads, appversion]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -879,8 +803,7 @@ jobs:
         merge-images,
         merge-platform-base,
         merge-agents,
-        merge-nous,
-        merge-openevolve,
+        merge-workloads,
       ]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
