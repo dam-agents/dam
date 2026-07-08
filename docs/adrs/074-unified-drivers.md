@@ -1,4 +1,11 @@
-# ADR-072: Unified `drivers:` manifest with pluggable events and default-on built-ins
+---
+id: 074
+title: "Unified `drivers:` manifest with pluggable events and default-on built-ins"
+status: accepted
+subsystem: agent-lifecycle
+summary: The runtime manifest folds contribution and event kinds into one drivers map resolved through the plugin registry, with built-ins on by default and event handlers now externally overridable.
+---
+# ADR-074: Unified `drivers:` manifest with pluggable events and default-on built-ins
 
 **Date:** 2026-06-30
 **Status:** Accepted

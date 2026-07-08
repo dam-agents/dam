@@ -1,3 +1,10 @@
+---
+id: 072
+title: Gateway credential injection for gRPC hosts
+status: accepted
+subsystem: security-and-credentials
+summary: A host's terminating chain can opt into HTTP/2 so gateway credential injection covers gRPC streams, with only the secret credential half injected and the non-secret half allowed as plain pod env.
+---
 # ADR-072: Gateway credential injection for gRPC hosts
 
 **Date:** 2026-06-23

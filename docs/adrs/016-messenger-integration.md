@@ -1,3 +1,10 @@
+---
+id: 016
+title: Messenger integration handled by API Server
+status: accepted
+subsystem: channels
+summary: Let the API Server host messenger integrations through a pluggable channel adapter interface, waking hibernated instances and opening a fresh ACP session per mention.
+---
 # ADR-016: Messenger integration handled by API Server
 
 **Date:** 2026-04-09

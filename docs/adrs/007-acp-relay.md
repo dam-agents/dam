@@ -1,3 +1,10 @@
+---
+id: 007
+title: ACP traffic always proxied through the API Server
+status: accepted
+subsystem: connections
+summary: Relay all ACP WebSocket traffic through the API Server rather than direct UI-to-pod connections, enabling network isolation and wake-on-connect.
+---
 # ADR-007: ACP traffic always proxied through the API Server
 
 **Date:** 2026-04-02

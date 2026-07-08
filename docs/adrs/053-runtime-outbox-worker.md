@@ -1,3 +1,10 @@
+---
+id: 053
+title: Transactional outbox + BullMQ worker for runtime-channel delivery
+status: proposed
+subsystem: channels
+summary: Agent-bound state changes commit to a Postgres outbox and a per-replica BullMQ worker dispatches them over the runtime channel.
+---
 # ADR-053: Transactional outbox + BullMQ worker for runtime-channel delivery
 
 **Date:** 2026-05-21

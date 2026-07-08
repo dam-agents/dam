@@ -1,3 +1,10 @@
+---
+id: 028
+title: Configurable injection on generic secrets
+status: accepted
+subsystem: security-and-credentials
+summary: Generic secrets gain optional pathPattern scoping and an injectionConfig header/value override so non-standard providers need no per-provider code.
+---
 # ADR-028: Configurable injection on generic secrets
 
 **Date:** 2026-04-21

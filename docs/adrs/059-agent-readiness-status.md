@@ -1,3 +1,10 @@
+---
+id: 059
+title: Agent readiness is controller-computed status — agent ∧ gateway
+status: accepted
+subsystem: agent-lifecycle
+summary: The controller computes readiness as agent-and-gateway pod Ready gated on the rolled-out revision and publishes it on Agent status; the api-server reads only that and drops all pod access.
+---
 # ADR-059: Agent readiness is controller-computed status — agent ∧ gateway
 
 **Date:** 2026-06-03

@@ -1,3 +1,10 @@
+---
+id: 021
+title: "Slack outbound messaging — MCP tool"
+status: accepted
+subsystem: channels
+summary: Expose an MCP tool so agents post outbound Slack messages through the API Server and SlackWorker, using a fire-and-forget threading model.
+---
 # ADR-021: Slack outbound messaging — MCP tool
 
 **Date:** 2026-04-16

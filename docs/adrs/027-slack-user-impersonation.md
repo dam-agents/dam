@@ -1,3 +1,10 @@
+---
+id: 027
+title: Slack per-turn user impersonation — foreign repliers fork the instance into a K8s Job
+status: accepted
+subsystem: channels
+summary: Foreign Slack repliers run their turn in a per-turn Kubernetes Job carrying their own credentials, sharing the instance PVC via RWX.
+---
 # ADR-027: Slack per-turn user impersonation — foreign repliers fork the instance into a K8s Job
 
 **Date:** 2026-04-22

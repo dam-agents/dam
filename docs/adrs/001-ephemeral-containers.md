@@ -1,3 +1,10 @@
+---
+id: 001
+title: Ephemeral containers + persistent workspace volumes
+status: accepted
+subsystem: agent-lifecycle
+summary: Fresh container per agent invocation, with workspace and session state persisted on mounted volumes and system packages baked into the image.
+---
 # ADR-001: Ephemeral containers + persistent workspace volumes
 
 **Date:** 2026-04-02

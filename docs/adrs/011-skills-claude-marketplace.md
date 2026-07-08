@@ -1,3 +1,10 @@
+---
+id: 011
+title: Skills via Claude plugin marketplace
+status: accepted
+subsystem: skills
+summary: Source and manage skills through Claude's plugin marketplace rather than cross-harness registries or git-committed files.
+---
 # ADR-011: Skills via Claude plugin marketplace
 
 **Date:** 2026-04-03

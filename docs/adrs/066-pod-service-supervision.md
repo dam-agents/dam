@@ -1,3 +1,10 @@
+---
+id: 066
+title: Pod services — image-provided background processes supervised by agent-runtime
+status: accepted
+subsystem: agent-lifecycle
+summary: Agent images may ship one optional pod-service executable that agent-runtime supervises for the pod lifetime, with capped-backoff crash restart and SIGHUP env reload.
+---
 # ADR-066: Pod services — image-provided background processes supervised by agent-runtime
 
 **Date:** 2026-06-10

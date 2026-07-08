@@ -1,3 +1,10 @@
+---
+id: 052
+title: "Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime"
+status: proposed
+subsystem: channels
+summary: Replace pod-files SSE, exec trigger drops, and direct skills tRPC with one tRPC channel carrying a desired-state snapshot and an ordered event stream that share a single per-agent version cursor.
+---
 # ADR-052: Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime
 
 **Date:** 2026-05-21

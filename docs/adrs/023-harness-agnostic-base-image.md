@@ -1,3 +1,10 @@
+---
+id: 023
+title: Harness-agnostic agent base image
+status: accepted
+subsystem: agent-lifecycle
+summary: Ship a single platform-base image owning ACP relay, triggers, and file service; concrete agents extend it and drop two fixed harness scripts.
+---
 # ADR-023: Harness-agnostic agent base image
 
 **Date:** 2026-04-17

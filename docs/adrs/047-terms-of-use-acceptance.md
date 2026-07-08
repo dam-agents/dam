@@ -1,3 +1,10 @@
+---
+id: 047
+title: "Terms of Use acceptance — api-server gate with hash-as-proof"
+status: accepted
+subsystem: security-and-credentials
+summary: An api-server middleware returns HTTP 412 on every JWT-authenticated route until the sub accepts the current Helm-set Terms Version, storing version plus sha256 text hash in Postgres.
+---
 # ADR-047: Terms of Use acceptance — api-server gate with hash-as-proof
 
 **Date:** 2026-05-25

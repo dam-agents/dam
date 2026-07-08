@@ -1,3 +1,10 @@
+---
+id: 020
+title: "Responsive mobile UI, ACP session controls, PWA"
+status: accepted
+subsystem: agent-lifecycle
+summary: Make the chat UI responsive for mobile, expose ACP session controls driven dynamically from session state, and ship a PWA.
+---
 # ADR-019: Responsive mobile UI, ACP session controls, PWA
 
 **Status:** ACCEPTED

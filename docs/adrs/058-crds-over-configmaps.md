@@ -1,3 +1,10 @@
+---
+id: 058
+title: CRDs over ConfigMaps — reconciled resources become custom resources
+status: accepted
+subsystem: platform-topology
+summary: Migrate reconciled Agent and Fork resources from labeled ConfigMaps to CRDs with a status subresource; Templates stay ConfigMaps.
+---
 # ADR-058: CRDs over ConfigMaps — reconciled resources become custom resources
 
 **Date:** 2026-06-03

@@ -1,3 +1,10 @@
+---
+id: 073
+title: Per-template scheduling for runtimeClassName and nodeSelector
+status: accepted
+subsystem: agent-lifecycle
+summary: runtimeClassName and nodeSelector become per-template overridable agent-spec fields while all other scheduling stays chart-wide.
+---
 # ADR-073: Per-template scheduling for runtimeClassName and nodeSelector
 
 **Date:** 2026-06-25

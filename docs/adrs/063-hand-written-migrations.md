@@ -1,3 +1,10 @@
+---
+id: 063
+title: Generated table migrations, hand-written views, squashed baseline
+status: accepted
+subsystem: persistence
+summary: Table/index/enum migrations are generated from the schema, reporting views are hand-written SQL, history is squashed to a baseline, guarded by a database-free snapshot check.
+---
 # ADR-063: Generated table migrations, hand-written views, squashed baseline
 
 **Date:** 2026-06-09

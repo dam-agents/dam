@@ -1,3 +1,10 @@
+---
+id: 025
+title: Persistent ACP session per Slack thread
+status: accepted
+subsystem: channels
+summary: Persist one ACP session per Slack thread, mapped by (instanceId, threadTs) in PostgreSQL and resumed on follow-ups, with fallback to a fresh session.
+---
 # ADR-025: Persistent ACP session per Slack thread
 
 **Date:** 2026-04-20

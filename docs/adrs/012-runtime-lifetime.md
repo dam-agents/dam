@@ -1,3 +1,10 @@
+---
+id: 012
+title: "Runtime lifetime — single-use Jobs"
+status: accepted
+subsystem: agent-lifecycle
+summary: Run each agent turn as a single-use Kubernetes Job instead of keep-alive pods, backed by a read cache and two-tier per-session and shared volumes.
+---
 # ADR-012: Runtime lifetime — single-use Jobs
 
 **Date:** 2026-04-07

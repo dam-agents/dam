@@ -1,3 +1,10 @@
+---
+id: 017
+title: DB-backed ACP sessions for metadata
+status: accepted
+subsystem: persistence
+summary: Add a PostgreSQL sessions table as the source of truth for session existence and metadata, enriched with live ACP data at query time.
+---
 # ADR-017: DB-backed ACP sessions for metadata
 
 **Date:** 2026-04-14

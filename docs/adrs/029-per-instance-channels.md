@@ -1,3 +1,10 @@
+---
+id: 029
+title: Per-instance messenger channels
+status: accepted
+subsystem: channels
+summary: Per-instance channels like Telegram store bot tokens in k8s Secrets, authorize per-conversation via /login, and hold one ACP session per authorized thread.
+---
 # ADR-029: Per-instance messenger channels
 
 **Date:** 2026-04-23

@@ -1,3 +1,10 @@
+---
+id: 002
+title: "Memory — platform provides primitives, agents own semantics"
+status: accepted
+subsystem: persistence
+summary: Platform provides persistent, isolated file storage; agents design their own memory formats, consolidation, and search.
+---
 # ADR-002: Memory — platform provides primitives, agents own semantics
 
 **Date:** 2026-04-02
