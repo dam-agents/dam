@@ -7,15 +7,21 @@ images:
   - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
     arch: x86_64
 
-cpus: 4
+# The ClickStack telemetry stack (CLICKSTACK=1 — collector, ClickHouse, keeper,
+# MongoDB, HyperDX) adds ~2 cores of pod requests on top of the platform stack.
+# On 4 CPUs the k3s scheduler hit FailedScheduling: Insufficient cpu when waking
+# an agent pod.
+cpus: 6
 # Istio ambient (istiod + istio-cni + ztunnel + waypoint Deployment) adds
 # ~1 GiB of pod requests on top of the existing platform stack. On 4 GiB the
-# k3s scheduler hit FailedScheduling: Insufficient memory for new agent pods.
+# k3s scheduler hit FailedScheduling: Insufficient memory for new agent pods;
+# ClickStack pushed 8 GiB to ~80% requested, hence 12.
 #
-# Bumping `memory:` here does not resize an existing VM. Devs upgrading
-# from a 4 GiB VM must reprovision:
-#   mise run cluster:delete && mise run cluster:install
-memory: 8GiB
+# Bumping `cpus:`/`memory:` here does not resize an existing VM. Resize in
+# place (data preserved):
+#   mise run cluster:stop && limactl edit <vm> --cpus 6 --memory 12 && limactl start <vm>
+# or reprovision: mise run cluster:delete && mise run cluster:install
+memory: 12GiB
 disk: 200GiB
 
 containerd:
