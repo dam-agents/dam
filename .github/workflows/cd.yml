@@ -966,7 +966,7 @@ jobs:
         with:
           pattern: findings-*
           path: findings
-      - name: Reconcile issues
+      - name: Reconcile summary issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -978,47 +978,50 @@ jobs:
             echo "::notice::no findings artifacts to process"
             exit 0
           fi
-          mapfile -t findings < <(jq -c -s 'add // [] | unique_by(.title) | .[]' "${files[@]}")
-          echo "Processing ${#findings[@]} finding(s) across all scanners"
-          footer="See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow."
 
-          confirmed=()
-          for finding in "${findings[@]}"; do
-            title=$(jq -r '.title' <<<"$finding")
-            body=$(jq -r '.body' <<<"$finding")
-            query=$(jq -r '.searchTerms | map("\"" + . + "\"") | join(" ")' <<<"$finding")
-            existing=$(gh issue list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --search "in:title ${query}" \
-              --json number \
-              --jq '.[0].number // empty')
-            if [ -n "$existing" ]; then
-              confirmed+=("$existing")
-              continue
-            fi
-            url=$(gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$(printf '%s\n\n---\n%s\n' "$body" "$footer")" \
-              --label "security,vulnerability")
-            confirmed+=("${url##*/}")
-          done
-
-          mapfile -t open_issues < <(gh issue list \
+          title="Security vulnerabilities (automated scan)"
+          existing=$(gh issue list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
-            --label "vulnerability" \
-            --author "github-actions[bot]" \
-            --limit 200 \
+            --search "in:title \"$title\"" \
             --json number \
-            --jq '.[].number')
+            --jq '.[0].number // empty')
 
-          for issue_num in "${open_issues[@]}"; do
-            for c in "${confirmed[@]}"; do
-              [ "$c" = "$issue_num" ] && continue 2
-            done
-            gh issue close "$issue_num" \
+          count=$(jq -s 'add // [] | unique_by(.title) | length' "${files[@]}")
+          echo "::notice::$count finding(s) across all scanners"
+
+          if [ "$count" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --comment "All vulnerabilities resolved — no findings in the latest scan."
+            fi
+            exit 0
+          fi
+
+          body=$(jq -s -r --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" '
+            add // [] | unique_by(.title) | sort_by(.title)
+            | ([ "Open vulnerabilities found by the scheduled scanners (\(length) total).",
+                 "This issue is regenerated on every scan — last update: [run](\($run)).",
+                 "" ]
+               + map("<details><summary>\(.title)</summary>\n\n\(.body)\n\n</details>")
+               + [ "",
+                   "---",
+                   "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow." ])
+            | join("\n")
+          ' "${files[@]}")
+
+          # GitHub caps issue bodies at 65536 chars; a too-long body 422s the API call
+          if [ "${#body}" -gt 65000 ]; then
+            body="${body:0:65000}"$'\n\n---\n**Truncated** — full findings in the workflow run artifacts.'
+          fi
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "${GITHUB_REPOSITORY}" --body "$body"
+          else
+            gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
-              --comment "Vulnerability no longer detected by scanners."
-          done
+              --title "$title" \
+              --body "$body" \
+              --label "security,vulnerability"
+          fi
