@@ -331,9 +331,13 @@ API Server ServiceAccount name
 
 {{/* HTTP endpoint of the ClickStack ClickHouse store — the api-server's
      owner-scoped telemetry read path queries it directly (docs/architecture/
-     observability.md). Mirrors the subchart's ClickHouse headless Service. */}}
+     observability.md). The operator names the headless Service
+     {clickstack.fullname}-clickhouse-clickhouse-headless, and the subchart's
+     fullname derives from .Release.Name (NOT platform.fullname) — mirror that
+     logic. Assumes clickstack.nameOverride/fullnameOverride stay unset. */}}
 {{- define "platform.clickstack.clickhouse.httpUrl" -}}
-{{- printf "http://%s-clickstack-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" (include "platform.fullname" .) .Release.Namespace }}
+{{- $fullname := ternary .Release.Name (printf "%s-clickstack" .Release.Name) (contains "clickstack" .Release.Name) | trunc 63 | trimSuffix "-" }}
+{{- printf "http://%s-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" $fullname .Release.Namespace }}
 {{- end }}
 
 {{- define "platform.agentTelemetry.env" -}}
