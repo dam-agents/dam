@@ -33,6 +33,7 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { TelemetryPanel } from "../../telemetry/components/telemetry-panel.js";
 import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
@@ -320,7 +321,7 @@ export function ChatView() {
   const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
 
   // ── Right panel ──
-  const rightTabs = ["files", "configuration"] as const;
+  const rightTabs = ["files", "configuration", "telemetry"] as const;
   const rightPanelContent = (
     <>
       <div className="flex border-b border-border-light shrink-0">
@@ -354,6 +355,9 @@ export function ChatView() {
             onOpenFile={openFileHandler}
           />
         </div>
+        {rightTab === "telemetry" && (
+          <TelemetryPanel agentId={selectedAgent} sessionId={sessionId} />
+        )}
       </div>
     </>
   );

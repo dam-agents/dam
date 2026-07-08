@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 import { useStore } from "../../../store.js";
+import { useTelemetryOverview } from "../../telemetry/api/queries.js";
+import { formatTokens, formatUsd } from "../../telemetry/lib/format.js";
 import { armColor } from "../lib/arm-color.js";
 import { formatScore } from "../lib/score.js";
 import type { ExperimentArmDetail } from "../types.js";
@@ -25,6 +27,29 @@ export function ArmLedger({
 }: Props) {
   const openAgentSession = useStore((s) => s.openAgentSession);
   const trialSessionId = arm.runs[arm.runs.length - 1]?.sessionId ?? null;
+
+  // Max lookback (30 days) — experiments outlive the default 24h window. The
+  // agent-scoped overview can include non-experiment sessions, so totals are
+  // summed only over this arm's run sessions.
+  const { data: telemetry } = useTelemetryOverview(arm.agentId, {
+    sinceHours: 720,
+  });
+  const runtimeBySession = new Map(
+    telemetry?.runtimeBySession.map((s) => [s.sessionId, s]) ?? [],
+  );
+  const armSessions = arm.runs
+    .map((run) => runtimeBySession.get(run.sessionId))
+    .filter((s) => s !== undefined);
+  const armCostUsd = armSessions.reduce((sum, s) => sum + s.costUsd, 0);
+  const armTokens = armSessions.reduce(
+    (sum, s) =>
+      sum +
+      s.inputTokens +
+      s.cacheReadTokens +
+      s.cacheCreationTokens +
+      s.outputTokens,
+    0,
+  );
 
   return (
     <Card className="overflow-hidden">
@@ -52,6 +77,11 @@ export function ArmLedger({
             Open trial
           </Button>
         )}
+        {armSessions.length > 0 && (
+          <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+            {formatUsd(armCostUsd)} · {formatTokens(armTokens)} tok
+          </span>
+        )}
         {arm.armVariation.trim() && (
           <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">
             {arm.armVariation.replace(/\s+/g, " ").trim()}
@@ -67,31 +97,38 @@ export function ArmLedger({
             <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
               <th className="px-4 py-2 text-left font-medium">Run</th>
               <th className="px-4 py-2 text-right font-medium">Score</th>
+              <th className="px-4 py-2 text-right font-medium">Cost</th>
               <th className="px-4 py-2 text-right font-medium">Candidate</th>
             </tr>
           </thead>
           <tbody>
-            {arm.runs.map((run) => (
-              <tr key={run.id} className="border-t border-border">
-                <td className="px-4 py-2 font-mono text-muted-foreground">
-                  #{run.runNumber}
-                </td>
-                <td className="px-4 py-2 text-right font-mono font-medium tabular-nums">
-                  {formatScore(run.score)}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  {run.candidateRef ? (
-                    <CandidateDownloadButton
-                      experimentId={experimentId}
-                      runId={run.id}
-                      candidateRef={run.candidateRef}
-                    />
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {arm.runs.map((run) => {
+              const runCost = runtimeBySession.get(run.sessionId)?.costUsd;
+              return (
+                <tr key={run.id} className="border-t border-border">
+                  <td className="px-4 py-2 font-mono text-muted-foreground">
+                    #{run.runNumber}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono font-medium tabular-nums">
+                    {formatScore(run.score)}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                    {runCost !== undefined ? formatUsd(runCost) : "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {run.candidateRef ? (
+                      <CandidateDownloadButton
+                        experimentId={experimentId}
+                        runId={run.id}
+                        candidateRef={run.candidateRef}
+                      />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
