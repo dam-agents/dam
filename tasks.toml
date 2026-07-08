@@ -465,6 +465,16 @@ dir = "{{config_root}}"
 sources = ["docs/adrs/*.md", "scripts/adr-index.mjs"]
 run = "node scripts/adr-index.mjs --check"
 
+# Guard: architecture docs stay within their character budget. The cap is a
+# forcing function (consolidate prose, push rationale into an ADR), not a byte
+# limit. Same shape as the other docs guards — pure files, no services, fail
+# closed. The PreToolUse hook (scripts/doc-size-hook.mjs) shares this
+# measurement front-line; this gate is the authoritative, unbypassable layer.
+["docs:check:doc-size"]
+dir = "{{config_root}}"
+sources = ["docs/architecture.md", "docs/architecture/*.md", "scripts/doc-size.mjs"]
+run = "node scripts/doc-size.mjs --check"
+
 # Deterministic, unbypassable gate for the one invariant the ADR read model
 # rests on: an accepted ADR's decision is never rewritten. Precommit diffs the
 # staged tree against HEAD (fast local loop); CI diffs the branch against its
