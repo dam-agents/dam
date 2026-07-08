@@ -17,7 +17,7 @@ overrides:
   tar@<7.5.16: 7.5.16
   ws@<8.21.0: 8.21.0
 
-packageExtensionsChecksum: sha256-KXxfPliwb3WV55jn5M9k5ASbQFftfqDqY9Khs8D9TbE=
+packageExtensionsChecksum: sha256-2dYXpk58AH3dqbk2N+yP8GOhmo377T0UiwCCrHN1AIQ=
 
 importers:
 
@@ -417,7 +417,7 @@ importers:
         version: link:../dev-config
       drizzle-kit:
         specifier: ^0.31.4
-        version: 0.31.10
+        version: 0.31.10(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(pg@8.20.0)(postgres@3.4.9))
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -4337,6 +4337,8 @@ packages:
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
+    peerDependencies:
+      drizzle-orm: '*'
 
   drizzle-orm@0.45.2:
     resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
@@ -10913,10 +10915,11 @@ snapshots:
     dependencies:
       detect-libc: 1.0.3
 
-  drizzle-kit@0.31.10:
+  drizzle-kit@0.31.10(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(pg@8.20.0)(postgres@3.4.9)):
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
+      drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(pg@8.20.0)(postgres@3.4.9)
       esbuild: 0.25.12
       tsx: 4.21.0
 
