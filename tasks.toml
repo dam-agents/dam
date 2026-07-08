@@ -465,6 +465,23 @@ dir = "{{config_root}}"
 sources = ["docs/adrs/*.md", "scripts/adr-index.mjs"]
 run = "node scripts/adr-index.mjs --check"
 
+# Deterministic, unbypassable gate for the one invariant the ADR read model
+# rests on: an accepted ADR's decision is never rewritten. Precommit diffs the
+# staged tree against HEAD (fast local loop); CI diffs the branch against its
+# origin/main merge-base (authoritative, survives amends and rebases). Same
+# script, different base.
+["docs:check:adr-immutable"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+  node scripts/adr-immutable.mjs --merge-base
+else
+  node scripts/adr-immutable.mjs --staged
+fi
+'''
+
 # -- Release --
 
 ["release:set-version"]

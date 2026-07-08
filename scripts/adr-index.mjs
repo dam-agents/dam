@@ -32,7 +32,7 @@ const GENERATED_MARKER =
 
 const STATUS = { ACCEPTED: "accepted", PROPOSED: "proposed", DEPRECATED: "deprecated" };
 
-function splitFrontmatter(raw) {
+export function splitFrontmatter(raw) {
   if (!raw.startsWith("---\n")) return { frontmatter: null, body: raw };
   const end = raw.indexOf("\n---", 4);
   if (end === -1) return { frontmatter: null, body: raw };
@@ -51,7 +51,7 @@ function unquote(v) {
 
 // Minimal YAML for the flat ADR frontmatter schema: `key: scalar`, inline
 // `key: [a, b]` lists, and block `- item` lists. No nesting beyond that.
-function parseFrontmatter(fm) {
+export function parseFrontmatter(fm) {
   const out = {};
   const lines = fm.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -260,4 +260,8 @@ function main() {
   process.stdout.write("✅ docs/adrs/index.md matches the generated projection.\n");
 }
 
-main();
+// Run only when invoked directly, so adr-immutable.mjs can import the parser
+// helpers without regenerating the index as a side effect.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
