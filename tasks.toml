@@ -447,6 +447,24 @@ if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$vers
 echo "OK: version $version"
 '''
 
+# -- Docs --
+
+["docs:check"]
+depends = ["docs:check:*"]
+
+# Regenerate docs/adrs/index.md from ADR frontmatter. The index is a projection
+# of the ADR log, never hand-maintained: edit an ADR, run this, commit both.
+["docs:generate:adr-index"]
+dir = "{{config_root}}"
+run = "node scripts/adr-index.mjs"
+
+# Guard: the committed ADR index must match what regeneration produces. Same
+# shape as db:check:generated — pure files, no services, fail closed on drift.
+["docs:check:adr-index"]
+dir = "{{config_root}}"
+sources = ["docs/adrs/*.md", "scripts/adr-index.mjs"]
+run = "node scripts/adr-index.mjs --check"
+
 # -- Release --
 
 ["release:set-version"]
