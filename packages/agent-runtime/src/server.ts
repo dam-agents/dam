@@ -123,6 +123,7 @@ const {
   workingDir: workDir,
   stateBackend,
   envReader: envStore,
+  isTerminalSessionActive: isPtySessionActive,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -185,10 +186,20 @@ const trpcHandler = createHTTPHandler({
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
-// A detached PTY is reaped on harness quietness, not viewer loss, so in-flight
-// work survives switching away. The grace stays short for tab-refresh reattach.
+// A detached PTY survives while the harness produces output; the short grace
+// covers tab-refresh reattach.
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+// Recent non-echo output ≈ busy. The window is the indicator's tail after the
+// last output; sized near the TUI repaint tick, trading possible flicker for
+// a short tail.
+const PTY_ACTIVE_WINDOW_MS = 1_000;
+const PTY_INPUT_ECHO_MS = 500;
+
+function isPtySessionActive(sessionId: string): boolean {
+  const slot = ptySlots.get(sessionId);
+  return !!slot?.pty && Date.now() - slot.lastBusyAt < PTY_ACTIVE_WINDOW_MS;
+}
 
 interface PtySlot {
   pty: nodePty.IPty | null;
@@ -196,8 +207,14 @@ interface PtySlot {
   serialize: InstanceType<typeof SerializeAddon>;
   client: WsWebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** Any output — drives detached-idle reaping. */
   lastOutputAt: number;
   lastSeenStampAt: number;
+  /** Echo-discounted output after the first keypress — drives `running`. */
+  lastBusyAt: number;
+  lastInputAt: number;
+  /** Boot render precedes any input and must not read as busy. */
+  sawInput: boolean;
 }
 
 const ptySlots = new Map<string, PtySlot>();
@@ -338,6 +355,9 @@ function attachPty(
         graceTimer: null,
         lastOutputAt: Date.now(),
         lastSeenStampAt: Date.now(),
+        lastBusyAt: 0,
+        lastInputAt: 0,
+        sawInput: false,
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
@@ -346,6 +366,8 @@ function attachPty(
       pty.onData((data) => {
         const now = Date.now();
         slot.lastOutputAt = now;
+        if (slot.sawInput && now - slot.lastInputAt > PTY_INPUT_ECHO_MS)
+          slot.lastBusyAt = now;
         // Keep other clients' unread honest during long attached work.
         if (
           slot.client &&
@@ -375,8 +397,17 @@ function attachPty(
     const slot = ptySlots.get(sessionId);
     if (!slot) return;
     if (frame.op === OP_INPUT) {
-      slot.pty?.write(new TextDecoder().decode(frame.data));
+      const now = Date.now();
+      slot.lastInputAt = now;
+      slot.sawInput = true;
+      const text = new TextDecoder().decode(frame.data);
+      // A submitted line counts as work starting; busy doesn't wait for the
+      // first non-echo repaint.
+      if (/[\r\n]/.test(text)) slot.lastBusyAt = now;
+      slot.pty?.write(text);
     } else if (frame.op === OP_RESIZE) {
+      // Suppresses the repaint echo without counting as the first keypress.
+      slot.lastInputAt = Date.now();
       slot.headless.resize(frame.cols, frame.rows);
       slot.pty?.resize(frame.cols, frame.rows);
     }

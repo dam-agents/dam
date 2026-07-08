@@ -95,6 +95,8 @@ export interface AcpRuntimeDeps {
   logBytesCap?: number;
   /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
+  /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
+  isTerminalSessionActive?: (sessionId: string) => boolean;
 }
 
 interface ActivePrompt {
@@ -1007,7 +1009,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               ? injectPlatformMetaIntoList(
                   frame,
                   deps.sessionMetadata,
-                  activePromptBySession,
+                  (sid) =>
+                    activePromptBySession.has(sid) ||
+                    (deps.isTerminalSessionActive?.(sid) ?? false),
                 )
               : (frame as object);
           const out = JSON.stringify({
@@ -1456,7 +1460,7 @@ function withPlatformMeta(
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
-  activeSessions: ReadonlyMap<string, unknown>,
+  isRunning: (sessionId: string) => boolean,
 ): object {
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
@@ -1474,9 +1478,18 @@ function injectPlatformMetaIntoList(
     .map((s) => {
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
       const entry = store.get(s.sessionId);
-      return entry
-        ? withPlatformMeta(s, entry, activeSessions.has(s.sessionId))
-        : s;
+      if (entry) return withPlatformMeta(s, entry, isRunning(s.sessionId));
+      // Store-less sessions decode as terminal by having no platform meta;
+      // adding meta for `running` must stamp the mode to keep that decode.
+      if (!isRunning(s.sessionId)) return s;
+      const existingMeta = isNonNullObject(s._meta) ? s._meta : {};
+      return {
+        ...s,
+        _meta: {
+          ...existingMeta,
+          platform: { mode: "terminal", running: true },
+        },
+      };
     });
   return { ...frame, result: { ...result, sessions: enriched } };
 }

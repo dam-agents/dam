@@ -19,6 +19,7 @@ export interface ComposeAcpOptions {
   workingDir: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
+  isTerminalSessionActive?: (sessionId: string) => boolean;
   log?: (msg: string) => void;
 }
 
@@ -38,6 +39,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       }),
     workingDir: opts.workingDir,
     sessionMetadata,
+    isTerminalSessionActive: opts.isTerminalSessionActive,
     log: opts.log,
     // Warm restart (env on the PV) spawns now; cold boot gates until env arrives.
     envReadyAtBoot: opts.envReader.ready(),

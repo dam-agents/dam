@@ -35,7 +35,11 @@ import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { MetricsPanel } from "../../metrics/components/metrics-panel.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
 import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
-import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
+import {
+  acpSessionsKeys,
+  optimisticInsertSession,
+  setSessionRunning,
+} from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
@@ -456,14 +460,17 @@ export function ChatView() {
               setTerminalPaused(false);
             }}
             onFirstSubmit={() => {
-              // Show the first message optimistically, then refetch so the poll reconciles it.
+              // Inserted running — onSubmit's seed can't land on a row that doesn't exist yet.
               optimisticInsertSession(
                 selectedAgent,
                 sessionId,
                 SessionMode.Terminal,
+                true,
               );
               queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
             }}
+            // Optimistic working dots on Enter; the poll reconciles within 5s.
+            onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
           />
         ) : (
           <>

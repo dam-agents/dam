@@ -1,4 +1,4 @@
-import type { SessionMode } from "api-server-api";
+import { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
@@ -109,7 +109,13 @@ export function SessionsSidebar({
         )}
         {sessions.map((s) => {
           const isOpen = s.sessionId === sessionId;
-          const working = isOpen ? busy : !!s.running;
+          // Terminal sessions have no chat turn, so `busy` never applies.
+          const working =
+            s.mode === SessionMode.Terminal
+              ? !!s.running
+              : isOpen
+                ? busy
+                : !!s.running;
           // Polled approvals cover all sessions; the live store surfaces the open one instantly.
           const needsApproval =
             approvalSessions.has(s.sessionId) ||

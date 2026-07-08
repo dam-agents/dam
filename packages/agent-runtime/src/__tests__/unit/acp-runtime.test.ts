@@ -2193,6 +2193,35 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
     expect(resp.result.sessions[0].title).toBe("Hello");
   });
 
+  it("stamps terminal mode + running on an active store-less session", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+      isTerminalSessionActive: (sid) => sid === SID,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID },
+        { sessionId: "other-idle" },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions[0]._meta.platform).toEqual({
+      mode: "terminal",
+      running: true,
+    });
+    // Idle store-less sessions keep no platform meta (terminal-default decode).
+    expect(resp.result.sessions[1]._meta).toBeUndefined();
+  });
+
   it("leaves harness-only (no store entry) sessions unenriched in the list", () => {
     const fa = makeFakeAgent();
     const { store } = makeFakeStore();

@@ -23,6 +23,7 @@ export function optimisticInsertSession(
   agentId: string,
   sessionId: string,
   mode: SessionMode,
+  running = false,
 ): void {
   const stub: SessionView = {
     sessionId,
@@ -34,7 +35,7 @@ export function optimisticInsertSession(
     experimentId: null,
     title: null,
     updatedAt: null,
-    running: false,
+    running,
   };
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
