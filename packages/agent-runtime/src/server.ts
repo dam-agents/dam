@@ -234,20 +234,20 @@ function attachPty(
   let initialized = false;
   ws.binaryType = "nodebuffer";
 
-  ws.on("error", () => {
-    const slot = ptySlots.get(sessionId);
-    if (slot?.client === ws) slot.client = null;
-  });
-  ws.on("close", () => {
+  // An errored socket may never emit close; both paths must arm the reap timer.
+  const detach = () => {
     const slot = ptySlots.get(sessionId);
     if (!slot || slot.client !== ws) return;
     slot.client = null;
     if (!slot.pty) return;
+    if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
       () => reapPtySlotIfIdle(sessionId),
       PTY_DETACH_GRACE_MS,
     );
-  });
+  };
+  ws.on("error", detach);
+  ws.on("close", detach);
 
   ws.on("message", (raw: Buffer) => {
     let frame;
@@ -332,6 +332,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(sessionId, `exited ${exitCode}`);
+        if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
           slot.client.close(1000, "pty exited");
