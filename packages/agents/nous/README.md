@@ -22,7 +22,10 @@ template sets `telemetry: true`, and when the telemetry backend is installed
 Both of Nous's dispatch paths — the Claude Agent SDK (which builds its
 subprocess env from `os.environ`) and the legacy `claude -p` fallback — pass
 that env through to the harness, so every planner/executor turn of a campaign
-exports token/cost/duration telemetry with trusted per-agent attribution.
+exports token/cost/duration telemetry with trusted per-agent attribution —
+under the service name `nous` (the chart names the OTel service after the
+template), with the user-declared agent name riding along as a display-only
+resource attribute.
 Gate summaries go through the OpenAI-format endpoint instead of the Claude
 CLI and are the one dispatch path that does not export.
 

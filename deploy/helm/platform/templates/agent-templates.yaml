@@ -87,7 +87,7 @@ data:
     {{- end }}
     {{- $env := $tmpl.env | default list }}
     {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}
-    {{- $env = concat $env (include "platform.agentTelemetry.env" $ | fromYamlArray) }}
+    {{- $env = concat $env (include "platform.agentTelemetry.env" (dict "root" $ "templateName" $name) | fromYamlArray) }}
     {{- end }}
     {{- with $env }}
     env:
