@@ -4,33 +4,33 @@ import type { TokenProvider } from "../auth/index.js";
 import { buildSessionsPort } from "../chat/compose.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import { createTrpcClient } from "../shared/trpc/trpc-client.js";
-import { buildTelemetryCommand } from "./commands/show.js";
-import { createTelemetryService } from "./services/telemetry-service.js";
+import { buildMetricsCommand } from "./commands/show.js";
+import { createMetricsService } from "./services/metrics-service.js";
 
-export interface TelemetryModuleOptions {
+export interface MetricsModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
 }
 
-export interface TelemetryModule {
+export interface MetricsModule {
   commands: ReadonlyArray<Command>;
 }
 
-export function composeTelemetryModule(
-  opts: TelemetryModuleOptions,
-): TelemetryModule {
+export function composeMetricsModule(
+  opts: MetricsModuleOptions,
+): MetricsModule {
   return {
     commands: [
-      buildTelemetryCommand({
+      buildMetricsCommand({
         compatService: opts.compatService,
         configService: opts.configService,
         tokenProvider: opts.tokenProvider,
         createAgentService: opts.createAgentService,
         createSessionsPort: buildSessionsPort,
-        createTelemetryService: (host) =>
-          createTelemetryService({
+        createMetricsService: (host) =>
+          createMetricsService({
             trpc: createTrpcClient({ host, tokenProvider: opts.tokenProvider }),
           }),
       }),

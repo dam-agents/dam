@@ -2,32 +2,32 @@ import { TRPCError } from "@trpc/server";
 import type {
   CallContext,
   SessionRuntime,
-  TelemetryQuery,
-  TelemetryService,
+  MetricsQuery,
+  MetricsService,
   TokenSpendByModel,
 } from "api-server-api";
 
 /** Row filters beyond ownership, independent and composable: an optional
  *  lookback window and an optional exact session. Both absent = all rows. */
-export interface TelemetryWindow {
+export interface MetricsWindow {
   hours?: number;
   sessionId?: string;
 }
 
 /** Port: the raw ClickHouse read surface. Takes an already-resolved,
  *  ownership-checked agent-id allowlist — it does no scoping of its own. */
-export interface TelemetryReader {
+export interface MetricsReader {
   tokenSpendByModel(
     agentIds: readonly string[],
-    window: TelemetryWindow,
+    window: MetricsWindow,
   ): Promise<TokenSpendByModel[]>;
   runtimeBySession(
     agentIds: readonly string[],
-    window: TelemetryWindow,
+    window: MetricsWindow,
   ): Promise<SessionRuntime[]>;
   contextPerCall(
     agentIds: readonly string[],
-    window: TelemetryWindow,
+    window: MetricsWindow,
     limit: number,
   ): Promise<CallContext[]>;
   close(): Promise<void>;
@@ -45,13 +45,13 @@ async function ownedScope(
   return owned.includes(agentId) ? [agentId] : [];
 }
 
-export function createTelemetryService(deps: {
-  reader: TelemetryReader;
+export function createMetricsService(deps: {
+  reader: MetricsReader;
   /** The caller's owned agent IDs, already narrowed for API-key binding. */
   listOwnedAgentIds: () => Promise<readonly string[]>;
-}): TelemetryService {
+}): MetricsService {
   return {
-    async overview(query: TelemetryQuery) {
+    async overview(query: MetricsQuery) {
       const ids = await ownedScope(deps.listOwnedAgentIds, query.agentId);
       if (ids.length === 0) {
         return {
@@ -72,14 +72,14 @@ export function createTelemetryService(deps: {
   };
 }
 
-/** Wired when the telemetry backend (ClickStack) is disabled — every read
+/** Wired when the metrics backend (ClickStack) is disabled — every read
  *  fails loud rather than masquerading as "no data yet". */
-export function createDisabledTelemetryService(): TelemetryService {
+export function createDisabledMetricsService(): MetricsService {
   return {
     overview: async () => {
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
-        message: "Agent telemetry backend is not enabled on this deployment.",
+        message: "Agent metrics backend is not enabled on this deployment.",
       });
     },
   };

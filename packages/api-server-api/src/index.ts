@@ -155,13 +155,13 @@ export {
 export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {
-  TelemetryService,
-  TelemetryQuery,
-  TelemetryOverview,
+  MetricsService,
+  MetricsQuery,
+  MetricsOverview,
   TokenSpendByModel,
   SessionRuntime,
   CallContext,
-} from "./modules/telemetry/types.js";
+} from "./modules/metrics/types.js";
 
 export type {
   AgentAppConnections,

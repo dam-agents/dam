@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 import { useStore } from "../../../store.js";
-import { useTelemetryOverview } from "../../telemetry/api/queries.js";
-import { formatTokens, formatUsd } from "../../telemetry/lib/format.js";
+import { useMetricsOverview } from "../../metrics/api/queries.js";
+import { formatTokens, formatUsd } from "../../metrics/lib/format.js";
 import { armColor } from "../lib/arm-color.js";
 import { formatScore } from "../lib/score.js";
 import type { ExperimentArmDetail } from "../types.js";
@@ -30,9 +30,9 @@ export function ArmLedger({
 
   // The agent-scoped overview can include non-experiment sessions, so totals
   // are summed only over this arm's run sessions.
-  const { data: telemetry } = useTelemetryOverview(arm.agentId);
+  const { data: metrics } = useMetricsOverview(arm.agentId);
   const runtimeBySession = new Map(
-    telemetry?.runtimeBySession.map((s) => [s.sessionId, s]) ?? [],
+    metrics?.runtimeBySession.map((s) => [s.sessionId, s]) ?? [],
   );
   const armSessions = arm.runs
     .map((run) => runtimeBySession.get(run.sessionId))

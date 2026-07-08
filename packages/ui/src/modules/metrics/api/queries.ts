@@ -2,13 +2,13 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-/** Telemetry overview for one agent. Disabled while no agent is selected. */
-export function useTelemetryOverview(
+/** Metrics overview for one agent. Disabled while no agent is selected. */
+export function useMetricsOverview(
   agentId: string | null,
   opts?: { sinceHours?: number; sessionId?: string; limit?: number },
 ) {
   return useQuery({
-    ...trpc.telemetry.overview.queryOptions(
+    ...trpc.metrics.overview.queryOptions(
       agentId ? { agentId, ...opts } : skipToken,
     ),
     refetchInterval: 15000,

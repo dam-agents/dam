@@ -4,7 +4,7 @@ import {
   formatDurationMs,
   formatTokens,
   formatUsd,
-} from "../../modules/telemetry/lib/format.js";
+} from "../../modules/metrics/lib/format.js";
 
 describe("formatTokens", () => {
   test("compacts large counts", () => {

@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import type { telemetryOverviewInputSchema } from "./schemas.js";
+import type { metricsOverviewInputSchema } from "./schemas.js";
 
-export type TelemetryQuery = z.infer<typeof telemetryOverviewInputSchema>;
+export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
 
 /** Token counts + cost rolled up per model, over the window. */
 export interface TokenSpendByModel {
@@ -47,16 +47,16 @@ export interface CallContext {
   durationMs: number;
 }
 
-/** All telemetry stats for the window in one shape: per-model token spend,
+/** All metrics stats for the window in one shape: per-model token spend,
  *  per-session runtime, and the most recent per-call context rows. */
-export interface TelemetryOverview {
+export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
   runtimeBySession: SessionRuntime[];
   contextPerCall: CallContext[];
 }
 
-/** Read-only, owner-scoped view over agent telemetry stored in ClickHouse.
+/** Read-only, owner-scoped view over agent metrics stored in ClickHouse.
  *  Returns data only for agents the caller owns. */
-export interface TelemetryService {
-  overview(query: TelemetryQuery): Promise<TelemetryOverview>;
+export interface MetricsService {
+  overview(query: MetricsQuery): Promise<MetricsOverview>;
 }

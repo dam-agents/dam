@@ -5,9 +5,9 @@ import type {
   TokenSpendByModel,
 } from "api-server-api";
 import type {
-  TelemetryReader,
-  TelemetryWindow,
-} from "../services/telemetry-service.js";
+  MetricsReader,
+  MetricsWindow,
+} from "../services/metrics-service.js";
 
 export function createClickhouseClient(cfg: {
   url: string;
@@ -28,7 +28,7 @@ export function createClickhouseClient(cfg: {
 // the trusted owner id in ResourceAttributes (stamped by the agent gateway —
 // see docs/architecture/observability.md). Every query is gated on that owner
 // id against the caller's resolved allowlist.
-const ownedApiRequests = (w: TelemetryWindow) =>
+const ownedApiRequests = (w: MetricsWindow) =>
   [
     "ServiceName = 'claude-code'",
     "Body = 'claude_code.api_request'",
@@ -41,7 +41,7 @@ const ownedApiRequests = (w: TelemetryWindow) =>
       : ["LogAttributes['session.id'] = {sessionId:String}"]),
   ].join("\n  AND ");
 
-const windowParams = (agentIds: readonly string[], w: TelemetryWindow) => ({
+const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   agentIds,
   ...(w.hours === undefined ? {} : { hours: w.hours }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
@@ -59,7 +59,7 @@ const n = (v: unknown): number => Number(v ?? 0);
 
 export function createClickhouseReader(
   client: ClickHouseClient,
-): TelemetryReader {
+): MetricsReader {
   const rows = async (
     query: string,
     query_params: Record<string, unknown>,

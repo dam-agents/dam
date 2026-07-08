@@ -17,21 +17,21 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderFittedTable, renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printServiceError } from "../../shared/trpc/print.js";
-import type { TelemetryService } from "../services/telemetry-service.js";
+import type { MetricsService } from "../services/metrics-service.js";
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-export function buildTelemetryCommand(deps: {
+export function buildMetricsCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
   createSessionsPort: (host: string, token: string) => SessionsPort;
-  createTelemetryService: (host: string) => TelemetryService;
+  createMetricsService: (host: string) => MetricsService;
 }): Command {
-  return new Command("telemetry")
+  return new Command("metrics")
     .description(
-      "Show an Agent's run telemetry — token spend, runtime, and context usage",
+      "Show an Agent's run metrics — token spend, runtime, and context usage",
     )
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
@@ -50,7 +50,7 @@ export function buildTelemetryCommand(deps: {
     .option("--json", "emit raw JSON instead of the default report")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam telemetry my-agent\n  dam telemetry my-agent --session sess-abc123\n  dam telemetry agent-abc123 --since 168 --json\n",
+      "\nExamples:\n  dam metrics my-agent\n  dam metrics my-agent --session sess-abc123\n  dam metrics agent-abc123 --since 168 --json\n",
     )
     .action(
       async (
@@ -79,9 +79,9 @@ export function buildTelemetryCommand(deps: {
         }
         const agent = resolved.value;
 
-        // Session titles live on the agent (over ACP), not in telemetry —
+        // Session titles live on the agent (over ACP), not in metrics —
         // fetch them alongside the overview to label sessions as the UI does.
-        // Best-effort: telemetry can outlive sessions or the agent may be
+        // Best-effort: metrics can outlive sessions or the agent may be
         // unreachable, so a failure degrades to raw session ids.
         const fetchTitles = async (): Promise<Map<string, string>> => {
           const tok = await deps.tokenProvider.getValidAccessToken(host);
@@ -98,7 +98,7 @@ export function buildTelemetryCommand(deps: {
         };
         const sinceHours = opts.since ? Number(opts.since) : undefined;
         const [result, titles] = await Promise.all([
-          deps.createTelemetryService(host).overview({
+          deps.createMetricsService(host).overview({
             agentId: agent.id,
             sessionId: opts.session,
             sinceHours,
@@ -140,7 +140,7 @@ export function buildTelemetryCommand(deps: {
 
         if (tokenSpendByModel.length === 0) {
           process.stderr.write(
-            `No telemetry for ${agent.name} in ${windowLabel}.\n`,
+            `No metrics for ${agent.name} in ${windowLabel}.\n`,
           );
           process.exit(EXIT_SUCCESS);
         }

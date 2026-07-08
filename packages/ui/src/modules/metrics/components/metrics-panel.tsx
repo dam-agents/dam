@@ -5,7 +5,7 @@ import type {
 } from "api-server-api";
 import { useState } from "react";
 
-import { useTelemetryOverview } from "../api/queries.js";
+import { useMetricsOverview } from "../api/queries.js";
 import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
 
 interface Props {
@@ -13,15 +13,15 @@ interface Props {
   sessionId: string | null;
 }
 
-type TelemetryScope = "session" | "all";
+type MetricsScope = "session" | "all";
 
-/** Right-sidebar telemetry tab: token spend per model, session totals, and
+/** Right-sidebar metrics tab: token spend per model, session totals, and
  *  the most recent LLM calls for the selected agent, all-time. Scoped to the
  *  current session or to all of the agent's sessions. */
-export function TelemetryPanel({ agentId, sessionId }: Props) {
-  const [scope, setScope] = useState<TelemetryScope>("session");
+export function MetricsPanel({ agentId, sessionId }: Props) {
+  const [scope, setScope] = useState<MetricsScope>("session");
   const sessionScope = sessionId !== null && scope === "session";
-  const { data, isPending, isError } = useTelemetryOverview(agentId, {
+  const { data, isPending, isError } = useMetricsOverview(agentId, {
     limit: 25,
     ...(sessionScope ? { sessionId } : {}),
   });
@@ -29,7 +29,7 @@ export function TelemetryPanel({ agentId, sessionId }: Props) {
   if (!agentId)
     return (
       <PanelBody toggle={null}>
-        <PanelNotice>Select an agent to see telemetry</PanelNotice>
+        <PanelNotice>Select an agent to see metrics</PanelNotice>
       </PanelBody>
     );
 
@@ -40,13 +40,13 @@ export function TelemetryPanel({ agentId, sessionId }: Props) {
   if (isError)
     return (
       <PanelBody toggle={scopeToggle}>
-        <PanelNotice>Telemetry is unavailable right now</PanelNotice>
+        <PanelNotice>Metrics are unavailable right now</PanelNotice>
       </PanelBody>
     );
   if (isPending)
     return (
       <PanelBody toggle={scopeToggle}>
-        <PanelNotice>Loading telemetry…</PanelNotice>
+        <PanelNotice>Loading metrics…</PanelNotice>
       </PanelBody>
     );
   if (data.tokenSpendByModel.length === 0)
@@ -97,10 +97,10 @@ function ScopeToggle({
   scope,
   onChange,
 }: {
-  scope: TelemetryScope;
-  onChange: (scope: TelemetryScope) => void;
+  scope: MetricsScope;
+  onChange: (scope: MetricsScope) => void;
 }) {
-  const options: [TelemetryScope, string][] = [
+  const options: [MetricsScope, string][] = [
     ["session", "This session"],
     ["all", "All sessions"],
   ];
