@@ -1,3 +1,10 @@
+---
+id: 064
+title: Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end
+status: accepted
+subsystem: channels
+summary: Hide the Bolt SDK behind a first-party Slack port so e2e wires an in-process fake while the fork path runs real Jobs and authenticated egress end-to-end.
+---
 # ADR-064: Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end
 
 **Date:** 2026-06-10

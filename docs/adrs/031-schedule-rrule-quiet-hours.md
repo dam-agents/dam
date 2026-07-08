@@ -1,3 +1,10 @@
+---
+id: 031
+title: Schedules use RRULE for includes and structured quiet hours for exclusions
+status: accepted
+subsystem: agent-lifecycle
+summary: Schedules express recurrence with RFC 5545 RRULE and exclusions with structured time-of-day quiet-hours windows, both timezone-aware.
+---
 # ADR-031: Schedules use RRULE for includes and structured quiet hours for exclusions
 
 **Date:** 2026-04-23

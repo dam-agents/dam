@@ -1,3 +1,10 @@
+---
+id: 004
+title: ACP over A2A for the experiment
+status: accepted
+subsystem: connections
+summary: Adopt Zed's ACP instead of A2A for the greenfield experiment; reconcile with A2A later if needed.
+---
 # ADR-004: ACP over A2A for the experiment
 
 **Date:** 2026-04-01

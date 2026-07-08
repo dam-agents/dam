@@ -1,3 +1,10 @@
+---
+id: 071
+title: Postgres role separation — no SUPERUSER on app roles
+status: accepted
+subsystem: persistence
+summary: Bundled Postgres runs two NOSUPERUSER per-service database owners plus one reserved SUPERUSER for DBA work, replacing the single shared superuser role.
+---
 # ADR-071: Postgres role separation — no SUPERUSER on app roles
 
 **Date:** 2026-05-22

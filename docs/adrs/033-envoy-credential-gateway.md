@@ -1,3 +1,11 @@
+---
+id: 033
+title: Envoy-based credential gateway with ext_authz HITL — drop OneCLI
+status: accepted
+subsystem: security-and-credentials
+supersedes: 010
+summary: Replace OneCLI with a per-pod Envoy sidecar for credential injection and an API-Server ext_authz service for human-in-the-loop approval.
+---
 # ADR-033: Envoy-based credential gateway with ext_authz HITL — drop OneCLI
 
 **Date:** 2026-04-24

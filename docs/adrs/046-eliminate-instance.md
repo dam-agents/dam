@@ -1,3 +1,10 @@
+---
+id: 046
+title: "Eliminate Instance — collapse into Agent"
+status: proposed
+subsystem: agent-lifecycle
+summary: Collapse Instance into Agent so one ConfigMap carries definition, runtime state, and lifecycle; Template, Agent, and Fork become the only durable concepts.
+---
 # ADR-046: Eliminate Instance — collapse into Agent
 
 **Date:** 2026-05-19

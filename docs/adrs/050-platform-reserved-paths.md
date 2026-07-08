@@ -1,3 +1,10 @@
+---
+id: 050
+title: "Platform-reserved paths"
+status: accepted
+subsystem: agent-lifecycle
+summary: The agent-runtime file API reserves only .triggers/ and .initialized from listing and writes; all other previously noise-filtered paths become listable and writable.
+---
 # ADR-050: Platform-reserved paths
 
 **Date:** 2026-05-21

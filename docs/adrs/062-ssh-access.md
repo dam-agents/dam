@@ -1,3 +1,10 @@
+---
+id: 062
+title: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
+status: accepted
+subsystem: security-and-credentials
+summary: Run a per-connection inetd sshd inside the agent pod and tunnel raw SSH bytes over a new /api/ssh WebSocket reusing the existing upgrade auth.
+---
 # ADR-062: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
 
 **Date:** 2026-06-02

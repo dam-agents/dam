@@ -1,3 +1,10 @@
+---
+id: 042
+title: "Agent egress is gated by NetworkPolicy; the agent is not a mesh participant"
+status: accepted
+subsystem: platform-topology
+summary: Take the agent pod out of the mesh and gate its egress with a per-pair kernel NetworkPolicy admitting only cluster DNS and the paired gateway pod.
+---
 # ADR-042: Agent egress is gated by NetworkPolicy; the agent is not a mesh participant
 
 **Date:** 2026-05-13

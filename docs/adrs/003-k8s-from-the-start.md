@@ -1,3 +1,10 @@
+---
+id: 003
+title: "Kubernetes from the start — k3s for local dev, K8s for production"
+status: accepted
+subsystem: platform-topology
+summary: Build on Kubernetes from day one using k3s via lima locally and the same Helm chart in production, skipping a Docker-compose phase.
+---
 # ADR-003: Kubernetes from the start — k3s for local dev, K8s for production
 
 **Date:** 2026-04-02

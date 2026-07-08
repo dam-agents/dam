@@ -1,3 +1,10 @@
+---
+id: 038
+title: Paired agent and gateway pods — cluster-enforced credential boundary
+status: accepted
+subsystem: security-and-credentials
+summary: Run separate agent and gateway pods per instance so NetworkPolicy structurally forces all agent egress through the gateway.
+---
 # ADR-038: Paired agent and gateway pods — cluster-enforced credential boundary
 
 **Date:** 2026-05-06

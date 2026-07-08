@@ -1,3 +1,10 @@
+---
+id: 018
+title: "Slack integration — Socket Mode, channel-based routing, identity linking"
+status: accepted
+subsystem: channels
+summary: Connect the Slack app over Socket Mode, link users to Keycloak via a slash command, and gate access by channel membership plus per-instance allowlist.
+---
 # ADR-018: Slack integration — Socket Mode, channel-based routing, identity linking
 
 **Date:** 2026-04-15

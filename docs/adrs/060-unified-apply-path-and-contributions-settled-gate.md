@@ -1,3 +1,10 @@
+---
+id: 060
+title: Unified runtime-channel apply path + settlement tracking
+status: accepted
+subsystem: platform-topology
+summary: Apply Contributions out-of-band from a single background worker that dispatches only to Ready agents and tracks per-version settlement for retry.
+---
 # ADR-060: Unified runtime-channel apply path + settlement tracking
 
 **Date:** 2026-06-03

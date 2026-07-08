@@ -1,3 +1,10 @@
+---
+id: 009
+title: Go for Controller, TypeScript for API Server
+status: accepted
+subsystem: platform-topology
+summary: Write the Controller in Go for client-go and operator tooling, and the API Server in TypeScript to share toolchain and types with the React UI.
+---
 # ADR-009: Go for Controller, TypeScript for API Server
 
 **Date:** 2026-04-02

@@ -1,3 +1,10 @@
+---
+id: 065
+title: Shared CRDs across co-located environments
+status: accepted
+subsystem: platform-topology
+summary: Co-located environments share one CRD set installed by the newest release; a CI gate blocks schema changes that break an environment on an older release.
+---
 # ADR-065: Shared CRDs across co-located environments
 
 **Date:** 2026-06-10

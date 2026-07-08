@@ -1,3 +1,10 @@
+---
+id: 048
+title: "Usage tracking — append-only activity log with pseudonymized identifiers"
+status: accepted
+subsystem: usage-tracking
+summary: An append-only Postgres table records activity read through named SQL views, HMAC-pseudonymizes the Keycloak sub at the repository boundary, and gates reads with a platform-inspector role.
+---
 # ADR-048: Usage tracking — append-only activity log with pseudonymized identifiers
 
 **Date:** 2026-05-20

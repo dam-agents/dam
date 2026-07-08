@@ -1,3 +1,10 @@
+---
+id: 006
+title: "ConfigMaps over CRDs — namespace-scoped resource model"
+status: accepted
+subsystem: platform-topology
+summary: Model agent templates, instances, and schedules as labeled ConfigMaps instead of CRDs so the platform deploys with namespace-scoped RBAC and no cluster-admin.
+---
 # ADR-006: ConfigMaps over CRDs — namespace-scoped resource model
 
 **Date:** 2026-04-02

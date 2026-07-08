@@ -1,3 +1,10 @@
+---
+id: 051
+title: "Connections, Connection Templates, and Contributions — unified configuration model"
+status: accepted
+subsystem: connections
+summary: Replace the OAuth-app and provider-preset registries with one model where every integration is a Connection built from a Connection Template that emits a typed Contribution set when granted.
+---
 # ADR-051: Connections, Connection Templates, and Contributions — unified configuration model
 
 **Date:** 2026-06-30

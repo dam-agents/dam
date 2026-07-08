@@ -1,3 +1,10 @@
+---
+id: 055
+title: "Agent-owned session metadata via ACP `_meta`; no server-side session store"
+status: accepted
+subsystem: agent-lifecycle
+summary: Drop the Postgres sessions table; the agent-runtime owns session metadata and every reader gets it from ACP session/list.
+---
 # ADR-055: Agent-owned session metadata via ACP `_meta`; no server-side session store
 
 **Date:** 2026-05-28
