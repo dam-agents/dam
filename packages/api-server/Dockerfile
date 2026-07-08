@@ -30,7 +30,7 @@ RUN pnpm --filter api-server exec tsup \
 FROM registry.access.redhat.com/hi/nodejs:24 AS runner
 
 USER root
-ARG NPM_VERSION=11.16.0
+ARG NPM_VERSION=11.18.0
 RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
 USER 65532
 
