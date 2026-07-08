@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-06
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -342,6 +342,33 @@ Secrets written by since-replaced code paths are the known trigger.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
+
+**Non-443 upstreams and streaming.** Per-host injection descriptors can
+carry three more chain-level attributes, motivating case being external
+Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/issues/2314)):
+
+- **Upstream port** — the pinned cluster dials the declared port (default
+  443) and the upstream sees a `host:port` authority. Only L7 chains honor
+  ports: the SNI-miss L4 catch-all always dials 443, because a CONNECT's
+  authority port is not recoverable after the tunnel handoff (SNI carries
+  no port). Port-scoped egress rules therefore promote their host onto the
+  L7 path, same as path-scoped rules. Allow-only (uncredentialed) chains
+  need no pinned port — they forward via the dynamic forward proxy, which
+  honors the inner request's own `Host:port`.
+- **Upgrade tunneling** — chains that opt in tunnel HTTP Upgrade flows
+  (WebSocket, and SPDY/3.1 for older Kubernetes clients) instead of
+  rejecting them, so `kubectl exec` / `port-forward` / `logs -f` work
+  through the credential-injecting path. The credential rides the upgrade
+  request itself and ext_authz gates it once; after the 101 the gateway
+  splices bytes. Such chains also get a long tunnel idle timeout (matching
+  the kubelet's own streaming default) instead of the 5-minute stream
+  default. Upgrade chains stay HTTP/1.1 — upgrades don't survive an
+  HTTP/2 upstream leg.
+- **Private upstream CA** — a connection can carry the upstream's CA
+  bundle in its K8s Secret; the chain validates the upstream handshake
+  against it instead of the system trust store (self-signed cluster CAs),
+  with SAN pinning unchanged. Agent-side trust is unaffected: the agent
+  always trusts the platform MITM CA, never the upstream's.
 
 **Multiple injection steps per host.** A single host can carry more than
 one credential — either two different credentials (e.g. an API key and a

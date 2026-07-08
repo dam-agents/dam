@@ -127,6 +127,15 @@ export const agentConnections = z.object({
 });
 export type AgentConnections = z.infer<typeof agentConnections>;
 
+/** Cluster API TLS probe. `trusted`: chains to a public root (no CA needed).
+ *  `reachable && !trusted`: self-signed/private CA — user must supply it.
+ *  `!reachable`: dial failed. */
+export interface ClusterCaProbe {
+  reachable: boolean;
+  trusted: boolean;
+  error?: string;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -145,6 +154,12 @@ export interface ConnectionsService {
   discoverMcp(input: { url: string }): Promise<{
     auth: "oauth" | "none";
   }>;
+
+  // Dials a cluster API endpoint with full TLS validation and reports whether
+  // its serving cert is publicly trusted, so the caller can require an explicit
+  // CA paste for an untrusted endpoint rather than trusting it blindly. `host`
+  // may include a `:port`. See ClusterCaProbe.
+  probeClusterCa(input: { host: string }): Promise<ClusterCaProbe>;
 
   startOAuth(
     connectionId: string,

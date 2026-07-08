@@ -329,6 +329,13 @@ API Server ServiceAccount name
 {{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* HTTP endpoint of the ClickStack ClickHouse store — the api-server's
+     owner-scoped telemetry read path queries it directly (docs/architecture/
+     observability.md). Mirrors the subchart's ClickHouse headless Service. */}}
+{{- define "platform.clickstack.clickhouse.httpUrl" -}}
+{{- printf "http://%s-clickstack-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" (include "platform.fullname" .) .Release.Namespace }}
+{{- end }}
+
 {{- define "platform.agentTelemetry.env" -}}
 {{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .) .Release.Namespace }}
 - name: CLAUDE_CODE_ENABLE_TELEMETRY

@@ -125,6 +125,23 @@ spec:
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      # The ClickHouse exporter creates its schema (otel_logs/otel_metrics_*/…)
+      # once, at collector start; it never retries the DDL, only the inserts.
+      # ClickHouse is heavier to boot than this collector, so on a fresh install
+      # the collector would otherwise win the race, silently skip schema
+      # creation, and every export would fail forever with "table does not
+      # exist". Gate startup on ClickHouse answering /ping so create_schema runs
+      # against a live server.
+      initContainers:
+        - name: wait-for-clickhouse
+          image: {{ .Values.clickstack.hyperdx.deployment.waitForMongodb.image }}
+          command:
+            - sh
+            - -c
+            - |
+              until wget -q -T 3 -O /dev/null "{{ include "platform.clickstack.clickhouse.httpUrl" . }}/ping"; do
+                echo "waiting for ClickHouse to be ready..."; sleep 3
+              done
       containers:
         - name: collector
           image: {{ .Values.clickstack.collector.image }}

@@ -3,6 +3,9 @@ import { encodeAccessToken } from "./host-injection.js";
 
 const PLACEHOLDER_TOKEN = "dummy-placeholder";
 
+/** Secret field holding the upstream CA (PEM) for `upstreamCa` chains. */
+export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
+
 export function sdsFileKeyForHost(host: string): string {
   const slug = Buffer.from(host, "utf8").toString("base64url");
   return `host-${slug}.sds.yaml`;
@@ -77,6 +80,9 @@ export function connectionSecretAnnotations(
       ...(c.encoding ? { encoding: c.encoding } : {}),
       ...(c.queryParamName ? { queryParamName: c.queryParamName } : {}),
       ...(c.http2 ? { http2: c.http2 } : {}),
+      ...(c.port ? { port: c.port } : {}),
+      ...(c.upgrades ? { upgrades: c.upgrades } : {}),
+      ...(c.upstreamCa ? { caKey: UPSTREAM_CA_SECRET_FIELD } : {}),
       // Single source of truth for the filename; the controller reads it rather than recomputing the key.
       sdsKey: sdsFileKeyForInjection(c),
     }));

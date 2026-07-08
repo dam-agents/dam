@@ -4,6 +4,8 @@ export interface EgressRuleRow {
   id: string;
   agentId: string;
   host: string;
+  /** Upstream port when not 443. Transparency only — matching is host-based. */
+  port?: number;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;

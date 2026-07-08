@@ -268,7 +268,7 @@ clickstack:
   # Production must override clickstack.hyperdx.secrets.* (placeholders by default).
 
   otel-collector:
-    enabled: false        # we run our own collector (above)
+    enabled: false # we run our own collector (above)
 
   hyperdx:
     deployment:
@@ -639,6 +639,7 @@ apiServer:
     - codeload.github.com
     - objects.githubusercontent.com
     - raw.githubusercontent.com
+    - release-assets.githubusercontent.com
     # Container registries
     - quay.io
     - registry-1.docker.io
@@ -1077,6 +1078,10 @@ agentTemplates:
     experimental: true
     displayName: "NOUS"
     description: "Nous hypothesis-driven experimentation agent"
+    # The image is claude-code-based and Nous drives campaigns through the
+    # Claude Agent SDK, whose subprocesses inherit the pod env — so the
+    # standard telemetry env rail covers campaign turns, not just chat.
+    telemetry: true
     tags: ["Any provider"]
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
     image:

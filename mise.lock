@@ -68,42 +68,42 @@ checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c9
 url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
 
 [[tools.gh]]
-version = "2.93.0"
+version = "2.96.0"
 backend = "aqua:cli/cli"
 
 [tools.gh."platforms.linux-arm64"]
-checksum = "sha256:c55feb33684abba57e9909737340d5b39282257c0363e1edde6785ac4a413be7"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_arm64.tar.gz"
+checksum = "sha256:06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_arm64.tar.gz"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-arm64-musl"]
-checksum = "sha256:c55feb33684abba57e9909737340d5b39282257c0363e1edde6785ac4a413be7"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_arm64.tar.gz"
+checksum = "sha256:06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_arm64.tar.gz"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz"
+checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
 provenance = "github-attestations"
 
 [tools.gh."platforms.linux-x64-musl"]
-checksum = "sha256:02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz"
+checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
 provenance = "github-attestations"
 
 [tools.gh."platforms.macos-arm64"]
-checksum = "sha256:a86be4e0a86c26456cf71177d6572d6f1165cf1679e532b72f7f15918ee51fd2"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_macOS_arm64.zip"
+checksum = "sha256:f23a0c37d963aacc3bed703ccbd59b41c5ca22101fab7f00eb2b7cad23aba463"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_macOS_arm64.zip"
 provenance = "github-attestations"
 
 [tools.gh."platforms.macos-x64"]
-checksum = "sha256:009425b9d175c482037fe25181817fd6b1ea3ae1f51cfae0e18f29f33d3152ac"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_macOS_amd64.zip"
+checksum = "sha256:4bd449df9ad639391bc62b8032546f0fe9edcd8526e06682a4f88abd8c5d163c"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_macOS_amd64.zip"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:77aa01ed7317295ad550de0ad04f3f276b1ef0e9272e3d002ac28dd99853d211"
-url = "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_windows_amd64.zip"
+checksum = "sha256:c2d6acc935cd2f00e2144d7e036d5cd82e6b6bd5594e8c75aa75ef2a4ed6aac3"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_windows_amd64.zip"
 provenance = "github-attestations"
 
 [[tools.go]]
@@ -231,66 +231,70 @@ checksum = "sha256:b3d588e16ec1e0ef9805d8a696591bd518a5cea62567da8f53b5ce32d11d2
 url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_macos-aarch64_bin.tar.gz"
 
 [[tools.kubeconform]]
-version = "0.7.0"
+version = "0.8.0"
 backend = "aqua:yannh/kubeconform"
 
 [tools.kubeconform."platforms.linux-arm64"]
-checksum = "sha256:cc907ccf9e3c34523f0f32b69745265e0a6908ca85b92f41931d4537860eb83c"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-arm64.tar.gz"
+checksum = "sha256:1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-arm64.tar.gz"
 
 [tools.kubeconform."platforms.linux-arm64-musl"]
-checksum = "sha256:cc907ccf9e3c34523f0f32b69745265e0a6908ca85b92f41931d4537860eb83c"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-arm64.tar.gz"
+checksum = "sha256:1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-arm64.tar.gz"
 
 [tools.kubeconform."platforms.linux-x64"]
-checksum = "sha256:c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz"
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
 
 [tools.kubeconform."platforms.linux-x64-musl"]
-checksum = "sha256:c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz"
+checksum = "sha256:9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz"
 
 [tools.kubeconform."platforms.macos-arm64"]
-checksum = "sha256:b5d32b2cb77f9c781c976b20a85e2d0bc8f9184d5d1cfe665a2f31a19f99eeb9"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-darwin-arm64.tar.gz"
+checksum = "sha256:f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-arm64.tar.gz"
 
 [tools.kubeconform."platforms.macos-x64"]
-checksum = "sha256:c6771cc894d82e1b12f35ee797dcda1f7da6a3787aa30902a15c264056dd40d4"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-darwin-amd64.tar.gz"
+checksum = "sha256:71dbc87ac9f24099a62b93570e65aa06312ba6ac8aea63b7f86e9d999edf5a92"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-amd64.tar.gz"
 
 [tools.kubeconform."platforms.windows-x64"]
-checksum = "sha256:9cb75551d81c909c2241ab383ced2be68363b5bfb15fd989badcc5a63bea5d7e"
-url = "https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-windows-amd64.zip"
+checksum = "sha256:e3f56102bcf4f50b034a567e2482a1c5330799983ddd655952310211aef73d93"
+url = "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-windows-amd64.zip"
 
 [[tools.lima]]
-version = "2.1.2"
+version = "2.1.4"
 backend = "aqua:lima-vm/lima"
 
 [tools.lima."platforms.linux-arm64"]
-checksum = "sha256:c2deb0aad9ba375b0d1cc37bf3e01402f2d9ef6cf63db924171d2627823626b0"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Linux-aarch64.tar.gz"
+checksum = "sha256:3bda2db2972e3dae25d0205fbb9b74f89b0e849f77e2de3ebcbc57e48acd681b"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Linux-aarch64.tar.gz"
 provenance = "github-attestations"
 
 [tools.lima."platforms.linux-arm64-musl"]
-checksum = "sha256:c2deb0aad9ba375b0d1cc37bf3e01402f2d9ef6cf63db924171d2627823626b0"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Linux-aarch64.tar.gz"
+checksum = "sha256:3bda2db2972e3dae25d0205fbb9b74f89b0e849f77e2de3ebcbc57e48acd681b"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Linux-aarch64.tar.gz"
+provenance = "github-attestations"
 
 [tools.lima."platforms.linux-x64"]
-checksum = "sha256:648ed5f599012a0864bd0c4809063b18116bca57f2593d30547dfedbef3c2ce0"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Linux-x86_64.tar.gz"
+checksum = "sha256:78da175634c38beab62a6618d16b9c7aeeabdbb5d99ed5c9a03bac212c786bfa"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Linux-x86_64.tar.gz"
+provenance = "github-attestations"
 
 [tools.lima."platforms.linux-x64-musl"]
-checksum = "sha256:648ed5f599012a0864bd0c4809063b18116bca57f2593d30547dfedbef3c2ce0"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Linux-x86_64.tar.gz"
+checksum = "sha256:78da175634c38beab62a6618d16b9c7aeeabdbb5d99ed5c9a03bac212c786bfa"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Linux-x86_64.tar.gz"
+provenance = "github-attestations"
 
 [tools.lima."platforms.macos-arm64"]
-checksum = "sha256:7081d03d01511f20c4a3b38d8120428ef1c66e4b21ec9b54017bc65da60b031f"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Darwin-arm64.tar.gz"
+checksum = "sha256:14c5b283f1c5eb4078e5a300b8d241f69197a3e41326dfc685a69c9455917acf"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Darwin-arm64.tar.gz"
 provenance = "github-attestations"
 
 [tools.lima."platforms.macos-x64"]
-checksum = "sha256:3dc5218c7b0cc14126fb6e3ae6f174f026660e4e2cdffcb34b16e5a2f415eb45"
-url = "https://github.com/lima-vm/lima/releases/download/v2.1.2/lima-2.1.2-Darwin-x86_64.tar.gz"
+checksum = "sha256:57f319f2d2b3e781cdceaaf58efc0cae92e31ccc774fee988df438c3a22feb45"
+url = "https://github.com/lima-vm/lima/releases/download/v2.1.4/lima-2.1.4-Darwin-x86_64.tar.gz"
+provenance = "github-attestations"
 
 [[tools.maven]]
 version = "3.9.16"
@@ -320,36 +324,36 @@ url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-mave
 url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
 
 [[tools.node]]
-version = "24.14.1"
+version = "24.18.0"
 backend = "core:node"
 
 [tools.node."platforms.linux-arm64"]
-checksum = "sha256:734ff04fa7f8ed2e8a78d40cacf5ac3fc4515dac2858757cbab313eb483ba8a2"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-arm64.tar.gz"
+checksum = "sha256:6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-arm64-musl"]
-checksum = "sha256:734ff04fa7f8ed2e8a78d40cacf5ac3fc4515dac2858757cbab313eb483ba8a2"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-arm64.tar.gz"
+checksum = "sha256:6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:ace9fa104992ed0829642629c46ca7bd7fd6e76278cb96c958c4b387d29658ea"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-x64.tar.gz"
+checksum = "sha256:783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-musl"]
-checksum = "sha256:ace9fa104992ed0829642629c46ca7bd7fd6e76278cb96c958c4b387d29658ea"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-x64.tar.gz"
+checksum = "sha256:783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
-checksum = "sha256:25495ff85bd89e2d8a24d88566d7e2f827c6b0d3d872b2cebf75371f93fcb1fe"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-darwin-arm64.tar.gz"
+checksum = "sha256:e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-arm64.tar.gz"
 
 [tools.node."platforms.macos-x64"]
-checksum = "sha256:2526230ad7d922be82d4fdb1e7ee1e84303e133e3b4b0ec4c2897ab31de0253d"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-darwin-x64.tar.gz"
+checksum = "sha256:dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:6e50ce5498c0cebc20fd39ab3ff5df836ed2f8a31aa093cecad8497cff126d70"
-url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-win-x64.zip"
+checksum = "sha256:0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip"
 
 [[tools."npm:json-schema-to-typescript"]]
 version = "15.0.4"
@@ -385,111 +389,111 @@ provenance = "github-attestations"
 provenance = "github-attestations"
 
 [[tools.trivy]]
-version = "0.71.0"
+version = "0.72.0"
 backend = "aqua:aquasecurity/trivy"
 
 [tools.trivy."platforms.linux-arm64"]
-checksum = "sha256:2561be394a3199c911f82fced606cbc05e1cb23eb6ce1da6935540adb76f4252"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-ARM64.tar.gz"
+checksum = "sha256:2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-ARM64.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.linux-arm64-musl"]
-checksum = "sha256:2561be394a3199c911f82fced606cbc05e1cb23eb6ce1da6935540adb76f4252"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-ARM64.tar.gz"
+checksum = "sha256:2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-ARM64.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.linux-x64"]
-checksum = "sha256:30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz"
+checksum = "sha256:bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.linux-x64-musl"]
-checksum = "sha256:30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_Linux-64bit.tar.gz"
+checksum = "sha256:bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.macos-arm64"]
-checksum = "sha256:95d4e896b120816edd0995a2df8adca26a8621b7bf62036a89b1d54a7b718a74"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_macOS-ARM64.tar.gz"
+checksum = "sha256:88f208680dc05da2b459e19b4f5aa2b4dc7c2117892ba4aab2ae63baba330016"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_macOS-ARM64.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.macos-x64"]
-checksum = "sha256:4558afb13d017615ca85011901caab78b4f09196e320b05a56c9fdc5615a1428"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_macOS-64bit.tar.gz"
+checksum = "sha256:ee5e60df8a98e5b89fd74a6d86f9e5c7e9a266a35002cb1e43291698b3bfee08"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_macOS-64bit.tar.gz"
 provenance = "cosign"
 
 [tools.trivy."platforms.windows-x64"]
-checksum = "sha256:382250158fb9431ff9b87904205027b066a544234b8952b2dd764bd712d55387"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.71.0/trivy_0.71.0_windows-64bit.zip"
+checksum = "sha256:ed3cf122060f61818fe1f735fd97557954e16e10bc8b058af9852271cf2e91b3"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_windows-64bit.zip"
 provenance = "cosign"
 
 [[tools.yq]]
-version = "4.53.2"
+version = "4.53.3"
 backend = "aqua:mikefarah/yq"
 
 [tools.yq."platforms.linux-arm64"]
-checksum = "sha256:03061b2a50c7a498de2bbb92d7cb078ce433011f085a4994117c2726be4106ea"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_arm64"
+checksum = "sha256:578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_arm64"
 
 [tools.yq."platforms.linux-arm64-musl"]
-checksum = "sha256:03061b2a50c7a498de2bbb92d7cb078ce433011f085a4994117c2726be4106ea"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_arm64"
+checksum = "sha256:578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_arm64"
 
 [tools.yq."platforms.linux-x64"]
-checksum = "sha256:d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64"
+checksum = "sha256:fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64"
 
 [tools.yq."platforms.linux-x64-musl"]
-checksum = "sha256:d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64"
+checksum = "sha256:fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64"
 
 [tools.yq."platforms.macos-arm64"]
-checksum = "sha256:541ba2287560df70f561955e2d7f7e1cd00cf2a15a884f6b5c87a4bfa887bc07"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_darwin_arm64"
+checksum = "sha256:877de31753a4dd2401aa048937aa9a7fc4d5f6ce858cf31508c5802954297213"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_darwin_arm64"
 
 [tools.yq."platforms.macos-x64"]
-checksum = "sha256:616b0a0f6a5b79d746f05a169c2b9bb40dee00c605ef165b9a1c1681bba738ac"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_darwin_amd64"
+checksum = "sha256:b4ba1ecce3c47f00803f4f964de38394326c7a32eb6540616e04fb2935a0f08d"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_darwin_amd64"
 
 [tools.yq."platforms.windows-x64"]
-checksum = "sha256:2aee32f1de46a20672f48c25df3018839798bd509143f2ce05fdab1550ff5592"
-url = "https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_windows_amd64.exe"
+checksum = "sha256:e279bc506a452eeafcdf364f91a025455e402a8001169083caf01f4b64a544e2"
+url = "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_windows_amd64.exe"
 
 [[tools.zizmor]]
-version = "1.25.2"
+version = "1.26.1"
 backend = "aqua:zizmorcore/zizmor"
 
 [tools.zizmor."platforms.linux-arm64"]
-checksum = "sha256:4b4b9491112c2a09b318101c0d3349b73af1c4f532e097dd6d0164f2abda760d"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:711f5af366b299128f9a04b1470e37d990b41fbd21f14a1a4148d25004a83762"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-arm64-musl"]
-checksum = "sha256:4b4b9491112c2a09b318101c0d3349b73af1c4f532e097dd6d0164f2abda760d"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:711f5af366b299128f9a04b1470e37d990b41fbd21f14a1a4148d25004a83762"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64"]
-checksum = "sha256:aa1facd105f0d83fe5c55b1adcd9d7417de5d83aa27471f91dc0b66cf3803577"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8556289a64e7aaf2400cd516f61a471aa91c5902cc56ad96a82fd12f90c2ef73"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64-musl"]
-checksum = "sha256:aa1facd105f0d83fe5c55b1adcd9d7417de5d83aa27471f91dc0b66cf3803577"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8556289a64e7aaf2400cd516f61a471aa91c5902cc56ad96a82fd12f90c2ef73"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-arm64"]
-checksum = "sha256:624ef0e09521aecd862126be0f6d7754669af2646750d68ac48a114be33c3146"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:68ab2b37836bbd44f6cfffcc102b9ffffbc20c5d67d84293dafb63bd2775a1da"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-aarch64-apple-darwin.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-x64"]
-checksum = "sha256:353271b9ec301dd4ba158af481323c831c6e9b494d5ac3f5aa58cf4b207699cc"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-x86_64-apple-darwin.tar.gz"
+checksum = "sha256:2967414a561f8c1264121e8f723c3b5abcf3d1bf7ce5063114df99985dd75801"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-apple-darwin.tar.gz"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.windows-x64"]
-checksum = "sha256:65d46a8144f701200621b580f632076d80d082d60856de9f88793a95fb5882d7"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.25.2/zizmor-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:c6cea156935e3b9d36faeca4fd8f622d23f7a7578da26adb34e6456abd9beb9a"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-pc-windows-msvc.zip"
 provenance = "github-attestations"

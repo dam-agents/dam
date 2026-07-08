@@ -16,7 +16,7 @@ ARG OPENEVOLVE_VERSION=0.2.27
 
 # uv-managed Python in a shared location so the agent user (uid 65532) can use
 # it at runtime. UV_PYTHON_INSTALL_DIR keeps interpreters out of root's $HOME.
-# uv itself is provided by the mise-managed base image.
+# uv comes from the base image's lazy installers; first use here bakes it in.
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     OPENEVOLVE_VENV=/opt/openevolve-venv
 

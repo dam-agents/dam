@@ -23,7 +23,11 @@ import {
 } from "../../../components/modal.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { useCreateConnection, useDiscoverMcp } from "../api/mutations.js";
+import {
+  useCreateConnection,
+  useDiscoverMcp,
+  useProbeClusterCa,
+} from "../api/mutations.js";
 import { useOAuthPopup } from "../hooks/use-oauth-popup.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
 
@@ -47,6 +51,7 @@ export function TemplateCreateForm({
 }) {
   const create = useCreateConnection();
   const discover = useDiscoverMcp();
+  const probeClusterCa = useProbeClusterCa();
 
   const [name, setName] = useState(() => slugifyTemplateName(template.name));
   const [fields, setFields] = useState<Record<string, string>>(() => {
@@ -75,7 +80,11 @@ export function TemplateCreateForm({
   });
 
   const needsOAuth = template.authKind === "oauth";
-  const pending = create.isPending || authorizing || discover.isPending;
+  const pending =
+    create.isPending ||
+    authorizing ||
+    discover.isPending ||
+    probeClusterCa.isPending;
 
   const inputsByName = useMemo(() => {
     const map = new Map<string, ConnectionTemplateInput>();
@@ -154,6 +163,9 @@ export function TemplateCreateForm({
             : {}),
           ...(submittedValue("envName")
             ? { envName: submittedValue("envName")! }
+            : {}),
+          ...(submittedValue("caData")
+            ? { caData: submittedValue("caData")! }
             : {}),
           ...(Object.keys(configInputs).length > 0 ? { configInputs } : {}),
           value,
@@ -244,6 +256,32 @@ export function TemplateCreateForm({
       }
       return;
     }
+    // Probe the endpoint (unless a CA was pasted) so a private-CA cluster
+    // fails here with a clear instruction instead of at use time. Reachable
+    // but untrusted → must supply the CA; unreachable/failure falls through.
+    if (
+      template.id === "kubernetes" &&
+      payload.authKind === "header" &&
+      !payload.caData &&
+      submittedValue("host")
+    ) {
+      try {
+        const probe = await probeClusterCa.mutateAsync({
+          host: submittedValue("host")!,
+        });
+        if (probe.reachable && !probe.trusted) {
+          setError(
+            "The cluster API server's certificate isn't publicly trusted. " +
+              "Paste its CA in the Cluster CA certificate field — the " +
+              "certificate-authority-data value from your kubeconfig (base64 or PEM).",
+          );
+          return;
+        }
+      } catch {
+        // Probe failure surfaces via the mutation's error toast; fall through.
+      }
+    }
+
     try {
       const result = await create.mutateAsync(payload);
       onCreated(result.id);
@@ -550,6 +588,7 @@ const FIELD_LABELS: Record<string, string> = {
   clientSecret: "Client secret",
   appSlug: "GitHub App slug",
   envName: "Environment variable",
+  caData: "Server CA certificate (optional)",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -562,6 +601,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   clientSecret: "•••••",
   appSlug: "my-platform-app",
   envName: "MY_API_KEY",
+  caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };
 
 function labelFor(key: string): string {

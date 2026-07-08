@@ -1354,3 +1354,165 @@ func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testi
 	assert.Equal(t, "http://collector.platform.svc:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
 	assert.Equal(t, "grpc", env["OTEL_EXPORTER_OTLP_PROTOCOL"])
 }
+
+// --- Upstream port / upgrades / private CA (external cluster connectivity) ---
+
+func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
+	s := ownerSecret("platform-conn-k8s", "connection", "k8s")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"Authorization","port":6443,"upgrades":true,"caKey":"upstream-ca.crt"}
+	]`
+	s = withHostSDS(s, "api.cluster.example")
+	s.Data["upstream-ca.crt"] = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Equal(t, 6443, chains[0].UpstreamPortValue())
+	assert.True(t, chains[0].Upgrades)
+	assert.Equal(t,
+		"/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt",
+		chains[0].UpstreamCAFile)
+	assert.Equal(t, "api.cluster.example:6443", chains[0].HostRewrite())
+}
+
+func TestChainsFromSecrets_MissingCADataKeyDegradesToSystemTrust(t *testing.T) {
+	// caKey present but data key absent → must drop the CA, not render an
+	// unbootable trusted_ca.
+	s := ownerSecret("platform-conn-k8s", "connection", "k8s")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"Authorization","port":6443,"caKey":"upstream-ca.crt"}
+	]`
+	s = withHostSDS(s, "api.cluster.example") // SDS present, CA data key absent
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Empty(t, chains[0].UpstreamCAFile,
+		"missing CA data key must degrade to system trust, not reference an absent file")
+	assert.Equal(t, 6443, chains[0].UpstreamPortValue(), "other opts unaffected")
+}
+
+func TestChainsFromSecrets_PortDefaultsTo443AndBareHostRewrite(t *testing.T) {
+	s := ownerSecret("platform-conn-github", "connection", "github")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.github.com","headerName":"Authorization"}
+	]`
+	s = withHostSDS(s, "api.github.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Equal(t, 443, chains[0].UpstreamPortValue())
+	assert.False(t, chains[0].Upgrades)
+	assert.Empty(t, chains[0].UpstreamCAFile)
+	assert.Equal(t, "api.github.com", chains[0].HostRewrite())
+}
+
+func TestChainsFromSecrets_ConflictingPortsKeepFirst(t *testing.T) {
+	a := ownerSecret("platform-conn-aaa", "connection", "aaa")
+	delete(a.Annotations, envoyHostPatternAnn)
+	a.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"Authorization","port":6443}
+	]`
+	a = withHostSDS(a, "api.cluster.example")
+	b := ownerSecret("platform-conn-bbb", "connection", "bbb")
+	delete(b.Annotations, envoyHostPatternAnn)
+	b.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"X-Other","port":8443}
+	]`
+	b = withHostSDS(b, "api.cluster.example")
+
+	chains := chainsFromSecrets([]corev1.Secret{a, b})
+	require.Len(t, chains, 1)
+	assert.Equal(t, 6443, chains[0].UpstreamPortValue(),
+		"name-sorted first secret's port must win on conflict")
+}
+
+func TestChainsFromSecrets_TraversalCAKeyIgnored(t *testing.T) {
+	s := ownerSecret("platform-conn-k8s", "connection", "k8s")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.cluster.example","headerName":"Authorization","caKey":"../../tls/tls.key"}
+	]`
+	s = withHostSDS(s, "api.cluster.example")
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 1)
+	assert.Empty(t, chains[0].UpstreamCAFile,
+		"caKey with path separators must not escape the Secret mount")
+}
+
+func portUpgradesChain(secretName, host string, port int, caFile string) envoyHostChain {
+	c := credentialedChain(secretName, host)
+	c.UpstreamPort = port
+	c.Upgrades = true
+	c.UpstreamCAFile = caFile
+	return c
+}
+
+func TestRenderEnvoyBootstrap_PortChainPinsUpstreamAndRewritesAuthority(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, ""),
+	})
+	require.NoError(t, err)
+
+	// The pinned cluster dials the declared port, and the upstream sees the
+	// authority it expects for a non-default port.
+	assert.Contains(t, got, "port_value: 6443")
+	assert.Contains(t, got, `host_rewrite_literal: "api.cluster.example:6443"`)
+	// SAN pinning stays on the bare host.
+	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*san_type:\s*DNS\s*\n\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example`, got)
+}
+
+func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, ""),
+	})
+	require.NoError(t, err)
+
+	// kubectl exec/port-forward upgrade to WebSocket (modern) or SPDY/3.1
+	// (legacy fallback); the chain must tunnel both, and long-lived tunnels
+	// get the relaxed idle timeout instead of the 5-minute HCM default.
+	assert.Contains(t, got, "upgrade_type: spdy/3.1")
+	// The idle-timeout override must appear on BOTH the inner streaming chain
+	// route AND the outer CONNECT tunnel route — the inner one alone is
+	// unreachable because the outer 5-minute default would fire first on an
+	// idle tunnel.
+	assert.Equal(t, 2, strings.Count(got, "idle_timeout: 14400s"),
+		"idle_timeout must cover both the inner chain and the outer CONNECT tunnel")
+}
+
+func TestRenderEnvoyBootstrap_NonUpgradesChainOmitsTunneling(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "spdy/3.1")
+	assert.NotContains(t, got, "idle_timeout: 14400s")
+}
+
+func TestRenderEnvoyBootstrap_UpstreamCAFileReplacesSystemBundle(t *testing.T) {
+	caFile := "/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, caFile),
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, got, "filename: "+caFile)
+	// SAN pinning must survive the CA override.
+	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*san_type:\s*DNS\s*\n\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example`, got)
+}
+
+func TestRenderEnvoyBootstrap_PortUpgradesCARendersValidYAML(t *testing.T) {
+	// All three new template blocks active at once (upgrade_configs,
+	// idle_timeout, CA-file override) — confirm the document still parses.
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443,
+			"/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"),
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+}

@@ -52,6 +52,13 @@ export function useDiscoverMcp() {
   });
 }
 
+export function useProbeClusterCa() {
+  return useMutation({
+    ...trpc.connections.probeClusterCa.mutationOptions(),
+    meta: { errorToast: "Couldn't reach the cluster API" },
+  });
+}
+
 /**
  * Verifies an Anthropic credential against Anthropic before save. Returns
  * `{ ok: true } | { ok: false; message }` rather than throwing — callers

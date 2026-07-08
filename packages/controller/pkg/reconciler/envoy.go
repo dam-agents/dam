@@ -110,11 +110,30 @@ type envoyHostChain struct {
 	// Per-credential injection steps, in name-sorted order.
 	Credentials []envoyCredential
 	// Name of the per-chain STRICT_DNS upstream cluster used when the
-	// chain has at least one credential. Pinned to `Host:443` with
-	// SAN-bound TLS validation so the agent's Host header cannot
+	// chain has at least one credential. Pinned to `Host:UpstreamPort`
+	// with SAN-bound TLS validation so the agent's Host header cannot
 	// redirect the credentialed body to an attacker-controlled upstream.
 	UpstreamCluster string
 	HTTP2           bool
+	UpstreamPort    int // 0 → 443
+	Upgrades        bool
+	// Path to a CA bundle inside the gateway pod; empty → system bundle.
+	UpstreamCAFile string
+}
+
+func (c envoyHostChain) UpstreamPortValue() int {
+	if c.UpstreamPort == 0 {
+		return 443
+	}
+	return c.UpstreamPort
+}
+
+// Authority presented upstream: bare host on 443, host:port otherwise.
+func (c envoyHostChain) HostRewrite() string {
+	if p := c.UpstreamPortValue(); p != 443 {
+		return fmt.Sprintf("%s:%d", c.Host, p)
+	}
+	return c.Host
 }
 
 // Credentialed reports whether the chain has any credential injections.
@@ -311,6 +330,9 @@ type connectionHostInjection struct {
 	Encoding       string `json:"encoding,omitempty"`
 	QueryParamName string `json:"queryParamName,omitempty"`
 	HTTP2          bool   `json:"http2,omitempty"`
+	Port           int    `json:"port,omitempty"` // 0 → 443
+	Upgrades       bool   `json:"upgrades,omitempty"`
+	CAKey          string `json:"caKey,omitempty"` // Secret field holding the upstream CA bundle
 	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
 	SDSKey string `json:"sdsKey,omitempty"`
 }
@@ -332,9 +354,18 @@ func sdsFileKey(e connectionHostInjection) string {
 // pair per entry in its `injection-hosts` JSON. Non-connection Secrets
 // remain single-host (handled by the caller).
 type hostCredential struct {
-	host  string
-	http2 bool
-	cred  envoyCredential
+	host string
+	opts chainOpts
+	cred envoyCredential
+}
+
+// Chain-level attributes beyond the credential. Merged across a host's
+// entries: bools OR, port/CA first-wins.
+type chainOpts struct {
+	http2    bool
+	port     int
+	upgrades bool
+	caFile   string
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -360,9 +391,30 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 			continue
 		}
 		seen[key] = struct{}{}
+		caFile := ""
+		if e.CAKey != "" {
+			switch {
+			// A separator would escape the Secret mount; a missing data key
+			// would make Envoy fail to boot. Both degrade to system trust
+			// (fail-closed for a private CA) rather than crash the gateway.
+			case strings.ContainsAny(e.CAKey, "/\\") || strings.Contains(e.CAKey, ".."):
+				slog.Warn("invalid caKey in injection-hosts; ignoring",
+					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
+			case len(s.Data[e.CAKey]) == 0:
+				slog.Warn("connection Secret missing CA data key; validating host against system trust instead",
+					"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "caKey", e.CAKey)
+			default:
+				caFile = envoyCredentialsRoot + "/cred-" + s.Name + "/" + e.CAKey
+			}
+		}
 		out = append(out, hostCredential{
-			host:  e.Host,
-			http2: e.HTTP2,
+			host: e.Host,
+			opts: chainOpts{
+				http2:    e.HTTP2,
+				port:     e.Port,
+				upgrades: e.Upgrades,
+				caFile:   caFile,
+			},
 			cred: envoyCredential{
 				SecretName:     s.Name,
 				HeaderName:     header,
@@ -404,13 +456,13 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		host        string
 		seenHeader  map[string]string
 		credentials []envoyCredential
-		http2       bool
+		opts        chainOpts
 		first       string // first Secret name encountered for this host (drives ChainID)
 	}
 	byHost := map[string]*bucket{}
 	order := []string{}
 
-	add := func(host, secretName string, cred *envoyCredential, http2 bool) {
+	add := func(host, secretName string, cred *envoyCredential, opts chainOpts) {
 		if host == "" {
 			return
 		}
@@ -420,8 +472,31 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			byHost[host] = b
 			order = append(order, host)
 		}
-		if http2 {
-			b.http2 = true
+		if opts.http2 {
+			b.opts.http2 = true
+		}
+		if opts.upgrades {
+			b.opts.upgrades = true
+		}
+		// The chain has one upstream socket and one validation context, so
+		// port/CA can't stack the way credentials do: first entry wins.
+		if opts.port != 0 {
+			if b.opts.port == 0 {
+				b.opts.port = opts.port
+			} else if b.opts.port != opts.port {
+				slog.Warn("conflicting upstream ports on host; keeping first",
+					"host", host, "keptPort", b.opts.port,
+					"skippedPort", opts.port, "skippedSecret", secretName)
+			}
+		}
+		if opts.caFile != "" {
+			if b.opts.caFile == "" {
+				b.opts.caFile = opts.caFile
+			} else if b.opts.caFile != opts.caFile {
+				slog.Warn("conflicting upstream CA files on host; keeping first",
+					"host", host, "keptCA", b.opts.caFile,
+					"skippedCA", opts.caFile, "skippedSecret", secretName)
+			}
 		}
 		if cred == nil {
 			return
@@ -456,10 +531,10 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 				if len(s.Data[cred.SDSFileKey]) == 0 {
 					slog.Warn("connection Secret missing SDS data key; rendering host allow-only (no credential injection)",
 						"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "sdsKey", cred.SDSFileKey)
-					add(hc.host, s.Name, nil, hc.http2)
+					add(hc.host, s.Name, nil, hc.opts)
 					continue
 				}
-				add(hc.host, s.Name, &cred, hc.http2)
+				add(hc.host, s.Name, &cred, hc.opts)
 			}
 			continue
 		}
@@ -471,15 +546,15 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 		if host == "" {
 			continue
 		}
-		http2 := s.Annotations[envoyInjectionHTTP2Ann] == "true"
+		opts := chainOpts{http2: s.Annotations[envoyInjectionHTTP2Ann] == "true"}
 		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
-			add(host, s.Name, nil, http2)
+			add(host, s.Name, nil, opts)
 			continue
 		}
 		if len(s.Data[envoyCredentialKeySDS]) == 0 {
 			slog.Warn("credential Secret missing sds.yaml data key; rendering host allow-only (no credential injection)",
 				"namespace", s.Namespace, "secret", s.Name, "host", host)
-			add(host, s.Name, nil, http2)
+			add(host, s.Name, nil, opts)
 			continue
 		}
 		cred := envoyCredential{
@@ -489,7 +564,7 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			VolumeName:     "cred-" + s.Name,
 			SDSFileKey:     envoyCredentialKeySDS,
 		}
-		add(host, s.Name, &cred, http2)
+		add(host, s.Name, &cred, opts)
 	}
 
 	chains := make([]envoyHostChain, 0, len(order))
@@ -503,7 +578,10 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			UpstreamCluster: "upstream_" + b.first + "_" + hostShort(host),
 			Host:            host,
 			Credentials:     b.credentials,
-			HTTP2:           b.http2,
+			HTTP2:           b.opts.http2,
+			UpstreamPort:    b.opts.port,
+			Upgrades:        b.opts.upgrades,
+			UpstreamCAFile:  b.opts.caFile,
 		})
 	}
 	return chains
@@ -841,6 +919,12 @@ static_resources:
                             upgrade_configs:
                               - upgrade_type: CONNECT
                                 connect_config: {}
+{{- if $.AnyUpgrades }}
+                            # Outer tunnel carries the inner streaming bytes, so
+                            # its idle timeout must match or the default 5-min
+                            # timer cuts a quiet port-forward / logs -f first.
+                            idle_timeout: 14400s
+{{- end }}
                           typed_per_filter_config:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
@@ -922,6 +1006,13 @@ static_resources:
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ $chain.ChainID }}
+{{- if $chain.Upgrades }}
+                # kubectl exec/port-forward/logs -f; spdy/3.1 is the legacy
+                # client-go fallback. Injection covered the upgrade request.
+                upgrade_configs:
+                  - upgrade_type: websocket
+                  - upgrade_type: spdy/3.1
+{{- end }}
 {{- if and $.OTel.Traces (not $chain.HasQueryParamCredential) }}
                 # Traced: this chain sees the agent's decrypted traceparent, so
                 # its span joins the harness trace and ext_authz carries that
@@ -1194,7 +1285,7 @@ static_resources:
                             # the upstream Host so honest backends never see
                             # an agent-manipulated value.
                             cluster: {{ $chain.UpstreamCluster }}
-                            host_rewrite_literal: "{{ $chain.Host }}"
+                            host_rewrite_literal: "{{ $chain.HostRewrite }}"
 {{- else }}
                             # Allow-only (path-rule promoted, no credential
                             # injection). Forward via dynamic_forward_proxy;
@@ -1202,6 +1293,11 @@ static_resources:
                             cluster: dynamic_forward_proxy_https
 {{- end }}
                             timeout: 0s
+{{- if $chain.Upgrades }}
+                            # 4h (kubelet's streaming default) so idle tunnels
+                            # survive the HCM's 5-min stream-idle default.
+                            idle_timeout: 14400s
+{{- end }}
 {{- end }}
 {{- if .Telemetry }}
         # Telemetry egress. The agent exports OTLP/HTTP to the collector
@@ -1542,7 +1638,7 @@ static_resources:
 {{- if $chain.Credentialed }}
 
     # Pinned upstream for the credentialed chain matching SNI={{ $chain.Host }}.
-    # STRICT_DNS resolves {{ $chain.Host }}:443 directly; the agent's Host
+    # STRICT_DNS resolves {{ $chain.Host }}:{{ $chain.UpstreamPortValue }} directly; the agent's Host
     # header plays no role in destination selection. Upstream TLS hard-binds
     # SNI and validates the upstream cert's SAN against {{ $chain.Host }},
     # so even a poisoned cache or misrouted endpoint fails the handshake
@@ -1578,7 +1674,7 @@ static_resources:
                   address:
                     socket_address:
                       address: {{ $chain.Host }}
-                      port_value: 443
+                      port_value: {{ $chain.UpstreamPortValue }}
       transport_socket:
         name: envoy.transport_sockets.tls
         typed_config:
@@ -1588,7 +1684,12 @@ static_resources:
           common_tls_context:
             validation_context:
               trusted_ca:
+{{- if $chain.UpstreamCAFile }}
+                # Private CA for this chain only; SAN pinning below unchanged.
+                filename: {{ $chain.UpstreamCAFile }}
+{{- else }}
                 filename: /etc/ssl/certs/ca-certificates.crt
+{{- end }}
               match_typed_subject_alt_names:
                 - san_type: DNS
                   matcher:
@@ -1795,6 +1896,13 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 	// structurally rather than crash-loop the gateway. The credentialed chain
 	// for that host still wins, and the host is in the leaf SAN regardless.
 	telemetry := cfg.TelemetryEnabled() && !hostInChains(chains, cfg.TelemetryCollectorHost)
+	anyUpgrades := false
+	for _, c := range chains {
+		if c.Upgrades {
+			anyUpgrades = true
+			break
+		}
+	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
@@ -1815,6 +1923,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost string
 		TelemetryCollectorPort int
 		InstanceID             string
+		AnyUpgrades            bool
 		OTel                   envoyOTelView
 	}{
 		ListenAddress:          envoyListenAddress,
@@ -1835,6 +1944,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		TelemetryCollectorHost: cfg.TelemetryCollectorHost,
 		TelemetryCollectorPort: cfg.TelemetryCollectorPort,
 		InstanceID:             instanceID,
+		AnyUpgrades:            anyUpgrades,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}); err != nil {
 		return "", err
@@ -1922,7 +2032,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v13-gateway-otel"
+const envoyBootstrapTemplateRev = "v14-upstream-port-upgrades"
 
 // envoySecretsRev digests the Secret set that drives Envoy's chain
 // rendering. Includes `injection-hosts` JSON so a descriptor change

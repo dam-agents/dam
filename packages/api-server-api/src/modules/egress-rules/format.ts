@@ -15,21 +15,36 @@ export function formatEgressRuleSource(source: EgressRuleSource): string {
   return source;
 }
 
-/** `<verdict> [<method>] <host>[<path>]` — wildcard method/path suppressed. */
+/** `<verdict> [<method>] <host>[:<port>][<path>]` — wildcard method/path
+ *  and the default port suppressed. */
 export function formatEgressRuleInline(
-  rule: Pick<EgressRuleView, "verdict" | "method" | "host" | "pathPattern">,
+  rule: Pick<
+    EgressRuleView,
+    "verdict" | "method" | "host" | "port" | "pathPattern"
+  >,
 ): string {
   const parts: string[] = [rule.verdict];
   if (rule.method !== "*") parts.push(rule.method);
-  parts.push(joinHostPath(rule.host, rule.pathPattern));
+  parts.push(joinHostPath(rule.host, rule.pathPattern, rule.port));
   return parts.join(" ");
 }
 
-function joinHostPath(host: string, pathPattern: string): string {
-  const normalizedHost = host.replace(/\/+$/, "");
+function joinHostPath(
+  host: string,
+  pathPattern: string,
+  port?: number,
+): string {
+  const normalizedHost = stripTrailingSlashes(host) + (port ? `:${port}` : "");
   if (pathPattern === "*") return normalizedHost;
   const normalizedPath = pathPattern.startsWith("/")
     ? pathPattern
     : `/${pathPattern}`;
   return `${normalizedHost}${normalizedPath}`;
+}
+
+// Index-based, not `/\/+$/` — that regex is quadratic on user-typed input.
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "/") end--;
+  return s.slice(0, end);
 }

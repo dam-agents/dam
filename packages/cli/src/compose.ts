@@ -13,6 +13,7 @@ import { composeImportModule } from "./modules/import/compose.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
+import { composeTelemetryModule } from "./modules/telemetry/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
@@ -133,6 +134,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     createAgentService: agent.exports.createService,
   });
 
+  const telemetry = composeTelemetryModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const program = new Command();
   program
     .name("dam")
@@ -153,6 +161,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of skill.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);
   for (const command of channel.commands) program.addCommand(command);
+  for (const command of telemetry.commands) program.addCommand(command);
 
   return program;
 }

@@ -1,14 +1,17 @@
-import { SessionMode } from "api-server-api";
+import type { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
+import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { useAcpSessions } from "../api/queries.js";
 import { SessionRow } from "./session-row.js";
+
+const EMPTY: never[] = [];
 
 export function SessionsSidebar({
   onResumeSession,
@@ -19,7 +22,7 @@ export function SessionsSidebar({
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
-  const sessionMode = useStore((s) => s.sessionMode);
+  const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const includeChannel = useStore((s) => s.includeChannelSessions);
   const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
@@ -34,10 +37,17 @@ export function SessionsSidebar({
     refetch,
   } = useAcpSessions(selectedAgent, includeChannel, {
     enabled: agentRunState === "running",
-    pollActive: sessionMode === SessionMode.Terminal,
     activeSessionId: sessionId,
   });
   const loading = isFetching;
+
+  const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
+  const approvalSessions = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of approvals)
+      if (a.status === "pending" && a.sessionId) set.add(a.sessionId);
+    return set;
+  }, [approvals]);
 
   const confirmDelete = useCallback(
     async (sid: string, title: string | null | undefined) => {
@@ -97,18 +107,25 @@ export function SessionsSidebar({
             No sessions yet
           </p>
         )}
-        {sessions.map((s) => (
-          <SessionRow
-            key={s.sessionId}
-            session={s}
-            active={s.sessionId === sessionId}
-            hasPending={pendingPermissions.some(
-              (p) => p.sessionId === s.sessionId,
-            )}
-            onResume={() => onResumeSession(s.sessionId, s.mode)}
-            onDelete={() => confirmDelete(s.sessionId, s.title)}
-          />
-        ))}
+        {sessions.map((s) => {
+          const isOpen = s.sessionId === sessionId;
+          const working = isOpen ? busy : !!s.running;
+          // Polled approvals cover all sessions; the live store surfaces the open one instantly.
+          const needsApproval =
+            approvalSessions.has(s.sessionId) ||
+            pendingPermissions.some((p) => p.sessionId === s.sessionId);
+          return (
+            <SessionRow
+              key={s.sessionId}
+              session={s}
+              active={isOpen}
+              working={working}
+              needsApproval={needsApproval}
+              onResume={() => onResumeSession(s.sessionId, s.mode)}
+              onDelete={() => confirmDelete(s.sessionId, s.title)}
+            />
+          );
+        })}
       </div>
       <AgentApprovalsTray agentId={selectedAgent} />
       <div className="px-3 py-3 border-t border-border-light shrink-0">

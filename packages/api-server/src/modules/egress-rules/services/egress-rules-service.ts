@@ -29,11 +29,14 @@ export interface CreateEgressRulesServiceDeps {
   ownerSub: string;
 }
 
-/** A rule needs the L7 (HTTP) ext_authz path — and therefore MITM — when
- *  it constrains method or path. Wildcard-only rules stay on the L4 path
- *  where the API server gates by SNI alone. */
-function needsL7Promotion(method: string, pathPattern: string): boolean {
-  return method !== "*" || pathPattern !== "*";
+/** Needs the L7/MITM path when it constrains method/path or a non-443 port;
+ *  wildcard 443 rules stay on the L4 (SNI-only) path. */
+function needsL7Promotion(
+  method: string,
+  pathPattern: string,
+  port?: number,
+): boolean {
+  return method !== "*" || pathPattern !== "*" || port != null;
 }
 
 function toView(row: EgressRuleRow): EgressRuleView {
@@ -41,6 +44,7 @@ function toView(row: EgressRuleRow): EgressRuleView {
     id: row.id,
     agentId: row.agentId,
     host: row.host,
+    ...(row.port ? { port: row.port } : {}),
     method: row.method,
     pathPattern: row.pathPattern,
     verdict: row.verdict,
@@ -86,6 +90,7 @@ export function createEgressRulesService(
         id: randomUUID(),
         agentId: input.agentId,
         host: input.host,
+        ...(input.port ? { port: input.port } : {}),
         method: input.method,
         pathPattern: input.pathPattern,
         verdict: input.verdict,
@@ -116,7 +121,7 @@ export function createEgressRulesService(
       // extend the cert SAN list and render an MITM chain. Idempotent: if
       // a credentialed Secret already exists for the host, this no-ops.
       if (
-        needsL7Promotion(input.method, input.pathPattern) &&
+        needsL7Promotion(input.method, input.pathPattern, input.port) &&
         deps.allowOnlySecrets
       ) {
         await deps.allowOnlySecrets.ensure(deps.ownerSub, input.host);
@@ -176,7 +181,10 @@ export function createEgressRulesService(
       // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
       // which promotes the host to L7 if it wasn't already. Same idempotent
       // ensure as create.
-      if (needsL7Promotion(method, pathPattern) && deps.allowOnlySecrets) {
+      if (
+        needsL7Promotion(method, pathPattern, updated.port) &&
+        deps.allowOnlySecrets
+      ) {
         await deps.allowOnlySecrets.ensure(deps.ownerSub, updated.host);
       }
       return toView(updated);

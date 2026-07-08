@@ -19,6 +19,7 @@ const SVG_BY_SLUG = new Set([
   "google-sheets",
   "google-slides",
   "google-tasks",
+  "kubernetes",
   "slack",
   "spotify",
   "youtube",

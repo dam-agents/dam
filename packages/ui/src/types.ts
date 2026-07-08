@@ -77,13 +77,6 @@ export interface Message {
   };
 }
 
-export interface LogEntry {
-  id: string;
-  ts: string;
-  type: string;
-  payload: object;
-}
-
 export type { SessionView } from "api-server-api";
 export { SessionType } from "api-server-api";
 

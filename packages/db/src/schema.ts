@@ -100,6 +100,8 @@ export const egressRules = pgTable(
     id: text("id").primaryKey(),
     agentId: text("agent_id").notNull(),
     host: text("host").notNull(),
+    // Upstream port; NULL = 443. Transparency only, outside the lookup key.
+    port: integer("port"),
     method: text("method").notNull(),
     pathPattern: text("path_pattern").notNull(),
     verdict: text("verdict").notNull(),

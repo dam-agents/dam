@@ -12,7 +12,14 @@ import {
 import {
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "./connection-sds.js";
+import {
+  buildKubernetesContributions,
+  decodeCaData,
+  KUBERNETES_TEMPLATE_ID,
+  parseClusterEndpoint,
+} from "./kubernetes-contributions.js";
 
 export interface BuildResult {
   auth: ConnectionAuthConfig;
@@ -261,17 +268,25 @@ function buildHeader(
   input: Extract<ConnectionCreateInput, { authKind: "header" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
-  const host = input.host ?? template.host;
+  const rawHost = input.host ?? template.host;
   const headerName = input.headerName ?? template.headerName;
   const valueFormat = input.valueFormat ?? template.valueFormat ?? "{value}";
-  if (!host) throw new Error(`template ${template.id}: missing host`);
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
   if (!headerName) {
     throw new Error(`template ${template.id}: missing headerName`);
   }
+  const { host, port } = parseClusterEndpoint(rawHost);
+  const caPem = input.caData ? decodeCaData(input.caData) : undefined;
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
   const valueRef = { ...secretPath, field: "value" };
   const contributions: Contribution[] = [...template.contributions];
+
+  if (template.id === KUBERNETES_TEMPLATE_ID) {
+    contributions.push(
+      ...buildKubernetesContributions({ host, port, hasUpstreamCa: !!caPem }),
+    );
+  }
 
   const hasHostContrib = contributions.some(
     (c) =>
@@ -282,8 +297,10 @@ function buildHeader(
     contributions.push({
       kind: "egress-inject",
       host,
+      ...(port ? { port } : {}),
       headerName,
       valueFormat,
+      ...(caPem ? { upstreamCa: true } : {}),
     });
   }
 
@@ -320,7 +337,16 @@ function buildHeader(
       valueFormat,
     },
     contributions,
-    secrets: new Map([[secretPath.path, { value: input.value, ...sdsFields }]]),
+    secrets: new Map([
+      [
+        secretPath.path,
+        {
+          value: input.value,
+          ...(caPem ? { [UPSTREAM_CA_SECRET_FIELD]: caPem } : {}),
+          ...sdsFields,
+        },
+      ],
+    ]),
   };
 }
 

@@ -81,6 +81,7 @@ export interface NewEgressRule {
   id: string;
   agentId: string;
   host: string;
+  port?: number;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;
@@ -100,6 +101,7 @@ type RawRule = {
   id: string;
   agentId: string;
   host: string;
+  port: number | null;
   method: string;
   pathPattern: string;
   verdict: string;
@@ -114,6 +116,7 @@ function toRow(r: RawRule): EgressRuleRow {
     id: r.id,
     agentId: r.agentId,
     host: r.host,
+    ...(r.port ? { port: r.port } : {}),
     method: r.method,
     pathPattern: r.pathPattern,
     verdict: r.verdict as RuleVerdict,
@@ -136,7 +139,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
 
     async findMatch(agentId, host, method, path) {
       const rows = await db.execute<RawRule>(sql`
-        SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
@@ -170,7 +173,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
 
     async listConnectionDerivedForAgent(agentId) {
       const rows = await db.execute<RawRule>(sql`
-        SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
@@ -215,6 +218,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           id: row.id,
           agentId: row.agentId,
           host: row.host,
+          port: row.port ?? null,
           method: row.method,
           pathPattern: row.pathPattern,
           verdict: row.verdict,
@@ -244,6 +248,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           id: row.id,
           agentId: row.agentId,
           host: row.host,
+          port: row.port ?? null,
           method: row.method,
           pathPattern: row.pathPattern,
           verdict: row.verdict,
@@ -266,7 +271,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND path_pattern = ${row.pathPattern}
           AND status = 'active'
           AND source LIKE 'preset:%'
-        RETURNING id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        RETURNING id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                   verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
       `);
       const promotedRows = promoted as unknown as RawRule[];

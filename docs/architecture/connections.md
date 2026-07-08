@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-01
+Last verified: 2026-07-07
 
 ## Overview
 
@@ -104,8 +104,8 @@ A header connection's stored credential can be **updated in place** — the valu
 A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. The kinds today:
 
 - **`env`** — an environment variable the harness merges in at spawn. For credential-derived env the value is a placeholder (the real secret is injected gateway-side); for user-typed and non-credential config env it is the literal value.
-- **`egress-allow`** — permission to reach a host (optionally path-scoped).
-- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter.
+- **`egress-allow`** — permission to reach a host (optionally path-scoped, optionally port-scoped for endpoints not on 443).
+- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
 - **`mcp-entry`** — an MCP server to expose to the harness.
 - **`skill-ref`** — a skill source to install at a pinned version.
@@ -166,6 +166,55 @@ All event kinds are built-in to every agent: the agent advertises the full set o
     { "kind": "mcp-entry",    "name": "acme",
       "url": "https://mcp.acme.internal/sse",
       "headers": { "Authorization": "Bearer dummy-placeholder" } }
+  ]
+}
+```
+
+### App preset: Kubernetes / OpenShift
+
+The external-cluster connection (#2314). The user supplies the cluster API
+endpoint (as an `oc login`-style URL or bare `host[:port]`), a service-account
+token, and — only when the API cert isn't publicly trusted — the cluster's CA.
+The build synthesizes three contributions: an `egress-inject` carrying the port,
+the streaming-upgrade opt-in, and (when a CA was given) the upstream-CA marker;
+a `file` contribution writing a ready-to-use kubeconfig at a **per-connection
+path**; and a `KUBECONFIG` `env` pointing at that file. The kubeconfig's trust
+anchor is the platform MITM CA already mounted in every agent pod, and its user
+carries only an **inert placeholder token** — the gateway overwrites it with
+the real service-account token on the wire, so `kubectl`/`oc` work out of the
+box while the real token only ever exists gateway-side. (The placeholder exists
+because `kubectl` refuses to issue a request with a credential-less user; `oc`
+would send an anonymous one.)
+
+Multiple cluster connections compose rather than clobber: each writes its own
+kubeconfig file, and the `env` driver joins their `KUBECONFIG` entries into the
+`:`-separated list `kubectl`/`oc` merge at load time (kubeconfig has no
+include-another-file mechanism, so this is the idiomatic route). The driver
+resolves `$HOME` and dedups; the first-granted connection's context is the
+default.
+
+The CA is optional and never reaches the agent — it configures the gateway's
+upstream validation only. Publicly-trusted endpoints (most managed clusters)
+need nothing; the connect flow probes the endpoint with full validation and, if
+its cert isn't publicly trusted, asks the user to paste the cluster CA
+(`certificate-authority-data` from a kubeconfig) rather than trusting it
+blindly.
+
+```jsonc
+{
+  "id": "conn-9c1d",
+  "templateId": "kubernetes",
+  "name": "prod-cluster",
+  "inputs": { "host": "api.prod.example:6443", "value": "…", "caData": "…" },
+  "auth": { "kind": "header", "valueRef": { "…": "…" }, "headerName": "Authorization", "valueFormat": "Bearer {value}" },
+  "contributions": [
+    { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
+      "headerName": "Authorization", "valueFormat": "Bearer {value}",
+      "upgrades": true, "upstreamCa": true },
+    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/api.prod.example-6443.config" },
+    { "kind": "file", "path": "$HOME/.kube/connections/api.prod.example-6443.config", "format": "yaml",
+      "mergeMode": "overwrite",
+      "content": { "clusters": [ { "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "user": { "token": "injected-by-gateway" } } ], "…": "…" } }
   ]
 }
 ```

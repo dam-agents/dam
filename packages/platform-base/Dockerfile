@@ -6,11 +6,11 @@ ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
 RUN dnf install -y git tar gzip && dnf clean all &&\
-set -eu; \
+    set -eu; \
     case "$(uname -m)" in \
-      x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
-      aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
-      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
+    aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
+    *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
     echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
@@ -20,25 +20,30 @@ set -eu; \
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
-COPY packages/platform-base/mise.lock /etc/mise/mise.lock
-RUN --mount=type=cache,target=/root/.cache/mise mise install
+RUN --mount=type=cache,target=/root/.cache/mise \
+    --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
+    set -eu; \
+    mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
+    cd /tmp/lockgen; mise trust -q; mise lock; \
+    cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
+RUN --mount=type=cache,target=/root/.cache/mise mise install node
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
 RUN dnf install \
-      -y \
-      --installroot=/sysroot \
-      --use-host-config \
-      --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
-      --setopt=install_weak_deps=0 \
-      catatonit \
-      curl \
-      git \
-      gzip \
-      openssh-server \
-      tar \
-      xz-libs \
-      &&\
+    -y \
+    --installroot=/sysroot \
+    --use-host-config \
+    --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
+    --setopt=install_weak_deps=0 \
+    catatonit \
+    curl \
+    git \
+    gzip \
+    openssh-server \
+    tar \
+    xz-libs \
+    &&\
     rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 FROM base AS builder
@@ -76,7 +81,7 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 USER root
 WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH"
+    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
@@ -86,6 +91,16 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
+# The chmod restores world-readability: mise rewrites the lock 0600, which
+# would lock the runtime agent user out after a root-run install in a derived
+# image build — an unreadable lock degrades every shim call to API lookups.
+RUN set -eu; \
+    mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
+    for spec in jq fd rg gh uv uv=uvx python kubectl oc 'npm:@googleworkspace/cli=gws'; do \
+    tool="${spec%%=*}"; bin="${spec##*=}"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
+    chmod 755 "$bin"; \
+    done
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run

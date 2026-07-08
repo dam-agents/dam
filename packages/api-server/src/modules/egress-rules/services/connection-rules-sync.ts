@@ -67,6 +67,7 @@ export interface ConnectionRulesSync {
  */
 export interface EgressHostRule {
   host: string;
+  port?: number; // transparency only; ext-authz matches host
   pathPattern?: string;
 }
 
@@ -153,6 +154,7 @@ export function createConnectionRulesSync(
             id: randomUUID(),
             agentId,
             host: rule.host,
+            ...(rule.port ? { port: rule.port } : {}),
             method: "*",
             pathPattern,
             verdict: "allow",

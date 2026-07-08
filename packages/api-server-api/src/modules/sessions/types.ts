@@ -33,4 +33,6 @@ export interface SessionView {
   experimentId?: string | null;
   title?: string | null;
   updatedAt?: string | null;
+  /** Live turn state from `session/list` enrichment — true while a turn is in flight. */
+  running?: boolean;
 }

@@ -36,9 +36,14 @@ export const envContribution = z.object({
   placeholder: z.string(),
 });
 
+// Upstream port; omit for 443. Only L7 chains honor it — the L4 catch-all
+// always dials 443 (a CONNECT's authority port is lost at the tunnel handoff).
+const egressPort = z.number().int().min(1).max(65535).optional();
+
 export const egressAllowContribution = z.object({
   kind: z.literal("egress-allow"),
   host: z.string().min(1),
+  port: egressPort,
   pathPattern: z.string().optional(),
 });
 
@@ -58,6 +63,12 @@ export const egressInjectContribution = z.object({
   // stream (e.g. Modal's x-modal-token-* metadata). Flows to the injection-hosts
   // annotation the controller reads. Omit for HTTP/1.1 REST hosts.
   http2: z.boolean().optional(),
+  port: egressPort,
+  // Tunnel WebSocket/SPDY upgrades (kubectl streaming); keeps the chain h1.
+  upgrades: z.boolean().optional(),
+  // Validate the upstream against the CA in the connection Secret, not the
+  // system store (self-signed cluster CAs).
+  upstreamCa: z.boolean().optional(),
 });
 
 export const fileContribution = z.object({

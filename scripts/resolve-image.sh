@@ -82,7 +82,7 @@ build_or_reuse() {
     echo "  pull failed, building instead" >&2
   fi
   echo "⚒ build $lt"
-  docker build -t "$lt" "$@"
+  docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
 }
 
 # tag portion to hand children as BASE_IMAGE / to publish under this run's sha

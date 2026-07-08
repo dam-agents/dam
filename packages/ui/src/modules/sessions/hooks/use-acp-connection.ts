@@ -189,11 +189,6 @@ export function useAcpConnection(
           setState("idle");
           reconnectFnRef.current?.();
         });
-        ws.addEventListener("error", () => {
-          useStore
-            .getState()
-            .addLog("error", { message: "WebSocket connection error" });
-        });
         connectionRef.current = { connection, ws };
       }
 

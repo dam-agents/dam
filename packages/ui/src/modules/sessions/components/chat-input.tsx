@@ -22,6 +22,7 @@ import { isMobile } from "../../../lib/breakpoints.js";
 import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -72,20 +73,7 @@ function BusyIndicator() {
   }, []);
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-      <span className="inline-flex gap-0.5">
-        <span
-          className="w-1 h-1 rounded-full bg-primary anim-pulse"
-          style={{ animationDelay: "0ms" }}
-        />
-        <span
-          className="w-1 h-1 rounded-full bg-primary anim-pulse"
-          style={{ animationDelay: "200ms" }}
-        />
-        <span
-          className="w-1 h-1 rounded-full bg-primary anim-pulse"
-          style={{ animationDelay: "400ms" }}
-        />
-      </span>
+      <WorkingDots />
       {verb}…
     </span>
   );

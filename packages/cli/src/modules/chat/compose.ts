@@ -9,6 +9,12 @@ import { createAcpSessionClient } from "./infrastructure/acp-session-client.js";
 import { createChatService } from "./services/chat-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
+// Sessions are agent-owned: the port talks ACP to the agent over
+// the api-server relay, not tRPC. Also used by the telemetry module
+// to join session titles onto telemetry rows.
+export const buildSessionsPort = (host: string, token: string) =>
+  createSessionsPort({ acp: createAcpSessionClient({ host, token }) });
+
 export function composeChatModule({
   compatService,
   configService,
@@ -20,11 +26,6 @@ export function composeChatModule({
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
 }): { commands: ReadonlyArray<Command> } {
-  // Sessions are agent-owned: the port talks ACP to the agent over
-  // the api-server relay, not tRPC.
-  const buildSessionsPort = (host: string, token: string) =>
-    createSessionsPort({ acp: createAcpSessionClient({ host, token }) });
-
   const chatService = createChatService({
     compatService,
     configService,

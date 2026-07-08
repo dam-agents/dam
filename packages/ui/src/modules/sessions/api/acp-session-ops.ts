@@ -11,6 +11,7 @@ interface PlatformMeta {
   experimentId?: string;
   threadTs?: string;
   createdAt?: string;
+  running?: boolean;
 }
 
 interface ListedSession {
@@ -40,6 +41,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     experimentId: p?.experimentId ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
+    running: p?.running ?? false,
   };
 }
 
@@ -48,8 +50,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
 async function withConnection<T>(
   agentId: string,
   fn: (conn: ClientSideConnection) => Promise<T>,
+  opts?: { passive?: boolean },
 ): Promise<T> {
-  const { connection, ws } = await openConnection(agentId, () => {});
+  const { connection, ws } = await openConnection(agentId, () => {}, opts);
   try {
     await connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
@@ -67,17 +70,25 @@ async function withConnection<T>(
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
-  return withConnection(agentId, async (conn) => {
-    const r = await conn.listSessions({ cwd: "." });
-    // Harness `session/list` order is unspecified; sort newest-first to keep
-    // the prior DB-backed `ORDER BY created_at DESC` sidebar ordering (the
-    // server store that used to guarantee it was dropped).
-    return (r.sessions ?? [])
-      .map((s) => toSessionView(agentId, s as unknown as ListedSession))
-      .sort((a, b) =>
-        (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
-      );
-  });
+  // Passive: listing is a read and must not defer the agent's hibernation.
+  return withConnection(
+    agentId,
+    async (conn) => {
+      const r = await conn.listSessions({ cwd: "." });
+      // Most-recently-active first; sessionId breaks ties for a stable order.
+      return (r.sessions ?? [])
+        .map((s) => toSessionView(agentId, s as unknown as ListedSession))
+        .sort((a, b) => {
+          const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+            a.updatedAt ?? a.createdAt,
+          );
+          return byActivity !== 0
+            ? byActivity
+            : a.sessionId.localeCompare(b.sessionId);
+        });
+    },
+    { passive: true },
+  );
 }
 
 export async function deleteAgentSession(

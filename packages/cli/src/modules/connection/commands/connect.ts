@@ -38,6 +38,7 @@ interface ConnectOpts {
   valueFormat?: string;
   envName?: string;
   value?: string;
+  caData?: string;
   config?: string[];
   server?: string;
   json?: boolean;
@@ -77,6 +78,10 @@ export function buildConnectCommand(deps: {
       "input: expose the credential to the agent as this env var (custom header credentials)",
     )
     .option("--value <value>", "input: header secret value")
+    .option(
+      "--ca-data <data>",
+      "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
+    )
     .option(
       "-c, --config <key=value>",
       "set an optional template config input (e.g. -c model=premium-shell), repeatable",
@@ -171,6 +176,18 @@ export function buildConnectCommand(deps: {
       });
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      // Probe (unless a CA was pasted) so a private-CA cluster fails here, not
+      // cryptically at use time.
+      if (
+        template.id === "kubernetes" &&
+        payload.authKind === "header" &&
+        !payload.caData &&
+        values.host &&
+        !checkClusterTrust(await svc.probeClusterCa(values.host), values.host)
+      ) {
         process.exit(EXIT_INVALID_INPUT);
       }
 
@@ -440,6 +457,7 @@ function buildPayload(
         ...(v("headerName") ? { headerName: v("headerName")! } : {}),
         ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
         ...(v("envName") ? { envName: v("envName")! } : {}),
+        ...(v("caData") ? { caData: v("caData")! } : {}),
         ...(Object.keys(configInputs).length > 0 ? { configInputs } : {}),
         value,
       };
@@ -451,6 +469,31 @@ function buildPayload(
         ...(v("url") ? { url: v("url")! } : {}),
       };
   }
+}
+
+// Returns whether to proceed: trusted proceeds; reachable-but-untrusted blocks
+// (must paste a CA); unreachable/probe-failure warns and proceeds.
+function checkClusterTrust(
+  probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
+  host: string,
+): boolean {
+  if (!probeRes.ok) return true;
+  const probe = probeRes.value;
+  if (probe.trusted) return true;
+  if (probe.reachable) {
+    process.stderr.write(
+      `error: the API server at ${host} presents a certificate that isn't ` +
+        `publicly trusted${probe.error ? ` (${probe.error})` : ""}.\n` +
+        "  Pass --ca-data with the cluster CA — the certificate-authority-data " +
+        "value from your kubeconfig (base64 or PEM).\n",
+    );
+    return false;
+  }
+  process.stderr.write(
+    `warning: couldn't reach ${host} to check its certificate` +
+      `${probe.error ? ` (${probe.error})` : ""}; continuing.\n`,
+  );
+  return true;
 }
 
 async function pollUntilActive(
@@ -559,6 +602,7 @@ const FIELD_LABELS: Record<string, string> = {
   clientSecret: "Client secret",
   appSlug: "GitHub App slug",
   envName: "Env var name",
+  caData: "Cluster CA certificate",
 };
 
 function labelFor(key: string): string {
