@@ -167,7 +167,11 @@ function loadAdrs() {
 }
 
 function esc(s) {
-  return String(s).replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
+  return String(s)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\n+/g, " ")
+    .trim();
 }
 
 function idSort(a, b) {
