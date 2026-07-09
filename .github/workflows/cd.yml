@@ -295,7 +295,14 @@ jobs:
 
   build-agents:
     needs: [merge-platform-base, changes]
-    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    # A cancelled dependency (e.g. runner never acquired) is neither failure()
+    # nor cancelled(), so !failure() alone would build agents against a
+    # platform-base tag that was never pushed. Require the tag to be either
+    # reused (registry-verified by the resolver) or actually merged.
+    if: >-
+      ${{ needs.changes.result == 'success' &&
+          needs.changes.outputs.agents != '[]' && !cancelled() && !failure() &&
+          (needs.changes.outputs.platform_base != 'true' || needs.merge-platform-base.result == 'success') }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -340,10 +347,11 @@ jobs:
     name: merge multi-arch agent manifests
     needs: [build-agents, appversion, changes]
     # !cancelled() && !failure() so this still runs when merge-platform-base was
-    # skipped (platform-base reused) — build-agents runs via the same guard, and
-    # without it here GitHub's implicit success() gate skips this merge (leaving
-    # claude-code untagged, which breaks build-nous/build-openevolve).
-    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    # skipped (platform-base reused) — without it GitHub's implicit success()
+    # gate skips this merge (leaving claude-code untagged, which breaks
+    # build-nous/build-openevolve). build-agents.result == 'success' so a
+    # partially-cancelled matrix never merges incomplete digests.
+    if: ${{ needs.build-agents.result == 'success' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -383,7 +391,10 @@ jobs:
 
   build-nous:
     needs: [merge-agents, changes]
-    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
+    # merge-agents.result check: see build-agents (cancelled dep ≠ failure()).
+    if: >-
+      ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() &&
+          (needs.changes.outputs.agents == '[]' || needs.merge-agents.result == 'success') }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -426,7 +437,7 @@ jobs:
   merge-nous:
     name: merge multi-arch nous manifest
     needs: [build-nous, appversion, changes]
-    if: ${{ needs.changes.outputs.nous == 'true' && !cancelled() && !failure() }}
+    if: ${{ needs.build-nous.result == 'success' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -463,7 +474,10 @@ jobs:
 
   build-openevolve:
     needs: [merge-agents, changes]
-    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
+    # merge-agents.result check: see build-agents (cancelled dep ≠ failure()).
+    if: >-
+      ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() &&
+          (needs.changes.outputs.agents == '[]' || needs.merge-agents.result == 'success') }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
@@ -506,7 +520,7 @@ jobs:
   merge-openevolve:
     name: merge multi-arch openevolve manifest
     needs: [build-openevolve, appversion, changes]
-    if: ${{ needs.changes.outputs.openevolve == 'true' && !cancelled() && !failure() }}
+    if: ${{ needs.build-openevolve.result == 'success' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -544,7 +558,11 @@ jobs:
   build-mock:
     name: build mock (e2e fixture)
     needs: [merge-platform-base, changes]
-    if: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
+    # merge-platform-base.result check: see build-agents (cancelled dep ≠ failure()).
+    if: >-
+      ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v') &&
+          needs.changes.result == 'success' && !cancelled() && !failure() &&
+          (needs.changes.outputs.platform_base != 'true' || needs.merge-platform-base.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
