@@ -68,8 +68,14 @@ data:
     nodeSelector:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+    {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
+    {{- fail (printf "agentTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
+    {{- end }}
     {{- if $tmpl.imagePullSecret }}
     imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
+    {{- end }}
+    {{- with $tmpl.imagePullSecretRef }}
+    imagePullSecretRef: {{ . | quote }}
     {{- end }}
     {{- with $tmpl.resources }}
     resources:

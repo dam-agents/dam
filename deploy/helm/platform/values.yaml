@@ -967,6 +967,14 @@ controller:
 #       username: iamapikey
 #       password: "<registry-api-key>" # keep out of plaintext values in prod (sealed/SOPS/external secret)
 #
+# Or, to reference a pull Secret you manage yourself (it must already exist in
+# `agentNamespace`), set `imagePullSecretRef` instead — mutually exclusive with
+# `imagePullSecret`:
+#
+#   bugstone:
+#     # ...
+#     imagePullSecretRef: "icr-pull-secret"
+#
 agentTemplates:
   claude-code:
     enabled: true
