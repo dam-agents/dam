@@ -1,4 +1,4 @@
-# ADR-074: Server-side per-user session read state
+# ADR-074: Session read state in agent-owned session metadata
 
 **Date:** 2026-07-09
 **Status:** Proposed
@@ -6,29 +6,29 @@
 
 ## Context
 
-The sessions list shows per-session status indicators, and the row design reserves a bold title for sessions with activity the user hasn't seen (#2427). Showing that requires remembering, per user, when each session was last viewed. Sessions themselves are deliberately agent-owned — the server has no session service, and the UI reads them over ACP — so read state has no obvious home. Client-local storage was considered and rejected: read/unread would not follow the user across devices.
+The sessions list reserves a bold title for sessions with activity the user hasn't seen (#2427), which requires remembering when each session was last viewed. Sessions are deliberately agent-owned — a duplicate server-side session table was removed in a painstaking refactor, and the server has kept no session state since. Read state needs a home that doesn't reintroduce that duplication.
 
 ## Decision
 
-Per-user session read state is stored server-side in the platform database, keyed by user and session, holding the session's own activity timestamp at the moment it was seen. This is a deliberate exception to the no-session-state stance, drawn at a boundary: **the platform DB may hold per-user view-state *about* sessions (who has seen what); session content and lifecycle remain agent-owned and readable only over ACP.**
+Read state is a per-session `seenAt` stamp in the agent-owned session metadata, written by the agent runtime whenever session activity happens while a viewer is attached, and surfaced to clients over the existing `session/list` metadata enrichment. A session reads as unread when its activity timestamp is newer than `seenAt`; activity with no viewer attached (scheduled runs, background terminal work, channel messages) is what produces unread.
 
 Rules of the decision:
 
-- A session reads as unread when its activity timestamp is newer than the caller's stamp; stamps compare session timestamps to session timestamps, never to a client clock.
-- Stamps are private to the user who wrote them; the API exposes only the caller's own state.
-- The harness and agent pod know nothing about read state — there is no second owner, so the split-brain failure that motivated the no-session-state rule cannot occur here.
+- Read state is **per-session, not per-user**. Agents currently have a single driving user; if shared agents become real, this decision is revisited rather than stretched.
+- The stamp is written agent-side by the runtime from viewer engagement it already observes — clients never write read state, and no user identity enters the pod.
+- Timestamps compare session activity to session activity; no client clock is involved.
 
 ## Alternatives Considered
 
+- **Platform DB table (per-user stamps)** — reintroduces server-held session state that was deliberately refactored away, and builds per-user machinery for a multi-user situation that doesn't exist yet; also leaves orphan rows (sessions and agents are not DB rows, so no FK cleanup).
 - **Client-local storage** — no cross-device consistency; a session read on desktop stays unread on the phone.
-- **Agent-side, in session metadata** — preserves the rule literally (stamps ride `session/list`, die with the agent), but the pod has no user identity today: per-user stamps would need a new ACP write surface plus identity plumbing, and would make pod-resident (agent-forgeable, co-user-readable) data authoritative about users.
 - **Derive from the activity ledger** — "prompted" is not "read" (viewing without prompting marks nothing), and it repurposes a usage/reporting ledger as UI state.
-- **IdP user attributes** — the identity provider is not an application state store; no query shape, size limits.
 
 ## Consequences
 
-- **Easier:** unread is consistent across devices and clients for the same user — the stamp is one DB row away for any surface (UI today; channels or CLI could reuse it).
-- **Easier:** no new protocol or pod surface — the platform DB already holds session-referencing rows (pending approvals, activity events), and this follows the same shape.
-- **Harder:** orphaned stamps — sessions and agents are not DB rows, so no foreign key can clean up after deletion; rows are tiny but agent-deletion cleanup needs a hook (precedent: skills cleanup) or the growth is accepted.
-- **Harder:** a new steady write path — marking seen while a session is open writes up to one upsert per user per list-poll tick, where the api-server previously had no per-view writes.
-- **Committed-to:** the view-state boundary. The next per-user preference will cite this ADR to justify a DB home; anything the harness owns (messages, titles, modes, lifecycle) stays agent-side regardless of this decision.
+- **Easier:** no new API, table, or protocol surface — the stamp rides the same `session/list` enrichment that already carries mode and live turn status, so every client gets cross-device-consistent unread for free.
+- **Easier:** correct marking without polling races — the runtime knows synchronously whether a viewer was attached when activity happened; a client-written stamp would trail the 5 s list poll.
+- **Easier:** lifecycle is free — the stamp lives with the session's metadata on the agent's volume and disappears with the session or agent; no cleanup path.
+- **Harder:** any viewer marks the session read for everyone — with shared agents (allowed users, multiple channel identities) one person's glance would clear another's unread; acceptable only while agents are single-driver, which is the recorded assumption.
+- **Harder:** channel sessions are approximate — a channel worker's transient attachment during message relay counts as viewing, so "unread" for Slack/Telegram sessions means "no client attached", not "the human read it".
+- **Committed-to:** the single-driver assumption, now load-bearing for read semantics — shared-agent work must revisit this ADR first.
