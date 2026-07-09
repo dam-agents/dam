@@ -284,7 +284,12 @@ function buildHeader(
 
   if (template.id === KUBERNETES_TEMPLATE_ID) {
     contributions.push(
-      ...buildKubernetesContributions({ host, port, hasUpstreamCa: !!caPem }),
+      ...buildKubernetesContributions({
+        name: input.name,
+        host,
+        port,
+        hasUpstreamCa: !!caPem,
+      }),
     );
   }
 

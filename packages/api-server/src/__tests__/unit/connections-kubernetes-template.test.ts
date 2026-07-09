@@ -43,6 +43,7 @@ function kubernetesTemplate() {
 
 async function buildKubernetes(input: {
   host: string;
+  name?: string;
   value?: string;
   caData?: string;
 }) {
@@ -50,7 +51,7 @@ async function buildKubernetes(input: {
     kubernetesTemplate(),
     {
       templateId: "kubernetes",
-      name: "my-cluster",
+      name: input.name ?? "my-cluster",
       authKind: "header",
       host: input.host,
       value: input.value ?? "sa-token",
@@ -94,11 +95,14 @@ describe("kubernetes connection template", () => {
   });
 
   it("writes a per-connection kubeconfig and points KUBECONFIG at it", async () => {
-    const built = await buildKubernetes({ host: "api.cluster.example:6443" });
+    const built = await buildKubernetes({
+      host: "api.cluster.example:6443",
+      name: "prod-cluster",
+    });
     const file = fileOf(built.contributions);
-    expect(file.path).toBe(
-      "$HOME/.kube/connections/api.cluster.example-6443.config",
-    );
+    // File + context/cluster/user are keyed by the connection name, not the
+    // host (see the same-host-different-port test for why).
+    expect(file.path).toBe("$HOME/.kube/connections/prod-cluster.config");
     // The env driver joins KUBECONFIG across connections, so it must point at
     // this connection's own file.
     expect(envOf(built.contributions, "KUBECONFIG").placeholder).toBe(
@@ -108,9 +112,12 @@ describe("kubernetes connection template", () => {
     expect(file.mergeMode).toBe("overwrite");
     const content = file.content as {
       clusters: {
+        name: string;
         cluster: { server: string; "certificate-authority": string };
       }[];
-      users: { user: { token?: string } }[];
+      users: { name: string; user: { token?: string } }[];
+      contexts: { name: string; context: { cluster: string; user: string } }[];
+      "current-context": string;
     };
     expect(content.clusters[0].cluster.server).toBe(
       "https://api.cluster.example:6443",
@@ -118,19 +125,59 @@ describe("kubernetes connection template", () => {
     expect(content.clusters[0].cluster["certificate-authority"]).toBe(
       "/etc/platform/ca/ca.crt",
     );
+    // Cluster/user/context all carry the connection name; it's the current one.
+    expect(content.clusters[0].name).toBe("prod-cluster");
+    expect(content.users[0].name).toBe("prod-cluster");
+    expect(content.contexts[0]).toMatchObject({
+      name: "prod-cluster",
+      context: { cluster: "prod-cluster", user: "prod-cluster" },
+    });
+    expect(content["current-context"]).toBe("prod-cluster");
     // Real token stays gateway-side; user holds only the placeholder.
     expect(JSON.stringify(content)).not.toContain("sa-token");
     expect(content.users[0].user.token).toBe("injected-by-gateway");
   });
 
-  it("gives distinct clusters distinct kubeconfig files (so they compose)", async () => {
+  it("gives distinct connections distinct kubeconfig files (so they compose)", async () => {
     const a = fileOf(
-      (await buildKubernetes({ host: "api.a.example:6443" })).contributions,
+      (await buildKubernetes({ host: "api.a.example:6443", name: "cluster-a" }))
+        .contributions,
     );
     const b = fileOf(
-      (await buildKubernetes({ host: "api.b.example" })).contributions,
+      (await buildKubernetes({ host: "api.b.example", name: "cluster-b" }))
+        .contributions,
     );
     expect(a.path).not.toBe(b.path);
+  });
+
+  it("keeps same-host clusters on different ports distinct (name, not host, is the key)", async () => {
+    const ctxOf = (path: string, content: unknown) => ({
+      path,
+      ctx: (content as { "current-context": string })["current-context"],
+    });
+    const a = fileOf(
+      (
+        await buildKubernetes({
+          host: "api.shared.example:6443",
+          name: "shared-a",
+        })
+      ).contributions,
+    );
+    const b = fileOf(
+      (
+        await buildKubernetes({
+          host: "api.shared.example:8443",
+          name: "shared-b",
+        })
+      ).contributions,
+    );
+    const A = ctxOf(a.path, a.content);
+    const B = ctxOf(b.path, b.content);
+    // Same host, different ports — before the fix these collided (context name
+    // dropped the port). Now file paths AND context names are distinct.
+    expect(A.path).not.toBe(B.path);
+    expect(A.ctx).toBe("shared-a");
+    expect(B.ctx).toBe("shared-b");
   });
 
   it("normalizes :443 away and omits the port field", async () => {
