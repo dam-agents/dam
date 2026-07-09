@@ -43,6 +43,7 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")).toEqual({
       meta: { type: "schedule", scheduleId: "sch-1" },
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-01-01T00:00:00Z",
     });
   });
 
@@ -56,6 +57,7 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")).toEqual({
       meta: { mode: "terminal" },
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-01-01T00:00:00Z",
     });
   });
 
@@ -67,6 +69,7 @@ describe("createSessionMetadataStore", () => {
     expect(b.get("s1")).toEqual({
       meta: { mode: "chat", threadTs: "1700000000.1" },
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-01-01T00:00:00Z",
     });
   });
 
@@ -79,6 +82,7 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")).toEqual({
       meta: {},
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-01-01T00:00:00Z",
     });
     expect(store.get("s2")).toBeUndefined();
   });

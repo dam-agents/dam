@@ -13,6 +13,8 @@ const sessionMetaEntrySchema = z.object({
   meta: platformSessionMetaSchema.catch({}),
   createdAt: z.string(),
   lastActivityAt: z.string().optional(),
+  /** When a viewer last saw the session; unread = lastActivityAt > seenAt. */
+  seenAt: z.string().optional(),
 });
 
 // A malformed entry is dropped rather than discarding the whole store.
@@ -38,6 +40,7 @@ export interface SessionMetadataStore {
   get(sessionId: string): SessionMetaEntry | undefined;
   set(sessionId: string, meta: PlatformSessionMeta): void;
   recordActivity(sessionId: string): void;
+  recordSeen(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   /** Soft delete: drop the entry and remember the id so list
    *  enrichment filters it out even while the harness still lists the JSONL. */
@@ -54,6 +57,22 @@ export function createSessionMetadataStore(
     initial: () => ({ sessions: {}, tombstones: [] }),
   });
 
+  // One-time backfill: pre-feature entries have no seenAt and would all read
+  // as unread. Grandfather them as seen at their last known activity.
+  {
+    const { sessions, tombstones } = store.read();
+    if (Object.values(sessions).some((e) => e.seenAt === undefined)) {
+      const backfilled: Record<string, SessionMetaEntry> = {};
+      for (const [id, e] of Object.entries(sessions)) {
+        backfilled[id] = {
+          ...e,
+          seenAt: e.seenAt ?? e.lastActivityAt ?? e.createdAt,
+        };
+      }
+      store.write({ sessions: backfilled, tombstones });
+    }
+  }
+
   return {
     get(sessionId) {
       return store.read().sessions[sessionId];
@@ -62,6 +81,7 @@ export function createSessionMetadataStore(
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
       const lastActivityAt = existing?.lastActivityAt;
+      const seenAt = existing?.seenAt ?? now();
       store.write({
         tombstones,
         sessions: {
@@ -70,6 +90,7 @@ export function createSessionMetadataStore(
             meta,
             createdAt: existing?.createdAt ?? now(),
             ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+            seenAt,
           },
         },
       });
@@ -83,6 +104,18 @@ export function createSessionMetadataStore(
         sessions: {
           ...sessions,
           [sessionId]: { ...existing, lastActivityAt: now() },
+        },
+      });
+    },
+    recordSeen(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing) return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...existing, seenAt: now() },
         },
       });
     },

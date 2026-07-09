@@ -15,7 +15,6 @@ interface Props {
   active: boolean;
   working: boolean;
   needsApproval: boolean;
-  /** Bold title for a session with activity the user hasn't seen. Not yet wired — see #2427. */
   unread?: boolean;
   onResume: () => void;
   onDelete: () => void;

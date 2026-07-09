@@ -56,6 +56,17 @@ export function removeSessionFromCache(
   );
 }
 
+// Opening a session marks it seen agent-side; mirror that into the list cache
+// so switching away can't resurrect a stale unread before the next poll.
+export function setSessionSeen(agentId: string, sessionId: string): void {
+  const seenAt = new Date().toISOString();
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.map((s) => (s.sessionId === sessionId ? { ...s, seenAt } : s)),
+  );
+}
+
 // Seed the open session's live busy state into the list cache so its status dot
 // stays correct the instant it stops being the open row — before the next poll.
 export function setSessionRunning(

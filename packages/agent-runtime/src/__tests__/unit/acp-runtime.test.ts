@@ -2071,6 +2071,11 @@ function makeFakeStore(now: () => string = () => "2026-03-03T00:00:00Z"): {
         if (!existing) return;
         sessions.set(id, { ...existing, lastActivityAt: now() });
       },
+      recordSeen: (id) => {
+        const existing = sessions.get(id);
+        if (!existing) return;
+        sessions.set(id, { ...existing, seenAt: now() });
+      },
       all: () => Object.fromEntries(sessions),
       tombstone: (id) => {
         sessions.delete(id);

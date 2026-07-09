@@ -112,7 +112,11 @@ const podService = existsSync(podServicePath)
 
 if (envStore.ready()) podService?.refreshEnv();
 
-const { runtime: acpRuntime, triggerDriver } = composeAcp({
+const {
+  runtime: acpRuntime,
+  triggerDriver,
+  sessionMetadata,
+} = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
     : ["/usr/local/bin/harness-chat"],
@@ -193,11 +197,22 @@ interface PtySlot {
   client: WsWebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
   lastOutputAt: number;
+  lastSeenStampAt: number;
 }
 
 const ptySlots = new Map<string, PtySlot>();
 const ptyLog = (sid: string, msg: string) =>
   process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+
+const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
+
+// An attached viewer sees everything the terminal does. Terminal sessions are
+// usually store-less; the first stamp creates their entry (with the explicit
+// mode, which `set` needs and which keeps the terminal decode).
+function markTerminalSeen(sessionId: string): void {
+  if (sessionMetadata.get(sessionId)) sessionMetadata.recordSeen(sessionId);
+  else sessionMetadata.set(sessionId, { mode: "terminal" });
+}
 
 function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
@@ -239,6 +254,7 @@ function attachPty(
     const slot = ptySlots.get(sessionId);
     if (!slot || slot.client !== ws) return;
     slot.client = null;
+    markTerminalSeen(sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -276,6 +292,7 @@ function attachPty(
           existing.client.close(1000, "replaced by new connection");
         }
         existing.client = ws;
+        markTerminalSeen(sessionId);
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
         const serialized = existing.serialize.serialize();
@@ -320,12 +337,23 @@ function attachPty(
         client: ws,
         graceTimer: null,
         lastOutputAt: Date.now(),
+        lastSeenStampAt: Date.now(),
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
+      markTerminalSeen(sessionId);
 
       pty.onData((data) => {
-        slot.lastOutputAt = Date.now();
+        const now = Date.now();
+        slot.lastOutputAt = now;
+        // Keep other clients' unread honest during long attached work.
+        if (
+          slot.client &&
+          now - slot.lastSeenStampAt > PTY_SEEN_STAMP_DEBOUNCE_MS
+        ) {
+          slot.lastSeenStampAt = now;
+          markTerminalSeen(sessionId);
+        }
         slot.headless.write(data);
         if (slot.client?.readyState === 1)
           slot.client.send(encodeDataFrame(OP_OUTPUT, data));

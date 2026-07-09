@@ -12,6 +12,7 @@ interface PlatformMeta {
   threadTs?: string;
   createdAt?: string;
   running?: boolean;
+  seenAt?: string;
 }
 
 interface ListedSession {
@@ -42,6 +43,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
+    seenAt: p?.seenAt ?? null,
   };
 }
 

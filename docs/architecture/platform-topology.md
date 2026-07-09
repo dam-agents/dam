@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-07-08
+Last verified: 2026-07-09
 
 ## Overview
 
@@ -47,7 +47,7 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one.
+A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this.
 
 ### agent-runtime
 

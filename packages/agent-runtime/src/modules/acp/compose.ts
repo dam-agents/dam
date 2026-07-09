@@ -4,7 +4,10 @@ import {
   type RuntimeEnvReader,
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
-import { createSessionMetadataStore } from "./infrastructure/session-metadata-store.js";
+import {
+  createSessionMetadataStore,
+  type SessionMetadataStore,
+} from "./infrastructure/session-metadata-store.js";
 import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
 import {
   createTriggerSessionDriver,
@@ -22,6 +25,7 @@ export interface ComposeAcpOptions {
 export function composeAcp(opts: ComposeAcpOptions): {
   runtime: AcpRuntime;
   triggerDriver: TriggerSessionDriver;
+  sessionMetadata: SessionMetadataStore;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
   const runtime = createAcpRuntime({
@@ -42,5 +46,5 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver };
+  return { runtime, triggerDriver, sessionMetadata };
 }

@@ -8,7 +8,7 @@ import { useStore } from "../../../store.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
-import { useAcpSessions } from "../api/queries.js";
+import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import { SessionRow } from "./session-row.js";
 
 const EMPTY: never[] = [];
@@ -114,6 +114,14 @@ export function SessionsSidebar({
           const needsApproval =
             approvalSessions.has(s.sessionId) ||
             pendingPermissions.some((p) => p.sessionId === s.sessionId);
+          // No stamp means the runtime never tracked the session (legacy,
+          // harness-minted) — read, not unread.
+          const unread = Boolean(
+            !isOpen &&
+            s.seenAt &&
+            s.updatedAt &&
+            Date.parse(s.updatedAt) > Date.parse(s.seenAt),
+          );
           return (
             <SessionRow
               key={s.sessionId}
@@ -121,7 +129,11 @@ export function SessionsSidebar({
               active={isOpen}
               working={working}
               needsApproval={needsApproval}
-              onResume={() => onResumeSession(s.sessionId, s.mode)}
+              unread={unread}
+              onResume={() => {
+                if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
+                onResumeSession(s.sessionId, s.mode);
+              }}
               onDelete={() => confirmDelete(s.sessionId, s.title)}
             />
           );
