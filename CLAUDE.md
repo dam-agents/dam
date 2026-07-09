@@ -36,7 +36,7 @@ mise run cluster:build-ui        # rebuild UI image only, restart UI pod
 mise run cluster:build-controller# rebuild controller image only, restart controller pod
 mise run cluster:build-agent     # rebuild agent image only, restart agent pods
 mise run cluster:build-keycloak  # rebuild keycloak image only, restart keycloak pod
-mise run cluster:fix-certs       # roll ztunnel + waypoint pods after an expired-SVID wedge (issue #283)
+mise run cluster:fix-certs       # recover from expired dev-cluster certs: roll ztunnel, waypoints, cert-manager webhook (issue #283)
 mise run cluster:status          # show pods and cluster state
 mise run cluster:logs            # show api-server pod logs
 mise run cluster:stop            # stop k3s VM (preserves data)
@@ -64,7 +64,7 @@ Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` i
 
 Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run cluster:kubeconfig)"`.
 
-If in-mesh traffic misbehaves — the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step with a misleading `Connection reset`, or a new agent never seeds its workspace (agent pod logs repeat `[runtime] hello failed`) — suspect expired Istio ambient workload SVIDs (issue #283). `mise run cluster:status` reports whether the expired-cert signature is present. The `ztunnel-cert-watchdog` CronJob in `istio-system` auto-rolls `ds/ztunnel` and the waypoint deployments within ~10 min when it sees the signature; `mise run cluster:fix-certs` is the manual escape hatch if you can't wait.
+If in-mesh traffic misbehaves — the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step with a misleading `Connection reset`, or a new agent never seeds its workspace (agent pod logs repeat `[runtime] hello failed`) — suspect expired Istio ambient workload SVIDs (issue #283). `mise run cluster:status` reports whether the expired-cert signature is present. The `ztunnel-cert-watchdog` CronJob in `istio-system` auto-rolls `ds/ztunnel` and the waypoint deployments within ~10 min when it sees the signature; `mise run cluster:fix-certs` is the manual escape hatch if you can't wait. The same suspend/resume clock skip can expire cert-manager's webhook serving cert (`cluster:install` fails at admission with `failed calling webhook ... certificate has expired`) — `cluster:status` probes for it and `cluster:fix-certs` heals it too.
 
 ## System Architecture (what this system is)
 

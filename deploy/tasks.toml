@@ -946,7 +946,7 @@ $RUN_IN_VM df -h /
 '''
 
 ["cluster:fix-certs"]
-description = "Recover from expired Istio ambient SVIDs (issue #283): roll ztunnel + all waypoint deployments. Honors LIMA_INSTANCE."
+description = "Recover from expired dev-cluster certs (issue #283): roll ztunnel + waypoint deployments + cert-manager webhook. Honors LIMA_INSTANCE."
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
@@ -991,16 +991,32 @@ if [ -z "$WAYPOINTS" ]; then
   fi
 fi
 
+# cert-manager's webhook holds a short-lived in-memory serving cert that a
+# suspended VM can age past expiry, failing chart installs at admission with
+# "failed calling webhook ... certificate has expired". A restart re-issues
+# it from the long-lived CA Secret.
+CM_WEBHOOK=0
+if kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+  CM_WEBHOOK=1
+fi
+
 echo "Rolling ds/ztunnel..."
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout restart ds/ztunnel
 for wp in $WAYPOINTS; do
   echo "Rolling waypoint deploy/${wp##*/} (ns ${wp%%/*})..."
   kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
 done
+if [ "$CM_WEBHOOK" = 1 ]; then
+  echo "Rolling cert-manager webhook..."
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout restart deploy/cert-manager-webhook
+fi
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 for wp in $WAYPOINTS; do
   kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
 done
+if [ "$CM_WEBHOOK" = 1 ]; then
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout status deploy/cert-manager-webhook --timeout=120s
+fi
 echo "Done. If symptoms persist, re-check with: mise run cluster:status"
 '''
 
@@ -1065,6 +1081,26 @@ case "${1:-}" in
       printf '%s\n' "$CERT_HITS"
     else
       echo 'ok — no expired-cert signature in recent ztunnel logs'
+    fi
+    echo ''
+    echo '=== cert-manager webhook health ==='
+    # The webhook's in-memory serving cert can expire while the VM sleeps,
+    # failing chart installs at admission. Probe with a server dry-run — the
+    # same call the platform chart's cert-manager objects go through.
+    if ! kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+      echo 'skipped — cert-manager not installed'
+    else
+      PROBE_ERR=$(printf 'apiVersion: cert-manager.io/v1\nkind: ClusterIssuer\nmetadata:\n  name: webhook-health-probe\nspec:\n  selfSigned: {}\n' \
+        | kubectl --kubeconfig="$KUBECONFIG" apply --dry-run=server -f - 2>&1 >/dev/null || true)
+      if [ -z "$PROBE_ERR" ]; then
+        echo 'ok — webhook admission responding'
+      elif printf '%s' "$PROBE_ERR" | grep -q 'certificate has expired'; then
+        echo 'WARNING: cert-manager webhook serving cert has expired — helm installs will'
+        echo 'fail at admission. Fix now: mise run cluster:fix-certs'
+      else
+        echo 'WARN: webhook probe failed for another reason:'
+        printf '%s\n' "$PROBE_ERR" | head -3
+      fi
     fi
     ;;
 esac

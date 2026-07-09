@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-08
+Last verified: 2026-07-09
 
 ## Overview
 
@@ -518,5 +518,8 @@ is present. Together these absorb the race where lima VM
 suspend/resume on a sleeping host laptop slips past the default 24h
 rotation window and stalls every mesh hop — see
 [issue #283](https://github.com/dam-agents/dam/issues/283).
+The same clock skip can age out cert-manager's short-lived webhook
+serving cert, failing chart installs at admission; `cluster:status`
+probes for that and `cluster:fix-certs` restarts the webhook too.
 Production deployments configure mesh PKI separately and don't get
 any of these knobs.
