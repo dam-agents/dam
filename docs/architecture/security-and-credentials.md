@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-09
+Last verified: 2026-07-10
 
 ## Overview
 
@@ -195,6 +195,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   credential, built from its template and stored with the same labels and
   annotations: one per-Connection Secret carrying the credential value plus
   the placeholder SDS the gateway reads.
+- **Client-credentials grants** (machine-to-machine OAuth) — the
+  per-Connection Secret stores the long-lived client secret, and the
+  api-server exchanges it at the provider's token endpoint for short-lived
+  access tokens: once synchronously at connect time (bad credentials fail
+  the create), then again before each expiry via the same refresh loop that
+  renews OAuth tokens. Only the minted access token reaches the gateway's
+  injection path; the client secret stays at rest and is never sent to the
+  connection's hosts.
 - **GitHub personal access tokens** — a PAT is one **`github-pat`
   Connection** whose template re-bakes, from the bare PAT, the three host
   injections it needs into a single per-Connection Secret:

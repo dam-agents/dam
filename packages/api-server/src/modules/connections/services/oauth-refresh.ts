@@ -1,4 +1,11 @@
-import { and, eq, sql, type Db, connections as connectionsTable } from "db";
+import {
+  and,
+  eq,
+  inArray,
+  sql,
+  type Db,
+  connections as connectionsTable,
+} from "db";
 import {
   connectionAuthConfigSchema as authConfigSchema,
   contribution as contributionSchema,
@@ -13,6 +20,7 @@ import type {
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
+import { mintClientCredentialsToken } from "./client-credentials.js";
 
 export interface OAuthRefreshLoop {
   start(): void;
@@ -46,10 +54,15 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
     try {
       const due = await dueConnections(deps.db, skewSec);
       for (const conn of due) {
-        if (conn.auth.kind !== "oauth") continue;
-        if (!conn.auth.refreshTokenRef) continue;
+        if (conn.auth.kind === "oauth" && !conn.auth.refreshTokenRef) continue;
         try {
-          await refreshOne(conn, conn.auth, deps);
+          if (conn.auth.kind === "oauth") {
+            await refreshOne(conn, conn.auth, deps);
+          } else if (conn.auth.kind === "client-credentials") {
+            await remintOne(conn, conn.auth, deps);
+          } else {
+            continue;
+          }
           refreshed++;
         } catch (err) {
           failed++;
@@ -86,7 +99,10 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
     .from(connectionsTable)
     .where(
       and(
-        eq(sql`${connectionsTable.auth} ->> 'kind'`, "oauth"),
+        inArray(sql`${connectionsTable.auth} ->> 'kind'`, [
+          "oauth",
+          "client-credentials",
+        ]),
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
           AND ((${connectionsTable.auth} ->> 'expiresAt')::int - extract(epoch from now())::int) <= ${skewSec}
@@ -185,6 +201,42 @@ async function refreshOne(
     fields.refresh_token = next.refreshToken;
   }
   await deps.secretStore.putFields(auth.accessTokenRef, fields);
+  const updatedAuth: ConnectionAuthConfig = {
+    ...auth,
+    expiresAt: next.expiresAt,
+  };
+  await deps.db
+    .update(connectionsTable)
+    .set({ auth: updatedAuth, updatedAt: new Date() })
+    .where(eq(connectionsTable.id, conn.id));
+}
+
+// Client-credentials re-mint: no refresh token — every renewal is a fresh
+// client_credentials exchange with the stored client secret.
+export async function remintOne(
+  conn: Connection,
+  auth: Extract<ConnectionAuthConfig, { kind: "client-credentials" }>,
+  deps: {
+    engine: OAuthEngine;
+    secretStore: SecretStore;
+    db: Db;
+  },
+): Promise<void> {
+  const clientSecret = await deps.secretStore.getField(auth.clientSecretRef);
+  if (!clientSecret) {
+    throw new Error(`client secret missing at ${auth.clientSecretRef.path}`);
+  }
+
+  const next = await mintClientCredentialsToken(deps.engine, {
+    connectionRef: `connection:${conn.id}:${conn.templateId}`,
+    auth,
+    clientSecret,
+  });
+
+  await deps.secretStore.putFields(auth.accessTokenRef, {
+    access_token: next.accessToken,
+    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+  });
   const updatedAuth: ConnectionAuthConfig = {
     ...auth,
     expiresAt: next.expiresAt,

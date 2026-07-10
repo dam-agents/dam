@@ -49,6 +49,15 @@ export async function buildConnection(
         oauthCallbackUrl,
         brandName,
       );
+    case "client-credentials":
+      return buildClientCredentials(
+        template as Extract<
+          ConnectionTemplate,
+          { authKind: "client-credentials" }
+        >,
+        input,
+        mintSecretRef,
+      );
     case "header":
       return buildHeader(
         template as Extract<ConnectionTemplate, { authKind: "header" }>,
@@ -260,6 +269,88 @@ async function buildOAuthDcr(
     },
     contributions,
     secrets,
+  };
+}
+
+// The secret map carries only the client secret: the access token (and the
+// SDS files baked from it) is minted by the service before the secret write,
+// so the build stays free of network IO.
+function buildClientCredentials(
+  template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const rawHost = input.host ?? template.host;
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
+  const { host, port } = parseClusterEndpoint(rawHost);
+
+  const subst = (s: string | undefined): string | undefined =>
+    s?.replace(/\{host\}/g, host);
+  const tokenUrl = subst(input.tokenUrl ?? template.tokenUrl);
+  if (!tokenUrl || tokenUrl.includes("{host}")) {
+    throw new Error(`template ${template.id}: missing tokenUrl`);
+  }
+  const clientId = input.clientId;
+  if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
+  if (!input.clientSecret) {
+    throw new Error(`template ${template.id}: missing clientSecret`);
+  }
+  const headerName = input.headerName ?? template.headerName ?? "Authorization";
+  const valueFormat =
+    input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
+  const scopes =
+    input.scopes
+      ?.split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean) ??
+    template.scopes ??
+    [];
+  const audience = input.audience ?? template.audience;
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const contributions: Contribution[] = [...template.contributions];
+
+  const hasHostContrib = contributions.some(
+    (c) =>
+      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      c.host === host,
+  );
+  if (!hasHostContrib) {
+    contributions.push({
+      kind: "egress-inject",
+      host,
+      ...(port ? { port } : {}),
+      headerName,
+      valueFormat,
+    });
+  }
+
+  if (input.envName) {
+    contributions.push({
+      kind: "env",
+      name: input.envName,
+      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
+    });
+  }
+
+  return {
+    auth: {
+      kind: "client-credentials",
+      clientId,
+      clientSecretRef: { ...secretPath, field: "client_secret" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      tokenUrl,
+      scopes,
+      ...(audience ? { audience } : {}),
+      ...(template.tokenEndpointAcceptJson
+        ? { tokenEndpointAcceptJson: true }
+        : {}),
+      host,
+    },
+    contributions,
+    secrets: new Map([
+      [secretPath.path, { client_secret: input.clientSecret }],
+    ]),
   };
 }
 
