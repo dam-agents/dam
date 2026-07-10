@@ -572,7 +572,17 @@ jobs:
   e2e:
     name: mise e2e
     needs: [merge-images, build-mock]
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    # Without a status-check function the implicit success() applies, and it is
+    # false whenever any transitive dependency was skipped — merge-platform-base
+    # skips on PRs that don't touch platform-base, which silently skipped e2e on
+    # most PRs. Require the direct needs explicitly instead: e2e pulls exactly
+    # the images those two jobs push.
+    if: >-
+      ${{ github.event_name != 'schedule' &&
+          !startsWith(github.ref, 'refs/tags/v') &&
+          !cancelled() &&
+          needs.merge-images.result == 'success' &&
+          needs.build-mock.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
