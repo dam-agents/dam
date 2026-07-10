@@ -39,15 +39,18 @@ export function measure(content) {
 }
 
 // Which cap governs a path, or null when it is not an architecture doc.
-//   docs/architecture.md            → index cap
-//   docs/architecture/<name>.md     → page cap
+//   docs/architecture.md               → index cap (the always-loaded landing)
+//   docs/architecture/**/<name>.md     → page cap (at any depth)
+// The page cap follows every page regardless of nesting, so splitting a
+// subsystem into a subdirectory does not smuggle pages past the cap — the
+// forcing function must survive the split it is meant to enable.
 // Accepts absolute or repo-relative paths.
 export function capFor(filePath) {
   const abs = resolve(REPO_ROOT, filePath);
   if (abs === INDEX_PATH) return { kind: "index", cap: CAPS.index };
   const rel = relative(ARCH_DIR, abs);
-  const isDirectChild = rel && !rel.startsWith("..") && !rel.includes("/") && rel.endsWith(".md");
-  return isDirectChild ? { kind: "page", cap: CAPS.page } : null;
+  const isArchPage = rel && !rel.startsWith("..") && rel.endsWith(".md");
+  return isArchPage ? { kind: "page", cap: CAPS.page } : null;
 }
 
 // The steering message, shared so the hook rejection and the gate failure read
@@ -65,10 +68,12 @@ export function overageReport({ path, size, cap, kind }) {
   );
 }
 
-function listPages() {
-  return readdirSync(ARCH_DIR)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => join(ARCH_DIR, f));
+function listPages(dir = ARCH_DIR) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) return listPages(abs);
+    return entry.name.endsWith(".md") ? [abs] : [];
+  });
 }
 
 function checkFile(absPath) {

@@ -90,9 +90,11 @@ forced to lint and consolidate the doc.
   goal for a forcing function. Calibrate the number once against a rough token
   budget and leave it.
 - **Scope, staged.** Per-page cap (the day-one lint pressure) plus an index cap
-  (hardest, since the index is always loaded). Add a page-count guard later only
-  if pages start splitting to dodge the per-page cap (page proliferation is the
-  obvious exploit). Same unit across all scopes.
+  (hardest, since the index is always loaded). The per-page cap follows every
+  page at any nesting depth, so a human-approved split into a subsystem
+  subdirectory does not smuggle pages past the cap. Add a page-count guard later
+  only if pages start splitting to dodge the per-page cap (page proliferation is
+  the obvious exploit). Same unit across all scopes.
 - No auto-compaction. When a recompile does not fit, consolidation is deliberate
   and staged: tighten prose, merge related statements, and push detail and
   rationale *down into the log*. Overflow pressure relocates information into an
