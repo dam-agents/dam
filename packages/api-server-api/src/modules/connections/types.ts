@@ -26,11 +26,13 @@ export const oauthAuth = z.object({
 // Client-credentials grant: the platform exchanges the stored client secret
 // for short-lived access tokens (at create and again before each expiry);
 // only the access token ever reaches the gateway's injection path.
+// `tokenUrl` is resolved from the issuer's OAuth metadata at create time.
 export const clientCredentialsAuth = z.object({
   kind: z.literal("client-credentials"),
   clientId: z.string(),
   clientSecretRef: secretRef,
   accessTokenRef: secretRef,
+  issuerUrl: z.string().url(),
   tokenUrl: z.string().url(),
   scopes: z.array(z.string()).default([]),
   audience: z.string().min(1).optional(),

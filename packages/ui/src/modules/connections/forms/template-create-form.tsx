@@ -147,8 +147,8 @@ export function TemplateCreateForm({
           ...common,
           authKind: "client-credentials",
           ...(submittedValue("host") ? { host: submittedValue("host")! } : {}),
-          ...(submittedValue("tokenUrl")
-            ? { tokenUrl: submittedValue("tokenUrl")! }
+          ...(submittedValue("issuerUrl")
+            ? { issuerUrl: submittedValue("issuerUrl")! }
             : {}),
           ...(submittedValue("clientId")
             ? { clientId: submittedValue("clientId")! }
@@ -612,7 +612,7 @@ function slugifyTemplateName(name: string): string {
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
-  tokenUrl: "Token endpoint URL",
+  issuerUrl: "Issuer URL",
   headerName: "Header name",
   valueFormat: "Value format",
   value: "Secret value",
@@ -628,7 +628,7 @@ const FIELD_LABELS: Record<string, string> = {
 const FIELD_PLACEHOLDERS: Record<string, string> = {
   url: "https://example.com",
   host: "api.example.com",
-  tokenUrl: "https://auth.example.com/oauth/token",
+  issuerUrl: "https://auth.example.com/realms/main",
   headerName: "X-API-Key",
   valueFormat: "{value}",
   value: "•••••",

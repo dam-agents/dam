@@ -40,11 +40,12 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
 }
 
 // Client-credentials grant: the platform mints access tokens from the stored
-// client secret; the token endpoint is dialed server-side, never by the agent.
+// client secret; the token endpoint (discovered from the issuer's OAuth
+// metadata at create time) is dialed server-side, never by the agent.
 export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
   authKind: "client-credentials";
   host?: string;
-  tokenUrl?: string;
+  issuerUrl?: string;
   scopes?: string[];
   audience?: string;
   headerName?: string;
@@ -215,7 +216,7 @@ function inputsFor(
       // Same visible pre-filled style as the custom header credential.
       return [
         required("host", { presetValue: t.host }),
-        required("tokenUrl", { presetValue: t.tokenUrl }),
+        required("issuerUrl", { presetValue: t.issuerUrl }),
         required("clientId"),
         required("clientSecret", { secret: true }),
         optional("scopes"),

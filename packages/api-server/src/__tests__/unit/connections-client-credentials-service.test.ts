@@ -1,5 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
+
+vi.mock(
+  "../../modules/connections/infrastructure/mcp-discovery.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    discoverIssuerMetadata: async () => ({
+      tokenEndpoint: "https://auth.example.com/realms/main/token",
+      grantTypesSupported: ["client_credentials"],
+    }),
+  }),
+);
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
@@ -117,7 +128,7 @@ function createInput(overrides: Record<string, string> = {}) {
     name: "my-api",
     authKind: "client-credentials" as const,
     host: "api.example.com",
-    tokenUrl: "https://auth.example.com/token",
+    issuerUrl: "https://auth.example.com/realms/main",
     clientId: "cid",
     clientSecret: "csecret",
     ...overrides,

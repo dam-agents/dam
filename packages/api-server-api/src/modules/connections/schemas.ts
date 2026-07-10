@@ -96,7 +96,8 @@ const clientCredentialsCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("client-credentials"),
   host: z.string().min(1).optional(),
-  tokenUrl: z.string().url().optional(),
+  // The token endpoint is discovered from the issuer's OAuth metadata.
+  issuerUrl: z.string().url().optional(),
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
   // Space- or comma-separated; the server splits. A single string keeps the

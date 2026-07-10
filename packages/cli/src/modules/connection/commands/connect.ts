@@ -33,7 +33,7 @@ interface ConnectOpts {
   host?: string;
   clientId?: string;
   clientSecret?: string;
-  tokenUrl?: string;
+  issuerUrl?: string;
   scopes?: string;
   audience?: string;
   appSlug?: string;
@@ -74,8 +74,8 @@ export function buildConnectCommand(deps: {
     .option("--client-id <id>", "input: OAuth client id")
     .option("--client-secret <secret>", "input: OAuth client secret")
     .option(
-      "--token-url <url>",
-      "input: OAuth token endpoint (client credentials)",
+      "--issuer-url <url>",
+      "input: OAuth issuer URL — the token endpoint is discovered from its metadata (client credentials)",
     )
     .option(
       "--scopes <scopes>",
@@ -125,7 +125,7 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
-        "      --token-url https://auth.example.com/oauth/token --client-id … --client-secret …\n" +
+        "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
@@ -463,7 +463,7 @@ function buildPayload(
         ...common,
         authKind: "client-credentials",
         ...(v("host") ? { host: v("host")! } : {}),
-        ...(v("tokenUrl") ? { tokenUrl: v("tokenUrl")! } : {}),
+        ...(v("issuerUrl") ? { issuerUrl: v("issuerUrl")! } : {}),
         ...(v("clientId") ? { clientId: v("clientId")! } : {}),
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("scopes") ? { scopes: v("scopes")! } : {}),
@@ -626,7 +626,7 @@ function flagListFor(inputs: readonly ConnectionTemplateInput[]): string {
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
-  tokenUrl: "Token endpoint URL",
+  issuerUrl: "Issuer URL",
   headerName: "Header name",
   valueFormat: "Value format",
   value: "Secret value",

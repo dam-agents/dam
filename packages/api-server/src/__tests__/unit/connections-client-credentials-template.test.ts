@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
@@ -6,6 +6,19 @@ import {
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../../modules/connections/domain/connection-sds.js";
+import type { DiscoveredIssuerMetadata } from "../../modules/connections/infrastructure/mcp-discovery.js";
+
+const discoverIssuerMetadata =
+  vi.fn<(issuerUrl: string) => Promise<DiscoveredIssuerMetadata | null>>();
+
+vi.mock(
+  "../../modules/connections/infrastructure/mcp-discovery.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    discoverIssuerMetadata: (issuerUrl: string) =>
+      discoverIssuerMetadata(issuerUrl),
+  }),
+);
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -20,7 +33,7 @@ function template() {
 async function build(
   input: Partial<{
     host: string;
-    tokenUrl: string;
+    issuerUrl: string;
     clientId: string;
     clientSecret: string;
     scopes: string;
@@ -37,7 +50,7 @@ async function build(
       name: "my-api",
       authKind: "client-credentials",
       host: "api.example.com",
-      tokenUrl: "https://auth.example.com/token",
+      issuerUrl: "https://auth.example.com/realms/main",
       clientId: "cid",
       clientSecret: "csecret",
       ...input,
@@ -55,8 +68,19 @@ function injectOf(contributions: Contribution[]) {
 }
 
 describe("custom-client-credentials template build", () => {
-  it("projects inputs into client-credentials auth with both refs on one secret", async () => {
+  beforeEach(() => {
+    discoverIssuerMetadata.mockReset();
+    discoverIssuerMetadata.mockResolvedValue({
+      tokenEndpoint: "https://auth.example.com/realms/main/token",
+      grantTypesSupported: ["client_credentials", "authorization_code"],
+    });
+  });
+
+  it("projects inputs into client-credentials auth, resolving the token endpoint from the issuer", async () => {
     const built = await build({ scopes: "read write", audience: "aud" });
+    expect(discoverIssuerMetadata).toHaveBeenCalledWith(
+      "https://auth.example.com/realms/main",
+    );
     expect(built.auth).toEqual({
       kind: "client-credentials",
       clientId: "cid",
@@ -70,11 +94,35 @@ describe("custom-client-credentials template build", () => {
         path: "secret-connection:custom-client-credentials",
         field: "access_token",
       },
-      tokenUrl: "https://auth.example.com/token",
+      issuerUrl: "https://auth.example.com/realms/main",
+      tokenUrl: "https://auth.example.com/realms/main/token",
       scopes: ["read", "write"],
       audience: "aud",
       host: "api.example.com",
     });
+  });
+
+  it("rejects an issuer with no discoverable OAuth metadata", async () => {
+    discoverIssuerMetadata.mockResolvedValue(null);
+    await expect(build()).rejects.toThrow(/metadata/);
+  });
+
+  it("rejects an issuer that advertises grants without client_credentials", async () => {
+    discoverIssuerMetadata.mockResolvedValue({
+      tokenEndpoint: "https://auth.example.com/token",
+      grantTypesSupported: ["authorization_code"],
+    });
+    await expect(build()).rejects.toThrow(/client_credentials/);
+  });
+
+  it("accepts metadata that does not advertise grant types", async () => {
+    discoverIssuerMetadata.mockResolvedValue({
+      tokenEndpoint: "https://auth.example.com/token",
+    });
+    const built = await build();
+    expect(
+      built.auth.kind === "client-credentials" ? built.auth.tokenUrl : "",
+    ).toBe("https://auth.example.com/token");
   });
 
   it("defaults the injection to Authorization: Bearer", async () => {
@@ -142,7 +190,7 @@ describe("custom-client-credentials template build", () => {
 
   it.each([
     ["host", { host: "" }],
-    ["tokenUrl", { tokenUrl: "" }],
+    ["issuerUrl", { issuerUrl: "" }],
     ["clientId", { clientId: "" }],
     ["clientSecret", { clientSecret: "" }],
   ])("rejects a missing %s", async (field, override) => {

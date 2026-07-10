@@ -6,6 +6,7 @@ import type {
 } from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 import {
+  discoverIssuerMetadata,
   discoverMcpAuth,
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
@@ -272,23 +273,38 @@ async function buildOAuthDcr(
   };
 }
 
+// Resolves the token endpoint from the issuer's OAuth metadata (like the DCR
+// path above, discovery runs at build time so a bad issuer fails the create).
 // The secret map carries only the client secret: the access token (and the
-// SDS files baked from it) is minted by the service before the secret write,
-// so the build stays free of network IO.
-function buildClientCredentials(
+// SDS files baked from it) is minted by the service before the secret write.
+async function buildClientCredentials(
   template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
   input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
   mintSecretRef: (purpose: string) => SecretRef,
-): BuildResult {
+): Promise<BuildResult> {
   const rawHost = input.host ?? template.host;
   if (!rawHost) throw new Error(`template ${template.id}: missing host`);
   const { host, port } = parseClusterEndpoint(rawHost);
 
   const subst = (s: string | undefined): string | undefined =>
     s?.replace(/\{host\}/g, host);
-  const tokenUrl = subst(input.tokenUrl ?? template.tokenUrl);
-  if (!tokenUrl || tokenUrl.includes("{host}")) {
-    throw new Error(`template ${template.id}: missing tokenUrl`);
+  const issuerUrl = subst(input.issuerUrl ?? template.issuerUrl);
+  if (!issuerUrl || issuerUrl.includes("{host}")) {
+    throw new Error(`template ${template.id}: missing issuerUrl`);
+  }
+  const issuerMeta = await discoverIssuerMetadata(issuerUrl);
+  if (!issuerMeta) {
+    throw new Error(
+      `No OAuth authorization-server metadata found at ${issuerUrl} — check that it is the issuer URL (its /.well-known/openid-configuration or /.well-known/oauth-authorization-server must resolve)`,
+    );
+  }
+  if (
+    issuerMeta.grantTypesSupported &&
+    !issuerMeta.grantTypesSupported.includes("client_credentials")
+  ) {
+    throw new Error(
+      `The authorization server at ${issuerUrl} does not support the client_credentials grant`,
+    );
   }
   const clientId = input.clientId;
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
@@ -339,7 +355,8 @@ function buildClientCredentials(
       clientId,
       clientSecretRef: { ...secretPath, field: "client_secret" },
       accessTokenRef: { ...secretPath, field: "access_token" },
-      tokenUrl,
+      issuerUrl,
+      tokenUrl: issuerMeta.tokenEndpoint,
       scopes,
       ...(audience ? { audience } : {}),
       ...(template.tokenEndpointAcceptJson

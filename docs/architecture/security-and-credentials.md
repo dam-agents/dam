@@ -197,9 +197,10 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   the placeholder SDS the gateway reads.
 - **Client-credentials grants** (machine-to-machine OAuth) — the
   per-Connection Secret stores the long-lived client secret, and the
-  api-server exchanges it at the provider's token endpoint for short-lived
-  access tokens: once synchronously at connect time (bad credentials fail
-  the create), then again before each expiry via the same refresh loop that
+  api-server exchanges it at the provider's token endpoint (discovered from
+  the issuer's OAuth metadata at connect time) for short-lived access
+  tokens: once synchronously at connect time (bad credentials fail the
+  create), then again before each expiry via the same refresh loop that
   renews OAuth tokens. Only the minted access token reaches the gateway's
   injection path; the client secret stays at rest and is never sent to the
   connection's hosts.
