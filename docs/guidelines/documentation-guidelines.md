@@ -18,13 +18,13 @@ Use the ubiquitous language defined in [`tseng/vocabulary.md`](../../tseng/vocab
 
 ## Architecture Documentation Guidelines
 
-Architecture pages are the **authoritative, self-contained description of the current system** — both what it looks like and enough of the *why* to work in it. They must stand alone: a reader never needs an ADR to understand a page, and pages never link to ADRs. Make drift the harder path, not the default.
+Architecture pages are the **authoritative, self-contained description of the current system** — both what it looks like and enough of the *why* to work in it. That "why" is **operational** — the couplings and invariants you need to work in the system — not **decision history** (why an alternative was weighed and rejected), which lives in the ADR log. They must stand alone: a reader never needs an ADR to understand a page, and pages never link to ADRs. Make drift the harder path, not the default.
 
 ### Structure
 
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
-- No shared template. Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook). The cap is a forcing function, not a style rule: going over means the page carries too much detail or too many concerns. Reconcile by moving detail and rationale down into an ADR, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit.
+- No shared template. Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook). The cap is a forcing function, not a style rule: going over means the page drifted below architecture altitude, or grew to cover more than one subsystem. Reconcile by raising altitude and cutting volatile detail, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit. Do not offload description into an ADR to relieve size: the log holds decisions authored when they were made, not documentation spillover.
 - Cross-page concept ownership: one page owns each concept in depth; others one-liner + cross-link.
 
 ### Mandatory headers
