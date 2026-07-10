@@ -10,7 +10,7 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today. One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
-- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-facing only**: agents create them but never read them, and no code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
+- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-first**: agents create them, and read them only when authoring an ADR or recompiling docs; ordinary work uses the architecture pages. No code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
 
 ## Vocabulary
 

@@ -11,7 +11,7 @@ argument-hint: "[what you'd like to do]"
 
 Manage Architecture Decision Records in `docs/adrs/`. Interpret `$ARGUMENTS` as natural language.
 
-ADRs are human-facing only. Agents cannot read `docs/adrs/` (reads are denied in settings) — never try to read existing ADRs or the index. Writing **new** files there is fine. Whatever you need from the existing records (next number, current content of an ADR being updated), ask the user for it.
+ADRs are human-first: for ordinary work the agent-facing source of truth is the architecture docs, not the log. Reading `docs/adrs/` is allowed only for the job this skill does — authoring or updating an ADR. When you do, read `docs/adrs/index.md` first, then open only the records it points you to. Never read the log to understand the current system.
 
 ## What an ADR is, and what it isn't
 
@@ -65,15 +65,15 @@ Ask the user for any missing information. You need at minimum: title, context, d
 If the decision is made → create `docs/adrs/NNN-short-title.md` with status `accepted`.
 If the decision is open → create `docs/adrs/DRAFT-short-title.md` with status `proposed` (omit `id`).
 
-Ask the user for the next free number (they read it off `docs/adrs/index.md`). After creating the file, regenerate the index with `mise run docs:generate:adr-index` — the index is generated, not hand-edited, and the script writes it without you reading `docs/adrs/`.
+Read `docs/adrs/index.md` for the next free number. After creating the file, regenerate the index with `mise run docs:generate:adr-index` — the index is generated, not hand-edited.
 
 ## Updating an ADR
 
 Valid status transitions: `accepted`, `deprecated`, and supersession via the *new* ADR's `supersedes` field (never edit the superseded file's body — its status is derived).
 
-You cannot read or edit existing ADR files. Ask the user to paste the current content, produce the updated version, and hand it back for them to apply.
+Read the target ADR directly. An accepted body is immutable: only its status changes, and only to superseded via the *new* ADR's `supersedes` field. `check:adr-immutable` enforces this at commit, so keep any edit to an accepted record inside that rule.
 
-When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` (a `git mv` works without reading), set `id` and `status: accepted` in the frontmatter, then regenerate the index with `mise run docs:generate:adr-index`.
+When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` with `git mv`, set `id` and `status: accepted` in the frontmatter, then regenerate the index with `mise run docs:generate:adr-index`.
 
 ## Conventions
 

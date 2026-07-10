@@ -31,7 +31,7 @@ landing page at [`docs/architecture.md`](../../../docs/architecture.md). Everyth
 **out of scope** — do not flag it, even if it looks drifted:
 
 - Vocabulary in [`tseng/vocabulary.md`](../../../tseng/vocabulary.md).
-- ADRs (`docs/adrs/`) — human-facing only and unreadable to agents; never flag "this code
+- ADRs (`docs/adrs/`) — out of this skill's scope; never flag "this code
   should have an ADR" or anything else about ADR coverage.
 - READMEs, `CLAUDE.md`, code comments, guidelines, strategy docs.
 - Cross-reference rot in non-architecture docs.
@@ -41,8 +41,8 @@ If a check would land outside `docs/architecture/`, drop it.
 ## Direction of drift: code → docs
 
 Code leads, docs trail. Drift is measured **code vs docs**, in that direction only. ADRs play
-no part in any check: they are human-facing only and agents cannot read `docs/adrs/` (denied
-in settings), so no check may depend on an ADR's content or existence.
+no part in any check: they are human-first and out of this skill's scope, so no check may
+depend on an ADR's content or existence.
 
 Drift only exists when **code in the diff** changes subsystem behavior/responsibility and the
 matching architecture page does not reflect that code. Anchor every check on something concrete

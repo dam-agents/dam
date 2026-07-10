@@ -69,7 +69,7 @@ If the UI suddenly can't log in or `cluster:install` hangs on the keycloak realm
 
 Platform-specific. **Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page. Do not infer the architecture from the code alone — the architecture pages are the source of truth.
 
-ADRs (`docs/adrs/`) are human-facing decision history and **off limits to agents**: never read them (reads are denied in settings) and never link or reference them in code or documentation. Creating new ADRs via the `/adr` skill is allowed.
+ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of truth is the architecture docs. Agents read ADRs only when authoring a new ADR (via the `/adr` skill) or recompiling docs. Ordinary work (implementing, understanding the current system) uses the architecture docs, never the ADR log. Never link or reference an ADR from code or documentation.
 
 ## TypeScript Engineering (how to write TS here)
 
