@@ -24,7 +24,7 @@ Architecture pages are the **authoritative, self-contained description of the cu
 
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
-- No shared template. Free-form per page. No length cap.
+- No shared template. Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook). The cap is a forcing function, not a style rule: going over means the page carries too much detail or too many concerns. Reconcile by moving detail and rationale down into an ADR, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit.
 - Cross-page concept ownership: one page owns each concept in depth; others one-liner + cross-link.
 
 ### Mandatory headers

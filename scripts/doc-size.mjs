@@ -50,17 +50,19 @@ export function capFor(filePath) {
 }
 
 // The steering message, shared so the hook rejection and the gate failure read
-// identically. It states the overage and prescribes the reconcile, so the agent
-// does not simply trim meaning to fit.
+// identically. It names the cap as a signal to re-think what the page carries,
+// and orders the remedies so relocating and splitting come first and prose
+// tightening is the last resort — otherwise the cheapest move (reword to fit)
+// is also the first one read, and the agent stops there.
 export function overageReport({ path, size, cap, kind }) {
   const over = size - cap;
   const label = kind === "index" ? "index (always loaded, hardest cap)" : "page";
   return (
     `${path} is ${size} chars — ${over} over the ${cap}-char ${label} cap.\n` +
-    `Architecture docs are a capped projection of the ADR log. Do not trim meaning to fit. Reconcile:\n` +
-    `  - tighten prose and merge related statements;\n` +
-    `  - push detail and rationale down into an ADR (the log holds the "why");\n` +
-    `  - if the subsystem genuinely no longer fits one page, reconsider its boundaries — do not shrink meaning.`
+    `Over the cap means this page carries too much — too much detail, or too many concerns — not that it is worded verbosely. Treat it as a signal to re-think what belongs here, not a request to be more concise. Do not trim meaning to fit. Reconcile in this order:\n` +
+    `  - move detail and rationale down into an ADR — the log holds the "why", the page keeps the "what";\n` +
+    `  - if the page has grown to cover more than one subsystem, split it and reconsider the boundaries;\n` +
+    `  - only once the content is right, tighten prose and merge related statements — last, never the first move.`
   );
 }
 
