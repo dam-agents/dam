@@ -3,8 +3,8 @@
 //
 // Architecture docs are a hand-maintained, reduced view of the current system;
 // the cap keeps them reduced. It is a forcing function, not a byte budget: going
-// over means the page drifted below architecture altitude, or grew to cover more
-// than one subsystem. The remedy is to raise altitude, cut volatile detail, or
+// over means the page dropped to the level of the code, or grew to cover more
+// than one subsystem. The remedy is to raise the level, cut volatile detail, or
 // split — not to reword to fit, and not to offload description into the ADR log
 // (the log holds decisions, not documentation spillover). Precision of the
 // number is not the point; a hard limit that forces the re-think is.
@@ -52,8 +52,8 @@ export function capFor(filePath) {
 }
 
 // The steering message, shared so the hook rejection and the gate failure read
-// identically. Over-cap is an altitude/scope signal, not a conciseness ask, so
-// the ladder leads with raising altitude and splitting. It never tells the agent
+// identically. Over-cap is a wrong-level or too-broad signal, not a conciseness
+// ask, so the ladder leads with raising the level and splitting. It never tells the agent
 // to reword to fit, and never to mint an ADR as a spillover bucket: relocating
 // is the narrow last case, only for genuine decision rationale, which the log
 // already owns from when the decision was made.
@@ -63,7 +63,7 @@ export function overageReport({ path, size, cap, kind }) {
   return (
     `${path} is ${size} chars — ${over} over the ${cap}-char ${label} cap.\n` +
     `Over the cap means the page carries too much, not that it is worded verbosely. It is a signal to re-think what belongs here — do not reword or trim meaning to fit. Diagnose the overflow, then reconcile:\n` +
-    `  - most often the page has drifted below architecture altitude (field names, mechanics, how-it-works detail). Raise the altitude or cut it — that content is volatile and belongs nowhere durable;\n` +
+    `  - most often the page has dropped to the level of the code (field names, mechanics, how-it-works detail). Raise the level or cut it — that content is volatile and belongs nowhere durable;\n` +
     `  - if the page has grown to cover more than one subsystem, split it and reconsider the boundaries;\n` +
     `  - only if genuine decision rationale (why X was chosen over Y) has leaked onto the page, cut it. That "why" lives in the ADR log, authored when the decision was made — do not mint a new ADR now to relieve size. The page keeps the why-you-need-to-work-here; the log keeps the why-it-was-decided.`
   );
