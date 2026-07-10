@@ -111,8 +111,10 @@ forced to lint and consolidate the doc.
   - The rejection message must steer the reconcile, or the agent trims meaning
     to fit. It states how much it is over and prescribes the move: tighten
     prose, merge related statements, or push detail and rationale into an ADR.
-    Escape hatch: if the subsystem genuinely no longer fits, reconsider its
-    boundaries, do not shrink meaning.
+    Escape hatch: if the subsystem genuinely no longer fits, its boundaries may
+    be wrong — the agent stops and surfaces that to a human. Splitting a page or
+    redrawing subsystem boundaries is a human decision, not an autonomous
+    reconcile; do not shrink meaning.
   - Measurement: Write is trivial (content is in the tool input); Edit requires
     reading the file and simulating the substitution first. Side effect: adding
     a section before removing the old one is blocked on the intermediate state,

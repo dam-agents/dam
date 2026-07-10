@@ -50,7 +50,7 @@ Architecture pages are a bounded projection of the [ADR log](#adr-guidelines), c
 
 - Measured in characters. Per-page cap plus a harder cap on the always-loaded landing page ([`docs/architecture.md`](../architecture.md)).
 - Enforced two ways off one measurement: `mise run docs:check:doc-size` (runs in `mise run check` + CI, authoritative, covers human edits) and a PreToolUse hook on `docs/architecture/**` that rejects an over-budget Write/Edit in-session.
-- Over budget is not a trim-to-fit signal. Do not delete meaning. Reconcile: tighten prose, merge related statements, or push detail and rationale into an ADR. If a subsystem genuinely no longer fits, reconsider its boundaries — do not shrink meaning.
+- Over budget is not a trim-to-fit signal. Do not delete meaning. Reconcile: tighten prose, merge related statements, or push detail and rationale into an ADR. If a subsystem genuinely no longer fits, its boundaries may be wrong — stop and surface that to a human. Splitting a page or redrawing subsystem boundaries is a human decision, not an autonomous reconcile; do not shrink meaning.
 
 ### Diagrams
 

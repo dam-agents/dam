@@ -61,7 +61,7 @@ export function overageReport({ path, size, cap, kind }) {
     `Architecture docs are a capped projection of the ADR log. Do not trim meaning to fit. Reconcile:\n` +
     `  - tighten prose and merge related statements;\n` +
     `  - push detail and rationale down into an ADR (the log holds the "why");\n` +
-    `  - if the subsystem genuinely no longer fits one page, reconsider its boundaries — do not shrink meaning.`
+    `  - if the subsystem genuinely no longer fits one page, its boundaries may be wrong — stop and surface that to a human. Splitting a page or redrawing subsystem boundaries is a human decision, not an autonomous reconcile; do not shrink meaning.`
   );
 }
 
