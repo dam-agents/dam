@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { discoverIssuerMetadata } from "../../modules/connections/infrastructure/mcp-discovery.js";
+import {
+  discoverIssuerFromResourceHost,
+  discoverIssuerMetadata,
+} from "../../modules/connections/infrastructure/mcp-discovery.js";
 
 const ISSUER = "https://auth.example.com/realms/main";
 
@@ -77,5 +80,56 @@ describe("discoverIssuerMetadata", () => {
       },
     });
     expect(await discoverIssuerMetadata(`${ISSUER}/`, impl)).not.toBeNull();
+  });
+});
+
+describe("discoverIssuerFromResourceHost", () => {
+  const HOST = "https://api.example.com";
+
+  it("follows the protected-resource metadata to the named authorization server", async () => {
+    const { impl } = fetchStub({
+      [`${HOST}/.well-known/oauth-protected-resource`]: {
+        authorization_servers: [ISSUER],
+      },
+      [`${ISSUER}/.well-known/oauth-authorization-server`]: {
+        token_endpoint: `${ISSUER}/token`,
+      },
+    });
+    expect(await discoverIssuerFromResourceHost(HOST, impl)).toEqual({
+      issuerUrl: ISSUER,
+      tokenEndpoint: `${ISSUER}/token`,
+    });
+  });
+
+  it("treats the host itself as the issuer when it serves AS metadata", async () => {
+    const { impl } = fetchStub({
+      [`${HOST}/.well-known/openid-configuration`]: {
+        token_endpoint: `${HOST}/token`,
+      },
+    });
+    expect(await discoverIssuerFromResourceHost(HOST, impl)).toEqual({
+      issuerUrl: HOST,
+      tokenEndpoint: `${HOST}/token`,
+    });
+  });
+
+  it("falls back to the host when the named authorization server has no metadata", async () => {
+    const { impl } = fetchStub({
+      [`${HOST}/.well-known/oauth-protected-resource`]: {
+        authorization_servers: ["https://gone.example.com"],
+      },
+      [`${HOST}/.well-known/oauth-authorization-server`]: {
+        token_endpoint: `${HOST}/token`,
+      },
+    });
+    expect(await discoverIssuerFromResourceHost(HOST, impl)).toEqual({
+      issuerUrl: HOST,
+      tokenEndpoint: `${HOST}/token`,
+    });
+  });
+
+  it("returns null when nothing is discoverable", async () => {
+    const { impl } = fetchStub({});
+    expect(await discoverIssuerFromResourceHost(HOST, impl)).toBeNull();
   });
 });

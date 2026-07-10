@@ -6,10 +6,15 @@ import {
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../../modules/connections/domain/connection-sds.js";
-import type { DiscoveredIssuerMetadata } from "../../modules/connections/infrastructure/mcp-discovery.js";
+import type {
+  DiscoveredIssuer,
+  DiscoveredIssuerMetadata,
+} from "../../modules/connections/infrastructure/mcp-discovery.js";
 
 const discoverIssuerMetadata =
   vi.fn<(issuerUrl: string) => Promise<DiscoveredIssuerMetadata | null>>();
+const discoverIssuerFromResourceHost =
+  vi.fn<(origin: string) => Promise<DiscoveredIssuer | null>>();
 
 vi.mock(
   "../../modules/connections/infrastructure/mcp-discovery.js",
@@ -17,6 +22,8 @@ vi.mock(
     ...(await importOriginal<Record<string, unknown>>()),
     discoverIssuerMetadata: (issuerUrl: string) =>
       discoverIssuerMetadata(issuerUrl),
+    discoverIssuerFromResourceHost: (origin: string) =>
+      discoverIssuerFromResourceHost(origin),
   }),
 );
 
@@ -74,6 +81,8 @@ describe("custom-client-credentials template build", () => {
       tokenEndpoint: "https://auth.example.com/realms/main/token",
       grantTypesSupported: ["client_credentials", "authorization_code"],
     });
+    discoverIssuerFromResourceHost.mockReset();
+    discoverIssuerFromResourceHost.mockResolvedValue(null);
   });
 
   it("projects inputs into client-credentials auth, resolving the token endpoint from the issuer", async () => {
@@ -105,6 +114,42 @@ describe("custom-client-credentials template build", () => {
   it("rejects an issuer with no discoverable OAuth metadata", async () => {
     discoverIssuerMetadata.mockResolvedValue(null);
     await expect(build()).rejects.toThrow(/metadata/);
+  });
+
+  it("derives the authorization server from the host when no issuer is given", async () => {
+    discoverIssuerFromResourceHost.mockResolvedValue({
+      issuerUrl: "https://auth.example.com/realms/derived",
+      tokenEndpoint: "https://auth.example.com/realms/derived/token",
+    });
+    const built = await build({ issuerUrl: "" });
+    expect(discoverIssuerFromResourceHost).toHaveBeenCalledWith(
+      "https://api.example.com",
+    );
+    expect(discoverIssuerMetadata).not.toHaveBeenCalled();
+    if (built.auth.kind !== "client-credentials") throw new Error("wrong kind");
+    expect(built.auth.issuerUrl).toBe(
+      "https://auth.example.com/realms/derived",
+    );
+    expect(built.auth.tokenUrl).toBe(
+      "https://auth.example.com/realms/derived/token",
+    );
+  });
+
+  it("derives from the host including a pinned port", async () => {
+    discoverIssuerFromResourceHost.mockResolvedValue({
+      issuerUrl: "https://api.example.com:8443",
+      tokenEndpoint: "https://api.example.com:8443/token",
+    });
+    await build({ host: "api.example.com:8443", issuerUrl: "" });
+    expect(discoverIssuerFromResourceHost).toHaveBeenCalledWith(
+      "https://api.example.com:8443",
+    );
+  });
+
+  it("asks for an explicit issuer when host-derivation finds nothing", async () => {
+    await expect(build({ issuerUrl: "" })).rejects.toThrow(
+      /supply the issuer URL/,
+    );
   });
 
   it("rejects an issuer that advertises grants without client_credentials", async () => {
@@ -190,7 +235,6 @@ describe("custom-client-credentials template build", () => {
 
   it.each([
     ["host", { host: "" }],
-    ["issuerUrl", { issuerUrl: "" }],
     ["clientId", { clientId: "" }],
     ["clientSecret", { clientSecret: "" }],
   ])("rejects a missing %s", async (field, override) => {

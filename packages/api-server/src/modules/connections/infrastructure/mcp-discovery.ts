@@ -107,6 +107,36 @@ export async function discoverIssuerMetadata(
   return null;
 }
 
+export interface DiscoveredIssuer extends DiscoveredIssuerMetadata {
+  issuerUrl: string;
+}
+
+// When only the API host is known, find its authorization server: the host's
+// protected-resource metadata (RFC 9728) names the issuer; failing that, the
+// host itself may be the issuer.
+export async function discoverIssuerFromResourceHost(
+  origin: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<DiscoveredIssuer | null> {
+  try {
+    const res = await fetchImpl(
+      `${origin.replace(/\/$/, "")}/.well-known/oauth-protected-resource`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (res.ok) {
+      const data = (await res.json()) as ProtectedResourceMetadata;
+      const asUrl = data.authorization_servers?.[0];
+      if (asUrl) {
+        const meta = await discoverIssuerMetadata(asUrl, fetchImpl);
+        if (meta) return { issuerUrl: asUrl, ...meta };
+      }
+    }
+  } catch {}
+
+  const meta = await discoverIssuerMetadata(origin, fetchImpl);
+  return meta ? { issuerUrl: origin, ...meta } : null;
+}
+
 export interface DcrResult {
   clientId: string;
   clientSecret?: string;

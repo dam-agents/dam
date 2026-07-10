@@ -6,6 +6,7 @@ import type {
 } from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 import {
+  discoverIssuerFromResourceHost,
   discoverIssuerMetadata,
   discoverMcpAuth,
   registerOAuthClient,
@@ -288,15 +289,29 @@ async function buildClientCredentials(
 
   const subst = (s: string | undefined): string | undefined =>
     s?.replace(/\{host\}/g, host);
-  const issuerUrl = subst(input.issuerUrl ?? template.issuerUrl);
-  if (!issuerUrl || issuerUrl.includes("{host}")) {
-    throw new Error(`template ${template.id}: missing issuerUrl`);
-  }
-  const issuerMeta = await discoverIssuerMetadata(issuerUrl);
-  if (!issuerMeta) {
-    throw new Error(
-      `No OAuth authorization-server metadata found at ${issuerUrl} — check that it is the issuer URL (its /.well-known/openid-configuration or /.well-known/oauth-authorization-server must resolve)`,
-    );
+  const explicitIssuer = subst(input.issuerUrl ?? template.issuerUrl);
+
+  let issuerUrl: string;
+  let issuerMeta: { tokenEndpoint: string; grantTypesSupported?: string[] };
+  if (explicitIssuer) {
+    const meta = await discoverIssuerMetadata(explicitIssuer);
+    if (!meta) {
+      throw new Error(
+        `No OAuth authorization-server metadata found at ${explicitIssuer} — check that it is the issuer URL (its /.well-known/openid-configuration or /.well-known/oauth-authorization-server must resolve)`,
+      );
+    }
+    issuerUrl = explicitIssuer;
+    issuerMeta = meta;
+  } else {
+    const origin = `https://${host}${port ? `:${port}` : ""}`;
+    const derived = await discoverIssuerFromResourceHost(origin);
+    if (!derived) {
+      throw new Error(
+        `Couldn't discover an authorization server from ${origin} — supply the issuer URL explicitly`,
+      );
+    }
+    issuerUrl = derived.issuerUrl;
+    issuerMeta = derived;
   }
   if (
     issuerMeta.grantTypesSupported &&

@@ -216,7 +216,12 @@ function inputsFor(
       // Same visible pre-filled style as the custom header credential.
       return [
         required("host", { presetValue: t.host }),
-        required("issuerUrl", { presetValue: t.issuerUrl }),
+        {
+          name: "issuerUrl",
+          state: "optional",
+          ...(t.issuerUrl !== undefined ? { presetValue: t.issuerUrl } : {}),
+          hint: "Leave blank to discover the authorization server from the host.",
+        },
         required("clientId"),
         required("clientSecret", { secret: true }),
         optional("scopes"),
