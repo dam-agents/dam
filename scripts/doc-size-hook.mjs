@@ -5,7 +5,7 @@
 // It computes the resulting file content, measures it with the shared module,
 // and denies the write in-session when it would exceed the cap — so the reason
 // lands while the overflowing content is still in the agent's context and it
-// reconciles then and there, not at commit time (see docs/design/adr-governance.md).
+// reconciles then and there, not at commit time.
 //
 // The authoritative guarantee is the docs:check:doc-size gate; this hook is the
 // UX loop. It fails open on any error and never crashes the tool call: a human

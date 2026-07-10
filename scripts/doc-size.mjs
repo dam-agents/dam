@@ -2,11 +2,10 @@
 // check:doc-size — enforce the architecture-doc character budget.
 //
 // Architecture docs are a projection of the ADR log, capped by construction. The
-// cap is a forcing function (see docs/design/adr-governance.md, "Size cap on
-// architecture docs"): when a recompile does not fit, the agent must consolidate
-// prose and push detail and rationale down into an ADR rather than let the page
-// grow unbounded. The point is not to precisely budget context; it is to set a
-// hard limit so the projection stays reduced.
+// cap is a forcing function: when a recompile does not fit, the agent must
+// consolidate prose and push detail and rationale down into an ADR rather than
+// let the page grow unbounded. The point is not to precisely budget context; it
+// is to set a hard limit so the projection stays reduced.
 //
 // This module is the single measurement shared by two surfaces:
 //   - the authoritative gate (this file's `main`, wired as docs:check:doc-size

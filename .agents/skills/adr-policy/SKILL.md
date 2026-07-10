@@ -15,8 +15,7 @@ description: >
 
 Reviews changes to the **ADR log** under [`docs/adrs/`](../../../docs/adrs/) at review
 time. The ADR model is an immutable event log with two projections (architecture docs,
-generated index); see the split in
-[`docs/design/adr-governance.md`](../../../docs/design/adr-governance.md).
+generated index).
 
 Enforcement is split by what needs judgment. This skill owns **log integrity and
 decision judgment**. It does **not** rewrite ADRs — it surfaces findings, the user
