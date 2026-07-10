@@ -60,7 +60,22 @@ export function MetricsPanel({ agentId, sessionId }: Props) {
       </PanelBody>
     );
 
-  const session = sessionScope ? (data.runtimeBySession[0] ?? null) : null;
+  // Session scope can return several rows: the session itself plus child runs
+  // (subshell `claude -p`, dam-run) folded in via shared trace context — sum
+  // them so the totals cover everything the session spawned.
+  const session =
+    sessionScope && data.runtimeBySession.length > 0
+      ? data.runtimeBySession.reduce((a, r) => ({
+          ...a,
+          calls: a.calls + r.calls,
+          totalDurationMs: a.totalDurationMs + r.totalDurationMs,
+          inputTokens: a.inputTokens + r.inputTokens,
+          outputTokens: a.outputTokens + r.outputTokens,
+          cacheReadTokens: a.cacheReadTokens + r.cacheReadTokens,
+          cacheCreationTokens: a.cacheCreationTokens + r.cacheCreationTokens,
+          costUsd: a.costUsd + r.costUsd,
+        }))
+      : null;
 
   return (
     <PanelBody toggle={scopeToggle}>

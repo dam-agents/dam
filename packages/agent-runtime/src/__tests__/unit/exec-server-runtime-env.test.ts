@@ -22,11 +22,12 @@ const MARKER = "https://collector.test.invalid:4318";
 
 let server: ChildProcess;
 
-async function connectExec(argv: string[]): Promise<WebSocket> {
+async function connectExec(argv: string[], extra = ""): Promise<WebSocket> {
   const url =
     `ws://127.0.0.1:${PORT}/api/exec?argv=` +
     encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
-    `&cwd=${encodeURIComponent(homeDir)}&cols=80&rows=24`;
+    `&cwd=${encodeURIComponent(homeDir)}&cols=80&rows=24` +
+    extra;
   for (let i = 0; i < 100; i++) {
     try {
       return await new Promise<WebSocket>((resolve, reject) => {
@@ -90,5 +91,16 @@ describe("/api/exec (dam-run executor)", () => {
     const { out, code } = await runToExit(ws);
     expect(code).toBe(0);
     expect(out).toContain(`endpoint=${MARKER}`);
+  }, 30_000);
+
+  it("passes the dam-run caller's trace context to the command", async () => {
+    const tp = "00-11111111111111111111111111111111-2222222222222222-01";
+    const ws = await connectExec(
+      ["sh", "-c", 'printf "tp=%s" "$TRACEPARENT"'],
+      `&traceparent=${encodeURIComponent(tp)}`,
+    );
+    const { out, code } = await runToExit(ws);
+    expect(code).toBe(0);
+    expect(out).toContain(`tp=${tp}`);
   }, 30_000);
 });

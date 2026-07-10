@@ -28,18 +28,31 @@ export function createClickhouseClient(cfg: {
 // the trusted owner id in ResourceAttributes (stamped by the agent gateway —
 // see docs/architecture/observability.md). Every query is gated on that owner
 // id against the caller's resolved allowlist.
-const ownedApiRequests = (w: MetricsWindow) =>
-  [
+export const ownedApiRequests = (w: MetricsWindow): string => {
+  const base = [
     "ServiceName = 'claude-code'",
     "Body = 'claude_code.api_request'",
     "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
     ...(w.hours === undefined
       ? []
       : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
-    ...(w.sessionId === undefined
-      ? []
-      : ["LogAttributes['session.id'] = {sessionId:String}"]),
+  ];
+  if (w.sessionId === undefined) return base.join("\n  AND ");
+  // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
+  // own session.id but inherit the session's W3C trace context (TRACEPARENT),
+  // so their records carry the parent trace's TraceId. Folding same-trace rows
+  // in makes "this session" cover the runs it spawned. The subquery reuses the
+  // ownership + time predicate, so it never reaches across owners; when the
+  // harness emitted no TraceId this degrades to the exact-session match.
+  return [
+    ...base,
+    `(LogAttributes['session.id'] = {sessionId:String}
+   OR TraceId IN (SELECT DISTINCT TraceId FROM otel_logs
+     WHERE ${base.join(" AND ")}
+       AND LogAttributes['session.id'] = {sessionId:String}
+       AND TraceId != ''))`,
   ].join("\n  AND ");
+};
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   agentIds,

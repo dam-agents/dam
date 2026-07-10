@@ -453,13 +453,22 @@ server.on("upgrade", (req, socket, head) => {
       socket.destroy();
       return;
     }
+    // Caller's W3C trace context, forwarded by dam-run: the command joins the
+    // spawning session's trace, so its telemetry folds into that session's
+    // metrics.
+    const traceparent = q.get("traceparent");
+    const tracestate = q.get("tracestate");
     execWss.handleUpgrade(req, socket, head, (ws) =>
       attachExec(ws, {
         argv,
         cols: Number(q.get("cols")) || 80,
         rows: Number(q.get("rows")) || 24,
         cwd: q.get("cwd") || workDir,
-        env: mergedSpawnEnv(envStore),
+        env: {
+          ...mergedSpawnEnv(envStore),
+          ...(traceparent ? { TRACEPARENT: traceparent } : {}),
+          ...(tracestate ? { TRACESTATE: tracestate } : {}),
+        },
         log: (msg) => process.stderr.write(`[exec] ${msg}\n`),
       }),
     );

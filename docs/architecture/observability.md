@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-07-08
+Last verified: 2026-07-10
 
 ## Overview
 
@@ -50,6 +50,7 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 - **Signals.** Metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP. **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
 - **Self-declared identity for exploration.** The export env names the OTel service after the agent's **template** (so a nous agent reads as `nous`, not as the underlying Claude Code CLI's default), and seeds the user-declared agent name as a `platform.agent.name` resource attribute, kept current on rename. Both are exported by the harness itself and exist for finding an instance in the exploration UI — they are **display-only**; attribution rests solely on the gateway-stamped `platform.agent.id` below.
 - **Trace-context propagation stays on.** The harness keeps W3C trace-context propagation on even when it fronts a custom model upstream — a case where it would otherwise switch it off — so its subprocesses inherit the session's trace context and its requests carry the `traceparent` header. The gateway's TLS-intercepting chains that see the decrypted header join their spans — and the egress-approval check's api-server spans — to that same trace, so a model request reads as one trace across harness, gateway, and api-server. See [logging — gateway telemetry](logging.md#gateway-telemetry) for which chains are traced and what never reaches a span.
+- **Child harness runs fold into their session.** A harness run the session spawns rather than serves — a `claude -p` in a subshell, a command under `dam-run` (which forwards the caller's `TRACEPARENT` to the executor) — mints its own OTel `session.id` but inherits the session's trace context, so its records carry the parent trace's `TraceId`. The session-scoped metrics read path folds same-trace records in, so "this session" covers the runs the session spawned, not only its own API calls.
 
 ## Platform-service export
 

@@ -33,7 +33,16 @@ const runUrl =
   encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
   "&cwd=" +
   encodeURIComponent(process.cwd()) +
-  `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}`;
+  `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}` +
+  // Forward the caller's W3C trace context (the harness sets TRACEPARENT for
+  // its subprocesses) so the executor's command joins the session's trace and
+  // its telemetry folds into the session's metrics.
+  (process.env.TRACEPARENT
+    ? `&traceparent=${encodeURIComponent(process.env.TRACEPARENT)}`
+    : "") +
+  (process.env.TRACESTATE
+    ? `&tracestate=${encodeURIComponent(process.env.TRACESTATE)}`
+    : "");
 
 const ws = new WebSocket(runUrl);
 ws.binaryType = "arraybuffer";
