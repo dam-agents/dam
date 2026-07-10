@@ -10,14 +10,18 @@ describe("ownedApiRequests", () => {
     expect(sql).toContain("LogAttributes['session.id'] = {sessionId:String}");
   });
 
-  it("folds in records sharing the session's TraceId", () => {
+  it("folds in whole sessions sharing the session's TraceId", () => {
     const sql = ownedApiRequests({ sessionId: "s-1" });
-    expect(sql).toContain("OR TraceId IN (SELECT DISTINCT TraceId");
-    // The subquery must keep the ownership gate — never join across owners.
-    const subquery = sql.slice(sql.indexOf("SELECT DISTINCT"));
-    expect(subquery).toContain(
-      "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
+    // Two-level join: traces of the target session → sessions on those traces.
+    expect(sql).toContain(
+      "OR LogAttributes['session.id'] IN (\n     SELECT DISTINCT LogAttributes['session.id']",
     );
+    expect(sql).toContain("SELECT DISTINCT TraceId FROM otel_logs");
+    // Every subquery must keep the ownership gate — never join across owners.
+    const gates = sql.match(
+      /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
+    );
+    expect(gates).toHaveLength(3);
   });
 
   it("applies no session predicate without a sessionId", () => {

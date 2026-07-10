@@ -40,17 +40,23 @@ export const ownedApiRequests = (w: MetricsWindow): string => {
   if (w.sessionId === undefined) return base.join("\n  AND ");
   // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
   // own session.id but inherit the session's W3C trace context (TRACEPARENT),
-  // so their records carry the parent trace's TraceId. Folding same-trace rows
-  // in makes "this session" cover the runs it spawned. The subquery reuses the
-  // ownership + time predicate, so it never reaches across owners; when the
-  // harness emitted no TraceId this degrades to the exact-session match.
+  // so their records carry the parent trace's TraceId. "This session" folds in
+  // every session sharing a trace with the target — whole sessions, not just
+  // same-trace rows, since a child's warmup calls carry no TraceId. Both
+  // subqueries reuse the ownership + time predicate, so the fold never reaches
+  // across owners; when the harness emitted no TraceId this degrades to the
+  // exact-session match.
+  const owned = base.join(" AND ");
   return [
     ...base,
     `(LogAttributes['session.id'] = {sessionId:String}
-   OR TraceId IN (SELECT DISTINCT TraceId FROM otel_logs
-     WHERE ${base.join(" AND ")}
-       AND LogAttributes['session.id'] = {sessionId:String}
-       AND TraceId != ''))`,
+   OR LogAttributes['session.id'] IN (
+     SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
+     WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
+       SELECT DISTINCT TraceId FROM otel_logs
+       WHERE ${owned}
+         AND LogAttributes['session.id'] = {sessionId:String}
+         AND TraceId != '')))`,
   ].join("\n  AND ");
 };
 
