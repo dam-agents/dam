@@ -63,6 +63,13 @@ export function ConnectionsSection({
     [allTemplates],
   );
 
+  // Deleting a granted connection must also drop its staged grant — a stale
+  // id in the form would make Save fail with "not owned by caller" (#2426).
+  const disconnect = async (id: string, name: string) => {
+    if ((await confirmAndDelete(id, name)) && grantedIds.has(id))
+      onToggleGrant(id, false);
+  };
+
   const showInternal = isShowInternalConnectionsEnabled();
   const byCategory = useMemo(() => {
     const m = new Map<string, ConnectionTemplateView[]>();
@@ -91,11 +98,12 @@ export function ConnectionsSection({
                 selectable
                 selected={grantedIds.has(c.id)}
                 onSelectedChange={(on) => onToggleGrant(c.id, on)}
+                testId={`connection-grant-${c.id}`}
               >
                 <ConnectionAction
                   label="Disconnect"
                   tone="danger"
-                  onClick={() => void confirmAndDelete(c.id, c.name)}
+                  onClick={() => void disconnect(c.id, c.name)}
                   disabled={deletingId === c.id}
                 />
               </ConnectionRow>
