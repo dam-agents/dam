@@ -502,8 +502,10 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
         ? "active"
         : "pending";
     case "client-credentials":
-      // Past-expiry means the refresh loop has been failing to re-mint
-      // (it retries every tick and re-mints before expiry when healthy).
+      // expiresAt is always stamped at mint (provider expiry or the 1h
+      // fallback) — the unset guard is defensive. Past-expiry means the
+      // refresh loop has been failing to re-mint (it retries every tick
+      // and re-mints before expiry when healthy).
       return conn.auth.expiresAt &&
         conn.auth.expiresAt < Math.floor(Date.now() / 1000)
         ? "expired"

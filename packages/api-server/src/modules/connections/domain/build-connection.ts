@@ -313,6 +313,8 @@ async function buildClientCredentials(
     issuerUrl = derived.issuerUrl;
     issuerMeta = derived;
   }
+  // grant_types_supported is optional metadata (many issuers omit it) —
+  // absence is deliberately treated as supported.
   if (
     issuerMeta.grantTypesSupported &&
     !issuerMeta.grantTypesSupported.includes("client_credentials")
