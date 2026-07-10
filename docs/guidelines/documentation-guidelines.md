@@ -10,7 +10,7 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today. One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
-- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-first**: agents create them, and read them only when authoring an ADR or recompiling docs; ordinary work uses the architecture pages. No code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
+- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. An immutable event log; the architecture pages and the [ADR index](../adrs/index.md) are projections of it. Use the `/adr` skill. See [ADR Guidelines](#adr-guidelines) for the rules.
 
 ## Vocabulary
 
@@ -24,7 +24,7 @@ Architecture pages are the **authoritative, self-contained description of the cu
 
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
-- No shared template. Free-form per page. No length cap.
+- No shared template. Free-form per page. Hard [size cap](#size-cap) per page and on the landing page.
 - Cross-page concept ownership: one page owns each concept in depth; others one-liner + cross-link.
 
 ### Mandatory headers
@@ -44,6 +44,14 @@ Each subsystem page starts with one header directly under the title:
 
 Shared vocabulary is what makes this safe: because [code names concepts in the same ubiquitous language the docs use](#vocabulary), speaking abstractly is not vaguer than the code — it is the same concept, named once, at the level that survives.
 
+### Size cap
+
+Architecture pages are a bounded projection of the [ADR log](#adr-guidelines), capped by construction. The cap is not a budget; it is the forcing function that keeps the projection reduced and pushes rationale down into the log.
+
+- Measured in characters. Per-page cap plus a harder cap on the always-loaded landing page ([`docs/architecture.md`](../architecture.md)).
+- Enforced two ways off one measurement: `mise run docs:check:doc-size` (runs in `mise run check` + CI, authoritative, covers human edits) and a PreToolUse hook on `docs/architecture/**` that rejects an over-budget Write/Edit in-session.
+- Over budget is not a trim-to-fit signal. Do not delete meaning. Reconcile: tighten prose, merge related statements, or push detail and rationale into an ADR. If a subsystem genuinely no longer fits, reconsider its boundaries — do not shrink meaning.
+
 ### Diagrams
 
 - Mermaid only — renders on GitHub, reviewable as text in PR diffs.
@@ -59,4 +67,27 @@ Shared vocabulary is what makes this safe: because [code names concepts in the s
 ### Drift rule
 
 When your work changes the behavior or responsibility of a subsystem, update its page in the same PR.
+
+## ADR Guidelines
+
+ADRs are an append-only event log. The architecture pages ("what is") and the generated ADR index ("what was decided, live or not") are both projections of that log, never hand-maintained sources of truth.
+
+### Immutability
+
+- An accepted ADR body is frozen. The only permitted change to an accepted record is stamping its supersession.
+- Superseded, not rewritten. A reversal is a new ADR carrying `supersedes: <id>`; the old record stays as filed. The superseded status is *derived* from the forward link, so nobody hand-edits the old file.
+- No deleting or renaming an accepted ADR — that rewrites history and breaks the id.
+- Enforced deterministically by `mise run docs:check:adr-immutable` (staged-vs-HEAD in precommit, merge-base in CI). New ADRs are free.
+
+### Reads are human-first
+
+ADRs exist for humans; the architecture pages are the agent-facing source of truth. Agents read the log for exactly two jobs — authoring a new ADR (you need the dead branches the projection deletes) and recompiling docs (the only wholesale read). Ordinary work — implementing, understanding the current system — uses the architecture pages, never the log. A superseded decision must not leak into implementation as if it were live.
+
+### Generated index
+
+[`docs/adrs/index.md`](../adrs/index.md) is generated from ADR frontmatter, never hand-edited. Read it first when authoring: scan the one-line summaries, open only the two or three records that matter. Each ADR carries `id`, `title`, `status`, `supersedes`, `subsystem`/`tags`, and a one-line `summary`; the generator resolves supersession and computes each record's live/superseded status. `mise run docs:check:adr-index` (in `mise run check` + CI) fails if the committed index does not match regeneration — run `mise run docs:generate:adr-index` after editing an ADR.
+
+### No ADR references in docs or code
+
+Architecture pages stand alone and never link to an ADR; neither does code. Traceability from an ADR back to the page it affects serves only the maintenance process (recompile scoping and supersession impact), and rides the `subsystem`/`tags` frontmatter already carried for the index — no sidecar, no forward pointer in prose. The tag is a frozen historical fact about the subsystem as it stood then; a later page split maps old names to current pages via an alias table rather than rewriting immutable ADRs.
 
