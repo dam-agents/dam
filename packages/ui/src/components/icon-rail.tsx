@@ -28,7 +28,6 @@ interface Destination {
 export function IconRail({
   hideMobileBar = false,
 }: {
-  /** Chat keeps its own mobile sessions/chat nav, so it opts out of the bottom bar. */
   hideMobileBar?: boolean;
 } = {}) {
   const view = useStore((s) => s.view);

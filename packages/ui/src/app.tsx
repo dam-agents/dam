@@ -100,8 +100,7 @@ function MainApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat keeps the app icon rail on desktop; the chat view owns the rest of the
-  // row and its own mobile sessions/chat nav (so the rail's mobile bar is hidden).
+  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar here.
   if (view === "chat")
     return (
       <>
