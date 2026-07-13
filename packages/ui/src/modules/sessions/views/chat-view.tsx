@@ -347,77 +347,22 @@ export function ChatView() {
 
   // ── Layout ──
   return (
-    <div className="flex h-dvh bg-bg relative overflow-hidden">
+    <div className="flex flex-col h-dvh bg-bg relative overflow-hidden">
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       <div className="blob blob-3" />
 
-      {/* Left: Sessions + Files sections */}
-      <div
-        style={{ width: leftW }}
-        className={`shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10 ${
-          mobileScreen === "chat" ? "hidden md:flex" : "flex"
-        } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+      {/* Header spans the full width; on mobile it belongs to the chat screen only */}
+      <header
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0 relative z-10`}
       >
-        <SessionsSidebar
-          open={sessionsOpen}
-          onToggle={() => setSessionsOpen((o) => !o)}
-          className={
-            !sessionsOpen
-              ? "shrink-0"
-              : filesSectionOpen
-                ? "shrink-0"
-                : "flex-1"
-          }
-          style={
-            sessionsOpen && filesSectionOpen ? { height: sessionsH } : undefined
-          }
-          onResumeSession={mobileResumeSession}
-          onNewSession={handleNewSession}
-          onNewTerminal={handleNewTerminal}
-        />
-        {sessionsOpen && filesSectionOpen && (
-          <ResizeHandle
-            orientation="vertical"
-            onResize={(d) =>
-              setSessionsH((h) => {
-                const v = Math.max(120, Math.min(600, h + d));
-                localStorage.setItem("platform-sessions-h", String(v));
-                return v;
-              })
-            }
-          />
-        )}
-        <FilesPanel
-          open={filesSectionOpen}
-          onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-          className={filesSectionOpen ? "flex-1" : "shrink-0"}
-          onOpenFile={openFileHandler}
-        />
-      </div>
-      <ResizeHandle
-        side="left"
-        onResize={(d) =>
-          setLeftW((w) => {
-            const v = Math.max(140, Math.min(400, w + d));
-            localStorage.setItem("platform-left-w", String(v));
-            return v;
-          })
-        }
-      />
-
-      {/* Main chat column */}
-      <div
-        className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
-      >
-        {/* Header */}
-        <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
-          <button
-            className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
-            onClick={handleBack}
-          >
-            <ArrowLeft size={14} />
-          </button>
+        <button
+          className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+          onClick={handleBack}
+        >
+          <ArrowLeft size={14} />
+        </button>
+        <div className="group flex items-center gap-3 min-w-0">
           <span
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
@@ -431,8 +376,9 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-xs"
                 aria-label="Sandbox actions"
+                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
-                <MoreVertical size={16} />
+                <MoreVertical size={14} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -450,261 +396,330 @@ export function ChatView() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className="md:hidden"
-              onClick={() => setShowMobilePanel(true)}
-            >
-              <Settings2 size={14} />
-            </Button>
-            <ChatHeaderStatus
-              selectedAgent={selectedAgent}
-              agents={agents}
-              busy={busy}
-              connectionState={connectionState}
-            />
-          </div>
-        </header>
-
-        {/* Content: Terminal or Chat */}
-        {sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
-          <Terminal
-            key={sessionId}
-            agentId={selectedAgent}
-            sessionId={sessionId}
-            fresh={terminalFreshRef.current}
-            autoConnect={!terminalPaused && agentOperable}
-            onConnected={() => {
-              terminalFreshRef.current = false;
-              setTerminalPaused(false);
-            }}
-            onFirstSubmit={() => {
-              // Inserted running — onSubmit's seed can't land on a row that doesn't exist yet.
-              optimisticInsertSession(
-                selectedAgent,
-                sessionId,
-                SessionMode.Terminal,
-                true,
-              );
-              queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-            }}
-            // Optimistic working dots on Enter; the poll reconciles within 5s.
-            onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className="md:hidden"
+            onClick={() => setShowMobilePanel(true)}
+          >
+            <Settings2 size={14} />
+          </Button>
+          <ChatHeaderStatus
+            selectedAgent={selectedAgent}
+            agents={agents}
+            busy={busy}
+            connectionState={connectionState}
           />
-        ) : (
-          <>
-            <div className="relative flex flex-1 flex-col min-h-0">
-              <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
-                  {loadingSession && (
-                    <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
-                      <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
-                      Loading session...
-                    </div>
-                  )}
-                  {!loadingSession && sessionError && (
-                    <SessionErrorCard
-                      error={sessionError}
-                      onBack={() => {
-                        setSessionError(null);
-                        resetSession();
-                        if (isMobile()) setMobileScreen("sessions");
-                      }}
-                      onDelete={async () => {
-                        const sid = sessionError.sessionId;
-                        setSessionError(null);
-                        await deleteSession(sid);
-                        if (isMobile()) setMobileScreen("sessions");
-                      }}
-                    />
-                  )}
-                  {!loadingSession &&
-                    !sessionError &&
-                    messages.length === 0 && (
-                      <div className="py-24 text-center">
-                        <p className="text-[16px] font-bold text-text mb-2">
-                          Start a conversation
-                        </p>
-                        <p className="text-[14px] text-text-muted">
-                          Send a message to begin a new session with this agent
-                        </p>
+        </div>
+      </header>
+
+      {/* Body row: left panel | chat | right panel */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left: Sessions + Files sections */}
+        <div
+          style={{ width: leftW }}
+          className={`shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10 ${
+            mobileScreen === "chat" ? "hidden md:flex" : "flex"
+          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+        >
+          <SessionsSidebar
+            open={sessionsOpen}
+            onToggle={() => setSessionsOpen((o) => !o)}
+            className={
+              !sessionsOpen
+                ? "shrink-0"
+                : filesSectionOpen
+                  ? "shrink-0"
+                  : "flex-1"
+            }
+            style={
+              sessionsOpen && filesSectionOpen
+                ? { height: sessionsH }
+                : undefined
+            }
+            onResumeSession={mobileResumeSession}
+            onNewSession={handleNewSession}
+            onNewTerminal={handleNewTerminal}
+          />
+          {sessionsOpen && filesSectionOpen && (
+            <ResizeHandle
+              orientation="vertical"
+              onResize={(d) =>
+                setSessionsH((h) => {
+                  const v = Math.max(120, Math.min(600, h + d));
+                  localStorage.setItem("platform-sessions-h", String(v));
+                  return v;
+                })
+              }
+            />
+          )}
+          <FilesPanel
+            open={filesSectionOpen}
+            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
+            className={filesSectionOpen ? "flex-1" : "shrink-0"}
+            onOpenFile={openFileHandler}
+          />
+        </div>
+        <ResizeHandle
+          side="left"
+          onResize={(d) =>
+            setLeftW((w) => {
+              const v = Math.max(140, Math.min(400, w + d));
+              localStorage.setItem("platform-left-w", String(v));
+              return v;
+            })
+          }
+        />
+
+        {/* Main chat column */}
+        <div
+          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+        >
+          {/* Content: Terminal or Chat */}
+          {sessionMode === SessionMode.Terminal &&
+          selectedAgent &&
+          sessionId ? (
+            <Terminal
+              key={sessionId}
+              agentId={selectedAgent}
+              sessionId={sessionId}
+              fresh={terminalFreshRef.current}
+              autoConnect={!terminalPaused && agentOperable}
+              onConnected={() => {
+                terminalFreshRef.current = false;
+                setTerminalPaused(false);
+              }}
+              onFirstSubmit={() => {
+                // Inserted running — onSubmit's seed can't land on a row that doesn't exist yet.
+                optimisticInsertSession(
+                  selectedAgent,
+                  sessionId,
+                  SessionMode.Terminal,
+                  true,
+                );
+                queryClient.invalidateQueries({
+                  queryKey: acpSessionsKeys.all,
+                });
+              }}
+              // Optimistic working dots on Enter; the poll reconciles within 5s.
+              onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+            />
+          ) : (
+            <>
+              <div className="relative flex flex-1 flex-col min-h-0">
+                <div ref={messagesRef} className="flex-1 overflow-y-auto">
+                  <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
+                    {loadingSession && (
+                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
+                        <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
+                        Loading session...
                       </div>
                     )}
-                  {messages.map((m) =>
-                    m.notice ? (
-                      <div key={m.id} className="flex justify-center anim-in">
-                        <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
-                          {m.parts.find((p) => p.kind === "text")?.kind ===
-                          "text"
-                            ? (
-                                m.parts.find((p) => p.kind === "text") as {
-                                  text: string;
-                                }
-                              ).text
-                            : "…"}
-                        </span>
-                      </div>
-                    ) : (
-                      <div
-                        key={m.id}
-                        data-testid="chat-message"
-                        data-role={m.role}
-                        className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
-                      >
-                        <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
-                          {m.role === "user" ? "You" : "Agent"}
-                        </span>
-                        {m.error ? (
-                          <SendErrorCard
-                            error={m.error.message}
-                            onRetry={
-                              m.error.retryWith
-                                ? () =>
-                                    sendPrompt(
-                                      m.error!.retryWith!.text,
-                                      m.error!.retryWith!.attachments,
-                                    )
-                                : undefined
-                            }
-                          />
-                        ) : (
-                          <div
-                            className={
-                              m.role === "user"
-                                ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
-                                : "flex flex-col gap-2 max-w-full"
-                            }
-                          >
-                            {m.parts.map((p, i) =>
-                              p.kind === "text" ? (
-                                m.role === "assistant" ? (
-                                  <Markdown
-                                    key={i}
-                                    onFileClick={openFileHandler}
-                                  >
-                                    {p.text}
-                                  </Markdown>
-                                ) : (
-                                  <span
-                                    key={i}
-                                    className="whitespace-pre-wrap break-words"
-                                  >
-                                    {p.text}
-                                    {m.streaming &&
-                                      i === m.parts.length - 1 && (
-                                        <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
-                                      )}
-                                  </span>
-                                )
-                              ) : p.kind === "thought" ? (
-                                <ThoughtBlock
-                                  key={i}
-                                  text={p.text}
-                                  streaming={m.streaming}
-                                />
-                              ) : p.kind === "image" ? (
-                                <img
-                                  key={i}
-                                  src={`data:${p.mimeType};base64,${p.data}`}
-                                  alt="image"
-                                  className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
-                                />
-                              ) : p.kind === "file" ? (
-                                <div
-                                  key={i}
-                                  className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2"
-                                >
-                                  <FileIcon
-                                    size={14}
-                                    className="text-text-muted shrink-0"
-                                  />
-                                  <span className="text-[12px] text-text-secondary">
-                                    {p.name}
-                                  </span>
-                                  {p.size !== undefined && (
-                                    <span className="text-[10px] text-text-muted">
-                                      {p.size < 1024
-                                        ? `${p.size} B`
-                                        : `${(p.size / 1024).toFixed(1)} KB`}
+                    {!loadingSession && sessionError && (
+                      <SessionErrorCard
+                        error={sessionError}
+                        onBack={() => {
+                          setSessionError(null);
+                          resetSession();
+                          if (isMobile()) setMobileScreen("sessions");
+                        }}
+                        onDelete={async () => {
+                          const sid = sessionError.sessionId;
+                          setSessionError(null);
+                          await deleteSession(sid);
+                          if (isMobile()) setMobileScreen("sessions");
+                        }}
+                      />
+                    )}
+                    {!loadingSession &&
+                      !sessionError &&
+                      messages.length === 0 && (
+                        <div className="py-24 text-center">
+                          <p className="text-[16px] font-bold text-text mb-2">
+                            Start a conversation
+                          </p>
+                          <p className="text-[14px] text-text-muted">
+                            Send a message to begin a new session with this
+                            agent
+                          </p>
+                        </div>
+                      )}
+                    {messages.map((m) =>
+                      m.notice ? (
+                        <div key={m.id} className="flex justify-center anim-in">
+                          <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
+                            {m.parts.find((p) => p.kind === "text")?.kind ===
+                            "text"
+                              ? (
+                                  m.parts.find((p) => p.kind === "text") as {
+                                    text: string;
+                                  }
+                                ).text
+                              : "…"}
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          key={m.id}
+                          data-testid="chat-message"
+                          data-role={m.role}
+                          className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
+                        >
+                          <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
+                            {m.role === "user" ? "You" : "Agent"}
+                          </span>
+                          {m.error ? (
+                            <SendErrorCard
+                              error={m.error.message}
+                              onRetry={
+                                m.error.retryWith
+                                  ? () =>
+                                      sendPrompt(
+                                        m.error!.retryWith!.text,
+                                        m.error!.retryWith!.attachments,
+                                      )
+                                  : undefined
+                              }
+                            />
+                          ) : (
+                            <div
+                              className={
+                                m.role === "user"
+                                  ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
+                                  : "flex flex-col gap-2 max-w-full"
+                              }
+                            >
+                              {m.parts.map((p, i) =>
+                                p.kind === "text" ? (
+                                  m.role === "assistant" ? (
+                                    <Markdown
+                                      key={i}
+                                      onFileClick={openFileHandler}
+                                    >
+                                      {p.text}
+                                    </Markdown>
+                                  ) : (
+                                    <span
+                                      key={i}
+                                      className="whitespace-pre-wrap break-words"
+                                    >
+                                      {p.text}
+                                      {m.streaming &&
+                                        i === m.parts.length - 1 && (
+                                          <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
+                                        )}
                                     </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <ToolChip key={i} chip={p} />
-                              ),
-                            )}
-                            {m.streaming &&
-                              m.parts.length === 0 &&
-                              (m.queued ? (
-                                <span className="text-[12px] text-text-muted italic">
-                                  Waiting for previous prompt…
-                                </span>
-                              ) : (
-                                <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
-                              ))}
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  )}
+                                  )
+                                ) : p.kind === "thought" ? (
+                                  <ThoughtBlock
+                                    key={i}
+                                    text={p.text}
+                                    streaming={m.streaming}
+                                  />
+                                ) : p.kind === "image" ? (
+                                  <img
+                                    key={i}
+                                    src={`data:${p.mimeType};base64,${p.data}`}
+                                    alt="image"
+                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
+                                  />
+                                ) : p.kind === "file" ? (
+                                  <div
+                                    key={i}
+                                    className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2"
+                                  >
+                                    <FileIcon
+                                      size={14}
+                                      className="text-text-muted shrink-0"
+                                    />
+                                    <span className="text-[12px] text-text-secondary">
+                                      {p.name}
+                                    </span>
+                                    {p.size !== undefined && (
+                                      <span className="text-[10px] text-text-muted">
+                                        {p.size < 1024
+                                          ? `${p.size} B`
+                                          : `${(p.size / 1024).toFixed(1)} KB`}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <ToolChip key={i} chip={p} />
+                                ),
+                              )}
+                              {m.streaming &&
+                                m.parts.length === 0 &&
+                                (m.queued ? (
+                                  <span className="text-[12px] text-text-muted italic">
+                                    Waiting for previous prompt…
+                                  </span>
+                                ) : (
+                                  <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      ),
+                    )}
+                  </div>
                 </div>
+
+                {showJump && (
+                  <button
+                    onClick={scrollToBottom}
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+                  >
+                    <ArrowDown size={12} />
+                    Jump to latest
+                  </button>
+                )}
               </div>
 
-              {showJump && (
+              {hasPendingPermission ? (
+                <PermissionPrompt />
+              ) : (
+                <ChatInput
+                  textareaRef={textareaRef}
+                  busy={busy}
+                  loadingSession={loadingSession}
+                  onSend={sendPrompt}
+                  onStop={stopAgent}
+                />
+              )}
+              {harnessCurrent?.model && (
                 <button
-                  onClick={scrollToBottom}
-                  className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+                  type="button"
+                  onClick={handleConfigureSandbox}
+                  title="Model — change in sandbox configuration"
+                  className="flex items-center gap-1 px-4 md:px-8 py-1.5 text-[12px] text-text-muted hover:text-text transition-colors"
                 >
-                  <ArrowDown size={12} />
-                  Jump to latest
+                  {harnessCurrent.model}
+                  <ChevronUp size={12} />
                 </button>
               )}
-            </div>
+            </>
+          )}
+        </div>
 
-            {hasPendingPermission ? (
-              <PermissionPrompt />
-            ) : (
-              <ChatInput
-                textareaRef={textareaRef}
-                busy={busy}
-                loadingSession={loadingSession}
-                onSend={sendPrompt}
-                onStop={stopAgent}
-              />
-            )}
-            {harnessCurrent?.model && (
-              <button
-                type="button"
-                onClick={handleConfigureSandbox}
-                title="Model — change in sandbox configuration"
-                className="flex items-center gap-1 px-4 md:px-8 py-1.5 text-[12px] text-text-muted hover:text-text transition-colors"
-              >
-                {harnessCurrent.model}
-                <ChevronUp size={12} />
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Right panel: desktop */}
-      <ResizeHandle
-        side="right"
-        onResize={(d) =>
-          setRightW((w) => {
-            const v = Math.max(240, Math.min(600, w + d));
-            localStorage.setItem("platform-right-w", String(v));
-            return v;
-          })
-        }
-      />
-      <div
-        style={{ width: rightW }}
-        className="hidden md:flex shrink-0 flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10"
-      >
-        {rightPanelContent}
+        {/* Right panel: desktop */}
+        <ResizeHandle
+          side="right"
+          onResize={(d) =>
+            setRightW((w) => {
+              const v = Math.max(240, Math.min(600, w + d));
+              localStorage.setItem("platform-right-w", String(v));
+              return v;
+            })
+          }
+        />
+        <div
+          style={{ width: rightW }}
+          className="hidden md:flex shrink-0 flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10"
+        >
+          {rightPanelContent}
+        </div>
       </div>
 
       {/* Right panel: mobile overlay */}
@@ -742,10 +757,10 @@ export function ChatView() {
   );
 }
 
-/** Small pill in the chat header. Falls through to the shared `StatusBadge`,
- *  overriding to a "Busy" variant while the agent is mid-turn. A transient WS
- *  hiccup on a still-running agent adds a "Reconnecting" pill alongside —
- *  full lifecycle outages are handled by the takeover overlay, not here. */
+/** Exceptional-state badges in the chat header — nothing renders while the
+ *  agent is healthy. A transient WS hiccup on a still-running agent shows a
+ *  "Reconnecting" pill; full lifecycle outages are handled by the takeover
+ *  overlay, not here. */
 function ChatHeaderStatus({
   selectedAgent,
   agents,
@@ -762,14 +777,6 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {busy ? (
-        <StatusBadge
-          label="Busy"
-          colorClasses="bg-accent-light text-accent border-accent"
-        />
-      ) : (
-        <StatusBadge state={agent?.state ?? "starting"} />
-      )}
       {reconnecting && (
         <StatusBadge
           label="Reconnecting"
