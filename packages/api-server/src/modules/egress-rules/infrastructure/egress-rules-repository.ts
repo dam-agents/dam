@@ -41,6 +41,16 @@ export interface EgressRulesRepository {
    *  preset is not stored on the spec — its rules' sources are the truth. */
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
+  /** Exact lookup on the active-row unique index (`egress_rules_lookup_idx`).
+   *  Used as the insert conflict fallback so callers get *the* conflicting
+   *  row, not a best-match — `findMatch` treats the path as a request path,
+   *  not a pattern. */
+  getActiveByTuple(
+    agentId: string,
+    host: string,
+    method: string,
+    pathPattern: string,
+  ): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Insert-or-promote variant used by the connection-rules sync. If an
    *  existing active row for `(agent, host, method, pathPattern)` is a
@@ -106,7 +116,9 @@ type RawRule = {
   pathPattern: string;
   verdict: string;
   decidedBy: string;
-  decidedAt: Date;
+  // Raw `db.execute(sql...)` reads bypass drizzle's timestamptz mapper and
+  // yield strings; typed `.select()`/`.returning()` reads yield Dates.
+  decidedAt: Date | string;
   status: string;
   source: string;
 } & Record<string, unknown>;
@@ -121,7 +133,8 @@ function toRow(r: RawRule): EgressRuleRow {
     pathPattern: r.pathPattern,
     verdict: r.verdict as RuleVerdict,
     decidedBy: r.decidedBy,
-    decidedAt: r.decidedAt,
+    decidedAt:
+      r.decidedAt instanceof Date ? r.decidedAt : new Date(r.decidedAt),
     status: r.status as "active" | "revoked",
     source: r.source as EgressRuleSource,
   };
@@ -134,6 +147,24 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         .select()
         .from(egressRules)
         .where(eq(egressRules.id, id));
+      return rows.length ? toRow(rows[0] as RawRule) : null;
+    },
+
+    async getActiveByTuple(agentId, host, method, pathPattern) {
+      // No LIMIT needed — the partial unique index guarantees at most one
+      // active row per tuple.
+      const rows = await db
+        .select()
+        .from(egressRules)
+        .where(
+          and(
+            eq(egressRules.agentId, agentId),
+            eq(egressRules.host, host),
+            eq(egressRules.method, method),
+            eq(egressRules.pathPattern, pathPattern),
+            eq(egressRules.status, "active"),
+          ),
+        );
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
@@ -228,7 +259,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         .onConflictDoNothing()
         .returning();
       if (inserted.length) return toRow(inserted[0] as RawRule);
-      const existing = await this.findMatch(
+      const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
         row.method,
@@ -276,7 +307,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       `);
       const promotedRows = promoted as unknown as RawRule[];
       if (promotedRows.length) return toRow(promotedRows[0]!);
-      const existing = await this.findMatch(
+      const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
         row.method,
