@@ -3,38 +3,48 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowLeft,
+  ChevronUp,
   FileText as FileIcon,
-  MessageSquare,
+  MoreVertical,
   RefreshCw,
   Settings2,
-  TerminalSquare,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
-import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
+import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
-import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
+import {
+  useRestartAgent,
+  useSyncRestartingAgents,
+} from "../../agents/hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { MetricsPanel } from "../../metrics/components/metrics-panel.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
-import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -80,6 +90,12 @@ export function ChatView() {
   const rightTab = useStore((s) => s.rightTab);
   const goBack = useStore((s) => s.goBack);
   const setRightTab = useStore((s) => s.setRightTab);
+  const navigateToSandboxSettings = useStore(
+    (s) => s.navigateToSandboxSettings,
+  );
+  const setView = useStore((s) => s.setView);
+  const filesSectionOpen = useStore((s) => s.filesSectionOpen);
+  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useStore((s) =>
     s.sessionId
       ? s.pendingPermissions.some((p) => p.sessionId === s.sessionId)
@@ -97,6 +113,10 @@ export function ChatView() {
   );
   const [rightW, setRightW] = useState(
     () => Number(localStorage.getItem("platform-right-w")) || 340,
+  );
+  const [sessionsOpen, setSessionsOpen] = useState(true);
+  const [sessionsH, setSessionsH] = useState(
+    () => Number(localStorage.getItem("platform-sessions-h")) || 260,
   );
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
@@ -117,6 +137,9 @@ export function ChatView() {
   } = useAcpSession(selectedAgent, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedAgent);
+  const { restart } = useRestartAgent();
+  const deleteAgent = useDeleteAgent();
+  const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
 
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
@@ -229,89 +252,39 @@ export function ChatView() {
   ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
-  const handleToggleMode = useCallback(async () => {
+
+  // Spawn a fresh ephemeral terminal session. The PTY creates it — no server
+  // registration; it surfaces in session/list with no `_meta` and decodes as
+  // terminal.
+  const handleNewTerminal = useCallback(() => {
+    resetSession();
+    const id = crypto.randomUUID();
+    ephemeralTerminalIdRef.current = id;
+    terminalFreshRef.current = true;
+    setSessionId(id);
+    setSessionMode(SessionMode.Terminal);
+    setMobileScreen("chat");
+  }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
+
+  const handleConfigureSandbox = useCallback(() => {
+    if (selectedAgent) navigateToSandboxSettings(selectedAgent);
+  }, [selectedAgent, navigateToSandboxSettings]);
+
+  const handleRestartSandbox = useCallback(() => {
+    if (selectedAgent) restart(selectedAgent);
+  }, [selectedAgent, restart]);
+
+  const handleDeleteSandbox = useCallback(async () => {
     if (!selectedAgent) return;
-    const target =
-      sessionMode === SessionMode.Terminal
-        ? SessionMode.Chat
-        : SessionMode.Terminal;
-
-    // Blank chat → terminal: spawn a fresh terminal session with no
-    // confirmation. The PTY creates it — no server registration; it
-    // surfaces in session/list with no `_meta` and decodes as terminal.
-    if (!sessionId && messages.length === 0) {
-      if (target === SessionMode.Terminal) {
-        const id = crypto.randomUUID();
-        ephemeralTerminalIdRef.current = id;
-        setSessionId(id);
-      }
-      setSessionMode(target);
-      return;
-    }
-
-    if (
-      target === SessionMode.Chat &&
-      sessionId &&
-      ephemeralTerminalIdRef.current === sessionId
-    ) {
-      ephemeralTerminalIdRef.current = null;
-      resetSession();
-      setSessionMode(SessionMode.Chat);
-      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-      requestAnimationFrame(() => textareaRef.current?.focus());
-      return;
-    }
-
-    if (
-      !(await showConfirm(
-        `Switch this session to ${target} mode? Files and history are preserved, but any running tasks will be cancelled.`,
-        "Switch session mode",
-      ))
-    )
-      return;
-
-    if (busy) stopAgent();
-    if (target === SessionMode.Terminal) {
-      terminalFreshRef.current = true;
-      setTerminalPaused(true);
-      setSessionMode(target);
-    }
-    if (sessionId) {
-      if (target !== SessionMode.Terminal) setSessionMode(target);
-      try {
-        await applySessionMode(selectedAgent, sessionId, target);
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-      } catch {
-        setSessionMode(sessionMode);
-        if (target === SessionMode.Terminal) setTerminalPaused(false);
-        emitToast({
-          kind: "error",
-          message: "Failed to switch session mode",
-        });
-        return;
-      }
-      if (target === SessionMode.Terminal) setTerminalPaused(false);
-    } else {
-      setSessionMode(target);
-    }
-    if (target === SessionMode.Chat) {
-      if (sessionId) resumeSession(sessionId);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-  }, [
-    selectedAgent,
-    sessionMode,
-    sessionId,
-    messages.length,
-    showConfirm,
-    busy,
-    stopAgent,
-    setSessionMode,
-    resumeSession,
-    resetSession,
-    setSessionId,
-    setTerminalPaused,
-  ]);
+    const ok = await showConfirm(
+      "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
+      "Delete Sandbox",
+      { kind: "destructive" },
+    );
+    if (!ok) return;
+    deleteAgent.mutate({ id: selectedAgent });
+    setView("list");
+  }, [selectedAgent, showConfirm, deleteAgent, setView]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -322,10 +295,8 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
-  const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
-
   // ── Right panel ──
-  const rightTabs = ["files", "configuration", "metrics"] as const;
+  const rightTabs = ["configuration", "metrics"] as const;
   const rightPanelContent = (
     <>
       <div className="flex border-b border-border-light shrink-0">
@@ -348,7 +319,6 @@ export function ChatView() {
         })}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
         <div
           className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}
         >
@@ -366,6 +336,15 @@ export function ChatView() {
     </>
   );
 
+  const dotColor =
+    agentDisplay?.state === "running"
+      ? "bg-emerald-500"
+      : agentDisplay?.state === "error"
+        ? "bg-red-500"
+        : agentDisplay?.state === "hibernated"
+          ? "bg-zinc-400"
+          : "bg-amber-500";
+
   // ── Layout ──
   return (
     <div className="flex h-dvh bg-bg relative overflow-hidden">
@@ -373,7 +352,7 @@ export function ChatView() {
       <div className="blob blob-2" />
       <div className="blob blob-3" />
 
-      {/* Left: Sessions */}
+      {/* Left: Sessions + Files sections */}
       <div
         style={{ width: leftW }}
         className={`shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10 ${
@@ -381,8 +360,39 @@ export function ChatView() {
         } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
       >
         <SessionsSidebar
+          open={sessionsOpen}
+          onToggle={() => setSessionsOpen((o) => !o)}
+          className={
+            !sessionsOpen
+              ? "shrink-0"
+              : filesSectionOpen
+                ? "shrink-0"
+                : "flex-1"
+          }
+          style={
+            sessionsOpen && filesSectionOpen ? { height: sessionsH } : undefined
+          }
           onResumeSession={mobileResumeSession}
           onNewSession={handleNewSession}
+          onNewTerminal={handleNewTerminal}
+        />
+        {sessionsOpen && filesSectionOpen && (
+          <ResizeHandle
+            orientation="vertical"
+            onResize={(d) =>
+              setSessionsH((h) => {
+                const v = Math.max(120, Math.min(600, h + d));
+                localStorage.setItem("platform-sessions-h", String(v));
+                return v;
+              })
+            }
+          />
+        )}
+        <FilesPanel
+          open={filesSectionOpen}
+          onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
+          className={filesSectionOpen ? "flex-1" : "shrink-0"}
+          onOpenFile={openFileHandler}
         />
       </div>
       <ResizeHandle
@@ -402,32 +412,44 @@ export function ChatView() {
       >
         {/* Header */}
         <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
-          {/* Mobile-only: back to the sessions screen. Desktop navigates via the icon rail. */}
           <button
             className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
             onClick={handleBack}
           >
             <ArrowLeft size={14} />
           </button>
+          <span
+            aria-hidden
+            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+          />
           <h1 className="text-[14px] font-bold text-text truncate">
             {selectedAgentName}
           </h1>
-          <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
-            <button
-              className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-              onClick={chatActive ? undefined : handleToggleMode}
-              title="Chat mode"
-            >
-              <MessageSquare size={12} /> Chat
-            </button>
-            <button
-              className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${!chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-              onClick={!chatActive ? undefined : handleToggleMode}
-              title="Terminal mode"
-            >
-              <TerminalSquare size={12} /> Terminal
-            </button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Sandbox actions"
+              >
+                <MoreVertical size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                Configure sandbox
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRestartSandbox}>
+                Restart
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={handleDeleteSandbox}
+              >
+                Delete Sandbox
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="outline"
@@ -651,6 +673,17 @@ export function ChatView() {
                 onSend={sendPrompt}
                 onStop={stopAgent}
               />
+            )}
+            {harnessCurrent?.model && (
+              <button
+                type="button"
+                onClick={handleConfigureSandbox}
+                title="Model — change in sandbox configuration"
+                className="flex items-center gap-1 px-4 md:px-8 py-1.5 text-[12px] text-text-muted hover:text-text transition-colors"
+              >
+                {harnessCurrent.model}
+                <ChevronUp size={12} />
+              </button>
             )}
           </>
         )}
