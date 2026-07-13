@@ -56,14 +56,17 @@ export function removeSessionFromCache(
   );
 }
 
-// Opening a session marks it seen agent-side; mirror that into the list cache
-// so switching away can't resurrect a stale unread before the next poll.
+// Mirror the agent-side seen stamp into the list cache ahead of the next poll.
+// Stamps the row's own activity time, not the browser clock, to rule out skew.
 export function setSessionSeen(agentId: string, sessionId: string): void {
-  const seenAt = new Date().toISOString();
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
     (prev) =>
-      prev?.map((s) => (s.sessionId === sessionId ? { ...s, seenAt } : s)),
+      prev?.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, seenAt: s.updatedAt ?? s.createdAt }
+          : s,
+      ),
   );
 }
 
