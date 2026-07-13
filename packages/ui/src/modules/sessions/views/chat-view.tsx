@@ -32,9 +32,14 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { MetricsPanel } from "../../metrics/components/metrics-panel.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
 import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
-import { acpSessionsKeys, optimisticInsertSession } from "../api/queries.js";
+import {
+  acpSessionsKeys,
+  optimisticInsertSession,
+  setSessionRunning,
+} from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
@@ -320,7 +325,7 @@ export function ChatView() {
   const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
 
   // ── Right panel ──
-  const rightTabs = ["files", "configuration"] as const;
+  const rightTabs = ["files", "configuration", "metrics"] as const;
   const rightPanelContent = (
     <>
       <div className="flex border-b border-border-light shrink-0">
@@ -354,6 +359,9 @@ export function ChatView() {
             onOpenFile={openFileHandler}
           />
         </div>
+        {rightTab === "metrics" && (
+          <MetricsPanel agentId={selectedAgent} sessionId={sessionId} />
+        )}
       </div>
     </>
   );
@@ -452,14 +460,17 @@ export function ChatView() {
               setTerminalPaused(false);
             }}
             onFirstSubmit={() => {
-              // Show the first message optimistically, then refetch so the poll reconciles it.
+              // Inserted running — onSubmit's seed can't land on a row that doesn't exist yet.
               optimisticInsertSession(
                 selectedAgent,
                 sessionId,
                 SessionMode.Terminal,
+                true,
               );
               queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
             }}
+            // Optimistic working dots on Enter; the poll reconciles within 5s.
+            onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
           />
         ) : (
           <>

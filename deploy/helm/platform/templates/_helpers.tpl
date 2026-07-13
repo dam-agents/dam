@@ -331,13 +331,23 @@ API Server ServiceAccount name
 
 {{/* HTTP endpoint of the ClickStack ClickHouse store — the api-server's
      owner-scoped telemetry read path queries it directly (docs/architecture/
-     observability.md). Mirrors the subchart's ClickHouse headless Service. */}}
+     observability.md). The operator names the headless Service
+     {clickstack.fullname}-clickhouse-clickhouse-headless, and the subchart's
+     fullname derives from .Release.Name (NOT platform.fullname) — mirror that
+     logic. Assumes clickstack.nameOverride/fullnameOverride stay unset. */}}
 {{- define "platform.clickstack.clickhouse.httpUrl" -}}
-{{- printf "http://%s-clickstack-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" (include "platform.fullname" .) .Release.Namespace }}
+{{- $fullname := ternary .Release.Name (printf "%s-clickstack" .Release.Name) (contains "clickstack" .Release.Name) | trunc 63 | trimSuffix "-" }}
+{{- printf "http://%s-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" $fullname .Release.Namespace }}
 {{- end }}
 
+{{/* Call with (dict "root" $ "templateName" <name>): the harness's default
+     OTel service name is the CLI's own ("claude-code" for every claude-code-
+     based image), which makes derived templates like nous indistinguishable
+     in the exploration UI — so name the service after the template. */}}
 {{- define "platform.agentTelemetry.env" -}}
-{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .) .Release.Namespace }}
+{{- $host := printf "%s.%s.svc.cluster.local" (include "platform.clickstack.collector.fullname" .root) .root.Release.Namespace }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .templateName | quote }}
 - name: CLAUDE_CODE_ENABLE_TELEMETRY
   value: "1"
 - name: CLAUDE_CODE_ENHANCED_TELEMETRY_BETA

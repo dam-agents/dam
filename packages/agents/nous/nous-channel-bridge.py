@@ -48,6 +48,12 @@ PORT = int(os.environ.get("NOUS_BRIDGE_PORT", "8765"))
 PROTOCOL_VERSION = "2025-06-18"
 TIMEOUT_SECONDS = 15
 
+# Nous appends this approval prompt to *every* gate notification, even under
+# --auto-approve where the gate auto-passes and nothing is awaiting a reply
+# (upstream bug). This pod only ever runs auto-approved, so the line is always
+# misleading — strip it from the forwarded summary.
+APPROVAL_PROMPT = "Reply with `approve`, `reject`, or `abort`."
+
 logging.basicConfig(level=logging.INFO, format="[nous-bridge] %(levelname)s %(message)s")
 log = logging.getLogger("nous-bridge")
 
@@ -177,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
             # Nous `webhook` kind -> {"markdown": ...}; `slack` kind -> {"text": ...}.
             text = (body.get("markdown") or body.get("text") or "").strip()
+            # Drop the spurious approval prompt Nous appends under --auto-approve.
+            text = text.replace(APPROVAL_PROMPT, "").strip()
             qs = parse_qs(urlparse(self.path).query)
             channel = qs.get("channel", [DEFAULT_CHANNEL])[0]
             chat_id = qs.get("chatId", [None])[0]

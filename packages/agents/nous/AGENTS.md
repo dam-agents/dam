@@ -51,7 +51,7 @@ existing campaigns and offer to act on them. Scan `$NOUS_CAMPAIGN_PARENT`
 (`~/nous-campaigns`) for campaign directories (each has a `campaign.yaml`) and
 classify each as:
 
-- **running** — its `run.pid` names a live process (`kill -0 "$(cat run.pid)"`).
+- **running** — its `run.pid` (located in the campaign's subdirectory under `$NOUS_CAMPAIGN_PARENT`) names a live process (e.g. `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"`).
 - **not running** — no live process (finished, stopped, or interrupted by a pod
   restart — see below; this pod does not idle-hibernate, so this is rarer than it
   used to be).
@@ -74,14 +74,13 @@ stalls the arm until the platform's inactivity deadline fails it.
 
 Overrides for a trial session, in place of the usual flow:
 
-- **Don't list campaigns or ask anything.** Skip the conversation-start listing,
-  skip "author with the user", skip the approval-mode question. Author the
-  entire `campaign.yaml` yourself — including `locked_parameters`,
-  `ground_truth`, gateway-pinned `models:`, and a rehearsal+real `iterations`
-  schedule — and launch without confirmation.
-- **Always `--auto-approve`.** Never on-demand approval: there is nobody to
-  answer a gate. (A bound channel may still receive progress summaries; wiring
-  it is optional and must never gate the run.)
+- **Don't list campaigns or ask anything.** Skip the conversation-start listing
+  and skip "author with the user". Author the entire `campaign.yaml` yourself —
+  including `locked_parameters`, `ground_truth`, gateway-pinned `models:`, and a
+  rehearsal+real `iterations` schedule — and launch without confirmation.
+- **Always `--auto-approve`.** The design/findings gates auto-pass so the arm
+  runs unattended to completion. (A bound channel may still receive progress
+  summaries; wiring it is optional and must never gate the run.)
 - **Declare an `objective:` block** (weighted composite over the metrics the
   Experiment prompt names) so every iteration yields a deterministic numeric
   score in `best_found.json`. If the prompt pins a single metric, use weight 1.0
@@ -113,24 +112,19 @@ Overrides for a trial session, in place of the usual flow:
 **Pre-flight checklist — do all of these before `nous run`:**
 
 1. **Detect channels.** Call `describe_channel` for `slack` and `telegram`. A
-   bound channel does two jobs: progress reports flow to the user's thread (wire
-   `channels:` + start the bridge — see "Reporting progress to Slack/Telegram"),
-   and it unlocks **on-demand approval** (next step). Easy to forget — not
-   optional when a channel is bound.
-2. **Choose the approval mode** (see "Approval mode: auto-approve vs on-demand").
-   If a channel is bound, **ask the user**: auto-approve the whole campaign, or
-   send each gate to the channel for on-demand approval? With no channel,
-   auto-approve is the only safe choice — on-demand would halt a backgrounded run.
-3. **Discover gateway models** and pin `models:` (see "Pin models the gateway
+   bound channel lets progress reports flow to the user's thread (wire
+   `channels:` + start the bridge — see "Reporting progress to Slack/Telegram").
+   Easy to forget — not optional when a channel is bound.
+2. **Discover gateway models** and pin `models:` (see "Pin models the gateway
    serves") — you need the real catalog before you can propose a campaign.
-4. **Author the campaign *with* the user** (the `nous` skill → "Author with the
+3. **Author the campaign *with* the user** (the `nous` skill → "Author with the
    user"). Assume the user is a Nous beginner: propose concrete settings
    (iterations, locks, metrics, scope), explain each tradeoff in plain language,
    and get an explicit go-ahead on the final `campaign.yaml` before you launch.
    Never run a campaign the user hasn't seen and confirmed.
-5. **Make it lean and fast** — declare `observable_metrics` and schedule a
+4. **Make it lean and fast** — declare `observable_metrics` and schedule a
    rehearsal iteration (below); both cut DESIGN time and cost.
-6. **State the rough wall-clock up front.** Tell the user roughly how long the
+5. **State the rough wall-clock up front.** Tell the user roughly how long the
    campaign will take before you launch. This pod is configured **not to
    hibernate** (see "Long runs & recovery"), so a backgrounded run progresses to
    completion on its own — the user does *not* need to keep a session open.
@@ -175,8 +169,8 @@ in the pod's home root or any unrelated directory.
      cheap rehearsal (apparatus + regime sanity check) before the full real
      matrix. Catches parse/regime issues without paying for the whole seed sweep.
 
-4. **Confirm the final `campaign.yaml` with the user, then launch it in the
-   background** in the chosen approval mode (see "Approval mode").
+4. **Confirm the final `campaign.yaml` with the user, then launch it
+   auto-approved in the background** (see "Launching a campaign").
 
 ## Pin models the gateway serves
 
@@ -209,49 +203,27 @@ models:
   report: "claude/aws/claude-sonnet-4-6"
 ```
 
-## Approval mode: auto-approve vs on-demand
+## Launching a campaign
 
-Every iteration has two human gates (DESIGN and FINDINGS). **How they're handled
-is a per-campaign decision you make with the user before launch**, and it hinges
-on whether a Slack/Telegram channel is bound (pre-flight step 1):
+Every iteration has two human gates (DESIGN and FINDINGS). This pod always runs
+**auto-approved**: both gates auto-pass and the campaign runs unattended to
+completion. Launch with `--auto-approve` (`NOUS_ALLOW_AUTO_APPROVE=1` is already
+set in this image, so the flag alone is enough). If a channel is bound, gate
+summaries still post to it as progress (see "Reporting progress to
+Slack/Telegram").
 
-- **A channel is bound → ask the user which mode they want:**
-  - **Auto-approve** — both gates auto-pass and the campaign runs unattended to
-    completion. Launch with `--auto-approve` (`NOUS_ALLOW_AUTO_APPROVE=1` is
-    already set in this image, so the flag alone is enough). Gate summaries still
-    post to the channel as progress. Best when the user trusts the run
-    end-to-end.
-  - **On-demand approval** — the campaign **pauses at each gate**, relays the gate
-    summary + an approval request to the bound channel, and only proceeds once the
-    user approves. Launch with `NOUS_ALLOW_AUTO_APPROVE=0` and **no**
-    `--auto-approve`. Best when the user wants to vet the DESIGN before paying for
-    EXECUTE_ANALYZE, or review FINDINGS before they enter the knowledge base.
-- **No channel bound → auto-approve.** Do **not** run `NOUS_ALLOW_AUTO_APPROVE=0`
-  without a channel: a backgrounded run then blocks at the first gate with no way
-  to surface or answer the approval request, so it **just halts**. If the user
-  wants to review gates, bind a channel first.
-
-**Front-load `locked_parameters` in either mode** — auto-approve outright refuses
-a campaign with no locks, and even under on-demand review a lock *mismatch* is a
-hard validation failure. That inventory is what keeps a run defensible.
+**Front-load `locked_parameters`** — auto-approve outright refuses a campaign
+with no locks. That inventory is what keeps a run defensible.
 
 **Always launch the campaign as a background process** so you stay responsive and
-can query state with `nous` while it runs. Keep the PID, the log, and the chosen
-mode in the campaign directory (`run.mode` lets the recovery path pick the right
-flags after a pod restart — see below):
+can query state with `nous` while it runs. Keep the PID and the log in the
+campaign directory:
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-
-# Auto-approve (channel optional):
 nohup nous run campaign.yaml --auto-approve --max-iterations <N> \
   > campaign.log 2>&1 &
-echo $! > run.pid; echo auto > run.mode
-
-# On-demand approval (REQUIRES a bound channel):
-NOUS_ALLOW_AUTO_APPROVE=0 nohup nous run campaign.yaml --max-iterations <N> \
-  > campaign.log 2>&1 &
-echo $! > run.pid; echo on-demand > run.mode
+echo $! > run.pid
 ```
 
 Then report status without blocking: `nous status <run_id> --line` (see
@@ -270,24 +242,33 @@ The pod can still go away for reasons *other* than idle hibernation — an image
 upgrade, a node drain/eviction, an OOM, or a plain crash. Campaign artifacts live
 on the persistent `$HOME`, so the run survives and is resumable. Therefore **at
 the start of every turn**, for each campaign the user cares about (or any you
-launched this session): if `run.pid` is dead but `nous status` shows the campaign
-is not `DONE`, resume it in the background — **with the same approval mode it
-launched with** (read `run.mode`; on-demand also needs the channel bridge back
-up, so re-run the bridge check first):
+launched this session): if the campaign's `run.pid` (located in its subdirectory under `$NOUS_CAMPAIGN_PARENT`) is dead but `nous status` shows the campaign
+is not `DONE`, resume it auto-approved in the background (if it uses a bound
+channel, re-run the bridge check first — see "Reporting progress"):
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-if [ "$(cat run.mode 2>/dev/null)" = on-demand ]; then
-  NOUS_ALLOW_AUTO_APPROVE=0 nohup nous resume campaign.yaml >> campaign.log 2>&1 &
-else
-  nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
-fi
+nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
 echo $! > run.pid
 ```
 
 There is no keep-awake step any more: because the pod doesn't idle-hibernate,
 you never need a terminal or SSH session held open to finish a run. Resume is
 only for the rarer non-idle restart above.
+
+## Handling "approve" responses from the user
+
+Because gate notifications are posted automatically to Slack/Telegram from the background campaign (even under `--auto-approve`), the user might see a message like "Waiting for approval" and respond with "approve" out of habit or context.
+
+If the user sends "approve", "approve once", "yes", "confirm", or any similar validation, **do NOT start a new campaign or resume a campaign if it is already running**.
+
+1. First, check if the campaign is already running. Note that the campaign directory is at `$NOUS_CAMPAIGN_PARENT/<run_id>`. Do NOT look for `run.pid` in the current directory; instead, check the path `$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid` (e.g. run `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"` and `nous status <run_id> --line` to verify).
+2. If it is already running:
+   - Do NOT run `nous run` or `nous resume` again.
+   - Reply to the user explaining that the campaign is running with `--auto-approve` enabled and is proceeding automatically, so no manual approval is needed.
+   - Show the current status of the campaign using `nous status <run_id> --line`.
+3. If it is NOT running and is stopped at a checkpoint (e.g., after a pod restart):
+   - Resume it in the background by running `cd "$NOUS_CAMPAIGN_PARENT/<run_id>" && nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &` and record the PID: `echo $! > run.pid` (per the "Long runs & recovery" section).
 
 ## Monitoring a running campaign
 
@@ -344,16 +325,10 @@ list (a "channel type … not available" error means it isn't):
   mention it unless the user asks about messenger reporting — then point them at
   binding a channel in the platform UI.
 
-Nous then POSTs a markdown summary at every DESIGN/FINDINGS gate — **including
-under `--auto-approve`** (the notify fires before the gate auto-passes) — and the
-bridge relays it to the thread. Delivery is best-effort: a bridge or channel
-hiccup logs a warning and never blocks the campaign.
-
-**In on-demand approval mode** (`NOUS_ALLOW_AUTO_APPROVE=0` — see "Approval
-mode") the same relay carries the gate's **approval request**, and the gate then
-*waits* for the user's go-ahead instead of auto-passing. This is exactly why
-on-demand needs a bound channel: it's the only place the request can surface and
-be answered. Watch the thread for the user's approval and keep the run moving.
+Nous then POSTs a markdown summary at every DESIGN/FINDINGS gate — the notify
+fires before the gate auto-passes — and the bridge relays it to the thread.
+Delivery is best-effort: a bridge or channel hiccup logs a warning and never
+blocks the campaign.
 
 **After a pod restart:** the bridge dies with the pod, like the campaign — not on
 idle (this pod doesn't hibernate), but on an upgrade, eviction, or crash. When

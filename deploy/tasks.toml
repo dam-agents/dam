@@ -254,11 +254,13 @@ kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --t
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 
 # Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
-# markers (issue #283) and roll ds/ztunnel if any are present. Belt-and-
-# suspenders against any rotation failure that slips past the 30d
-# DEFAULT_WORKLOAD_CERT_TTL pinned on istiod above (e.g. a cluster left
-# running past TTL, an upstream istio bug). Apply is idempotent on
-# re-runs of cluster:install.
+# markers (issue #283) and, if any are present, roll ds/ztunnel plus all
+# istiod-synthesised waypoint deployments — waypoints hold their own
+# SVIDs, and ztunnel logs the failed HBONE dial when a waypoint's cert
+# is the expired one (issue #705). Belt-and-suspenders against any
+# rotation failure that slips past the 30d DEFAULT_WORKLOAD_CERT_TTL
+# pinned on istiod above (e.g. a cluster left running past TTL, an
+# upstream istio bug). Apply is idempotent on re-runs of cluster:install.
 kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
 apiVersion: v1
 kind: ServiceAccount
@@ -298,6 +300,30 @@ subjects:
     name: ztunnel-cert-watchdog
     namespace: istio-system
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ztunnel-cert-watchdog-waypoints
+rules:
+  # Cluster-scoped: waypoint deployments are synthesised wherever an
+  # istio-waypoint Gateway lives; discovery is label-based across namespaces.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ztunnel-cert-watchdog-waypoints
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ztunnel-cert-watchdog-waypoints
+subjects:
+  - kind: ServiceAccount
+    name: ztunnel-cert-watchdog
+    namespace: istio-system
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -328,16 +354,27 @@ spec:
                   for pod in $(kubectl -n istio-system get pods -l app=ztunnel -o name); do
                     if kubectl -n istio-system logs --since=15m "$pod" 2>/dev/null \
                         | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
-                      echo "watchdog: $pod reported expired SVID — rolling ds/ztunnel"
+                      echo "watchdog: $pod reported expired SVID — rolling ztunnel + waypoints"
                       TRIGGERED=1
                       break
                     fi
                   done
                   if [ "$TRIGGERED" = 1 ]; then
+                    # The expired cert may be a waypoint's own SVID (ztunnel logs the
+                    # failed HBONE dial); istiod labels the deployments it synthesises.
+                    WAYPOINTS=$(kubectl get deploy -A -l gateway.istio.io/managed=istio.io-mesh-controller \
+                      -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
                     kubectl -n istio-system rollout restart ds/ztunnel
+                    for wp in $WAYPOINTS; do
+                      echo "watchdog: rolling waypoint deploy/${wp##*/} (ns ${wp%%/*})"
+                      kubectl -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
+                    done
                     kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
+                    for wp in $WAYPOINTS; do
+                      kubectl -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
+                    done
                   else
-                    echo "watchdog: ztunnel SVIDs healthy"
+                    echo "watchdog: mesh SVIDs healthy"
                   fi
 YAML
 
@@ -908,8 +945,83 @@ echo "[4/4] Disk usage on the cluster VM:"
 $RUN_IN_VM df -h /
 '''
 
+["cluster:fix-certs"]
+description = "Recover from expired dev-cluster certs (issue #283): roll ztunnel + waypoint deployments + cert-manager webhook. Honors LIMA_INSTANCE."
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+
+# Diagnose first: the expired-SVID signature always surfaces in ztunnel
+# logs — for ztunnel-held workload certs and for an expired waypoint cert
+# alike (the dialing ztunnel logs the failed HBONE handshake). Keep the
+# regex in sync with the ztunnel-cert-watchdog CronJob (cluster:install).
+echo "Scanning ztunnel logs (last 30m) for expired-cert markers..."
+FOUND=0
+for pod in $(kubectl --kubeconfig="$KUBECONFIG" -n istio-system get pods -l app=ztunnel -o name); do
+  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs --since=30m "$pod" 2>/dev/null \
+      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+    echo "  $pod: expired-cert signature PRESENT"
+    FOUND=1
+  else
+    echo "  $pod: clean"
+  fi
+done
+if [ "$FOUND" = 0 ]; then
+  echo "No expired-cert signature found — rolling anyway is harmless if you suspect a wedge."
+fi
+
+# Waypoint pods carry their own SVIDs; istiod stamps the deployments it
+# synthesises from istio-waypoint Gateways with this label.
+WAYPOINTS=$(kubectl --kubeconfig="$KUBECONFIG" get deploy -A \
+  -l gateway.istio.io/managed=istio.io-mesh-controller \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
+if [ -z "$WAYPOINTS" ]; then
+  if kubectl --kubeconfig="$KUBECONFIG" get gateways.gateway.networking.k8s.io -A \
+      -o jsonpath='{.items[*].spec.gatewayClassName}' 2>/dev/null | grep -qw istio-waypoint; then
+    echo "WARN: istio-waypoint Gateways exist but no waypoint deployments carry the" >&2
+    echo "      mesh-controller label — istiod still reconciling, or label drift after an istio bump." >&2
+  else
+    echo "No waypoints found (platform chart not installed?) — rolling ztunnel only."
+  fi
+fi
+
+# cert-manager's webhook holds a short-lived in-memory serving cert that a
+# suspended VM can age past expiry, failing chart installs at admission with
+# "failed calling webhook ... certificate has expired". A restart re-issues
+# it from the long-lived CA Secret.
+CM_WEBHOOK=0
+if kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+  CM_WEBHOOK=1
+fi
+
+echo "Rolling ds/ztunnel..."
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout restart ds/ztunnel
+for wp in $WAYPOINTS; do
+  echo "Rolling waypoint deploy/${wp##*/} (ns ${wp%%/*})..."
+  kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout restart "deploy/${wp##*/}"
+done
+if [ "$CM_WEBHOOK" = 1 ]; then
+  echo "Rolling cert-manager webhook..."
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout restart deploy/cert-manager-webhook
+fi
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
+for wp in $WAYPOINTS; do
+  kubectl --kubeconfig="$KUBECONFIG" -n "${wp%%/*}" rollout status "deploy/${wp##*/}" --timeout=120s
+done
+if [ "$CM_WEBHOOK" = 1 ]; then
+  kubectl --kubeconfig="$KUBECONFIG" -n cert-manager rollout status deploy/cert-manager-webhook --timeout=120s
+fi
+echo "Done. If symptoms persist, re-check with: mise run cluster:status"
+'''
+
 ["cluster:status"]
-description = "Show cluster and pod status. Options: --watch (continuous refresh every 2s)"
+description = "Show cluster and pod status. Options: --watch (continuous refresh every 2s). Honors LIMA_INSTANCE."
 raw = true
 run = '''
 #!/usr/bin/env bash
@@ -917,7 +1029,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/${LIMA_INSTANCE:-platform-k3s}/copied-from-guest/kubeconfig.yaml"
 fi
 
 STATUS_CMD="
@@ -950,7 +1062,47 @@ case "${1:-}" in
       sleep 0.5
     done
     ;;
-  *) eval "$STATUS_CMD" ;;
+  *)
+    eval "$STATUS_CMD"
+    # One-shot only — log fetches are too slow for the --watch loop. Same
+    # expiry signature the ztunnel-cert-watchdog CronJob keys on (see
+    # cluster:install); keep the regex in sync. ztunnel logs cover both its
+    # own expired SVID and an expired waypoint cert (it dials the mTLS hop).
+    echo ''
+    echo '=== Mesh cert health (istio-system) ==='
+    CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
+        -l app=ztunnel --since=30m --tail=2000 --prefix 2>/dev/null \
+      | grep -iE 'certificate expired|AlertReceived\(CertificateExpired\)' | tail -5 || true)
+    if [ -n "$CERT_HITS" ]; then
+      echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
+      echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
+      echo 'agent pods looping "[runtime] hello failed" (workspace seeding never starts).'
+      echo 'Fix now: mise run cluster:fix-certs   (the watchdog auto-heals within ~10 min)'
+      printf '%s\n' "$CERT_HITS"
+    else
+      echo 'ok — no expired-cert signature in recent ztunnel logs'
+    fi
+    echo ''
+    echo '=== cert-manager webhook health ==='
+    # The webhook's in-memory serving cert can expire while the VM sleeps,
+    # failing chart installs at admission. Probe with a server dry-run — the
+    # same call the platform chart's cert-manager objects go through.
+    if ! kubectl --kubeconfig="$KUBECONFIG" -n cert-manager get deploy cert-manager-webhook >/dev/null 2>&1; then
+      echo 'skipped — cert-manager not installed'
+    else
+      PROBE_ERR=$(printf 'apiVersion: cert-manager.io/v1\nkind: ClusterIssuer\nmetadata:\n  name: webhook-health-probe\nspec:\n  selfSigned: {}\n' \
+        | kubectl --kubeconfig="$KUBECONFIG" apply --dry-run=server -f - 2>&1 >/dev/null || true)
+      if [ -z "$PROBE_ERR" ]; then
+        echo 'ok — webhook admission responding'
+      elif printf '%s' "$PROBE_ERR" | grep -q 'certificate has expired'; then
+        echo 'WARNING: cert-manager webhook serving cert has expired — helm installs will'
+        echo 'fail at admission. Fix now: mise run cluster:fix-certs'
+      else
+        echo 'WARN: webhook probe failed for another reason:'
+        printf '%s\n' "$PROBE_ERR" | head -3
+      fi
+    fi
+    ;;
 esac
 '''
 

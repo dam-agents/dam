@@ -15,6 +15,12 @@ const PLATFORM_CA_PATH = "/etc/platform/ca/ca.crt";
 const KUBECONFIG_PLACEHOLDER_TOKEN = "injected-by-gateway";
 
 export interface KubernetesTarget {
+  /** The connection's user-given name (unique per user; a DNS-label slug —
+   *  see connectionNameSchema). Used as the kubeconfig cluster/user/context
+   *  name and file path. The host is NOT a safe key: two clusters can share a
+   *  host on different ports, and the context name dropped the port — so
+   *  same-host clusters collided in the merged KUBECONFIG. The name can't. */
+  name: string;
   host: string;
   port?: number;
   hasUpstreamCa: boolean;
@@ -57,7 +63,11 @@ export function buildKubernetesContributions(
     );
   }
   const server = `https://${target.host}${target.port ? `:${target.port}` : ""}`;
-  const kubeconfigPath = `${KUBECONFIG_DIR}/${fileSlug(target.host, target.port)}.config`;
+  // Cluster/user/context all named after the connection (unique per user), so
+  // distinct connections never collide in the merged KUBECONFIG. Routing (the
+  // egress-inject) still keys on host/port — the gateway routes by SNI.
+  const label = target.name;
+  const kubeconfigPath = `${KUBECONFIG_DIR}/${label}.config`;
   return [
     {
       kind: "egress-inject",
@@ -79,23 +89,21 @@ export function buildKubernetesContributions(
         kind: "Config",
         clusters: [
           {
-            name: target.host,
+            name: label,
             cluster: {
               server,
               "certificate-authority": PLATFORM_CA_PATH,
             },
           },
         ],
-        users: [
-          { name: target.host, user: { token: KUBECONFIG_PLACEHOLDER_TOKEN } },
-        ],
+        users: [{ name: label, user: { token: KUBECONFIG_PLACEHOLDER_TOKEN } }],
         contexts: [
           {
-            name: target.host,
-            context: { cluster: target.host, user: target.host },
+            name: label,
+            context: { cluster: label, user: label },
           },
         ],
-        "current-context": target.host,
+        "current-context": label,
       },
     },
   ];
@@ -126,9 +134,4 @@ export function decodeCaData(caData: string): string {
 // Host is already bracket-stripped, so a remaining ':' means bare IPv6.
 function isIpLiteral(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
-}
-
-// Per-endpoint kubeconfig filename; distinct endpoints get distinct files.
-function fileSlug(host: string, port?: number): string {
-  return `${host}${port ? `-${port}` : ""}`.replace(/[^a-zA-Z0-9.-]/g, "_");
 }

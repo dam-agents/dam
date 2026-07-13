@@ -3,8 +3,8 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG BOBSHELL_VERSION=1.0.5
-ARG BOBSHELL_SHA256=38fe36e42318282d8b440340a776bb16eaefe3eaa2681184c786373b501f2bf7
+ARG BOBSHELL_VERSION=1.0.6
+ARG BOBSHELL_SHA256=6ec51abec4251d41ec45709030988b90baa659f535fc8d14dd003023dd163a5b
 RUN --mount=type=cache,target=/root/.npm \
     curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOBSHELL_VERSION}.tgz" -o /tmp/bobshell.tgz &&\
     echo "${BOBSHELL_SHA256} /tmp/bobshell.tgz" | sha256sum -c - &&\

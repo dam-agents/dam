@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-07
+Last verified: 2026-07-10
 
 ## Overview
 
@@ -195,6 +195,15 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   credential, built from its template and stored with the same labels and
   annotations: one per-Connection Secret carrying the credential value plus
   the placeholder SDS the gateway reads.
+- **Client-credentials grants** (machine-to-machine OAuth) — the
+  per-Connection Secret stores the long-lived client secret, and the
+  api-server exchanges it at the provider's token endpoint (discovered from
+  the issuer's OAuth metadata at connect time) for short-lived access
+  tokens: once synchronously at connect time (bad credentials fail the
+  create), then again before each expiry via the same refresh loop that
+  renews OAuth tokens. Only the minted access token reaches the gateway's
+  injection path; the client secret stays at rest and is never sent to the
+  connection's hosts.
 - **GitHub personal access tokens** — a PAT is one **`github-pat`
   Connection** whose template re-bakes, from the bare PAT, the three host
   injections it needs into a single per-Connection Secret:
@@ -505,10 +514,21 @@ k3s/lima `cluster:install` ([`deploy/tasks.toml`](../../deploy/tasks.toml))
 pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
 outlive a typical dev cluster's lifetime, and installs a
 `ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent
-ztunnel logs every 10 min and rolls `ds/ztunnel` if it sees
-`certificate expired` / `AlertReceived(CertificateExpired)`. Together
-these absorb the race where lima VM suspend/resume on a sleeping host
-laptop slips past the default 24h rotation window and stalls every
-mesh hop — see [issue #283](https://github.com/dam-agents/dam/issues/283).
+ztunnel logs every 10 min for `certificate expired` /
+`AlertReceived(CertificateExpired)` and rolls the affected mesh
+workloads — `ds/ztunnel` and the istio-synthesised waypoint
+deployments, whose SVIDs expire independently. An expired waypoint
+cert stalls only the flows through that waypoint (e.g. the harness
+path), which is why it can masquerade as an app-level bug — see
+[issue #705](https://github.com/dam-agents/dam/issues/705).
+`mise run cluster:fix-certs` performs the same roll on demand, and
+`mise run cluster:status` reports whether the expired-cert signature
+is present. Together these absorb the race where lima VM
+suspend/resume on a sleeping host laptop slips past the default 24h
+rotation window and stalls every mesh hop — see
+[issue #283](https://github.com/dam-agents/dam/issues/283).
+The same clock skip can age out cert-manager's short-lived webhook
+serving cert, failing chart installs at admission; `cluster:status`
+probes for that and `cluster:fix-certs` restarts the webhook too.
 Production deployments configure mesh PKI separately and don't get
-either knob.
+any of these knobs.

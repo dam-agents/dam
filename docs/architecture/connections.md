@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-07
+Last verified: 2026-07-10
 
 ## Overview
 
@@ -95,9 +95,11 @@ interface Connection {
 }
 ```
 
-The `auth` field carries credential-acquisition state in one of three modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
+The `auth` field carries credential-acquisition state in one of four modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
 A header connection's stored credential can be **updated in place** — the value-rotation counterpart to OAuth refresh. The update re-bakes the connection's SDS files from its existing contributions and the new value and rewrites them, together with the credential, onto the same per-Connection Secret. It touches only the secret store: the connection's identity, contributions, and all its agent grants are preserved, and because the live value is read gateway-side via Envoy SDS (the `env` contribution carries only a placeholder), no Agent-spec patch or pod roll is needed. OAuth connections rotate through their refresh flow instead, not this path.
+
+A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously — an undiscoverable issuer or invalid credentials fail the create before anything is persisted. The issuer URL is optional: when omitted, the authorization server is discovered from the API host itself (its protected-resource metadata naming the issuer, or the host serving issuer metadata directly). The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret (when the provider doesn't state a token lifetime, the platform assumes a conservative one-hour horizon rather than trusting the token to live forever). One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire. A connection whose re-mint keeps failing surfaces as **expired** once its token horizon passes.
 
 ### Contribution
 
@@ -178,7 +180,9 @@ token, and — only when the API cert isn't publicly trusted — the cluster's C
 The build synthesizes three contributions: an `egress-inject` carrying the port,
 the streaming-upgrade opt-in, and (when a CA was given) the upstream-CA marker;
 a `file` contribution writing a ready-to-use kubeconfig at a **per-connection
-path**; and a `KUBECONFIG` `env` pointing at that file. The kubeconfig's trust
+path** (the file, and the kubeconfig's cluster/user/context, are all named after
+the connection — unique per user); and a `KUBECONFIG` `env` pointing at that
+file. The kubeconfig's trust
 anchor is the platform MITM CA already mounted in every agent pod, and its user
 carries only an **inert placeholder token** — the gateway overwrites it with
 the real service-account token on the wire, so `kubectl`/`oc` work out of the
@@ -191,7 +195,10 @@ kubeconfig file, and the `env` driver joins their `KUBECONFIG` entries into the
 `:`-separated list `kubectl`/`oc` merge at load time (kubeconfig has no
 include-another-file mechanism, so this is the idiomatic route). The driver
 resolves `$HOME` and dedups; the first-granted connection's context is the
-default.
+default. Because the cluster/user/context are keyed by the connection name — not
+the API host — two clusters that share a host on different ports stay distinct in
+the merged config (the host alone dropped the port and collided), and each is
+addressable as `--context <connection-name>`.
 
 The CA is optional and never reaches the agent — it configures the gateway's
 upstream validation only. Publicly-trusted endpoints (most managed clusters)
@@ -211,10 +218,10 @@ blindly.
     { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
       "headerName": "Authorization", "valueFormat": "Bearer {value}",
       "upgrades": true, "upstreamCa": true },
-    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/api.prod.example-6443.config" },
-    { "kind": "file", "path": "$HOME/.kube/connections/api.prod.example-6443.config", "format": "yaml",
+    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/prod-cluster.config" },
+    { "kind": "file", "path": "$HOME/.kube/connections/prod-cluster.config", "format": "yaml",
       "mergeMode": "overwrite",
-      "content": { "clusters": [ { "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "user": { "token": "injected-by-gateway" } } ], "…": "…" } }
+      "content": { "clusters": [ { "name": "prod-cluster", "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "name": "prod-cluster", "user": { "token": "injected-by-gateway" } } ], "contexts": [ { "name": "prod-cluster", "context": { "cluster": "prod-cluster", "user": "prod-cluster" } } ], "current-context": "prod-cluster" } }
   ]
 }
 ```

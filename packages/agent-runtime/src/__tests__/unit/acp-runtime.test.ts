@@ -2064,12 +2064,18 @@ function makeFakeStore(now: () => string = () => "2026-03-03T00:00:00Z"): {
           meta,
           createdAt: existing?.createdAt ?? "2026-01-01T00:00:00Z",
           ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+          seenAt: existing?.seenAt ?? now(),
         });
       },
       recordActivity: (id) => {
         const existing = sessions.get(id);
         if (!existing) return;
         sessions.set(id, { ...existing, lastActivityAt: now() });
+      },
+      recordSeen: (id) => {
+        const existing = sessions.get(id);
+        if (!existing) return;
+        sessions.set(id, { ...existing, seenAt: now() });
       },
       all: () => Object.fromEntries(sessions),
       tombstone: (id) => {
@@ -2130,6 +2136,7 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
     expect(sessions.get(SID)).toEqual({
       meta: { type: "schedule", scheduleId: "sch-1" },
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-03-03T00:00:00Z",
     });
   });
 
@@ -2150,6 +2157,7 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
     expect(sessions.get(SID)).toEqual({
       meta: {},
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-03-03T00:00:00Z",
     });
   });
 
@@ -2183,6 +2191,35 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       running: false,
     });
     expect(resp.result.sessions[0].title).toBe("Hello");
+  });
+
+  it("stamps terminal mode + running on an active store-less session", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+      isTerminalSessionActive: (sid) => sid === SID,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID },
+        { sessionId: "other-idle" },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions[0]._meta.platform).toEqual({
+      mode: "terminal",
+      running: true,
+    });
+    // Idle store-less sessions keep no platform meta (terminal-default decode).
+    expect(resp.result.sessions[1]._meta).toBeUndefined();
   });
 
   it("leaves harness-only (no store entry) sessions unenriched in the list", () => {

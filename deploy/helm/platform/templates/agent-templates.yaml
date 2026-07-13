@@ -68,8 +68,14 @@ data:
     nodeSelector:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+    {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
+    {{- fail (printf "agentTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
+    {{- end }}
     {{- if $tmpl.imagePullSecret }}
     imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
+    {{- end }}
+    {{- with $tmpl.imagePullSecretRef }}
+    imagePullSecretRef: {{ . | quote }}
     {{- end }}
     {{- with $tmpl.resources }}
     resources:
@@ -87,7 +93,7 @@ data:
     {{- end }}
     {{- $env := $tmpl.env | default list }}
     {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}
-    {{- $env = concat $env (include "platform.agentTelemetry.env" $ | fromYamlArray) }}
+    {{- $env = concat $env (include "platform.agentTelemetry.env" (dict "root" $ "templateName" $name) | fromYamlArray) }}
     {{- end }}
     {{- with $env }}
     env:

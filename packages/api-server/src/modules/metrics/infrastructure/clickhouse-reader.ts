@@ -4,7 +4,10 @@ import type {
   SessionRuntime,
   TokenSpendByModel,
 } from "api-server-api";
-import type { TelemetryReader } from "../services/telemetry-service.js";
+import type {
+  MetricsReader,
+  MetricsWindow,
+} from "../services/metrics-service.js";
 
 export function createClickhouseClient(cfg: {
   url: string;
@@ -25,11 +28,43 @@ export function createClickhouseClient(cfg: {
 // the trusted owner id in ResourceAttributes (stamped by the agent gateway —
 // see docs/architecture/observability.md). Every query is gated on that owner
 // id against the caller's resolved allowlist.
-const OWNED_API_REQUESTS = `
-  ServiceName = 'claude-code'
-  AND Body = 'claude_code.api_request'
-  AND ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}
-  AND Timestamp >= now() - toIntervalHour({hours:UInt32})`;
+export const ownedApiRequests = (w: MetricsWindow): string => {
+  const base = [
+    "ServiceName = 'claude-code'",
+    "Body = 'claude_code.api_request'",
+    "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
+    ...(w.hours === undefined
+      ? []
+      : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
+  ];
+  if (w.sessionId === undefined) return base.join("\n  AND ");
+  // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
+  // own session.id but inherit the session's W3C trace context (TRACEPARENT),
+  // so their records carry the parent trace's TraceId. "This session" folds in
+  // every session sharing a trace with the target — whole sessions, not just
+  // same-trace rows, since a child's warmup calls carry no TraceId. Both
+  // subqueries reuse the ownership + time predicate, so the fold never reaches
+  // across owners; when the harness emitted no TraceId this degrades to the
+  // exact-session match.
+  const owned = base.join(" AND ");
+  return [
+    ...base,
+    `(LogAttributes['session.id'] = {sessionId:String}
+   OR LogAttributes['session.id'] IN (
+     SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
+     WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
+       SELECT DISTINCT TraceId FROM otel_logs
+       WHERE ${owned}
+         AND LogAttributes['session.id'] = {sessionId:String}
+         AND TraceId != '')))`,
+  ].join("\n  AND ");
+};
+
+const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
+  agentIds,
+  ...(w.hours === undefined ? {} : { hours: w.hours }),
+  ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
+});
 
 const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
 const TOK_IN = IN("'input_tokens'");
@@ -43,7 +78,7 @@ const n = (v: unknown): number => Number(v ?? 0);
 
 export function createClickhouseReader(
   client: ClickHouseClient,
-): TelemetryReader {
+): MetricsReader {
   const rows = async (
     query: string,
     query_params: Record<string, unknown>,
@@ -57,7 +92,7 @@ export function createClickhouseReader(
   };
 
   return {
-    async tokenSpendByModel(agentIds, hours) {
+    async tokenSpendByModel(agentIds, window) {
       const r = await rows(
         `SELECT
            LogAttributes['model'] AS model,
@@ -68,10 +103,10 @@ export function createClickhouseReader(
            sum(${TOK_CACHE_C}) AS cacheCreationTokens,
            sum(${COST_USD}) AS costUsd
          FROM otel_logs
-         WHERE ${OWNED_API_REQUESTS}
+         WHERE ${ownedApiRequests(window)}
          GROUP BY model
          ORDER BY costUsd DESC`,
-        { agentIds, hours },
+        windowParams(agentIds, window),
       );
       return r.map((x) => ({
         model: String(x.model ?? ""),
@@ -84,7 +119,7 @@ export function createClickhouseReader(
       })) satisfies TokenSpendByModel[];
     },
 
-    async runtimeBySession(agentIds, hours) {
+    async runtimeBySession(agentIds, window) {
       const r = await rows(
         `SELECT
            LogAttributes['session.id'] AS sessionId,
@@ -99,10 +134,10 @@ export function createClickhouseReader(
            min(Timestamp) AS firstAt,
            max(Timestamp) AS lastAt
          FROM otel_logs
-         WHERE ${OWNED_API_REQUESTS} AND LogAttributes['session.id'] != ''
+         WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
          GROUP BY sessionId, agentId
          ORDER BY lastAt DESC`,
-        { agentIds, hours },
+        windowParams(agentIds, window),
       );
       return r.map((x) => ({
         sessionId: String(x.sessionId ?? ""),
@@ -119,7 +154,7 @@ export function createClickhouseReader(
       })) satisfies SessionRuntime[];
     },
 
-    async contextPerCall(agentIds, hours, limit) {
+    async contextPerCall(agentIds, window, limit) {
       const r = await rows(
         `SELECT
            Timestamp AS at,
@@ -134,10 +169,10 @@ export function createClickhouseReader(
            ${COST_USD} AS costUsd,
            ${IN("'duration_ms'")} AS durationMs
          FROM otel_logs
-         WHERE ${OWNED_API_REQUESTS}
+         WHERE ${ownedApiRequests(window)}
          ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
-        { agentIds, hours, limit },
+        { ...windowParams(agentIds, window), limit },
       );
       return r.map((x) => ({
         at: String(x.at ?? ""),

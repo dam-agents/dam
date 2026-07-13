@@ -12,7 +12,7 @@ import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { reposRouter } from "./modules/repos/router.js";
-import { telemetryRouter } from "./modules/telemetry/router.js";
+import { metricsRouter } from "./modules/metrics/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
 import { termsRouter } from "./modules/terms/router.js";
 
@@ -28,7 +28,7 @@ export const appRouter = t.router({
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
   files: filesRouter,
-  telemetry: telemetryRouter,
+  metrics: metricsRouter,
   terms: termsRouter,
   e2e: e2eRouter,
   apiKeys: apiKeysRouter,

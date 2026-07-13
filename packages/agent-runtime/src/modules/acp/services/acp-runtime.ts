@@ -63,8 +63,11 @@ export interface AcpRuntime {
    * A cross-session call like `listSessions` carries no sessionId and never
    * engages — such channels can do their RPC round-trip without ever seeing
    * another session's permission prompts or updates.
+   *
+   * `viewer: false` marks a machine-driven channel (the in-process trigger
+   * driver): its activity never counts as the user having seen the session.
    */
-  attach(channel: ClientChannel): void;
+  attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   resetSession(sessionId: string): void;
   /** Env on disk changed: recycle a running harness so it respawns with the new env. */
@@ -92,6 +95,8 @@ export interface AcpRuntimeDeps {
   logBytesCap?: number;
   /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
+  /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
+  isTerminalSessionActive?: (sessionId: string) => boolean;
 }
 
 interface ActivePrompt {
@@ -242,6 +247,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * which channels receive fan-out broadcasts.
    */
   const engagedSessions = new Map<ClientChannel, Set<string>>();
+  /** Machine-driven channels (trigger driver); their activity is never "seen". */
+  const nonViewerChannels = new Set<ClientChannel>();
   const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
   const activePromptBySession = new Map<string, ActivePrompt>();
@@ -367,6 +374,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!sessions) return; // channel detached
     if (sessions.has(sessionId)) return; // idempotent
     sessions.add(sessionId);
+    if (!nonViewerChannels.has(channel))
+      deps.sessionMetadata?.recordSeen(sessionId);
 
     // Replay any pending agent→client requests for this session to the
     // newly-engaged channel. A fresh viewer joining an in-progress prompt
@@ -383,6 +392,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function hasEngagedChannel(sessionId: string): boolean {
     for (const [channel, sessions] of engagedSessions) {
       if (sessions.has(sessionId) && channel.isOpen()) return true;
+    }
+    return false;
+  }
+
+  function hasEngagedViewer(sessionId: string): boolean {
+    for (const [channel, sessions] of engagedSessions) {
+      if (
+        sessions.has(sessionId) &&
+        channel.isOpen() &&
+        !nonViewerChannels.has(channel)
+      )
+        return true;
     }
     return false;
   }
@@ -635,6 +656,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
     engagedSessions.delete(channel);
+    nonViewerChannels.delete(channel);
     channelCursors.delete(channel);
 
     // Drop any prompts this channel had queued but not yet sent to the agent.
@@ -987,7 +1009,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               ? injectPlatformMetaIntoList(
                   frame,
                   deps.sessionMetadata,
-                  activePromptBySession,
+                  (sid) =>
+                    activePromptBySession.has(sid) ||
+                    (deps.isTerminalSessionActive?.(sid) ?? false),
                 )
               : (frame as object);
           const out = JSON.stringify({
@@ -1015,6 +1039,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             // Turn boundary — apply a deferred env change if nothing's in flight.
             maybeRecycleForEnv();
           }
+          // A completed turn is activity too — a response landing with no
+          // viewer attached is what makes the session unread.
+          deps.sessionMetadata?.recordActivity(sid);
+          if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           appendAndFanOut(
             sid,
             JSON.stringify(
@@ -1231,6 +1259,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // A real prompt is genuine activity — stamp it so the session list
         // sorts/displays by last message, not the harness mtime.
         deps.sessionMetadata?.recordActivity(promptSessionId);
+        if (hasEngagedViewer(promptSessionId))
+          deps.sessionMetadata?.recordSeen(promptSessionId);
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
@@ -1287,11 +1317,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   return {
-    attach(channel) {
+    attach(channel, opts) {
       // One path for both: buffer frames until the agent is bound, then replay.
       // Warm (env present) releases synchronously below — buffered stays empty.
       // Cold-boot parks the release until env lands (or the safety timer fires).
       engagedSessions.set(channel, new Set());
+      if (opts?.viewer === false) nonViewerChannels.add(channel);
       const buffered: string[] = [];
       let live: AgentProcess | null = null;
       const release = (): void => {
@@ -1410,7 +1441,12 @@ function withPlatformMeta(
     ...(entry.lastActivityAt ? { updatedAt: entry.lastActivityAt } : {}),
     _meta: {
       ...existingMeta,
-      platform: { ...entry.meta, createdAt: entry.createdAt, running },
+      platform: {
+        ...entry.meta,
+        createdAt: entry.createdAt,
+        running,
+        ...(entry.seenAt ? { seenAt: entry.seenAt } : {}),
+      },
     },
   };
 }
@@ -1424,7 +1460,7 @@ function withPlatformMeta(
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
-  activeSessions: ReadonlyMap<string, unknown>,
+  isRunning: (sessionId: string) => boolean,
 ): object {
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
@@ -1442,9 +1478,18 @@ function injectPlatformMetaIntoList(
     .map((s) => {
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
       const entry = store.get(s.sessionId);
-      return entry
-        ? withPlatformMeta(s, entry, activeSessions.has(s.sessionId))
-        : s;
+      if (entry) return withPlatformMeta(s, entry, isRunning(s.sessionId));
+      // Store-less sessions decode as terminal by having no platform meta;
+      // adding meta for `running` must stamp the mode to keep that decode.
+      if (!isRunning(s.sessionId)) return s;
+      const existingMeta = isNonNullObject(s._meta) ? s._meta : {};
+      return {
+        ...s,
+        _meta: {
+          ...existingMeta,
+          platform: { mode: "terminal", running: true },
+        },
+      };
     });
   return { ...frame, result: { ...result, sessions: enriched } };
 }

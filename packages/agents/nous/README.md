@@ -22,7 +22,10 @@ template sets `telemetry: true`, and when the telemetry backend is installed
 Both of Nous's dispatch paths — the Claude Agent SDK (which builds its
 subprocess env from `os.environ`) and the legacy `claude -p` fallback — pass
 that env through to the harness, so every planner/executor turn of a campaign
-exports token/cost/duration telemetry with trusted per-agent attribution.
+exports token/cost/duration telemetry with trusted per-agent attribution —
+under the service name `nous` (the chart names the OTel service after the
+template), with the user-declared agent name riding along as a display-only
+resource attribute.
 Gate summaries go through the OpenAI-format endpoint instead of the Claude
 CLI and are the one dispatch path that does not export.
 
@@ -41,10 +44,9 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
   using channels is rejected at pre-flight ([Nous issue #296](https://github.com/AI-native-Systems-Research/agentic-strategy-evolution/issues/296))
   — which would break the channel bridge below. The patch is idempotent and
   self-verifying; it no-ops once a Nous release ships the property.
-- `NOUS_ALLOW_AUTO_APPROVE=1` as the default so `--auto-approve` runs are
-  unconditional in this pod (the design/findings human gates auto-pass). The
-  agent overrides it to `0` per-run for **on-demand approval**, where each gate
-  is instead relayed to a bound Slack/Telegram channel (see `AGENTS.md`).
+- `NOUS_ALLOW_AUTO_APPROVE=1` so `--auto-approve` runs are unconditional in this
+  pod (the design/findings human gates auto-pass) — the only approval mode this
+  pod runs in (see `AGENTS.md`).
 - `NOUS_CAMPAIGN_PARENT=/home/agent/nous-campaigns` (on the persist:true `$HOME`
   mount) so campaign artifacts survive pod restarts and stay out of target repos
   (Nous issue #239).
@@ -70,12 +72,10 @@ harness scripts. The chat harness drives `nous` per `AGENTS.md`:
   unique web-safe `run_id` (repo + question, `-2`/`-3` on collision); the target
   repo is cloned into `<run_id>/repo`, never in the pod root. `campaign.yaml`
   always declares `locked_parameters`.
-- **Every run** → launched as a **background process** (PID in `run.pid`, output
-  in `campaign.log`, chosen mode in `run.mode`) so the agent stays conversational
-  and can poll `nous status` while it runs. Approval is a per-campaign choice:
-  **auto-approve** by default, or — when a Slack/Telegram channel is bound —
-  **on-demand approval** (`NOUS_ALLOW_AUTO_APPROVE=0`), where each gate pauses and
-  is relayed to the channel for the user to approve.
+- **Every run** → launched **auto-approved** as a **background process** (PID in
+  `run.pid`, output in `campaign.log`) so the agent stays conversational and can
+  poll `nous status` while it runs. Both design/findings gates auto-pass; a bound
+  Slack/Telegram channel still receives gate summaries as progress.
 - **Experiment trial** → when launched as an arm of a platform Experiment
   (the Trial prompt carries the autonomous-trial directive), the interactive
   doctrine is suspended: the agent self-authors the campaign, runs
@@ -108,11 +108,6 @@ call routes back through the egress gateway like the harness's own MCP calls, an
 the per-agent MCP endpoint authorizes by the pod's **mesh identity** (no token —
 ADR-041). Stdlib-only; the agent launches it on demand (see `AGENTS.md`). Needs a
 channel bound to the agent; delivery is best-effort.
-
-The same bridge doubles as the **approval channel** for on-demand mode: with
-`NOUS_ALLOW_AUTO_APPROVE=0` the relayed card is an approval request the user
-answers from the thread rather than a fire-and-forget progress summary, so a
-bound channel is a prerequisite for on-demand approval (not just reporting).
 
 Each summary is itself an OpenAI-format LLM call (`OPENAI_BASE_URL`). Under
 LiteLLM that hits the proxy's intercept CA and a model-id `403`, so the image

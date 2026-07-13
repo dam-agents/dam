@@ -23,6 +23,7 @@ export function optimisticInsertSession(
   agentId: string,
   sessionId: string,
   mode: SessionMode,
+  running = false,
 ): void {
   const stub: SessionView = {
     sessionId,
@@ -34,7 +35,7 @@ export function optimisticInsertSession(
     experimentId: null,
     title: null,
     updatedAt: null,
-    running: false,
+    running,
   };
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
@@ -53,6 +54,20 @@ export function removeSessionFromCache(
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
     (prev) => prev?.filter((s) => s.sessionId !== sessionId),
+  );
+}
+
+// Mirror the agent-side seen stamp into the list cache ahead of the next poll.
+// Stamps the row's own activity time, not the browser clock, to rule out skew.
+export function setSessionSeen(agentId: string, sessionId: string): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, seenAt: s.updatedAt ?? s.createdAt }
+          : s,
+      ),
   );
 }
 

@@ -26,6 +26,7 @@ export function Terminal({
   onConnected,
   onFirstOutput,
   onFirstSubmit,
+  onSubmit,
   autoConnect = true,
 }: {
   agentId: string;
@@ -39,6 +40,8 @@ export function Terminal({
   onFirstOutput?: () => void;
   /** Fires on the first submitted line (CR/LF) — a sent message, not startup's device-report onData noise. */
   onFirstSubmit?: () => void;
+  /** Fires on every submitted line. */
+  onSubmit?: () => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,9 +152,12 @@ export function Terminal({
       };
 
       term.onData((data) => {
-        if (!firstSubmitSeen && /[\r\n]/.test(data)) {
-          firstSubmitSeen = true;
-          onFirstSubmit?.();
+        if (/[\r\n]/.test(data)) {
+          onSubmit?.();
+          if (!firstSubmitSeen) {
+            firstSubmitSeen = true;
+            onFirstSubmit?.();
+          }
         }
         if (ws?.readyState === WebSocket.OPEN)
           ws.send(encodeDataFrame(OP_INPUT, data));

@@ -72,5 +72,23 @@ export default defineConfig({
       dependencies: ["agent"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      // Pure-API spec (mints its own JWT, no browser session, so no
+      // storageState); needs the agent + granted connection from "agent".
+      // Listed late so its harness recycles on env changes can't interrupt
+      // the message-driven suites.
+      name: "user-env",
+      testMatch: /09-.*\.spec\.ts$/,
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      // Churns its own dedicated connection on the shared agent; listed last
+      // so the delete/recreate can't disturb the injection/slack suites.
+      name: "connection-regrant",
+      testMatch: /10-.*\.spec\.ts$/,
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

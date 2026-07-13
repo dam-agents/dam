@@ -31,10 +31,10 @@ import {
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import {
-  createDisabledTelemetryService,
-  createTelemetryService,
-  type TelemetryReader,
-} from "../../modules/telemetry/index.js";
+  createDisabledMetricsService,
+  createMetricsService,
+  type MetricsReader,
+} from "../../modules/metrics/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
 import {
@@ -125,9 +125,9 @@ export interface ApiServerAppDeps {
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
-  /** ClickHouse-backed agent-telemetry reader; `null` when the telemetry
-   *  backend is disabled (the telemetry API then fails closed). */
-  telemetryReader: TelemetryReader | null;
+  /** ClickHouse-backed agent-metrics reader; `null` when the telemetry
+   *  backend is disabled (the metrics API then fails closed). */
+  metricsReader: MetricsReader | null;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
@@ -155,7 +155,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     contributionsSettled,
     getAgentCapabilities,
     schedulesBoot,
-    telemetryReader,
+    metricsReader,
     terms,
     isTermsAccepted,
     e2e,
@@ -817,11 +817,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       isSettled: (agentId) =>
         contributionsSettled.status(agentId).then((s) => s.settled),
     });
-    // Owner-scoped telemetry: resolve this user's agent IDs (narrowed to the
+    // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
     // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
-    const telemetry = telemetryReader
-      ? createTelemetryService({
-          reader: telemetryReader,
+    const metrics = metricsReader
+      ? createMetricsService({
+          reader: metricsReader,
           listOwnedAgentIds: async () => {
             const ids = (await agents.list()).map((a) => a.id);
             return user.agentIds === "*"
@@ -829,7 +829,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
               : ids.filter((id) => user.agentIds.includes(id));
           },
         })
-      : createDisabledTelemetryService();
+      : createDisabledMetricsService();
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -848,7 +848,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         experiments,
         files,
         harnessConfig,
-        telemetry,
+        metrics,
         terms,
         e2e,
         apiKeys,

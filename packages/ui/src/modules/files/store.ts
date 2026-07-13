@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 
-export type RightTab = "files" | "configuration";
+export type RightTab = "files" | "configuration" | "metrics";
 
 export interface FilesSlice {
   /** Path of the file currently open in the viewer. The content itself lives

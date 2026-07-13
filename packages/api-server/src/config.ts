@@ -51,9 +51,9 @@ const configSchema = z.object({
    *  mounts the CA and sets this; unset means no custom CA. */
   databaseCaCertPath: z.string().optional(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
-  /** ClickHouse HTTP endpoint for the agent-telemetry read path (the
+  /** ClickHouse HTTP endpoint for the agent-metrics read path (the
    *  ClickStack store). Unset means the telemetry backend is disabled — the
-   *  telemetry API then fails closed with PRECONDITION_FAILED. The Helm chart
+   *  metrics API then fails closed with PRECONDITION_FAILED. The Helm chart
    *  sets these only when `clickstack.enabled`, from the same service/secret
    *  the collector writes through. */
   clickhouseUrl: z.string().optional(),

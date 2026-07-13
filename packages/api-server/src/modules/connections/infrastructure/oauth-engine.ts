@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 
 export interface OAuthProvider {
   id: string;
-  authorizationUrl: string;
+  /** Absent for token-endpoint-only grants (client credentials). */
+  authorizationUrl?: string;
   tokenEndpoint: string;
   clientId: string;
   /** Public clients (PKCE-only) omit this. */
@@ -44,6 +45,10 @@ export interface OAuthEngine {
   refresh(opts: {
     provider: OAuthProvider;
     refreshToken: string;
+  }): Promise<TokenSet>;
+  clientCredentials(opts: {
+    provider: OAuthProvider;
+    audience?: string;
   }): Promise<TokenSet>;
 }
 
@@ -142,6 +147,11 @@ export function createOAuthEngine(
 
   return {
     start({ provider, redirectUri, ctx }) {
+      if (!provider.authorizationUrl) {
+        throw new Error(
+          `OAuth provider ${provider.id} has no authorizationUrl`,
+        );
+      }
       ensureJanitor();
       const codeVerifier = crypto.randomBytes(32).toString("base64url");
       const codeChallenge = crypto
@@ -208,6 +218,24 @@ export function createOAuthEngine(
       if (provider.clientSecret) {
         params.set("client_secret", provider.clientSecret);
       }
+      return postTokenEndpoint(provider, params);
+    },
+
+    async clientCredentials({ provider, audience }) {
+      if (!provider.clientSecret) {
+        throw new Error(
+          `OAuth provider ${provider.id}: client_credentials requires a client secret`,
+        );
+      }
+      const params = new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: provider.clientId,
+        client_secret: provider.clientSecret,
+      });
+      if (provider.scopes?.length) {
+        params.set("scope", provider.scopes.join(" "));
+      }
+      if (audience) params.set("audience", audience);
       return postTokenEndpoint(provider, params);
     },
   };

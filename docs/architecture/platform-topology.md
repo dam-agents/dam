@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-07-02
+Last verified: 2026-07-13
 
 ## Overview
 
@@ -47,14 +47,14 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one.
+A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this.
 
 ### agent-runtime
 
 The per-agent pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract. Its responsibilities are:
 
 - Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
-- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so a refresh within a 30 s grace window reattaches.
+- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport. Available only on images that ship `sshd`.
 - Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers. See [connections](connections.md).
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.

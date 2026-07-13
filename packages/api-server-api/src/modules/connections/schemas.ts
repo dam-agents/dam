@@ -90,6 +90,31 @@ const headerCreateInput = z.object({
   caData: z.string().optional(),
 });
 
+// Like oauthCreateInput, fields a template may preset are optional here and
+// enforced at build time against the template's own values.
+const clientCredentialsCreateInput = z.object({
+  ...commonFields,
+  authKind: z.literal("client-credentials"),
+  host: z.string().min(1).optional(),
+  // The token endpoint is discovered from the issuer's OAuth metadata.
+  issuerUrl: z.string().url().optional(),
+  clientId: z.string().min(1).optional(),
+  clientSecret: z.string().min(1).optional(),
+  // Space- or comma-separated; the server splits. A single string keeps the
+  // schema-driven forms all-string.
+  scopes: z.string().optional(),
+  audience: z.string().min(1).optional(),
+  headerName: z.string().min(1).optional(),
+  valueFormat: z.string().min(1).optional(),
+  envName: z
+    .string()
+    .regex(
+      /^[A-Za-z_][A-Za-z0-9_]*$/,
+      "env var name must be letters, digits, and underscores (not starting with a digit)",
+    )
+    .optional(),
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
@@ -98,6 +123,7 @@ const noneCreateInput = z.object({
 
 export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   oauthCreateInput,
+  clientCredentialsCreateInput,
   headerCreateInput,
   noneCreateInput,
 ]);

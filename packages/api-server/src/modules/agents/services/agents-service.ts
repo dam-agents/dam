@@ -35,6 +35,10 @@ import {
   assembleSpecFromTemplate,
   assembleSpecFromImage,
 } from "../domain/spec-assembly.js";
+import {
+  seedTelemetryIdentity,
+  renamedTelemetryIdentity,
+} from "../domain/telemetry-env.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
@@ -284,7 +288,10 @@ export function createAgentsService(deps: {
       }
       // Template-declared env rides the rail like user env (seeded below), not
       // the CR — the controller no longer reads spec.env.
-      const templateEnv = (spec.env as EnvVar[] | undefined) ?? [];
+      const templateEnv = seedTelemetryIdentity(
+        (spec.env as EnvVar[] | undefined) ?? [],
+        input.name,
+      );
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
       if (input.hibernationTimeoutMin !== undefined)
@@ -455,9 +462,23 @@ export function createAgentsService(deps: {
       if (env !== undefined) {
         // Strip protected names, then bump + enqueue so a running agent applies it next turn.
         env = preserveProtectedEnvs([], env);
+        if (input.name !== undefined)
+          env = renamedTelemetryIdentity(env, input.name) ?? env;
         await deps.agentEnvRepo.replace(input.id, env);
         await deps.runtimeMutator.bump(input.id, []);
         await deps.runtimeMutator.enqueueAfterCommit(input.id);
+      } else if (input.name !== undefined) {
+        // Rename: keep the telemetry name attribute in step with the new
+        // name; skipped entirely when the agent doesn't carry it.
+        const refreshed = renamedTelemetryIdentity(
+          await deps.agentEnvRepo.list(input.id),
+          input.name,
+        );
+        if (refreshed) {
+          await deps.agentEnvRepo.replace(input.id, refreshed);
+          await deps.runtimeMutator.bump(input.id, []);
+          await deps.runtimeMutator.enqueueAfterCommit(input.id);
+        }
       }
 
       if (input.env !== undefined || input.secretRef !== undefined) {

@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
+COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
 COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat

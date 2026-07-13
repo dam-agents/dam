@@ -27,6 +27,10 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise mise install node
+# node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
+# (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
+# node release bundles npm >= 11.17.0.
+RUN mise exec node -- npm install -g npm@11.18.0
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
@@ -111,7 +115,7 @@ COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN mkdir -p /home/agent &&\
+RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
     chown -R 65532 /etc/mise /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /app /home/agent /usr/local/share/mise &&\
     ldconfig &&\
     echo 'sshd:x:74:' >> /etc/group &&\
