@@ -53,7 +53,9 @@ function isNoProxy(host: string, noProxy: string | undefined): boolean {
     const entry = raw.trim();
     if (entry === "") continue;
     if (entry === "*") return true;
-    const bare = entry.startsWith(".") ? entry.slice(1) : entry;
+    // Compare case-insensitively like curl/undici; URL already lowercases
+    // the target hostname, so only the entry needs normalizing.
+    const bare = (entry.startsWith(".") ? entry.slice(1) : entry).toLowerCase();
     if (host === bare || host.endsWith(`.${bare}`)) return true;
   }
   return false;

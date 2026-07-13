@@ -48,6 +48,15 @@ describe("proxyAgentForUrl", () => {
     ).toBeUndefined();
   });
 
+  it("matches NO_PROXY entries case-insensitively", () => {
+    expect(
+      proxyAgentForUrl("wss://api.internal.example.com/x", {
+        HTTPS_PROXY: "http://proxy:10000",
+        NO_PROXY: ".Internal.Example.com",
+      }),
+    ).toBeUndefined();
+  });
+
   it("honors a NO_PROXY wildcard", () => {
     expect(
       proxyAgentForUrl("wss://api.example.com/x", {
