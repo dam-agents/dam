@@ -421,14 +421,13 @@ export function ChatView() {
       >
         {/* Header */}
         <header className="flex items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0">
+          {/* Mobile-only: back to the sessions screen. Desktop navigates via the icon rail. */}
           <button
-            className="flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+            className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
             onClick={handleBack}
           >
             <ArrowLeft size={14} />
-            <span className="hidden md:inline">Sandboxes</span>
           </button>
-          <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">
             {selectedAgentName}
           </h1>
