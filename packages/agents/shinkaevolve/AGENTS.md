@@ -108,8 +108,8 @@ estimate, but an informed user may pre-authorize it (see below).
 - **Clone the target into its own run directory**, never the pod home root or
   an unrelated path. Give each run a unique web-safe `<run-id>` (repo +
   objective slug; append `-2`, `-3` on collision).
-- **Watch for stalls.** A wedged LLM call can hang a generation indefinitely
-  (upstream issue #143). If `run.log` and the generation count in
+- **Watch for stalls.** A wedged LLM call can hang a generation indefinitely.
+  If `run.log` and the generation count in
   `results/programs.sqlite` haven't advanced in ~30 minutes, kill the process
   and relaunch per resume-on-wake below — the run resumes from the persisted
   population.
