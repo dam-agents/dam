@@ -2,7 +2,6 @@ import type { AgentState } from "../../../types.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
 import { Section } from "./config-section.js";
-import { ModelSettingsPanel } from "./model-settings-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
 export function ConfigurationPanel({
@@ -34,8 +33,6 @@ export function ConfigurationPanel({
           onOpenFile={onOpenFile}
         />
       </Section>
-
-      <ModelSettingsPanel agentId={agentId} />
     </div>
   );
 }
