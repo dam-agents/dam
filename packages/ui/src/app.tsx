@@ -127,11 +127,17 @@ function MainApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat view is full-screen (has its own layout)
+  // Chat keeps the app icon rail on desktop; the chat view owns the rest of the
+  // row and its own mobile sessions/chat nav (so the rail's mobile bar is hidden).
   if (view === "chat")
     return (
       <>
-        <ChatView />
+        <div className="flex h-dvh bg-background overflow-hidden">
+          <IconRail hideMobileBar />
+          <div className="relative z-10 flex-1 min-w-0">
+            <ChatView />
+          </div>
+        </div>
         <DialogOverlay />
         <ConnectionBanner />
       </>
