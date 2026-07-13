@@ -376,7 +376,7 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-xs"
                 aria-label="Sandbox actions"
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
                 <MoreVertical size={14} />
               </Button>
