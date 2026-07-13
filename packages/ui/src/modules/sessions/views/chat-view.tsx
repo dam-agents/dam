@@ -354,7 +354,7 @@ export function ChatView() {
 
       {/* Header spans the full width; on mobile it belongs to the chat screen only */}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-4 px-5 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0 relative z-10`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0 relative z-10`}
       >
         <button
           className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
@@ -362,34 +362,41 @@ export function ChatView() {
         >
           <ArrowLeft size={14} />
         </button>
-        <span
-          aria-hidden
-          className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-        />
-        <h1 className="text-[14px] font-bold text-text truncate">
-          {selectedAgentName}
-        </h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label="Sandbox actions">
-              <MoreVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={handleConfigureSandbox}>
-              Configure sandbox
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={handleRestartSandbox}>
-              Restart
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onSelect={handleDeleteSandbox}
-            >
-              Delete Sandbox
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="group flex items-center gap-3 min-w-0">
+          <span
+            aria-hidden
+            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+          />
+          <h1 className="text-[14px] font-bold text-text truncate">
+            {selectedAgentName}
+          </h1>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Sandbox actions"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              >
+                <MoreVertical size={14} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                Configure sandbox
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleRestartSandbox}>
+                Restart
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={handleDeleteSandbox}
+              >
+                Delete Sandbox
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
@@ -750,10 +757,10 @@ export function ChatView() {
   );
 }
 
-/** Small pill in the chat header. Falls through to the shared `StatusBadge`,
- *  overriding to a "Busy" variant while the agent is mid-turn. A transient WS
- *  hiccup on a still-running agent adds a "Reconnecting" pill alongside —
- *  full lifecycle outages are handled by the takeover overlay, not here. */
+/** Exceptional-state badges in the chat header — nothing renders while the
+ *  agent is healthy. A transient WS hiccup on a still-running agent shows a
+ *  "Reconnecting" pill; full lifecycle outages are handled by the takeover
+ *  overlay, not here. */
 function ChatHeaderStatus({
   selectedAgent,
   agents,
@@ -770,14 +777,6 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {busy ? (
-        <StatusBadge
-          label="Busy"
-          colorClasses="bg-accent-light text-accent border-accent"
-        />
-      ) : (
-        <StatusBadge state={agent?.state ?? "starting"} />
-      )}
       {reconnecting && (
         <StatusBadge
           label="Reconnecting"
