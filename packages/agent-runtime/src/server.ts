@@ -310,6 +310,8 @@ function attachPty(
         }
         existing.client = ws;
         markTerminalSeen(sessionId);
+        // The reattach resize repaint is a reaction too, not work.
+        existing.lastInputAt = Date.now();
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
         const serialized = existing.serialize.serialize();
