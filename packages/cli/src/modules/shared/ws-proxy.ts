@@ -33,7 +33,8 @@ export function proxyAgentForUrl(
     ? (env.HTTPS_PROXY ?? env.https_proxy)
     : (env.HTTP_PROXY ?? env.http_proxy);
   if (!proxy) return undefined;
-  if (isNoProxy(target.hostname, env.NO_PROXY ?? env.no_proxy)) return undefined;
+  if (isNoProxy(target.hostname, env.NO_PROXY ?? env.no_proxy))
+    return undefined;
 
   // A `wss:`/`https:` target is tunneled through the proxy with CONNECT
   // (HttpsProxyAgent); a plain `ws:`/`http:` target is forwarded with an
