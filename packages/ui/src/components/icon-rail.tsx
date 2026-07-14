@@ -170,7 +170,7 @@ function IconWithBadge({
       {badge > 0 && (
         <Badge
           variant="default"
-          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
+          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
         >
           {badge > 9 ? "9+" : badge}
         </Badge>

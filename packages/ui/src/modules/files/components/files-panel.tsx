@@ -11,7 +11,6 @@ import {
 
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
-import { FileViewer } from "./file-viewer.js";
 import {
   FilesPanelContext,
   useFilesPanelController,
@@ -90,53 +89,44 @@ export function FilesPanel({
         className="hidden"
         onChange={controller.handleFolderInputChange}
       />
-      {controller.openFile ? (
-        <FileViewer
-          key={controller.openFile.path}
-          file={controller.openFile}
-          onClose={controller.closeFile}
-          onOpenFile={onOpenFile}
-        />
-      ) : (
-        <div
-          className="relative flex-1 overflow-y-auto py-1"
-          onDragEnter={controller.handlePanelDragEnter}
-          onDragOver={controller.handlePanelDragOver}
-          onDragLeave={controller.handlePanelDragLeave}
-          onDrop={controller.handlePanelDrop}
-        >
-          {controller.ctxValue && (
-            <FilesPanelContext.Provider value={controller.ctxValue}>
-              {controller.pendingNew && controller.pendingNew.dir === "" && (
-                <InlineNameRow
-                  kind={controller.pendingNew.kind}
-                  depth={0}
-                  placeholder={
-                    controller.pendingNew.kind === "dir"
-                      ? "new-folder"
-                      : "new-file.md"
-                  }
-                  onCommit={controller.handleCommitNew}
-                  onCancel={controller.handleCancelNew}
-                />
-              )}
-              {controller.rootIsLoadedEmpty && (
-                <p className="px-4 py-5 text-[12px] text-text-muted">
-                  No files yet
-                </p>
-              )}
-              <DirContents path="" depth={0} />
-            </FilesPanelContext.Provider>
-          )}
-          {controller.showPanelOverlay && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
-              <div className="text-[12px] font-semibold text-accent">
-                Drop files to upload to /home/agent
-              </div>
+      <div
+        className="relative flex-1 overflow-y-auto py-1"
+        onDragEnter={controller.handlePanelDragEnter}
+        onDragOver={controller.handlePanelDragOver}
+        onDragLeave={controller.handlePanelDragLeave}
+        onDrop={controller.handlePanelDrop}
+      >
+        {controller.ctxValue && (
+          <FilesPanelContext.Provider value={controller.ctxValue}>
+            {controller.pendingNew && controller.pendingNew.dir === "" && (
+              <InlineNameRow
+                kind={controller.pendingNew.kind}
+                depth={0}
+                placeholder={
+                  controller.pendingNew.kind === "dir"
+                    ? "new-folder"
+                    : "new-file.md"
+                }
+                onCommit={controller.handleCommitNew}
+                onCancel={controller.handleCancelNew}
+              />
+            )}
+            {controller.rootIsLoadedEmpty && (
+              <p className="px-4 py-5 text-[12px] text-text-muted">
+                No files yet
+              </p>
+            )}
+            <DirContents path="" depth={0} />
+          </FilesPanelContext.Provider>
+        )}
+        {controller.showPanelOverlay && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
+            <div className="text-[12px] font-semibold text-accent">
+              Drop files to upload to /home/agent
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </SidebarSection>
   );
 }
