@@ -29,6 +29,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&Agent{}, &AgentList{},
 		&Fork{}, &ForkList{},
 		&Run{}, &RunList{},
+		&UserBudget{}, &UserBudgetList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

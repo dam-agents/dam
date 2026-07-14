@@ -17,6 +17,7 @@ import { ConnectionsStep } from "../components/steps/connections-step.js";
 import { ImageStep } from "../components/steps/image-step.js";
 import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
+import { sizeToQuantities } from "../lib/quantity.js";
 import { generateSandboxName } from "../lib/sandbox-name.js";
 import { loadSnapshot, type WizardStep } from "../lib/wizard-snapshot.js";
 
@@ -101,11 +102,16 @@ export function SandboxWizardView() {
     const useRegistry =
       !!image && registryFilledCount(registryCredential) === 3;
     try {
+      const size = sizeToQuantities(
+        snapshot.sizeCpuMilli,
+        snapshot.sizeMemoryMi,
+      );
       const agent = await createAgent.mutateAsync({
         name: snapshot.name.trim(),
         ...(image
           ? { image }
           : { templateId: snapshot.templateId ?? undefined }),
+        ...(size ? { size } : {}),
         egressPreset: snapshot.egressPreset,
         ...(() => {
           // Provider connections and catalog connections both grant via
@@ -187,6 +193,11 @@ export function SandboxWizardView() {
           setupNote={
             templateList.find((t) => t.id === snapshot.templateId)?.setupNote
           }
+          templateSize={
+            templateList.find((t) => t.id === snapshot.templateId)?.size
+          }
+          sizeCpuMilli={snapshot.sizeCpuMilli}
+          sizeMemoryMi={snapshot.sizeMemoryMi}
         />
       )}
 

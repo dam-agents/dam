@@ -25,10 +25,12 @@ import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
+  isAgentStoppedError,
   isAgentWakeTimeoutError,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
+import { composeBudgetsModule } from "../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import {
   createDisabledMetricsService,
@@ -453,6 +455,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         {
           error: "agent unreachable",
           ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
         },
         502,
       );
@@ -604,6 +607,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         {
           error: "instance unreachable",
           ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
         },
         502,
       );
@@ -739,10 +743,27 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
+    // Reserved-vs-Ceiling meter + the live-resize gate (#1900). Composed
+    // before the agents module so the gate can be injected; reads via the
+    // boot-level repo (owner-scoped by the list selector).
+    const { budgets, resizeGate } = composeBudgetsModule({
+      k8s: k8sClient,
+      owner: user.sub,
+      listAgents: () => agentsRepo.list(user.sub),
+      defaultCeiling: {
+        cpu: config.defaultUserCpuBudget,
+        memory: config.defaultUserMemoryBudget,
+      },
+    });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+      agentDefaultLimits: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
+      resizeGate,
       owner: user.sub,
       db,
       userDirectory,
@@ -852,6 +873,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         terms,
         e2e,
         apiKeys,
+        budgets,
         user,
         e2eEnabled: config.e2eEnabled,
       }),

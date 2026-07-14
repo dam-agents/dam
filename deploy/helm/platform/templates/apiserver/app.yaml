@@ -236,6 +236,19 @@ spec:
               value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
+            # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
+            # so create-time resource stamping (#1900) cannot drift from the
+            # controller's render-time defaults.
+            - name: AGENT_DEFAULT_CPU_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
+            - name: AGENT_DEFAULT_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+            # Default per-user ceiling (#1900), same value the controller
+            # enforces with; display-only here (the meter's ceiling figure).
+            - name: DEFAULT_USER_CPU_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
+            - name: DEFAULT_USER_MEMORY_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultMemory | quote }}
             {{- if .Values.skills.skillSources }}
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}

@@ -15,6 +15,12 @@ function toView(tmpl: Template) {
     docsUrl: tmpl.spec.docsUrl,
     setupNote: tmpl.spec.setupNote,
     experimental: tmpl.spec.experimental ?? false,
+    // The template's default Size (#1900) — seeds the create wizard's
+    // sliders; absent dimensions fall to the chart default there.
+    size: {
+      cpu: tmpl.spec.resources?.limits?.cpu,
+      memory: tmpl.spec.resources?.limits?.memory,
+    },
   };
 }
 

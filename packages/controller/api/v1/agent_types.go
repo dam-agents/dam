@@ -108,6 +108,13 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonOverBudget is stamped on Ready when the agent wants to run but its
+// start would push the owner's summed Sizes (`spec.resources.limits`) past
+// their Ceiling (#1900). The pods stay at zero; the message carries the
+// reserved/ceiling figures. Reverts to Hibernated once the activity window
+// lapses.
+const ReasonOverBudget = "OverBudget"
+
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.
 type AgentStatus struct {

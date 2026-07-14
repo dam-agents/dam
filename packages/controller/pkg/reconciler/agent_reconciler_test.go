@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,6 +39,7 @@ func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 		authzPolicyListGVR: "AuthorizationPolicyList",
 		AgentsGVR:          "AgentList",
 		RunsGVR:            "RunList",
+		UserBudgetsGVR:     "UserBudgetList",
 	}
 	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }
@@ -90,6 +92,15 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 			ImagePullPolicy: "IfNotPresent",
 			StorageSize:     "10Gi",
 		},
+		// Generous ceiling so only budget-specific tests (which set their
+		// own) exercise a denial.
+		DefaultUserCPUBudget:    resource.MustParse("4"),
+		DefaultUserMemoryBudget: resource.MustParse("8Gi"),
+		RequestsFraction:        0.5,
+		RequestsMinCPU:          resource.MustParse("100m"),
+		RequestsMinMemory:       resource.MustParse("128Mi"),
+		LegacyAgentCPULimit:     resource.MustParse("1"),
+		LegacyAgentMemoryLimit:  resource.MustParse("2Gi"),
 	}
 	var dynObjs []runtime.Object
 	if agent != nil {

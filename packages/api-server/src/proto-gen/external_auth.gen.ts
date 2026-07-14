@@ -6,7 +6,10 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import type { handleUnaryCall, UntypedServiceImplementation } from "@grpc/grpc-js";
+import type {
+  handleUnaryCall,
+  UntypedServiceImplementation,
+} from "@grpc/grpc-js";
 
 export const protobufPackage = "envoy.service.auth.v3";
 
@@ -94,12 +97,20 @@ function createBaseCheckRequest(): CheckRequest {
 }
 
 export const CheckRequest: MessageFns<CheckRequest> = {
-  encode(message: CheckRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: CheckRequest,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.attributes !== undefined) {
-      AttributeContext.encode(message.attributes, writer.uint32(10).fork()).join();
+      AttributeContext.encode(
+        message.attributes,
+        writer.uint32(10).fork(),
+      ).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -110,7 +121,8 @@ export const CheckRequest: MessageFns<CheckRequest> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): CheckRequest {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseCheckRequest();
     while (reader.pos < end) {
@@ -146,19 +158,29 @@ export const CheckRequest: MessageFns<CheckRequest> = {
   },
   fromPartial(object: DeepPartial<CheckRequest>): CheckRequest {
     const message = createBaseCheckRequest();
-    message.attributes = (object.attributes !== undefined && object.attributes !== null)
-      ? AttributeContext.fromPartial(object.attributes)
-      : undefined;
+    message.attributes =
+      object.attributes !== undefined && object.attributes !== null
+        ? AttributeContext.fromPartial(object.attributes)
+        : undefined;
     return message;
   },
 };
 
 function createBaseAttributeContext(): AttributeContext {
-  return { source: undefined, destination: undefined, request: undefined, tlsSession: undefined, _unknownFields: {} };
+  return {
+    source: undefined,
+    destination: undefined,
+    request: undefined,
+    tlsSession: undefined,
+    _unknownFields: {},
+  };
 }
 
 export const AttributeContext: MessageFns<AttributeContext> = {
-  encode(message: AttributeContext, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: AttributeContext,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.source !== undefined) {
       Peer.encode(message.source, writer.uint32(10).fork()).join();
     }
@@ -172,7 +194,9 @@ export const AttributeContext: MessageFns<AttributeContext> = {
       TLSSession.encode(message.tlsSession, writer.uint32(98).fork()).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -183,7 +207,8 @@ export const AttributeContext: MessageFns<AttributeContext> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AttributeContext {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAttributeContext();
     while (reader.pos < end) {
@@ -243,18 +268,22 @@ export const AttributeContext: MessageFns<AttributeContext> = {
   },
   fromPartial(object: DeepPartial<AttributeContext>): AttributeContext {
     const message = createBaseAttributeContext();
-    message.source = (object.source !== undefined && object.source !== null)
-      ? Peer.fromPartial(object.source)
-      : undefined;
-    message.destination = (object.destination !== undefined && object.destination !== null)
-      ? Peer.fromPartial(object.destination)
-      : undefined;
-    message.request = (object.request !== undefined && object.request !== null)
-      ? Request.fromPartial(object.request)
-      : undefined;
-    message.tlsSession = (object.tlsSession !== undefined && object.tlsSession !== null)
-      ? TLSSession.fromPartial(object.tlsSession)
-      : undefined;
+    message.source =
+      object.source !== undefined && object.source !== null
+        ? Peer.fromPartial(object.source)
+        : undefined;
+    message.destination =
+      object.destination !== undefined && object.destination !== null
+        ? Peer.fromPartial(object.destination)
+        : undefined;
+    message.request =
+      object.request !== undefined && object.request !== null
+        ? Request.fromPartial(object.request)
+        : undefined;
+    message.tlsSession =
+      object.tlsSession !== undefined && object.tlsSession !== null
+        ? TLSSession.fromPartial(object.tlsSession)
+        : undefined;
     return message;
   },
 };
@@ -264,12 +293,17 @@ function createBasePeer(): Peer {
 }
 
 export const Peer: MessageFns<Peer> = {
-  encode(message: Peer, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Peer,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.address !== undefined) {
       Address.encode(message.address, writer.uint32(10).fork()).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -280,7 +314,8 @@ export const Peer: MessageFns<Peer> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Peer {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBasePeer();
     while (reader.pos < end) {
@@ -316,9 +351,10 @@ export const Peer: MessageFns<Peer> = {
   },
   fromPartial(object: DeepPartial<Peer>): Peer {
     const message = createBasePeer();
-    message.address = (object.address !== undefined && object.address !== null)
-      ? Address.fromPartial(object.address)
-      : undefined;
+    message.address =
+      object.address !== undefined && object.address !== null
+        ? Address.fromPartial(object.address)
+        : undefined;
     return message;
   },
 };
@@ -328,12 +364,20 @@ function createBaseAddress(): Address {
 }
 
 export const Address: MessageFns<Address> = {
-  encode(message: Address, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Address,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.socketAddress !== undefined) {
-      SocketAddress.encode(message.socketAddress, writer.uint32(10).fork()).join();
+      SocketAddress.encode(
+        message.socketAddress,
+        writer.uint32(10).fork(),
+      ).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -344,7 +388,8 @@ export const Address: MessageFns<Address> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Address {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAddress();
     while (reader.pos < end) {
@@ -380,9 +425,10 @@ export const Address: MessageFns<Address> = {
   },
   fromPartial(object: DeepPartial<Address>): Address {
     const message = createBaseAddress();
-    message.socketAddress = (object.socketAddress !== undefined && object.socketAddress !== null)
-      ? SocketAddress.fromPartial(object.socketAddress)
-      : undefined;
+    message.socketAddress =
+      object.socketAddress !== undefined && object.socketAddress !== null
+        ? SocketAddress.fromPartial(object.socketAddress)
+        : undefined;
     return message;
   },
 };
@@ -392,7 +438,10 @@ function createBaseSocketAddress(): SocketAddress {
 }
 
 export const SocketAddress: MessageFns<SocketAddress> = {
-  encode(message: SocketAddress, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: SocketAddress,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(18).string(message.address);
     }
@@ -400,7 +449,9 @@ export const SocketAddress: MessageFns<SocketAddress> = {
       writer.uint32(24).uint32(message.portValue);
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -411,7 +462,8 @@ export const SocketAddress: MessageFns<SocketAddress> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SocketAddress {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSocketAddress();
     while (reader.pos < end) {
@@ -466,12 +518,17 @@ function createBaseRequest(): Request {
 }
 
 export const Request: MessageFns<Request> = {
-  encode(message: Request, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Request,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.http !== undefined) {
       HttpRequest.encode(message.http, writer.uint32(18).fork()).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -482,7 +539,8 @@ export const Request: MessageFns<Request> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Request {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseRequest();
     while (reader.pos < end) {
@@ -518,25 +576,41 @@ export const Request: MessageFns<Request> = {
   },
   fromPartial(object: DeepPartial<Request>): Request {
     const message = createBaseRequest();
-    message.http = (object.http !== undefined && object.http !== null)
-      ? HttpRequest.fromPartial(object.http)
-      : undefined;
+    message.http =
+      object.http !== undefined && object.http !== null
+        ? HttpRequest.fromPartial(object.http)
+        : undefined;
     return message;
   },
 };
 
 function createBaseHttpRequest(): HttpRequest {
-  return { method: "", headers: {}, path: "", host: "", scheme: "", _unknownFields: {} };
+  return {
+    method: "",
+    headers: {},
+    path: "",
+    host: "",
+    scheme: "",
+    _unknownFields: {},
+  };
 }
 
 export const HttpRequest: MessageFns<HttpRequest> = {
-  encode(message: HttpRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: HttpRequest,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.method !== "") {
       writer.uint32(18).string(message.method);
     }
-    globalThis.Object.entries(message.headers).forEach(([key, value]: [string, string]) => {
-      HttpRequest_HeadersEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
-    });
+    globalThis.Object.entries(message.headers).forEach(
+      ([key, value]: [string, string]) => {
+        HttpRequest_HeadersEntry.encode(
+          { key: key as any, value },
+          writer.uint32(26).fork(),
+        ).join();
+      },
+    );
     if (message.path !== "") {
       writer.uint32(34).string(message.path);
     }
@@ -547,7 +621,9 @@ export const HttpRequest: MessageFns<HttpRequest> = {
       writer.uint32(58).string(message.scheme);
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -558,7 +634,8 @@ export const HttpRequest: MessageFns<HttpRequest> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): HttpRequest {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseHttpRequest();
     while (reader.pos < end) {
@@ -577,7 +654,10 @@ export const HttpRequest: MessageFns<HttpRequest> = {
             break;
           }
 
-          const entry3 = HttpRequest_HeadersEntry.decode(reader, reader.uint32());
+          const entry3 = HttpRequest_HeadersEntry.decode(
+            reader,
+            reader.uint32(),
+          );
           if (entry3.value !== undefined) {
             message.headers[entry3.key] = entry3.value;
           }
@@ -630,7 +710,9 @@ export const HttpRequest: MessageFns<HttpRequest> = {
   fromPartial(object: DeepPartial<HttpRequest>): HttpRequest {
     const message = createBaseHttpRequest();
     message.method = object.method ?? "";
-    message.headers = (globalThis.Object.entries(object.headers ?? {}) as [string, string][]).reduce(
+    message.headers = (
+      globalThis.Object.entries(object.headers ?? {}) as [string, string][]
+    ).reduce(
       (acc: { [key: string]: string }, [key, value]: [string, string]) => {
         if (value !== undefined) {
           acc[key] = globalThis.String(value);
@@ -651,7 +733,10 @@ function createBaseHttpRequest_HeadersEntry(): HttpRequest_HeadersEntry {
 }
 
 export const HttpRequest_HeadersEntry: MessageFns<HttpRequest_HeadersEntry> = {
-  encode(message: HttpRequest_HeadersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: HttpRequest_HeadersEntry,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
     }
@@ -659,7 +744,9 @@ export const HttpRequest_HeadersEntry: MessageFns<HttpRequest_HeadersEntry> = {
       writer.uint32(18).string(message.value);
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -669,8 +756,12 @@ export const HttpRequest_HeadersEntry: MessageFns<HttpRequest_HeadersEntry> = {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): HttpRequest_HeadersEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(
+    input: BinaryReader | Uint8Array,
+    length?: number,
+  ): HttpRequest_HeadersEntry {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseHttpRequest_HeadersEntry();
     while (reader.pos < end) {
@@ -709,10 +800,14 @@ export const HttpRequest_HeadersEntry: MessageFns<HttpRequest_HeadersEntry> = {
     return message;
   },
 
-  create(base?: DeepPartial<HttpRequest_HeadersEntry>): HttpRequest_HeadersEntry {
+  create(
+    base?: DeepPartial<HttpRequest_HeadersEntry>,
+  ): HttpRequest_HeadersEntry {
     return HttpRequest_HeadersEntry.fromPartial(base ?? {});
   },
-  fromPartial(object: DeepPartial<HttpRequest_HeadersEntry>): HttpRequest_HeadersEntry {
+  fromPartial(
+    object: DeepPartial<HttpRequest_HeadersEntry>,
+  ): HttpRequest_HeadersEntry {
     const message = createBaseHttpRequest_HeadersEntry();
     message.key = object.key ?? "";
     message.value = object.value ?? "";
@@ -725,12 +820,17 @@ function createBaseTLSSession(): TLSSession {
 }
 
 export const TLSSession: MessageFns<TLSSession> = {
-  encode(message: TLSSession, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: TLSSession,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.sni !== "") {
       writer.uint32(10).string(message.sni);
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -741,7 +841,8 @@ export const TLSSession: MessageFns<TLSSession> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): TLSSession {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseTLSSession();
     while (reader.pos < end) {
@@ -787,7 +888,10 @@ function createBaseStatus(): Status {
 }
 
 export const Status: MessageFns<Status> = {
-  encode(message: Status, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Status,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.code !== 0) {
       writer.uint32(8).int32(message.code);
     }
@@ -795,7 +899,9 @@ export const Status: MessageFns<Status> = {
       writer.uint32(18).string(message.message);
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -806,7 +912,8 @@ export const Status: MessageFns<Status> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Status {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseStatus();
     while (reader.pos < end) {
@@ -861,12 +968,17 @@ function createBaseCheckResponse(): CheckResponse {
 }
 
 export const CheckResponse: MessageFns<CheckResponse> = {
-  encode(message: CheckResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: CheckResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.status !== undefined) {
       Status.encode(message.status, writer.uint32(10).fork()).join();
     }
     if (message._unknownFields !== undefined) {
-      for (const [key, values] of globalThis.Object.entries(message._unknownFields)) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
         const tag = parseInt(key, 10);
         for (const value of values) {
           writer.uint32(tag).raw(value);
@@ -877,7 +989,8 @@ export const CheckResponse: MessageFns<CheckResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): CheckResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseCheckResponse();
     while (reader.pos < end) {
@@ -913,9 +1026,10 @@ export const CheckResponse: MessageFns<CheckResponse> = {
   },
   fromPartial(object: DeepPartial<CheckResponse>): CheckResponse {
     const message = createBaseCheckResponse();
-    message.status = (object.status !== undefined && object.status !== null)
-      ? Status.fromPartial(object.status)
-      : undefined;
+    message.status =
+      object.status !== undefined && object.status !== null
+        ? Status.fromPartial(object.status)
+        : undefined;
     return message;
   },
 };
@@ -926,10 +1040,14 @@ export const AuthorizationService = {
     path: "/envoy.service.auth.v3.Authorization/Check" as const,
     requestStream: false as const,
     responseStream: false as const,
-    requestSerialize: (value: CheckRequest): Buffer => Buffer.from(CheckRequest.encode(value).finish()),
-    requestDeserialize: (value: Buffer): CheckRequest => CheckRequest.decode(value),
-    responseSerialize: (value: CheckResponse): Buffer => Buffer.from(CheckResponse.encode(value).finish()),
-    responseDeserialize: (value: Buffer): CheckResponse => CheckResponse.decode(value),
+    requestSerialize: (value: CheckRequest): Buffer =>
+      Buffer.from(CheckRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): CheckRequest =>
+      CheckRequest.decode(value),
+    responseSerialize: (value: CheckResponse): Buffer =>
+      Buffer.from(CheckResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): CheckResponse =>
+      CheckResponse.decode(value),
   },
 } as const;
 
@@ -937,13 +1055,24 @@ export interface AuthorizationServer extends UntypedServiceImplementation {
   check: handleUnaryCall<CheckRequest, CheckResponse>;
 }
 
-type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
+type Builtin =
+  | Date
+  | Function
+  | Uint8Array
+  | string
+  | number
+  | boolean
+  | undefined;
 
-export type DeepPartial<T> = T extends Builtin ? T
-  : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
-  : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
-  : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : Partial<T>;
+export type DeepPartial<T> = T extends Builtin
+  ? T
+  : T extends globalThis.Array<infer U>
+    ? globalThis.Array<DeepPartial<U>>
+    : T extends ReadonlyArray<infer U>
+      ? ReadonlyArray<DeepPartial<U>>
+      : T extends {}
+        ? { [K in keyof T]?: DeepPartial<T[K]> }
+        : Partial<T>;
 
 export interface MessageFns<T> {
   encode(message: T, writer?: BinaryWriter): BinaryWriter;

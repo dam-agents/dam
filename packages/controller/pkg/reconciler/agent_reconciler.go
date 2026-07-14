@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -31,6 +32,15 @@ type AgentReconciler struct {
 	client  kubernetes.Interface
 	dynamic dynamic.Interface // required to apply cert-manager Certificates
 	config  *config.Config
+
+	// Per-owner serialization of the budget check (#1900). Correctness also
+	// leans on agent reconciles being drained by a single worker goroutine —
+	// see the race note on budgetAllows.
+	budgetMu   sync.Mutex
+	ownerLocks map[string]*sync.Mutex
+	// Denied wake attempts, keyed agent → last-activity value at denial;
+	// see wakeAlreadyDenied.
+	deniedWakes map[string]string
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
@@ -76,6 +86,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// The `agent-platform.ai/owner` label scopes credential Secret discovery;
 	// grants are read from spec (they were moved off annotations).
 	owner := agent.Labels["agent-platform.ai/owner"]
+
+	// Materialize an absent Size before anything reads it (#1900): the
+	// render and budget gates below must see concrete limits, so a legacy
+	// agent never runs at the wrong default even on its first post-upgrade
+	// reconcile. A fill failure requeues quietly — transient API hiccup,
+	// same standing as the budget-check read failures below.
+	if err := r.ensureConcreteSize(ctx, agent); err != nil {
+		return fmt.Errorf("agent %s: %w", name, err)
+	}
+
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner,
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {
@@ -154,11 +174,69 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// reconciler scales *up* when recent activity says the agent should run;
 	// scale-*down* is the idle checker's probe-gated job, so a reconcile
 	// triggered for any other reason can never hibernate a busy agent.
-	running := shouldRun(
-		agent.Annotations,
-		effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration()),
-		time.Now().UTC(),
-	)
+	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
+	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
+
+	// Budget gate (#1900): only a real 0→1 spends budget. Denied ⇒ render
+	// everything but keep the pair parked at zero, surfacing OverBudget below.
+	// A denial is remembered per wake attempt: the parked agent does not
+	// start by itself when room frees — only a fresh bump (or an always-on
+	// agent, which declares "always run") retries the gate.
+	lastActivity := agent.Annotations[annLastActivity]
+	alwaysOn := idleTimeout <= 0
+	overBudget := ""
+	parked := false
+	if running {
+		if !alwaysOn && r.wakeAlreadyDenied(name, lastActivity) {
+			running = false
+			parked = true
+		} else {
+			verdict, err := r.budgetAllows(ctx, agent, owner)
+			if err != nil {
+				// Transient infra failure — requeue without stamping ReconcileError,
+				// mirroring the gateway ClusterIP wait below.
+				return fmt.Errorf("agent %s: budget check: %w", name, err)
+			}
+			if !verdict.allowed {
+				running = false
+				parked = true
+				overBudget = verdict.message
+				if !alwaysOn {
+					r.recordDeniedWake(name, lastActivity)
+				}
+			} else {
+				r.clearDeniedWake(name)
+			}
+		}
+	}
+
+	// Live-resize gate (#1900): an UP agent whose Size GREW past the Ceiling
+	// parks — the same semantics as an over-budget start, and the reason the
+	// controller's enforcement is complete: the api-server's synchronous
+	// resize rejection is a courtesy in front of this, and out-of-band spec
+	// writes cannot grow a running agent around the Ceiling. Grow-only and
+	// diff-keyed against the live template (see resizeAllows), so resyncs
+	// and ceiling changes never re-check a running agent.
+	if running {
+		verdict, grew, err := r.resizeAllows(ctx, agent, owner)
+		if err != nil {
+			return fmt.Errorf("agent %s: resize budget check: %w", name, err)
+		}
+		if grew && !verdict.allowed {
+			running = false
+			parked = true
+			overBudget = verdict.message
+			if !alwaysOn {
+				r.recordDeniedWake(name, lastActivity)
+			}
+			// Scale down NOW, before the template applies below: with
+			// replicas still 1 the StatefulSet would briefly roll a pod at
+			// the denied size.
+			if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
+			}
+		}
+	}
 
 	// Paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
@@ -223,6 +301,20 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("agentStatefulSet")
 
+	// Hard stop (#1900): the one exception to "scale-down is the idle
+	// checker's job" — user intent scales the pair to zero now, bypassing
+	// the busy probe (a hard stop may interrupt work by design). Idempotent
+	// on resync; any later explicit wake or schedule fire clears the
+	// annotation and the pair goes back through the budget gate above.
+	if agent.Annotations[annStopRequested] != "" {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
+		}
+		err = r.publishReconciled(ctx, agent)
+		timer.mark("hardStop")
+		return err
+	}
+
 	// The reconciler only scales up; scale-down and the Hibernated
 	// readiness reason are the idle checker's job. So readiness is published
 	// only for a running agent — but rendering succeeded either way, so an idle
@@ -230,6 +322,22 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if running {
 		err = r.publishReadiness(ctx, agent)
 		timer.mark("readiness")
+		return err
+	}
+	if parked {
+		// A denial happens only at a real 0→1, so the agent StatefulSet is at
+		// zero by construction — but a prior *admitted* reconcile may have
+		// scaled the gateway up before failing transiently (its apply precedes
+		// the agent's), and applyStatefulSet(…, false) preserves replicas. Scale
+		// the pair to zero explicitly so a parked agent never strands an orphan
+		// gateway pod until the idle sweep.
+		if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
+		}
+	}
+	if overBudget != "" {
+		err = r.publishOverBudget(ctx, agent, overBudget)
+		timer.mark("overBudget")
 		return err
 	}
 	err = r.publishReconciled(ctx, agent)
@@ -369,6 +477,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	// We clean them up explicitly here. (In-flight forks are owner-refed to
 	// the Agent CR, so K8s GC reaps them — see ensureForkOwnerReference.)
 	r.deletePVCs(ctx, name)
+
+	r.clearDeniedWake(name)
 }
 
 // deleteReleaseNsAgentResources deletes the release-namespace resources

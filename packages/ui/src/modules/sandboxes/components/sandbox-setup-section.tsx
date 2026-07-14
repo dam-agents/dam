@@ -11,6 +11,7 @@ import { ProviderSection } from "../../providers/components/provider-section.js"
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
+import { SandboxSizeSection } from "./sandbox-size-section.js";
 
 const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
@@ -32,6 +33,19 @@ export function SandboxSetupSection({ f }: Props) {
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
+
+      <SandboxSizeSection
+        sizeCpuMilli={f.sizeCpuMilli}
+        sizeMemoryMi={f.sizeMemoryMi}
+        onChange={f.setSize}
+        disabled={f.saving}
+        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+        restartNote={
+          f.sizeRestartsAgent
+            ? "Changing the size restarts the sandbox on save."
+            : "The new size applies when the sandbox next starts."
+        }
+      />
 
       <section className="mb-8">
         {/* Read-only: image/template are create-only — changing them would mean

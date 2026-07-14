@@ -40,6 +40,9 @@ export type AgentState =
   | "running"
   | "hibernating"
   | "hibernated"
+  /** Parked (#1900): wants to run, but starting it would breach the owner's
+   *  Ceiling. Waits at zero until a deliberate start after room frees. */
+  | "over_budget"
   | "error";
 
 // The public projection of the Agent CR spec: the generated AgentSpecCR (the
@@ -61,6 +64,11 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   /** Latest controller-reported error, if any. */
   error?: string;
+  /** Parked (#1900): starting this agent would breach its owner's compute
+   *  Ceiling; pods stay down; free room and start it again (never-hibernate agents restart by themselves). */
+  overBudget: boolean;
+  /** The controller's reserved/ceiling figures for a parked agent. */
+  overBudgetMessage?: string;
   /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */
   podTerminationReason?: string;
   /** Contributions that failed to install on the last settle; empty when healthy. */
@@ -91,6 +99,14 @@ export interface AgentsService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;
+  /** Hard stop (#1900): scale the agent down now to free its Reserved
+   *  compute. Sticky against background activity; an explicit wake or a
+   *  schedule fire restarts it. */
+  stop: (id: string) => Promise<Agent | null>;
+  /** Pause (#1900): scale down now like a stop, but non-sticky once down —
+   *  the agent wakes on its next deliberate use (open chat, message,
+   *  schedule), passing back through the budget gate. */
+  pause: (id: string) => Promise<Agent | null>;
   /**
    * Ensure the agent's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps

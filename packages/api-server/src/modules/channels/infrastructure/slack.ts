@@ -29,6 +29,7 @@ import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  isAgentStoppedError,
   isAgentWakeTimeoutError,
   isTransientWakeFailure,
   wakeFailureReasonToken,
@@ -316,9 +317,11 @@ export function createSlackWorker(
     };
 
     const postFailure = async (err: unknown) => {
-      failureReason = isAgentWakeTimeoutError(err)
-        ? wakeFailureReasonToken(err.failure)
-        : "acp-error";
+      failureReason = isAgentStoppedError(err)
+        ? "agent-stopped"
+        : isAgentWakeTimeoutError(err)
+          ? wakeFailureReasonToken(err.failure)
+          : "acp-error";
       getLogger().warn(
         {
           agentId: instanceName,
@@ -329,9 +332,11 @@ export function createSlackWorker(
       );
       // Wake timeouts get human copy mapped from the classified cause;
       // everything else keeps the raw path (out of scope here).
-      const text = isAgentWakeTimeoutError(err)
-        ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx.images)}`
-        : `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`;
+      const text = isAgentStoppedError(err)
+        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx.images)}`
+        : isAgentWakeTimeoutError(err)
+          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx.images)}`
+          : `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`;
       await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,

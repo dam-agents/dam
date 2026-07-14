@@ -43,6 +43,36 @@ type Config struct {
 	// Disabled by default.
 	WarmPool WarmPool
 
+	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
+	// per-user Ceiling on concurrently reserved compute (#1900), applied when
+	// a user has no UserBudget CR. Threaded in via DEFAULT_USER_CPU_BUDGET /
+	// DEFAULT_USER_MEMORY_BUDGET from `controller.userBudgets`. Parse
+	// failures fail startup — a malformed ceiling must never silently become
+	// zero (that would park every agent platform-wide).
+	DefaultUserCPUBudget    resource.Quantity
+	DefaultUserMemoryBudget resource.Quantity
+
+	// RequestsFromLimits derives pod requests from an agent's limits at
+	// render (#1900): request = max(limit × Fraction, floor). Limits are the
+	// user-facing "size" the Budget bounds; requests are scheduling
+	// internals. Threaded via REQUESTS_FROM_LIMITS_* from
+	// `controller.requestsFromLimits`.
+	RequestsFraction  float64
+	RequestsMinCPU    resource.Quantity
+	RequestsMinMemory resource.Quantity
+
+	// LegacyAgentCPULimit / LegacyAgentMemoryLimit are the Size the
+	// controller materializes into an Agent spec that lacks a limits
+	// dimension (#1900) — the limits pre-Sizes agents actually ran with
+	// under the old chart defaults, NOT today's (smaller) default, so
+	// convergence never shrinks an existing workload. Fill-if-absent during
+	// reconcile gives limits "required" semantics without schema-level
+	// enforcement (softer backwards compatibility). Threaded via
+	// AGENT_LEGACY_CPU_LIMIT / AGENT_LEGACY_MEMORY_LIMIT from
+	// `controller.agent.legacyAgentSize`.
+	LegacyAgentCPULimit    resource.Quantity
+	LegacyAgentMemoryLimit resource.Quantity
+
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
@@ -327,6 +357,41 @@ func LoadFromEnv() (*Config, error) {
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
 	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
+	cpuBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_CPU_BUDGET", "4"))
+	if err != nil {
+		return nil, fmt.Errorf("DEFAULT_USER_CPU_BUDGET is not a valid K8s quantity: %w", err)
+	}
+	memBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_MEMORY_BUDGET", "8Gi"))
+	if err != nil {
+		return nil, fmt.Errorf("DEFAULT_USER_MEMORY_BUDGET is not a valid K8s quantity: %w", err)
+	}
+	cfg.DefaultUserCPUBudget = cpuBudget
+	cfg.DefaultUserMemoryBudget = memBudget
+	fraction, err := strconv.ParseFloat(envOrDefault("REQUESTS_FROM_LIMITS_FRACTION", "0.5"), 64)
+	if err != nil || fraction <= 0 || fraction > 1 {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_FRACTION must be a number in (0, 1] (got %q)", os.Getenv("REQUESTS_FROM_LIMITS_FRACTION"))
+	}
+	minCPU, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_CPU", "100m"))
+	if err != nil {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_CPU is not a valid K8s quantity: %w", err)
+	}
+	minMemory, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_MEMORY", "128Mi"))
+	if err != nil {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_MEMORY is not a valid K8s quantity: %w", err)
+	}
+	cfg.RequestsFraction = fraction
+	cfg.RequestsMinCPU = minCPU
+	cfg.RequestsMinMemory = minMemory
+	legacyCPU, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_CPU_LIMIT", "1"))
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_LEGACY_CPU_LIMIT is not a valid K8s quantity: %w", err)
+	}
+	legacyMem, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_MEMORY_LIMIT", "2Gi"))
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_LEGACY_MEMORY_LIMIT is not a valid K8s quantity: %w", err)
+	}
+	cfg.LegacyAgentCPULimit = legacyCPU
+	cfg.LegacyAgentMemoryLimit = legacyMem
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -350,6 +415,11 @@ func (c *Config) validate() error {
 	}
 	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
+	}
+	// The budget check (#1900) falls back to these for legacy specs without
+	// stamped limits — "fallback, never zero" only holds if they exist.
+	if r := c.AgentTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
+		return fmt.Errorf("controller.agent.templateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
 	}
 	// Defense in depth: refuse to start if the container security context
 	// floor was cleared. The chart ships `capabilities.drop: ["ALL"]`; if a

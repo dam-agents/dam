@@ -836,13 +836,25 @@ controller:
       # on a cached image. A template or agent can still set its own override.
       imagePullPolicy: ""
       storageSize: "10Gi"
+      # Default agent Size when neither the user's slider nor the template
+      # chooses one. Limits are the user-facing concept (#1900): the Budget
+      # bounds Σ limits of a user's running agents, so limits ARE the
+      # agent's "power". Requests are derived at render from
+      # `controller.requestsFromLimits` below; setting `requests` here (or in
+      # a template) overrides the derivation — an operator escape hatch, not
+      # a user concept.
+      #
+      # UPGRADE NOTE (#1900): this default is smaller than the pre-Sizes one
+      # (limits were 1 CPU / 2Gi, requests 250m / 512Mi). It applies to NEW
+      # sandboxes only — existing ones are backfilled at `legacyAgentSize`
+      # below — but the derived default CPU request is 500m (limit × 0.5)
+      # where it used to be 250m, so a packed cluster fits fewer default-size
+      # agents. Tune `requestsFromLimits.fraction` if density matters more
+      # than burst headroom.
       resources:
-        requests:
-          cpu: "250m"
-          memory: "512Mi"
         limits:
           cpu: "1"
-          memory: "2Gi"
+          memory: "1Gi"
       mounts:
         - path: $HOME
           persist: true
@@ -863,6 +875,42 @@ controller:
           touch $HOME/.initialized
         fi
         mkdir -p $HOME/work
+
+    # -- Size the controller materializes into any Agent spec that lacks a
+    # limits dimension (#1900): fill-if-absent on reconcile, never touching
+    # a set value — this is what makes `spec.resources.limits` effectively
+    # required without schema-level enforcement. Defaults to the limits
+    # pre-Sizes agents were actually running with under the old chart
+    # defaults (1 CPU / 2Gi), so an upgrade never shrinks an existing
+    # sandbox out from under its workload — a workload that used 1–2Gi
+    # would otherwise OOM on its next wake. Operators who overrode the old
+    # `templateDefaults.resources.limits` should mirror that override here
+    # before upgrading.
+    legacyAgentSize:
+      cpu: "1"
+      memory: "2Gi"
+
+  # -- Per-user compute Ceiling defaults (#1900): the maximum CPU and memory
+  # one user's running agents can use concurrently, as the sum of their Sizes
+  # (`spec.resources.limits`, which hard-cap usage; the uniform per-agent
+  # gateway overhead is deliberately not counted — price it into these
+  # defaults). Enforced by the controller at the 0→1 scale-up; a user at the
+  # ceiling must pause, stop, or shrink a running sandbox before starting
+  # another. Raise (or lower) per user with a UserBudget CR named
+  # `budget-<keycloak-sub>` in the agent namespace.
+  userBudgets:
+    defaultCpu: "4"
+    defaultMemory: "8Gi"
+
+  # -- How pod requests are derived from an agent's limits (#1900). Requests
+  # are scheduling internals, never a user concept: the scheduler packs on
+  # `limit × fraction` (a deterministic 1/fraction overcommit), the floors
+  # keep tiny agents schedulable and fairly weighted under contention. A
+  # template that sets `resources.requests` explicitly bypasses derivation.
+  requestsFromLimits:
+    fraction: "0.5"
+    minCpu: "100m"
+    minMemory: "128Mi"
 
   # -- Warm PVC pool (#692). A background buffer of pre-provisioned,
   # already-Bound spare workspace volumes that a newly created agent claims

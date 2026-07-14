@@ -19,6 +19,7 @@ import {
   RegistryCredentialSection,
   registryFilledCount,
 } from "../registry-credential-section.js";
+import { SandboxSizeSection } from "../sandbox-size-section.js";
 import { StepHeader } from "../step-header.js";
 
 const NETWORK_PRESETS: { value: EgressPreset; label: string; help: string }[] =
@@ -49,6 +50,9 @@ interface Props {
   onRegistryChange: (value: RegistryCredential) => void;
   update: (patch: Partial<WizardSnapshot>) => void;
   setupNote?: { title: string; body: string };
+  templateSize?: { cpu?: string; memory?: string };
+  sizeCpuMilli: number | null;
+  sizeMemoryMi: number | null;
 }
 
 export function SetupStep({
@@ -60,6 +64,9 @@ export function SetupStep({
   onRegistryChange,
   update,
   setupNote,
+  templateSize,
+  sizeCpuMilli,
+  sizeMemoryMi,
 }: Props) {
   const registryPartial =
     showRegistry &&
@@ -84,6 +91,13 @@ export function SetupStep({
           />
         </FormField>
       </section>
+
+      <SandboxSizeSection
+        templateSize={templateSize}
+        sizeCpuMilli={sizeCpuMilli}
+        sizeMemoryMi={sizeMemoryMi}
+        onChange={update}
+      />
 
       {setupNote && (
         <section className="mb-8">

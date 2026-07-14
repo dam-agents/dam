@@ -162,14 +162,35 @@ func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
 	return !status.Idle
 }
 
-// hibernate scales an agent's paired StatefulSets (agent + gateway, both
-// labelled LabelAgent=name) to zero and records the Hibernated phase on the
-// Agent status subresource. The idle checker is the sole scale-down
-// authority and never writes spec — run state is derived from activity, not a
-// stored desiredState. Idempotent: a StatefulSet already at zero is left
-// untouched.
 func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
-	sss, err := c.client.AppsV1().StatefulSets(c.config.Namespace).List(ctx, metav1.ListOptions{
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name)
+}
+
+// hibernateAgentPair scales an agent's paired StatefulSets (agent + gateway,
+// both labelled LabelAgent=name) to zero and records the Hibernated phase on
+// the Agent status subresource. Scale-down never writes spec — run state is
+// derived from activity, not a stored desiredState. Idempotent: a StatefulSet
+// already at zero is left untouched. Shared by the idle checker (probe-gated
+// idleness) and the reconciler's hard-stop branch (#1900, user intent).
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string) error {
+	if err := scaleAgentPairToZero(ctx, kube, namespace, name); err != nil {
+		return err
+	}
+	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
+		// Pods are gone, so the agent is not routable until woken — reflect that
+		// on Ready (the api-server's routing signal). The Hibernated reason lets
+		// consumers tell this from a still-starting agent.
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
+		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
+	})
+}
+
+// scaleAgentPairToZero scales an agent's paired StatefulSets to zero without
+// touching status. Idempotent; shared by hibernateAgentPair and the
+// reconciler's parked branch (which stamps OverBudget, not Hibernated).
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, namespace, name string) error {
+	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,
 	})
 	if err != nil {
@@ -182,24 +203,17 @@ func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
 		}
 		ssName := ss.Name
 		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			fresh, err := c.client.AppsV1().StatefulSets(c.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
+			fresh, err := kube.AppsV1().StatefulSets(namespace).Get(ctx, ssName, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
 			zero := int32(0)
 			fresh.Spec.Replicas = &zero
-			_, err = c.client.AppsV1().StatefulSets(c.config.Namespace).Update(ctx, fresh, metav1.UpdateOptions{})
+			_, err = kube.AppsV1().StatefulSets(namespace).Update(ctx, fresh, metav1.UpdateOptions{})
 			return err
 		}); err != nil {
 			return fmt.Errorf("scaling down statefulset %s: %w", ssName, err)
 		}
 	}
-	return updateAgentStatus(ctx, c.dynamic, c.config.Namespace, name, func(s *apiv1.AgentStatus) {
-		// Pods are gone, so the agent is not routable until woken — reflect that
-		// on Ready (the api-server's routing signal). The Hibernated reason lets
-		// consumers tell this from a still-starting agent.
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
-		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
-		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
-	})
+	return nil
 }

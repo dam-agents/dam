@@ -29,11 +29,13 @@ metadata:
 rules:
   # the reconciled resources are agent-platform.ai/v1 Agent + Fork
   # custom resources. The controller watches them and is the sole writer of
-  # their status subresource; the api-server owns spec, so Agents stay
-  # read-only here.
+  # their status subresource. The api-server owns spec *intent*; the one
+  # controller spec write — hence `patch` — is the fill-if-absent Size
+  # materialization (#1900), which only ever sets a missing
+  # `resources.limits` dimension and never touches a set value.
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
   # Forks additionally need update/patch (the controller stamps the
   # parent-Agent owner reference onto the Fork CR) and delete (the over-age
   # fork reaper), mirroring the runs grant below.
@@ -64,6 +66,12 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["runs/finalizers"]
     verbs: ["update"]
+  # Per-user compute ceilings (#1900). Operator-written; the controller only
+  # reads them at the 0→1 budget check — a live direct get by the CEL-pinned
+  # name (`budget-<owner>`), so no list or watch is needed.
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["userbudgets"]
+    verbs: ["get"]
   # ConfigMaps for the chart-shipped templates and the controller-rendered Envoy
   # bootstrap CM (owner-refed to the Agent/Fork).
   - apiGroups: [""]
@@ -146,7 +154,7 @@ rules:
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get"]
-    resourceNames: ["agents.agent-platform.ai", "forks.agent-platform.ai", "runs.agent-platform.ai"]
+    resourceNames: ["agents.agent-platform.ai", "forks.agent-platform.ai", "runs.agent-platform.ai", "userbudgets.agent-platform.ai"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -1,6 +1,9 @@
 import type { AgentState, AgentView } from "../../../types.js";
 
-export type AgentDisplayState = AgentState;
+/** Parked (#1900) is a display-only refinement of `starting`: the sandbox
+ *  wants to run but its owner is over budget. Free room, then Start retries
+ *  the gate (only never-hibernate sandboxes restart by themselves). */
+export type AgentDisplayState = AgentState | "over_budget";
 
 export interface AgentDisplay {
   /** Derived state that drives the status pill. */
@@ -23,12 +26,18 @@ export function resolveAgentDisplay(
   restartingAgentIds: ReadonlySet<string>,
 ): AgentDisplay {
   const restarting = restartingAgentIds.has(agent.id);
-  const state: AgentDisplayState = restarting ? "starting" : agent.state;
+  const state: AgentDisplayState = restarting
+    ? "starting"
+    : agent.overBudget
+      ? "over_budget"
+      : agent.state;
   const clickable =
     !restarting && (agent.state === "running" || agent.state === "hibernated");
   const powerAction: AgentDisplay["powerAction"] = restarting
     ? null
-    : agent.state === "hibernated"
+    : // A parked sandbox doesn't start by itself — Start is its retry
+      // through the budget gate.
+      agent.state === "hibernated" || agent.overBudget
       ? "start"
       : agent.state === "running" || agent.state === "error"
         ? "restart"

@@ -13,6 +13,7 @@ import { type AcpClientFactory } from "../../../core/acp-client.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  isAgentStoppedError,
   isAgentWakeTimeoutError,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
@@ -196,16 +197,24 @@ export function createTelegramWorker(
       });
       outcome = "success";
     } catch (err) {
-      failureReason = isAgentWakeTimeoutError(err)
-        ? wakeFailureReasonToken(err.failure)
-        : "acp-error";
+      failureReason = isAgentStoppedError(err)
+        ? "agent-stopped"
+        : isAgentWakeTimeoutError(err)
+          ? wakeFailureReasonToken(err.failure)
+          : "acp-error";
       getLogger().warn(
         { agentId: instanceName, reason: failureReason, error: String(err) },
         "telegram.turn.failed",
       );
       // Wake timeouts get a human reply; other errors stay log-only as
       // before (out of scope here).
-      if (isAgentWakeTimeoutError(err)) {
+      if (isAgentStoppedError(err)) {
+        await thread
+          .post(
+            "This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).",
+          )
+          .catch(() => {});
+      } else if (isAgentWakeTimeoutError(err)) {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       }
     } finally {

@@ -34,6 +34,8 @@ import {
 import {
   assembleSpecFromTemplate,
   assembleSpecFromImage,
+  resolveEffectiveHibernationTimeoutMin,
+  type DefaultResourceLimits,
 } from "../domain/spec-assembly.js";
 import {
   seedTelemetryIdentity,
@@ -88,6 +90,34 @@ function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
   return { ...infra, spec: { ...infra.spec, env } };
 }
 
+/** Port: budget gate for resizing an UP agent (#1900) — a live resize rolls
+ *  the pod at replicas=1 and never crosses the controller's 0→1 gate, so the
+ *  api-server owns this one check. Wired from the budgets module; structural
+ *  so this module doesn't import across the boundary. */
+export interface ResizeGatePort {
+  assertResizeFits(
+    agent: InfraAgent,
+    newSize: { cpu?: string; memory?: string },
+  ): Promise<void>;
+}
+
+// Serializes resize check+patch per owner. In-process only — correctness
+// leans on the api-server running a single replica, the same standing as the
+// controller's single-worker invariant (see budgets.md).
+const ownerResizeLocks = new Map<string, Promise<unknown>>();
+async function withOwnerResizeLock<T>(
+  owner: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = ownerResizeLocks.get(owner) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  ownerResizeLocks.set(
+    owner,
+    run.catch(() => {}),
+  );
+  return run;
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   /** Postgres store for user-typed env. */
@@ -107,6 +137,11 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  agentDefaultLimits: DefaultResourceLimits;
+  /** Budget gate for live resizes; omitted by system compositions (which
+   *  never resize) — a live resize without it is rejected. */
+  resizeGate?: ResizeGatePort;
   /** Single-shot create: seeds spec grant fields before first render, then
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
@@ -276,15 +311,23 @@ export function createAgentsService(deps: {
             message: `template "${input.templateId}" not found`,
           });
         }
-        spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
-          description: input.description,
-        });
+        spec = assembleSpecFromTemplate(
+          input.name,
+          tmpl.spec,
+          { description: input.description, size: input.size },
+          deps.agentDefaultLimits,
+        );
         templateId = input.templateId;
       } else {
-        spec = assembleSpecFromImage(input.name, {
-          image: input.image,
-          description: input.description,
-        });
+        spec = assembleSpecFromImage(
+          input.name,
+          {
+            image: input.image,
+            description: input.description,
+            size: input.size,
+          },
+          deps.agentDefaultLimits,
+        );
       }
       // Template-declared env rides the rail like user env (seeded below), not
       // the CR — the controller no longer reads spec.env.
@@ -451,11 +494,49 @@ export function createAgentsService(deps: {
           input.hibernationTimeoutMin === null
             ? null
             : minutesToDuration(input.hibernationTimeoutMin);
+      let gateLiveResize:
+        | ((
+            apply: () => Promise<InfraAgent | null>,
+          ) => Promise<InfraAgent | null>)
+        | null = null;
+      if (input.size !== undefined) {
+        // A sleeping agent's new Size passes the controller's 0→1 gate on
+        // its next start. An UP agent's resize is gated by the controller
+        // at render (an over-ceiling grow parks the pair); the check here
+        // is the synchronous courtesy in front of it — fail at save time
+        // with a typed error instead of parking a moment later. Serialized
+        // per owner around read+check+patch, with the read INSIDE the
+        // lock: the shrink shortcut and the up/sleeping split must
+        // classify against the same state the ceiling check runs on, or
+        // two rapid resizes could classify an increase as a shrink.
+        gateLiveResize = (apply) =>
+          withOwnerResizeLock(deps.owner ?? "", async () => {
+            const current = await deps.repo.get(input.id, deps.owner);
+            if (!current) return null;
+            if (!current.hibernated && !current.overBudget) {
+              const gate = deps.resizeGate;
+              if (!gate) {
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message: "Resizing a running sandbox is not supported here.",
+                });
+              }
+              await gate.assertResizeFits(current, input.size!);
+            }
+            return apply();
+          });
+        // Merge-patch merges nested objects, so only the provided
+        // dimensions change; requests (operator escape hatch) survive.
+        patch.resources = { limits: input.size };
+      }
       // Both branches do the owner check; an env-only update skips the no-op CR patch.
-      const infra =
+      const applyPatch = () =>
         Object.keys(patch).length > 0
-          ? await deps.repo.updateSpec(input.id, deps.owner, patch)
-          : await deps.repo.get(input.id, deps.owner);
+          ? deps.repo.updateSpec(input.id, deps.owner, patch)
+          : deps.repo.get(input.id, deps.owner);
+      const infra = gateLiveResize
+        ? await gateLiveResize(applyPatch)
+        : await applyPatch();
       if (!infra) return null;
 
       let env = input.env;
@@ -596,6 +677,69 @@ export function createAgentsService(deps: {
         result: "success",
       });
       emit({ type: EventType.AgentWoken, agentId: id });
+      return project(infra);
+    },
+
+    async stop(id) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.stop" },
+        });
+        return null;
+      }
+      const infra = await deps.repo.requestStop(id);
+      if (!infra) return null;
+      securityLog("info", "agent.stop", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      return project(infra);
+    },
+
+    async pause(id) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.pause" },
+        });
+        return null;
+      }
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      // A never-hibernate agent (effective timeout 0) runs regardless of
+      // activity, so a non-sticky pause would silently self-revive within a
+      // reconcile. For those, pause degrades to the sticky stop — down until
+      // explicitly woken — which is the only stable "paused" it can have.
+      const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
+        current.spec.hibernationTimeout,
+        deps.agentIdleTimeoutMinutes,
+      );
+      const infra =
+        effectiveTimeout === 0
+          ? await deps.repo.requestStop(id)
+          : await deps.repo.requestPause(id);
+      if (!infra) return null;
+      securityLog("info", "agent.pause", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
       return project(infra);
     },
 
