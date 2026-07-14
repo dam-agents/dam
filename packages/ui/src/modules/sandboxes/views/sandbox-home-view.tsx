@@ -10,6 +10,7 @@ import { SandboxSectionNav } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxTwoColumnShell } from "../components/sandbox-two-column-shell.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
+import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const f = useSandboxSettingsForm();
@@ -22,6 +23,8 @@ export function SandboxHomeView() {
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
   );
+
+  const summaries = useSectionSummaries(f.agent);
 
   if (f.status !== "ready" || !f.agent) {
     return (
@@ -69,6 +72,7 @@ export function SandboxHomeView() {
         <SandboxSectionNav
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
+          summaries={summaries}
         />
       }
     >

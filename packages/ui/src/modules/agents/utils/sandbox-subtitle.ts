@@ -7,18 +7,27 @@ export interface SandboxSubtitleLookup {
   connectionTemplateIdById: ReadonlyMap<string, string>;
 }
 
-/** "harness · provider" row subtitle. The harness segment degrades to the raw
- *  image ref when the template is unknown; the provider segment is omitted
- *  when no granted connection resolves to a provider. */
-export function sandboxSubtitle(
+/** The harness + provider segments of a sandbox subtitle. The harness segment
+ *  degrades to the raw image ref when the template is unknown; the provider
+ *  segment is null when no granted connection resolves to a provider. */
+export function sandboxSubtitleParts(
   agent: AgentView,
   lookup: SandboxSubtitleLookup,
-): string {
+): { harness: string; provider: string | null } {
   const harness =
     (agent.templateId
       ? lookup.templateNameById.get(agent.templateId)
       : undefined) ?? agent.image;
-  const provider = providerLabel(agent, lookup);
+  return { harness, provider: providerLabel(agent, lookup) };
+}
+
+/** "harness · provider" row subtitle; the provider segment is omitted when no
+ *  granted connection resolves to a provider. */
+export function sandboxSubtitle(
+  agent: AgentView,
+  lookup: SandboxSubtitleLookup,
+): string {
+  const { harness, provider } = sandboxSubtitleParts(agent, lookup);
   return provider ? `${harness} · ${provider}` : harness;
 }
 
