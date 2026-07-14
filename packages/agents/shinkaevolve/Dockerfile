@@ -24,6 +24,8 @@ USER root
 
 COPY --from=sqlite-cli /sqlite/usr/bin/sqlite3 /usr/bin/sqlite3
 COPY --from=sqlite-cli /sqlite/usr/lib64/libsqlite3.so.* /usr/lib64/
+# fail the build if any transitive shared-library dep is missing from the base
+RUN sqlite3 -version
 
 ARG SHINKA_VERSION=0.0.7
 
