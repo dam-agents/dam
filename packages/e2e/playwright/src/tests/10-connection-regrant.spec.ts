@@ -93,7 +93,12 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
   });
 
   await test.step("create a replacement of the same type", async () => {
-    await page.getByRole("button", { name: /show all/i }).click();
+    // The provider section renders its own "Show all" toggle — scope to the
+    // connections section.
+    await page
+      .locator("section", { hasText: "My connections" })
+      .getByRole("button", { name: /show all/i })
+      .click();
     await page.getByTestId("connection-template-custom-header").click();
 
     await page.getByTestId("connection-field-name").fill(recreatedName);
