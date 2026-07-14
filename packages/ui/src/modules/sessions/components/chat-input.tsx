@@ -9,7 +9,6 @@ import {
   type KeyboardEvent,
   type RefObject,
   useCallback,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -23,64 +22,10 @@ import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { ChatColumn } from "./chat-column.js";
-import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-const BUSY_VERBS = [
-  "Bamboozling",
-  "Bamming",
-  "Cowabunga-ing",
-  "Gadzooksing",
-  "Gee whizzing",
-  "Gee willikering",
-  "Gollying",
-  "Great Scotting",
-  "Holy guacamoleing",
-  "Holy mackereling",
-  "Holy moleying",
-  "Hot diggitying",
-  "Jeepersing",
-  "Jiminy cricketing",
-  "Kablooeying",
-  "Kabooming",
-  "Kapowing",
-  "Kersplatting",
-  "Klonking",
-  "Leapin' lizarding",
-  "Powieing",
-  "Sakes aliving",
-  "Shazaming",
-  "Thwacking",
-  "Up-up-and-awaying",
-  "Vrooming",
-  "Whamming",
-  "Whiz-banging",
-  "Whomping",
-  "Zlonking",
-  "Zonking",
-  "Zwapping",
-];
-
-function BusyIndicator() {
-  const [verb, setVerb] = useState(
-    () => BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)],
-  );
-  useEffect(() => {
-    const id = setInterval(() => {
-      setVerb(BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)]);
-    }, 2500);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-      <WorkingDots />
-      {verb}…
-    </span>
-  );
-}
-
-interface ChatInputProps {
+export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;
@@ -251,7 +196,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 px-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -286,11 +231,6 @@ export function ChatInput({
             )}
           </div>
         </div>
-        {isComputing && (
-          <div className="flex items-center gap-3">
-            <BusyIndicator />
-          </div>
-        )}
       </ChatColumn>
     </div>
   );

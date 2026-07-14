@@ -1,8 +1,7 @@
-import { Settings } from "@carbon/icons-react";
+import { ArrowDown, Settings } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import {
   AlertCircle,
-  ArrowDown,
   ArrowLeft,
   FileText as FileIcon,
   MoreVertical,
@@ -50,17 +49,21 @@ import {
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
+import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
-import { ChatInput } from "../components/chat-input.js";
+import { ChatInputArea } from "../components/chat-input-area.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
-import { PermissionPrompt } from "../components/permission-prompt.js";
+import {
+  PermissionStatusLine,
+  PermissionVerdictLine,
+} from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
-import { WorkingDots } from "../components/working-dots.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -98,11 +101,7 @@ export function ChatView() {
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
-  const hasPendingPermission = useStore((s) =>
-    s.sessionId
-      ? s.pendingPermissions.some((p) => p.sessionId === s.sessionId)
-      : false,
-  );
+  const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showMobilePanel = useStore((s) => s.showMobilePanel);
@@ -347,6 +346,13 @@ export function ChatView() {
           ? "bg-zinc-400"
           : "bg-amber-500";
 
+  // The status line normally renders inside the last assistant message; when
+  // the transcript ends on something else (replay edge), fall back to a
+  // standalone trailing line so the blocked input always has its anchor.
+  const lastMessage = messages[messages.length - 1];
+  const statusLineInThread =
+    lastMessage?.role === "assistant" && !lastMessage.notice;
+
   // ── Layout ──
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
@@ -544,7 +550,7 @@ export function ChatView() {
                           </p>
                         </div>
                       )}
-                    {messages.map((m) =>
+                    {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
                           <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
@@ -586,7 +592,7 @@ export function ChatView() {
                               className={
                                 m.role === "user"
                                   ? "flex flex-col gap-2 rounded-xl border border-border-light bg-surface px-4 py-3 text-[14px] text-text"
-                                  : "flex flex-col gap-4 max-w-full"
+                                  : "flex flex-col gap-4 w-full max-w-full"
                               }
                             >
                               {m.parts.map((p, i) =>
@@ -623,6 +629,8 @@ export function ChatView() {
                                     alt="image"
                                     className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
                                   />
+                                ) : p.kind === "verdict" ? (
+                                  <PermissionVerdictLine key={i} verdict={p} />
                                 ) : p.kind === "file" ? (
                                   <div
                                     key={i}
@@ -648,62 +656,66 @@ export function ChatView() {
                                 ),
                               )}
                               {m.streaming &&
-                                m.parts.length === 0 &&
-                                (m.queued ? (
+                                m.queued &&
+                                m.parts.length === 0 && (
                                   <span className="text-[12px] text-text-muted italic">
                                     Waiting for previous prompt…
                                   </span>
-                                ) : (
-                                  <WorkingDots
-                                    size="md"
-                                    className="text-accent py-3"
-                                  />
-                                ))}
+                                )}
+                              {m.role === "assistant" &&
+                                mi === messages.length - 1 && (
+                                  <PermissionStatusLine />
+                                )}
+                              {m.role === "assistant" &&
+                                m.streaming &&
+                                !m.queued &&
+                                !hasPendingPermission && (
+                                  <BusyIndicator className="py-1" />
+                                )}
                             </div>
                           )}
                         </div>
                       ),
                     )}
+                    {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
 
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted/30 transition-colors"
                   >
-                    <ArrowDown size={12} />
+                    <ArrowDown size={16} />
                     Jump to latest
                   </button>
                 )}
               </div>
 
-              {hasPendingPermission ? (
-                <PermissionPrompt />
-              ) : (
-                <ChatInput
+              <div className="pb-[16px]">
+                <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
                   onSend={sendPrompt}
                   onStop={stopAgent}
                 />
-              )}
-              {harnessCurrent?.model && (
-                <div className="px-4 md:px-8 pb-[16px]">
-                  <ChatColumn>
-                    <button
-                      type="button"
-                      onClick={handleConfigureSandbox}
-                      title="Model — change in sandbox configuration"
-                      className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
-                    >
-                      {harnessCurrent.model}
-                      <Settings size={12} />
-                    </button>
-                  </ChatColumn>
-                </div>
-              )}
+                {!hasPendingPermission && harnessCurrent?.model && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <button
+                        type="button"
+                        onClick={handleConfigureSandbox}
+                        title="Model — change in sandbox configuration"
+                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
+                      >
+                        {harnessCurrent.model}
+                        <Settings size={12} />
+                      </button>
+                    </ChatColumn>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>

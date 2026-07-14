@@ -48,12 +48,22 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
+/** Client-minted record of a tool-approval verdict, anchored where the user
+ *  decided it. Not part of the runtime log — it vanishes on session replay. */
+export interface VerdictPart {
+  kind: "verdict";
+  label: string;
+  subject: string;
+  allowed: boolean;
+}
+
 export type MessagePart =
   | TextPart
   | ThoughtPart
   | ImagePart
   | FilePart
-  | ToolChip;
+  | ToolChip
+  | VerdictPart;
 
 export interface Message {
   id: string;
