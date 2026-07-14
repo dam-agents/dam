@@ -12,6 +12,8 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
   grantedConnectionIds: [],
+  overBudget: false,
+  size: {},
   state,
   contributionFailures: [],
   channels: [],
@@ -87,6 +89,13 @@ describe("transitionRestartingAgents", () => {
       [agent("a", "error")],
       NOW,
     );
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry when the budget gate parks the agent — the denial is the attempt's outcome", () => {
+    const current = new Map([["a", entry(false)]]);
+    const parked = { ...agent("a", "starting"), overBudget: true };
+    const next = transitionRestartingAgents(current, [parked], NOW);
     expect(next.has("a")).toBe(false);
   });
 

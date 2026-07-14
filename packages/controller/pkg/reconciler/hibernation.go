@@ -11,6 +11,11 @@ import (
 const (
 	annActiveSession = "agent-platform.ai/active-session"
 	annLastActivity  = "agent-platform.ai/last-activity"
+	// User-initiated hard stop (#1900): non-empty forces the pair down,
+	// overriding activity and disabled auto-hibernation. Cleared only by an
+	// explicit wake or a schedule fire — background activity bumps never
+	// touch it, so a stopped agent stays stopped under open UI polls.
+	annStopRequested = "agent-platform.ai/stop-requested"
 )
 
 // shouldRun reports whether an agent should be scaled up, derived purely from
@@ -24,6 +29,11 @@ const (
 // Hibernation is therefore only ever the result of a *positive* idle signal,
 // never of absent data.
 func shouldRun(annotations map[string]string, idleTimeout time.Duration, now time.Time) bool {
+	// A hard stop overrides every run signal, including disabled
+	// auto-hibernation — it is the one *negative* override in the model.
+	if annotations[annStopRequested] != "" {
+		return false
+	}
 	if idleTimeout <= 0 {
 		return true
 	}

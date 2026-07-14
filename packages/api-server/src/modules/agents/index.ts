@@ -32,6 +32,10 @@ export {
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export {
+  AgentStoppedError,
+  isAgentStoppedError,
+} from "./domain/agent-stopped.js";
+export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,

@@ -6,9 +6,15 @@ import { Card } from "@/components/ui/card";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
+import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { useDeleteAgent } from "../api/mutations.js";
+import {
+  useDeleteAgent,
+  usePauseAgent,
+  useStopAgent,
+} from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import {
@@ -36,6 +42,8 @@ export function ListView() {
   useSyncRestartingAgents();
 
   const deleteAgent = useDeleteAgent();
+  const pauseAgent = usePauseAgent();
+  const stopAgent = useStopAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
@@ -62,6 +70,27 @@ export function ListView() {
     [templates, connections.data],
   );
 
+  const stopSandbox = async (agent: AgentView) => {
+    // Schedules override a stop by design (#1900) — say so before it lands.
+    const schedules = await fetchSchedulesForAgent(agent.id);
+    const scheduleNote =
+      schedules.length > 0 ? (
+        <>
+          {" "}
+          This sandbox has <strong>{schedules.length} schedule(s)</strong> — the
+          next fire will start it again.
+        </>
+      ) : null;
+    const msg = (
+      <>
+        Stop sandbox <strong className="text-foreground">"{agent.name}"</strong>
+        ? It stays stopped until you start it.{scheduleNote}
+      </>
+    );
+    if (!(await showConfirm(msg, "Stop Sandbox"))) return;
+    stopAgent.mutate({ id: agent.id });
+  };
+
   const deleteSandbox = async (agent: AgentView) => {
     const msg = (
       <>
@@ -85,6 +114,8 @@ export function ListView() {
           <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
         )}
       </div>
+
+      {initialLoaded && agents.length > 0 && <BudgetMeter />}
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
@@ -116,6 +147,8 @@ export function ListView() {
               onSelect={() => navigateToSandboxHome(agent.id)}
               onWake={() => wakeAgent.wake(agent.id)}
               onRestart={() => restartAgent(agent.id)}
+              onPause={() => pauseAgent.mutate({ id: agent.id })}
+              onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}
             />
           ))}

@@ -16,4 +16,9 @@ const (
 	AgentSchemaGeneration = 4
 	ForkSchemaGeneration  = 1
 	RunSchemaGeneration   = 1
+	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
+	// Ceilings must be positive quantities; owner must be name-constructible
+	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.
+	// (Folded into gen 1 pre-release — this CRD ships first with this PR.)
+	UserBudgetSchemaGeneration = 1
 )

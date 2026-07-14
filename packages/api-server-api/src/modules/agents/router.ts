@@ -15,6 +15,8 @@ import {
   agentGetInputSchema,
   agentRestartInputSchema,
   agentUpdateInputSchema,
+  agentPauseInputSchema,
+  agentStopInputSchema,
   agentWakeInputSchema,
 } from "./schemas.js";
 import type { Agent } from "./types.js";
@@ -33,6 +35,12 @@ function toView(agent: Agent) {
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
     error: agent.error,
+    overBudget: agent.overBudget,
+    overBudgetMessage: agent.overBudgetMessage,
+    size: {
+      cpu: agent.spec.resources?.limits?.cpu,
+      memory: agent.spec.resources?.limits?.memory,
+    },
     podTerminationReason: agent.podTerminationReason,
     contributionFailures: agent.contributionFailures,
     channels: agent.channels,
@@ -91,6 +99,22 @@ export const agentsRouter = t.router({
     .input(agentWakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.wake(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(agent);
+    }),
+
+  stop: manageAgentsProcedure
+    .input(agentStopInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.stop(input.id);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(agent);
+    }),
+
+  pause: manageAgentsProcedure
+    .input(agentPauseInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.agents.pause(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),

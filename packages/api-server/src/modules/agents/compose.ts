@@ -15,6 +15,7 @@ import {
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsSettledPort,
+  type ResizeGatePort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -46,6 +47,10 @@ export function composeAgentsModule(deps: {
   namespace: string;
   /** Global default idle timeout in minutes; the per-agent override resolves against it. */
   agentIdleTimeoutMinutes: number;
+  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  agentDefaultLimits: { cpu: string; memory: string };
+  /** Budget gate for live resizes (#1900); omitted by system compositions. */
+  resizeGate?: ResizeGatePort;
   /** `undefined` enables system-level composition (cross-owner) for the
    *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
@@ -85,6 +90,8 @@ export function composeAgentsModule(deps: {
       repo,
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
+      agentDefaultLimits: deps.agentDefaultLimits,
+      resizeGate: deps.resizeGate,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,

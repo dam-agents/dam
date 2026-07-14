@@ -28,6 +28,8 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an Agent: running or hibernated |
 | Wake | Transitioning an Agent from hibernated to running |
+| Hard Stop | User-initiated scale-to-zero of a running Agent (the `stop-requested` annotation), freeing its Reserved compute. Sticky against background activity — background polls cannot resurrect it — and cleared only by an explicit Wake or a Schedule fire (the UI warns at stop time when schedules exist) |
+| Pause | User-initiated immediate hibernation: a Hard Stop whose stamp the api-server clears once the Agent settles Hibernated. Sticky only during the scale-down window (which is what prevents poll-resurrection mid-descent); afterwards the Agent wakes on any deliberate touch, back through the budget gate |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
 | Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
 | Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
@@ -172,6 +174,19 @@ An Experiment races several AI-driven R&D harnesses against one goal and compare
 | Inspector | A Keycloak user carrying the configured inspector realm role (`platform-inspector` by default) who can read `/api/usage/*` but is otherwise indistinguishable from a regular platform user |
 | Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
 | Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
+
+## Budgets (bounded context)
+
+Fair-sharing of the cluster's fixed compute pool between users. Distinct from Usage Tracking (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
+
+| Term | Definition |
+|------|-----------|
+| Budget | A per-user ceiling on concurrently Reserved compute (CPU and memory) across that user's Agents. Constrains *starting* an Agent, never *running* one — no eviction on ceiling changes |
+| Ceiling | The limit side of a Budget: the operator-set maximum Reserved compute for one user. Resolved as the user's UserBudget override, else the chart-wide default |
+| Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-turn Fork/Run pods |
+| Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/1Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
+| UserBudget | The record of one user's Ceiling override: a namespaced CR (platform namespace, like Agent) named `budget-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub (name↔owner pinned by schema validation). Absence means the chart default applies |
+| Over Budget | The parked state of an Agent whose start would push its owner's Reserved past their Ceiling: pods stay at zero, `Ready=False/OverBudget`. Parked Agents never start by themselves — a new deliberate start (Start button, opening it, a Schedule fire) retries the gate; never-hibernate Agents are the exception and auto-start when room frees. The activity window lapsing reverts it to plain hibernation |
 
 ## Platform CLI (bounded context)
 

@@ -25,9 +25,10 @@ var crdGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version:
 // operator-run CRD upgrade in the ops repository.
 func Assert(ctx context.Context, client dynamic.Interface) error {
 	required := map[string]int{
-		"agents." + apiv1.GroupVersion.Group: apiv1.AgentSchemaGeneration,
-		"forks." + apiv1.GroupVersion.Group:  apiv1.ForkSchemaGeneration,
-		"runs." + apiv1.GroupVersion.Group:   apiv1.RunSchemaGeneration,
+		"agents." + apiv1.GroupVersion.Group:      apiv1.AgentSchemaGeneration,
+		"forks." + apiv1.GroupVersion.Group:       apiv1.ForkSchemaGeneration,
+		"runs." + apiv1.GroupVersion.Group:        apiv1.RunSchemaGeneration,
+		"userbudgets." + apiv1.GroupVersion.Group: apiv1.UserBudgetSchemaGeneration,
 	}
 	for name, want := range required {
 		crd, err := client.Resource(crdGVR).Get(ctx, name, metav1.GetOptions{})

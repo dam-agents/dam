@@ -17,6 +17,21 @@ const adminAppSlugSchema = z
       "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
   });
 
+/** A positive Kubernetes resource quantity. Boot-validates the
+ *  chart-templated quantity strings: a typo'd Helm value (e.g. cpu "1Gi"
+ *  where "1" was meant is caught by the grammar only for true garbage, but
+ *  "1x" or "" crash here at startup) would otherwise propagate into every
+ *  created agent spec or silently zero the meter's ceiling. */
+const positiveQuantitySchema = z
+  .string()
+  .regex(
+    /^(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[mkMGTPE])?$/,
+    "must be a Kubernetes quantity, e.g. '1', '500m', '2Gi'",
+  )
+  .refine((v) => parseFloat(v) > 0, {
+    message: "must be a positive quantity",
+  });
+
 const configSchema = z.object({
   /** Build-time semver from this package's package.json — not env-driven.
    *  Bundled into `dist/index.js` by tsup at build time; in dev (tsx) it
@@ -97,6 +112,20 @@ const configSchema = z.object({
    *  the controller's `controller.agent.base.idleTimeout` Helm value. Always
    *  supplied by loadConfig — the `AGENT_IDLE_TIMEOUT` fallback is the sole default. */
   agentIdleTimeoutMinutes: z.number().int().min(0),
+  /** Chart-default agent size (limits), templated from the same
+   *  `controller.agent.templateDefaults.resources.limits` Helm value the
+   *  controller consumes, so the two cannot drift. Stamped into every created
+   *  agent spec so Reserved (#1900) reads straight off
+   *  `spec.resources.limits`; requests are derived by the controller at
+   *  render. */
+  agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
+  agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
+  /** Chart-default per-user compute Ceiling (#1900), templated from the
+   *  same `controller.userBudgets` Helm value the controller enforces
+   *  with. Display-only here (the meter's ceiling figure when the caller
+   *  has no UserBudget CR) — enforcement never reads these. */
+  defaultUserCpuBudget: positiveQuantitySchema.default("4"),
+  defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   /** JSON array of system Skill Sources declared by the cluster admin via
    *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
    *  parseSeedSources at startup — malformed JSON or wrong shape crashes the
@@ -253,6 +282,10 @@ export function loadConfig(): Config {
     agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),
+    agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
+    agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
+    defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
+    defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret:

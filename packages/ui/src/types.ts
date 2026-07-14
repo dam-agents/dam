@@ -90,6 +90,8 @@ export interface TemplateView {
   docsUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
+  /** The template's default Size (#1900): CPU/memory limit strings. */
+  size?: { cpu?: string; memory?: string };
 }
 
 export type AgentState =
@@ -98,6 +100,9 @@ export type AgentState =
   | "running"
   | "hibernating"
   | "hibernated"
+  /** Parked (#1900): wants to run, but starting it would breach the owner's
+   *  Ceiling. Waits at zero until a deliberate start after room frees. */
+  | "over_budget"
   | "error";
 
 export interface AgentView {
@@ -112,6 +117,13 @@ export interface AgentView {
   grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
+  /** Parked (#1900): starting would breach the owner's compute budget; the
+   *  sandbox stays parked until you free room and start it. */
+  overBudget: boolean;
+  /** The controller's figures for a parked sandbox (tooltip copy). */
+  overBudgetMessage?: string;
+  /** The sandbox's Size (#1900): its CPU/memory limit strings. */
+  size: { cpu?: string; memory?: string };
   /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */
   podTerminationReason?: string;
   /** Contributions that failed to install on the last settle; empty when healthy. */

@@ -140,6 +140,8 @@ const RESTART_DISPLAY_TTL_MS = 120_000;
  *     the real state surface).
  *   - state === "error" → drop (pod is observably not starting; user needs to
  *     see the error, not a stale "Restarting" pill).
+ *   - overBudget → drop (the budget gate denied this start — that IS the
+ *     attempt's outcome; the parked state must surface, not "Starting").
  *   - state !== "running" → mark seenNonRunning (pod has cycled).
  *   - state === "running" && seenNonRunning → drop (restart complete).
  *   - state === "running" && !seenNonRunning → keep (still in grace window
@@ -162,6 +164,7 @@ export function transitionRestartingAgents(
     if (!agent) continue;
     if (now - entry.clickedAt >= RESTART_DISPLAY_TTL_MS) continue;
     if (agent.state === "error") continue;
+    if (agent.overBudget) continue;
     if (agent.state !== "running") {
       next.set(id, { seenNonRunning: true, clickedAt: entry.clickedAt });
     } else if (!entry.seenNonRunning) {

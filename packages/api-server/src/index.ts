@@ -158,6 +158,12 @@ async function runUserEnvBackfill(): Promise<void> {
 }
 await runUserEnvBackfill();
 
+// Concrete spec.resources.limits on legacy agents (#1900) are the
+// controller's job: it materializes `legacyAgentSize` into any spec
+// missing a dimension on reconcile (fill-if-absent) — watch-driven, so it
+// also covers CRs created out-of-band, which a boot backfill here never
+// could.
+
 const runtimeDelivery = composeRuntimeDelivery({
   db,
   namespace: config.namespace,
@@ -311,6 +317,10 @@ const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
   agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+  agentDefaultLimits: {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  },
   owner: undefined,
   db,
   userDirectory,

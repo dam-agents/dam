@@ -11,6 +11,16 @@ export function prefetchSchedules(agentId: string) {
   });
 }
 
+/** One-shot imperative fetch for flows that need the schedules *now* (e.g.
+ *  the stop-confirm dialog warning that a schedule will restart the sandbox).
+ *  Failures resolve to an empty list — the caller's flow must not block on a
+ *  schedules hiccup. */
+export function fetchSchedulesForAgent(agentId: string) {
+  return queryClient
+    .fetchQuery(trpc.schedules.list.queryOptions({ agentId }))
+    .catch(() => []);
+}
+
 export function useSchedules(agentId: string | null) {
   return useQuery({
     ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),

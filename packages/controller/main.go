@@ -254,6 +254,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	go runCachedWorker(ctx, "fork", forkInformer.Lister(), cfg.Namespace, forkQueue, reconciler.FromCacheObject[apiv1.Fork], forkReconciler.Reconcile)
 	go runCachedWorker(ctx, "run", runInformer.Lister(), cfg.Namespace, runQueue, reconciler.FromCacheObject[apiv1.Run], runReconciler.Reconcile)
+	// Exactly ONE agent worker: budget enforcement (#1900) relies on agent
+	// reconciles never interleaving — see the race note on budgetAllows
+	// before parallelizing this.
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 

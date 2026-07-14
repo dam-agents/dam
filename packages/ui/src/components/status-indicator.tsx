@@ -9,6 +9,7 @@ const stateLabel: Record<AgentDisplayState, string> = {
   hibernating: "Hibernating",
   hibernated: "Hibernating",
   error: "Error",
+  over_budget: "Over budget",
 };
 
 const stateVariant: Record<
@@ -21,6 +22,7 @@ const stateVariant: Record<
   hibernating: "muted",
   hibernated: "muted",
   error: "danger",
+  over_budget: "warning",
 };
 
 export function StatusBadge({
