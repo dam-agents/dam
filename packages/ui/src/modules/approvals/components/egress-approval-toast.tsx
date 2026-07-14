@@ -37,9 +37,7 @@ export function EgressApprovalToast({
   const approveHost = useApproveHost();
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxSettings = useStore(
-    (s) => s.navigateToSandboxSettings,
-  );
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   if (row.payload.kind !== "ext_authz") return null;
   const { host, method, path } = row.payload;
@@ -136,7 +134,7 @@ export function EgressApprovalToast({
           size="sm"
           className="h-[26px] text-[14px] font-medium"
           disabled={inflight}
-          onClick={() => navigateToSandboxSettings(row.agentId)}
+          onClick={() => navigateToSandboxHome(row.agentId)}
           title="Open this sandbox's settings"
         >
           <Settings size={14} /> Customize…

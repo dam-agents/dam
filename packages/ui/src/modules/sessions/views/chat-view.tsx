@@ -63,7 +63,6 @@ import {
   PermissionVerdictLine,
 } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
-import { TempConfigDialog } from "../components/temp-config-dialog.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
@@ -100,16 +99,13 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const goBack = useStore((s) => s.goBack);
-  const navigateToSandboxSettings = useStore(
-    (s) => s.navigateToSandboxSettings,
-  );
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const [showConfigDialog, setShowConfigDialog] = useState(false);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
@@ -308,8 +304,8 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const handleConfigureSandbox = useCallback(() => {
-    if (selectedAgent) navigateToSandboxSettings(selectedAgent);
-  }, [selectedAgent, navigateToSandboxSettings]);
+    if (selectedAgent) navigateToSandboxHome(selectedAgent);
+  }, [selectedAgent, navigateToSandboxHome]);
 
   const handleRestartSandbox = useCallback(() => {
     if (selectedAgent) restart(selectedAgent);
@@ -401,15 +397,6 @@ export function ChatView() {
           </DropdownMenu>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {/* Temporary access to the old right-panel content until #2124. */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setShowConfigDialog(true)}
-            title="Sandbox configuration"
-          >
-            <Settings size={16} />
-          </Button>
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
@@ -755,21 +742,6 @@ export function ChatView() {
           </>
         )}
       </div>
-
-      {showConfigDialog && (
-        <TempConfigDialog
-          agentId={selectedAgent}
-          agentState={agents.find((a) => a.id === selectedAgent)?.state}
-          sessionId={sessionId}
-          onResumeSession={mobileResumeSession}
-          onOpenFile={(path) => {
-            // The docked panel opens behind this fullscreen dialog — leave.
-            setShowConfigDialog(false);
-            openFileHandler(path);
-          }}
-          onClose={() => setShowConfigDialog(false)}
-        />
-      )}
 
       <EgressApprovalToasts agentId={selectedAgent} />
 

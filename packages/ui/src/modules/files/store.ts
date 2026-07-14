@@ -2,11 +2,8 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 
-export type RightTab = "configuration" | "metrics";
-
 export interface FilesSlice {
   openFilePath: string | null;
-  rightTab: RightTab;
   filesSectionOpen: boolean;
   /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
    *  the tree-click handler can prompt before discarding. */
@@ -17,7 +14,6 @@ export interface FilesSlice {
   importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
   setOpenFileEdit: (edit: boolean) => void;
-  setRightTab: (tab: RightTab) => void;
   setFilesSectionOpen: (open: boolean) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
@@ -62,7 +58,6 @@ export const createFilesSlice: StateCreator<
   FilesSlice
 > = (set) => ({
   openFilePath: null,
-  rightTab: "configuration",
   filesSectionOpen: true,
   openFileDirty: false,
   openFileEdit: false,
@@ -75,7 +70,6 @@ export const createFilesSlice: StateCreator<
       openFileEdit: opts?.edit ?? false,
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
-  setRightTab: (tab) => set({ rightTab: tab }),
   setFilesSectionOpen: (open) => set({ filesSectionOpen: open }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {

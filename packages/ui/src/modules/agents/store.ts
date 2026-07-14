@@ -113,7 +113,6 @@ export const createAgentsSlice: StateCreator<
       selectedAgent: agentId,
       view: "chat",
       mobileScreen: "chat",
-      showMobilePanel: false,
       pendingTerminal: true,
     });
   },
