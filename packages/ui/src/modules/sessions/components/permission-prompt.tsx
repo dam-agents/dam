@@ -1,7 +1,8 @@
 import { Checkmark, Close } from "@carbon/icons-react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import type { PermissionOption } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -113,6 +114,21 @@ export function PermissionPrompt({
     : [];
   const current = pending[0];
 
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clampable, setClampable] = useState(false);
+
+  useEffect(() => setExpanded(false), [current?.toolCallId]);
+
+  // Show the toggle only when the title actually overflows the clamp. Skip
+  // measuring while expanded (scrollHeight equals clientHeight then), so the
+  // "Show less" affordance doesn't vanish.
+  useEffect(() => {
+    if (expanded) return;
+    const el = titleRef.current;
+    setClampable(!!el && el.scrollHeight > el.clientHeight + 1);
+  }, [expanded, current?.toolCallId]);
+
   const pick = useCallback(
     (opt: PermissionOption) => {
       if (!current) return;
@@ -161,10 +177,22 @@ export function PermissionPrompt({
         <div className="rounded-xl border border-border-light bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
           <div className="flex items-start gap-2 text-[14px] font-semibold text-text">
             <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
-            <span className="line-clamp-6 break-all min-w-0" title={title}>
+            <span
+              ref={titleRef}
+              className={cn("break-all min-w-0", !expanded && "line-clamp-3")}
+            >
               Allow {title}?
             </span>
           </div>
+          {(clampable || expanded) && (
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              className="self-start pl-4 text-[12px] text-muted-foreground hover:text-text transition-colors"
+            >
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
           {location && (
             <div className="pl-4 text-[14px] text-muted-foreground break-all">
               {location}
