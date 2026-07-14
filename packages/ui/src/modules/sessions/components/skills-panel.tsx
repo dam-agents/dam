@@ -84,6 +84,10 @@ interface SkillsPanelProps {
    *  consumer can mirror it without independently polling the destructive
    *  `skills.state` endpoint. Must be stable. */
   onInstalledChange?: (installed: SkillRef[]) => void;
+  /** Read-only: disable install/uninstall toggles (e.g. while the agent is
+   *  stopped, where toggling wakes+reconciles and reverts). The container is
+   *  expected to surface its own "start agent to edit" affordance. */
+  readOnly?: boolean;
 }
 
 const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -132,6 +136,7 @@ export function SkillsPanel({
   agentState,
   onOpenFile,
   onInstalledChange,
+  readOnly = false,
 }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -310,7 +315,7 @@ export function SkillsPanel({
     installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
-    if (!agentId || isError) return;
+    if (!agentId || isError || readOnly) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const currentlyInstalled = isInstalled(skill.source, skill.name);
@@ -336,7 +341,7 @@ export function SkillsPanel({
   };
 
   const updateDrift = async (skill: Skill) => {
-    if (!agentId || isError) return;
+    if (!agentId || isError || readOnly) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
@@ -475,7 +480,7 @@ export function SkillsPanel({
           Agent is in an error state — resolve it before managing skills.
         </div>
       )}
-      {isAsleep && (
+      {isAsleep && !readOnly && (
         <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted">
           Asleep — installing or removing a skill will wake the agent; this can
           take a moment.
@@ -852,7 +857,7 @@ export function SkillsPanel({
                   installed.contentHash !== skill.contentHash;
                 const key = skillKey(skill.source, skill.name);
                 const rowBusy = busyRow === key;
-                const disabled = !agentId || isError || rowBusy;
+                const disabled = !agentId || isError || rowBusy || readOnly;
 
                 return (
                   <label

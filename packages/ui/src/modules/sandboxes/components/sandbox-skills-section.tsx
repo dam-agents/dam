@@ -1,3 +1,4 @@
+import { Locked } from "@carbon/icons-react";
 import type { SkillRef } from "api-server-api";
 import { useCallback, useRef } from "react";
 
@@ -7,6 +8,7 @@ import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import { SkillsPanel } from "../../sessions/components/skills-panel.js";
+import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
 /** Interim re-home of the existing skills panel (redesign tracked in #944).
  *  onOpenFile is omitted — the file viewer is a chat-only affordance. */
@@ -33,12 +35,26 @@ export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
     [agent.id],
   );
 
+  const { operable, comingUp } = useOperableState(agent.id);
+
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Skills</SectionLabel>
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+        {operable ? (
+          <SectionLabel>Skills</SectionLabel>
+        ) : (
+          <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <Locked size={14} /> Skills are read-only while the agent is stopped
+          </span>
+        )}
+        {!operable && (
+          <WakeToEditButton agentId={agent.id} comingUp={comingUp} />
+        )}
+      </div>
       <SkillsPanel
         agentId={agent.id}
         agentState={agent.state}
+        readOnly={!operable}
         onInstalledChange={onInstalledChange}
       />
     </section>
