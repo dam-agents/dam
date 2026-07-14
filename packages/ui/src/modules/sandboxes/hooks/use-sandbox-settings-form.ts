@@ -61,7 +61,6 @@ export type SandboxSettingsStatus =
 
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
-  const setView = useStore((s) => s.setView);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
@@ -253,8 +252,7 @@ export function useSandboxSettingsForm() {
   const dirty = isDirty || net.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
 
-  // Browser-level guard (tab close, refresh, URL nav); `goBack` covers in-app
-  // navigation.
+  // Browser-level guard (tab close, refresh, URL nav).
   useUnsavedGuard(dirty);
 
   const egressStaged: StagedNetworkAccessController = {
@@ -348,15 +346,6 @@ export function useSandboxSettingsForm() {
     }
   });
 
-  const goBack = () => {
-    if (
-      dirty &&
-      !window.confirm("Discard unsaved changes and leave this sandbox?")
-    )
-      return;
-    setView("list");
-  };
-
   const status: SandboxSettingsStatus = !agentId
     ? "no-agent"
     : agentsQuery.data !== undefined && !agent
@@ -375,7 +364,6 @@ export function useSandboxSettingsForm() {
     status,
     agent,
     templateName,
-    goBack,
     register,
     control,
     errors,
