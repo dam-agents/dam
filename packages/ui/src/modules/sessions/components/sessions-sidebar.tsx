@@ -15,7 +15,6 @@ import {
 import { useStore } from "../../../store.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
-import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -213,7 +212,6 @@ export function SessionsSidebar({
           );
         })}
       </div>
-      <AgentApprovalsTray agentId={selectedAgent} />
     </SidebarSection>
   );
 }

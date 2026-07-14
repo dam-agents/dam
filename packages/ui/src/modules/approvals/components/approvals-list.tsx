@@ -19,18 +19,13 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { isHeldCallStillLive } from "../lib/hold.js";
 
 const STATUS_LABEL: Record<ApprovalView["status"], string> = {
   pending: "pending",
   resolved: "resolved",
   expired: "timed out",
 };
-
-function isHeldCallStillLive(row: ApprovalView): boolean {
-  return (
-    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
-  );
-}
 
 export interface ApprovalsListProps {
   rows: readonly ApprovalView[];
