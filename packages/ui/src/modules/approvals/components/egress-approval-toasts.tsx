@@ -86,7 +86,7 @@ export function EgressApprovalToasts({ agentId }: { agentId: string | null }) {
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) setExpanded(false);
       }}
-      className="absolute top-4 max-md:top-[78px] right-4 z-40 w-[400px] max-w-[calc(100vw-32px)]"
+      className="absolute top-4 max-md:top-[78px] right-4 z-40 max-md:z-[60] w-[400px] max-w-[calc(100vw-32px)]"
     >
       {visible.map((row, i) => {
         const rear = i > 0 && !expanded;

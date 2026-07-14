@@ -22,9 +22,10 @@ export function TruncateStart({
       title={title}
       className={cn("truncate text-left", className)}
     >
-      {"\u200E"}
+      {/* select-none keeps the invisible marks out of copied selections. */}
+      <span className="select-none">{"\u200E"}</span>
       {children}
-      {"\u200E"}
+      <span className="select-none">{"\u200E"}</span>
     </span>
   );
 }

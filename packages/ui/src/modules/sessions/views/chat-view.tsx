@@ -117,9 +117,10 @@ export function ChatView() {
     () => Number(localStorage.getItem("platform-left-w")) || 220,
   );
   // null = no stored width yet: the file panel splits 50/50 with the chat
-  // column until the user drags the divider.
+  // column until the user drags the divider. The key is new on purpose — the
+  // old panel's stored "platform-right-w" shouldn't override the split.
   const [rightW, setRightW] = useState<number | null>(
-    () => Number(localStorage.getItem("platform-right-w")) || null,
+    () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
   const [sessionsOpen, setSessionsOpen] = useState(true);
@@ -446,7 +447,7 @@ export function ChatView() {
 
         {/* Main chat column */}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 px-2 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
         >
           {/* Content: Terminal or Chat */}
           {sessionMode === SessionMode.Terminal &&
@@ -481,7 +482,7 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-4 md:px-4 py-8 flex flex-col gap-8">
+                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
                         <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
@@ -697,8 +698,10 @@ export function ChatView() {
                 onResize={(d) =>
                   setRightW((w) => {
                     const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
-                    const v = Math.max(240, Math.min(960, base + d));
-                    localStorage.setItem("platform-right-w", String(v));
+                    // Keep at least ~500px for the sidebar + chat column.
+                    const max = Math.min(960, window.innerWidth - 500);
+                    const v = Math.max(240, Math.min(max, base + d));
+                    localStorage.setItem("platform-file-w", String(v));
                     return v;
                   })
                 }
@@ -731,7 +734,11 @@ export function ChatView() {
           agentState={agents.find((a) => a.id === selectedAgent)?.state}
           sessionId={sessionId}
           onResumeSession={mobileResumeSession}
-          onOpenFile={openFileHandler}
+          onOpenFile={(path) => {
+            // The docked panel opens behind this fullscreen dialog — leave.
+            setShowConfigDialog(false);
+            openFileHandler(path);
+          }}
           onClose={() => setShowConfigDialog(false)}
         />
       )}

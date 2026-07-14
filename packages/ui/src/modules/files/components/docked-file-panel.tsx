@@ -1,17 +1,18 @@
+import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { useFileContentQuery } from "../api/queries.js";
 import { FileViewer } from "./file-viewer.js";
 
+interface Props {
+  onOpenFile: (path: string) => void;
+}
+
 /** Body of the on-demand right file panel: resolves `openFilePath` to content
  *  and hosts the viewer. Closes silently when the file disappears
  *  (rename/delete/git switch); guards a dirty draft on explicit close. */
-export function DockedFilePanel({
-  onOpenFile,
-}: {
-  onOpenFile: (path: string) => void;
-}) {
+export function DockedFilePanel({ onOpenFile }: Props) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
   const openFileDirty = useStore((s) => s.openFileDirty);
@@ -23,9 +24,14 @@ export function DockedFilePanel({
     openFilePath,
   );
 
+  // Auto-close only for genuinely gone files, and never over a dirty draft —
+  // the query polls with no retry, so transient errors also land here and
+  // must not discard unsaved edits.
   useEffect(() => {
-    if (error) setOpenFilePath(null);
-  }, [error, setOpenFilePath]);
+    const gone =
+      error instanceof TRPCClientError && error.data?.code === "NOT_FOUND";
+    if (gone && !openFileDirty) setOpenFilePath(null);
+  }, [error, openFileDirty, setOpenFilePath]);
 
   const close = useCallback(async () => {
     if (

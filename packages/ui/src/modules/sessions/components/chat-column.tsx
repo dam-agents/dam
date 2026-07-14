@@ -10,7 +10,7 @@ export function ChatColumn({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("mx-auto w-full max-w-[813px]", className)}>
+    <div className={cn("mx-auto w-full max-w-[813px] px-4", className)}>
       {children}
     </div>
   );
