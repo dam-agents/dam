@@ -39,6 +39,7 @@ import {
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
@@ -684,7 +685,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted/30 transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
@@ -761,6 +762,8 @@ export function ChatView() {
           </div>
         </div>
       )}
+
+      <EgressApprovalToasts agentId={selectedAgent} />
 
       {selectedAgent && !agentOperable && (
         <AgentUnavailableOverlay
