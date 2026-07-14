@@ -25,7 +25,7 @@ export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
   return (
     <nav
       aria-label="Sandbox sections"
-      className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[200px] md:self-start"
+      className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
       {SECTIONS.map((entry) => (
         <SectionNavItem
