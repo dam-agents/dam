@@ -45,7 +45,7 @@ export function OpenInMenu({ agent }: { agent: AgentView }) {
             <Terminal /> Terminal (local)
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("ide")}>
-            <Code /> Vs Code / Zed (local)
+            <Code /> VS Code / Zed (local)
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
