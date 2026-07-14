@@ -63,6 +63,7 @@ import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -100,11 +101,7 @@ export function ChatView() {
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
-  const hasPendingPermission = useStore((s) =>
-    s.sessionId
-      ? s.pendingPermissions.some((p) => p.sessionId === s.sessionId)
-      : false,
-  );
+  const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showMobilePanel = useStore((s) => s.showMobilePanel);
@@ -348,6 +345,13 @@ export function ChatView() {
         : agentDisplay?.state === "hibernated"
           ? "bg-zinc-400"
           : "bg-amber-500";
+
+  // The status line normally renders inside the last assistant message; when
+  // the transcript ends on something else (replay edge), fall back to a
+  // standalone trailing line so the blocked input always has its anchor.
+  const lastMessage = messages[messages.length - 1];
+  const statusLineInThread =
+    lastMessage?.role === "assistant" && !lastMessage.notice;
 
   // ── Layout ──
   return (
@@ -662,7 +666,8 @@ export function ChatView() {
                                 mi === messages.length - 1 && (
                                   <PermissionStatusLine />
                                 )}
-                              {m.streaming &&
+                              {m.role === "assistant" &&
+                                m.streaming &&
                                 !m.queued &&
                                 !hasPendingPermission && (
                                   <BusyIndicator className="py-1" />
@@ -672,6 +677,7 @@ export function ChatView() {
                         </div>
                       ),
                     )}
+                    {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
 

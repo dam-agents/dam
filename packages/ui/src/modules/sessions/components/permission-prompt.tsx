@@ -97,7 +97,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
 export function PermissionPrompt({
   onResolved,
 }: {
-  onResolved?: (verdict: PermissionVerdict) => void;
+  onResolved?: (verdict: PermissionVerdict, toolCallId: string) => void;
 }) {
   // Only show requests tied to the session the user is currently viewing.
   // Other sessions may have pending permissions buffered on the runtime and
@@ -132,11 +132,14 @@ export function PermissionPrompt({
   const pick = useCallback(
     (opt: PermissionOption) => {
       if (!current) return;
-      onResolved?.({
-        label: verdictLabel(opt),
-        subject: toolTitle(current.toolCall),
-        allowed: opt.kind?.startsWith("allow") ?? false,
-      });
+      onResolved?.(
+        {
+          label: verdictLabel(opt),
+          subject: toolTitle(current.toolCall),
+          allowed: opt.kind?.startsWith("allow") ?? false,
+        },
+        current.toolCallId,
+      );
       resolve(current.toolCallId, {
         outcome: { outcome: "selected", optionId: opt.optionId },
       });
