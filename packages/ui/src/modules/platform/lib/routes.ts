@@ -85,7 +85,7 @@ export function pathToState(path: string): {
   if (path === "/terms") return { view: "terms" };
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
   const sandboxHomeMatch = path.match(
-    /^\/sandboxes\/([^/]+)(?:\/(connections|skills|schedules))?$/,
+    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|skills|schedules))?$/,
   );
   if (sandboxHomeMatch)
     return {

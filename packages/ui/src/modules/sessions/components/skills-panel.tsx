@@ -234,13 +234,14 @@ export function SkillsPanel({
 
   const refreshSource = useCallback(
     async (sourceId: string) => {
+      if (readOnly) return;
       const ok = await runAction(
         () => api.skills.sources.refresh.mutate({ id: sourceId }),
         "Failed to refresh source",
       );
       if (ok !== ACTION_FAILED) await loadSkills(sourceId);
     },
-    [loadSkills],
+    [loadSkills, readOnly],
   );
 
   useEffect(() => {
@@ -360,6 +361,7 @@ export function SkillsPanel({
   };
 
   const addSource = async () => {
+    if (readOnly) return;
     if (!addForm.name.trim() || !addForm.gitUrl.trim()) return;
     setAddBusy(true);
     const result = await runAction(
@@ -394,6 +396,7 @@ export function SkillsPanel({
   }
 
   const openPublish = (skill: LocalSkill) => {
+    if (readOnly) return;
     const first = publishableSources[0];
     if (!first) return;
     setPublishFor(skill);
@@ -405,7 +408,7 @@ export function SkillsPanel({
   };
 
   const publish = async () => {
-    if (!agentId || !publishFor) return;
+    if (readOnly || !agentId || !publishFor) return;
     setPublishBusy(true);
     try {
       const result = await api.skills.publish.mutate({
@@ -454,6 +457,7 @@ export function SkillsPanel({
   };
 
   const deleteSource = async (src: SkillSource) => {
+    if (readOnly) return;
     const ok = await showConfirm(
       `Remove source "${src.name}"? Installed skills stay on running agents.`,
       "Remove Source",
@@ -598,7 +602,7 @@ export function SkillsPanel({
                         ? "Add a GitHub source first to publish there"
                         : "Publish this skill as a pull request"
                     }
-                    disabled={publishableSources.length === 0}
+                    disabled={publishableSources.length === 0 || readOnly}
                     onClick={() => openPublish(skill)}
                   >
                     <Share2 size={11} />
@@ -623,6 +627,7 @@ export function SkillsPanel({
           variant="outline"
           size="xs"
           className="w-full"
+          disabled={readOnly}
           onClick={() => {
             setAddForm({ name: "", gitUrl: "", path: "" });
             setShowAdd(true);
@@ -765,7 +770,7 @@ export function SkillsPanel({
               <span
                 role="button"
                 tabIndex={0}
-                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
+                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading || readOnly ? "pointer-events-none opacity-50" : ""}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!loading) void refreshSource(src.id);
@@ -785,7 +790,7 @@ export function SkillsPanel({
                 <span
                   role="button"
                   tabIndex={0}
-                  className="text-text-muted hover:text-danger transition-colors"
+                  className={`text-text-muted hover:text-danger transition-colors ${readOnly ? "pointer-events-none opacity-50" : ""}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     void deleteSource(src);
