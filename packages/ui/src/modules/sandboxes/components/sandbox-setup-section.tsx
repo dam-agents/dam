@@ -11,6 +11,7 @@ import { ProviderSection } from "../../providers/components/provider-section.js"
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
+import { SandboxModelSettings } from "./sandbox-model-settings.js";
 
 const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
@@ -67,6 +68,8 @@ export function SandboxSetupSection({ f }: Props) {
           break the agent and may need a restart.
         </p>
       </section>
+
+      <SandboxModelSettings agentId={agent.id} />
 
       <ConnectionsSection
         grantedIds={f.grantedAppIds}
