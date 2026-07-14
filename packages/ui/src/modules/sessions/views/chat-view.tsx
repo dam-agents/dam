@@ -1,9 +1,9 @@
+import { Settings } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import {
   AlertCircle,
   ArrowDown,
   ArrowLeft,
-  ChevronUp,
   FileText as FileIcon,
   MoreVertical,
   RefreshCw,
@@ -50,6 +50,7 @@ import {
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
+import { ChatColumn } from "../components/chat-column.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
@@ -57,6 +58,7 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
+import { WorkingDots } from "../components/working-dots.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 
@@ -347,14 +349,10 @@ export function ChatView() {
 
   // ── Layout ──
   return (
-    <div className="flex flex-col h-dvh bg-bg relative overflow-hidden">
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
-      <div className="blob blob-3" />
-
+    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {/* Header spans the full width; on mobile it belongs to the chat screen only */}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-11 border-b border-border-light bg-surface/50 backdrop-blur-xl shrink-0 relative z-10`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-10`}
       >
         <button
           className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
@@ -420,7 +418,7 @@ export function ChatView() {
         {/* Left: Sessions + Files sections */}
         <div
           style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10 ${
+          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-10 ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
@@ -510,7 +508,7 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
+                  <ChatColumn className="px-4 md:px-4 py-8 flex flex-col gap-8">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
                         <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
@@ -567,7 +565,7 @@ export function ChatView() {
                           data-role={m.role}
                           className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
                         >
-                          <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
+                          <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
                             {m.role === "user" ? "You" : "Agent"}
                           </span>
                           {m.error ? (
@@ -587,8 +585,8 @@ export function ChatView() {
                             <div
                               className={
                                 m.role === "user"
-                                  ? "flex flex-col gap-2 rounded-xl rounded-br-sm border border-accent/30 bg-accent-light px-5 py-3 text-[14px] text-text max-w-[620px]"
-                                  : "flex flex-col gap-2 max-w-full"
+                                  ? "flex flex-col gap-2 rounded-xl border border-border-light bg-surface px-4 py-3 text-[14px] text-text"
+                                  : "flex flex-col gap-4 max-w-full"
                               }
                             >
                               {m.parts.map((p, i) =>
@@ -656,14 +654,17 @@ export function ChatView() {
                                     Waiting for previous prompt…
                                   </span>
                                 ) : (
-                                  <span className="inline-block w-[7px] h-4 bg-accent anim-blink rounded-sm" />
+                                  <WorkingDots
+                                    size="md"
+                                    className="text-accent py-3"
+                                  />
                                 ))}
                             </div>
                           )}
                         </div>
                       ),
                     )}
-                  </div>
+                  </ChatColumn>
                 </div>
 
                 {showJump && (
@@ -689,15 +690,19 @@ export function ChatView() {
                 />
               )}
               {harnessCurrent?.model && (
-                <button
-                  type="button"
-                  onClick={handleConfigureSandbox}
-                  title="Model — change in sandbox configuration"
-                  className="flex items-center gap-1 px-4 md:px-8 py-1.5 text-[12px] text-text-muted hover:text-text transition-colors"
-                >
-                  {harnessCurrent.model}
-                  <ChevronUp size={12} />
-                </button>
+                <div className="px-4 md:px-8 pb-[16px]">
+                  <ChatColumn>
+                    <button
+                      type="button"
+                      onClick={handleConfigureSandbox}
+                      title="Model — change in sandbox configuration"
+                      className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
+                    >
+                      {harnessCurrent.model}
+                      <Settings size={12} />
+                    </button>
+                  </ChatColumn>
+                </div>
               )}
             </>
           )}
@@ -716,7 +721,7 @@ export function ChatView() {
         />
         <div
           style={{ width: rightW }}
-          className="hidden md:flex shrink-0 flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10"
+          className="hidden md:flex shrink-0 flex-col border-l border-border-light overflow-hidden relative z-10"
         >
           {rightPanelContent}
         </div>

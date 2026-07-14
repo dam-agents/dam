@@ -1,8 +1,8 @@
 import {
-  Attachment as Paperclip,
+  Add,
   Close as X,
   Document as FileIcon,
-  Send as SendIcon,
+  SendAltFilled as SendIcon,
   Stop as Square,
 } from "@carbon/icons-react";
 import {
@@ -22,6 +22,7 @@ import { isMobile } from "../../../lib/breakpoints.js";
 import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { ChatColumn } from "./chat-column.js";
 import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -203,16 +204,16 @@ export function ChatInput({
     }
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message agent...";
+  const placeholder = isComputing ? "Queue a message..." : "Message...";
 
   return (
     <div
-      className={`border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-primary bg-primary/10" : "border-border"}`}
+      className="px-4 md:px-8 pt-3 pb-1"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
+      <ChatColumn className="flex flex-col gap-1.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -223,44 +224,34 @@ export function ChatInput({
             e.target.value = "";
           }}
         />
-        <div className="flex items-end gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-[44px] w-[44px] text-muted-foreground hover:text-primary hover:border-primary shrink-0 disabled:opacity-40"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loadingSession}
-            title="Attach file"
-          >
-            <Paperclip size={16} />
-          </Button>
-          {attachments.length > 0 ? (
-            <div className="flex-1 rounded-lg border border-primary bg-background shadow-[0_0_0_3px_var(--color-accent-glow)] transition-all focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--color-accent-glow)]">
-              <div className="flex gap-2 flex-wrap px-3 pt-3">
-                {attachments.map((a, i) => (
-                  <AttachmentChip
-                    key={i}
-                    attachment={a}
-                    onRemove={() => removeAttachment(i)}
-                  />
-                ))}
-              </div>
-              <Textarea
-                ref={textareaRef}
-                className="w-full bg-transparent border-0 px-4 py-2 text-[14px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                placeholder={placeholder}
-                rows={1}
-                disabled={loadingSession}
-              />
+        <div
+          className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
+        >
+          {attachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap px-3 pt-3">
+              {attachments.map((a, i) => (
+                <AttachmentChip
+                  key={i}
+                  attachment={a}
+                  onRemove={() => removeAttachment(i)}
+                />
+              ))}
             </div>
-          ) : (
+          )}
+          <div className="flex items-end gap-1 px-2 min-h-[56px]">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 mb-[9px] h-[40px] w-[40px] text-muted-foreground hover:text-primary disabled:opacity-40"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loadingSession}
+              title="Attach file"
+            >
+              <Add size={16} />
+            </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 rounded-lg border border-border bg-background px-4 py-3 text-[14px] text-foreground resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-muted-foreground disabled:opacity-40"
+              className="flex-1 bg-transparent border-0 px-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -269,36 +260,38 @@ export function ChatInput({
               rows={1}
               disabled={loadingSession}
             />
-          )}
-          {showStop && (
-            <Button
-              variant="destructive"
-              size="icon"
-              className="h-[44px] w-[44px] shrink-0"
-              onClick={onStop}
-              title="Stop"
-            >
-              <Square size={16} />
-            </Button>
-          )}
-          {showSend && (
-            <Button
-              size="icon"
-              className="h-[44px] w-[44px] disabled:opacity-40 shrink-0"
-              onClick={send}
-              disabled={sendDisabled || loadingSession}
-              title={isComputing ? "Queue" : "Send"}
-            >
-              <SendIcon size={16} />
-            </Button>
-          )}
+            {showStop && (
+              <Button
+                variant="ghost"
+                tone="danger"
+                size="icon-sm"
+                className="shrink-0 mb-[9px] h-[40px] w-[40px]"
+                onClick={onStop}
+                title="Stop"
+              >
+                <Square size={16} />
+              </Button>
+            )}
+            {showSend && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-text" : "text-muted-foreground"} disabled:opacity-40`}
+                onClick={send}
+                disabled={sendDisabled || loadingSession}
+                title={isComputing ? "Queue" : "Send"}
+              >
+                <SendIcon size={16} />
+              </Button>
+            )}
+          </div>
         </div>
         {isComputing && (
           <div className="flex items-center gap-3">
             <BusyIndicator />
           </div>
         )}
-      </div>
+      </ChatColumn>
     </div>
   );
 }
