@@ -2,6 +2,7 @@ import type { AgentState } from "../../../types.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
 import { Section } from "./config-section.js";
+import { ModelSettingsPanel } from "./model-settings-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
 export function ConfigurationPanel({
@@ -18,6 +19,8 @@ export function ConfigurationPanel({
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
+      <ModelSettingsPanel agentId={agentId} />
+
       <Section title="Schedules">
         <SchedulesPanel agentId={agentId} onResumeSession={onResumeSession} />
       </Section>
