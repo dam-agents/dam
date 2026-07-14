@@ -39,7 +39,6 @@ export function ListView() {
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
-  const selectAgent = useStore((s) => s.selectAgent);
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -115,7 +114,6 @@ export function ListView() {
                 deleteAgent.isPending && deleteAgent.variables?.id === agent.id
               }
               onSelect={() => navigateToSandboxHome(agent.id)}
-              onOpenChat={() => selectAgent(agent.id)}
               onWake={() => wakeAgent.wake(agent.id)}
               onRestart={() => restartAgent(agent.id)}
               onDelete={() => void deleteSandbox(agent)}
