@@ -22,8 +22,6 @@ export interface NavigationSlice {
   navigateToExperiment: (experimentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
-  showMobilePanel: boolean;
-  setShowMobilePanel: (show: boolean) => void;
 }
 
 export const createNavigationSlice: StateCreator<
@@ -104,6 +102,4 @@ export const createNavigationSlice: StateCreator<
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
-  showMobilePanel: false,
-  setShowMobilePanel: (show) => set({ showMobilePanel: show }),
 });

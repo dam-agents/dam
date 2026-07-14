@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import { Caret } from "../../sessions/components/caret.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
 import {
@@ -57,6 +58,7 @@ export function FileRow({
 }: Props) {
   const panel = useFilesPanel();
   const isDir = type === "dir";
+  const isActive = useStore((s) => s.openFilePath) === path && !isDir;
   const targetDir = isDir ? path : parentDirOf(path);
   // Raise the row above its siblings while its menu is open (parity with the
   // previous coordinate menu); Radix portals the menu content itself.
@@ -79,7 +81,7 @@ export function FileRow({
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center h-[32px] text-[14px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-accent-light ring-1 ring-accent ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-surface-raised" : "text-text-secondary hover:bg-accent-light hover:text-accent"}`}
+          className={`group relative flex items-center h-[32px] text-[14px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-accent-light ring-1 ring-accent ring-inset" : `text-text-secondary hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)

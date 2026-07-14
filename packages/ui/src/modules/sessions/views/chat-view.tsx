@@ -6,10 +6,16 @@ import {
   FileText as FileIcon,
   MoreVertical,
   RefreshCw,
-  Settings2,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -40,11 +46,10 @@ import {
 } from "../../agents/hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
+import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { MetricsPanel } from "../../metrics/components/metrics-panel.js";
-import { prefetchSchedules } from "../../schedules/api/queries.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -53,12 +58,12 @@ import {
 import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
-import { ConfigurationPanel } from "../components/configuration-panel.js";
 import {
   PermissionStatusLine,
   PermissionVerdictLine,
 } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { TempConfigDialog } from "../components/temp-config-dialog.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
@@ -93,9 +98,8 @@ export function ChatView() {
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
-  const rightTab = useStore((s) => s.rightTab);
+  const openFilePath = useStore((s) => s.openFilePath);
   const goBack = useStore((s) => s.goBack);
-  const setRightTab = useStore((s) => s.setRightTab);
   const navigateToSandboxSettings = useStore(
     (s) => s.navigateToSandboxSettings,
   );
@@ -105,17 +109,19 @@ export function ChatView() {
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const showMobilePanel = useStore((s) => s.showMobilePanel);
-  const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
   const [leftW, setLeftW] = useState(
     () => Number(localStorage.getItem("platform-left-w")) || 220,
   );
-  const [rightW, setRightW] = useState(
-    () => Number(localStorage.getItem("platform-right-w")) || 340,
+  // null = no stored width yet: the file panel splits 50/50 with the chat
+  // column until the user drags the divider.
+  const [rightW, setRightW] = useState<number | null>(
+    () => Number(localStorage.getItem("platform-right-w")) || null,
   );
+  const filePanelRef = useRef<HTMLDivElement>(null);
   const [sessionsOpen, setSessionsOpen] = useState(true);
   const [sessionsH, setSessionsH] = useState(
     () => Number(localStorage.getItem("platform-sessions-h")) || 260,
@@ -297,47 +303,6 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
-  // ── Right panel ──
-  const rightTabs = ["configuration", "metrics"] as const;
-  const rightPanelContent = (
-    <>
-      <div className="flex border-b border-border-light shrink-0">
-        {rightTabs.map((tab) => {
-          const warmCache =
-            tab === "configuration" && selectedAgent
-              ? () => prefetchSchedules(selectedAgent)
-              : undefined;
-          return (
-            <button
-              key={tab}
-              onClick={() => setRightTab(tab)}
-              onMouseEnter={warmCache}
-              onFocus={warmCache}
-              className={`flex-1 h-11 text-[11px] font-bold uppercase tracking-[0.05em] border-b-2 transition-colors ${rightTab === tab ? "text-accent border-accent bg-accent-light" : "text-text-muted border-transparent hover:text-text-secondary"}`}
-            >
-              {tab === "configuration" ? "config" : tab}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div
-          className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}
-        >
-          <ConfigurationPanel
-            onResumeSession={mobileResumeSession}
-            agentId={selectedAgent}
-            agentState={agents.find((a) => a.id === selectedAgent)?.state}
-            onOpenFile={openFileHandler}
-          />
-        </div>
-        {rightTab === "metrics" && (
-          <MetricsPanel agentId={selectedAgent} sessionId={sessionId} />
-        )}
-      </div>
-    </>
-  );
-
   const dotColor =
     agentDisplay?.state === "running"
       ? "bg-emerald-500"
@@ -403,13 +368,14 @@ export function ChatView() {
           </DropdownMenu>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {/* Temporary access to the old right-panel content until #2124. */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon-sm"
-            className="md:hidden"
-            onClick={() => setShowMobilePanel(true)}
+            onClick={() => setShowConfigDialog(true)}
+            title="Sandbox configuration"
           >
-            <Settings2 size={14} />
+            <Settings size={16} />
           </Button>
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
@@ -480,7 +446,7 @@ export function ChatView() {
 
         {/* Main chat column */}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+          className={`relative flex flex-1 flex-col min-w-0 px-2 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
         >
           {/* Content: Terminal or Chat */}
           {sessionMode === SessionMode.Terminal &&
@@ -721,46 +687,53 @@ export function ChatView() {
           )}
         </div>
 
-        {/* Right panel: desktop */}
-        <ResizeHandle
-          side="right"
-          onResize={(d) =>
-            setRightW((w) => {
-              const v = Math.max(240, Math.min(600, w + d));
-              localStorage.setItem("platform-right-w", String(v));
-              return v;
-            })
-          }
-        />
-        <div
-          style={{ width: rightW }}
-          className="hidden md:flex shrink-0 flex-col border-l border-border-light overflow-hidden relative z-10"
-        >
-          {rightPanelContent}
-        </div>
+        {/* Docked file panel — hidden unless a file is open; fullscreen
+            takeover on mobile */}
+        {openFilePath && (
+          <>
+            <div className="hidden md:flex">
+              <ResizeHandle
+                side="right"
+                onResize={(d) =>
+                  setRightW((w) => {
+                    const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
+                    const v = Math.max(240, Math.min(960, base + d));
+                    localStorage.setItem("platform-right-w", String(v));
+                    return v;
+                  })
+                }
+              />
+            </div>
+            <div
+              ref={filePanelRef}
+              style={
+                rightW !== null
+                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+                  : undefined
+              }
+              className={cn(
+                "flex flex-col overflow-hidden bg-background relative z-10 max-md:fixed max-md:inset-0 max-md:z-50",
+                rightW !== null
+                  ? "md:shrink-0 md:w-[var(--file-w)]"
+                  : "md:flex-1 md:basis-0 md:min-w-0",
+                "md:border-l md:border-border-light",
+              )}
+            >
+              <DockedFilePanel onOpenFile={openFileHandler} />
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Right panel: mobile overlay */}
-      {showMobilePanel && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowMobilePanel(false)}
-          />
-          <div className="absolute right-0 top-0 bottom-0 w-full max-w-[400px] bg-surface flex flex-col anim-slide-in-right">
-            <div className="flex items-center justify-between px-4 h-11 border-b border-border-light shrink-0">
-              <span className="text-[13px] font-bold text-text">Panel</span>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setShowMobilePanel(false)}
-              >
-                <ArrowLeft size={14} />
-              </Button>
-            </div>
-            {rightPanelContent}
-          </div>
-        </div>
+      {showConfigDialog && (
+        <TempConfigDialog
+          agentId={selectedAgent}
+          agentState={agents.find((a) => a.id === selectedAgent)?.state}
+          sessionId={sessionId}
+          onResumeSession={mobileResumeSession}
+          onOpenFile={openFileHandler}
+          onClose={() => setShowConfigDialog(false)}
+        />
       )}
 
       <EgressApprovalToasts agentId={selectedAgent} />
