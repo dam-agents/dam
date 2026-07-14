@@ -6,8 +6,10 @@ import { useStore } from "../../../store.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
+import { SandboxSchedulesSection } from "../components/sandbox-schedules-section.js";
 import { SandboxSectionNav } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
+import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
 import { SandboxTwoColumnShell } from "../components/sandbox-two-column-shell.js";
 import { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
@@ -79,6 +81,10 @@ export function SandboxHomeView() {
       <SandboxHomeHeader agent={agent} display={display} />
       {section === "setup" ? (
         <SandboxSetupSection f={f} />
+      ) : section === "skills" ? (
+        <SandboxSkillsSection agent={agent} />
+      ) : section === "schedules" ? (
+        <SandboxSchedulesSection agentId={agent.id} />
       ) : (
         <SectionPlaceholder />
       )}

@@ -80,6 +80,10 @@ interface SkillsPanelProps {
   agentState: AgentState | undefined;
   /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
   onOpenFile?: (path: string) => void;
+  /** Notified whenever the installed set changes (mount, poll, toggle) so a
+   *  consumer can mirror it without independently polling the destructive
+   *  `skills.state` endpoint. Must be stable. */
+  onInstalledChange?: (installed: SkillRef[]) => void;
 }
 
 const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -127,6 +131,7 @@ export function SkillsPanel({
   agentId,
   agentState,
   onOpenFile,
+  onInstalledChange,
 }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -157,6 +162,13 @@ export function SkillsPanel({
     body: "",
   });
   const [publishBusy, setPublishBusy] = useState(false);
+
+  // Publish the installed set to any interested consumer (e.g. the sandbox-home
+  // sidebar summary) so it stays live off this panel's data instead of polling
+  // `skills.state` itself.
+  useEffect(() => {
+    onInstalledChange?.(installed);
+  }, [installed, onInstalledChange]);
 
   /**
    * Ids whose collapse state is *inverted from the kind-level default*:

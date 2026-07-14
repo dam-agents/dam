@@ -3,26 +3,25 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { useStore } from "../../../store.js";
 import { useSchedules, useScheduleSessions } from "../api/queries.js";
 import { CreateScheduleForm } from "../forms/create-schedule-form.js";
 import { ScheduleCard } from "./schedule-card.js";
 
 export function SchedulesPanel({
+  agentId,
   onResumeSession,
 }: {
+  agentId: string | null;
   onResumeSession?: (sessionId: string) => void;
 }) {
-  const selectedAgent = useStore((s) => s.selectedAgent);
-
-  const schedulesQuery = useSchedules(selectedAgent);
+  const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
 
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sessionsQuery = useScheduleSessions(selectedAgent, expandedId);
+  const sessionsQuery = useScheduleSessions(agentId, expandedId);
   const sessionsForExpanded = sessionsQuery.data ?? [];
 
   return (
@@ -41,9 +40,9 @@ export function SchedulesPanel({
         </Button>
       </div>
 
-      {isCreating && selectedAgent && (
+      {isCreating && agentId && (
         <CreateScheduleForm
-          agentId={selectedAgent}
+          agentId={agentId}
           onCancel={() => setIsCreating(false)}
           onSaved={() => setIsCreating(false)}
         />
@@ -53,10 +52,10 @@ export function SchedulesPanel({
         <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>
       )}
       {schedules.map((schedule) =>
-        editingId === schedule.id && selectedAgent ? (
+        editingId === schedule.id && agentId ? (
           <CreateScheduleForm
             key={schedule.id}
-            agentId={selectedAgent}
+            agentId={agentId}
             existing={schedule}
             onCancel={() => setEditingId(null)}
             onSaved={() => setEditingId(null)}

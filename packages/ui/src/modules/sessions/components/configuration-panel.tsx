@@ -20,7 +20,7 @@ export function ConfigurationPanel({
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <Section title="Schedules">
-        <SchedulesPanel onResumeSession={onResumeSession} />
+        <SchedulesPanel agentId={agentId} onResumeSession={onResumeSession} />
       </Section>
 
       <Section title="Channels">
