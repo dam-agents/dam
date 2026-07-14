@@ -28,7 +28,7 @@ async function connectExec(argv: string[], extra = ""): Promise<WebSocket> {
     encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
     `&cwd=${encodeURIComponent(homeDir)}&cols=80&rows=24` +
     extra;
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 250; i++) {
     try {
       return await new Promise<WebSocket>((resolve, reject) => {
         const ws = new WebSocket(url);
