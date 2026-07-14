@@ -39,6 +39,8 @@ export interface AgentsSlice {
   clearAgentUnreachable: (id: string) => void;
   selectAgent: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
+  /** Enter chat and open a fresh web terminal for the agent. */
+  openAgentTerminal: (agentId: string) => void;
   goBack: () => void;
 }
 
@@ -101,6 +103,20 @@ export const createAgentsSlice: StateCreator<
       mobileScreen: "chat",
       showMobilePanel: false,
       pendingResumeSessionId: sessionId,
+    });
+  },
+
+  openAgentTerminal: (agentId) => {
+    history.pushState(null, "", viewToPath("chat", agentId));
+    // Set the pending flag after the reset (which clears it), mirroring the
+    // resume handoff; chat-view consumes it on entry to spawn a terminal.
+    get().resetChatContext();
+    set({
+      selectedAgent: agentId,
+      view: "chat",
+      mobileScreen: "chat",
+      showMobilePanel: false,
+      pendingTerminal: true,
     });
   },
 

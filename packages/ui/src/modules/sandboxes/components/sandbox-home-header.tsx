@@ -1,4 +1,4 @@
-import { ChevronDown, OverflowMenuVertical } from "@carbon/icons-react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { OpenInMenu } from "./open-in-menu.js";
 
 interface Props {
   agent: AgentView;
@@ -51,11 +52,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
         <StatusBadge state={display.state} />
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {/* Real menu arrives in slice 07; the slot is reserved so the header
-            layout is final. */}
-        <Button disabled>
-          Open in <ChevronDown />
-        </Button>
+        <OpenInMenu agent={agent} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" title="Sandbox actions">

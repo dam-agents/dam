@@ -187,6 +187,25 @@ export function ChatView() {
     resumeSession,
   ]);
 
+  const pendingTerminal = useStore((s) => s.pendingTerminal);
+  const setPendingTerminal = useStore((s) => s.setPendingTerminal);
+  useEffect(() => {
+    if (!selectedAgent || !pendingTerminal) return;
+    setPendingTerminal(false);
+    // Same fresh-terminal spawn as the blank chat → terminal toggle: a
+    // client-side ephemeral PTY session, no server registration.
+    const id = crypto.randomUUID();
+    ephemeralTerminalIdRef.current = id;
+    setSessionId(id);
+    setSessionMode(SessionMode.Terminal);
+  }, [
+    selectedAgent,
+    pendingTerminal,
+    setPendingTerminal,
+    setSessionId,
+    setSessionMode,
+  ]);
+
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       setMobileScreen("chat");
