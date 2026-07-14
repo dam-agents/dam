@@ -1,10 +1,14 @@
-import { useEffect } from "react";
+import { Checkmark, Close } from "@carbon/icons-react";
+import { useCallback, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import type { PermissionOption } from "../../../store.js";
 import { useStore } from "../../../store.js";
+import type { VerdictPart } from "../../../types.js";
 import { ChatColumn } from "./chat-column.js";
+
+export type PermissionVerdict = Omit<VerdictPart, "kind">;
 
 function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
@@ -18,14 +22,67 @@ function toolTitle(toolCall: unknown): string {
   return "this tool call";
 }
 
-function optionAccent(kind?: string): string {
-  if (kind === "allow_always" || kind === "allow_once") {
-    return "hover:border-primary hover:text-primary";
+function toolLocation(toolCall: unknown): string | null {
+  if (toolCall && typeof toolCall === "object") {
+    const tc = toolCall as { locations?: { path?: string }[] };
+    return tc.locations?.[0]?.path ?? null;
   }
-  if (kind === "reject_always" || kind === "reject_once") {
-    return "hover:border-destructive hover:text-destructive";
+  return null;
+}
+
+function verdictLabel(opt: PermissionOption): string {
+  switch (opt.kind) {
+    case "allow_once":
+      return "Allowed once";
+    case "allow_always":
+      return "Always allowed";
+    case "reject_once":
+      return "Denied";
+    case "reject_always":
+      return "Always denied";
+    default:
+      return opt.name;
   }
-  return "hover:border-primary hover:text-primary";
+}
+
+/** Transcript-side note for a pending approval — rendered at the end of the
+ *  agent response while the blocking prompt occupies the input slot. Renders
+ *  nothing when the viewed session has no pending request. */
+export function PermissionStatusLine() {
+  const sessionId = useStore((s) => s.sessionId);
+  const pendingPermissions = useStore((s) => s.pendingPermissions);
+  const current = sessionId
+    ? pendingPermissions.find((p) => p.sessionId === sessionId)
+    : undefined;
+  if (!current) return null;
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border-light bg-muted/30 px-4 min-h-[44px] text-[14px] anim-in">
+      <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+      <span className="text-muted-foreground shrink-0">
+        Awaiting approval —
+      </span>
+      <span className="font-semibold text-text truncate">
+        Allow {toolTitle(current.toolCall)}
+      </span>
+    </div>
+  );
+}
+
+/** A resolved verdict, rendered in the transcript where the user decided it. */
+export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
+  return (
+    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-[44px] text-[14px] anim-in">
+      {verdict.allowed ? (
+        <Checkmark size={16} className="text-success shrink-0" />
+      ) : (
+        <Close size={16} className="text-destructive shrink-0" />
+      )}
+      <span className="text-muted-foreground shrink-0">{verdict.label} —</span>
+      <span className="font-semibold text-text truncate">
+        {verdict.subject}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -36,7 +93,11 @@ function optionAccent(kind?: string): string {
  * prompt on the next attach. Only clicking an option (or pressing its number)
  * sends a response to the agent.
  */
-export function PermissionPrompt() {
+export function PermissionPrompt({
+  onResolved,
+}: {
+  onResolved?: (verdict: PermissionVerdict) => void;
+}) {
   // Only show requests tied to the session the user is currently viewing.
   // Other sessions may have pending permissions buffered on the runtime and
   // replayed into this global list; those belong to their own chat views.
@@ -51,6 +112,21 @@ export function PermissionPrompt() {
     ? pendingPermissions.filter((p) => p.sessionId === sessionId)
     : [];
   const current = pending[0];
+
+  const pick = useCallback(
+    (opt: PermissionOption) => {
+      if (!current) return;
+      onResolved?.({
+        label: verdictLabel(opt),
+        subject: toolTitle(current.toolCall),
+        allowed: opt.kind?.startsWith("allow") ?? false,
+      });
+      resolve(current.toolCallId, {
+        outcome: { outcome: "selected", optionId: opt.optionId },
+      });
+    },
+    [current, resolve, onResolved],
+  );
 
   useEffect(() => {
     if (!current) return;
@@ -68,50 +144,51 @@ export function PermissionPrompt() {
       if (Number.isNaN(num)) return;
       if (num < 1 || num > current.options.length) return;
       e.preventDefault();
-      const opt = current.options[num - 1];
-      resolve(current.toolCallId, {
-        outcome: { outcome: "selected", optionId: opt.optionId },
-      });
+      pick(current.options[num - 1]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, resolve]);
+  }, [current, pick]);
 
   if (!current) return null;
 
-  const pick = (opt: PermissionOption) =>
-    resolve(current.toolCallId, {
-      outcome: { outcome: "selected", optionId: opt.optionId },
-    });
+  const title = toolTitle(current.toolCall);
+  const location = toolLocation(current.toolCall);
 
   return (
-    <div className="border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3">
-      <ChatColumn className="rounded-lg border-2 border-primary bg-background p-3.5 flex flex-col gap-2 shadow-sm">
-        <div className="text-[14px] font-bold text-foreground break-all">
-          Allow{" "}
-          <span className="text-primary">{toolTitle(current.toolCall)}</span>?
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {current.options.map((opt, i) => (
-            <Button
-              key={opt.optionId}
-              variant="outline"
-              onClick={() => pick(opt)}
-              className={`h-auto items-start justify-start gap-3 whitespace-normal rounded-md border-2 border-border bg-card px-3 py-2 text-left text-[13px] text-foreground ${optionAccent(opt.kind)}`}
-            >
-              <span className="text-muted-foreground font-mono text-[11px] w-4 shrink-0">
-                {i + 1}
-              </span>
-              <span className="min-w-0 flex-1 break-words">{opt.name}</span>
-            </Button>
-          ))}
-        </div>
-        {pending.length > 1 && (
-          <div className="text-[11px] text-muted-foreground">
-            {pending.length - 1} more request
-            {pending.length - 1 === 1 ? "" : "s"} queued
+    <div className="px-4 md:px-8 pt-3 pb-4">
+      <ChatColumn className="flex flex-col gap-2">
+        <div className="rounded-xl border border-border-light bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-text break-all">
+            <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+            Allow {title}?
           </div>
-        )}
+          {location && (
+            <div className="pl-4 text-[14px] text-muted-foreground break-all">
+              {location}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {current.options.map((opt, i) => (
+              <Button
+                key={opt.optionId}
+                variant="outline"
+                size="sm"
+                onClick={() => pick(opt)}
+                className="bg-background h-[26px] text-[14px] font-medium max-w-full"
+                title={`${opt.name} — press ${i + 1}`}
+              >
+                <span className="truncate">{opt.name}</span>
+              </Button>
+            ))}
+          </div>
+          {pending.length > 1 && (
+            <div className="text-[11px] text-muted-foreground">
+              {pending.length - 1} more request
+              {pending.length - 1 === 1 ? "" : "s"} queued
+            </div>
+          )}
+        </div>
       </ChatColumn>
     </div>
   );

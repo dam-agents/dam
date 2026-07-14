@@ -80,7 +80,7 @@ function BusyIndicator() {
   );
 }
 
-interface ChatInputProps {
+export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;

@@ -1,8 +1,7 @@
-import { Settings } from "@carbon/icons-react";
+import { ArrowDown, Settings } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import {
   AlertCircle,
-  ArrowDown,
   ArrowLeft,
   FileText as FileIcon,
   MoreVertical,
@@ -51,9 +50,12 @@ import {
   setSessionRunning,
 } from "../api/queries.js";
 import { ChatColumn } from "../components/chat-column.js";
-import { ChatInput } from "../components/chat-input.js";
+import { ChatInputArea } from "../components/chat-input-area.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
-import { PermissionPrompt } from "../components/permission-prompt.js";
+import {
+  PermissionStatusLine,
+  PermissionVerdictLine,
+} from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
@@ -544,7 +546,7 @@ export function ChatView() {
                           </p>
                         </div>
                       )}
-                    {messages.map((m) =>
+                    {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
                           <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
@@ -586,7 +588,7 @@ export function ChatView() {
                               className={
                                 m.role === "user"
                                   ? "flex flex-col gap-2 rounded-xl border border-border-light bg-surface px-4 py-3 text-[14px] text-text"
-                                  : "flex flex-col gap-4 max-w-full"
+                                  : "flex flex-col gap-4 w-full max-w-full"
                               }
                             >
                               {m.parts.map((p, i) =>
@@ -623,6 +625,8 @@ export function ChatView() {
                                     alt="image"
                                     className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
                                   />
+                                ) : p.kind === "verdict" ? (
+                                  <PermissionVerdictLine key={i} verdict={p} />
                                 ) : p.kind === "file" ? (
                                   <div
                                     key={i}
@@ -659,6 +663,10 @@ export function ChatView() {
                                     className="text-accent py-3"
                                   />
                                 ))}
+                              {m.role === "assistant" &&
+                                mi === messages.length - 1 && (
+                                  <PermissionStatusLine />
+                                )}
                             </div>
                           )}
                         </div>
@@ -670,40 +678,38 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-raised px-3 py-1.5 text-[12px] text-text-secondary shadow-md hover:text-accent hover:border-accent transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted/30 transition-colors"
                   >
-                    <ArrowDown size={12} />
+                    <ArrowDown size={16} />
                     Jump to latest
                   </button>
                 )}
               </div>
 
-              {hasPendingPermission ? (
-                <PermissionPrompt />
-              ) : (
-                <ChatInput
+              <div className="pb-[16px]">
+                <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
                   onSend={sendPrompt}
                   onStop={stopAgent}
                 />
-              )}
-              {harnessCurrent?.model && (
-                <div className="px-4 md:px-8 pb-[16px]">
-                  <ChatColumn>
-                    <button
-                      type="button"
-                      onClick={handleConfigureSandbox}
-                      title="Model — change in sandbox configuration"
-                      className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
-                    >
-                      {harnessCurrent.model}
-                      <Settings size={12} />
-                    </button>
-                  </ChatColumn>
-                </div>
-              )}
+                {!hasPendingPermission && harnessCurrent?.model && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <button
+                        type="button"
+                        onClick={handleConfigureSandbox}
+                        title="Model — change in sandbox configuration"
+                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
+                      >
+                        {harnessCurrent.model}
+                        <Settings size={12} />
+                      </button>
+                    </ChatColumn>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
