@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
 import { SandboxSchedulesSection } from "../components/sandbox-schedules-section.js";
 import { SandboxSectionNav } from "../components/sandbox-section-nav.js";
@@ -86,16 +87,12 @@ export function SandboxHomeView() {
       ) : section === "schedules" ? (
         <SandboxSchedulesSection agentId={agent.id} />
       ) : (
-        <SectionPlaceholder />
+        <ConnectionsSection
+          grantedIds={f.grantedAppIds}
+          onToggleGrant={f.toggleAppGrant}
+          oauthReturnView={`/sandboxes/${agent.id}/connections`}
+        />
       )}
     </SandboxTwoColumnShell>
-  );
-}
-
-function SectionPlaceholder() {
-  return (
-    <p className="text-[13px] text-muted-foreground">
-      Coming in this PR — this section is being re-homed here.
-    </p>
   );
 }

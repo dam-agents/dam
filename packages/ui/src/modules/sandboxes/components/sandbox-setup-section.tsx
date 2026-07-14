@@ -9,7 +9,6 @@ import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
-import { ConnectionsSection } from "./connections-section.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 
@@ -70,12 +69,6 @@ export function SandboxSetupSection({ f }: Props) {
       </section>
 
       <SandboxModelSettings agentId={agent.id} />
-
-      <ConnectionsSection
-        grantedIds={f.grantedAppIds}
-        onToggleGrant={f.toggleAppGrant}
-        oauthReturnView={`/sandboxes/${agent.id}`}
-      />
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>
