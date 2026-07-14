@@ -77,9 +77,7 @@ function ApprovalRow({
   const approveHost = useApproveHost();
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxSettings = useStore(
-    (s) => s.navigateToSandboxSettings,
-  );
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
@@ -195,7 +193,7 @@ function ApprovalRow({
               variant="ghost"
               size="xs"
               disabled={inflight}
-              onClick={() => navigateToSandboxSettings(row.agentId)}
+              onClick={() => navigateToSandboxHome(row.agentId)}
               title="Open this sandbox's settings (connections, network access, environment)"
             >
               <Settings2 size={11} /> Customize…

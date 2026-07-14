@@ -1,4 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,9 +21,9 @@ interface Props {
   subtitle: string;
   deletePending: boolean;
   onSelect: () => void;
+  onOpenChat: () => void;
   onWake: () => void;
   onRestart: () => void;
-  onConfigure: () => void;
   onDelete: () => void;
 }
 
@@ -33,9 +33,9 @@ export function AgentRow({
   subtitle,
   deletePending,
   onSelect,
+  onOpenChat,
   onWake,
   onRestart,
-  onConfigure,
   onDelete,
 }: Props) {
   return (
@@ -75,8 +75,8 @@ export function AgentRow({
                   Restart
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={onConfigure}>
-                Configure
+              <DropdownMenuItem onSelect={onOpenChat}>
+                <Chat /> Open chat
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

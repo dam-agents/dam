@@ -83,42 +83,17 @@ function MainApp() {
       useStore.setState({ selectedAgent: null, view: "list" });
     };
     const onPopState = () => {
-      const path = window.location.pathname;
-      if (path.startsWith("/chat/"))
-        enterChat(decodeURIComponent(path.slice(6)));
-      else if (path === "/settings" || path.startsWith("/settings/")) {
-        const { settingsTab } = pathToState(path);
-        useStore.setState({
-          view: "settings",
-          settingsTab: settingsTab ?? "account",
-        });
-      } else if (path === "/inbox") useStore.setState({ view: "inbox" });
-      else if (path === "/terms") useStore.setState({ view: "terms" });
-      else if (path === "/sandboxes/new")
-        useStore.setState({ view: "sandbox-new", agentId: null });
-      else if (/^\/sandboxes\/[^/]+$/.test(path))
-        useStore.setState({
-          view: "sandbox-settings",
-          agentId: decodeURIComponent(path.slice("/sandboxes/".length)),
-        });
-      else if (path === "/experiments")
-        useStore.setState({
-          view: "experiments",
-          agentId: null,
-          experimentId: null,
-        });
-      else if (path === "/experiments/new")
-        useStore.setState({
-          view: "experiment-new",
-          agentId: null,
-          experimentId: null,
-        });
-      else if (/^\/experiments\/[^/]+$/.test(path))
-        useStore.setState({
-          view: "experiment-detail",
-          experimentId: decodeURIComponent(path.slice("/experiments/".length)),
-        });
-      else leaveChat();
+      const state = pathToState(window.location.pathname);
+      if (state.view === "chat") return enterChat(state.agent!);
+      // Unknown paths resolve to "list"; leaveChat also tears down chat context.
+      if (state.view === "list") return leaveChat();
+      useStore.setState({
+        view: state.view,
+        agentId: state.agentId ?? null,
+        experimentId: state.experimentId ?? null,
+        settingsTab: state.settingsTab ?? "account",
+        sandboxSection: state.sandboxSection ?? "setup",
+      });
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
     const path = window.location.pathname;
@@ -147,7 +122,7 @@ function MainApp() {
             <SandboxWizardView />
           ) : view === "experiment-new" ? (
             <ExperimentWizardView />
-          ) : view === "sandbox-settings" ? (
+          ) : view === "sandbox-home" ? (
             <SandboxSettingsView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">

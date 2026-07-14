@@ -3,6 +3,7 @@ import type { StateCreator } from "zustand";
 import type { PlatformStore } from "../../../store.js";
 import {
   pathToState,
+  type SandboxSection,
   type SettingsTab,
   type View,
   viewToPath,
@@ -13,10 +14,11 @@ export interface NavigationSlice {
   agentId: string | null;
   experimentId: string | null;
   settingsTab: SettingsTab;
+  sandboxSection: SandboxSection;
   setView: (v: View) => void;
   navigateToCreateSandbox: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
-  navigateToSandboxSettings: (agentId: string) => void;
+  navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToExperiments: () => void;
   navigateToCreateExperiment: () => void;
   navigateToExperiment: (experimentId: string) => void;
@@ -57,6 +59,8 @@ export const createNavigationSlice: StateCreator<
   agentId: pathToState(window.location.pathname).agentId ?? null,
   experimentId: pathToState(window.location.pathname).experimentId ?? null,
   settingsTab: pathToState(window.location.pathname).settingsTab ?? "account",
+  sandboxSection:
+    pathToState(window.location.pathname).sandboxSection ?? "setup",
   setView: (v) => {
     history.pushState(null, "", viewToPath(v));
     // viewToPath(v) without a tab is /settings, so keep the tab in sync.
@@ -82,9 +86,13 @@ export const createNavigationSlice: StateCreator<
     );
     set({ view: "settings", settingsTab, agentId: null });
   },
-  navigateToSandboxSettings: (agentId) => {
-    history.pushState(null, "", viewToPath("sandbox-settings", null, agentId));
-    set({ view: "sandbox-settings", agentId });
+  navigateToSandboxHome: (agentId, section = "setup") => {
+    history.pushState(
+      null,
+      "",
+      viewToPath("sandbox-home", null, agentId, null, null, section),
+    );
+    set({ view: "sandbox-home", agentId, sandboxSection: section });
   },
   navigateToExperiments: () => {
     history.pushState(null, "", viewToPath("experiments"));

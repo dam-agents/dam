@@ -9,7 +9,7 @@ export const viewSchema = z.enum([
   "inbox",
   "terms",
   "sandbox-new",
-  "sandbox-settings",
+  "sandbox-home",
   "experiments",
   "experiment-new",
   "experiment-detail",
@@ -25,12 +25,21 @@ export const settingsTabSchema = z.enum([
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
+export const sandboxSectionSchema = z.enum([
+  "setup",
+  "connections",
+  "skills",
+  "schedules",
+]);
+export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
+
 export function viewToPath(
   view: View,
   agent?: string | null,
   agentId?: string | null,
   settingsTab?: SettingsTab | null,
   experimentId?: string | null,
+  sandboxSection?: SandboxSection | null,
 ): string {
   if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
   if (view === "settings")
@@ -40,8 +49,12 @@ export function viewToPath(
   if (view === "inbox") return "/inbox";
   if (view === "terms") return "/terms";
   if (view === "sandbox-new") return "/sandboxes/new";
-  if (view === "sandbox-settings" && agentId)
-    return `/sandboxes/${encodeURIComponent(agentId)}`;
+  if (view === "sandbox-home" && agentId) {
+    const base = `/sandboxes/${encodeURIComponent(agentId)}`;
+    return sandboxSection && sandboxSection !== "setup"
+      ? `${base}/${sandboxSection}`
+      : base;
+  }
   if (view === "experiments") return "/experiments";
   if (view === "experiment-new") return "/experiments/new";
   if (view === "experiment-detail" && experimentId)
@@ -55,6 +68,7 @@ export function pathToState(path: string): {
   agentId?: string;
   settingsTab?: SettingsTab;
   experimentId?: string;
+  sandboxSection?: SandboxSection;
 } {
   if (path.startsWith("/chat/"))
     return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
@@ -70,11 +84,14 @@ export function pathToState(path: string): {
   if (path === "/inbox") return { view: "inbox" };
   if (path === "/terms") return { view: "terms" };
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
-  const sandboxSettingsMatch = path.match(/^\/sandboxes\/([^/]+)$/);
-  if (sandboxSettingsMatch)
+  const sandboxHomeMatch = path.match(
+    /^\/sandboxes\/([^/]+)(?:\/(connections|skills|schedules))?$/,
+  );
+  if (sandboxHomeMatch)
     return {
-      view: "sandbox-settings",
-      agentId: decodeURIComponent(sandboxSettingsMatch[1]!),
+      view: "sandbox-home",
+      agentId: decodeURIComponent(sandboxHomeMatch[1]!),
+      sandboxSection: (sandboxHomeMatch[2] as SandboxSection) ?? "setup",
     };
   if (
     (path === "/experiments" || path.startsWith("/experiments/")) &&
