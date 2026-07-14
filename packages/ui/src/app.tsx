@@ -11,7 +11,7 @@ import { ExperimentDetailView } from "./modules/experiments/views/experiment-det
 import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
-import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
+import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -123,7 +123,7 @@ function MainApp() {
           ) : view === "experiment-new" ? (
             <ExperimentWizardView />
           ) : view === "sandbox-home" ? (
-            <SandboxSettingsView />
+            <SandboxHomeView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
               {view === "settings" ? (
