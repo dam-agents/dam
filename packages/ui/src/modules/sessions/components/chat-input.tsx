@@ -9,7 +9,6 @@ import {
   type KeyboardEvent,
   type RefObject,
   useCallback,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -23,62 +22,8 @@ import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { ChatColumn } from "./chat-column.js";
-import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-const BUSY_VERBS = [
-  "Bamboozling",
-  "Bamming",
-  "Cowabunga-ing",
-  "Gadzooksing",
-  "Gee whizzing",
-  "Gee willikering",
-  "Gollying",
-  "Great Scotting",
-  "Holy guacamoleing",
-  "Holy mackereling",
-  "Holy moleying",
-  "Hot diggitying",
-  "Jeepersing",
-  "Jiminy cricketing",
-  "Kablooeying",
-  "Kabooming",
-  "Kapowing",
-  "Kersplatting",
-  "Klonking",
-  "Leapin' lizarding",
-  "Powieing",
-  "Sakes aliving",
-  "Shazaming",
-  "Thwacking",
-  "Up-up-and-awaying",
-  "Vrooming",
-  "Whamming",
-  "Whiz-banging",
-  "Whomping",
-  "Zlonking",
-  "Zonking",
-  "Zwapping",
-];
-
-function BusyIndicator() {
-  const [verb, setVerb] = useState(
-    () => BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)],
-  );
-  useEffect(() => {
-    const id = setInterval(() => {
-      setVerb(BUSY_VERBS[Math.floor(Math.random() * BUSY_VERBS.length)]);
-    }, 2500);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-      <WorkingDots />
-      {verb}…
-    </span>
-  );
-}
 
 export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -286,11 +231,6 @@ export function ChatInput({
             )}
           </div>
         </div>
-        {isComputing && (
-          <div className="flex items-center gap-3">
-            <BusyIndicator />
-          </div>
-        )}
       </ChatColumn>
     </div>
   );

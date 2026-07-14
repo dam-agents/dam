@@ -49,6 +49,7 @@ import {
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
+import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
@@ -60,7 +61,6 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
-import { WorkingDots } from "../components/working-dots.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 
@@ -652,20 +652,20 @@ export function ChatView() {
                                 ),
                               )}
                               {m.streaming &&
-                                m.parts.length === 0 &&
-                                (m.queued ? (
+                                m.queued &&
+                                m.parts.length === 0 && (
                                   <span className="text-[12px] text-text-muted italic">
                                     Waiting for previous prompt…
                                   </span>
-                                ) : (
-                                  <WorkingDots
-                                    size="md"
-                                    className="text-accent py-3"
-                                  />
-                                ))}
+                                )}
                               {m.role === "assistant" &&
                                 mi === messages.length - 1 && (
                                   <PermissionStatusLine />
+                                )}
+                              {m.streaming &&
+                                !m.queued &&
+                                !hasPendingPermission && (
+                                  <BusyIndicator className="py-1" />
                                 )}
                             </div>
                           )}

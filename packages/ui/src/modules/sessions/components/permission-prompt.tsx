@@ -159,9 +159,11 @@ export function PermissionPrompt({
     <div className="px-4 md:px-8 pt-3 pb-4">
       <ChatColumn className="flex flex-col gap-2">
         <div className="rounded-xl border border-border-light bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-[14px] font-semibold text-text break-all">
-            <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
-            Allow {title}?
+          <div className="flex items-start gap-2 text-[14px] font-semibold text-text">
+            <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
+            <span className="line-clamp-6 break-all min-w-0" title={title}>
+              Allow {title}?
+            </span>
           </div>
           {location && (
             <div className="pl-4 text-[14px] text-muted-foreground break-all">

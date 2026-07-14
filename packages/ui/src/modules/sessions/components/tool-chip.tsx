@@ -19,7 +19,9 @@ export function ToolChip({ chip }: { chip: T }) {
       label={
         <>
           {running && <Loader size={12} className="anim-spin shrink-0" />}
-          <span className="truncate">{chip.title}</span>
+          <span className="truncate min-w-0" title={chip.title}>
+            {chip.title}
+          </span>
         </>
       }
       onToggle={hasContent ? () => setOpen((o) => !o) : undefined}
