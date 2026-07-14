@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import type { PermissionOption } from "../../../store.js";
 import { useStore } from "../../../store.js";
+import { ChatColumn } from "./chat-column.js";
 
 function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
@@ -85,7 +86,7 @@ export function PermissionPrompt() {
 
   return (
     <div className="border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3">
-      <div className="mx-auto max-w-[760px] rounded-lg border-2 border-primary bg-background p-3.5 flex flex-col gap-2 shadow-sm">
+      <ChatColumn className="rounded-lg border-2 border-primary bg-background p-3.5 flex flex-col gap-2 shadow-sm">
         <div className="text-[14px] font-bold text-foreground break-all">
           Allow{" "}
           <span className="text-primary">{toolTitle(current.toolCall)}</span>?
@@ -111,7 +112,7 @@ export function PermissionPrompt() {
             {pending.length - 1 === 1 ? "" : "s"} queued
           </div>
         )}
-      </div>
+      </ChatColumn>
     </div>
   );
 }
