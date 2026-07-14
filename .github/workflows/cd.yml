@@ -21,8 +21,6 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
-  # early opt-in, remove after 2026-06-16:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   check:
@@ -92,6 +90,7 @@ jobs:
       nous: ${{ steps.d.outputs.nous }}
       openevolve: ${{ steps.d.outputs.openevolve }}
       claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
+      source_shas: ${{ steps.d.outputs.source_shas }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -115,18 +114,18 @@ jobs:
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
   build-images:
-    needs: [check]
-    runs-on: ${{ matrix.runner }}
+    # Deliberately not gated on `check`: builds run in parallel with it and
+    # push by digest only (no tags), so broken code never becomes referencable
+    # — merge-images, which creates the tags, requires `check`. PRs build
+    # amd64 only (changes.archs): PR sha tags feed nothing but the amd64 e2e.
+    needs: [changes]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
         component: [controller, api-server, ui, keycloak]
-        arch: [amd64, arm64]
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
         include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
           - component: controller
             dockerfile: packages/controller/Dockerfile
             context: packages/controller
@@ -177,7 +176,7 @@ jobs:
 
   merge-images:
     name: merge multi-arch manifests
-    needs: [build-images, appversion]
+    needs: [build-images, appversion, check]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -216,7 +215,9 @@ jobs:
             $(printf "$IMAGE@sha256:%s " *)
 
   build-platform-base:
-    needs: [check, changes]
+    # Not gated on `check` either — see build-images. merge-platform-base
+    # carries the gate for the whole agent-image chain.
+    needs: [changes]
     if: ${{ needs.changes.outputs.platform_base == 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
@@ -257,7 +258,7 @@ jobs:
 
   merge-platform-base:
     name: merge multi-arch platform-base manifest
-    needs: [build-platform-base, appversion, changes]
+    needs: [build-platform-base, appversion, changes, check]
     if: ${{ needs.changes.outputs.platform_base == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -277,12 +278,19 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/platform-base
+          # The source-sha tag (last commit touching the component's effective
+          # source) is the exact ref the build-vs-reuse resolver probes.
+          # github.sha-only tagging made reuse depend on that commit being a
+          # green push tip; this keeps reuse alive across multi-commit pushes
+          # and red main runs. PR runs don't tag it (untrusted-ish, and PRs
+          # only ever reuse what non-PR runs published).
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['platform-base'] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Create manifest list and push
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}/platform-base
@@ -365,12 +373,14 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          # source-sha tag: see merge-platform-base.
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)[matrix.component] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Create manifest list and push
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
@@ -445,12 +455,14 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/nous
+          # source-sha tag: see merge-platform-base.
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['nous'] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Create manifest list and push
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}/nous
@@ -525,12 +537,14 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/openevolve
+          # source-sha tag: see merge-platform-base.
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['openevolve'] }},enable=${{ github.event_name != 'pull_request' }}
       - name: Create manifest list and push
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}/openevolve
