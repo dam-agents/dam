@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { formatSessionDate } from "../lib/format-session-date.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
@@ -129,8 +130,11 @@ export function SessionRow({
             working={working}
           />
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          {new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
+        <span
+          className="text-[11px] text-muted-foreground"
+          title={new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
+        >
+          {formatSessionDate(s.updatedAt ?? s.createdAt)}
         </span>
       </div>
       {/* Desktop: hover-visible overflow menu */}

@@ -6,11 +6,13 @@ export function ResizeHandle({
   side = "left",
   orientation = "horizontal",
   onResize,
+  onDragEnd,
 }: {
   side?: "left" | "right";
   orientation?: "horizontal" | "vertical";
   // Signed delta: horizontal → rightward positive for side="left"; vertical → downward positive.
   onResize: (delta: number) => void;
+  onDragEnd?: () => void;
 }) {
   const dragging = useRef(false);
   const last = useRef(0);
@@ -36,6 +38,7 @@ export function ResizeHandle({
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        onDragEnd?.();
       };
 
       document.addEventListener("mousemove", onMouseMove);
@@ -43,7 +46,7 @@ export function ResizeHandle({
       document.body.style.cursor = vertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
-    [side, vertical, onResize],
+    [side, vertical, onResize, onDragEnd],
   );
 
   if (vertical) {

@@ -127,6 +127,19 @@ export function ChatView() {
   const [sessionsH, setSessionsH] = useState(
     () => Number(localStorage.getItem("platform-sessions-h")) || 260,
   );
+  // Collapse/expand animates via flex transitions; suppressed while dragging
+  // the divider so resizing stays immediate.
+  const [resizingSections, setResizingSections] = useState(false);
+  const sectionTransition = resizingSections
+    ? undefined
+    : "transition-[flex] duration-200";
+  const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
+    flex: !open
+      ? "0 0 44px"
+      : fixedPx !== undefined
+        ? `0 0 ${fixedPx}px`
+        : "1 1 0%",
+  });
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
@@ -418,18 +431,11 @@ export function ChatView() {
           <SessionsSidebar
             open={sessionsOpen}
             onToggle={() => setSessionsOpen((o) => !o)}
-            className={
-              !sessionsOpen
-                ? "shrink-0"
-                : filesSectionOpen
-                  ? "shrink-0"
-                  : "flex-1"
-            }
-            style={
-              sessionsOpen && filesSectionOpen
-                ? { height: sessionsH }
-                : undefined
-            }
+            className={sectionTransition}
+            style={sectionFlex(
+              sessionsOpen,
+              sessionsOpen && filesSectionOpen ? sessionsH : undefined,
+            )}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
             onNewTerminal={handleNewTerminal}
@@ -437,19 +443,22 @@ export function ChatView() {
           {sessionsOpen && filesSectionOpen && (
             <ResizeHandle
               orientation="vertical"
-              onResize={(d) =>
+              onResize={(d) => {
+                setResizingSections(true);
                 setSessionsH((h) => {
                   const v = Math.max(120, Math.min(600, h + d));
                   localStorage.setItem("platform-sessions-h", String(v));
                   return v;
-                })
-              }
+                });
+              }}
+              onDragEnd={() => setResizingSections(false)}
             />
           )}
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            className={filesSectionOpen ? "flex-1" : "shrink-0"}
+            className={sectionTransition}
+            style={sectionFlex(filesSectionOpen)}
             onOpenFile={openFileHandler}
           />
         </div>

@@ -33,7 +33,7 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-11 shrink-0 border-border-light",
+          "flex items-center gap-1 pl-3 pr-2 h-[44px] shrink-0 border-border-light",
           open && "border-b",
           headerClassName,
         )}
@@ -54,11 +54,11 @@ export function SidebarSection({
         </button>
         {headerRight}
       </div>
-      {open && (
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-          {children}
-        </div>
-      )}
+      {/* Stays mounted while collapsed so the parent-driven height change
+          can animate; the section root clips the squeezed content. */}
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+        {children}
+      </div>
     </div>
   );
 }
