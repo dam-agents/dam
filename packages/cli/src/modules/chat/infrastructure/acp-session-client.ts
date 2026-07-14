@@ -4,6 +4,8 @@ import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
+import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+
 /**
  * Sessions are agent-owned: there is no server session store. The CLI
  * reads and mutates them directly over the api-server's ACP relay WebSocket,
@@ -31,7 +33,7 @@ interface ListedSession {
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {

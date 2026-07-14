@@ -8,6 +8,8 @@ import {
   OP_OUTPUT,
 } from "api-server-api";
 
+import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+
 export type BridgeResult =
   | { kind: "exited"; code: number }
   | { kind: "disconnected"; reason: string };
@@ -30,9 +32,8 @@ export function connectTerminalBridge({
     const proto = host.startsWith("https://") ? "wss:" : "ws:";
     const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
     const sep = terminalPath.includes("?") ? "&" : "?";
-    const ws = new WebSocket(
-      `${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`,
-    );
+    const url = `${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
 
     const onData = (chunk: Buffer) => {
       if (ws.readyState === WebSocket.OPEN)

@@ -120,9 +120,7 @@ function MainApp() {
         });
       else leaveChat();
     };
-    // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
-    const path = window.location.pathname;
-    if (path.startsWith("/chat/")) enterChat(decodeURIComponent(path.slice(6)));
+    onPopState();
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);

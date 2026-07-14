@@ -16,7 +16,7 @@
 #   resolve-image.sh build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
 #   resolve-image.sh gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   resolve-image.sh paths <component>          -> effective source paths (debug)
-#   resolve-image.sh --self-check               -> run assertions (no docker/git/network)
+#   resolve-image.sh --self-check               -> run assertions (no docker/network; git optional)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs), RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI main/tag: publish all).
@@ -24,6 +24,11 @@
 set -euo pipefail
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
+
+# Test-only files never ship (final images copy dist/ + node_modules), so they
+# don't move the last-touching commit. Ceiling: a reused image may differ in
+# builder-stage test sources; runtime content is identical.
+TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
 
 # platform-base's build context is the repo root but it only COPYs these paths;
 # keep in sync with packages/platform-base/Dockerfile.
@@ -64,13 +69,17 @@ effective_paths() {
 
 registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
 
+# Last commit touching the component's effective source (tests excluded).
+# Empty when git/history is unavailable — callers pick their own fallback.
+source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $TEST_EXCLUDES 2>/dev/null || true; }
+
 resolve() {
   local comp="$1" paths sha ref
   [ -n "${RESOLVE_NO_REUSE:-}" ] && { echo BUILD; return; }
   paths="$(effective_paths "$comp")"
   # Uncommitted change (or untracked file) in the effective source ⇒ must build.
-  [ -n "$(git status --porcelain -- $paths 2>/dev/null)" ] && { echo BUILD; return; }
-  sha="$(git log -1 --format=%H -- $paths 2>/dev/null || true)"
+  [ -n "$(git status --porcelain -- $paths $TEST_EXCLUDES 2>/dev/null)" ] && { echo BUILD; return; }
+  sha="$(source_sha "$comp")"
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
@@ -99,8 +108,14 @@ tag_for() {
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json
+  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
+  # source_shas: per-component last-touching-source sha — non-PR runs tag their
+  # images with it so PR reuse hits even when that commit was never a green
+  # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
+  src="$(for a in platform-base claude-code codex pi-agent bob k-search $WORKLOADS; do
+    s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
+  done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
   pb_tag="$(tag_for platform-base)"
   built=()
@@ -114,8 +129,8 @@ gha_outputs() {
     [ "$(resolve "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
   done
   workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag"
+  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
+    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
 }
 
 self_check() {
@@ -140,6 +155,7 @@ self_check() {
   has "$out" 'workloads=["nous","openevolve","shinkaevolve"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
+  has "$out" 'source_shas={"platform-base":"'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 

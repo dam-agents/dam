@@ -28,9 +28,12 @@ export function createClickhouseClient(cfg: {
 // the trusted owner id in ResourceAttributes (stamped by the agent gateway —
 // see docs/architecture/observability.md). Every query is gated on that owner
 // id against the caller's resolved allowlist.
+//
+// `Body` alone scopes to Claude Code harness telemetry: ServiceName carries the
+// template name (OTEL_SERVICE_NAME, _helpers.tpl), so filtering it would hide
+// every template not literally named `claude-code` (e.g. `bugstone`).
 export const ownedApiRequests = (w: MetricsWindow): string => {
   const base = [
-    "ServiceName = 'claude-code'",
     "Body = 'claude_code.api_request'",
     "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
     ...(w.hours === undefined

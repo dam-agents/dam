@@ -8,17 +8,14 @@ import {
   ensureCustomHeaderConnection,
   getConnectionId,
 } from "../lib/connections.js";
-import {
-  agentName,
-  connectionHost,
-  headerName,
-  valueFormat,
-} from "../lib/fixtures.js";
+import { agentName, valueFormat } from "../lib/fixtures.js";
 
 const originalName = "e2e-regrant-original";
 const recreatedName = "e2e-regrant-recreated";
 const regrantEnvName = "E2E_REGRANT_KEY";
 const regrantValue = "e2e-regrant-secret-5e1c";
+const regrantHost = "regrant.example.com";
+const regrantHeaderName = "x-regrant-key";
 
 // Regression for #2426: disconnecting a granted connection on the sandbox
 // settings page and creating a replacement of the same type left the deleted
@@ -53,8 +50,8 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
 
     originalId = await ensureCustomHeaderConnection(api, {
       name: originalName,
-      host: connectionHost,
-      headerName,
+      host: regrantHost,
+      headerName: regrantHeaderName,
       valueFormat,
       value: regrantValue,
       envName: regrantEnvName,
@@ -74,7 +71,9 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
 
   await test.step("open the sandbox settings page", async () => {
     await page.goto(`${baseUrl}/sandboxes/${agentId}`);
-    await expect(page.getByRole("heading", { name: agentName })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: agentName }),
+    ).toBeVisible();
     await expect(
       page.getByTestId(`connection-grant-${originalId}`).getByRole("checkbox"),
     ).toBeChecked();
@@ -94,12 +93,19 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
   });
 
   await test.step("create a replacement of the same type", async () => {
-    await page.getByRole("button", { name: /show all/i }).click();
+    // The provider section renders its own "Show all" toggle — scope to the
+    // connections section.
+    await page
+      .locator("section", { hasText: "My connections" })
+      .getByRole("button", { name: /show all/i })
+      .click();
     await page.getByTestId("connection-template-custom-header").click();
 
     await page.getByTestId("connection-field-name").fill(recreatedName);
-    await page.getByTestId("connection-field-host").fill(connectionHost);
-    await page.getByTestId("connection-field-headerName").fill(headerName);
+    await page.getByTestId("connection-field-host").fill(regrantHost);
+    await page
+      .getByTestId("connection-field-headerName")
+      .fill(regrantHeaderName);
     await page.getByTestId("connection-field-valueFormat").fill(valueFormat);
     await page.getByTestId("connection-field-value").fill(regrantValue);
     await page.getByTestId("connection-field-envName").fill(regrantEnvName);

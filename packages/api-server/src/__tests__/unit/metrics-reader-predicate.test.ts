@@ -24,6 +24,14 @@ describe("ownedApiRequests", () => {
     expect(gates).toHaveLength(3);
   });
 
+  it("scopes to Claude Code telemetry by Body, not template ServiceName", () => {
+    // ServiceName is the template name (OTEL_SERVICE_NAME), so gating on it
+    // would hide every template not named `claude-code` (e.g. `bugstone`).
+    const sql = ownedApiRequests({ hours: 24 });
+    expect(sql).toContain("Body = 'claude_code.api_request'");
+    expect(sql).not.toContain("ServiceName");
+  });
+
   it("applies no session predicate without a sessionId", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).not.toContain("sessionId");

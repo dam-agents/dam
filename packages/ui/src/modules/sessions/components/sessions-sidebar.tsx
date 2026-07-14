@@ -120,10 +120,12 @@ export function SessionsSidebar({
           const needsApproval =
             approvalSessions.has(s.sessionId) ||
             pendingPermissions.some((p) => p.sessionId === s.sessionId);
-          // No stamp means the runtime never tracked the session (legacy,
-          // harness-minted) — read, not unread.
+          // Terminals have no meaningful unread — their updatedAt tracks the
+          // harness file mtime (bumped by restarts and TUI repaints), not
+          // reading. No seenAt means an untracked (legacy) session — also read.
           const unread = Boolean(
             !isOpen &&
+            s.mode !== SessionMode.Terminal &&
             s.seenAt &&
             s.updatedAt &&
             Date.parse(s.updatedAt) > Date.parse(s.seenAt),

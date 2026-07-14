@@ -291,11 +291,13 @@ export function useAcpConnection(
     setState("idle");
   }, [clearEngagement]);
 
-  // Tear the connection down and drop the engagement binding — otherwise the channel stays bound to the gone session
+  // Tear the channel down when we leave the session — including switching to a
+  // terminal (no ACP), which otherwise stays engaged and marks the chat "seen"
+  // on turn completion, so it never shows unread.
   useEffect(() => {
-    if (sessionId) return;
+    if (sessionId && sessionMode !== SessionMode.Terminal) return;
     reset();
-  }, [sessionId, reset]);
+  }, [sessionId, sessionMode, reset]);
 
   return { state, ensureLive, connectionRef, reset };
 }
