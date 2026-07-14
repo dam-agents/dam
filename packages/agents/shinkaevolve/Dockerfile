@@ -2,9 +2,28 @@
 # to `shinka_run`; the inherited harness brings the model gateway and CA trust,
 # so the pod holds no model key.
 ARG BASE_IMAGE=platform-claude-code
+
+# The runner base has no package manager (sysroot-built, see platform-base);
+# stage the sqlite3 CLI the same way — AGENTS.md has the agent polling run
+# progress with sqlite queries against results/programs.sqlite.
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sqlite-cli
+USER root
+RUN dnf install \
+    -y \
+    --installroot=/sqlite \
+    --use-host-config \
+    --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
+    --setopt=install_weak_deps=0 \
+    sqlite \
+    &&\
+    rm -rf /sqlite/var/lib/dnf /sqlite/var/cache /sqlite/var/log
+
 FROM ${BASE_IMAGE}
 
 USER root
+
+COPY --from=sqlite-cli /sqlite/usr/bin/sqlite3 /usr/bin/sqlite3
+COPY --from=sqlite-cli /sqlite/usr/lib64/libsqlite3.so.* /usr/lib64/
 
 ARG SHINKA_VERSION=0.0.7
 
