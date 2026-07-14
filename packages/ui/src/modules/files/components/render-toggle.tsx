@@ -22,13 +22,13 @@ export function RenderToggle({
 }: Props) {
   return (
     <Button
-      variant="ghost"
-      size="sm"
-      className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${rendered ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
+      variant="outline"
+      size="xs"
+      className="text-[14px]"
       onClick={onToggle}
       title={rendered ? rawTitle : renderTitle}
     >
-      {rendered ? <Code size={11} /> : <Eye size={11} />}
+      {rendered ? <Code size={14} /> : <Eye size={14} />}
       {rendered ? "Raw" : "Render"}
     </Button>
   );

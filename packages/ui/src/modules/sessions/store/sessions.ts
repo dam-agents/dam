@@ -8,6 +8,10 @@ import type { PlatformStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
+} from "../lib/session-category.js";
 
 /** A resume-time failure that blocks showing the session chat. Rendered inline. */
 export interface SessionError {
@@ -22,7 +26,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   sessionError: SessionError | null;
-  includeChannelSessions: boolean;
+  sessionFilter: SessionCategory[];
   queuedMessage: string | null;
   busy: boolean;
   terminalPaused: boolean;
@@ -37,7 +41,7 @@ export interface SessionsSlice {
   setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
-  setIncludeChannelSessions: (v: boolean) => void;
+  toggleSessionFilter: (category: SessionCategory) => void;
   setQueuedMessage: (msg: string | null) => void;
   setBusy: (busy: boolean) => void;
 
@@ -65,7 +69,7 @@ export const createSessionsSlice: StateCreator<
   sessionMode: null,
   messages: [],
   sessionError: null,
-  includeChannelSessions: false,
+  sessionFilter: [...SESSION_CATEGORIES],
   queuedMessage: null,
   busy: false,
   terminalPaused: false,
@@ -82,7 +86,12 @@ export const createSessionsSlice: StateCreator<
       messages: typeof updater === "function" ? updater(s.messages) : updater,
     })),
   setSessionError: (e) => set({ sessionError: e }),
-  setIncludeChannelSessions: (v) => set({ includeChannelSessions: v }),
+  toggleSessionFilter: (category) =>
+    set((s) => ({
+      sessionFilter: s.sessionFilter.includes(category)
+        ? s.sessionFilter.filter((c) => c !== category)
+        : [...s.sessionFilter, category],
+    })),
   setQueuedMessage: (msg) => set({ queuedMessage: msg }),
   setBusy: (busy) => set({ busy }),
 

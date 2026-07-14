@@ -90,7 +90,6 @@ export const createAgentsSlice: StateCreator<
       selectedAgent: id,
       view: "chat",
       mobileScreen: "sessions",
-      showMobilePanel: false,
     });
   },
 
@@ -101,7 +100,6 @@ export const createAgentsSlice: StateCreator<
       selectedAgent: agentId,
       view: "chat",
       mobileScreen: "chat",
-      showMobilePanel: false,
       pendingResumeSessionId: sessionId,
     });
   },
@@ -115,7 +113,6 @@ export const createAgentsSlice: StateCreator<
       selectedAgent: agentId,
       view: "chat",
       mobileScreen: "chat",
-      showMobilePanel: false,
       pendingTerminal: true,
     });
   },
@@ -123,7 +120,7 @@ export const createAgentsSlice: StateCreator<
   goBack: () => {
     history.pushState(null, "", "/");
     get().resetChatContext();
-    set({ selectedAgent: null, view: "list", showMobilePanel: false });
+    set({ selectedAgent: null, view: "list" });
   },
 });
 

@@ -19,6 +19,8 @@ export function ConfigurationPanel({
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
+      <ModelSettingsPanel agentId={agentId} />
+
       <Section title="Schedules">
         <SchedulesPanel agentId={agentId} onResumeSession={onResumeSession} />
       </Section>
@@ -34,8 +36,6 @@ export function ConfigurationPanel({
           onOpenFile={onOpenFile}
         />
       </Section>
-
-      <ModelSettingsPanel agentId={agentId} />
     </div>
   );
 }
