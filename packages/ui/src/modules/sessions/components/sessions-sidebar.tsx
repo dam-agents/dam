@@ -1,10 +1,12 @@
+import { Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -15,6 +17,11 @@ import { useAgentRunState } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
+import {
+  SESSION_CATEGORIES,
+  SESSION_CATEGORY_LABELS,
+  sessionCategory,
+} from "../lib/session-category.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
 
@@ -41,8 +48,15 @@ export function SessionsSidebar({
   const sessionId = useStore((s) => s.sessionId);
   const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
-  const includeChannel = useStore((s) => s.includeChannelSessions);
-  const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
+  const sessionFilter = useStore((s) => s.sessionFilter);
+  const toggleSessionFilter = useStore((s) => s.toggleSessionFilter);
+  const listInclude = useMemo(
+    () => ({
+      channels: sessionFilter.includes("channels"),
+      scheduled: sessionFilter.includes("scheduled"),
+    }),
+    [sessionFilter],
+  );
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
@@ -50,13 +64,18 @@ export function SessionsSidebar({
   const agentRunState = useAgentRunState(selectedAgent);
   const { data: sessions = [], isFetching } = useAcpSessions(
     selectedAgent,
-    includeChannel,
+    listInclude,
     {
       enabled: agentRunState === "running",
       activeSessionId: sessionId,
     },
   );
   const loading = isFetching;
+
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
+    [sessions, sessionFilter],
+  );
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
@@ -80,8 +99,34 @@ export function SessionsSidebar({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-[14px] font-normal text-muted-foreground"
+          >
+            <Filter size={14} />
+            {sessionFilter.length === SESSION_CATEGORIES.length
+              ? "All"
+              : `Filter (${sessionFilter.length})`}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {SESSION_CATEGORIES.map((category) => (
+            <DropdownMenuCheckboxItem
+              key={category}
+              checked={sessionFilter.includes(category)}
+              onCheckedChange={() => toggleSessionFilter(category)}
+              onSelect={(e) => e.preventDefault()}
+            >
+              {SESSION_CATEGORY_LABELS[category]}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button variant="outline" size="xs" className="text-[14px]">
-            <Plus size={12} /> New <ChevronDown size={11} />
+            <Plus size={12} /> New
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -117,22 +162,18 @@ export function SessionsSidebar({
       className={className}
       style={style}
     >
-      <label className="flex items-center gap-2 cursor-pointer text-[11px] text-text-muted px-4 py-2 border-b border-border-light shrink-0">
-        <input
-          type="checkbox"
-          checked={includeChannel}
-          onChange={(e) => setIncludeChannel(e.target.checked)}
-          className="accent-accent w-3 h-3"
-        />
-        Show channel sessions
-      </label>
       <div className="flex-1 overflow-y-auto">
         {!loading && sessions.length === 0 && (
           <p className="px-4 py-5 text-[12px] text-text-muted">
             No sessions yet
           </p>
         )}
-        {sessions.map((s) => {
+        {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
+          <p className="px-4 py-5 text-[12px] text-text-muted">
+            No sessions match the filter
+          </p>
+        )}
+        {visibleSessions.map((s) => {
           const isOpen = s.sessionId === sessionId;
           // Terminal sessions have no chat turn, so `busy` never applies.
           const working =
