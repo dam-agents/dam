@@ -83,11 +83,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // Churns its own dedicated connection on the shared agent; listed last
-      // so the delete/recreate can't disturb the injection/slack suites.
       name: "connection-regrant",
       testMatch: /10-.*\.spec\.ts$/,
-      dependencies: ["agent"],
+      dependencies: ["slack"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
   ],
