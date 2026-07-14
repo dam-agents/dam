@@ -1,11 +1,4 @@
-import {
-  ChevronDown,
-  FilePlus,
-  FolderPlus,
-  FolderUp,
-  Plus,
-  Upload,
-} from "lucide-react";
+import { FilePlus, FolderPlus, FolderUp, Plus, Upload } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -50,7 +43,7 @@ export function FilesPanel({
           disabled={controller.isUploading}
           title={controller.isUploading ? "Upload in progress…" : "Add"}
         >
-          <Plus size={12} /> Add <ChevronDown size={11} />
+          <Plus size={12} /> Add
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

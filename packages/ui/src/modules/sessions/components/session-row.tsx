@@ -1,9 +1,20 @@
-import { Code } from "@carbon/icons-react";
+import {
+  Code,
+  Hashtag,
+  OverflowMenuVertical,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
-import { Clock, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { WorkingDots } from "./working-dots.js";
@@ -83,6 +94,9 @@ export function SessionRow({
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
   const terminal = s.mode === SessionMode.Terminal;
+  const channel =
+    s.type === SessionType.ChannelSlack ||
+    s.type === SessionType.ChannelTelegram;
 
   return (
     <div
@@ -107,38 +121,42 @@ export function SessionRow({
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
-          {(s.type === SessionType.ChannelSlack ||
-            s.type === SessionType.ChannelTelegram) && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
-              {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
-            </span>
-          )}
           <SessionIndicators
             scheduled={scheduled}
             terminal={terminal}
+            channel={channel}
             needsApproval={needsApproval}
             working={working}
           />
         </div>
-        <span className="text-[11px] text-text-muted">
+        <span className="text-[11px] text-muted-foreground">
           {new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
         </span>
       </div>
-      {/* Desktop: hover-visible delete button */}
-      <Button
-        data-testid="session-delete-button"
-        variant="ghost"
-        tone="danger"
-        size="icon-xs"
-        className="shrink-0 opacity-0 group-hover:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        title="Delete session"
-      >
-        <Trash2 size={12} />
-      </Button>
+      {/* Desktop: hover-visible overflow menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            data-testid="session-menu-button"
+            variant="ghost"
+            size="icon-xs"
+            className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+            title="More actions"
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem
+            data-testid="session-delete-button"
+            tone="danger"
+            onSelect={onDelete}
+          >
+            <TrashCan size={13} /> Delete session
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {/* Context menu — long press (mobile) or right-click */}
       {menuOpen && (
         <div
@@ -156,7 +174,7 @@ export function SessionRow({
               onDelete();
             }}
           >
-            <Trash2 size={13} /> Delete session
+            <TrashCan size={13} /> Delete session
           </Button>
         </div>
       )}
@@ -167,22 +185,28 @@ export function SessionRow({
 function SessionIndicators({
   scheduled,
   terminal,
+  channel,
   needsApproval,
   working,
 }: {
   scheduled: boolean;
   terminal: boolean;
+  channel: boolean;
   needsApproval: boolean;
   working: boolean;
 }) {
-  if (!scheduled && !terminal && !needsApproval && !working) return null;
+  if (!scheduled && !terminal && !channel && !needsApproval && !working)
+    return null;
   return (
     <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
       {terminal && (
         <Code size={16} className="text-text" aria-label="Terminal" />
       )}
+      {channel && (
+        <Hashtag size={16} className="text-text" aria-label="Channel session" />
+      )}
       {scheduled && (
-        <Clock size={16} className="text-text" aria-label="Scheduled" />
+        <Time size={16} className="text-text" aria-label="Scheduled" />
       )}
       {needsApproval ? (
         <span

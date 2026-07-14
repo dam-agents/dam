@@ -10,12 +10,17 @@ import { listAgentSessions } from "./acp-session-ops.js";
 
 const STATUS_POLL_MS = 5_000;
 
+export interface SessionListInclude {
+  channels: boolean;
+  scheduled: boolean;
+}
+
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
   agentLists: (agentId: string | null) =>
     [...acpSessionsKeys.all, agentId] as const,
-  list: (agentId: string | null, includeChannel: boolean) =>
-    [...acpSessionsKeys.agentLists(agentId), { includeChannel }] as const,
+  list: (agentId: string | null, include: SessionListInclude) =>
+    [...acpSessionsKeys.agentLists(agentId), include] as const,
 };
 
 // Optimistic insert so the sidebar shows the row immediately; the next refetch reconciles.
@@ -89,7 +94,7 @@ export function setSessionRunning(
  * Sessions list, read straight off the agent over ACP `session/list`
  * and decoded from `_meta.platform`. Regular and experiment-trial sessions are
  * always listed (so an arm's trial is reachable from its agent's sidebar);
- * schedule sessions are excluded; channel sessions are included only when asked. Pass
+ * schedule and channel sessions are included only when asked. Pass
  * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
  * without firing requests.
  *
@@ -98,7 +103,7 @@ export function setSessionRunning(
  */
 export function useAcpSessions(
   agentId: string | null,
-  includeChannel: boolean,
+  include: SessionListInclude,
   options?: {
     enabled?: boolean;
     activeSessionId?: string | null;
@@ -106,7 +111,7 @@ export function useAcpSessions(
 ) {
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
-    queryKey: acpSessionsKeys.list(agentId, includeChannel),
+    queryKey: acpSessionsKeys.list(agentId, include),
     queryFn: live
       ? async () => {
           const sessions = await listAgentSessions(agentId);
@@ -114,15 +119,16 @@ export function useAcpSessions(
             SessionType.Regular,
             SessionType.ExperimentTrial,
           ];
-          if (includeChannel)
+          if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
+          if (include.scheduled) allowed.push(SessionType.ScheduleCron);
           const fresh = sessions.filter((s) => allowed.includes(s.type));
           // Keep the active session's optimistic stub if not fetched so a refetch can't drop it.
           const activeId = options?.activeSessionId;
           if (!activeId || fresh.some((s) => s.sessionId === activeId))
             return fresh;
           const prev = queryClient.getQueryData<SessionView[]>(
-            acpSessionsKeys.list(agentId, includeChannel),
+            acpSessionsKeys.list(agentId, include),
           );
           const stub = prev?.find((s) => s.sessionId === activeId);
           return stub ? [stub, ...fresh] : fresh;
