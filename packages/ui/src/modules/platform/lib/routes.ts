@@ -23,6 +23,7 @@ export const settingsTabSchema = z.enum([
   "providers",
   "connections",
   "api-keys",
+  "channels",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 

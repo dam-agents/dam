@@ -18,7 +18,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import { useCreateTelegramConnectLink } from "../../telegram/api/mutations.js";
 import { useTelegramBot } from "../../telegram/api/queries.js";
 
-export function ChannelsPanel() {
+export function ChannelsPanel({ agentId }: { agentId?: string } = {}) {
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
   const availableChannels = agentsData?.availableChannels ?? {};
@@ -26,7 +26,7 @@ export function ChannelsPanel() {
   const telegramAvailable = !!availableChannels.telegram;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const agent = agents.find((a) => a.id === selectedAgent);
+  const agent = agents.find((a) => a.id === (agentId ?? selectedAgent));
 
   if (!slackAvailable && !telegramAvailable) {
     return (
