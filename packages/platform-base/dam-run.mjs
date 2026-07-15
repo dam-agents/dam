@@ -58,8 +58,18 @@ const finish = (code) => {
     } catch {}
   }
   process.stdin.pause();
-  process.exit(code);
+  // Flush stdout before exiting — process.exit truncates a backpressured
+  // pipe. The timer is a backstop for a wedged stdout consumer.
+  process.stdout.write("", () => process.exit(code));
+  setTimeout(() => process.exit(code), 2000);
 };
+
+// The relay completes the upgrade before it starts the executor, so a slow
+// handshake means the path to the api-server is broken, not a slow pod.
+const dialTimeout = setTimeout(() => {
+  process.stderr.write("dam-run: timed out connecting to the platform relay\n");
+  finish(1);
+}, 30_000);
 
 const send = (frame) => {
   if (ws.readyState === WebSocket.OPEN) ws.send(frame);
@@ -71,10 +81,16 @@ const resizeFrame = () => {
 };
 
 ws.onopen = () => {
+  clearTimeout(dialTimeout);
   send(resizeFrame());
   if (isTty) {
     process.stdin.setRawMode(true);
     process.stdout.on("resize", () => send(resizeFrame()));
+  } else {
+    // Piped stdin: a PTY has no true EOF, so signal it the terminal way, with
+    // EOT — twice, since the first only flushes a partial line (a raw-mode
+    // command would read the 0x04 bytes as data, same as in a real terminal).
+    process.stdin.on("end", () => send(new Uint8Array([OP_INPUT, 0x04, 0x04])));
   }
   process.stdin.on("data", (chunk) => {
     const frame = new Uint8Array(chunk.length + 1);

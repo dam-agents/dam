@@ -106,7 +106,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
 
   // A fresh harness process holds no live relays, so any Run CR that survived a
-  // crash is leaked — its executor pod would run untethered. Sweep them.
+  // crash is leaked — its executor pod would run untethered. Sweep them. Two
+  // accepted imperfections: during a RollingUpdate the outgoing replica may
+  // still hold live relays this sweep kills early (those streams die seconds
+  // later with the old pod anyway), and the sweep is one-shot best-effort —
+  // the controller's over-age reaper covers anything it misses.
   void runs
     .listRunIds()
     .then(async (ids) => {
@@ -117,7 +121,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         );
       }
     })
-    .catch(() => {});
+    .catch((err) => {
+      process.stderr.write(`harness-api run sweep failed: ${err}\n`);
+    });
 
   return { server };
 }

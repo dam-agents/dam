@@ -70,6 +70,16 @@ describe("attachExec (PTY)", () => {
     expect(output(ws)).toContain("got-hi");
   });
 
+  // dam-run signals piped-stdin EOF as EOT×2 (a PTY has no true EOF); a
+  // command reading to EOF must exit instead of hanging until the reaper.
+  it("treats EOT input as EOF", async () => {
+    const ws = run(["cat"]);
+    ws.emit("message", Buffer.from(encodeDataFrame(OP_INPUT, "hi\n")));
+    ws.emit("message", Buffer.from(encodeDataFrame(OP_INPUT, "\x04\x04")));
+    expect(await ws.exited).toBe(0);
+    expect(output(ws)).toContain("hi");
+  });
+
   it("reports a missing command as a non-zero exit", async () => {
     const ws = run(["definitely-not-a-real-cmd-xyz-42"]);
     expect(await ws.exited).toBeGreaterThan(0);
