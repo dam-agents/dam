@@ -115,6 +115,12 @@ export const agentConnectTelegramInputSchema = z.object({
   botToken: z.string().min(1),
 });
 
+export const agentBindTelegramChatInputSchema = z.object({
+  agentId: z.string().min(1),
+  // Opaque bind-flow id minted by the Telegram OAuth callback.
+  flowId: z.string().min(1),
+});
+
 // The Agent CR spec shape is the generated AgentSpecCR (crd-types.gen.ts, from
 // the controller's CRD); the public AgentSpec (types.ts) derives from it. K8s
 // validates it at admission, so there's no Zod re-validation here.

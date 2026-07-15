@@ -13,6 +13,7 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
+import { ChannelType } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -54,6 +55,10 @@ import type {
   TelegramOAuthPending,
   TelegramBindFlowStore,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
+import {
+  findAgentByConversation,
+  bindConversation,
+} from "../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createSshRelay } from "./ssh-relay.js";
@@ -761,6 +766,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       userDirectory,
       channelSecretStore,
+      telegramBinding: telegramBindFlows
+        ? {
+            peekFlow: telegramBindFlows.peek,
+            consumeFlow: telegramBindFlows.consume,
+            findAgentByConversation: findAgentByConversation(db),
+            bind: bindConversation(db),
+            postMessage: (agentId, conversationId, text) =>
+              channelManager.postMessage(agentId, ChannelType.Telegram, text, {
+                conversationId,
+              }),
+          }
+        : undefined,
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,

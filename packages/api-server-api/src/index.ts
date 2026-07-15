@@ -42,12 +42,15 @@ export type {
   AgentUpdateInput,
   ConnectSlackError,
   ConnectSlackResult,
+  BindTelegramChatError,
+  BindTelegramChatResult,
   Channel,
   SlackChannel,
   TelegramChannel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
+  agentBindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
   agentConnectTelegramInputSchema,
   agentCreateInputSchema,

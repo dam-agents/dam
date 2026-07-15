@@ -6,6 +6,7 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  agentBindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
   agentConnectTelegramInputSchema,
   agentCreateInputSchema,
@@ -167,5 +168,35 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.disconnectTelegram(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
+    }),
+
+  bindTelegramChat: manageAgentsProcedure
+    .input(agentBindTelegramChatInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram bot not configured",
+        });
+      const res = await ctx.agents.bindTelegramChat(
+        input.agentId,
+        input.flowId,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "FlowInvalid":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Bind link is invalid or expired — send /login again in Telegram",
+          });
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "ChatAlreadyBound":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This chat is already connected to another agent",
+          });
+      }
     }),
 });

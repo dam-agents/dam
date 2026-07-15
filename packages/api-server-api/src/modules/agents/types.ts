@@ -91,6 +91,17 @@ export type ConnectSlackResult =
   | { ok: true; value: Agent }
   | { ok: false; error: ConnectSlackError };
 
+export type BindTelegramChatError =
+  /** Unknown, expired, or not-your-flow — deliberately one bucket so the
+   *  error is no oracle for whether a flow id exists. */
+  | { type: "FlowInvalid" }
+  | { type: "AgentNotFound" }
+  | { type: "ChatAlreadyBound" };
+
+export type BindTelegramChatResult =
+  | { ok: true; value: { chatTitle: string | null } }
+  | { ok: false; error: BindTelegramChatError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -123,5 +134,11 @@ export interface AgentsService {
   disconnectSlack: (id: string) => Promise<Agent | null>;
   connectTelegram: (id: string, botToken: string) => Promise<Agent | null>;
   disconnectTelegram: (id: string) => Promise<Agent | null>;
+  /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
+   *  bind that conversation to the caller's agent. */
+  bindTelegramChat: (
+    agentId: string,
+    flowId: string,
+  ) => Promise<BindTelegramChatResult>;
   isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }
