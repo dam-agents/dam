@@ -1,159 +1,128 @@
-import {
-  type ConnectionTemplateView,
-  type ConnectionView,
-  PROVIDER_TEMPLATE_IDS,
-} from "api-server-api";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useSetAgentConnections } from "../../agents/api/mutations.js";
+import { useAgentConnections } from "../../agents/api/queries.js";
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
-import {
-  ConnectionAction,
-  ConnectionCatalogRow,
-  ConnectionRow,
-} from "../../connections/components/connection-row.js";
-import { TemplateCreateForm } from "../../connections/forms/template-create-form.js";
+import { CatalogConnectionRow } from "../../connections/components/catalog-connection-row.js";
+import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
-import { filterOfferedTemplates } from "../../connections/internal-only.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { connectionKindSubtitle } from "../../connections/lib/catalog-providers.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
-import { CardList } from "./card-list.js";
-
-const NO_TEMPLATES: ConnectionTemplateView[] = [];
-const NO_CONNECTIONS: ConnectionView[] = [];
-
-const CATEGORY_ORDER = ["app", "mcp", "other"] as const;
-const CATEGORY_LABEL: Record<(typeof CATEGORY_ORDER)[number], string> = {
-  app: "Apps",
-  mcp: "MCP servers",
-  other: "Other",
-};
 
 interface Props {
-  grantedIds: ReadonlySet<string>;
-  onToggleGrant: (id: string, on: boolean) => void;
+  agentId: string;
   oauthReturnView: string;
 }
 
-export function ConnectionsSection({
-  grantedIds,
-  onToggleGrant,
-  oauthReturnView,
-}: Props) {
-  const templatesQ = useConnectionTemplates();
+/** Grants apply immediately here — only the create wizard stages, since its
+ *  sandbox doesn't exist yet. */
+export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const connectionsQ = useAppConnections();
+  const templatesQ = useConnectionTemplates();
+  const agentConnectionsQ = useAgentConnections(agentId);
+  const setConnections = useSetAgentConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
-  const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
-  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
-  const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = excludeProviderConnections(
-    connectionsQ.data ?? NO_CONNECTIONS,
+  const grantedIds = useMemo(
+    () =>
+      new Set(
+        agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [],
+      ),
+    [agentConnectionsQ.data],
   );
-
-  const templateById = useMemo(
-    () => new Map(allTemplates.map((t) => [t.id, t])),
-    [allTemplates],
-  );
-
-  // Deleting a granted connection must also drop its staged grant — a stale
-  // id in the form would make Save fail with "not owned by caller" (#2426).
-  const disconnect = async (id: string, name: string) => {
-    if ((await confirmAndDelete(id, name)) && grantedIds.has(id))
-      onToggleGrant(id, false);
+  // setAgentConnections replaces the full set, so resend untouched grants.
+  const toggleGrant = (id: string, on: boolean) => {
+    const current =
+      agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
+    const next = on
+      ? [...new Set([...current, id])]
+      : current.filter((x) => x !== id);
+    setConnections.mutate({ agentId, connectionIds: next });
   };
 
-  const showInternal = useFeatures().data?.["advanced-connections"] ?? false;
-  const byCategory = useMemo(() => {
-    const m = new Map<string, ConnectionTemplateView[]>();
-    for (const t of filterOfferedTemplates(allTemplates, showInternal)) {
-      if (PROVIDER_TEMPLATE_IDS.has(t.id)) continue;
-      const list = m.get(t.category) ?? [];
-      list.push(t);
-      m.set(t.category, list);
-    }
-    return m;
-  }, [allTemplates, showInternal]);
+  const templateById = useMemo(
+    () => new Map((templatesQ.data ?? []).map((t) => [t.id, t])),
+    [templatesQ.data],
+  );
+  // Provider credentials are managed by the Provider picker, not here.
+  const granted = useMemo(
+    () =>
+      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
+        grantedIds.has(c.id),
+      ),
+    [connectionsQ.data, grantedIds],
+  );
 
   return (
-    <>
-      <section className="mb-8">
-        <SectionLabel spaced>My connections</SectionLabel>
-        {connections.length > 0 ? (
-          <CardList>
-            {connections.map((c) => (
-              <ConnectionRow
-                key={c.id}
-                title={templateById.get(c.templateId)?.name ?? c.templateId}
-                subtitle={c.name}
-                iconSlug={templateById.get(c.templateId)?.iconSlug}
-                status={c.status}
-                selectable
-                selected={grantedIds.has(c.id)}
-                onSelectedChange={(on) => onToggleGrant(c.id, on)}
-                testId={`connection-grant-${c.id}`}
-              >
-                <ConnectionAction
-                  label="Disconnect"
-                  tone="danger"
-                  onClick={() => void disconnect(c.id, c.name)}
-                  disabled={deletingId === c.id}
+    <section>
+      <SectionLabel spaced>Connections</SectionLabel>
+      <Inset className="rounded-lg border border-border bg-card">
+        {granted.length > 0 ? (
+          <>
+            <div className="divide-y divide-border">
+              {granted.map((c) => (
+                <CatalogConnectionRow
+                  key={c.id}
+                  connection={c}
+                  subtitle={connectionKindSubtitle(
+                    c,
+                    templateById.get(c.templateId),
+                  )}
+                  grant={{
+                    granted: true,
+                    onToggle: (on) => toggleGrant(c.id, on),
+                    actionHidden: true,
+                  }}
+                  onDelete={() => void confirmAndDelete(c.id, c.name)}
+                  deleting={deletingId === c.id}
                 />
-              </ConnectionRow>
-            ))}
-          </CardList>
+              ))}
+            </div>
+            <div className="border-t border-border px-4 py-3">
+              <Button
+                variant="outline"
+                className="h-[40px] text-[14px]"
+                onClick={() => setCatalogOpen(true)}
+                data-testid="open-connection-catalog"
+              >
+                <Add size={16} />
+                Add Connection
+              </Button>
+            </div>
+          </>
         ) : (
-          <p className="text-[13px] text-muted-foreground">
-            No connections yet.
-          </p>
+          <div className="flex flex-col items-center gap-4 py-10">
+            <p className="text-[14px] text-foreground/80">
+              You have not added any Connections to this Sandbox yet
+            </p>
+            <Button
+              variant="outline"
+              className="h-[40px] text-[14px]"
+              onClick={() => setCatalogOpen(true)}
+              data-testid="open-connection-catalog"
+            >
+              <Add size={16} />
+              Add Connection
+            </Button>
+          </div>
         )}
-        <button
-          type="button"
-          onClick={() => setShowCatalog((v) => !v)}
-          className="mt-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
-        >
-          {showCatalog ? "Show less" : "Show all"}
-          {showCatalog ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-      </section>
-
-      {showCatalog &&
-        CATEGORY_ORDER.map((cat) => {
-          const list = byCategory.get(cat) ?? [];
-          if (list.length === 0) return null;
-          return (
-            <section key={cat} className="mb-8">
-              <SectionLabel spaced>{CATEGORY_LABEL[cat]}</SectionLabel>
-              <CardList>
-                {list.map((t) => (
-                  <ConnectionCatalogRow
-                    key={t.id}
-                    template={t}
-                    onConnect={() => setCreating(t)}
-                  />
-                ))}
-              </CardList>
-            </section>
-          );
-        })}
-
-      {creating && (
-        <TemplateCreateForm
-          template={creating}
-          onCreated={(id) => {
-            setCreating(null);
-            onToggleGrant(id, true);
-          }}
-          onCancel={() => setCreating(null)}
-          popupOAuth
+      </Inset>
+      {catalogOpen && (
+        <ConnectionCatalogModal
+          onClose={() => setCatalogOpen(false)}
+          sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
           oauthReturnView={oauthReturnView}
         />
       )}
-    </>
+    </section>
   );
 }

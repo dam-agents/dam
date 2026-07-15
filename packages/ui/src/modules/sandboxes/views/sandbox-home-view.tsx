@@ -101,8 +101,7 @@ export function SandboxHomeView() {
         <SandboxArtifactsSection agentId={agent.id} />
       ) : (
         <ConnectionsSection
-          grantedIds={f.grantedAppIds}
-          onToggleGrant={f.toggleAppGrant}
+          agentId={agent.id}
           oauthReturnView={`/sandboxes/${agent.id}/connections`}
         />
       )}

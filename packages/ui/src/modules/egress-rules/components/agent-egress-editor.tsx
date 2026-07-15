@@ -225,7 +225,7 @@ export function AgentEgressEditor({
     : [];
   const connectionGrantPreviews: PreviewRow[] = stagedMode
     ? staged.pendingConnectionGrants.map((g) => ({
-        key: `preview:connection:${g.connectionId}`,
+        key: `preview:connection:${g.connectionId}:${g.host}`,
         host: g.host,
         method: "*",
         pathPattern: "*",

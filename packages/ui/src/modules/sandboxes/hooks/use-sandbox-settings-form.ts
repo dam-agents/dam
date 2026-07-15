@@ -103,8 +103,16 @@ export function useSandboxSettingsForm() {
     [agent?.env],
   );
 
-  const { register, control, handleSubmit, watch, setValue, reset, formState } =
-    useForm<SettingsValues>({
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    resetField,
+    formState,
+  } = useForm<SettingsValues>({
       resolver: zodResolver(settingsSchema),
       mode: "onChange",
       defaultValues: {
@@ -160,6 +168,23 @@ export function useSandboxSettingsForm() {
   ]);
 
   const assignedAppIds = watch("assignedAppIds");
+
+  // App grants apply immediately elsewhere; re-adopt server truth so a later
+  // provider save doesn't resend a stale grant list.
+  useEffect(() => {
+    if (!formReady || formState.dirtyFields.assignedAppIds) return;
+    const fresh = (connectionsQuery.data?.connections ?? [])
+      .map((c) => c.connectionId)
+      .sort();
+    if (fresh.join("\n") !== [...assignedAppIds].sort().join("\n"))
+      resetField("assignedAppIds", { defaultValue: fresh });
+  }, [
+    formReady,
+    formState.dirtyFields.assignedAppIds,
+    connectionsQuery.data,
+    assignedAppIds,
+    resetField,
+  ]);
   const envVars = watch("envVars");
   const hibernationTimeoutMin = watch("hibernationTimeoutMin");
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
@@ -190,15 +215,6 @@ export function useSandboxSettingsForm() {
       { shouldDirty: true },
     );
   };
-  const toggleAppGrant = (id: string, on: boolean) =>
-    setValue(
-      "assignedAppIds",
-      on
-        ? [...new Set([...assignedAppIds, id])].sort()
-        : assignedAppIds.filter((x) => x !== id),
-      { shouldDirty: true },
-    );
-
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = (agent?.env ?? [])
       .filter((e) => isProtectedAgentEnvName(e.name))
@@ -224,10 +240,8 @@ export function useSandboxSettingsForm() {
     return items;
   }, [agent?.env, apps, appIdsSet, envVars]);
 
-  // Connection-grant preview: staged app toggles haven't hit the server, so
-  // diff against the baseline to render preview rows for newly-granted
-  // connections (and strike through rules whose grant is being revoked).
-  // Mirrors what `setAgentConnections` will produce on Save.
+  // Egress preview for a staged provider swap: rows for the incoming
+  // provider's hosts, strikethrough for the outgoing one's rules.
   const baselineAppIds = useMemo(
     () =>
       new Set(
@@ -355,10 +369,20 @@ export function useSandboxSettingsForm() {
       if (net.stagedPreset !== null) {
         await applyPreset.mutateAsync({ agentId, preset: net.stagedPreset });
       }
+      let savedAppIds = values.assignedAppIds;
       if (dirtyFields.assignedAppIds) {
+        // Only the provider choice stages; app grants come from server truth.
+        const freshSaved =
+          connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [];
+        savedAppIds = [
+          ...new Set([
+            ...freshSaved.filter((id) => !providerAppIds.has(id)),
+            ...values.assignedAppIds.filter((id) => providerAppIds.has(id)),
+          ]),
+        ].sort();
         await setAgentConnections.mutateAsync({
           agentId,
-          connectionIds: values.assignedAppIds,
+          connectionIds: savedAppIds,
         });
       }
       for (const id of net.pendingDeletes) await revokeRule.mutateAsync({ id });
@@ -377,7 +401,7 @@ export function useSandboxSettingsForm() {
       // later saves fail validation invisibly.
       reset({
         name: values.name.trim(),
-        assignedAppIds: values.assignedAppIds,
+        assignedAppIds: savedAppIds,
         envVars: values.envVars,
         hibernationTimeoutMin: values.hibernationTimeoutMin,
         sizeCpuMilli: values.sizeCpuMilli,
@@ -413,8 +437,6 @@ export function useSandboxSettingsForm() {
     selectedProvider,
     selectProvider,
     dropProviderGrant,
-    grantedAppIds: appIdsSet,
-    toggleAppGrant,
     currentPreset,
     egressStaged,
     inheritedEnvs,

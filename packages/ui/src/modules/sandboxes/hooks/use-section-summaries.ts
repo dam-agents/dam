@@ -14,6 +14,7 @@ import {
 } from "../../agents/utils/sandbox-subtitle.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useFeatures } from "../../features/api/queries.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
@@ -76,14 +77,18 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [agent, templates, apps, modelName]);
 
   const connections = useMemo(() => {
-    // Providers surface in the Setup line, so the Connections summary lists
-    // only the non-provider app grants.
-    const names = (connectionsQuery.data?.connections ?? [])
+    // Providers surface in the Setup line; app grants fold into provider
+    // titles ("GitHub, Custom Headers, +6 more").
+    if (!connectionsQuery.data) return undefined;
+    const titles = connectionsQuery.data.connections
       .map((c) => c.connectionId)
       .filter((id) => !providerAppIds.has(id))
-      .map((id) => apps.find((a) => a.id === id)?.name)
-      .filter((n): n is string => !!n);
-    return formatNameList(names);
+      .map((id) => apps.find((a) => a.id === id))
+      .filter((a) => a !== undefined)
+      .map((a) => catalogProviderTitle(a.templateId) ?? a.name);
+    return (
+      formatNameList([...new Set(titles)]) ?? "No connections added"
+    );
   }, [connectionsQuery.data, apps, providerAppIds]);
 
   const skills = useMemo(() => {

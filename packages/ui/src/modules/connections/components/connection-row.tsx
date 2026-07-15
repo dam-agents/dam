@@ -151,7 +151,11 @@ const STATUS_BADGE: Record<
   disconnected: { label: "Disconnected", variant: "muted" },
 };
 
-function StatusBadge({ status }: { status?: AppConnectionView["status"] }) {
+export function StatusBadge({
+  status,
+}: {
+  status?: AppConnectionView["status"];
+}) {
   if (!status) return null;
   const { label, variant } = STATUS_BADGE[status];
   return <Badge variant={variant}>{label}</Badge>;
