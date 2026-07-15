@@ -147,8 +147,8 @@ export function useSandboxSettingsForm() {
         .sort(),
       envVars: userInitialEnv,
       hibernationTimeoutMin: agent.hibernationTimeoutMin,
-      sizeCpuMilli: parseCpuMilli(agent.size.cpu) ?? 1000,
-      sizeMemoryMi: parseMemoryMi(agent.size.memory) ?? 1024,
+      sizeCpuMilli: parseCpuMilli(agent.size?.cpu) ?? 1000,
+      sizeMemoryMi: parseMemoryMi(agent.size?.memory) ?? 1024,
     });
     setFormReady(true);
   }, [
