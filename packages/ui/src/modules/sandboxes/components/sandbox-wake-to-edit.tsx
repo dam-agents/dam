@@ -40,9 +40,11 @@ export function WakeToEditButton({
   const wakeAgent = useWakeAgent();
   if (comingUp)
     return (
-      <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        <Loader2 size={12} className="animate-spin" />
-        Starting…
+      // Matches the weight/size of the "Start agent to edit" button it
+      // replaces (text-sm font-medium), so the slot reads consistently.
+      <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+        Agent is starting…
+        <Loader2 size={14} className="animate-spin" />
       </span>
     );
   return (
