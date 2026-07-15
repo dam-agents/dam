@@ -15,6 +15,7 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
+import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { pathToState, useStore } from "./store.js";
 
@@ -39,6 +40,7 @@ export default function App() {
   }, [theme]);
 
   if (view === "terms") return <TermsView />;
+  if (view === "telegram-bind") return <TelegramBindView />;
   return <MainApp />;
 }
 
