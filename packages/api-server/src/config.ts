@@ -78,7 +78,8 @@ const configSchema = z.object({
   slackBotToken: z.string().nullable().default(null),
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
-  telegramEnabled: z.coerce.boolean().default(false),
+  /** Bot token of the platform-wide Telegram bot; null disables Telegram. */
+  telegramBotToken: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   /** HMAC key used to pseudonymize Keycloak `sub` values written to
@@ -262,7 +263,7 @@ export function loadConfig(): Config {
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
-    telegramEnabled: process.env.TELEGRAM_ENABLED,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     e2eEnabled: process.env.E2E_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,

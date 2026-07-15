@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import type {
-  TelegramOAuthPending,
-  TelegramThreadsRepo,
-} from "../../modules/channels/infrastructure/telegram.js";
+import {
+  createTelegramBindFlowStore,
+  type TelegramOAuthPending,
+} from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
 
 const exchangeCodeForTokens = vi.fn();
@@ -14,54 +14,35 @@ vi.mock("../../modules/channels/infrastructure/identity-oauth.js", () => ({
 
 const TELEGRAM_USER_ID = "999000111";
 const KEYCLOAK_SUB = "kc-sub-abc";
+const UI = "https://app.example";
 
 const oauthConfig: KeycloakOAuthConfig = {
   keycloakExternalUrl: "https://kc.example",
   keycloakUrl: "https://kc.internal",
   keycloakRealm: "platform",
   keycloakClientId: "telegram",
-  callbackUrl: "https://app.example/api/telegram/oauth/callback",
+  callbackUrl: `${UI}/api/telegram/oauth/callback`,
 };
 
-interface Harness {
-  routes: ReturnType<typeof createTelegramOAuthRoutes>;
-  authorizeCalls: Array<{
-    agentId: string;
-    threadId: string;
-    authorizedBy: string;
-  }>;
-  pendingFlows: Map<string, TelegramOAuthPending>;
-}
-
-function makeHarness(opts: { isOwner: boolean }): Harness {
-  const authorizeCalls: Harness["authorizeCalls"] = [];
+function makeHarness(opts?: { pendingCreatedAt?: number }) {
   const pendingFlows = new Map<string, TelegramOAuthPending>();
   pendingFlows.set("state-1", {
-    instanceName: "agent-1",
     telegramUserId: TELEGRAM_USER_ID,
     threadId: "chat-123",
     codeVerifier: "verifier",
-    createdAt: Date.now(),
+    chatTitle: "Team chat",
+    createdAt: opts?.pendingCreatedAt ?? Date.now(),
   });
 
-  const threads: TelegramThreadsRepo = {
-    isAuthorized: async () => false,
-    authorize: async (agentId, threadId, authorizedBy) => {
-      authorizeCalls.push({ agentId, threadId, authorizedBy });
-    },
-    list: async () => [],
-    revoke: async () => {},
-    getAuthorizedBy: async () => null,
-  };
-
+  const bindFlows = createTelegramBindFlowStore();
   const routes = createTelegramOAuthRoutes({
     pendingFlows,
-    threads,
-    isAgentOwner: async () => opts.isOwner,
+    bindFlows,
     oauthConfig,
+    uiBaseUrl: UI,
   });
 
-  return { routes, authorizeCalls, pendingFlows };
+  return { routes, pendingFlows, bindFlows };
 }
 
 describe("telegram oauth callback", () => {
@@ -69,52 +50,83 @@ describe("telegram oauth callback", () => {
     exchangeCodeForTokens.mockReset();
   });
 
-  // Regression for the terms-of-use gate: the inbound gate calls
-  // isTermsAccepted(authorizedBy), which is keyed on the Keycloak sub. The
-  // callback must persist the sub — persisting the Telegram user ID would make
-  // the gate block every message regardless of UI acceptance.
-  it("stores the Keycloak sub as authorizedBy, not the Telegram user ID", async () => {
-    const { routes, authorizeCalls } = makeHarness({ isOwner: true });
+  it("mints a sub-pinned bind flow and redirects to the picker", async () => {
+    const h = makeHarness();
     exchangeCodeForTokens.mockResolvedValue({ keycloakSub: KEYCLOAK_SUB });
 
-    const res = await routes.request(
+    const res = await h.routes.request(
       "/api/telegram/oauth/callback?code=abc&state=state-1",
     );
 
-    expect(res.status).toBe(200);
-    expect(authorizeCalls).toHaveLength(1);
-    expect(authorizeCalls[0]).toMatchObject({
-      agentId: "agent-1",
-      threadId: "chat-123",
-      authorizedBy: KEYCLOAK_SUB,
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location")!;
+    expect(location.startsWith(`${UI}/telegram/bind?flow=`)).toBe(true);
+
+    const flowId = new URL(location).searchParams.get("flow")!;
+    // The flow pins the AUTHENTICATED sub, not the Telegram user id — the
+    // bind mutation matches it against the UI session's sub.
+    expect(h.bindFlows.peek(flowId)).toMatchObject({
+      conversationId: "chat-123",
+      telegramUserId: TELEGRAM_USER_ID,
+      keycloakSub: KEYCLOAK_SUB,
+      chatTitle: "Team chat",
     });
-    expect(authorizeCalls[0].authorizedBy).not.toBe(TELEGRAM_USER_ID);
+    expect(h.pendingFlows.has("state-1")).toBe(false);
   });
 
-  it("rejects a non-owner and does not authorize the thread", async () => {
-    const { routes, authorizeCalls } = makeHarness({ isOwner: false });
-    exchangeCodeForTokens.mockResolvedValue({ keycloakSub: KEYCLOAK_SUB });
+  it("redirects unknown or replayed states to the expired page", async () => {
+    const h = makeHarness();
 
-    const res = await routes.request(
+    const res = await h.routes.request(
+      "/api/telegram/oauth/callback?code=abc&state=nope",
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      `${UI}/telegram/bind?error=expired`,
+    );
+    expect(exchangeCodeForTokens).not.toHaveBeenCalled();
+  });
+
+  it("expires stale pending flows", async () => {
+    const h = makeHarness({ pendingCreatedAt: Date.now() - 11 * 60 * 1000 });
+
+    const res = await h.routes.request(
       "/api/telegram/oauth/callback?code=abc&state=state-1",
     );
 
-    expect(res.status).toBe(403);
-    expect(authorizeCalls).toHaveLength(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      `${UI}/telegram/bind?error=expired`,
+    );
+    expect(h.pendingFlows.has("state-1")).toBe(false);
   });
 
-  it("consumes the pending flow and does not authorize on token-exchange failure", async () => {
-    const { routes, authorizeCalls, pendingFlows } = makeHarness({
-      isOwner: true,
-    });
+  it("consumes the pending flow and mints nothing on token-exchange failure", async () => {
+    const h = makeHarness();
     exchangeCodeForTokens.mockResolvedValue({ error: "invalid_grant" });
 
-    const res = await routes.request(
+    const res = await h.routes.request(
       "/api/telegram/oauth/callback?code=abc&state=state-1",
     );
 
-    expect(res.status).toBe(400);
-    expect(authorizeCalls).toHaveLength(0);
-    expect(pendingFlows.has("state-1")).toBe(false);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      `${UI}/telegram/bind?error=exchange_failed`,
+    );
+    expect(h.pendingFlows.has("state-1")).toBe(false);
+  });
+
+  it("routes a user-denied Keycloak login to the picker's error state", async () => {
+    const h = makeHarness();
+
+    const res = await h.routes.request(
+      "/api/telegram/oauth/callback?error=access_denied",
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      `${UI}/telegram/bind?error=denied`,
+    );
   });
 });

@@ -13,7 +13,7 @@ import {
 
 export function startChannelCleanupSaga(
   deleteChannelsByAgent: (agentId: string) => Promise<void>,
-  deleteTelegramThreadsByAgent: (agentId: string) => Promise<void>,
+  deleteTelegramConversationsByAgent: (agentId: string) => Promise<void>,
 ): Subscription {
   return events$()
     .pipe(
@@ -27,10 +27,10 @@ export function startChannelCleanupSaga(
           );
         }
         try {
-          await deleteTelegramThreadsByAgent(event.agentId);
+          await deleteTelegramConversationsByAgent(event.agentId);
         } catch (err) {
           process.stderr.write(
-            `[channel-cleanup] Telegram threads failed for ${event.agentId}: ${err}\n`,
+            `[channel-cleanup] Telegram conversations failed for ${event.agentId}: ${err}\n`,
           );
         }
       }),

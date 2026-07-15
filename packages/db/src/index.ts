@@ -4,7 +4,7 @@ export {
   channels,
   identityLinks,
   allowedUsers,
-  telegramThreads,
+  telegramConversations,
   skillSources,
   agentSkills,
   agentSkillPublishes,

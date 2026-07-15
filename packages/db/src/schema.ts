@@ -70,17 +70,22 @@ export const allowedUsers = pgTable(
   (table) => [primaryKey({ columns: [table.agentId, table.keycloakSub] })],
 );
 
-export const telegramThreads = pgTable(
-  "telegram_threads",
+export const telegramConversations = pgTable(
+  "telegram_conversations",
   {
+    // SDK-encoded thread id (chat id + optional forum-topic id). Primary key
+    // alone enforces the place-scoped invariant: one conversation binds to
+    // exactly one Agent.
+    conversationId: text("conversation_id").primaryKey(),
     agentId: text("agent_id").notNull(),
-    threadId: text("thread_id").notNull(),
+    // Keycloak sub of the Agent owner who bound the conversation — the party
+    // whose Terms-of-Use acceptance gates inbound turns.
     authorizedBy: text("authorized_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.agentId, table.threadId] })],
+  (table) => [index("telegram_conversations_agent_idx").on(table.agentId)],
 );
 
 /**
