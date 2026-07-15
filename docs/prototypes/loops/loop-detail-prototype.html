@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Todo Web Application — loop detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ── Tokens copied from packages/ui/src/App.css (light theme) ── */
+  :root {
+    --c-bg: #fafaf9; --c-surface: #ffffff; --c-surface-raised: #f5f5f4;
+    --c-border-light: #dde1e6; --c-text: #121619; --c-text-secondary: #57534e; --c-text-muted: #a8a29e;
+    --c-accent: #1d6be1; --c-accent-hover: #1556b8; --c-accent-light: #eaf2fe;
+    --c-success: #24a148; --c-success-light: #defbe6; --c-warning: #ff832b; --c-warning-light: #fffbeb;
+    --c-danger: #dc2626; --c-danger-light: #fef2f2; --c-info: #000000; --c-info-light: #f2f4f8;
+    --c-template: #7c3aed; --c-template-light: #f5f3ff; --muted-foreground: #4d5358;
+    --radius: 8px; --radius-md: 6px; --radius-sm: 4px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px; line-height: 1.55; color: var(--c-text); background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── App shell ── */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .rail { width: 56px; flex-shrink: 0; background: var(--c-surface); border-right: 1px solid var(--c-border-light);
+    display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .rail-item { width: 40px; height: 40px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: rgba(18,22,25,.8); cursor: pointer; }
+  .rail-item:hover { background: var(--c-info-light); }
+  .rail-item.active { background: var(--c-info-light); color: #000; }
+  .rail-logo { margin-bottom: 8px; }
+  .rail-spacer { flex: 1; }
+  .main { flex: 1; overflow-y: auto; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 40px 40px 80px; }
+
+  /* ── Header ── */
+  .backlink { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); margin-bottom: 20px; }
+  .backlink:hover { color: var(--c-text); }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1.title { font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+  .goal { margin: 10px 0 0; max-width: 720px; font-size: 14px; color: var(--c-text-secondary); line-height: 1.6; }
+  .meta-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--muted-foreground); flex-wrap: wrap; }
+  .dot-sep { color: var(--c-text-muted); }
+
+  /* ── Badges ── */
+  .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; letter-spacing: .34px; border: 1px solid transparent; white-space: nowrap; }
+  .badge .bdot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+  .badge-info { background: var(--c-info-light); color: #000; }
+  .badge-success { background: var(--c-success-light); color: #15803d; }
+  .badge-danger { background: var(--c-danger-light); color: var(--c-danger); }
+  .badge-muted { background: var(--c-info-light); color: var(--muted-foreground); }
+  .badge-warning { background: var(--c-warning-light); color: #b45309; }
+  .badge-accent { background: var(--c-accent-light); color: var(--c-accent-hover); }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; font-family: inherit; }
+  .btn-primary { background: #000; color: #fff; }
+  .btn-outline { background: var(--c-surface); border-color: var(--c-border-light); color: var(--c-text); }
+  .btn-outline:hover { background: var(--c-info-light); }
+  .btn-sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+
+  /* ── Cards ── */
+  .card { background: var(--c-surface); border: 1px solid var(--c-border-light); border-radius: var(--radius); }
+
+  /* ── Config strip ── */
+  .config { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface); flex-wrap: wrap; }
+  .config .cfg { font-size: 13px; color: var(--muted-foreground); }
+  .config .cfg strong { color: var(--c-text); font-weight: 600; }
+  .config .grow { flex: 1; }
+  .config .repo { display: inline-flex; align-items: center; gap: 6px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--c-text-secondary); }
+
+  /* ── Metrics ── */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 8px; }
+  .metric { padding: 16px 18px; }
+  .metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 500; }
+  .metric .value { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin-top: 6px; }
+  .metric .value small { font-size: 15px; font-weight: 500; color: var(--c-text-muted); letter-spacing: 0; }
+  .metric .value .up { font-size: 14px; color: var(--c-success); font-weight: 600; }
+  .metric .sub { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
+
+  /* ── Two-column layout ── */
+  .layout { display: grid; grid-template-columns: 1fr 340px; gap: 28px; margin-top: 28px; align-items: start; }
+  .section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 0 0 14px; }
+
+  /* ── Generation card ── */
+  .gen { margin-bottom: 14px; overflow: hidden; }
+  .gen-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; cursor: pointer; user-select: none; }
+  .gen-num { font-size: 15px; font-weight: 600; }
+  .gen-head .spacer { flex: 1; }
+  .gen-head .gmeta { font-size: 12.5px; color: var(--muted-foreground); }
+  .chev { color: var(--c-text-muted); transition: transform .15s ease; }
+  details[open] .chev { transform: rotate(90deg); }
+  summary { list-style: none; } summary::-webkit-details-marker { display: none; }
+
+  /* ── Pipeline (Make → Test → Eval → Curate) ── */
+  .pipeline { display: flex; align-items: stretch; gap: 0; padding: 4px 18px 16px; }
+  .stage { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface); }
+  .stage-top { display: flex; align-items: center; gap: 8px; }
+  .stage-icon { width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; }
+  .si-done { background: var(--c-success); } .si-accent { background: var(--c-accent); } .si-pending { background: var(--c-surface); color: var(--c-text-muted); border: 1px dashed var(--c-border-light); }
+  .stage-name { font-size: 13px; font-weight: 600; }
+  .stage-desc { font-size: 12px; color: var(--muted-foreground); line-height: 1.45; }
+  .stage-status { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .ss-done { color: var(--c-success); } .ss-accent { color: var(--c-accent); } .ss-muted { color: var(--c-text-muted); }
+  .connector { align-self: center; width: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--c-text-muted); }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ── Generation body ── */
+  .gen-body { border-top: 1px solid var(--c-border-light); padding: 16px 18px; }
+  .sub-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin: 0 0 8px; }
+  .sub-label.mt { margin-top: 18px; }
+
+  /* candidate (single, depth) */
+  .cand-solo { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--c-border-light); border-left: 3px solid var(--c-accent); border-radius: var(--radius-md); background: var(--c-accent-light); flex-wrap: wrap; }
+  .cand-link { display: inline-flex; align-items: center; gap: 7px; color: var(--c-accent); font-size: 13.5px; font-weight: 500; }
+  .cand-link:hover { text-decoration: underline; }
+  .cand-slice { font-size: 13px; color: var(--c-text-secondary); }
+  .cand-solo .spacer { flex: 1; }
+  .score { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; }
+  .review-note { font-size: 13px; color: var(--c-text-secondary); line-height: 1.55; margin: 10px 2px 0; }
+  .review-note strong { color: var(--c-text); }
+
+  /* findings list */
+  .findings { display: flex; flex-direction: column; gap: 7px; }
+  .finding { display: flex; gap: 9px; font-size: 13px; color: var(--c-text-secondary); line-height: 1.5; }
+  .fstep { flex-shrink: 0; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted-foreground); background: var(--c-surface-raised); border: 1px solid var(--c-border-light); border-radius: 999px; padding: 1px 8px; height: 19px; display: inline-flex; align-items: center; margin-top: 1px; }
+
+  /* curate result */
+  .curate-note { font-size: 13px; color: var(--c-text-secondary); line-height: 1.55; background: var(--c-surface-raised); border: 1px solid var(--c-border-light); border-radius: var(--radius-md); padding: 10px 13px; }
+  .curate-note .mono { color: var(--c-text); }
+
+  /* ── Knowledge rail ── */
+  .rail-panel { position: sticky; top: 24px; }
+  .fh { padding: 16px 18px; border-bottom: 1px solid var(--c-border-light); }
+  .ft { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .fs { font-size: 12px; color: var(--muted-foreground); margin-top: 4px; }
+  .fb { padding: 16px 18px; font-size: 13px; line-height: 1.6; }
+  .lb-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 16px 0 6px; }
+  .lb-h:first-child { margin-top: 0; }
+  .fb ul { margin: 0; padding-left: 18px; color: var(--c-text-secondary); }
+  .fb li { margin-bottom: 6px; }
+  .fb li.done::marker { content: "✓  "; color: var(--c-success); }
+  .fb code { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--c-surface-raised); padding: 1px 4px; border-radius: 3px; }
+  .rev-tag { color: var(--c-template); font-weight: 500; }
+  .ff { padding: 12px 18px; border-top: 1px solid var(--c-border-light); font-size: 11.5px; color: var(--muted-foreground); line-height: 1.5; }
+
+  .callout { margin-top: 20px; border: 1px solid var(--c-border-light); background: var(--c-info-light); border-radius: var(--radius-md); padding: 10px 14px; font-size: 12.5px; color: var(--muted-foreground); }
+  .proto-note { position: fixed; bottom: 14px; right: 16px; z-index: 50; background: var(--c-template-light); color: var(--c-template); border: 1px solid #ddd0f7; font-size: 11px; padding: 5px 11px; border-radius: 999px; font-weight: 600; letter-spacing: .03em; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <div class="rail-item rail-logo" title="Platform">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    </div>
+    <div class="rail-item" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+    </div>
+    <div class="rail-item active" title="Loops">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+    </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-item" title="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.2 7.3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="container">
+      <a class="backlink" href="#">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+        Loops
+      </a>
+
+      <!-- Header -->
+      <div class="head-row">
+        <div>
+          <h1 class="title">Todo Web Application</h1>
+          <p class="goal">
+            Build a small todo app in <span class="mono">tomkis/todo-app</span>: a REST API plus a minimal web UI to add,
+            list, complete, and delete todos, persisted in SQLite. Keep it simple.
+          </p>
+          <div class="meta-row">
+            <span class="badge badge-info"><span class="bdot pulse"></span>Running</span>
+            <span class="dot-sep">·</span>
+            <span>Generation 3 of 6</span>
+            <span class="dot-sep">·</span>
+            <span>Stops when <strong style="color:var(--c-text)">Eval passes</strong>, or generation cap 6</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-outline btn-sm">Pause</button>
+          <button class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Config strip -->
+      <div class="config">
+        <span class="cfg"><strong>Depth</strong> · one candidate per generation</span>
+        <span class="dot-sep">·</span>
+        <span class="cfg">Population <strong>1</strong></span>
+      </div>
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div class="card metric">
+          <div class="label">Generations</div>
+          <div class="value">3<small> / 6</small></div>
+          <div class="sub">one candidate each</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Best score</div>
+          <div class="value mono">0.72 <span class="up">▲ .12</span></div>
+          <div class="sub">up from 0.60 last gen</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Candidates</div>
+          <div class="value mono">3</div>
+          <div class="sub">evaluated so far</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Cost</div>
+          <div class="value mono">$6.20</div>
+          <div class="sub">2.8M tokens</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <!-- Generations column -->
+        <div>
+          <p class="section-label">Generations</p>
+
+          <!-- GENERATION 3 (current) -->
+          <details class="card gen" open>
+            <summary class="gen-head">
+              <span class="gen-num">Generation 3</span>
+              <span class="badge badge-info"><span class="bdot pulse"></span>Running</span>
+              <span class="spacer"></span>
+              <span class="gmeta mono">PR #3 · continue · 0.72 · $2.10</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">M</span><span class="stage-name">Make</span></div>
+                <div class="stage-desc">Opened PR #3 — complete &amp; delete endpoints.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">T</span><span class="stage-name">Test</span></div>
+                <div class="stage-desc">Added 6 tests, ran the suite.</div>
+                <div class="stage-status ss-done">Pass</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">E</span><span class="stage-name">Eval</span></div>
+                <div class="stage-desc">Reviewed the PR.</div>
+                <div class="stage-status ss-done">continue · 0.72</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-accent pulse">C</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Folding findings into Knowledge <span class="mono">r3</span>.</div>
+                <div class="stage-status ss-accent">Running</div>
+              </div>
+            </div>
+
+            <div class="gen-body">
+              <p class="sub-label">Candidate</p>
+              <div class="cand-solo">
+                <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>PR #3</a>
+                <span class="cand-slice">complete &amp; delete endpoints</span>
+                <span class="spacer"></span>
+                <span class="badge badge-success">Test passed</span>
+                <span class="badge badge-muted">continue</span>
+                <span class="score">0.72</span>
+              </div>
+              <p class="review-note"><strong>Eval:</strong> Endpoints are clean and isolated, tests cover the happy path. <span class="mono">DELETE</span> returns 200 for a missing id — should be a 404. Not blocking, but note it. App still lacks the web UI, so not done yet.</p>
+
+              <p class="sub-label mt">Findings reported this round</p>
+              <div class="findings">
+                <div class="finding"><span class="fstep">Make</span><span>Reused the SQLite store and Todo model from gen 1; no schema change needed.</span></div>
+                <div class="finding"><span class="fstep">Eval</span><span><span class="mono">DELETE /todos/:id</span> is missing a 404 path for unknown ids.</span></div>
+              </div>
+
+              <p class="sub-label mt">Curate</p>
+              <div class="curate-note">Marked complete &amp; delete as built and carried the 404 gap into Knowledge <span class="mono">r3</span> as an open gotcha for the next Make. <span class="ss-accent">Writing…</span></div>
+            </div>
+          </details>
+
+          <!-- GENERATION 2 -->
+          <details class="card gen">
+            <summary class="gen-head">
+              <span class="gen-num">Generation 2</span>
+              <span class="badge badge-muted"><span class="bdot"></span>Completed</span>
+              <span class="spacer"></span>
+              <span class="gmeta mono">PR #2 · continue · 0.60 · $2.00</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">M</span><span class="stage-name">Make</span></div>
+                <div class="stage-desc">Opened PR #2 — create &amp; list endpoints.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">T</span><span class="stage-name">Test</span></div>
+                <div class="stage-desc">Added 5 tests, ran the suite.</div>
+                <div class="stage-status ss-done">Pass</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">E</span><span class="stage-name">Eval</span></div>
+                <div class="stage-desc">Reviewed the PR.</div>
+                <div class="stage-status ss-done">continue · 0.60</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">C</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Wrote Knowledge <span class="mono">r2</span>.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="gen-body">
+              <p class="sub-label">Candidate</p>
+              <div class="cand-solo">
+                <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>PR #2</a>
+                <span class="cand-slice">POST /todos and GET /todos</span>
+                <span class="spacer"></span>
+                <span class="badge badge-success">Test passed</span>
+                <span class="badge badge-muted">continue</span>
+                <span class="score">0.60</span>
+              </div>
+              <p class="review-note"><strong>Eval:</strong> Solid create and list endpoints on top of the gen 1 store. Validation is thin but acceptable for now. Still no way to complete or delete a todo, and no UI.</p>
+
+              <p class="sub-label mt">Findings reported this round</p>
+              <div class="findings">
+                <div class="finding"><span class="fstep">Make</span><span>Wired the endpoints straight onto the gen 1 store; kept the handler layer thin.</span></div>
+                <div class="finding"><span class="fstep">Test</span><span>Added a fixture that resets the SQLite file per test.</span></div>
+              </div>
+
+              <p class="sub-label mt">Curate</p>
+              <div class="curate-note">Added create &amp; list to what's built in Knowledge <span class="mono">r2</span>; flagged complete, delete, and the UI as still open.</div>
+            </div>
+          </details>
+
+          <!-- GENERATION 1 -->
+          <details class="card gen">
+            <summary class="gen-head">
+              <span class="gen-num">Generation 1</span>
+              <span class="badge badge-muted"><span class="bdot"></span>Completed</span>
+              <span class="spacer"></span>
+              <span class="gmeta mono">PR #1 · continue · 0.40 · $2.10</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">M</span><span class="stage-name">Make</span></div>
+                <div class="stage-desc">Opened PR #1 — data model &amp; storage. Started from main; Knowledge was empty.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">T</span><span class="stage-name">Test</span></div>
+                <div class="stage-desc">Added 4 tests, ran the suite.</div>
+                <div class="stage-status ss-done">Pass</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">E</span><span class="stage-name">Eval</span></div>
+                <div class="stage-desc">Reviewed the PR.</div>
+                <div class="stage-status ss-done">continue · 0.40</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">C</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Wrote Knowledge <span class="mono">r1</span> from scratch.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="gen-body">
+              <p class="sub-label">Candidate</p>
+              <div class="cand-solo">
+                <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>PR #1</a>
+                <span class="cand-slice">Todo model + SQLite store</span>
+                <span class="spacer"></span>
+                <span class="badge badge-success">Test passed</span>
+                <span class="badge badge-muted">continue</span>
+                <span class="score">0.40</span>
+              </div>
+              <p class="review-note"><strong>Eval:</strong> Clean foundation. A Todo record and a small store with migrations, nicely isolated and testable. Nothing user-facing yet, as expected for a first slice.</p>
+
+              <p class="sub-label mt">Findings reported this round</p>
+              <div class="findings">
+                <div class="finding"><span class="fstep">Make</span><span>Chose SQLite via a thin repository so later endpoints don't touch SQL directly.</span></div>
+              </div>
+
+              <p class="sub-label mt">Curate</p>
+              <div class="curate-note">Created Knowledge <span class="mono">r1</span>: recorded the store choice and listed every remaining slice as not started.</div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Knowledge rail -->
+        <aside>
+          <p class="section-label">Knowledge</p>
+          <div class="card rail-panel">
+            <div class="fh">
+              <div class="ft">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5V20"/></svg>
+                Knowledge
+              </div>
+              <div class="fs">Curated by Curate each generation · writing <span class="rev-tag mono">r3</span></div>
+            </div>
+            <div class="fb">
+              <div class="lb-h">What's built</div>
+              <ul>
+                <li class="done">Todo model + SQLite store <span class="rev-tag">gen 1</span></li>
+                <li class="done"><code>POST /todos</code>, <code>GET /todos</code> <span class="rev-tag">gen 2</span></li>
+                <li class="done">complete &amp; delete endpoints <span class="rev-tag">gen 3, in review</span></li>
+              </ul>
+
+              <div class="lb-h">What's left</div>
+              <ul>
+                <li>Minimal web UI: add, list, complete, delete</li>
+                <li>Wire the UI to the API</li>
+              </ul>
+
+              <div class="lb-h">Gotchas</div>
+              <ul>
+                <li><code>DELETE</code> returns 200 for unknown ids — add a 404. <span class="rev-tag">gen 3</span></li>
+                <li>Keep each slice isolated and unit-tested.</li>
+              </ul>
+            </div>
+            <div class="ff">
+              The next Make reads this as static data, no agent-to-agent call. Gen 3's Make read revision <span class="rev-tag mono">r2</span>.
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="callout">
+        This is the depth loop: population 1, one candidate per generation. Each generation is a fresh Make → Test → Eval → Curate over a single candidate, so Select is trivial (the one survivor carries forward). Turn population up and the same screen grows a ranked population per generation; the four-step core is unchanged.
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-note">UX PROTOTYPE · MOCK DATA</div>
+</body>
+</html>

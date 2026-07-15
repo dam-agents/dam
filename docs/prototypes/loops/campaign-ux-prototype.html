@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Loops — UX prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ── Tokens copied from packages/ui/src/App.css (light theme) ── */
+  :root {
+    --c-bg: #fafaf9;
+    --c-surface: #ffffff;
+    --c-surface-raised: #f5f5f4;
+    --c-border-light: #dde1e6;
+    --c-text: #121619;
+    --c-text-secondary: #57534e;
+    --c-text-muted: #a8a29e;
+    --c-accent: #1d6be1;
+    --c-accent-hover: #1556b8;
+    --c-accent-light: #eaf2fe;
+    --c-success: #24a148;
+    --c-success-light: #defbe6;
+    --c-warning: #ff832b;
+    --c-warning-light: #fffbeb;
+    --c-danger: #dc2626;
+    --c-danger-light: #fef2f2;
+    --c-info: #000000;
+    --c-info-light: #f2f4f8;
+    --c-template: #7c3aed;
+    --c-template-light: #f5f3ff;
+    --muted-foreground: #4d5358;
+    --radius: 8px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--c-text);
+    background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── App shell ── */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .rail {
+    width: 56px; flex-shrink: 0; background: var(--c-surface);
+    border-right: 1px solid var(--c-border-light);
+    display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px;
+  }
+  .rail-item {
+    width: 40px; height: 40px; border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(18,22,25,.8); cursor: pointer;
+  }
+  .rail-item:hover { background: var(--c-info-light); }
+  .rail-item.active { background: var(--c-info-light); color: #000; }
+  .rail-logo { margin-bottom: 8px; }
+  .rail-spacer { flex: 1; }
+
+  .main { flex: 1; overflow-y: auto; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 40px 40px 80px; }
+
+  /* ── Header ── */
+  .backlink {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--muted-foreground); margin-bottom: 20px;
+  }
+  .backlink:hover { color: var(--c-text); }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1.title { font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+  .goal {
+    margin: 10px 0 0; max-width: 720px; font-size: 14px; color: var(--c-text-secondary);
+    line-height: 1.6;
+  }
+  .meta-row {
+    display: flex; align-items: center; gap: 12px; margin-top: 14px;
+    font-size: 13px; color: var(--muted-foreground);
+  }
+  .dot-sep { color: var(--c-text-muted); }
+
+  /* ── Badges (rounded-full pills) ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 999px; padding: 2px 10px; font-size: 12px; letter-spacing: .34px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .badge .bdot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+  .badge-info { background: var(--c-info-light); color: #000; }
+  .badge-success { background: var(--c-success-light); color: #15803d; }
+  .badge-danger { background: var(--c-danger-light); color: var(--c-danger); }
+  .badge-muted { background: var(--c-info-light); color: var(--muted-foreground); }
+  .badge-warning { background: var(--c-warning-light); color: #b45309; }
+  .badge-accent { background: var(--c-accent-light); color: var(--c-accent-hover); }
+  .badge-outline { border-color: var(--c-border-light); color: var(--c-text); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px;
+    border-radius: var(--radius-md); font-size: 13px; font-weight: 500; cursor: pointer;
+    border: 1px solid transparent; font-family: inherit;
+  }
+  .btn-primary { background: #000; color: #fff; }
+  .btn-primary:hover { background: rgba(0,0,0,.9); }
+  .btn-outline { background: var(--c-surface); border-color: var(--c-border-light); color: var(--c-text); }
+  .btn-outline:hover { background: var(--c-info-light); }
+  .btn-sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+  .btn-danger.btn-outline:hover { background: var(--c-danger-light); color: var(--c-danger); border-color: var(--c-danger); }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--c-surface); border: 1px solid var(--c-border-light);
+    border-radius: var(--radius);
+  }
+
+  /* ── Metrics strip ── */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 28px 0 8px; }
+  .metric { padding: 16px 18px; }
+  .metric .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted-foreground); font-weight: 500;
+  }
+  .metric .value { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin-top: 6px; }
+  .metric .value small { font-size: 15px; font-weight: 500; color: var(--c-text-muted); letter-spacing: 0; }
+  .metric .sub { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
+
+  /* ── Two-column layout: rounds + logbook rail ── */
+  .layout { display: grid; grid-template-columns: 1fr 340px; gap: 28px; margin-top: 28px; align-items: start; }
+  .section-label {
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted-foreground); margin: 0 0 14px;
+  }
+
+  /* ── Round card ── */
+  .round { margin-bottom: 14px; overflow: hidden; }
+  .round-head {
+    display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+    cursor: pointer; user-select: none;
+  }
+  .round-num { font-size: 15px; font-weight: 600; }
+  .round-head .spacer { flex: 1; }
+  .round-head .rmeta { font-size: 12.5px; color: var(--muted-foreground); }
+  .chev { color: var(--c-text-muted); transition: transform .15s ease; }
+  details[open] .chev { transform: rotate(90deg); }
+  summary { list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+
+  /* ── Pipeline strip ── */
+  .pipeline {
+    display: flex; align-items: stretch; gap: 0; padding: 4px 18px 18px;
+  }
+  .stage {
+    flex: 1; display: flex; flex-direction: column; gap: 6px;
+    padding: 12px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md);
+    background: var(--c-surface);
+  }
+  .stage-top { display: flex; align-items: center; gap: 8px; }
+  .stage-icon {
+    width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+  .si-done { background: var(--c-success); }
+  .si-fail { background: var(--c-danger); }
+  .si-run  { background: var(--c-accent); }
+  .si-skip { background: var(--c-surface-raised); color: var(--c-text-muted); border: 1px solid var(--c-border-light); }
+  .si-pending { background: var(--c-surface); color: var(--c-text-muted); border: 1px dashed var(--c-border-light); }
+  .si-continue { background: var(--c-accent); }
+  .si-hitl { background: var(--c-warning); }
+  .stage-name { font-size: 13px; font-weight: 600; }
+  .stage-desc { font-size: 12px; color: var(--muted-foreground); line-height: 1.45; }
+  .stage-status { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .ss-done { color: var(--c-success); }
+  .ss-fail { color: var(--c-danger); }
+  .ss-run  { color: var(--c-accent); }
+  .ss-muted { color: var(--c-text-muted); }
+  .ss-continue { color: var(--c-accent); }
+  .ss-hitl { color: #b45309; }
+  .connector {
+    align-self: center; width: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--c-text-muted);
+  }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ── Round detail body ── */
+  .round-body { border-top: 1px solid var(--c-border-light); padding: 16px 18px; display: grid; gap: 14px; }
+  .detail-row { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: start; }
+  .detail-key { font-size: 12px; font-weight: 600; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }
+  /* Candidate = opaque (connection, locator) pair. Just a link. */
+  .cand-wrap { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .cand-link {
+    display: inline-flex; align-items: center; gap: 7px; color: var(--c-accent);
+    font-size: 13px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md);
+    padding: 6px 10px; background: var(--c-surface);
+  }
+  .cand-link:hover { border-color: var(--c-accent); background: var(--c-accent-light); }
+  .cand-src { font-size: 12px; color: var(--muted-foreground); }
+  .cand-dl { color: var(--muted-foreground); }
+  .findings { font-size: 13.5px; color: var(--c-text); line-height: 1.55; }
+  .findings .lead { color: var(--muted-foreground); }
+  .test-line { font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+  /* Test emits one thing the platform understands: a pass/fail signal. The rest is opaque, verbatim. */
+  .raw-output {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--c-text-secondary);
+    background: var(--c-surface-raised); border: 1px solid var(--c-border-light);
+    border-radius: var(--radius-sm); padding: 8px 10px; margin: 8px 0 0;
+    white-space: pre-wrap; overflow-x: auto; line-height: 1.5;
+  }
+  .raw-note { font-size: 11.5px; color: var(--c-text-muted); margin-top: 6px; line-height: 1.45; }
+  /* HITL: eval can pause the loop for a human to continue or abort */
+  .hitl-panel { background: var(--c-warning-light); border: 1px solid #f0d9b0; border-radius: var(--radius-md); padding: 14px 16px; }
+  .hitl-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .hitl-deadline { font-size: 11.5px; color: #b45309; }
+  .hitl-reason { margin: 10px 0 6px; font-size: 13px; color: var(--c-text); }
+  .decision { display: flex; gap: 10px; margin-top: 12px; }
+
+  /* ── Logbook rail ── */
+  .rail-panel { position: sticky; top: 24px; }
+  .logbook-head { padding: 16px 18px; border-bottom: 1px solid var(--c-border-light); }
+  .logbook-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .logbook-sub { font-size: 12px; color: var(--muted-foreground); margin-top: 4px; }
+  .logbook-body { padding: 16px 18px; font-size: 13px; line-height: 1.6; }
+  .lb-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 16px 0 6px; }
+  .lb-h:first-child { margin-top: 0; }
+  .logbook-body p { margin: 0 0 8px; color: var(--c-text-secondary); }
+  .logbook-body ul { margin: 0; padding-left: 18px; color: var(--c-text-secondary); }
+  .logbook-body li { margin-bottom: 6px; }
+  .logbook-body code { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--c-surface-raised); padding: 1px 4px; border-radius: 3px; }
+  .rev-tag { color: var(--c-template); font-weight: 500; }
+  .logbook-foot {
+    padding: 12px 18px; border-top: 1px solid var(--c-border-light);
+    font-size: 11.5px; color: var(--muted-foreground); line-height: 1.5;
+  }
+
+  .callout {
+    margin-top: 20px; border: 1px solid var(--c-border-light); background: var(--c-info-light);
+    border-radius: var(--radius-md); padding: 10px 14px; font-size: 12.5px; color: var(--muted-foreground);
+  }
+  .proto-note {
+    position: fixed; bottom: 14px; right: 16px; z-index: 50;
+    background: var(--c-template-light); color: var(--c-template); border: 1px solid #ddd0f7;
+    font-size: 11px; padding: 5px 11px; border-radius: 999px; font-weight: 600; letter-spacing: .03em;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Left icon rail (matches real app chrome) -->
+  <nav class="rail">
+    <div class="rail-item rail-logo" title="Platform">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    </div>
+    <div class="rail-item" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+    </div>
+    <div class="rail-item active" title="Loops">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+    </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-item" title="Inbox">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+    </div>
+    <div class="rail-item" title="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.2 7.3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="container">
+      <a class="backlink" href="#">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+        Loops
+      </a>
+
+      <!-- Header -->
+      <div class="head-row">
+        <div>
+          <h1 class="title">Idempotent&nbsp;<span class="mono">/checkout</span>&nbsp;endpoint</h1>
+          <p class="goal">
+            Make the <span class="mono">/checkout</span> endpoint safe to retry: two identical requests must never
+            double-charge. The change has to pass CI and clear code review before it's accepted.
+          </p>
+          <div class="meta-row">
+            <span class="badge badge-warning"><span class="bdot pulse"></span>Paused · needs your decision</span>
+            <span class="dot-sep">·</span>
+            <span>Iteration 3 of 8</span>
+            <span class="dot-sep">·</span>
+            <span>Stops on <strong style="color:var(--c-text)">pass</strong>, abort, or iteration cap 8</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-outline btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+            Refresh
+          </button>
+          <button class="btn btn-outline btn-sm btn-danger">Stop</button>
+        </div>
+      </div>
+
+      <!-- Process metrics (measured by the platform, not self-reported) -->
+      <div class="metrics">
+        <div class="card metric">
+          <div class="label">Iterations</div>
+          <div class="value">3<small> / 8</small></div>
+          <div class="sub">2 continued · 1 needs decision</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Cost</div>
+          <div class="value mono">$4.20</div>
+          <div class="sub">1.9M tokens across iterations</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Elapsed</div>
+          <div class="value mono">2h&nbsp;40m</div>
+          <div class="sub">since loop started</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Awaiting decision</div>
+          <div class="value mono">22m</div>
+          <div class="sub">iteration 3 paused for you</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <!-- Iterations column -->
+        <div>
+          <p class="section-label">Iterations</p>
+
+          <!-- ITERATION 3 — live, parked on eval -->
+          <details class="card round" open>
+            <summary class="round-head">
+              <span class="round-num">Iteration 3</span>
+              <span class="badge badge-warning"><span class="bdot pulse"></span>Needs your decision</span>
+              <span class="spacer"></span>
+              <span class="rmeta mono">41m · $1.85</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top">
+                  <span class="stage-icon si-done">✓</span><span class="stage-name">Make</span>
+                </div>
+                <div class="stage-desc">Fresh agent wrote the change from the findings.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top">
+                  <span class="stage-icon si-done">✓</span><span class="stage-name">Test</span>
+                </div>
+                <div class="stage-desc">Automated gate returned pass.</div>
+                <div class="stage-status ss-done">Passed</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top">
+                  <span class="stage-icon si-hitl pulse">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+                  </span><span class="stage-name">Eval</span>
+                </div>
+                <div class="stage-desc">Flagged for a human decision. Loop paused.</div>
+                <div class="stage-status ss-hitl">Needs decision</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top">
+                  <span class="stage-icon si-pending">○</span><span class="stage-name">Curate</span>
+                </div>
+                <div class="stage-desc">Runs only if you continue.</div>
+                <div class="stage-status ss-muted">Pending</div>
+              </div>
+            </div>
+
+            <div class="round-body">
+              <div class="detail-row">
+                <div class="detail-key">Candidate</div>
+                <div class="cand-wrap">
+                  <a class="cand-link mono" href="#">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+                    c4d5e6f
+                  </a>
+                  <button class="btn btn-outline btn-sm cand-dl">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Download copy
+                  </button>
+                </div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-key">Test</div>
+                <div>
+                  <span class="badge badge-success">Passed</span>
+                  <pre class="raw-output">$ make test
+ok — 120 passed, 0 failed
+exit 0</pre>
+                  <div class="raw-note">Verbatim output. The platform stores it but never parses it. The one thing it routes on is the pass / fail signal.</div>
+                </div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-key">Eval</div>
+                <div>
+                  <div class="hitl-panel">
+                    <div class="hitl-head">
+                      <span class="badge badge-warning"><span class="bdot pulse"></span>Needs your decision</span>
+                      <span class="hitl-deadline">auto-aborts in 23h if no answer</span>
+                    </div>
+                    <p class="hitl-reason">The candidate didn't pass. This eval is set to check in with you before the loop spends another iteration.</p>
+                    <div class="findings">The narrow row-lock removes the double-charge and the gate is green, but it serializes retries on the same key, which could bottleneck under load.</div>
+                    <div class="decision">
+                      <button class="btn btn-primary">Continue</button>
+                      <button class="btn btn-outline btn-danger">Abort</button>
+                    </div>
+                    <div class="raw-note">Continue runs curate and starts iteration 4. Abort stops the loop for good.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- ITERATION 2 — test failed, loop continued -->
+          <details class="card round">
+            <summary class="round-head">
+              <span class="round-num">Iteration 2</span>
+              <span class="badge badge-muted"><span class="bdot"></span>Continued · test failed</span>
+              <span class="spacer"></span>
+              <span class="rmeta mono">25m · $0.95</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Make</span></div>
+                <div class="stage-desc">Wrapped the handler in one transaction.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-fail">✕</span><span class="stage-name">Test</span></div>
+                <div class="stage-desc">Automated gate returned fail.</div>
+                <div class="stage-status ss-fail">Failed</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-skip">–</span><span class="stage-name">Eval</span></div>
+                <div class="stage-desc">Skipped — the test gate didn't pass.</div>
+                <div class="stage-status ss-muted">Skipped</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Logged why the transaction approach broke.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="round-body">
+              <div class="detail-row">
+                <div class="detail-key">Candidate</div>
+                <div class="cand-wrap">
+                  <a class="cand-link mono" href="#">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+                    b91e0d4
+                  </a>
+                  <button class="btn btn-outline btn-sm cand-dl">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Download copy
+                  </button>
+                </div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-key">Test</div>
+                <div>
+                  <span class="badge badge-danger">Failed</span>
+                  <pre class="raw-output">$ make test
+FAIL — 2 failing:
+  checkout_timeout, retry_idempotent
+exit 1</pre>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- ITERATION 1 — eval returned continue -->
+          <details class="card round">
+            <summary class="round-head">
+              <span class="round-num">Iteration 1</span>
+              <span class="badge badge-muted"><span class="bdot"></span>Continued</span>
+              <span class="spacer"></span>
+              <span class="rmeta mono">38m · $1.40</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Make</span></div>
+                <div class="stage-desc">First attempt — added an idempotency-key table.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Test</span></div>
+                <div class="stage-desc">Automated gate returned pass.</div>
+                <div class="stage-status ss-done">Passed</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-continue">↻</span><span class="stage-name">Eval</span></div>
+                <div class="stage-desc">Returned: continue (didn't pass).</div>
+                <div class="stage-status ss-continue">Continue</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Logged the race condition for the next iteration.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="round-body">
+              <div class="detail-row">
+                <div class="detail-key">Candidate</div>
+                <div class="cand-wrap">
+                  <a class="cand-link mono" href="#">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+                    7f3a1c2
+                  </a>
+                  <button class="btn btn-outline btn-sm cand-dl">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Download copy
+                  </button>
+                </div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-key">Test</div>
+                <div>
+                  <span class="badge badge-success">Passed</span>
+                  <pre class="raw-output">$ make test
+ok — 118 passed, 0 failed
+exit 0</pre>
+                </div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-key">Eval</div>
+                <div class="findings">
+                  <span class="badge badge-accent" style="margin-right:6px">Continue</span>
+                  The idempotency check reads the key before taking the row lock, so two concurrent retries can both pass the check and double-charge. Move the existence check inside the transaction that writes the charge.
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Logbook rail -->
+        <aside>
+          <p class="section-label">Findings</p>
+          <div class="card rail-panel">
+            <div class="logbook-head">
+              <div class="logbook-title">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5V20"/></svg>
+                Findings
+              </div>
+              <div class="logbook-sub">Curated findings for this lineage · updated iteration 3</div>
+            </div>
+            <div class="logbook-body">
+              <div class="lb-h">What works</div>
+              <p>A single idempotency table keyed by request id, written once per charge. Return the stored result on repeat.</p>
+
+              <div class="lb-h">Pitfalls found</div>
+              <ul>
+                <li>The existence check must run <strong>inside</strong> the row lock, or concurrent retries both pass it and double-charge. <span class="rev-tag">iteration 1</span></li>
+                <li>Wrapping the whole handler in one transaction stretches the DB call past the timeout budget and breaks <code>test_checkout_timeout</code>. <span class="rev-tag">iteration 2</span></li>
+              </ul>
+
+              <div class="lb-h">Open question</div>
+              <p>Where to place the lock so it's correct under concurrency without regressing the timeout test. Iteration 3 tries a narrow lock on just the idempotency row.</p>
+            </div>
+            <div class="logbook-foot">
+              Maintained by an agent after each iteration. Every Make reads it as static data. Iteration 3 read revision <span class="rev-tag mono">r3</span>.
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="callout">
+        The platform drives this loop end to end. It owns the iterations, the immutable candidate pointers, and every metric above — nothing here is self-reported by an agent. What each step <em>does</em> lives in its prompt; the platform only sees Make → Test → Eval → curate.
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-note">UX PROTOTYPE · MOCK DATA</div>
+</body>
+</html>

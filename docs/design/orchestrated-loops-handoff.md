@@ -12,6 +12,17 @@ Research, optimization, and software development all run the same loop: set a go
 
 The PRD covers it. In short: one approach iterating in depth, a locked four step loop (Make, Test, Eval, curate), fresh agent per step, one knowledge base, and a UI built on the existing Experiments screens that shows the loop running to an approved result. That slice proves the hard core. Everything below is out of scope for it.
 
+## Prototypes
+
+Clickable UX prototypes (static HTML, mock data) live in [`docs/prototypes/loops/`](../prototypes/loops/). They use the working name "Loop" and a software-engineering example (a Ralph style loop that builds a small todo app).
+
+- [`loop-creation-prototype.html`](../prototypes/loops/loop-creation-prototype.html) is the creation wizard: goal, strategy, the four steps (each an image, its connections, and a prompt), then review. It shows the empty sandbox model, the platform wrapper that hands each step its inputs and captures the result over MCP, and the Findings to Knowledge split. Breadth and the synthesizer are locked, since M1 is depth.
+- [`loop-detail-prototype.html`](../prototypes/loops/loop-detail-prototype.html) is a running depth loop, one candidate per generation, with the per generation Make, Test, Eval, Curate pipeline and the Knowledge rail. The creation wizard's "Create & run loop" opens it.
+- [`loops-evolution-prototype.html`](../prototypes/loops/loops-evolution-prototype.html) sketches the later breadth and synthesizer view (M2, M3), for reference only.
+- [`campaign-ux-prototype.html`](../prototypes/loops/campaign-ux-prototype.html) is an earlier depth detail sketch, kept for history.
+
+The prototypes are ahead of this doc on naming (Loop, Knowledge). Treat them as exploration, not a spec.
+
 ## Decisions that must survive
 
 These are load bearing. If a future change contradicts one of them, that is a real design reversal, not a detail.

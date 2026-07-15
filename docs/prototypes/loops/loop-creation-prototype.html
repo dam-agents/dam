@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>New loop — creation wizard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ── Tokens copied from packages/ui/src/App.css (light theme) ── */
+  :root {
+    --c-bg: #fafaf9; --c-surface: #ffffff; --c-surface-raised: #f5f5f4;
+    --c-border-light: #dde1e6; --c-text: #121619; --c-text-secondary: #57534e; --c-text-muted: #a8a29e;
+    --c-accent: #1d6be1; --c-accent-hover: #1556b8; --c-accent-light: #eaf2fe;
+    --c-success: #24a148; --c-success-light: #defbe6; --c-warning: #ff832b; --c-warning-light: #fffbeb;
+    --c-danger: #dc2626; --c-danger-light: #fef2f2; --c-info: #000000; --c-info-light: #f2f4f8;
+    --c-template: #7c3aed; --c-template-light: #f5f3ff; --muted-foreground: #4d5358;
+    --radius: 8px; --radius-md: 6px; --radius-sm: 4px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px; line-height: 1.55; color: var(--c-text); background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── App shell ── */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .rail { width: 56px; flex-shrink: 0; background: var(--c-surface); border-right: 1px solid var(--c-border-light);
+    display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .rail-item { width: 40px; height: 40px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: rgba(18,22,25,.8); cursor: pointer; }
+  .rail-item:hover { background: var(--c-info-light); }
+  .rail-item.active { background: var(--c-info-light); color: #000; }
+  .rail-logo { margin-bottom: 8px; }
+  .rail-spacer { flex: 1; }
+  .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .container { width: 100%; max-width: 780px; margin: 0 auto; padding: 34px 40px 40px; flex: 1; }
+
+  /* ── Header ── */
+  .backlink { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); margin-bottom: 16px; }
+  .backlink:hover { color: var(--c-text); }
+  h1.title { font-size: 22px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+
+  /* ── Badges ── */
+  .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; letter-spacing: .34px; border: 1px solid transparent; white-space: nowrap; }
+  .badge-accent { background: var(--c-accent-light); color: var(--c-accent-hover); }
+  .badge-template { background: var(--c-template-light); color: var(--c-template); }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: var(--radius-md); font-size: 13.5px; font-weight: 500; cursor: pointer; border: 1px solid transparent; font-family: inherit; }
+  .btn-primary { background: #000; color: #fff; }
+  .btn-primary:hover { background: #1c1c1c; }
+  .btn-outline { background: var(--c-surface); border-color: var(--c-border-light); color: var(--c-text); }
+  .btn-outline:hover { background: var(--c-info-light); }
+  .btn-ghost { background: transparent; color: var(--muted-foreground); }
+  .btn-ghost:hover { color: var(--c-text); }
+  .btn-lg { height: 44px; padding: 0 22px; font-size: 14px; }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  /* ── Progress stepper ── */
+  .wsteps { display: flex; align-items: flex-start; margin: 22px 0 6px; }
+  .wstep { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 0 0 auto; cursor: pointer; }
+  .wstep .dot { width: 30px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; background: var(--c-surface); border: 1.5px solid var(--c-border-light); color: var(--c-text-muted); transition: all .15s ease; }
+  .wstep .wlabel { font-size: 11.5px; color: var(--c-text-muted); font-weight: 500; white-space: nowrap; }
+  .wstep.loop .dot { border-style: dashed; }
+  .wstep.done .dot { background: var(--c-text); border-color: var(--c-text); color: #fff; border-style: solid; }
+  .wstep.active .dot { background: #000; border-color: #000; color: #fff; border-style: solid; box-shadow: 0 0 0 4px var(--c-info-light); }
+  .wstep.active .wlabel { color: var(--c-text); font-weight: 600; }
+  .wline { flex: 1 1 auto; height: 1.5px; background: var(--c-border-light); margin: 15px 6px 0; min-width: 10px; }
+  .wline.done { background: var(--c-text); }
+  .wgroup-cap { text-align: center; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--c-text-muted); margin: 14px 0 -2px; }
+
+  /* ── Screens ── */
+  .screen { display: none; margin-top: 26px; animation: fade .18s ease; }
+  .screen.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .screen-lead { margin: 0 0 20px; }
+  .screen-title { font-size: 20px; font-weight: 600; letter-spacing: -.3px; margin: 0; }
+  .screen-sub { font-size: 14px; color: var(--c-text-secondary); margin: 8px 0 0; line-height: 1.6; max-width: 620px; }
+
+  /* step screen header with big badge */
+  .step-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .big-badge { width: 46px; height: 46px; border-radius: 12px; background: var(--c-accent); color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-hero .st-name { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+  .step-hero .st-role { font-size: 13.5px; color: var(--muted-foreground); margin-top: 2px; }
+  .returns-chip { margin-left: auto; font-size: 12px; color: var(--muted-foreground); border: 1px solid var(--c-border-light); background: var(--c-surface); border-radius: 999px; padding: 5px 12px; align-self: center; }
+  .returns-chip code { font-family: "IBM Plex Mono", monospace; color: var(--c-text-secondary); }
+
+  /* ── Fields ── */
+  .field { margin-bottom: 24px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin-bottom: 9px; }
+  .field-hint { font-size: 12.5px; color: var(--c-text-muted); margin-top: 8px; line-height: 1.5; }
+  input.inp, textarea.inp {
+    width: 100%; font-family: inherit; font-size: 15px; color: var(--c-text); background: var(--c-surface);
+    border: 1px solid var(--c-border-light); border-radius: var(--radius-md); padding: 11px 13px; line-height: 1.55;
+  }
+  input.inp:focus, textarea.inp:focus { outline: none; border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-light); }
+  textarea.inp { resize: vertical; }
+  .goal-input { min-height: 110px; }
+  .prompt-input { min-height: 240px; font-family: "IBM Plex Mono", monospace; font-size: 13.5px; line-height: 1.6; }
+
+  /* per-approach prompt cards (shown when population > 1) */
+  .approach { border: 1px solid var(--c-border-light); border-radius: var(--radius-md); margin-bottom: 12px; overflow: hidden; }
+  .approach:last-child { margin-bottom: 0; }
+  .approach-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--c-surface-raised); border-bottom: 1px solid var(--c-border-light); }
+  .approach-badge { width: 24px; height: 24px; border-radius: 999px; background: var(--c-accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .approach-name { border: none; background: transparent; font-family: inherit; font-size: 14px; font-weight: 600; color: var(--c-text); flex: 1; padding: 0; }
+  .approach-name:focus { outline: none; }
+  .approach-tag { font-size: 11px; color: var(--c-text-muted); }
+  .approach textarea { border: none; border-radius: 0; min-height: 150px; }
+  .approach textarea:focus { box-shadow: none; }
+
+  /* platform-appended loop instruction (locked, not editable) */
+  .prompt-append { margin-top: 8px; border: 1px dashed var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface-raised); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; cursor: not-allowed; }
+  .prompt-append svg { color: var(--c-text-muted); flex-shrink: 0; margin-top: 2px; }
+  .pa-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--c-text-muted); }
+  .pa-text { font-size: 12.5px; color: var(--c-text-secondary); font-family: "IBM Plex Mono", monospace; line-height: 1.55; margin-top: 3px; }
+  .pa-text code { background: var(--c-surface); border: 1px solid var(--c-border-light); border-radius: 4px; padding: 0 5px; font-size: 12px; color: var(--c-text); }
+  .pa-text + .pa-text { margin-top: 5px; }
+  .pa-text strong { color: var(--c-text); font-weight: 600; }
+
+  /* image selector (styled dropdown) */
+  .img-select { position: relative; display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); padding: 10px 12px; background: var(--c-surface); min-width: 260px; }
+  .img-select svg { color: var(--c-text-muted); flex-shrink: 0; }
+  .img-select select { border: none; background: transparent; font-family: "IBM Plex Mono", monospace; font-size: 14px; font-weight: 500; color: var(--c-text); cursor: pointer; flex: 1; padding: 0; }
+  .img-select select:focus { outline: none; }
+
+  /* connections multi-chip picker */
+  .conn-picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .conn-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--c-border-light); border-radius: 999px; font-size: 13.5px; font-weight: 500; background: var(--c-surface); }
+  .conn-chip svg { color: var(--c-text-secondary); }
+  .conn-x { border: none; background: transparent; color: var(--c-text-muted); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .conn-x:hover { color: var(--c-danger); }
+  .conn-add { border: 1px dashed var(--c-border-light); background: var(--c-surface); border-radius: 999px; padding: 8px 14px; font-size: 13.5px; font-weight: 500; color: var(--c-text-secondary); cursor: pointer; font-family: inherit; }
+  .conn-add:hover { background: var(--c-info-light); }
+  .conn-empty { font-size: 13px; color: var(--c-text-muted); font-style: italic; }
+
+  /* ── Strategy config rows ── */
+  .card { background: var(--c-surface); border: 1px solid var(--c-border-light); border-radius: var(--radius); }
+  .cfg-row { display: flex; align-items: center; gap: 14px; padding: 15px 18px; border-bottom: 1px solid var(--c-border-light); }
+  .cfg-row:last-child { border-bottom: none; }
+  .cfg-main { flex: 1; }
+  .cfg-name { font-size: 14.5px; font-weight: 500; }
+  .cfg-desc { font-size: 13px; color: var(--muted-foreground); margin-top: 3px; }
+  .stepper { display: inline-flex; align-items: center; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); overflow: hidden; background: var(--c-surface); }
+  .stepper button { width: 36px; height: 36px; border: none; background: var(--c-surface); font-size: 18px; cursor: pointer; color: var(--c-text-secondary); font-family: inherit; }
+  .stepper button:hover { background: var(--c-info-light); }
+  .stepper .val { width: 46px; text-align: center; font-family: "IBM Plex Mono", monospace; font-size: 15px; font-weight: 600; border-left: 1px solid var(--c-border-light); border-right: 1px solid var(--c-border-light); height: 36px; display: flex; align-items: center; justify-content: center; }
+  .switch { display: inline-flex; align-items: center; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch-track { width: 40px; height: 23px; border-radius: 999px; background: var(--c-surface-raised); border: 1px solid var(--c-border-light); position: relative; transition: background .15s ease; }
+  .switch-thumb { position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s ease; }
+  .switch input:checked + .switch-track { background: var(--c-accent); border-color: var(--c-accent); }
+  .switch input:checked + .switch-track .switch-thumb { transform: translateX(17px); }
+
+  .fold-disabled { margin-top: 18px; display: flex; align-items: center; gap: 10px; padding: 14px 16px; border: 1px dashed var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface-raised); color: var(--c-text-muted); cursor: not-allowed; }
+  .fold-disabled .fd-title { font-size: 13.5px; font-weight: 500; }
+  .fold-disabled svg { color: var(--c-text-muted); flex-shrink: 0; }
+  .fold-disabled .fold-note { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
+  .fold { margin-top: 18px; border: 1px dashed var(--c-border-light); border-radius: var(--radius-md); overflow: hidden; }
+  .fold > summary { list-style: none; cursor: pointer; padding: 13px 16px; display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 500; color: var(--c-text-secondary); background: var(--c-surface-raised); }
+  .fold > summary::-webkit-details-marker { display: none; }
+  .fold-chev { color: var(--c-text-muted); transition: transform .15s ease; }
+  .fold[open] .fold-chev { transform: rotate(90deg); }
+  .fold-note { margin-left: auto; font-size: 12px; color: var(--c-text-muted); font-weight: 400; }
+  .fold-body { padding: 2px 4px; }
+  .fold-body .cfg-row { padding-left: 14px; padding-right: 14px; }
+  .radio-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 4px 14px 14px; }
+  .radio-card { border: 1px solid var(--c-border-light); border-radius: var(--radius-md); padding: 13px 15px; cursor: pointer; background: var(--c-surface); }
+  .radio-card.sel { border-color: var(--c-accent); background: var(--c-accent-light); }
+  .radio-card .rc-top { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+  .radio-card .rc-desc { font-size: 12.5px; color: var(--muted-foreground); margin-top: 6px; line-height: 1.45; }
+  .rc-dot { width: 15px; height: 15px; border-radius: 999px; border: 2px solid var(--c-border-light); flex-shrink: 0; }
+  .radio-card.sel .rc-dot { border-color: var(--c-accent); background: radial-gradient(circle, var(--c-accent) 0 4px, #fff 5px); }
+  .section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 0 0 10px; }
+
+  /* ── Review ── */
+  .review-step { display: flex; align-items: flex-start; gap: 13px; padding: 15px 18px; border-bottom: 1px solid var(--c-border-light); }
+  .review-step:last-child { border-bottom: none; }
+  .rs-badge { width: 30px; height: 30px; border-radius: 8px; background: var(--c-accent); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rs-name { font-size: 14.5px; font-weight: 600; }
+  .rs-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .rs-tag { font-size: 11.5px; color: var(--c-text-secondary); background: var(--c-surface-raised); border: 1px solid var(--c-border-light); border-radius: 999px; padding: 2px 9px; }
+  .rs-tag .mono { font-size: 11.5px; }
+  .rs-prompt { font-size: 12.5px; color: var(--muted-foreground); margin-top: 7px; line-height: 1.5; font-family: "IBM Plex Mono", monospace; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .recap-line { display: flex; gap: 14px; padding: 13px 18px; border-bottom: 1px solid var(--c-border-light); font-size: 14px; }
+  .recap-line:last-child { border-bottom: none; }
+  .recap-k { flex: 0 0 92px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); padding-top: 2px; }
+  .recap-v { flex: 1; }
+  .recap-v .sub { display: block; color: var(--muted-foreground); font-size: 13px; margin-top: 2px; }
+
+  /* ── Wizard footer nav ── */
+  .wnav { position: sticky; bottom: 0; background: var(--c-surface); border-top: 1px solid var(--c-border-light); }
+  .wnav-inner { max-width: 780px; margin: 0 auto; padding: 14px 40px; display: flex; align-items: center; gap: 14px; }
+  .wnav .count { font-size: 12.5px; color: var(--muted-foreground); }
+  .wnav .grow { flex: 1; }
+
+  .proto-note { position: fixed; bottom: 70px; right: 16px; z-index: 50; background: var(--c-template-light); color: var(--c-template); border: 1px solid #ddd0f7; font-size: 11px; padding: 5px 11px; border-radius: 999px; font-weight: 600; letter-spacing: .03em; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <div class="rail-item rail-logo" title="Platform">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    </div>
+    <div class="rail-item" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+    </div>
+    <div class="rail-item active" title="Loops">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+    </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-item" title="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.2 7.3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="container">
+      <a class="backlink" href="#">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+        Loops
+      </a>
+      <h1 class="title">New loop</h1>
+
+      <!-- Progress stepper -->
+      <div class="wsteps" id="wsteps">
+        <div class="wstep active" data-i="0"><span class="dot">1</span><span class="wlabel">Goal</span></div>
+        <div class="wline"></div>
+        <div class="wstep" data-i="1"><span class="dot">2</span><span class="wlabel">Strategy</span></div>
+        <div class="wline"></div>
+        <div class="wstep loop" data-i="2"><span class="dot">M</span><span class="wlabel">Make</span></div>
+        <div class="wline"></div>
+        <div class="wstep loop" data-i="3"><span class="dot">T</span><span class="wlabel">Test</span></div>
+        <div class="wline"></div>
+        <div class="wstep loop" data-i="4"><span class="dot">E</span><span class="wlabel">Eval</span></div>
+        <div class="wline"></div>
+        <div class="wstep loop" data-i="5"><span class="dot">C</span><span class="wlabel">Curate</span></div>
+        <div class="wline"></div>
+        <div class="wstep" data-i="6"><span class="dot">7</span><span class="wlabel">Review</span></div>
+      </div>
+
+      <!-- ══ SCREEN 0: GOAL ══ -->
+      <section class="screen active" data-i="0">
+        <div class="screen-lead">
+          <h2 class="screen-title">Goal</h2>
+          <p class="screen-sub">A plain-English objective. Vague is fine. Every agent in every step reads this, and it never changes once the loop runs.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">What should the loop achieve?</span>
+          <textarea class="inp goal-input">Build a small todo app in tomkis/todo-app: a REST API plus a minimal web UI to add, list, complete, and delete todos, persisted in SQLite. Keep it simple.</textarea>
+        </div>
+        <div class="field">
+          <span class="field-label">Loop name</span>
+          <input class="inp" value="Todo Web Application" />
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 2: MAKE ══ -->
+      <section class="screen" data-i="2">
+        <div class="step-hero">
+          <span class="big-badge">M</span>
+          <div>
+            <div class="st-name">Make</div>
+            <div class="st-role" id="makeRole">Produces one candidate each round</div>
+          </div>
+          <span class="returns-chip" id="makeReturns">returns <code>candidate</code> + <code>findings</code></span>
+        </div>
+        <p class="screen-sub" style="margin:-8px 0 24px">The <strong>Build</strong> step. Each round runs in a fresh, empty sandbox. It pulls in the previous candidate and the current Knowledge, then produces the next candidate. Choose what it runs in, what it can reach, and what it should do.</p>
+
+        <div class="field">
+          <span class="field-label">Image</span>
+          <div class="img-select">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <select><option>claude-code</option><option>codex</option><option>pi-agent</option><option>bob</option></select>
+          </div>
+          <span class="field-hint">The container this step runs in. Each step can differ.</span>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Connections</span>
+          <div class="conn-picker" data-conn>
+            <span class="conn-chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.85 9.73.5.1.68-.22.68-.49v-1.7c-2.79.62-3.38-1.23-3.38-1.23-.46-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.12 2.91.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.26 10.26 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>GitHub<button class="conn-x" title="Remove">×</button></span>
+            <button class="conn-add">+ Add connection</button>
+          </div>
+          <span class="field-hint">Grants this step can use. A step can have several. The platform never learns which repo or path &mdash; that goes in the prompt.</span>
+        </div>
+
+        <div class="field">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <span class="field-label" id="makePromptLabel" style="margin-bottom:0">Prompt</span>
+            <span class="field-hint" id="approachHint" style="margin-top:0"></span>
+          </div>
+          <div id="approachList" style="margin-top:9px"></div>
+          <div class="prompt-append" title="The platform wraps every step: it hands in the inputs and captures the result. Not editable.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <div>
+              <div class="pa-label">Wrapped by the platform · not editable</div>
+              <div class="pa-text"><strong>Given:</strong> an empty sandbox, the current Knowledge, and the surviving candidate from the last generation (none in the first).</div>
+              <div class="pa-text"><strong>On finish:</strong> call <code>make_done</code> with the PR as the candidate, plus any findings.</div>
+            </div>
+          </div>
+          <span class="field-hint">You write the work, including pulling in the handed-in candidate and Knowledge. The platform hands them in and captures the result; the reporting is its done-tool, not your prompt.</span>
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 3: TEST ══ -->
+      <section class="screen" data-i="3">
+        <div class="step-hero">
+          <span class="big-badge">T</span>
+          <div>
+            <div class="st-name">Test</div>
+            <div class="st-role">Objective gate on each candidate</div>
+          </div>
+          <span class="returns-chip">returns <code>pass</code> / <code>fail</code> + <code>findings</code></span>
+        </div>
+        <p class="screen-sub" style="margin:-8px 0 24px">The <strong>Test</strong> step. A hard, reproducible gate that returns pass or fail, no judgment. A failing candidate does not stop the loop; it just doesn't move forward.</p>
+
+        <div class="field">
+          <span class="field-label">Image</span>
+          <div class="img-select">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <select><option>codex</option><option>claude-code</option><option>pi-agent</option><option>bob</option></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Connections</span>
+          <div class="conn-picker" data-conn>
+            <span class="conn-chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.85 9.73.5.1.68-.22.68-.49v-1.7c-2.79.62-3.38-1.23-3.38-1.23-.46-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.12 2.91.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.26 10.26 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>GitHub<button class="conn-x" title="Remove">×</button></span>
+            <button class="conn-add">+ Add connection</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Prompt</span>
+          <textarea class="inp prompt-input">Work in tomkis/todo-app. You start in an empty sandbox.
+
+Clone the repo and check out the candidate PR the platform hands you. Add unit tests that cover the slice this PR introduces. If it is already covered by tests from an earlier iteration, skip adding new ones.
+
+Run the full test suite.</textarea>
+          <div class="prompt-append" title="The platform wraps every step: it hands in the inputs and captures the result. Not editable.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <div>
+              <div class="pa-label">Wrapped by the platform · not editable</div>
+              <div class="pa-text"><strong>Given:</strong> an empty sandbox and a reference to the candidate PR.</div>
+              <div class="pa-text"><strong>On finish:</strong> call <code>test_done</code> with pass or fail, plus any findings.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 4: EVAL ══ -->
+      <section class="screen" data-i="4">
+        <div class="step-hero">
+          <span class="big-badge">E</span>
+          <div>
+            <div class="st-name">Eval</div>
+            <div class="st-role">Judges each candidate</div>
+          </div>
+          <span class="returns-chip">returns <code>verdict</code> + <code>score</code> + <code>findings</code></span>
+        </div>
+        <p class="screen-sub" style="margin:-8px 0 24px">Where the loop <strong>learns</strong> whether a candidate is good enough. Judges the candidate and returns a verdict (<span class="mono">passed</span> stops the loop, <span class="mono">continue</span> iterates) plus a score the platform tracks over generations.</p>
+
+        <div class="field">
+          <span class="field-label">Image</span>
+          <div class="img-select">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <select><option>claude-code</option><option>codex</option><option>pi-agent</option><option>bob</option></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Connections</span>
+          <div class="conn-picker" data-conn>
+            <span class="conn-chip"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.85 9.73.5.1.68-.22.68-.49v-1.7c-2.79.62-3.38-1.23-3.38-1.23-.46-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.57 2.34 1.12 2.91.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.6.69.49A10.26 10.26 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>GitHub<button class="conn-x" title="Remove">×</button></span>
+            <button class="conn-add">+ Add connection</button>
+          </div>
+          <span class="field-hint">Reads the PR to review it. It never writes.</span>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Prompt</span>
+          <textarea class="inp prompt-input">Work in tomkis/todo-app. You start in an empty sandbox.
+
+Clone the repo and check out the candidate PR the platform hands you. Review it as a senior engineer: correctness, clarity, and whether the slice is properly isolated and tested.
+
+Pass only once the app meets the goal and the PR is clean.</textarea>
+          <div class="prompt-append" title="The platform wraps every step: it hands in the inputs and captures the result. Not editable.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <div>
+              <div class="pa-label">Wrapped by the platform · not editable</div>
+              <div class="pa-text"><strong>Given:</strong> an empty sandbox and a reference to the candidate PR.</div>
+              <div class="pa-text"><strong>On finish:</strong> call <code>eval_done</code> with a verdict (passed / continue) and a score, plus any findings.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 5: CURATE ══ -->
+      <section class="screen" data-i="5">
+        <div class="step-hero">
+          <span class="big-badge">C</span>
+          <div>
+            <div class="st-name">Curate</div>
+            <div class="st-role">Maps Findings into Knowledge</div>
+          </div>
+          <span class="returns-chip">reads <code>findings</code> · writes <code>Knowledge</code></span>
+        </div>
+        <p class="screen-sub" style="margin:-8px 0 24px">How the loop <strong>remembers</strong> what it learned. The one writer of the Knowledge, it reads the raw Findings every step emitted this round and folds them into the curated Knowledge the next Make reads. Knowledge lives on the platform, so no external connection is needed by default.</p>
+
+        <div class="field">
+          <span class="field-label">Image</span>
+          <div class="img-select">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <select><option>claude-code</option><option>codex</option><option>pi-agent</option><option>bob</option></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Connections</span>
+          <div class="conn-picker" data-conn>
+            <span class="conn-empty">No connections &mdash; Curate only reads Findings and writes Knowledge.</span>
+            <button class="conn-add">+ Add connection</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Prompt</span>
+          <textarea class="inp prompt-input">The platform hands you this round's Findings from every step and the current Knowledge.
+
+Fold the Findings into the Knowledge: append what changed (which slice was done, key decisions, anything the next round should know), then re-summarize so the Knowledge stays short — what's built, what's left, and open gotchas.</textarea>
+          <div class="prompt-append" title="The platform wraps every step: it hands in the inputs and captures the result. Not editable.">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <div>
+              <div class="pa-label">Wrapped by the platform · not editable</div>
+              <div class="pa-text"><strong>Given:</strong> an empty sandbox, this round's Findings from every step, and the current Knowledge.</div>
+              <div class="pa-text"><strong>On finish:</strong> call <code>curate_done</code> with the updated Knowledge.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 1: STRATEGY ══ -->
+      <section class="screen" data-i="1">
+        <div class="screen-lead">
+          <h2 class="screen-title">Strategy</h2>
+          <p class="screen-sub">Set the shape of the loop before you write the steps: when it stops, and how many candidates each round explores. The defaults run one candidate per round in depth.</p>
+        </div>
+
+        <p class="section-label">Stop policy</p>
+        <div class="card">
+          <div class="cfg-row">
+            <div class="cfg-main">
+              <div class="cfg-name">Stop when a candidate passes</div>
+              <div class="cfg-desc">The loop ends the moment Eval returns a <span class="mono">passed</span> verdict.</div>
+            </div>
+            <label class="switch"><input type="checkbox" checked /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+          </div>
+          <div class="cfg-row">
+            <div class="cfg-main">
+              <div class="cfg-name">Generation cap</div>
+              <div class="cfg-desc">Hard stop if nothing passes. Keeps cost bounded.</div>
+            </div>
+            <div class="stepper" data-stepper="cap"><button>−</button><span class="val">6</span><button>+</button></div>
+          </div>
+        </div>
+
+        <div class="fold-disabled" title="Breadth and multiple starting approaches arrive in a later milestone. For now every loop runs one candidate per generation in depth.">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <span class="fd-title">Breadth &amp; selection</span>
+          <span class="fold-note">one candidate per generation <span class="badge badge-template" style="font-size:10px;padding:1px 7px;">later</span></span>
+        </div>
+      </section>
+
+      <!-- ══ SCREEN 6: REVIEW ══ -->
+      <section class="screen" data-i="6">
+        <div class="screen-lead">
+          <h2 class="screen-title">Review</h2>
+          <p class="screen-sub">One last look before the loop starts running.</p>
+        </div>
+
+        <p class="section-label">Loop</p>
+        <div class="card" style="margin-bottom:22px">
+          <div class="recap-line">
+            <div class="recap-k">Name</div>
+            <div class="recap-v">Todo Web Application</div>
+          </div>
+          <div class="recap-line">
+            <div class="recap-k">Goal</div>
+            <div class="recap-v">A small todo app in <span class="mono">tomkis/todo-app</span>: REST API + minimal web UI (add, list, complete, delete), persisted in SQLite.</div>
+          </div>
+          <div class="recap-line">
+            <div class="recap-k">Strategy</div>
+            <div class="recap-v">Depth &mdash; 1 candidate per generation, keep top 1.<span class="sub">Stops on a <span class="mono">passed</span> verdict, cap 6 generations.</span></div>
+          </div>
+        </div>
+
+        <p class="section-label">The four steps</p>
+        <div class="card">
+          <div class="review-step">
+            <span class="rs-badge">M</span>
+            <div>
+              <div class="rs-name">Make</div>
+              <div class="rs-meta" id="revMakeMeta"><span class="rs-tag">image <span class="mono">claude-code</span></span><span class="rs-tag">GitHub</span></div>
+              <div class="rs-prompt" id="revMakePrompt">Work in tomkis/todo-app. Read the Knowledge and the goal. Pick the next unbuilt slice, implement it in isolation so a unit test can cover it, open a PR…</div>
+            </div>
+          </div>
+          <div class="review-step">
+            <span class="rs-badge">T</span>
+            <div>
+              <div class="rs-name">Test</div>
+              <div class="rs-meta"><span class="rs-tag">image <span class="mono">codex</span></span><span class="rs-tag">GitHub</span></div>
+              <div class="rs-prompt">Check out the PR. Add unit tests for the new slice (skip if already covered). Run the full test suite…</div>
+            </div>
+          </div>
+          <div class="review-step">
+            <span class="rs-badge">E</span>
+            <div>
+              <div class="rs-name">Eval</div>
+              <div class="rs-meta"><span class="rs-tag">image <span class="mono">claude-code</span></span><span class="rs-tag">GitHub</span></div>
+              <div class="rs-prompt">Review the PR as a senior engineer: correctness, clarity, isolation, tests. Pass only once the app meets the goal and the PR is clean…</div>
+            </div>
+          </div>
+          <div class="review-step">
+            <span class="rs-badge">C</span>
+            <div>
+              <div class="rs-name">Curate</div>
+              <div class="rs-meta"><span class="rs-tag">image <span class="mono">claude-code</span></span><span class="rs-tag">no connections</span></div>
+              <div class="rs-prompt">Append this round's progress and re-summarize the log: what's built, what's left, open gotchas…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Wizard footer -->
+    <div class="wnav">
+      <div class="wnav-inner">
+        <button class="btn btn-ghost" id="backBtn" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+          Back
+        </button>
+        <span class="count" id="count">Step 1 of 7</span>
+        <span class="grow"></span>
+        <button class="btn btn-primary" id="nextBtn">
+          Next
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <button class="btn btn-primary btn-lg" id="createBtn" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Create &amp; run loop
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-note">UX PROTOTYPE · MOCK DATA</div>
+
+<script>
+  const TOTAL = 7;
+  let cur = 0;
+  const byI = (a, b) => (+a.dataset.i) - (+b.dataset.i);
+  const screens = [...document.querySelectorAll('.screen')].sort(byI);
+  const wsteps = [...document.querySelectorAll('#wsteps .wstep')].sort(byI);
+  const wlines = [...document.querySelectorAll('#wsteps .wline')];
+  const backBtn = document.getElementById('backBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const createBtn = document.getElementById('createBtn');
+  const count = document.getElementById('count');
+
+  function render() {
+    screens.forEach((s, i) => s.classList.toggle('active', i === cur));
+    wsteps.forEach((w, i) => {
+      w.classList.toggle('active', i === cur);
+      w.classList.toggle('done', i < cur);
+    });
+    wlines.forEach((l, i) => l.classList.toggle('done', i < cur));
+    count.textContent = `Step ${cur + 1} of ${TOTAL}`;
+    backBtn.disabled = cur === 0;
+    const last = cur === TOTAL - 1;
+    nextBtn.style.display = last ? 'none' : '';
+    createBtn.style.display = last ? '' : 'none';
+    document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function go(i) { cur = Math.max(0, Math.min(TOTAL - 1, i)); render(); }
+
+  nextBtn.addEventListener('click', () => go(cur + 1));
+  backBtn.addEventListener('click', () => go(cur - 1));
+  createBtn.addEventListener('click', () => { window.location.href = 'loop-detail-prototype.html'; });
+  wsteps.forEach(w => w.addEventListener('click', () => go(+w.dataset.i)));
+
+  // connections: add / remove chips
+  document.querySelectorAll('[data-conn]').forEach(picker => {
+    const addBtn = picker.querySelector('.conn-add');
+    addBtn.addEventListener('click', () => {
+      const empty = picker.querySelector('.conn-empty');
+      if (empty) empty.remove();
+      const chip = document.createElement('span');
+      chip.className = 'conn-chip';
+      chip.innerHTML = 'New connection<button class="conn-x" title="Remove">×</button>';
+      picker.insertBefore(chip, addBtn);
+    });
+    picker.addEventListener('click', e => {
+      if (e.target.classList.contains('conn-x')) e.target.closest('.conn-chip').remove();
+    });
+  });
+
+  // radio-card select mode
+  document.querySelectorAll('.radio-cards').forEach(group => {
+    group.querySelectorAll('.radio-card').forEach(card => {
+      card.addEventListener('click', () => {
+        group.querySelectorAll('.radio-card').forEach(c => c.classList.remove('sel'));
+        card.classList.add('sel');
+      });
+    });
+  });
+
+  // ── Make: population = number of starting approaches ──
+  const SOLO_PROMPT = `Work in tomkis/todo-app. You start in an empty sandbox.
+
+Clone the repo and check out the candidate the platform hands you from the last round (if there's none, start from main). Read the Knowledge to see what already exists and what's left.
+
+Pick ONE small slice of the goal that isn't done yet (the data model, a single API endpoint, one UI action) and implement it on top, in isolation, so a unit test can cover it. Open a pull request for it.`;
+  const APPROACHES = [
+    { name: 'Query batching',        prompt: 'Work in tomkis/search-api. Read the Findings and the goal.\n\nApproach: collapse the per-result lookups /search issues into one batched query to cut round-trips. Results must not change.\n\nCommit on a fresh branch and report the commit as the candidate.' },
+    { name: 'Inverted index',        prompt: 'Work in tomkis/search-api. Read the Findings and the goal.\n\nApproach: build an inverted index over the searchable fields so /search avoids full scans. Results must not change.\n\nCommit on a fresh branch and report the commit as the candidate.' },
+    { name: 'Response caching',      prompt: 'Work in tomkis/search-api. Read the Findings and the goal.\n\nApproach: cache /search responses with correct invalidation on write. Results must not change.\n\nCommit on a fresh branch and report the commit as the candidate.' },
+    { name: 'Precompute hot queries',prompt: 'Work in tomkis/search-api. Read the Findings and the goal.\n\nApproach: precompute and store results for the hottest queries, refreshed in the background. Results must not change.\n\nCommit on a fresh branch and report the commit as the candidate.' },
+  ];
+  const letter = i => String.fromCharCode(65 + i);
+
+  const approachList = document.getElementById('approachList');
+  const makePromptLabel = document.getElementById('makePromptLabel');
+  const approachHint = document.getElementById('approachHint');
+  const makeRole = document.getElementById('makeRole');
+  const makeReturns = document.getElementById('makeReturns');
+  const revMakeMeta = document.getElementById('revMakeMeta');
+  const revMakePrompt = document.getElementById('revMakePrompt');
+
+  function esc(s) { return s.replace(/</g, '&lt;'); }
+
+  function updateMake(pop) {
+    if (pop <= 1) {
+      makePromptLabel.textContent = 'Prompt';
+      approachHint.textContent = '';
+      makeRole.textContent = 'Produces one candidate each round';
+      makeReturns.innerHTML = 'returns <code>candidate</code> + <code>findings</code>';
+      approachList.innerHTML = `<textarea class="inp prompt-input">${esc(SOLO_PROMPT)}</textarea>`;
+      revMakeMeta.innerHTML = '<span class="rs-tag">image <span class="mono">claude-code</span></span><span class="rs-tag">GitHub</span>';
+      revMakePrompt.textContent = SOLO_PROMPT.replace(/\n+/g, ' ');
+    } else {
+      makePromptLabel.textContent = `Starting approaches — ${pop}`;
+      approachHint.textContent = 'one Make sandbox per approach, so each candidate starts from a different idea';
+      makeRole.textContent = `Produces ${pop} candidates each round, one per approach`;
+      makeReturns.innerHTML = `returns <code>${pop} candidates</code> + <code>findings</code>`;
+      let html = '';
+      for (let i = 0; i < pop; i++) {
+        const a = APPROACHES[i] || { name: `Approach ${letter(i)}`, prompt: 'Work in tomkis/search-api. Read the Findings and the goal.\n\nApproach: (describe a distinct line of attack)\n\nCommit on a fresh branch and report the commit as the candidate.' };
+        html += `<div class="approach">
+          <div class="approach-head">
+            <span class="approach-badge">${letter(i)}</span>
+            <input class="approach-name" value="${a.name}" />
+            <span class="approach-tag mono">sandbox ${i + 1}</span>
+          </div>
+          <textarea class="inp prompt-input">${esc(a.prompt)}</textarea>
+        </div>`;
+      }
+      approachList.innerHTML = html;
+      const names = Array.from({ length: pop }, (_, i) => `${letter(i)}: ${(APPROACHES[i] || {}).name || 'Approach ' + letter(i)}`).join(' · ');
+      revMakeMeta.innerHTML = `<span class="rs-tag">image <span class="mono">claude-code</span></span><span class="rs-tag">GitHub</span><span class="rs-tag">${pop} approaches</span>`;
+      revMakePrompt.textContent = names;
+    }
+  }
+
+  // steppers
+  document.querySelectorAll('.stepper').forEach(s => {
+    const val = s.querySelector('.val');
+    const [minus, plus] = s.querySelectorAll('button');
+    const min = s.dataset.stepper === 'cap' ? 1 : (s.dataset.stepper === 'pop' ? 1 : 1);
+    const commit = () => { if (s.dataset.stepper === 'pop') updateMake(+val.textContent); };
+    minus.addEventListener('click', () => { val.textContent = Math.max(min, (+val.textContent) - 1); commit(); });
+    plus.addEventListener('click', () => { val.textContent = (+val.textContent) + 1; commit(); });
+  });
+
+  updateMake(1);
+  render();
+</script>
+</body>
+</html>

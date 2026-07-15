@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Loops — evolution prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ── Tokens copied from packages/ui/src/App.css (light theme) ── */
+  :root {
+    --c-bg: #fafaf9; --c-surface: #ffffff; --c-surface-raised: #f5f5f4;
+    --c-border-light: #dde1e6; --c-text: #121619; --c-text-secondary: #57534e; --c-text-muted: #a8a29e;
+    --c-accent: #1d6be1; --c-accent-hover: #1556b8; --c-accent-light: #eaf2fe;
+    --c-success: #24a148; --c-success-light: #defbe6; --c-warning: #ff832b; --c-warning-light: #fffbeb;
+    --c-danger: #dc2626; --c-danger-light: #fef2f2; --c-info: #000000; --c-info-light: #f2f4f8;
+    --c-template: #7c3aed; --c-template-light: #f5f3ff; --muted-foreground: #4d5358;
+    --radius: 8px; --radius-md: 6px; --radius-sm: 4px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px; line-height: 1.55; color: var(--c-text); background: var(--c-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── App shell ── */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .rail { width: 56px; flex-shrink: 0; background: var(--c-surface); border-right: 1px solid var(--c-border-light);
+    display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .rail-item { width: 40px; height: 40px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; color: rgba(18,22,25,.8); cursor: pointer; }
+  .rail-item:hover { background: var(--c-info-light); }
+  .rail-item.active { background: var(--c-info-light); color: #000; }
+  .rail-logo { margin-bottom: 8px; }
+  .rail-spacer { flex: 1; }
+  .main { flex: 1; overflow-y: auto; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 40px 40px 80px; }
+
+  /* ── Header ── */
+  .backlink { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); margin-bottom: 20px; }
+  .backlink:hover { color: var(--c-text); }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1.title { font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+  .goal { margin: 10px 0 0; max-width: 720px; font-size: 14px; color: var(--c-text-secondary); line-height: 1.6; }
+  .meta-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--muted-foreground); }
+  .dot-sep { color: var(--c-text-muted); }
+
+  /* ── Badges ── */
+  .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; letter-spacing: .34px; border: 1px solid transparent; white-space: nowrap; }
+  .badge .bdot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+  .badge-info { background: var(--c-info-light); color: #000; }
+  .badge-success { background: var(--c-success-light); color: #15803d; }
+  .badge-danger { background: var(--c-danger-light); color: var(--c-danger); }
+  .badge-muted { background: var(--c-info-light); color: var(--muted-foreground); }
+  .badge-warning { background: var(--c-warning-light); color: #b45309; }
+  .badge-accent { background: var(--c-accent-light); color: var(--c-accent-hover); }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; font-family: inherit; }
+  .btn-primary { background: #000; color: #fff; }
+  .btn-outline { background: var(--c-surface); border-color: var(--c-border-light); color: var(--c-text); }
+  .btn-outline:hover { background: var(--c-info-light); }
+  .btn-sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+
+  /* ── Cards ── */
+  .card { background: var(--c-surface); border: 1px solid var(--c-border-light); border-radius: var(--radius); }
+
+  /* ── Config strip (population / synthesizer toggle) ── */
+  .config { display: flex; align-items: center; gap: 18px; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface); flex-wrap: wrap; }
+  .config .cfg { font-size: 13px; color: var(--muted-foreground); }
+  .config .cfg strong { color: var(--c-text); font-weight: 600; }
+  .config .grow { flex: 1; }
+  /* toggle switch */
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch-track { width: 38px; height: 22px; border-radius: 999px; background: var(--c-surface-raised); border: 1px solid var(--c-border-light); position: relative; transition: background .15s ease; }
+  .switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s ease; }
+  .switch input:checked + .switch-track { background: var(--c-accent); border-color: var(--c-accent); }
+  .switch input:checked + .switch-track .switch-thumb { transform: translateX(16px); }
+  .switch-label { font-size: 13px; font-weight: 600; }
+  .mode-hint { font-size: 12.5px; color: var(--muted-foreground); }
+  .mode-on { display: none; }
+  .syn-on .mode-on { display: inline; }
+  .syn-on .mode-off { display: none; }
+
+  /* ── Metrics ── */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 8px; }
+  .metric { padding: 16px 18px; }
+  .metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 500; }
+  .metric .value { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin-top: 6px; }
+  .metric .value small { font-size: 15px; font-weight: 500; color: var(--c-text-muted); letter-spacing: 0; }
+  .metric .value .up { font-size: 14px; color: var(--c-success); font-weight: 600; }
+  .metric .sub { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
+
+  /* ── Two-column layout ── */
+  .layout { display: grid; grid-template-columns: 1fr 340px; gap: 28px; margin-top: 28px; align-items: start; }
+  .section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 0 0 14px; }
+
+  /* ── Generation card ── */
+  .gen { margin-bottom: 14px; overflow: hidden; }
+  .gen-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; cursor: pointer; user-select: none; }
+  .gen-num { font-size: 15px; font-weight: 600; }
+  .gen-head .spacer { flex: 1; }
+  .gen-head .gmeta { font-size: 12.5px; color: var(--muted-foreground); }
+  .chev { color: var(--c-text-muted); transition: transform .15s ease; }
+  details[open] .chev { transform: rotate(90deg); }
+  summary { list-style: none; } summary::-webkit-details-marker { display: none; }
+
+  /* ── Fan-out pipeline ── */
+  .pipeline { display: flex; align-items: stretch; gap: 0; padding: 4px 18px 16px; }
+  .stage { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--c-border-light); border-radius: var(--radius-md); background: var(--c-surface); }
+  .stage.stacked { box-shadow: 4px 4px 0 -1px var(--c-surface), 4px 4px 0 0 var(--c-border-light); margin-right: 5px; }
+  .stage.join { border-color: var(--c-accent); background: var(--c-accent-light); }
+  .stage-top { display: flex; align-items: center; gap: 8px; }
+  .stage-icon { width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; }
+  .si-done { background: var(--c-success); } .si-accent { background: var(--c-accent); } .si-pending { background: var(--c-surface); color: var(--c-text-muted); border: 1px dashed var(--c-border-light); }
+  .stage-name { font-size: 13px; font-weight: 600; }
+  .stage-desc { font-size: 12px; color: var(--muted-foreground); line-height: 1.45; }
+  .stage-status { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .ss-done { color: var(--c-success); } .ss-accent { color: var(--c-accent); } .ss-muted { color: var(--c-text-muted); }
+  .count { margin-left: auto; font-size: 10px; font-weight: 600; background: var(--c-surface-raised); color: var(--muted-foreground); border-radius: 999px; padding: 1px 7px; }
+  .connector { align-self: center; width: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--c-text-muted); }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ── Generation body: population + select ── */
+  .gen-body { border-top: 1px solid var(--c-border-light); padding: 16px 18px; }
+  .sub-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin: 0 0 8px; }
+  .pop { display: flex; flex-direction: column; gap: 6px; }
+  .cand-row { display: grid; grid-template-columns: 22px 1fr auto 58px 132px; gap: 12px; align-items: center;
+    padding: 9px 12px 9px 9px; border: 1px solid var(--c-border-light); border-left: 3px solid transparent; border-radius: var(--radius-md); background: var(--c-surface); }
+  .cand-rank { font-size: 12px; font-weight: 600; color: var(--c-text-muted); text-align: center; }
+  .cand-link { display: inline-flex; align-items: center; gap: 7px; color: var(--c-accent); font-size: 13px; }
+  .cand-link:hover { text-decoration: underline; }
+  .score { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; text-align: right; }
+  .score.none { color: var(--c-text-muted); font-weight: 400; }
+  .carried-pill { display: none; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--c-accent-hover); background: var(--c-accent-light); border-radius: 999px; padding: 2px 9px; justify-self: end; }
+  .dropped-tag { font-size: 11px; color: var(--c-text-muted); justify-self: end; }
+  /* survivor highlight + carried pill, driven by mode */
+  .cand-row.surv-score { border-left-color: var(--c-accent); background: var(--c-accent-light); }
+  .cand-row.surv-score .carried-pill { display: inline-flex; }
+  .cand-row.surv-score .dropped-tag { display: none; }
+  .syn-on .cand-row.surv-score { border-left-color: transparent; background: var(--c-surface); }
+  .syn-on .cand-row .carried-pill { display: none; }
+  .syn-on .cand-row.surv-score .dropped-tag { display: inline; }
+  .syn-on .cand-row.surv-syn { border-left-color: var(--c-accent); background: var(--c-accent-light); }
+  .syn-on .cand-row.surv-syn .carried-pill { display: inline-flex; }
+  .syn-on .cand-row.surv-syn .dropped-tag { display: none; }
+
+  /* ── Select detail (mode-dependent) ── */
+  .select-wrap { margin-top: 16px; }
+  .block-off { display: block; } .block-on { display: none; }
+  .syn-on .block-off { display: none; } .syn-on .block-on { display: block; }
+  .select-det { border: 1px solid var(--c-border-light); border-radius: var(--radius-md); padding: 12px 14px; background: var(--c-surface-raised); }
+  .select-det.agent { background: var(--c-accent-light); border-color: #bcd6fb; }
+  .sd-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .sd-body { font-size: 13px; color: var(--c-text-secondary); line-height: 1.55; margin-top: 8px; }
+  .sd-body .seed { color: var(--c-text); }
+  .sd-note { font-size: 11.5px; color: var(--c-text-muted); margin-top: 8px; }
+
+  /* ── Findings rail ── */
+  .rail-panel { position: sticky; top: 24px; }
+  .fh { padding: 16px 18px; border-bottom: 1px solid var(--c-border-light); }
+  .ft { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .fs { font-size: 12px; color: var(--muted-foreground); margin-top: 4px; }
+  .fb { padding: 16px 18px; font-size: 13px; line-height: 1.6; }
+  .lb-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 16px 0 6px; }
+  .lb-h:first-child { margin-top: 0; }
+  .fb p { margin: 0 0 8px; color: var(--c-text-secondary); }
+  .fb ul { margin: 0; padding-left: 18px; color: var(--c-text-secondary); }
+  .fb li { margin-bottom: 6px; }
+  .fb code { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--c-surface-raised); padding: 1px 4px; border-radius: 3px; }
+  .rev-tag { color: var(--c-template); font-weight: 500; }
+  .ff { padding: 12px 18px; border-top: 1px solid var(--c-border-light); font-size: 11.5px; color: var(--muted-foreground); line-height: 1.5; }
+
+  .callout { margin-top: 20px; border: 1px solid var(--c-border-light); background: var(--c-info-light); border-radius: var(--radius-md); padding: 10px 14px; font-size: 12.5px; color: var(--muted-foreground); }
+  .proto-note { position: fixed; bottom: 14px; right: 16px; z-index: 50; background: var(--c-template-light); color: var(--c-template); border: 1px solid #ddd0f7; font-size: 11px; padding: 5px 11px; border-radius: 999px; font-weight: 600; letter-spacing: .03em; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <div class="rail-item rail-logo" title="Platform">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    </div>
+    <div class="rail-item" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+    </div>
+    <div class="rail-item active" title="Loops">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+    </div>
+    <div class="rail-spacer"></div>
+    <div class="rail-item" title="Inbox">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+    </div>
+    <div class="rail-item" title="Settings">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.2 7.3l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="container">
+      <a class="backlink" href="#">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+        Loops
+      </a>
+
+      <!-- Header -->
+      <div class="head-row">
+        <div>
+          <h1 class="title">Speed up&nbsp;<span class="mono">/search</span></h1>
+          <p class="goal">
+            Cut the p95 latency of the <span class="mono">/search</span> endpoint without breaking result correctness.
+            Each generation makes several candidates, keeps the ones that still pass, and evolves toward the fastest.
+          </p>
+          <div class="meta-row">
+            <span class="badge badge-info"><span class="bdot pulse"></span>Running</span>
+            <span class="dot-sep">·</span>
+            <span>Generation 2 of 6</span>
+            <span class="dot-sep">·</span>
+            <span>Stops when a candidate <strong style="color:var(--c-text)">passes the target</strong>, or generation cap 6</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Config: population + synthesizer toggle -->
+      <div class="config">
+        <span class="cfg">Population <strong>4</strong> per generation</span>
+        <span class="dot-sep">·</span>
+        <span class="cfg">Keep top <strong>2</strong></span>
+        <span class="grow"></span>
+        <label class="switch">
+          <input type="checkbox" id="synToggle" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-label">Synthesizer</span>
+        </label>
+        <span class="mode-hint">
+          <span class="mode-off">off — selection is a blind top-k by score</span>
+          <span class="mode-on">on — an agent selects and recombines the population</span>
+        </span>
+      </div>
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div class="card metric">
+          <div class="label">Generations</div>
+          <div class="value">2<small> / 6</small></div>
+          <div class="sub">4 candidates each</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Best score</div>
+          <div class="value mono">0.81 <span class="up">▲ .19</span></div>
+          <div class="sub">up from 0.62 last gen</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Candidates</div>
+          <div class="value mono">8</div>
+          <div class="sub">evaluated so far</div>
+        </div>
+        <div class="card metric">
+          <div class="label">Cost</div>
+          <div class="value mono">$9.60</div>
+          <div class="sub">4.3M tokens</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <!-- Generations column -->
+        <div>
+          <p class="section-label">Generations</p>
+
+          <!-- GENERATION 2 (current) -->
+          <details class="card gen" open>
+            <summary class="gen-head">
+              <span class="gen-num">Generation 2</span>
+              <span class="badge badge-accent"><span class="bdot"></span>Selected</span>
+              <span class="spacer"></span>
+              <span class="gmeta mono">best 0.81 · $5.10</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <!-- Fan-out pipeline -->
+            <div class="pipeline">
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Make</span><span class="count">×4</span></div>
+                <div class="stage-desc">Fresh agents, seeded from gen 1 survivors.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Test</span><span class="count">×4</span></div>
+                <div class="stage-desc">Correctness gate per candidate.</div>
+                <div class="stage-status ss-done">3 pass</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Eval</span><span class="count">×4</span></div>
+                <div class="stage-desc">Scores each passing candidate.</div>
+                <div class="stage-status ss-done">Scored</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage join">
+                <div class="stage-top"><span class="stage-icon si-accent">⤵</span><span class="stage-name">Select</span></div>
+                <div class="stage-desc"><span class="mode-off">Top-k by score (conductor).</span><span class="mode-on">Synthesizer agent.</span></div>
+                <div class="stage-status ss-accent">Fan-in</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Distills the whole gen into findings.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="gen-body">
+              <p class="sub-label">Population — 4 candidates, ranked by score</p>
+              <div class="pop">
+                <div class="cand-row surv-score surv-syn">
+                  <span class="cand-rank">1</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>e7d2a1c</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.81</span>
+                  <span class="carried-pill">carried →</span><span class="dropped-tag">carried →</span>
+                </div>
+                <div class="cand-row surv-score">
+                  <span class="cand-rank">2</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>b3c9104</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.74</span>
+                  <span class="carried-pill">carried →</span><span class="dropped-tag">dropped</span>
+                </div>
+                <div class="cand-row surv-syn">
+                  <span class="cand-rank">3</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>9f4e0b8</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.69</span>
+                  <span class="carried-pill">carried →</span><span class="dropped-tag">dropped</span>
+                </div>
+                <div class="cand-row">
+                  <span class="cand-rank">—</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>2a8d7f3</a>
+                  <span class="badge badge-danger">Failed</span>
+                  <span class="score none">—</span>
+                  <span class="dropped-tag">test failed</span>
+                </div>
+              </div>
+
+              <div class="select-wrap">
+                <p class="sub-label">Select — carry 2 into generation 3</p>
+                <!-- Synthesizer OFF: deterministic -->
+                <div class="block-off">
+                  <div class="select-det">
+                    <div class="sd-head">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="1.8"><path d="M4 18h6M4 12h10M4 6h16"/></svg>
+                      Top-2 by score
+                    </div>
+                    <div class="sd-body">Kept <span class="mono">e7d2a1c</span> (0.81) and <span class="mono">b3c9104</span> (0.74), the two highest scores. Selection is a blind ranking; the conductor never reads the candidates.</div>
+                    <div class="sd-note">Deterministic and reproducible. Only as good as the score.</div>
+                  </div>
+                </div>
+                <!-- Synthesizer ON: agent -->
+                <div class="block-on">
+                  <div class="select-det agent">
+                    <div class="sd-head">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" stroke-width="1.8"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+                      Synthesizer · kept 2 of 4
+                    </div>
+                    <div class="sd-body">
+                      Kept <span class="mono">e7d2a1c</span> (0.81, the leader). Dropped <span class="mono">b3c9104</span> despite its higher score and kept <span class="mono">9f4e0b8</span> (0.69) instead: b3c9104 only tunes constants and is near its ceiling, while 9f4e0b8's inverted-index approach scores lower now but has far more headroom.
+                      <div style="margin-top:8px" class="seed"><strong>Seed for gen 3:</strong> combine e7d2a1c's query batching with 9f4e0b8's index structure.</div>
+                    </div>
+                    <div class="sd-note">Content-aware. Can override score, and recombines ideas across candidates. Costs a run, less reproducible.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <!-- GENERATION 1 -->
+          <details class="card gen">
+            <summary class="gen-head">
+              <span class="gen-num">Generation 1</span>
+              <span class="badge badge-muted"><span class="bdot"></span>Completed</span>
+              <span class="spacer"></span>
+              <span class="gmeta mono">best 0.62 · $4.50</span>
+              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></span>
+            </summary>
+
+            <div class="pipeline">
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Make</span><span class="count">×4</span></div>
+                <div class="stage-desc">First population from the goal alone.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Test</span><span class="count">×4</span></div>
+                <div class="stage-desc">Correctness gate per candidate.</div>
+                <div class="stage-status ss-done">3 pass</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage stacked">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Eval</span><span class="count">×4</span></div>
+                <div class="stage-desc">Scores each passing candidate.</div>
+                <div class="stage-status ss-done">Scored</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage join">
+                <div class="stage-top"><span class="stage-icon si-accent">⤵</span><span class="stage-name">Select</span></div>
+                <div class="stage-desc"><span class="mode-off">Top-k by score (conductor).</span><span class="mode-on">Synthesizer agent.</span></div>
+                <div class="stage-status ss-accent">Fan-in</div>
+              </div>
+              <div class="connector">→</div>
+              <div class="stage">
+                <div class="stage-top"><span class="stage-icon si-done">✓</span><span class="stage-name">Curate</span></div>
+                <div class="stage-desc">Distills the whole gen into findings.</div>
+                <div class="stage-status ss-done">Done</div>
+              </div>
+            </div>
+
+            <div class="gen-body">
+              <p class="sub-label">Population — 4 candidates, ranked by score</p>
+              <div class="pop">
+                <div class="cand-row surv-score surv-syn">
+                  <span class="cand-rank">1</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>4b1c802</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.62</span>
+                  <span class="carried-pill">carried →</span><span class="dropped-tag">carried →</span>
+                </div>
+                <div class="cand-row surv-score surv-syn">
+                  <span class="cand-rank">2</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>d90f312</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.55</span>
+                  <span class="carried-pill">carried →</span><span class="dropped-tag">carried →</span>
+                </div>
+                <div class="cand-row">
+                  <span class="cand-rank">3</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>71ea4d6</a>
+                  <span class="badge badge-success">Passed</span>
+                  <span class="score">0.41</span>
+                  <span class="dropped-tag">dropped</span>
+                </div>
+                <div class="cand-row">
+                  <span class="cand-rank">—</span>
+                  <a class="cand-link mono" href="#"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>c5b2091</a>
+                  <span class="badge badge-danger">Failed</span>
+                  <span class="score none">—</span>
+                  <span class="dropped-tag">test failed</span>
+                </div>
+              </div>
+
+              <div class="select-wrap">
+                <p class="sub-label">Select — carried 2 into generation 2</p>
+                <div class="block-off">
+                  <div class="select-det">
+                    <div class="sd-head">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="1.8"><path d="M4 18h6M4 12h10M4 6h16"/></svg>
+                      Top-2 by score
+                    </div>
+                    <div class="sd-body">Kept <span class="mono">4b1c802</span> (0.62) and <span class="mono">d90f312</span> (0.55).</div>
+                  </div>
+                </div>
+                <div class="block-on">
+                  <div class="select-det agent">
+                    <div class="sd-head">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" stroke-width="1.8"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+                      Synthesizer · kept 2 of 4
+                    </div>
+                    <div class="sd-body">Kept the top two, <span class="mono">4b1c802</span> and <span class="mono">d90f312</span>. Agreed with the score ranking this generation; nothing lower down looked worth rescuing yet.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Findings rail -->
+        <aside>
+          <p class="section-label">Findings</p>
+          <div class="card rail-panel">
+            <div class="fh">
+              <div class="ft">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5V20"/></svg>
+                Findings
+              </div>
+              <div class="fs">Curated across the whole population · updated gen 2</div>
+            </div>
+            <div class="fb">
+              <div class="lb-h">What's working</div>
+              <p>Query batching cuts round-trips and is the biggest win so far. Every high scorer uses it.</p>
+
+              <div class="lb-h">Promising but unproven</div>
+              <ul>
+                <li>An inverted index scores lower today but scales better as the corpus grows. <span class="rev-tag">gen 2</span></li>
+              </ul>
+
+              <div class="lb-h">Dead ends</div>
+              <ul>
+                <li>Aggressive result caching breaks correctness under concurrent writes. <span class="rev-tag">gen 1</span></li>
+                <li>Tuning constants alone plateaus around 0.75. <span class="rev-tag">gen 2</span></li>
+              </ul>
+            </div>
+            <div class="ff">
+              Maintained by an agent after each generation from the whole population. Every Make reads it as static data. Gen 2 read revision <span class="rev-tag mono">r2</span>.
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="callout">
+        Breadth sits on the Learn to Design edge. Eval scores each candidate; <strong>Select</strong> is the fan-in. With the synthesizer off it's a blind top-k ranking the conductor runs on opaque scores. With it on, an agent selects and recombines. Either way the conductor never reads a candidate, and the four-step core is untouched.
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-note">UX PROTOTYPE · MOCK DATA</div>
+
+<script>
+  document.getElementById('synToggle').addEventListener('change', function () {
+    document.body.classList.toggle('syn-on', this.checked);
+  });
+</script>
+</body>
+</html>
