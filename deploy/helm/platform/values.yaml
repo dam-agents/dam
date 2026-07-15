@@ -239,6 +239,32 @@ redis:
       cpu: 200m
       memory: 256Mi
 
+# -- Shared SeaweedFS object store (Apache-2.0), single node. Holds
+# Experiment Candidate artifacts; agents upload and browsers download
+# directly, using short-lived links the api-server mints after ownership
+# checks. Disable to use an external store (`apiServer.objectStorage`) or
+# none at all (recording candidates is then unavailable).
+seaweedfs:
+  enabled: true
+  # -- Extra annotations for the StatefulSet object / its pod template
+  # (merged over commonAnnotations / commonPodAnnotations).
+  annotations: {}
+  podAnnotations: {}
+  image: docker.io/chrislusf/seaweedfs:4.39
+  # -- S3 identity of the api-server. Secret key auto-generated on first
+  # install if null, persisted across upgrades in a Secret.
+  accessKeyId: platform
+  secretAccessKey: null
+  storage: 10Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
 # chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
@@ -594,11 +620,9 @@ apiServer:
   # 5 GiB import could fill the disk.
   maxImportBundleBytes: 5368709120
 
-  # -- Hard ceiling (bytes) for a single Experiment Candidate artifact stored
-  # in Postgres. Enforced by the api-server before the blob is written.
-  # Default 10 MiB — Candidates are meant to be small; larger artifacts want
-  # object storage, not a database row.
-  maxArtifactBytes: 10485760
+  # -- Hard ceiling (bytes) for a single Experiment Candidate artifact.
+  # null = 50 MiB default.
+  maxArtifactBytes: null
 
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
@@ -714,6 +738,30 @@ apiServer:
     # CA certificate (PEM) used to verify the external DB's TLS certificate.
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
+  # -- Object-store connection (empty endpoint = use shared local seaweedfs)
+  objectStorage:
+    endpoint: ""
+    # -- Endpoint as agent pods dial it (upload links are signed against it;
+    # plain-HTTP values need an explicit port). Empty derives it: the shared
+    # store's cluster-DNS FQDN, or `endpoint`. Only for unusual topologies.
+    agentEndpoint: ""
+    # -- Browser-reachable endpoint for direct download links. Empty relays
+    # downloads through the api-server (buffered — pair a raised
+    # maxArtifactBytes with this). Usually `endpoint` for external stores;
+    # the shared store would need its S3 port exposed via ingress.
+    publicEndpoint: ""
+    region: "us-east-1"
+    # -- Created by the api-server at startup when missing (pre-create it
+    # to run with credentials lacking CreateBucket).
+    bucket: "platform-artifacts"
+    # -- Static credentials for an external endpoint — both set or both
+    # empty (empty = AWS SDK default provider chain, e.g. IRSA). The shared
+    # local store uses its own chart-generated credentials.
+    accessKeyId: ""
+    secretAccessKey: null
+    # -- Path-style addressing, needed by SeaweedFS and most self-hosted
+    # stores. Set false for AWS S3.
+    forcePathStyle: true
   resources:
     requests:
       cpu: 100m

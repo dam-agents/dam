@@ -19,6 +19,7 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifacts: ArtifactService;
+  maxArtifactBytes: number;
   runtimeHello: RuntimeDeliveryService;
 }) {
   const app = new Hono();
@@ -31,6 +32,7 @@ export function createHarnessRouter(deps: {
     schedulesServiceFor: deps.schedulesServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
     artifacts: deps.artifacts,
+    maxArtifactBytes: deps.maxArtifactBytes,
   });
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,

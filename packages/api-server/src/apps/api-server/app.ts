@@ -46,7 +46,7 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { createCandidateRoutes } from "../../modules/experiments/candidate-route.js";
-import { composeArtifactsModule } from "../../modules/artifacts/compose.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
@@ -136,6 +136,8 @@ export interface ApiServerAppDeps {
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
+  /** Owner-agnostic; consumers owner-scope each read themselves. */
+  artifacts: ArtifactService;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -164,6 +166,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     terms,
     isTermsAccepted,
     e2e,
+    artifacts,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -339,15 +342,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Candidate download — non-tRPC because it streams a binary artifact (zip).
   // Boot-time artifact service (owner-agnostic store); the route owner-scopes
   // each read through the experiments service.
-  const { service: artifacts } = composeArtifactsModule({
-    db,
-    maxBytes: config.maxArtifactBytes,
-  });
   app.route(
     "/",
     createCandidateRoutes({
       experimentsFor: (owner) =>
-        composeExperimentsForOwner({ db, owner }).experiments,
+        composeExperimentsForOwner({
+          db,
+          owner,
+          maxArtifactBytes: config.maxArtifactBytes,
+        }).experiments,
       artifacts,
     }),
   );
@@ -804,6 +807,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
+      maxArtifactBytes: config.maxArtifactBytes,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
       runtimeMutator,
       wakeAgent: async (agentId) => {

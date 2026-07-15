@@ -884,6 +884,25 @@ static_resources:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                               disabled: true
+{{- if $.ObjectStoreAuthority }}
+                        # Object-store CONNECT (presigned candidate uploads).
+                        # Purely mechanical: a plain-HTTP CONNECT would RST in
+                        # the TLS-intercept chain, so splice to a pinned
+                        # upstream instead. Policy stays with ext_authz, which
+                        # fires here (unlike the harness routes) — the gate
+                        # platform-allows the store host.
+                        - match:
+                            connect_matcher: {}
+                            headers:
+                              - name: ":authority"
+                                string_match:
+                                  exact: "{{ $.ObjectStoreAuthority }}"
+                          route:
+                            cluster: objectstore_passthrough
+                            upgrade_configs:
+                              - upgrade_type: CONNECT
+                                connect_config: {}
+{{- end }}
 {{- if and .Telemetry $.OTel.Traces }}
                         # Agent-telemetry export CONNECT (collector authority).
                         # Same tunnel as the generic CONNECT below — the transit
@@ -1633,6 +1652,24 @@ static_resources:
                     socket_address:
                       address: {{ $.HarnessHost }}
                       port_value: {{ $.HarnessPort }}
+{{- if $.ObjectStoreAuthority }}
+
+    # Object-store CONNECT upstream; same shape as harness_passthrough.
+    - name: objectstore_passthrough
+      connect_timeout: 5s
+      type: STRICT_DNS
+      dns_lookup_family: V4_PREFERRED
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: objectstore_passthrough
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.ObjectStoreHost }}
+                      port_value: {{ $.ObjectStorePort }}
+{{- end }}
 
 {{- range $chain := .Chains }}
 {{- if $chain.Credentialed }}
@@ -1888,6 +1925,11 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 	// this exact string so the harness route is scoped to api-server
 	// traffic only — fall-through goes through the regular egress paths.
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
+	// Empty (no bundled store) renders no store routes or cluster.
+	objectStoreAuthority := ""
+	if cfg.ObjectStoreHost != "" {
+		objectStoreAuthority = fmt.Sprintf("%s:%d", cfg.ObjectStoreHost, cfg.ObjectStorePort)
+	}
 	// Render the telemetry collector chain only when the backend is configured
 	// AND the collector host doesn't collide with a credentialed chain host —
 	// two filter chains sharing `server_names` is a fatal Envoy config error.
@@ -1914,6 +1956,9 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		HarnessAuthority       string
 		HarnessHost            string
 		HarnessPort            int
+		ObjectStoreAuthority   string
+		ObjectStoreHost        string
+		ObjectStorePort        int
 		HealthPath             string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
@@ -1936,6 +1981,9 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		HealthPath:             platformGatewayHealthPath,
 		HarnessHost:            cfg.HarnessHost(),
 		HarnessPort:            cfg.HarnessServerPort,
+		ObjectStoreAuthority:   objectStoreAuthority,
+		ObjectStoreHost:        cfg.ObjectStoreHost,
+		ObjectStorePort:        cfg.ObjectStorePort,
 		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,

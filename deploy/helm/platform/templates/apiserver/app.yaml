@@ -320,6 +320,35 @@ spec:
             - name: MAX_ARTIFACT_BYTES
               value: {{ .Values.apiServer.maxArtifactBytes | quote }}
             {{- end }}
+            {{- if include "platform.objectstorage.enabled" . }}
+            # S3-compatible Candidate-artifact store.
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: {{ include "platform.objectstorage.endpoint" . | quote }}
+            - name: OBJECT_STORAGE_AGENT_ENDPOINT
+              value: {{ include "platform.objectstorage.agentEndpoint" . | quote }}
+            {{- if .Values.apiServer.objectStorage.publicEndpoint }}
+            - name: OBJECT_STORAGE_PUBLIC_ENDPOINT
+              value: {{ .Values.apiServer.objectStorage.publicEndpoint | quote }}
+            {{- end }}
+            - name: OBJECT_STORAGE_REGION
+              value: {{ .Values.apiServer.objectStorage.region | quote }}
+            - name: OBJECT_STORAGE_BUCKET
+              value: {{ .Values.apiServer.objectStorage.bucket | quote }}
+            - name: OBJECT_STORAGE_FORCE_PATH_STYLE
+              value: {{ .Values.apiServer.objectStorage.forcePathStyle | quote }}
+            {{- if include "platform.objectstorage.hasCredentials" . }}
+            - name: OBJECT_STORAGE_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: accessKeyId
+            - name: OBJECT_STORAGE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: secretAccessKey
+            {{- end }}
+            {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
             # agent templates are mounted from a ConfigMap and loaded

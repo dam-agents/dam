@@ -204,6 +204,92 @@ Redis URL exposed to consumers (no auth in v1; matches Postgres).
 {{- printf "redis://%s:%d" (include "platform.redis.fullname" .) (int .Values.redis.port) }}
 {{- end }}
 
+{{/* ---- Shared SeaweedFS (object store) ---- */}}
+
+{{/*
+Shared SeaweedFS fullname (StatefulSet + Service)
+*/}}
+{{- define "platform.seaweedfs.fullname" -}}
+{{- printf "%s-seaweedfs" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Shared SeaweedFS secrets name
+*/}}
+{{- define "platform.seaweedfs.secrets.fullname" -}}
+{{- printf "%s-seaweedfs-secrets" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Whether any object store is configured (external endpoint or shared
+seaweedfs). Renders "true" or "" — use in `if` conditions.
+*/}}
+{{- define "platform.objectstorage.enabled" -}}
+{{- if or .Values.apiServer.objectStorage.endpoint .Values.seaweedfs.enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Object-storage endpoint — uses external endpoint if set, otherwise shared
+seaweedfs (mirrors platform.apiserver.db.host).
+*/}}
+{{- define "platform.objectstorage.endpoint" -}}
+{{- if .Values.apiServer.objectStorage.endpoint }}
+{{- .Values.apiServer.objectStorage.endpoint }}
+{{- else }}
+{{- printf "http://%s:8333" (include "platform.seaweedfs.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+Object-storage endpoint as agents dial it — upload links are signed against
+this authority (SigV4 binds the Host header).
+*/}}
+{{- define "platform.objectstorage.agentEndpoint" -}}
+{{- if .Values.apiServer.objectStorage.agentEndpoint }}
+{{- .Values.apiServer.objectStorage.agentEndpoint }}
+{{- else if .Values.apiServer.objectStorage.endpoint }}
+{{- .Values.apiServer.objectStorage.endpoint }}
+{{- else }}
+{{- printf "http://%s.%s.svc.cluster.local:8333" (include "platform.seaweedfs.fullname" .) .Release.Namespace }}
+{{- end }}
+{{- end }}
+
+{{/*
+Whether the api-server gets static object-store credentials from a
+chart-managed Secret: external keys when provided, else the shared
+seaweedfs identity (external endpoint with no keys = SDK provider chain).
+*/}}
+{{- define "platform.objectstorage.hasCredentials" -}}
+{{- if .Values.apiServer.objectStorage.endpoint -}}
+{{- if .Values.apiServer.objectStorage.accessKeyId -}}true{{- end -}}
+{{- else if .Values.seaweedfs.enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Object-store credentials Secret name — uses the api-server's own secret when
+external keys are set, else the shared seaweedfs secret (mirrors
+platform.apiserver.db.password.secretName).
+*/}}
+{{- define "platform.apiserver.objectstorage.credentials.secretName" -}}
+{{- if .Values.apiServer.objectStorage.accessKeyId }}
+{{- include "platform.apiserver.secrets.fullname" . }}
+{{- else }}
+{{- include "platform.seaweedfs.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+host:port the gateway Envoy pins its object-store routes to — only for a
+plain-HTTP agent endpoint (an https store rides the TLS catch-all instead).
+The endpoint must carry an explicit port for the exact :authority match.
+*/}}
+{{- define "platform.objectstorage.agentAuthorityHttp" -}}
+{{- $ep := include "platform.objectstorage.agentEndpoint" . }}
+{{- if and (include "platform.objectstorage.enabled" .) (hasPrefix "http://" $ep) }}
+{{- trimPrefix "http://" $ep | trimSuffix "/" }}
+{{- end }}
+{{- end }}
+
 {{/*
 API Server database host — uses external host if set, otherwise shared postgres
 */}}

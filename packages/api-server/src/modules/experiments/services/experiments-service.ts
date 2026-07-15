@@ -22,6 +22,8 @@ import { isUniqueViolation } from "../../../core/db-errors.js";
 export function createExperimentsService(deps: {
   owner: string;
   repo: ExperimentsRepository;
+  /** Candidate size cap quoted in the Trial prompt's reporting contract. */
+  maxArtifactBytes: number;
   agentExists?: (agentId: string) => Promise<boolean>;
   trialLauncher?: TrialLauncher;
 }): ExperimentsService {
@@ -54,6 +56,7 @@ export function createExperimentsService(deps: {
       const task = buildTrialPrompt({
         prompt: experiment.prompt,
         armVariation: arm.armVariation,
+        maxArtifactBytes: deps.maxArtifactBytes,
       });
       try {
         await launcher.launch({

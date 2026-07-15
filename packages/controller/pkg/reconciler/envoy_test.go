@@ -252,6 +252,28 @@ func TestRenderEnvoyBootstrap_EmptyRoutesNoLeafTLSReferences(t *testing.T) {
 	assert.Contains(t, got, "l4_authz_passthrough")
 }
 
+func TestRenderEnvoyBootstrap_ObjectStoreRoutesRenderedWhenConfigured(t *testing.T) {
+	// Store routes mirror the harness shape: CONNECT to a pinned cluster
+	// plus absolute-URI, both scoped to the exact authority.
+	cfg := *bootstrapTestCfg
+	cfg.ObjectStoreHost = "platform-seaweedfs.platform.svc.cluster.local"
+	cfg.ObjectStorePort = 8333
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", &cfg, nil)
+	require.NoError(t, err)
+
+	assert.Contains(t, got, `exact: "platform-seaweedfs.platform.svc.cluster.local:8333"`)
+	assert.Contains(t, got, "cluster: objectstore_passthrough")
+	assert.Contains(t, got, "name: objectstore_passthrough")
+	assert.Contains(t, got, "address: platform-seaweedfs.platform.svc.cluster.local")
+	assert.Contains(t, got, "port_value: 8333")
+}
+
+func TestRenderEnvoyBootstrap_NoObjectStoreNoStoreRoutes(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "objectstore_passthrough")
+}
+
 func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(t *testing.T) {
 	// With no credentialed routes there should be no per-credential cluster
 	// and no host_rewrite_literal — the catch-all/L4 paths still use

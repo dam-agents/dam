@@ -100,6 +100,12 @@ spec:
               value: {{ .Values.istio.trustDomain | quote }}
             - name: PLATFORM_ISTIO_WAYPOINT_NAME
               value: {{ .Values.istio.waypointName | quote }}
+            {{- with include "platform.objectstorage.agentAuthorityHttp" . }}
+            # Plain-HTTP object-store authority — gateways render dedicated
+            # routes for it (harness-route shape) for presigned uploads.
+            - name: PLATFORM_OBJECT_STORE_AUTHORITY
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Telemetry attribution: when the bundled telemetry backend is on,
             # each gateway gains a collector egress chain that MITM-terminates

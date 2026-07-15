@@ -8,7 +8,7 @@ import {
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
-import { composeArtifactsModule } from "../../modules/artifacts/compose.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -28,6 +28,7 @@ export interface HarnessApiServerAppDeps {
   runtimeHello: RuntimeDeliveryService;
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
+  artifacts: ArtifactService;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -40,15 +41,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     schedulesBoot,
     runtimeMutator,
+    artifacts,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
-  const { service: artifacts } = composeArtifactsModule({
-    db,
-    maxBytes: config.maxArtifactBytes,
-  });
 
   const app = createHarnessRouter({
     channelManager,
@@ -69,8 +67,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
     experimentsServiceFor: (owner) =>
-      composeExperimentsForOwner({ db, owner }).experiments,
+      composeExperimentsForOwner({
+        db,
+        owner,
+        maxArtifactBytes: config.maxArtifactBytes,
+      }).experiments,
     artifacts,
+    maxArtifactBytes: config.maxArtifactBytes,
   });
 
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the

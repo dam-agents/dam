@@ -21,6 +21,11 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { createAcpClient } from "../../core/acp-client.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import { formatByteCap } from "../../modules/experiments/domain/trial-prompt.js";
+import {
+  armCandidateKey,
+  isArmCandidateKey,
+} from "../../modules/experiments/domain/candidate-key.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 
@@ -107,6 +112,7 @@ export interface McpSessionDeps {
   schedules: SchedulesService;
   experiments: ExperimentsService;
   artifacts: ArtifactService;
+  maxArtifactBytes: number;
   agentHome: string;
 }
 
@@ -115,6 +121,7 @@ export function createMcpSession(
   deps: McpSessionDeps,
 ): McpSession {
   const { agentHome, schedules } = deps;
+  const candidateCap = formatByteCap(deps.maxArtifactBytes);
   const server = new McpServer({
     name: `platform-${agentId}`,
     version: "1.0.0",
@@ -499,8 +506,47 @@ export function createMcpSession(
 
   // ---- Experiments tools ----------------------------------------------------
   server.tool(
+    "request_candidate_upload",
+    `Request a direct-upload link for a candidate artifact (up to ${candidateCap}). Returns an uploadUrl to HTTP PUT the file to and the candidateRef to pass to record_run afterwards. Upload with your environment's default proxy settings, e.g.: curl -sS -f -X PUT --upload-file <file> '<uploadUrl>'. The link is valid for one object and a short time; request a fresh one per candidate. Only works while this agent is an arm of a running experiment.`,
+    {
+      filename: z
+        .string()
+        .min(1)
+        .max(255)
+        .optional()
+        .describe(
+          "Basename to store the artifact under (e.g. candidate.json); used as the download filename later.",
+        ),
+    },
+    async ({ filename }) => {
+      const active = await deps.experiments.resolveActiveArm(agentId);
+      if (!active) {
+        return errorResult(
+          "request_candidate_upload is only available while this agent is an arm of a running experiment; none is active.",
+        );
+      }
+      const key = armCandidateKey(active.experimentId, agentId, filename);
+      const upload = await deps.artifacts.createUploadUrl(key);
+      if (!upload) {
+        return errorResult(
+          "direct upload is not available on this deployment; call record_run with `candidate` set to a file path instead.",
+        );
+      }
+      return textResult(
+        JSON.stringify({
+          uploadUrl: upload.url,
+          candidateRef: key,
+          expiresInSeconds: upload.expiresSeconds,
+          maxBytes: deps.maxArtifactBytes,
+          instructions: `HTTP PUT the file to uploadUrl (e.g. curl -sS -f -X PUT --upload-file <file> '<uploadUrl>'), then call record_run with this candidateRef.`,
+        }),
+      );
+    },
+  );
+
+  server.tool(
     "record_run",
-    `Append a Run to your Experiment's ledger — call this once per optimization-loop iteration that produced a result. Pass the iteration's \`score\` (a single number, higher is better) and \`candidate\`, the path to the artifact file the iteration produced (absolute under ${agentHome} or workspace-relative, e.g. candidate.json). The platform reads and stores that file (10 MiB cap) and attributes the Run to your active experiment arm automatically. Only works while this agent is an arm of a running experiment.`,
+    `Append a Run to your Experiment's ledger — call this once per optimization-loop iteration that produced a result. Pass the iteration's \`score\` (a single number, higher is better) and exactly one of: \`candidateRef\` (from request_candidate_upload, after uploading the file — preferred, supports candidates up to ${candidateCap}) or \`candidate\`, the path to the artifact file the iteration produced (absolute under ${agentHome} or workspace-relative, e.g. candidate.json), which the platform reads and stores itself (${candidateCap} cap). The Run is attributed to your active experiment arm automatically. Only works while this agent is an arm of a running experiment.`,
     {
       score: z
         .number()
@@ -508,45 +554,33 @@ export function createMcpSession(
       candidate: z
         .string()
         .min(1)
+        .optional()
         .describe(
-          `Path to the candidate artifact file: absolute under ${agentHome} or workspace-relative (e.g. candidate.json).`,
+          `Path to the candidate artifact file: absolute under ${agentHome} or workspace-relative (e.g. candidate.json). Mutually exclusive with candidateRef.`,
+        ),
+      candidateRef: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "candidateRef returned by request_candidate_upload, after the file was uploaded to its uploadUrl. Mutually exclusive with candidate.",
         ),
     },
-    async ({ score, candidate }) => {
+    async ({ score, candidate, candidateRef }) => {
       const active = await deps.experiments.resolveActiveArm(agentId);
       if (!active) {
         return errorResult(
           "record_run is only available while this agent is an arm of a running experiment; none is active.",
         );
       }
-
-      const resolvedPath = resolveWorkspacePath(candidate, agentHome);
-      let file: { content: string; binary: boolean; mimeType?: string };
-      try {
-        file = await runtimeClient.files.read.query({ path: resolvedPath });
-      } catch (err) {
-        if (err instanceof TRPCClientError) {
-          if (err.data?.code === "NOT_FOUND") {
-            return errorResult(
-              `candidate not found: ${candidate} (resolved to ${resolvedPath})`,
-            );
-          }
-          if (err.data?.code === "PAYLOAD_TOO_LARGE") {
-            return errorResult(
-              `candidate ${candidate} exceeds the 10 MB per-file cap`,
-            );
-          }
-        }
+      if ((candidate === undefined) === (candidateRef === undefined)) {
         return errorResult(
-          `failed to read candidate ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
+          "pass exactly one of `candidate` (a file path) or `candidateRef` (from request_candidate_upload).",
         );
       }
 
-      const content = file.binary
-        ? Buffer.from(file.content, "base64")
-        : Buffer.from(file.content, "utf8");
-      const contentType = file.mimeType ?? "application/octet-stream";
-
+      // Resolve the session before touching storage so a failed resolution
+      // doesn't leave an orphaned object behind.
       const sessionId = await resolveTrialSessionId(active.experimentId);
       if (!sessionId) {
         return errorResult(
@@ -554,13 +588,58 @@ export function createMcpSession(
         );
       }
 
-      const key = `${active.experimentId}/${agentId}/${crypto.randomUUID()}/${basename(candidate)}`;
-      try {
-        await deps.artifacts.put({ key, content, contentType });
-      } catch (err) {
-        return errorResult(
-          `failed to store candidate: ${err instanceof Error ? err.message : String(err)}`,
-        );
+      let key: string;
+      if (candidateRef !== undefined) {
+        if (!isArmCandidateKey(candidateRef, active.experimentId, agentId)) {
+          return errorResult(
+            "unknown candidateRef; use the value returned by request_candidate_upload.",
+          );
+        }
+        try {
+          await deps.artifacts.verifyUpload(candidateRef);
+        } catch (err) {
+          return errorResult(
+            `candidate upload verification failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        key = candidateRef;
+      } else {
+        const resolvedPath = resolveWorkspacePath(candidate!, agentHome);
+        let file: { content: string; binary: boolean; mimeType?: string };
+        try {
+          file = await runtimeClient.files.read.query({ path: resolvedPath });
+        } catch (err) {
+          if (err instanceof TRPCClientError) {
+            if (err.data?.code === "NOT_FOUND") {
+              return errorResult(
+                `candidate not found: ${candidate} (resolved to ${resolvedPath})`,
+              );
+            }
+            if (err.data?.code === "PAYLOAD_TOO_LARGE") {
+              // The file API's own wire ceiling, not the artifact cap.
+              return errorResult(
+                `candidate ${candidate} exceeds the harness file API's per-file transfer cap; use request_candidate_upload + candidateRef instead`,
+              );
+            }
+          }
+          return errorResult(
+            `failed to read candidate ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        const content = file.binary
+          ? Buffer.from(file.content, "base64")
+          : Buffer.from(file.content, "utf8");
+        const contentType = file.mimeType ?? "application/octet-stream";
+
+        key = armCandidateKey(active.experimentId, agentId, candidate);
+        try {
+          await deps.artifacts.put({ key, content, contentType });
+        } catch (err) {
+          return errorResult(
+            `failed to store candidate: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
 
       const run = await deps.experiments.recordRun({
@@ -639,6 +718,7 @@ export interface MountMcpDeps {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifacts: ArtifactService;
+  maxArtifactBytes: number;
   agentHome: string;
 }
 
@@ -700,6 +780,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       schedules,
       experiments,
       artifacts: deps.artifacts,
+      maxArtifactBytes: deps.maxArtifactBytes,
       agentHome: deps.agentHome,
     });
     await session.server.connect(session.transport);

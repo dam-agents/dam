@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -133,6 +134,13 @@ type Config struct {
 	TelemetryCollectorHost string
 	// TelemetryCollectorPort is the collector's OTLP/HTTP port (default 4318).
 	TelemetryCollectorPort int
+	// ObjectStoreHost/ObjectStorePort: plain-HTTP authority of the bundled
+	// Candidate object store. When set, gateways render a CONNECT route
+	// splicing to a pinned upstream (a plain-HTTP CONNECT would RST in the
+	// TLS-intercept chain); egress policy stays with the ext_authz gate.
+	// Empty = no store / HTTPS external.
+	ObjectStoreHost string
+	ObjectStorePort int
 }
 
 // otelEnvPrefix selects the OpenTelemetry environment family. The controller
@@ -392,6 +400,18 @@ func LoadFromEnv() (*Config, error) {
 	}
 	cfg.LegacyAgentCPULimit = legacyCPU
 	cfg.LegacyAgentMemoryLimit = legacyMem
+	if v := os.Getenv("PLATFORM_OBJECT_STORE_AUTHORITY"); v != "" {
+		host, port, err := net.SplitHostPort(v)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_OBJECT_STORE_AUTHORITY must be host:port, got %q: %w", v, err)
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_OBJECT_STORE_AUTHORITY port must be numeric, got %q", port)
+		}
+		cfg.ObjectStoreHost = host
+		cfg.ObjectStorePort = p
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
