@@ -2,6 +2,8 @@ import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { skillKey } from "../../hooks/use-skills-surface.js";
 import { SkillRow } from "./skill-row.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
@@ -51,6 +53,7 @@ export function SkillSourceCard({
   busyKey,
   disabled,
   stateLoaded,
+  readOnly,
   onToggle,
 }: {
   source: SkillSource;
@@ -65,6 +68,8 @@ export function SkillSourceCard({
   disabled: boolean;
   /** Whether the installed set has loaded — gates the collapse-default snapshot. */
   stateLoaded: boolean;
+  /** Read-only (agent stopped): render the card on a muted background. */
+  readOnly: boolean;
   onToggle: (skill: Skill) => void;
 }) {
   const busy = loading || skills === undefined;
@@ -94,10 +99,18 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const visible = expanded ? sorted : enabled;
+  // Collapsed shows enabled only; otherwise the full sorted list. Gating on
+  // `collapsible` means a source that drops to zero enabled (or zero available)
+  // can't get stuck showing an empty collapsed list with no way to expand.
+  const visible = collapsible && !expanded ? enabled : sorted;
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div
+      className={cn(
+        "rounded-lg border border-border",
+        readOnly ? "bg-muted" : "bg-card",
+      )}
+    >
       <div className="flex items-start gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

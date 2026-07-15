@@ -8,11 +8,22 @@ import { cn } from "@/lib/utils";
  * in no source. Publish, Delete, and the render modal attach in slices 04/05;
  * this slice renders just the group card and its rows.
  */
-export function StandaloneSkillsGroup({ skills }: { skills: LocalSkill[] }) {
+export function StandaloneSkillsGroup({
+  skills,
+  readOnly,
+}: {
+  skills: LocalSkill[];
+  readOnly: boolean;
+}) {
   return (
     <section>
       <SectionLabel spaced>Created in this sandbox</SectionLabel>
-      <div className="rounded-lg border border-border bg-card">
+      <div
+        className={cn(
+          "rounded-lg border border-border",
+          readOnly ? "bg-muted" : "bg-card",
+        )}
+      >
         {skills.map((skill, i) => (
           <div
             key={`${skill.skillPath}::${skill.name}`}

@@ -42,16 +42,15 @@ export function SkillsSurface({
   } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
 
   return (
-    // Read-only (agent stopped / starting): dim and disable the whole surface
-    // as one treatment, per the design — not just the toggles. The wake
-    // affordance lives in the container header, outside this dimmed region.
+    // Read-only (agent stopped / starting): non-interactive, with each card on
+    // a muted background per the design (the wake affordance lives in the
+    // container header, outside this region).
     <div
-      className={cn(
-        "flex flex-col gap-8",
-        readOnly && "pointer-events-none opacity-50",
-      )}
+      className={cn("flex flex-col gap-8", readOnly && "pointer-events-none")}
     >
-      {standalone.length > 0 && <StandaloneSkillsGroup skills={standalone} />}
+      {standalone.length > 0 && (
+        <StandaloneSkillsGroup skills={standalone} readOnly={readOnly} />
+      )}
 
       <section>
         <SectionLabel spaced>Sourced from GitHub</SectionLabel>
@@ -74,6 +73,7 @@ export function SkillsSurface({
                 busyKey={busyKey}
                 disabled={!agentId || isError}
                 stateLoaded={stateLoaded}
+                readOnly={readOnly}
                 onToggle={toggle}
               />
             ))}
