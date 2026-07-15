@@ -9,6 +9,7 @@ import {
   type ChannelConfig,
   type DriverFailure,
   type BindTelegramChatResult,
+  type CreateTelegramConnectLinkResult,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -90,6 +91,10 @@ export interface TelegramBindingPort {
     conversationId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
+  /** The platform bot's @handle (no @), or null when unknown. */
+  botUsername(): string | null;
+  /** Mint a one-time connect code pinning agent + owner; returns the code. */
+  mintConnectCode(agentId: string, agentName: string, ownerSub: string): string;
 }
 
 /**
@@ -937,6 +942,32 @@ export function createAgentsService(deps: {
       emit({ type: EventType.SlackDisconnected, agentId: id });
 
       return project(infra);
+    },
+
+    async createTelegramConnectLink(agentId) {
+      const binding = deps.telegramBinding;
+      if (!binding || !deps.owner)
+        return err({ type: "TelegramUnavailable" as const });
+      const infra = await deps.repo.get(agentId, deps.owner);
+      if (!infra) return err({ type: "AgentNotFound" as const });
+      const username = binding.botUsername();
+      if (!username) return err({ type: "TelegramUnavailable" as const });
+
+      const code = binding.mintConnectCode(infra.id, infra.name, deps.owner);
+      // Intent record: the link is a bearer capability — whoever delivers it
+      // to the bot (group-admin gate applies) binds the chat to this agent.
+      securityLog("info", "channel.connect_link_created", {
+        category: "authz-list",
+        actor: deps.owner,
+        actorKind: "user",
+        surface: "telegram",
+        agentId: infra.id,
+        result: "success",
+      });
+      return ok({
+        dmLink: `https://t.me/${username}?start=connect-${code}`,
+        groupLink: `https://t.me/${username}?startgroup=connect-${code}`,
+      });
     },
 
     async bindTelegramChat(agentId, flowId) {

@@ -185,6 +185,10 @@ spec:
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}
             {{- end }}
+            {{- if .Values.apiServer.telegramBotUsername }}
+            - name: TELEGRAM_BOT_USERNAME
+              value: {{ .Values.apiServer.telegramBotUsername | quote }}
+            {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED
               value: "true"

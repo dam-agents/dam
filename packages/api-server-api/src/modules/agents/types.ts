@@ -98,6 +98,16 @@ export type BindTelegramChatResult =
   | { ok: true; value: { chatTitle: string | null } }
   | { ok: false; error: BindTelegramChatError };
 
+export type CreateTelegramConnectLinkError =
+  | { type: "AgentNotFound" }
+  /** Telegram is off, or the bot's handle is unknown (not configured and
+   *  getMe hasn't succeeded), so no deep link can be built. */
+  | { type: "TelegramUnavailable" };
+
+export type CreateTelegramConnectLinkResult =
+  | { ok: true; value: { dmLink: string; groupLink: string } }
+  | { ok: false; error: CreateTelegramConnectLinkError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -134,5 +144,10 @@ export interface AgentsService {
     agentId: string,
     flowId: string,
   ) => Promise<BindTelegramChatResult>;
+  /** Mint a one-time deep link that binds a Telegram chat to the caller's
+   *  agent when delivered to the bot — no browser roundtrip. */
+  createTelegramConnectLink: (
+    agentId: string,
+  ) => Promise<CreateTelegramConnectLinkResult>;
   isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

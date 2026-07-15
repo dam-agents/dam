@@ -15,7 +15,10 @@ import {
   generatePkce,
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
-import type { TelegramOAuthPending } from "./telegram-flows.js";
+import type {
+  TelegramOAuthPending,
+  TelegramConnectLinkStore,
+} from "./telegram-flows.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -29,6 +32,11 @@ export interface TelegramConversationsPort {
   findAgentByConversation(
     conversationId: string,
   ): Promise<{ agentId: string; authorizedBy: string } | null>;
+  bind(
+    conversationId: string,
+    agentId: string,
+    authorizedBy: string,
+  ): Promise<"bound" | "conflict">;
   listByAgent(agentId: string): Promise<string[]>;
   unbind(conversationId: string): Promise<void>;
 }
@@ -149,6 +157,7 @@ function isCommand(text: string, command: string): boolean {
  *  testability: command handling, the binding gate, and the relay hand-off. */
 export function createTelegramMessageHandler(deps: {
   conversations: TelegramConversationsPort;
+  connectLinks: Pick<TelegramConnectLinkStore, "peek" | "consume">;
   isChatAdmin: (chatId: string, userId: string) => Promise<boolean>;
   decodeChatId: (threadId: string) => string;
   fetchChatTitle: (chatId: string) => Promise<string>;
@@ -166,7 +175,7 @@ export function createTelegramMessageHandler(deps: {
   async function denyNonAdmin(
     thread: ThreadLike,
     telegramUserId: string,
-    command: "login" | "logout",
+    command: "login" | "logout" | "connect",
   ): Promise<boolean> {
     if (thread.isDM) return false;
     const isAdmin = await deps.isChatAdmin(
@@ -183,7 +192,11 @@ export function createTelegramMessageHandler(deps: {
       reason: "not-group-admin",
       detail: { telegramUserId, threadId: thread.id, command },
     });
-    await thread.post(`Only group admins can /${command}.`);
+    await thread.post(
+      command === "connect"
+        ? "Only group admins can connect this chat to an agent."
+        : `Only group admins can /${command}.`,
+    );
     return true;
   }
 
@@ -234,6 +247,71 @@ export function createTelegramMessageHandler(deps: {
     await thread.post("Chat disconnected. Send /login to connect it again.");
   }
 
+  /** A UI-minted one-time code delivered via the `?start=connect-<code>`
+   *  deep link: it already pins agent + owner, so the bind completes here
+   *  with no browser roundtrip. */
+  async function handleConnectCode(
+    thread: ThreadLike,
+    telegramUserId: string,
+    code: string,
+  ) {
+    if (await denyNonAdmin(thread, telegramUserId, "connect")) return;
+
+    const link = deps.connectLinks.peek(code);
+    if (!link) {
+      await thread.post(
+        "This connect link is invalid or has expired. Create a new one from the platform and try again.",
+      );
+      return;
+    }
+
+    const existing = await deps.conversations.findAgentByConversation(
+      thread.id,
+    );
+    if (existing && existing.agentId !== link.agentId) {
+      await thread.post(
+        "This chat is already connected to an agent. Send /logout first to reconnect.",
+      );
+      return;
+    }
+    if (!existing) {
+      const outcome = await deps.conversations.bind(
+        thread.id,
+        link.agentId,
+        link.ownerSub,
+      );
+      if (outcome === "conflict") {
+        const raced = await deps.conversations.findAgentByConversation(
+          thread.id,
+        );
+        if (!raced || raced.agentId !== link.agentId) {
+          await thread.post(
+            "This chat is already connected to an agent. Send /logout first to reconnect.",
+          );
+          return;
+        }
+      }
+    }
+
+    deps.connectLinks.consume(code);
+    securityLog("info", "channel.chat_bound", {
+      category: "authz-list",
+      actor: link.ownerSub,
+      actorKind: "user",
+      surface: "telegram",
+      agentId: link.agentId,
+      result: "success",
+      detail: {
+        conversationId: thread.id,
+        telegramUserId,
+        viaConnectLink: true,
+      },
+    });
+    await thread.post(
+      `This chat is now connected to ${link.agentName}. Send /logout to disconnect.`,
+    );
+  }
+
   return async function handleMessage(
     thread: ThreadLike,
     message: TelegramInboundMessage,
@@ -241,6 +319,23 @@ export function createTelegramMessageHandler(deps: {
   ) {
     if (message.author.isMe) return;
     const text = message.text.trim();
+
+    if (isCommand(text, "/start")) {
+      // /start is how deep links deliver intent. A `connect-<code>` payload
+      // completes a UI-minted binding on the spot; any other /start (bare or
+      // otherwise) is login intent — the group-admin gate still applies.
+      const payload = text.split(/\s+/)[1] ?? "";
+      if (payload.startsWith("connect-")) {
+        await handleConnectCode(
+          thread,
+          message.author.userId,
+          payload.slice("connect-".length),
+        );
+        return;
+      }
+      await handleLogin(thread, message.author.userId);
+      return;
+    }
 
     if (isCommand(text, "/login")) {
       await handleLogin(thread, message.author.userId);
@@ -295,10 +390,14 @@ export function createTelegramMessageHandler(deps: {
 
 export function createTelegramWorker(deps: {
   botToken: string;
+  /** Operator-configured bot handle (no @). Authoritative when set; the
+   *  worker falls back to getMe at start when it isn't. */
+  configuredBotUsername?: string | null;
   makeAcpClient: AcpClientFactory;
   state: StateAdapter;
   agents: () => AgentsService;
   conversations: TelegramConversationsPort;
+  connectLinks: Pick<TelegramConnectLinkStore, "peek" | "consume">;
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: Map<string, TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
@@ -317,7 +416,7 @@ export function createTelegramWorker(deps: {
     adapter: ReturnType<typeof createTelegramAdapter>;
   } | null = null;
   let startFailed = false;
-  let username: string | null = null;
+  let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
 
   // The conversation's session carries the thread id in
@@ -434,6 +533,7 @@ export function createTelegramWorker(deps: {
 
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
+          connectLinks: deps.connectLinks,
           isChatAdmin:
             deps.isChatAdmin ??
             ((chatId, userId) => isTelegramChatAdmin(botToken, chatId, userId)),
@@ -464,7 +564,7 @@ export function createTelegramWorker(deps: {
         await chat.initialize();
         await adapter.startPolling();
         bot = { chat, adapter };
-        username = await fetchTelegramBotUsername(botToken);
+        if (!username) username = await fetchTelegramBotUsername(botToken);
         process.stderr.write(
           `[telegram] platform bot started${username ? ` (@${username})` : ""}\n`,
         );

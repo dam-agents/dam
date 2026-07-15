@@ -38,10 +38,13 @@ function harness(opts?: {
   boundTo?: string | null;
   isAdmin?: boolean;
   termsAccepted?: boolean;
+  connectLink?: { agentId: string; agentName: string; ownerSub: string };
 }) {
   const pendingOAuthFlows = new Map<string, TelegramOAuthPending>();
   const unbind = vi.fn(async () => {});
+  const bind = vi.fn(async () => "bound" as const);
   const relay = vi.fn(async () => {});
+  const consumeConnect = vi.fn();
 
   const handle = createTelegramMessageHandler({
     conversations: {
@@ -49,8 +52,16 @@ function harness(opts?: {
         opts?.boundTo
           ? { agentId: opts.boundTo, authorizedBy: "kc|owner-1" }
           : null,
+      bind,
       listByAgent: async () => [],
       unbind,
+    },
+    connectLinks: {
+      peek: (code) =>
+        opts?.connectLink && code === "valid-code"
+          ? { ...opts.connectLink, createdAt: 0 }
+          : null,
+      consume: consumeConnect,
     },
     isChatAdmin: async () => opts?.isAdmin ?? true,
     decodeChatId: (threadId) => threadId,
@@ -62,7 +73,7 @@ function harness(opts?: {
     relay,
   });
 
-  return { handle, pendingOAuthFlows, unbind, relay };
+  return { handle, pendingOAuthFlows, unbind, bind, relay, consumeConnect };
 }
 
 const author = (userId = "tg-7") => ({
@@ -147,6 +158,88 @@ describe("telegram message handler", () => {
       "hello agent",
       expect.objectContaining({ userId: "tg-7" }),
     );
+  });
+
+  it("treats /start (bare or deep-linked) as login intent", async () => {
+    const h = harness();
+    for (const text of ["/start", "/start login", "/start@dam_bot login"]) {
+      const dm = makeThread({ isDM: true });
+      await h.handle(dm, { text, author: author() }, true);
+      expect(dm.posts.join("\n")).toContain(
+        "connect this chat to one of your agents",
+      );
+    }
+    expect(h.pendingOAuthFlows.size).toBe(3);
+  });
+
+  it("binds on a valid connect code and consumes it", async () => {
+    const h = harness({
+      connectLink: {
+        agentId: "agent-1",
+        agentName: "my-agent",
+        ownerSub: "kc|owner-1",
+      },
+    });
+    const thread = makeThread();
+    await h.handle(
+      thread,
+      { text: "/start connect-valid-code", author: author() },
+      true,
+    );
+    expect(h.bind).toHaveBeenCalledWith("chat-42", "agent-1", "kc|owner-1");
+    expect(h.consumeConnect).toHaveBeenCalledWith("valid-code");
+    expect(thread.posts.join("\n")).toContain("now connected to my-agent");
+  });
+
+  it("rejects an unknown or expired connect code", async () => {
+    const h = harness();
+    const thread = makeThread({ isDM: true });
+    await h.handle(
+      thread,
+      { text: "/start connect-nope", author: author() },
+      true,
+    );
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(thread.posts.join("\n")).toContain("invalid or has expired");
+  });
+
+  it("gates connect codes on group admins", async () => {
+    const h = harness({
+      isAdmin: false,
+      connectLink: {
+        agentId: "agent-1",
+        agentName: "my-agent",
+        ownerSub: "kc|owner-1",
+      },
+    });
+    const thread = makeThread();
+    await h.handle(
+      thread,
+      { text: "/start connect-valid-code", author: author() },
+      true,
+    );
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(thread.posts.join("\n")).toContain("Only group admins");
+  });
+
+  it("refuses a connect code when the chat is bound to another agent", async () => {
+    const h = harness({
+      boundTo: "agent-9",
+      connectLink: {
+        agentId: "agent-1",
+        agentName: "my-agent",
+        ownerSub: "kc|owner-1",
+      },
+    });
+    const thread = makeThread();
+    await h.handle(
+      thread,
+      { text: "/start connect-valid-code", author: author() },
+      true,
+    );
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(h.consumeConnect).not.toHaveBeenCalled();
+    expect(thread.posts.join("\n")).toContain("Send /logout first");
   });
 
   it("ignores the bot's own messages", async () => {

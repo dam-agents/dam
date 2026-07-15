@@ -3,6 +3,13 @@ import { useMutation } from "@tanstack/react-query";
 import { trpc } from "../../../trpc.js";
 import { agentsKeys } from "../../agents/api/queries.js";
 
+export function useCreateTelegramConnectLink() {
+  return useMutation({
+    ...trpc.agents.createTelegramConnectLink.mutationOptions(),
+    meta: { errorToast: "Couldn't create a Telegram connect link" },
+  });
+}
+
 /** No errorToast on purpose — the bind page maps failures to inline states. */
 export function useBindTelegramChat() {
   return useMutation({

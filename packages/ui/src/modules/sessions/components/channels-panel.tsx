@@ -15,6 +15,7 @@ import {
   useUpdateAgent,
 } from "../../agents/api/mutations.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { useCreateTelegramConnectLink } from "../../telegram/api/mutations.js";
 import { useTelegramBot } from "../../telegram/api/queries.js";
 
 export function ChannelsPanel() {
@@ -40,7 +41,7 @@ export function ChannelsPanel() {
       {slackAvailable && (
         <SlackChannelForm key={agent?.id ?? "none"} agent={agent} />
       )}
-      {telegramAvailable && <TelegramChannelInfo />}
+      {telegramAvailable && <TelegramChannelInfo agent={agent} />}
     </div>
   );
 }
@@ -206,17 +207,65 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
   );
 }
 
-/** Telegram is a platform-wide bot; chats bind in-chat, not from here. */
-function TelegramChannelInfo() {
+/** Telegram is a platform-wide bot; chats bind in-chat or via a one-time
+ *  connect link minted here. */
+function TelegramChannelInfo({ agent }: { agent: AgentView | undefined }) {
   const bot = useTelegramBot();
+  const mint = useCreateTelegramConnectLink();
+  const [links, setLinks] = useState<{
+    dmLink: string;
+    groupLink: string;
+  } | null>(null);
   const handle = bot.data?.username;
+
   return (
     <fieldset className="rounded-lg border border-border p-4 flex flex-col gap-2">
       <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
         Telegram
       </legend>
+      {agent && (
+        <div className="flex flex-col gap-1">
+          <Button
+            size="sm"
+            className="self-start"
+            disabled={mint.isPending}
+            onClick={() =>
+              mint.mutate(
+                { agentId: agent.id },
+                { onSuccess: (res) => setLinks(res) },
+              )
+            }
+          >
+            {mint.isPending ? "Creating link…" : "Connect a chat…"}
+          </Button>
+          {links && (
+            <div className="flex flex-col gap-0.5 text-[12px]">
+              <a
+                className="underline text-foreground"
+                href={links.dmLink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Connect a direct chat
+              </a>
+              <a
+                className="underline text-foreground"
+                href={links.groupLink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Add to a group and connect it
+              </a>
+              <span className="text-muted-foreground">
+                The link is single-use and expires in 10 minutes. Tapping Start
+                in Telegram completes the connection.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <p className="text-[12px] text-muted-foreground">
-        Telegram is available install-wide. Add{" "}
+        Or start from Telegram: add{" "}
         {handle ? (
           <a
             className="underline text-foreground"
@@ -229,8 +278,8 @@ function TelegramChannelInfo() {
         ) : (
           "this installation's Telegram bot"
         )}{" "}
-        to a chat (or message it directly) and send /login to connect the chat
-        to one of your agents. Send /logout in the chat to disconnect.
+        to a chat (or message it directly) and send /login to pick the agent in
+        the browser. Send /logout in the chat to disconnect.
       </p>
     </fieldset>
   );

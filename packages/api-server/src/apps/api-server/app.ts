@@ -54,6 +54,7 @@ import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure
 import type {
   TelegramOAuthPending,
   TelegramBindFlowStore,
+  TelegramConnectLinkStore,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
 import {
   findAgentByConversation,
@@ -109,6 +110,8 @@ export interface ApiServerAppDeps {
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
   /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
   telegramBindFlows?: TelegramBindFlowStore;
+  /** Present when Telegram is enabled; backs the one-time connect links. */
+  telegramConnectLinks?: TelegramConnectLinkStore;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -146,6 +149,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
     telegramBindFlows,
+    telegramConnectLinks,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -762,18 +766,25 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       db,
       userDirectory,
-      telegramBinding: telegramBindFlows
-        ? {
-            peekFlow: telegramBindFlows.peek,
-            consumeFlow: telegramBindFlows.consume,
-            findAgentByConversation: findAgentByConversation(db),
-            bind: bindConversation(db),
-            postMessage: (agentId, conversationId, text) =>
-              channelManager.postMessage(agentId, ChannelType.Telegram, text, {
-                conversationId,
-              }),
-          }
-        : undefined,
+      telegramBinding:
+        telegramBindFlows && telegramConnectLinks
+          ? {
+              peekFlow: telegramBindFlows.peek,
+              consumeFlow: telegramBindFlows.consume,
+              findAgentByConversation: findAgentByConversation(db),
+              bind: bindConversation(db),
+              postMessage: (agentId, conversationId, text) =>
+                channelManager.postMessage(
+                  agentId,
+                  ChannelType.Telegram,
+                  text,
+                  { conversationId },
+                ),
+              botUsername: () => channelManager.telegramBotUsername(),
+              mintConnectCode: (agentId, agentName, ownerSub) =>
+                telegramConnectLinks.create({ agentId, agentName, ownerSub }),
+            }
+          : undefined,
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,

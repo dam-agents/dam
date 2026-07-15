@@ -23,26 +23,39 @@ export interface TelegramPendingBind {
   createdAt: number;
 }
 
-export interface TelegramBindFlowStore {
-  create(bind: Omit<TelegramPendingBind, "createdAt">): string;
+/** A UI-minted one-time connect code (the `?start=connect-<code>` deep-link
+ *  payload). It pins the agent AND the owner at mint time — delivering it to
+ *  the bot binds the chat with no browser roundtrip. */
+export interface TelegramConnectLink {
+  agentId: string;
+  agentName: string;
+  ownerSub: string;
+  createdAt: number;
+}
+
+export interface FlowStore<T> {
+  create(record: Omit<T, "createdAt">): string;
   /** TTL-checked read; an expired entry is deleted and reads as null.
-   *  Deliberately not consuming — a CONFLICT bind leaves the flow alive so
-   *  the user can pick a different agent within the TTL. */
-  peek(flowId: string): TelegramPendingBind | null;
+   *  Deliberately not consuming — callers consume only on success, so a
+   *  recoverable failure leaves the flow alive within the TTL. */
+  peek(flowId: string): T | null;
   consume(flowId: string): void;
 }
+
+export type TelegramBindFlowStore = FlowStore<TelegramPendingBind>;
+export type TelegramConnectLinkStore = FlowStore<TelegramConnectLink>;
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
 /** In-memory, single-replica by design (like the OAuth pending-flow maps):
  *  the handoff lives well under the TTL, and the api-server runs one replica. */
-export function createTelegramBindFlowStore(opts?: {
+export function createFlowStore<T extends { createdAt: number }>(opts?: {
   now?: () => number;
   ttlMs?: number;
-}): TelegramBindFlowStore {
+}): FlowStore<T> {
   const now = opts?.now ?? (() => Date.now());
   const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS;
-  const flows = new Map<string, TelegramPendingBind>();
+  const flows = new Map<string, T>();
 
   let janitor: ReturnType<typeof setInterval> | null = null;
   function ensureJanitor() {
@@ -57,10 +70,10 @@ export function createTelegramBindFlowStore(opts?: {
   }
 
   return {
-    create(bind) {
+    create(record) {
       ensureJanitor();
       const flowId = randomUUID();
-      flows.set(flowId, { ...bind, createdAt: now() });
+      flows.set(flowId, { ...record, createdAt: now() } as T);
       return flowId;
     },
 
@@ -78,4 +91,18 @@ export function createTelegramBindFlowStore(opts?: {
       flows.delete(flowId);
     },
   };
+}
+
+export function createTelegramBindFlowStore(opts?: {
+  now?: () => number;
+  ttlMs?: number;
+}): TelegramBindFlowStore {
+  return createFlowStore<TelegramPendingBind>(opts);
+}
+
+export function createTelegramConnectLinkStore(opts?: {
+  now?: () => number;
+  ttlMs?: number;
+}): TelegramConnectLinkStore {
+  return createFlowStore<TelegramConnectLink>(opts);
 }
