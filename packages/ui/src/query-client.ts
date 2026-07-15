@@ -15,6 +15,7 @@ declare module "@tanstack/react-query" {
     mutationMeta: {
       invalidates?: QueryKey[];
       errorToast?: string;
+      suppressErrorToast?: boolean;
     };
     queryMeta: {
       errorToast?: string;
@@ -56,6 +57,7 @@ export const queryClient = new QueryClient({
         );
       },
       onError: (error, _vars, _ctx, mutation) => {
+        if (mutation.meta?.suppressErrorToast) return;
         if (getApiHealthSnapshot() === "reconnecting" || isTermsStale()) return;
         const title = mutation.meta?.errorToast;
         const detail =

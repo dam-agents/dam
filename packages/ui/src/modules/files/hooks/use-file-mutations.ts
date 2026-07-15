@@ -133,7 +133,7 @@ export function useFileMutations(agentId: string | null) {
         if (sourceKind === "dir") {
           emitToast({
             kind: "error",
-            message: `"${nameOf(to)}" already exists`,
+            message: `A folder named "${nameOf(to)}" already exists there. Folders can't be overwritten — rename or delete the existing one first.`,
           });
           return;
         }
