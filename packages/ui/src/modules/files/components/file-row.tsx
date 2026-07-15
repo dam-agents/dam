@@ -64,11 +64,17 @@ export function FileRow({
   // previous coordinate menu); Radix portals the menu content itself.
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const drag = useFileRowDrag(targetDir, {
-    onEnter: panel.onRowDragEnter,
-    onLeave: panel.onRowDragLeave,
-    onDrop: panel.onRowDrop,
-  });
+  const drag = useFileRowDrag(
+    targetDir,
+    { path, type },
+    {
+      onEnter: panel.onRowDragEnter,
+      onLeave: panel.onRowDragLeave,
+      onEnd: panel.onRowDragEnd,
+      onDrop: panel.onRowDrop,
+      onMove: panel.onRowMove,
+    },
+  );
 
   const dispatch = (action: FileRowMenuAction) =>
     panel.onAction(action, path, type);
@@ -81,7 +87,7 @@ export function FileRow({
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center h-[32px] text-[14px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-accent-light ring-1 ring-accent ring-inset" : `text-text-secondary hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
+          className={`group relative flex items-center h-[32px] text-[14px] cursor-pointer transition-colors ${menuOpen ? "z-20" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-text-secondary font-medium" : `text-text-secondary hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)
