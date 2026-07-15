@@ -63,7 +63,7 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. Mult
 Platform runs a single Telegram bot for the entire installation. A Telegram chat (DM or group) binds to at most one instance; the binding routes every message in that chat.
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
-2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotUsername=<handle>`.
+2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
 3. Connect a chat either way:
    - **From the UI**: pick an instance, click "Connect a chat…", and open the one-time link — tapping Start in Telegram completes the connection, no login needed.
    - **From Telegram**: add the bot to a chat (or message it directly) and send `/login` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.

@@ -185,9 +185,9 @@ spec:
             - name: TELEGRAM_BOT_TOKEN
               value: {{ .Values.apiServer.telegramBotToken | quote }}
             {{- end }}
-            {{- if .Values.apiServer.telegramBotUsername }}
+            {{- if .Values.apiServer.telegramBotName }}
             - name: TELEGRAM_BOT_USERNAME
-              value: {{ .Values.apiServer.telegramBotUsername | quote }}
+              value: {{ .Values.apiServer.telegramBotName | quote }}
             {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED

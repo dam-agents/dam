@@ -549,7 +549,7 @@ apiServer:
   # -- The bot's @handle without the @ (e.g. "dam_ibm_bot"). Used to build
   # t.me connect links and for mention detection; when empty the api-server
   # discovers it at startup via the Bot API.
-  telegramBotUsername: ""
+  telegramBotName: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the
   # usage reporting endpoints. Disable to stop all writes (the read
