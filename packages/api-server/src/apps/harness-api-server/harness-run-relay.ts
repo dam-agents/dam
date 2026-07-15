@@ -21,7 +21,41 @@ const MAX_CONCURRENT_RUNS_PER_AGENT = 16;
 
 const PENDING_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
 
-export function createRunRelay(deps: { k8s: K8sClient; runs: RunsService }) {
+// Ping cadence for both relay legs. Pings serve two jobs at once: the frames
+// reset every Envoy stream-idle timer on the agent↔api-server path (5-min
+// default when the gateway's CONNECT-route override isn't rendered), so a
+// quiet long-running command isn't cut mid-stream; and a missed pong detects a
+// half-open peer (node died without FIN), releasing the Run CR and the
+// concurrency slot promptly instead of waiting for the 60-min reaper. Both
+// peers (undici in dam-run, ws in agent-runtime) auto-pong per RFC 6455.
+const KEEPALIVE_INTERVAL_MS = 30_000;
+
+// Bounds the relay→executor dial: waitReady proved the pod Ready, so a
+// handshake that still hangs means a wedged runtime — fail the run rather
+// than sit silent.
+const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+function keepalive(sock: WebSocket) {
+  let alive = true;
+  sock.on("pong", () => {
+    alive = true;
+  });
+  const timer = setInterval(() => {
+    if (sock.readyState !== WebSocket.OPEN) return;
+    if (!alive) return sock.terminate();
+    alive = false;
+    sock.ping();
+  }, KEEPALIVE_INTERVAL_MS);
+  sock.on("close", () => clearInterval(timer));
+}
+
+export function createRunRelay(deps: {
+  k8s: K8sClient;
+  runs: RunsService;
+  /** agent-runtime port on the executor pod; injectable for tests. */
+  executorPort?: number;
+}) {
+  const executorPort = deps.executorPort ?? 8080;
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const livePerAgent = new Map<string, number>();
 
@@ -33,14 +67,6 @@ export function createRunRelay(deps: { k8s: K8sClient; runs: RunsService }) {
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
-
-      // The waypoint AuthorizationPolicy already proved the caller is this
-      // agent; resolveAgent just confirms the Agent exists.
-      const identity = await resolveAgent(deps.k8s, agentId);
-      if (!identity) {
-        client.close(1011, "agent not found");
-        return;
-      }
 
       const live = livePerAgent.get(agentId) ?? 0;
       if (live >= MAX_CONCURRENT_RUNS_PER_AGENT) {
@@ -88,22 +114,44 @@ export function createRunRelay(deps: { k8s: K8sClient; runs: RunsService }) {
         }
         pending.push([d, b]);
       };
+      // Attached before the first await: the socket is live from the upgrade,
+      // and a close (or frame) emitted while we resolve/create/wait must not
+      // be missed — a missed close would leave the executor running
+      // untethered until the reaper, pinning a concurrency slot.
       client.on("message", buffer);
       client.on("close", () => {
         clientGone = true;
         release();
       });
+      keepalive(client);
 
       try {
+        // The waypoint AuthorizationPolicy already proved the caller is this
+        // agent; resolveAgent just confirms the Agent exists.
+        const identity = await resolveAgent(deps.k8s, agentId);
+        if (!identity) {
+          client.close(1011, "agent not found");
+          return release();
+        }
+        if (clientGone || overflow) return release();
+
         await deps.runs.create(runId, agentId, identity.uid);
+        // A close that raced create(): release() already ran and its delete
+        // may have preceded the write — re-delete what create just wrote.
+        if (released) return void deps.runs.delete(runId);
+
         const podIP = await deps.runs.waitReady(runId, abort.signal);
         if (clientGone || overflow) return release();
 
         // dam-run passed the exec params (argv/cwd/cols/rows) as query on the
         // upgrade URL; forward that query verbatim to the executor's /api/exec.
         const search = new URL(req.url ?? "/", "http://localhost").search;
-        upstream = new WebSocket(`ws://${podIP}:8080/api/exec${search}`);
+        upstream = new WebSocket(
+          `ws://${podIP}:${executorPort}/api/exec${search}`,
+          { handshakeTimeout: EXECUTOR_HANDSHAKE_TIMEOUT_MS },
+        );
         const us = upstream;
+        keepalive(us);
         us.on("open", () => {
           if (clientGone || overflow) return release();
           client.off("message", buffer);
@@ -116,12 +164,16 @@ export function createRunRelay(deps: { k8s: K8sClient; runs: RunsService }) {
             if (client.readyState === WebSocket.OPEN)
               client.send(d, { binary: isBinary });
           });
-          us.on("close", () => {
-            try {
-              client.close();
-            } catch {}
-            release();
-          });
+        });
+        us.on("close", (code) => {
+          // Normally the exec side sent OP_EXIT and closed 1000, and dam-run
+          // already exited on the OP_EXIT. Anything else (pod died, reaper,
+          // runtime crash) surfaces as a reason so dam-run isn't silent.
+          try {
+            if (code === 1000) client.close(1000);
+            else client.close(1011, "executor connection lost");
+          } catch {}
+          release();
         });
         us.on("error", () => {
           if (client.readyState === WebSocket.OPEN)
