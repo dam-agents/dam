@@ -386,7 +386,8 @@ export function createTelegramWorker(deps: {
     const freshPrompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
-      `To reply, call \`send_channel_message\` with channel="telegram" and chatId="${thread.id}".`,
+      `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
+      "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       "",
       `Message: ${text}`,
     ].join("\n");
