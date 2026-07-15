@@ -26,11 +26,7 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
 }
 
-export interface TelegramChannel extends Channel {
-  type: ChannelType.Telegram;
-}
-
-export type ChannelConfig = SlackChannel | TelegramChannel;
+export type ChannelConfig = SlackChannel;
 
 // --- Agent ---
 
@@ -132,8 +128,6 @@ export interface AgentsService {
     slackChannelId: string,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
-  connectTelegram: (id: string, botToken: string) => Promise<Agent | null>;
-  disconnectTelegram: (id: string) => Promise<Agent | null>;
   /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
    *  bind that conversation to the caller's agent. */
   bindTelegramChat: (

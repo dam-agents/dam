@@ -12,7 +12,6 @@ import {
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
   backfillUserEnv,
-  startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
@@ -41,7 +40,6 @@ import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-s
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
-import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -184,7 +182,6 @@ const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
 };
-const channelSecretStore = createChannelSecretStore(k8sClient);
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
@@ -262,8 +259,6 @@ const { service: e2eService } = composeE2eModule({
   slack: fakeSlackGateway,
 });
 
-const channelSecretCleanupSub =
-  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
   deleteConversationsByAgent(db),
@@ -323,7 +318,6 @@ const { agents: systemAgents } = composeAgentsModule({
   owner: undefined,
   db,
   userDirectory,
-  channelSecretStore,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
@@ -588,7 +582,6 @@ const { server: apiServer } = startApiServerApp({
   api,
   db,
   channelManager,
-  channelSecretStore,
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
@@ -652,7 +645,6 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
   if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
-  channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

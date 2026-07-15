@@ -8,11 +8,9 @@ import {
 import {
   agentBindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
-  agentConnectTelegramInputSchema,
   agentCreateInputSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
-  agentDisconnectTelegramInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
   agentUpdateInputSchema,
@@ -145,27 +143,6 @@ export const agentsRouter = t.router({
     .input(agentDisconnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.disconnectSlack(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
-    }),
-
-  connectTelegram: manageAgentsProcedure
-    .input(agentConnectTelegramInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      if (!ctx.channels.available.telegram)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Telegram channel not enabled",
-        });
-      const agent = await ctx.agents.connectTelegram(input.id, input.botToken);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
-    }),
-
-  disconnectTelegram: manageAgentsProcedure
-    .input(agentDisconnectTelegramInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.disconnectTelegram(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
     }),

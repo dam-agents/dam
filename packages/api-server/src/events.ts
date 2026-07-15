@@ -17,8 +17,6 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
-  TelegramConnected = "TelegramConnected",
-  TelegramDisconnected = "TelegramDisconnected",
   ForkReady = "ForkReady",
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
@@ -77,16 +75,6 @@ export type SlackConnected = {
 
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
-  agentId: string;
-};
-
-export type TelegramConnected = {
-  type: EventType.TelegramConnected;
-  agentId: string;
-};
-
-export type TelegramDisconnected = {
-  type: EventType.TelegramDisconnected;
   agentId: string;
 };
 
@@ -216,8 +204,6 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
-  | TelegramConnected
-  | TelegramDisconnected
   | ForkReady
   | ForkFailed
   | ForkCompleted

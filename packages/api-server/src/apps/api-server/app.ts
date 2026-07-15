@@ -78,7 +78,6 @@ import { composeApiKeysModule } from "./../../modules/api-keys/index.js";
 import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 import {
@@ -105,7 +104,6 @@ export interface ApiServerAppDeps {
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
-  channelSecretStore: ChannelSecretStore;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
@@ -144,7 +142,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     api,
     db,
     channelManager,
-    channelSecretStore,
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
@@ -765,7 +762,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       db,
       userDirectory,
-      channelSecretStore,
       telegramBinding: telegramBindFlows
         ? {
             peekFlow: telegramBindFlows.peek,

@@ -46,7 +46,6 @@ import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
-import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -303,7 +302,6 @@ export function createAgentsService(deps: {
   findSlackChannelBinding: (
     slackChannelId: string,
   ) => Promise<{ agentId: string } | null>;
-  channelSecretStore: ChannelSecretStore;
   /** Absent in the system-wide composition — binding is a user-facing flow. */
   telegramBinding?: TelegramBindingPort;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
@@ -937,31 +935,6 @@ export function createAgentsService(deps: {
 
       await deps.deleteChannelByType(id, ChannelType.Slack);
       emit({ type: EventType.SlackDisconnected, agentId: id });
-
-      return project(infra);
-    },
-
-    async connectTelegram(id, botToken) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
-
-      await deps.channelSecretStore.storeTelegramToken(id, botToken);
-      await deps.upsertChannel(id, { type: ChannelType.Telegram });
-      emit({ type: EventType.TelegramConnected, agentId: id });
-
-      return project(infra);
-    },
-
-    async disconnectTelegram(id) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
-
-      await deps.deleteChannelByType(id, ChannelType.Telegram);
-      await deps.channelSecretStore.deleteChannelSecret(
-        id,
-        ChannelType.Telegram,
-      );
-      emit({ type: EventType.TelegramDisconnected, agentId: id });
 
       return project(infra);
     },

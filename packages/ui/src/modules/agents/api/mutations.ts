@@ -215,26 +215,6 @@ export function useDisconnectSlack() {
   });
 }
 
-export function useConnectTelegram() {
-  return useMutation({
-    ...trpc.agents.connectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to connect Telegram",
-    },
-  });
-}
-
-export function useDisconnectTelegram() {
-  return useMutation({
-    ...trpc.agents.disconnectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to disconnect Telegram",
-    },
-  });
-}
-
 export function useSetAgentConnections() {
   return useMutation({
     ...trpc.connections.setAgentConnections.mutationOptions(),

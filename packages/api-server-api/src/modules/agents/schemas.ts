@@ -41,7 +41,6 @@ export const agentWakeInputSchema = idSchema;
 export const agentStopInputSchema = idSchema;
 export const agentPauseInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema;
-export const agentDisconnectTelegramInputSchema = idSchema;
 
 export const agentCreateInputSchema = z
   .object({
@@ -108,11 +107,6 @@ export const agentUpdateInputSchema = z.object({
 export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
-});
-
-export const agentConnectTelegramInputSchema = z.object({
-  id: z.string().min(1),
-  botToken: z.string().min(1),
 });
 
 export const agentBindTelegramChatInputSchema = z.object({
