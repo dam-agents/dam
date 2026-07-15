@@ -10,6 +10,16 @@ export function useCreateTelegramConnectLink() {
   });
 }
 
+export function useUnbindTelegramChat() {
+  return useMutation({
+    ...trpc.agents.unbindTelegramChat.mutationOptions(),
+    meta: {
+      errorToast: "Couldn't disconnect the Telegram chat",
+      invalidates: [trpc.agents.listTelegramChats.queryKey()],
+    },
+  });
+}
+
 /** No errorToast on purpose — the bind page maps failures to inline states. */
 export function useBindTelegramChat() {
   return useMutation({

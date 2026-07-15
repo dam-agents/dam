@@ -69,7 +69,7 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
    - **From Telegram**: add the bot to a chat (or message it directly) and send `/login` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
 
-**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/logout` in the chat disconnects it. Messages in unconnected group chats are ignored.
+**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/logout` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
 
 ## Development mode
 

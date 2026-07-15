@@ -8,6 +8,8 @@ import {
 import {
   agentBindTelegramChatInputSchema,
   agentCreateTelegramConnectLinkInputSchema,
+  agentListTelegramChatsInputSchema,
+  agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
   agentCreateInputSchema,
   agentDeleteInputSchema,
@@ -166,6 +168,47 @@ export const agentsRouter = t.router({
             code: "PRECONDITION_FAILED",
             message: "Telegram bot is not running",
           });
+      }
+    }),
+
+  listTelegramChats: manageAgentsProcedure
+    .input(agentListTelegramChatsInputSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram bot not configured",
+        });
+      const res = await ctx.agents.listTelegramChats(input.agentId);
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "TelegramUnavailable":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Telegram bot is not running",
+          });
+      }
+    }),
+
+  unbindTelegramChat: manageAgentsProcedure
+    .input(agentUnbindTelegramChatInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram bot not configured",
+        });
+      const res = await ctx.agents.unbindTelegramChat(
+        input.agentId,
+        input.conversationId,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "AgentNotFound":
+        case "ChatNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
       }
     }),
 

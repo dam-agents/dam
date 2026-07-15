@@ -59,6 +59,7 @@ import type {
 import {
   findAgentByConversation,
   bindConversation,
+  unbindConversation,
 } from "../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
@@ -781,6 +782,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
                   { conversationId },
                 ),
               botUsername: () => channelManager.telegramBotUsername(),
+              listConversations: (agentId) =>
+                channelManager.listConversations(agentId, ChannelType.Telegram),
+              unbind: unbindConversation(db),
               mintConnectCode: (agentId, agentName, ownerSub) =>
                 telegramConnectLinks.create({ agentId, agentName, ownerSub }),
             }

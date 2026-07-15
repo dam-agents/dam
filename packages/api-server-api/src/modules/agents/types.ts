@@ -108,6 +108,24 @@ export type CreateTelegramConnectLinkResult =
   | { ok: true; value: { dmLink: string; groupLink: string } }
   | { ok: false; error: CreateTelegramConnectLinkError };
 
+export interface TelegramChatView {
+  conversationId: string;
+  title: string;
+}
+
+export type ListTelegramChatsResult =
+  | { ok: true; value: { chats: TelegramChatView[] } }
+  | { ok: false; error: CreateTelegramConnectLinkError };
+
+export type UnbindTelegramChatError =
+  | { type: "AgentNotFound" }
+  /** The conversation isn't bound to this agent (unknown, or another's). */
+  | { type: "ChatNotFound" };
+
+export type UnbindTelegramChatResult =
+  | { ok: true; value: null }
+  | { ok: false; error: UnbindTelegramChatError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -149,5 +167,13 @@ export interface AgentsService {
   createTelegramConnectLink: (
     agentId: string,
   ) => Promise<CreateTelegramConnectLinkResult>;
+  /** The Telegram conversations bound to the caller's agent, with titles. */
+  listTelegramChats: (agentId: string) => Promise<ListTelegramChatsResult>;
+  /** Owner-side disconnect of a bound conversation (the UI counterpart of
+   *  the in-chat /logout). */
+  unbindTelegramChat: (
+    agentId: string,
+    conversationId: string,
+  ) => Promise<UnbindTelegramChatResult>;
   isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

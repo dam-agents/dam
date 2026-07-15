@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
   executeTelegramBind,
+  executeTelegramUnbind,
   type TelegramBindingPort,
 } from "../../modules/agents/services/agents-service.js";
 import {
@@ -55,6 +56,8 @@ function harness(opts?: {
     ),
     botUsername: () => "dam_test_bot",
     mintConnectCode: vi.fn(() => "code-1"),
+    listConversations: vi.fn(async () => []),
+    unbind: vi.fn(async () => {}),
   };
 
   const run = executeTelegramBind({
@@ -134,5 +137,57 @@ describe("telegram bind flow", () => {
     const h = harness({ postError: "bot not running" });
     const res = await h.run("agent-1", h.flowId);
     expect(res).toEqual({ ok: true, value: { chatTitle: "Team chat" } });
+  });
+});
+
+describe("telegram unbind (owner-side)", () => {
+  function unbindHarness(opts?: {
+    boundTo?: string | null;
+    postError?: string;
+  }) {
+    const h = harness(opts);
+    const run = executeTelegramUnbind({
+      owner: OWNER,
+      getAgent: async (id) =>
+        id === "agent-1" ? { id: "agent-1", name: "my-agent" } : null,
+      binding: h.binding,
+    });
+    return { ...h, run };
+  }
+
+  it("notifies the chat BEFORE unbinding, then removes the binding", async () => {
+    const h = unbindHarness({ boundTo: "agent-1" });
+    const res = await h.run("agent-1", "chat-42");
+    expect(res).toEqual({ ok: true, value: null });
+    expect(h.binding.postMessage).toHaveBeenCalledWith(
+      "agent-1",
+      "chat-42",
+      expect.stringContaining("disconnected"),
+    );
+    const postOrder = (h.binding.postMessage as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0]!;
+    const unbindOrder = (h.binding.unbind as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0]!;
+    expect(postOrder).toBeLessThan(unbindOrder);
+  });
+
+  it("rejects a conversation bound to a different agent", async () => {
+    const h = unbindHarness({ boundTo: "agent-9" });
+    const res = await h.run("agent-1", "chat-42");
+    expect(res).toEqual({ ok: false, error: { type: "ChatNotFound" } });
+    expect(h.binding.unbind).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unbound conversation", async () => {
+    const h = unbindHarness({ boundTo: null });
+    const res = await h.run("agent-1", "chat-42");
+    expect(res).toEqual({ ok: false, error: { type: "ChatNotFound" } });
+  });
+
+  it("still unbinds when the courtesy note fails", async () => {
+    const h = unbindHarness({ boundTo: "agent-1", postError: "bot down" });
+    const res = await h.run("agent-1", "chat-42");
+    expect(res).toEqual({ ok: true, value: null });
+    expect(h.binding.unbind).toHaveBeenCalledWith("chat-42");
   });
 });

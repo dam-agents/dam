@@ -10,6 +10,8 @@ import {
   type DriverFailure,
   type BindTelegramChatResult,
   type CreateTelegramConnectLinkResult,
+  type ListTelegramChatsResult,
+  type UnbindTelegramChatResult,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -93,6 +95,9 @@ export interface TelegramBindingPort {
   ): Promise<{ ok: true } | { error: string }>;
   /** The platform bot's @handle (no @), or null when unknown. */
   botUsername(): string | null;
+  /** Bound conversations for an agent, with human titles. */
+  listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
+  unbind(conversationId: string): Promise<void>;
   /** Mint a one-time connect code pinning agent + owner; returns the code. */
   mintConnectCode(agentId: string, agentName: string, ownerSub: string): string;
 }
@@ -193,6 +198,57 @@ export function executeTelegramBind(deps: {
     }
 
     return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+/** Owner-side disconnect, extracted like `executeTelegramBind` for tests. */
+export function executeTelegramUnbind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  binding: TelegramBindingPort;
+}) {
+  return async (
+    agentId: string,
+    conversationId: string,
+  ): Promise<UnbindTelegramChatResult> => {
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    const existing = await deps.binding.findAgentByConversation(conversationId);
+    if (!existing || existing.agentId !== agentId)
+      return err({ type: "ChatNotFound" as const });
+
+    // Courtesy note BEFORE the row goes away — outbound posting validates
+    // the binding, so this ordering is load-bearing. Best-effort either way.
+    const post = await deps.binding.postMessage(
+      agentId,
+      conversationId,
+      `This chat was disconnected from ${agent.name} by its owner. Send /login to connect it again.`,
+    );
+    if ("error" in post) {
+      securityLog("warn", "channel.chat_unbound.notify_failed", {
+        category: "channel",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "telegram",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { conversationId },
+      });
+    }
+
+    await deps.binding.unbind(conversationId);
+    securityLog("info", "channel.chat_unbound", {
+      category: "authz-list",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      surface: "telegram",
+      agentId,
+      result: "success",
+      detail: { conversationId, viaUi: true },
+    });
+    return ok(null);
   };
 }
 
@@ -942,6 +998,30 @@ export function createAgentsService(deps: {
       emit({ type: EventType.SlackDisconnected, agentId: id });
 
       return project(infra);
+    },
+
+    async listTelegramChats(agentId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "TelegramUnavailable" as const });
+      const infra = await deps.repo.get(agentId, deps.owner);
+      if (!infra) return err({ type: "AgentNotFound" as const });
+      const chats = await binding.listConversations(infra.id);
+      return ok({
+        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+      });
+    },
+
+    async unbindTelegramChat(agentId, conversationId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "ChatNotFound" as const });
+      return executeTelegramUnbind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        binding,
+      })(agentId, conversationId);
     },
 
     async createTelegramConnectLink(agentId) {

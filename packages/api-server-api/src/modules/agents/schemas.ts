@@ -113,6 +113,15 @@ export const agentCreateTelegramConnectLinkInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const agentListTelegramChatsInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const agentUnbindTelegramChatInputSchema = z.object({
+  agentId: z.string().min(1),
+  conversationId: z.string().min(1),
+});
+
 export const agentBindTelegramChatInputSchema = z.object({
   agentId: z.string().min(1),
   // Opaque bind-flow id minted by the Telegram OAuth callback.

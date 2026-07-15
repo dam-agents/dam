@@ -9,3 +9,12 @@ export function useTelegramBot() {
     staleTime: Infinity,
   });
 }
+
+/** Chats bound to an agent. No refetch interval — each call resolves chat
+ *  titles against the Telegram Bot API. */
+export function useTelegramChats(agentId: string | undefined) {
+  return useQuery({
+    ...trpc.agents.listTelegramChats.queryOptions({ agentId: agentId ?? "" }),
+    enabled: !!agentId,
+  });
+}

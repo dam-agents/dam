@@ -15,8 +15,14 @@ import {
   useUpdateAgent,
 } from "../../agents/api/mutations.js";
 import { useAgents } from "../../agents/api/queries.js";
-import { useCreateTelegramConnectLink } from "../../telegram/api/mutations.js";
-import { useTelegramBot } from "../../telegram/api/queries.js";
+import {
+  useCreateTelegramConnectLink,
+  useUnbindTelegramChat,
+} from "../../telegram/api/mutations.js";
+import {
+  useTelegramBot,
+  useTelegramChats,
+} from "../../telegram/api/queries.js";
 
 export function ChannelsPanel({ agentId }: { agentId?: string } = {}) {
   const { data: agentsData } = useAgents();
@@ -223,6 +229,7 @@ function TelegramChannelInfo({ agent }: { agent: AgentView | undefined }) {
       <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
         Telegram
       </legend>
+      {agent && <TelegramConnectedChats agentId={agent.id} />}
       {agent && (
         <div className="flex flex-col gap-1">
           <Button
@@ -282,5 +289,52 @@ function TelegramChannelInfo({ agent }: { agent: AgentView | undefined }) {
         the browser. Send /logout in the chat to disconnect.
       </p>
     </fieldset>
+  );
+}
+
+function TelegramConnectedChats({ agentId }: { agentId: string }) {
+  const chats = useTelegramChats(agentId);
+  const unbind = useUnbindTelegramChat();
+
+  if (chats.isPending)
+    return (
+      <span className="text-[12px] text-muted-foreground">
+        Loading connected chats…
+      </span>
+    );
+  if (chats.isError || !chats.data) return null;
+  if (chats.data.chats.length === 0)
+    return (
+      <span className="text-[12px] text-muted-foreground italic">
+        No chats connected yet
+      </span>
+    );
+
+  return (
+    <div className="flex flex-col gap-1">
+      <SectionLabel>Connected chats</SectionLabel>
+      {chats.data.chats.map((chat) => (
+        <div
+          key={chat.conversationId}
+          className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1"
+        >
+          <span className="flex-1 text-[12px] text-foreground truncate">
+            {chat.title}
+          </span>
+          <Button
+            variant="ghost"
+            tone="danger"
+            size="xs"
+            disabled={unbind.isPending}
+            onClick={() =>
+              unbind.mutate({ agentId, conversationId: chat.conversationId })
+            }
+            className="shrink-0"
+          >
+            Disconnect
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
