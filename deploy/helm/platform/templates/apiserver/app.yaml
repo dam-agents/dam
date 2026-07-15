@@ -181,9 +181,9 @@ spec:
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
-            {{- if .Values.apiServer.telegramEnabled }}
-            - name: TELEGRAM_ENABLED
-              value: "true"
+            {{- if .Values.apiServer.telegramBotToken }}
+            - name: TELEGRAM_BOT_TOKEN
+              value: {{ .Values.apiServer.telegramBotToken | quote }}
             {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED

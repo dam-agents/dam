@@ -29,6 +29,12 @@ Pre-upgrade clean-ups, all no-ops on a fresh install:
    (TTL 60s after completion) so the operational impact is minimal.
    Owner-refed children (Job + Pod + Service + Envoy bootstrap CM +
    leaf cert) cascade-delete via the fork ConfigMap.
+
+4. Delete per-agent Telegram bot-token Secrets. Telegram is a platform
+   channel now (one bot, token in api-server env); the per-agent
+   `platform-channel-telegram-<agentId>` Secrets are orphaned and the
+   api-server no longer carries deletion code for them. Prunable one
+   release after the platform bot shipped.
 */ -}}
 {{- $jobName := printf "%s-migrate-stale-netpols" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 apiVersion: v1
@@ -63,6 +69,10 @@ rules:
     verbs: ["list", "delete"]
   - apiGroups: [""]
     resources: ["configmaps"]
+    verbs: ["list", "delete"]
+  # Step 4: label-scoped Secret sweep only, agent namespace only.
+  - apiGroups: [""]
+    resources: ["secrets"]
     verbs: ["list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -153,4 +163,13 @@ spec:
               echo "migration: deleting $fork_count in-flight fork ConfigMap(s) in $ns"
               if [ "$fork_count" != "0" ]; then
                 kubectl -n "$ns" delete configmap -l agent-platform.ai/type=agent-fork --ignore-not-found
+              fi
+
+              # 4. Per-agent Telegram bot-token Secrets, orphaned by the
+              #    platform-wide bot (token lives in api-server env now).
+              sel='agent-platform.ai/type=channel-secret,agent-platform.ai/channel-type=telegram'
+              sec_count=$(kubectl -n "$ns" get secret -l "$sel" -o name 2>/dev/null | wc -l | tr -d ' ')
+              echo "migration: deleting $sec_count telegram channel Secret(s) in $ns"
+              if [ "$sec_count" != "0" ]; then
+                kubectl -n "$ns" delete secret -l "$sel" --ignore-not-found
               fi

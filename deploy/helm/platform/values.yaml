@@ -541,8 +541,10 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
-  # -- Enable the Telegram channel. Each agent can connect its own bot token via the UI.
-  telegramEnabled: false
+  # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
+  # Leave empty to disable Telegram. Chat admins connect a chat to an agent
+  # by sending /login in the chat and picking the agent in the web UI.
+  telegramBotToken: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the
   # usage reporting endpoints. Disable to stop all writes (the read

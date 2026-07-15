@@ -58,6 +58,17 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. Mult
 
 **Access control** — per-instance allowed-users list (empty = open to all channel members). Unauthorized users get an ephemeral rejection.
 
+## Telegram Integration
+
+Platform runs a single Telegram bot for the entire installation. A Telegram chat (DM or group) binds to at most one instance; the binding routes every message in that chat.
+
+1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
+2. Deploy with the token: `--set=apiServer.telegramBotToken=<token>`.
+3. Add the bot to a chat (or message it directly) and send `/login`. In groups, only chat admins can start the flow.
+4. Complete the browser login and pick which of your instances the chat should connect to. The bot confirms in the chat.
+
+**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/logout` in the chat disconnects it. Messages in unconnected group chats are ignored.
+
 ## Development mode
 
 ```sh
