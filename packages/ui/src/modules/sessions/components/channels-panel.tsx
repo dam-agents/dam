@@ -15,10 +15,7 @@ import {
   useUpdateAgent,
 } from "../../agents/api/mutations.js";
 import { useAgents } from "../../agents/api/queries.js";
-import {
-  useCreateTelegramConnectLink,
-  useUnbindTelegramChat,
-} from "../../telegram/api/mutations.js";
+import { useUnbindTelegramChat } from "../../telegram/api/mutations.js";
 import {
   useTelegramBot,
   useTelegramChats,
@@ -213,15 +210,9 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
   );
 }
 
-/** Telegram is a platform-wide bot; chats bind in-chat or via a one-time
- *  connect link minted here. */
+/** Telegram is a platform-wide bot; chats bind via /login in the chat. */
 function TelegramChannelInfo({ agent }: { agent: AgentView | undefined }) {
   const bot = useTelegramBot();
-  const mint = useCreateTelegramConnectLink();
-  const [links, setLinks] = useState<{
-    dmLink: string;
-    groupLink: string;
-  } | null>(null);
   const handle = bot.data?.username;
 
   return (
@@ -230,49 +221,8 @@ function TelegramChannelInfo({ agent }: { agent: AgentView | undefined }) {
         Telegram
       </legend>
       {agent && <TelegramConnectedChats agentId={agent.id} />}
-      {agent && (
-        <div className="flex flex-col gap-1">
-          <Button
-            size="sm"
-            className="self-start"
-            disabled={mint.isPending}
-            onClick={() =>
-              mint.mutate(
-                { agentId: agent.id },
-                { onSuccess: (res) => setLinks(res) },
-              )
-            }
-          >
-            {mint.isPending ? "Creating link…" : "Connect a chat…"}
-          </Button>
-          {links && (
-            <div className="flex flex-col gap-0.5 text-[12px]">
-              <a
-                className="underline text-foreground"
-                href={links.dmLink}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Connect a direct chat
-              </a>
-              <a
-                className="underline text-foreground"
-                href={links.groupLink}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Add to a group and connect it
-              </a>
-              <span className="text-muted-foreground">
-                The link is single-use and expires in 10 minutes. Tapping Start
-                in Telegram completes the connection.
-              </span>
-            </div>
-          )}
-        </div>
-      )}
       <p className="text-[12px] text-muted-foreground">
-        Or start from Telegram: add{" "}
+        Add{" "}
         {handle ? (
           <a
             className="underline text-foreground"

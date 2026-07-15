@@ -54,8 +54,6 @@ function harness(opts?: {
     postMessage: vi.fn(async () =>
       opts?.postError ? { error: opts.postError } : { ok: true as const },
     ),
-    botUsername: () => "dam_test_bot",
-    mintConnectCode: vi.fn(() => "code-1"),
     listConversations: vi.fn(async () => []),
     unbind: vi.fn(async () => {}),
   };

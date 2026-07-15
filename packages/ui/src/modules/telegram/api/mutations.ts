@@ -3,13 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 import { trpc } from "../../../trpc.js";
 import { agentsKeys } from "../../agents/api/queries.js";
 
-export function useCreateTelegramConnectLink() {
-  return useMutation({
-    ...trpc.agents.createTelegramConnectLink.mutationOptions(),
-    meta: { errorToast: "Couldn't create a Telegram connect link" },
-  });
-}
-
 export function useUnbindTelegramChat() {
   return useMutation({
     ...trpc.agents.unbindTelegramChat.mutationOptions(),

@@ -44,8 +44,7 @@ export type {
   ConnectSlackResult,
   BindTelegramChatError,
   BindTelegramChatResult,
-  CreateTelegramConnectLinkError,
-  CreateTelegramConnectLinkResult,
+  ListTelegramChatsError,
   TelegramChatView,
   ListTelegramChatsResult,
   UnbindTelegramChatError,
@@ -56,7 +55,6 @@ export type {
 } from "./modules/agents/types.js";
 export {
   agentBindTelegramChatInputSchema,
-  agentCreateTelegramConnectLinkInputSchema,
   agentListTelegramChatsInputSchema,
   agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,

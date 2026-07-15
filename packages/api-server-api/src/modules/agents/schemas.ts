@@ -109,10 +109,6 @@ export const agentConnectSlackInputSchema = z.object({
   slackChannelId: z.string().min(1),
 });
 
-export const agentCreateTelegramConnectLinkInputSchema = z.object({
-  agentId: z.string().min(1),
-});
-
 export const agentListTelegramChatsInputSchema = z.object({
   agentId: z.string().min(1),
 });

@@ -7,7 +7,6 @@ import {
 } from "../../auth-procedures.js";
 import {
   agentBindTelegramChatInputSchema,
-  agentCreateTelegramConnectLinkInputSchema,
   agentListTelegramChatsInputSchema,
   agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
@@ -148,27 +147,6 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.disconnectSlack(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
-    }),
-
-  createTelegramConnectLink: manageAgentsProcedure
-    .input(agentCreateTelegramConnectLinkInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      if (!ctx.channels.available.telegram)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Telegram bot not configured",
-        });
-      const res = await ctx.agents.createTelegramConnectLink(input.agentId);
-      if (res.ok) return res.value;
-      switch (res.error.type) {
-        case "AgentNotFound":
-          throw new TRPCError({ code: "NOT_FOUND" });
-        case "TelegramUnavailable":
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Telegram bot is not running",
-          });
-      }
     }),
 
   listTelegramChats: manageAgentsProcedure

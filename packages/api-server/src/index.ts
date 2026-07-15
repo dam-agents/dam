@@ -55,7 +55,6 @@ import {
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
 import {
   createTelegramBindFlowStore,
-  createTelegramConnectLinkStore,
   type TelegramOAuthPending,
 } from "./modules/channels/infrastructure/telegram-flows.js";
 import {
@@ -336,10 +335,6 @@ const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
 const telegramBindFlows = config.telegramBotToken
   ? createTelegramBindFlowStore()
   : undefined;
-const telegramConnectLinks = config.telegramBotToken
-  ? createTelegramConnectLinkStore()
-  : undefined;
-
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
@@ -413,7 +408,7 @@ const slackWorker = slackGatewayFactory
   : undefined;
 
 const telegramWorker =
-  config.telegramBotToken && chatSdkState && telegramConnectLinks
+  config.telegramBotToken && chatSdkState
     ? createTelegramWorker({
         botToken: config.telegramBotToken,
         configuredBotUsername: config.telegramBotUsername,
@@ -426,7 +421,6 @@ const telegramWorker =
           listByAgent: listConversationsByAgent(db),
           unbind: unbindConversation(db),
         },
-        connectLinks: telegramConnectLinks,
         oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
@@ -594,7 +588,6 @@ const { server: apiServer } = startApiServerApp({
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
   telegramBindFlows,
-  telegramConnectLinks,
   seedSources,
   redisBus,
   approvalsRelay,

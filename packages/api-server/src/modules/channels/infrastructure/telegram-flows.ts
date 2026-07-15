@@ -23,16 +23,6 @@ export interface TelegramPendingBind {
   createdAt: number;
 }
 
-/** A UI-minted one-time connect code (the `?start=connect-<code>` deep-link
- *  payload). It pins the agent AND the owner at mint time — delivering it to
- *  the bot binds the chat with no browser roundtrip. */
-export interface TelegramConnectLink {
-  agentId: string;
-  agentName: string;
-  ownerSub: string;
-  createdAt: number;
-}
-
 export interface FlowStore<T> {
   create(record: Omit<T, "createdAt">): string;
   /** TTL-checked read; an expired entry is deleted and reads as null.
@@ -43,7 +33,6 @@ export interface FlowStore<T> {
 }
 
 export type TelegramBindFlowStore = FlowStore<TelegramPendingBind>;
-export type TelegramConnectLinkStore = FlowStore<TelegramConnectLink>;
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
@@ -98,11 +87,4 @@ export function createTelegramBindFlowStore(opts?: {
   ttlMs?: number;
 }): TelegramBindFlowStore {
   return createFlowStore<TelegramPendingBind>(opts);
-}
-
-export function createTelegramConnectLinkStore(opts?: {
-  now?: () => number;
-  ttlMs?: number;
-}): TelegramConnectLinkStore {
-  return createFlowStore<TelegramConnectLink>(opts);
 }

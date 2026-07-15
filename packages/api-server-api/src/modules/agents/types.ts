@@ -98,15 +98,10 @@ export type BindTelegramChatResult =
   | { ok: true; value: { chatTitle: string | null } }
   | { ok: false; error: BindTelegramChatError };
 
-export type CreateTelegramConnectLinkError =
+export type ListTelegramChatsError =
   | { type: "AgentNotFound" }
-  /** Telegram is off, or the bot's handle is unknown (not configured and
-   *  getMe hasn't succeeded), so no deep link can be built. */
+  /** Telegram is off for this install, so no bindings can be read. */
   | { type: "TelegramUnavailable" };
-
-export type CreateTelegramConnectLinkResult =
-  | { ok: true; value: { dmLink: string; groupLink: string } }
-  | { ok: false; error: CreateTelegramConnectLinkError };
 
 export interface TelegramChatView {
   conversationId: string;
@@ -115,7 +110,7 @@ export interface TelegramChatView {
 
 export type ListTelegramChatsResult =
   | { ok: true; value: { chats: TelegramChatView[] } }
-  | { ok: false; error: CreateTelegramConnectLinkError };
+  | { ok: false; error: ListTelegramChatsError };
 
 export type UnbindTelegramChatError =
   | { type: "AgentNotFound" }
@@ -162,11 +157,6 @@ export interface AgentsService {
     agentId: string,
     flowId: string,
   ) => Promise<BindTelegramChatResult>;
-  /** Mint a one-time deep link that binds a Telegram chat to the caller's
-   *  agent when delivered to the bot — no browser roundtrip. */
-  createTelegramConnectLink: (
-    agentId: string,
-  ) => Promise<CreateTelegramConnectLinkResult>;
   /** The Telegram conversations bound to the caller's agent, with titles. */
   listTelegramChats: (agentId: string) => Promise<ListTelegramChatsResult>;
   /** Owner-side disconnect of a bound conversation (the UI counterpart of
