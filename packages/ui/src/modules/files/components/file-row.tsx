@@ -64,11 +64,17 @@ export function FileRow({
   // previous coordinate menu); Radix portals the menu content itself.
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const drag = useFileRowDrag(targetDir, {
-    onEnter: panel.onRowDragEnter,
-    onLeave: panel.onRowDragLeave,
-    onDrop: panel.onRowDrop,
-  });
+  const drag = useFileRowDrag(
+    targetDir,
+    { path, type },
+    {
+      onEnter: panel.onRowDragEnter,
+      onLeave: panel.onRowDragLeave,
+      onEnd: panel.onRowDragEnd,
+      onDrop: panel.onRowDrop,
+      onMove: panel.onRowMove,
+    },
+  );
 
   const dispatch = (action: FileRowMenuAction) =>
     panel.onAction(action, path, type);

@@ -1,4 +1,4 @@
-import { Document as FileText, Folder } from "@carbon/icons-react";
+import { FileText, Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -27,11 +27,11 @@ export function InlineNameRow({
       className="flex items-center gap-1.5 py-[5px] text-[12px]"
       style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
     >
-      <span className="w-[13px] shrink-0" />
+      <span className="w-[16px] shrink-0" />
       {kind === "dir" ? (
-        <Folder size={13} className="shrink-0" />
+        <Folder size={16} className="shrink-0" />
       ) : (
-        <FileText size={13} className="shrink-0" />
+        <FileText size={16} className="shrink-0" />
       )}
       <InlineNameInput
         initial={initial}
@@ -77,7 +77,7 @@ function InlineNameInput({
   return (
     <Input
       ref={ref}
-      className="flex-1 h-6 px-1 py-0 text-[12px] font-mono bg-card border-primary"
+      className="flex-1 h-[26px] px-1 py-0 text-[12px] bg-card border-primary"
       value={value}
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}

@@ -17,6 +17,11 @@ import {
   type FileEntryKind,
   useFileMutations,
 } from "../hooks/use-file-mutations.js";
+import {
+  type DragSource,
+  MOVE_MIME,
+  readMoveSource,
+} from "../hooks/use-file-row-drag.js";
 import { downloadFileAt } from "../lib/download.js";
 import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
@@ -47,7 +52,9 @@ export interface FilesPanelContextValue {
   ) => void;
   onRowDragEnter: (targetDir: string) => void;
   onRowDragLeave: (targetDir: string) => void;
+  onRowDragEnd: () => void;
   onRowDrop: (targetDir: string, files: FileList) => void;
+  onRowMove: (targetDir: string, source: DragSource) => void;
 }
 
 export const FilesPanelContext = createContext<FilesPanelContextValue | null>(
@@ -90,6 +97,7 @@ export function useFilesPanelController({
   const {
     createEntry,
     renameEntry,
+    moveEntry,
     deleteEntry,
     uploadFiles,
     uploadBundle,
@@ -163,6 +171,22 @@ export function useFilesPanelController({
     // only clear if we haven't already moved into another row.
     setDragTargetPath((prev) => (prev === targetDir ? null : prev));
   }, []);
+
+  // Drag cancel (Escape / drop outside the window) doesn't reliably fire a
+  // final dragleave, so the source's dragend clears any stuck highlight.
+  const handleRowDragEnd = useCallback(() => {
+    setDragTargetPath(null);
+    setPanelDragActive(false);
+  }, []);
+
+  const handleRowMove = useCallback(
+    (targetDir: string, source: DragSource) => {
+      setDragTargetPath(null);
+      setPanelDragActive(false);
+      void moveEntry({ from: source.path, toDir: targetDir });
+    },
+    [moveEntry],
+  );
 
   const handleRowDrop = useCallback(
     (targetDir: string, files: FileList) => {
@@ -273,6 +297,11 @@ export function useFilesPanelController({
     if (e.dataTransfer?.types?.includes("Files")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
+    } else if (e.dataTransfer?.types?.includes(MOVE_MIME)) {
+      // In-tree move dropped on empty panel space targets the root; no
+      // upload overlay for these.
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
     }
   }, []);
 
@@ -289,7 +318,12 @@ export function useFilesPanelController({
       setPanelDragActive(false);
       setDragTargetPath(null);
       // Row handlers stopPropagation before this fires, so reaching here
-      // means the drop happened on empty panel space → upload to root.
+      // means the drop happened on empty panel space → root.
+      const moved = readMoveSource(e);
+      if (moved) {
+        void moveEntry({ from: moved.path, toDir: "" });
+        return;
+      }
       const items = e.dataTransfer.items;
       if (items && hasDirectoryItem(items)) {
         void (async () => {
@@ -300,7 +334,7 @@ export function useFilesPanelController({
       }
       if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
     },
-    [uploadBundle, uploadFiles],
+    [moveEntry, uploadBundle, uploadFiles],
   );
 
   const ctxValue = useMemo<FilesPanelContextValue | null>(
@@ -321,7 +355,9 @@ export function useFilesPanelController({
             onAction: handleAction,
             onRowDragEnter: handleRowDragEnter,
             onRowDragLeave: handleRowDragLeave,
+            onRowDragEnd: handleRowDragEnd,
             onRowDrop: handleRowDrop,
+            onRowMove: handleRowMove,
           }
         : null,
     [
@@ -340,6 +376,7 @@ export function useFilesPanelController({
       handleRowDragEnter,
       handleRowDragLeave,
       handleRowDrop,
+      handleRowMove,
     ],
   );
 
