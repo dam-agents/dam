@@ -70,7 +70,8 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
   });
 
   await test.step("open the sandbox settings page", async () => {
-    await page.goto(`${baseUrl}/sandboxes/${agentId}`);
+    // Connections are their own section under the sandbox home now (#2793).
+    await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await expect(
       page.getByRole("heading", { level: 1, name: agentName }),
     ).toBeVisible();
@@ -119,7 +120,9 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
       page.getByTestId(`connection-grant-${recreatedId}`).getByRole("checkbox"),
     ).toBeChecked();
 
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Submit changes", exact: true })
+      .click();
 
     await expect
       .poll(

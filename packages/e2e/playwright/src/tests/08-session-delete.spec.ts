@@ -54,7 +54,10 @@ test("deleting the active session clears it and lets a fresh session start (#108
 
   await test.step("(A) deleting the active session removes it without a refresh", async () => {
     await activeRow.hover();
-    await activeRow.getByTestId("session-delete-button").click();
+    // Delete moved behind the row's overflow menu in the chat-shell rework
+    // (#2769); the menu item is portaled, so target it at page scope.
+    await activeRow.getByTestId("session-menu-button").click();
+    await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
       .getByRole("button", { name: "Confirm" })
