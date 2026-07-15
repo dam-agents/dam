@@ -1,7 +1,9 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import { useMemo } from "react";
 
-/** DataTransfer type carrying an in-tree move (JSON DragSource). */
+/** DataTransfer type carrying an in-tree move (JSON DragSource). App-private
+ *  on purpose: external drags never carry it, which is what keeps the
+ *  `hasFiles`/`hasMove` branches mutually exclusive on the drop paths. */
 export const MOVE_MIME = "application/x-platform-move";
 
 export interface DragSource {

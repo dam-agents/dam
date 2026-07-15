@@ -30,6 +30,7 @@ interface RenameEntryInput {
 interface MoveEntryInput {
   from: string;
   toDir: string;
+  kind: FileEntryKind;
 }
 
 function joinPath(dir: string, name: string): string {
@@ -106,7 +107,12 @@ export function useFileMutations(agentId: string | null) {
   );
 
   const relocate = useCallback(
-    async (from: string, to: string, failLabel: string) => {
+    async (
+      from: string,
+      to: string,
+      failLabel: string,
+      sourceKind?: FileEntryKind,
+    ) => {
       if (to === from) return;
 
       const tryRename = async (overwrite: boolean) => {
@@ -122,6 +128,13 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         if (!isConflictError(err)) {
           emitToast({ kind: "error", message: errorMessage(err, failLabel) });
+          return;
+        }
+        if (sourceKind === "dir") {
+          emitToast({
+            kind: "error",
+            message: `"${nameOf(to)}" already exists`,
+          });
           return;
         }
         const ok = await showConfirm(
@@ -156,11 +169,11 @@ export function useFileMutations(agentId: string | null) {
   );
 
   const moveEntry = useCallback(
-    async ({ from, toDir }: MoveEntryInput) => {
+    async ({ from, toDir, kind }: MoveEntryInput) => {
       if (parentOf(from) === toDir) return;
       // A folder can't move into itself or its own subtree.
       if (from === toDir || toDir.startsWith(from + "/")) return;
-      await relocate(from, joinPath(toDir, nameOf(from)), "Move failed");
+      await relocate(from, joinPath(toDir, nameOf(from)), "Move failed", kind);
     },
     [relocate],
   );

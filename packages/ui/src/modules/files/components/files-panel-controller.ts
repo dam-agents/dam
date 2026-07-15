@@ -183,7 +183,11 @@ export function useFilesPanelController({
     (targetDir: string, source: DragSource) => {
       setDragTargetPath(null);
       setPanelDragActive(false);
-      void moveEntry({ from: source.path, toDir: targetDir });
+      void moveEntry({
+        from: source.path,
+        toDir: targetDir,
+        kind: source.type,
+      });
     },
     [moveEntry],
   );
@@ -321,7 +325,7 @@ export function useFilesPanelController({
       // means the drop happened on empty panel space → root.
       const moved = readMoveSource(e);
       if (moved) {
-        void moveEntry({ from: moved.path, toDir: "" });
+        void moveEntry({ from: moved.path, toDir: "", kind: moved.type });
         return;
       }
       const items = e.dataTransfer.items;
