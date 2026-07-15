@@ -13,6 +13,7 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
+import { ChannelType } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -50,14 +51,15 @@ import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
+import type {
+  TelegramOAuthPending,
+  TelegramBindFlowStore,
+} from "../../modules/channels/infrastructure/telegram-flows.js";
 import {
-  isThreadAuthorized,
-  authorizeThread,
-  revokeThread,
-  listAuthorizedThreads,
-  getAuthorizedBy,
-} from "../../modules/channels/infrastructure/telegram-threads-repository.js";
+  findAgentByConversation,
+  bindConversation,
+  unbindConversation,
+} from "../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createSshRelay } from "./ssh-relay.js";
@@ -77,7 +79,6 @@ import { composeApiKeysModule } from "./../../modules/api-keys/index.js";
 import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 import {
@@ -104,10 +105,12 @@ export interface ApiServerAppDeps {
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
-  channelSecretStore: ChannelSecretStore;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
+  /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
+  telegramBindFlows?: TelegramBindFlowStore;
+  /** Present when Telegram is enabled; backs the one-time connect links. */
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -141,10 +144,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     api,
     db,
     channelManager,
-    channelSecretStore,
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
+    telegramBindFlows,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -367,19 +370,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
   }
 
-  if (config.telegramEnabled) {
+  if (config.telegramBotToken && telegramBindFlows) {
     app.route(
       "/",
       createTelegramOAuthRoutes({
         pendingFlows: pendingTelegramOAuthFlows,
-        threads: {
-          isAuthorized: isThreadAuthorized(db),
-          authorize: authorizeThread(db),
-          list: listAuthorizedThreads(db),
-          revoke: revokeThread(db),
-          getAuthorizedBy: getAuthorizedBy(db),
-        },
-        isAgentOwner: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
+        bindFlows: telegramBindFlows,
         oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
@@ -387,6 +383,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           keycloakClientId: config.keycloakClientId,
           callbackUrl: `${config.uiBaseUrl}/api/telegram/oauth/callback`,
         },
+        uiBaseUrl: config.uiBaseUrl,
       }),
     );
   }
@@ -767,7 +764,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       db,
       userDirectory,
-      channelSecretStore,
+      telegramBinding: telegramBindFlows
+        ? {
+            peekFlow: telegramBindFlows.peek,
+            consumeFlow: telegramBindFlows.consume,
+            findAgentByConversation: findAgentByConversation(db),
+            bind: bindConversation(db),
+            postMessage: (agentId, conversationId, text) =>
+              channelManager.postMessage(agentId, ChannelType.Telegram, text, {
+                conversationId,
+              }),
+            listConversations: (agentId) =>
+              channelManager.listConversations(agentId, ChannelType.Telegram),
+            unbind: unbindConversation(db),
+          }
+        : undefined,
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
@@ -861,7 +872,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         repos: reposService,
         agents,
         schedules,
-        channels: { available: channelManager.availableChannels() },
+        channels: {
+          available: channelManager.availableChannels(),
+          telegramBotUsername: () => channelManager.telegramBotUsername(),
+        },
         connections,
         skills,
         approvals,

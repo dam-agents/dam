@@ -6,12 +6,13 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  agentBindTelegramChatInputSchema,
+  agentListTelegramChatsInputSchema,
+  agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
-  agentConnectTelegramInputSchema,
   agentCreateInputSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
-  agentDisconnectTelegramInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
   agentUpdateInputSchema,
@@ -148,24 +149,74 @@ export const agentsRouter = t.router({
       return toView(agent);
     }),
 
-  connectTelegram: manageAgentsProcedure
-    .input(agentConnectTelegramInputSchema)
+  listTelegramChats: manageAgentsProcedure
+    .input(agentListTelegramChatsInputSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram bot not configured",
+        });
+      const res = await ctx.agents.listTelegramChats(input.agentId);
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "TelegramUnavailable":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Telegram bot is not running",
+          });
+      }
+    }),
+
+  unbindTelegramChat: manageAgentsProcedure
+    .input(agentUnbindTelegramChatInputSchema)
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "Telegram channel not enabled",
+          message: "Telegram bot not configured",
         });
-      const agent = await ctx.agents.connectTelegram(input.id, input.botToken);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      const res = await ctx.agents.unbindTelegramChat(
+        input.agentId,
+        input.conversationId,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "AgentNotFound":
+        case "ChatNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+      }
     }),
 
-  disconnectTelegram: manageAgentsProcedure
-    .input(agentDisconnectTelegramInputSchema)
+  bindTelegramChat: manageAgentsProcedure
+    .input(agentBindTelegramChatInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.disconnectTelegram(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram bot not configured",
+        });
+      const res = await ctx.agents.bindTelegramChat(
+        input.agentId,
+        input.flowId,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "FlowInvalid":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Bind link is invalid or expired — send /login again in Telegram",
+          });
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "ChatAlreadyBound":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This chat is already connected to another agent",
+          });
+      }
     }),
 });

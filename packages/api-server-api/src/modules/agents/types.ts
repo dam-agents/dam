@@ -26,11 +26,7 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
 }
 
-export interface TelegramChannel extends Channel {
-  type: ChannelType.Telegram;
-}
-
-export type ChannelConfig = SlackChannel | TelegramChannel;
+export type ChannelConfig = SlackChannel;
 
 // --- Agent ---
 
@@ -91,6 +87,40 @@ export type ConnectSlackResult =
   | { ok: true; value: Agent }
   | { ok: false; error: ConnectSlackError };
 
+export type BindTelegramChatError =
+  /** Unknown, expired, or not-your-flow — deliberately one bucket so the
+   *  error is no oracle for whether a flow id exists. */
+  | { type: "FlowInvalid" }
+  | { type: "AgentNotFound" }
+  | { type: "ChatAlreadyBound" };
+
+export type BindTelegramChatResult =
+  | { ok: true; value: { chatTitle: string | null } }
+  | { ok: false; error: BindTelegramChatError };
+
+export type ListTelegramChatsError =
+  | { type: "AgentNotFound" }
+  /** Telegram is off for this install, so no bindings can be read. */
+  | { type: "TelegramUnavailable" };
+
+export interface TelegramChatView {
+  conversationId: string;
+  title: string;
+}
+
+export type ListTelegramChatsResult =
+  | { ok: true; value: { chats: TelegramChatView[] } }
+  | { ok: false; error: ListTelegramChatsError };
+
+export type UnbindTelegramChatError =
+  | { type: "AgentNotFound" }
+  /** The conversation isn't bound to this agent (unknown, or another's). */
+  | { type: "ChatNotFound" };
+
+export type UnbindTelegramChatResult =
+  | { ok: true; value: null }
+  | { ok: false; error: UnbindTelegramChatError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -121,7 +151,19 @@ export interface AgentsService {
     slackChannelId: string,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
-  connectTelegram: (id: string, botToken: string) => Promise<Agent | null>;
-  disconnectTelegram: (id: string) => Promise<Agent | null>;
+  /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
+   *  bind that conversation to the caller's agent. */
+  bindTelegramChat: (
+    agentId: string,
+    flowId: string,
+  ) => Promise<BindTelegramChatResult>;
+  /** The Telegram conversations bound to the caller's agent, with titles. */
+  listTelegramChats: (agentId: string) => Promise<ListTelegramChatsResult>;
+  /** Owner-side disconnect of a bound conversation (the UI counterpart of
+   *  the in-chat /logout). */
+  unbindTelegramChat: (
+    agentId: string,
+    conversationId: string,
+  ) => Promise<UnbindTelegramChatResult>;
   isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

@@ -4,7 +4,6 @@ import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
-import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -16,6 +15,7 @@ import {
   type PresetSeeder,
   type ContributionsSettledPort,
   type ResizeGatePort,
+  type TelegramBindingPort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -56,12 +56,13 @@ export function composeAgentsModule(deps: {
   owner: string | undefined;
   db: Db;
   userDirectory: KeycloakUserDirectory;
-  channelSecretStore: ChannelSecretStore;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Telegram chat→agent binding flow; omitted system-side. */
+  telegramBinding?: TelegramBindingPort;
   /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -112,7 +113,7 @@ export function composeAgentsModule(deps: {
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
       },
       findSlackChannelBinding: findBySlackChannelId(deps.db),
-      channelSecretStore: deps.channelSecretStore,
+      telegramBinding: deps.telegramBinding,
       listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
       listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
       setAllowedUsers: setAllowedUsers(deps.db, owner),

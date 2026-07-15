@@ -8,6 +8,9 @@ import {
   type TemplateSpec,
   type ChannelConfig,
   type DriverFailure,
+  type BindTelegramChatResult,
+  type ListTelegramChatsResult,
+  type UnbindTelegramChatResult,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -45,7 +48,6 @@ import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
-import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -60,6 +62,189 @@ import { securityLog } from "../../../core/security-log.js";
  */
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+}
+
+/**
+ * Port consumed by `bindTelegramChat()`. Declared locally (like
+ * `PresetSeeder`) so the agents module doesn't import channels
+ * infrastructure; the composition root assembles it from the bind-flow
+ * store, the conversations repository, and the ChannelManager.
+ */
+export interface TelegramBindingPort {
+  peekFlow(flowId: string): {
+    conversationId: string;
+    telegramUserId: string;
+    keycloakSub: string;
+    chatTitle?: string;
+  } | null;
+  consumeFlow(flowId: string): void;
+  findAgentByConversation(
+    conversationId: string,
+  ): Promise<{ agentId: string; authorizedBy: string } | null>;
+  bind(
+    conversationId: string,
+    agentId: string,
+    authorizedBy: string,
+  ): Promise<"bound" | "conflict">;
+  /** Best-effort confirmation into the chat, via the channel manager. */
+  postMessage(
+    agentId: string,
+    conversationId: string,
+    text: string,
+  ): Promise<{ ok: true } | { error: string }>;
+  /** Bound conversations for an agent, with human titles. */
+  listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
+  unbind(conversationId: string): Promise<void>;
+}
+
+/**
+ * The bind flow, extracted from the service so tests can drive it with
+ * three narrow deps instead of the full service dependency set.
+ */
+export function executeTelegramBind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  binding: TelegramBindingPort;
+}) {
+  return async (
+    agentId: string,
+    flowId: string,
+  ): Promise<BindTelegramChatResult> => {
+    const flow = deps.binding.peekFlow(flowId);
+    if (!flow) return err({ type: "FlowInvalid" as const });
+
+    if (!deps.owner || flow.keycloakSub !== deps.owner) {
+      // A different signed-in user is trying to consume the flow. Same error
+      // as an unknown flow — don't reveal that the id exists; the flow stays
+      // alive so the right account can still complete within the TTL.
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        decision: "deny",
+        reason: "telegram-bind-sub-mismatch",
+        detail: { conversationId: flow.conversationId },
+      });
+      return err({ type: "FlowInvalid" as const });
+    }
+
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    const existing = await deps.binding.findAgentByConversation(
+      flow.conversationId,
+    );
+    if (existing && existing.agentId !== agentId) {
+      // Flow stays alive — the user may pick the right agent, or /logout
+      // in the chat and retry.
+      return err({ type: "ChatAlreadyBound" as const });
+    }
+    if (!existing) {
+      const outcome = await deps.binding.bind(
+        flow.conversationId,
+        agentId,
+        flow.keycloakSub,
+      );
+      if (outcome === "conflict") {
+        // Lost an insert race — re-read to tell idempotent-same-agent apart
+        // from a real clash.
+        const raced = await deps.binding.findAgentByConversation(
+          flow.conversationId,
+        );
+        if (!raced || raced.agentId !== agentId)
+          return err({ type: "ChatAlreadyBound" as const });
+      }
+    }
+
+    deps.binding.consumeFlow(flowId);
+
+    // The binding IS the consent grant: the owner lends this agent — its
+    // credentials included — to everyone in the conversation.
+    securityLog("info", "channel.chat_bound", {
+      category: "authz-list",
+      actor: deps.owner,
+      actorKind: "user",
+      surface: "telegram",
+      agentId,
+      result: "success",
+      detail: {
+        conversationId: flow.conversationId,
+        telegramUserId: flow.telegramUserId,
+      },
+    });
+
+    const post = await deps.binding.postMessage(
+      agentId,
+      flow.conversationId,
+      `This chat is now connected to ${agent.name}. Send /logout to disconnect.`,
+    );
+    if ("error" in post) {
+      // Best-effort: the binding is committed; the confirmation is courtesy.
+      securityLog("warn", "channel.chat_bound.notify_failed", {
+        category: "channel",
+        actor: deps.owner,
+        actorKind: "user",
+        surface: "telegram",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { conversationId: flow.conversationId },
+      });
+    }
+
+    return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+/** Owner-side disconnect, extracted like `executeTelegramBind` for tests. */
+export function executeTelegramUnbind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  binding: TelegramBindingPort;
+}) {
+  return async (
+    agentId: string,
+    conversationId: string,
+  ): Promise<UnbindTelegramChatResult> => {
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    const existing = await deps.binding.findAgentByConversation(conversationId);
+    if (!existing || existing.agentId !== agentId)
+      return err({ type: "ChatNotFound" as const });
+
+    // Courtesy note BEFORE the row goes away — outbound posting validates
+    // the binding, so this ordering is load-bearing. Best-effort either way.
+    const post = await deps.binding.postMessage(
+      agentId,
+      conversationId,
+      `This chat was disconnected from ${agent.name} by its owner. Send /login to connect it again.`,
+    );
+    if ("error" in post) {
+      securityLog("warn", "channel.chat_unbound.notify_failed", {
+        category: "channel",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "telegram",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { conversationId },
+      });
+    }
+
+    await deps.binding.unbind(conversationId);
+    securityLog("info", "channel.chat_unbound", {
+      category: "authz-list",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      surface: "telegram",
+      agentId,
+      result: "success",
+      detail: { conversationId, viaUi: true },
+    });
+    return ok(null);
+  };
 }
 
 /**
@@ -173,7 +358,8 @@ export function createAgentsService(deps: {
   findSlackChannelBinding: (
     slackChannelId: string,
   ) => Promise<{ agentId: string } | null>;
-  channelSecretStore: ChannelSecretStore;
+  /** Absent in the system-wide composition — binding is a user-facing flow. */
+  telegramBinding?: TelegramBindingPort;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
   listAllowedUsersByAgent: (agentId: string) => Promise<string[]>;
   setAllowedUsers: (agentId: string, subs: string[]) => Promise<void>;
@@ -809,29 +995,41 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async connectTelegram(id, botToken) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
-
-      await deps.channelSecretStore.storeTelegramToken(id, botToken);
-      await deps.upsertChannel(id, { type: ChannelType.Telegram });
-      emit({ type: EventType.TelegramConnected, agentId: id });
-
-      return project(infra);
+    async listTelegramChats(agentId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "TelegramUnavailable" as const });
+      const infra = await deps.repo.get(agentId, deps.owner);
+      if (!infra) return err({ type: "AgentNotFound" as const });
+      const chats = await binding.listConversations(infra.id);
+      return ok({
+        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+      });
     },
 
-    async disconnectTelegram(id) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
+    async unbindTelegramChat(agentId, conversationId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "ChatNotFound" as const });
+      return executeTelegramUnbind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        binding,
+      })(agentId, conversationId);
+    },
 
-      await deps.deleteChannelByType(id, ChannelType.Telegram);
-      await deps.channelSecretStore.deleteChannelSecret(
-        id,
-        ChannelType.Telegram,
-      );
-      emit({ type: EventType.TelegramDisconnected, agentId: id });
-
-      return project(infra);
+    async bindTelegramChat(agentId, flowId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "FlowInvalid" as const });
+      return executeTelegramBind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        binding,
+      })(agentId, flowId);
     },
 
     async isAllowedUser(agentId, keycloakSub) {

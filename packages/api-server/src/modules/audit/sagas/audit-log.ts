@@ -74,7 +74,18 @@ export function startAuditLogSaga(): Subscription {
       agentId: e.agentId,
       result: e.outcome,
       ...(e.reason ? { reason: e.reason } : {}),
-      ...(e.forkId ? { detail: { forkId: e.forkId } } : {}),
+      // `actor` stays Keycloak-sub space; the messenger-native driver id
+      // rides `detail`, never `actor`.
+      ...(e.forkId || e.externalActorId
+        ? {
+            detail: {
+              ...(e.forkId ? { forkId: e.forkId } : {}),
+              ...(e.externalActorId
+                ? { externalActorId: e.externalActorId }
+                : {}),
+            },
+          }
+        : {}),
     }),
   );
 

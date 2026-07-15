@@ -9,10 +9,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import {
   isShowInternalConnectionsEnabled,
@@ -20,10 +22,11 @@ import {
 } from "../../connections/internal-only.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
+import { ChannelsPanel } from "../../sessions/components/channels-panel.js";
 import { useAppVersion } from "../api/queries.js";
 import { ProvidersView } from "./providers-view.js";
 
-const tabs: { id: SettingsTab; label: string }[] = [
+const baseTabs: { id: SettingsTab; label: string }[] = [
   { id: "account", label: "Account" },
   { id: "appearance", label: "Appearance" },
   { id: "providers", label: "Providers" },
@@ -53,7 +56,14 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const activeTab = useStore((s) => s.settingsTab);
+  // Hidden behind the version-tap toggle, like the internal connections:
+  // messenger channel bindings are not a regular-user surface yet.
+  const showChannels = isShowInternalConnectionsEnabled();
+  const tabs = showChannels
+    ? [...baseTabs, { id: "channels" as const, label: "Channels" }]
+    : baseTabs;
+  const rawTab = useStore((s) => s.settingsTab);
+  const activeTab = rawTab === "channels" && !showChannels ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -148,6 +158,8 @@ export function SettingsView() {
 
         {activeTab === "api-keys" && <ApiKeysList />}
 
+        {activeTab === "channels" && showChannels && <ChannelsSettings />}
+
         {activeTab === "account" && (
           <div className="anim-in">
             <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
@@ -213,6 +225,37 @@ export function SettingsView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Internal-only tab: pick an agent, then manage its messenger channels.
+ *  Revealed by the same five-tap version toggle as internal connections. */
+function ChannelsSettings() {
+  const agents = useAgentsList();
+  const [agentId, setAgentId] = useState<string>("");
+  const selected = agents.find((a) => a.id === agentId);
+
+  return (
+    <div className="anim-in">
+      <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
+        Channels
+      </h2>
+      <p className="text-[14px] text-foreground/80 mb-6">
+        Connect an agent to messenger surfaces (Slack channels, Telegram chats).
+      </p>
+      <div className="mb-4 max-w-90">
+        <SectionLabel spaced>Agent</SectionLabel>
+        <Select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+          <option value="">Select an agent…</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {selected && <ChannelsPanel agentId={selected.id} />}
     </div>
   );
 }

@@ -12,7 +12,6 @@ import {
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
   backfillUserEnv,
-  startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
@@ -39,12 +38,8 @@ import {
 } from "./modules/channels/infrastructure/slack.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
-import {
-  createTelegramWorker,
-  type TelegramOAuthPending,
-} from "./modules/channels/infrastructure/telegram.js";
+import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
-import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -52,13 +47,16 @@ import {
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
-  isThreadAuthorized,
-  authorizeThread,
-  revokeThread,
-  listAuthorizedThreads,
-  deleteThreadsByAgent,
-  getAuthorizedBy,
-} from "./modules/channels/infrastructure/telegram-threads-repository.js";
+  findAgentByConversation,
+  bindConversation,
+  listConversationsByAgent,
+  unbindConversation,
+  deleteConversationsByAgent,
+} from "./modules/channels/infrastructure/telegram-conversations-repository.js";
+import {
+  createTelegramBindFlowStore,
+  type TelegramOAuthPending,
+} from "./modules/channels/infrastructure/telegram-flows.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -185,7 +183,6 @@ const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
 };
-const channelSecretStore = createChannelSecretStore(k8sClient);
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
@@ -263,11 +260,9 @@ const { service: e2eService } = composeE2eModule({
   slack: fakeSlackGateway,
 });
 
-const channelSecretCleanupSub =
-  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
-  deleteThreadsByAgent(db),
+  deleteConversationsByAgent(db),
 );
 const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
   createAgentSkillsRepository(db).deleteByAgent(agentId),
@@ -324,7 +319,6 @@ const { agents: systemAgents } = composeAgentsModule({
   owner: undefined,
   db,
   userDirectory,
-  channelSecretStore,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
@@ -338,7 +332,9 @@ const identityLinkService = createIdentityLinkService({
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
 const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
-
+const telegramBindFlows = config.telegramBotToken
+  ? createTelegramBindFlowStore()
+  : undefined;
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
@@ -350,7 +346,7 @@ const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callbac
 const chatSdkDatabaseUrl = config.databaseCaCertPath
   ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
   : config.databaseUrl;
-const chatSdkState = config.telegramEnabled
+const chatSdkState = config.telegramBotToken
   ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
   : undefined;
 
@@ -412,35 +408,35 @@ const slackWorker = slackGatewayFactory
   : undefined;
 
 const telegramWorker =
-  config.telegramEnabled && chatSdkState
-    ? createTelegramWorker(
+  config.telegramBotToken && chatSdkState
+    ? createTelegramWorker({
+        botToken: config.telegramBotToken,
+        configuredBotUsername: config.telegramBotUsername,
         makeAcpClient,
-        chatSdkState,
-        () => systemAgents,
-        {
-          isAuthorized: isThreadAuthorized(db),
-          authorize: authorizeThread(db),
-          list: listAuthorizedThreads(db),
-          revoke: revokeThread(db),
-          getAuthorizedBy: getAuthorizedBy(db),
+        state: chatSdkState,
+        agents: () => systemAgents,
+        conversations: {
+          findAgentByConversation: findAgentByConversation(db),
+          bind: bindConversation(db),
+          listByAgent: listConversationsByAgent(db),
+          unbind: unbindConversation(db),
         },
-        {
+        oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: telegramOauthCallbackUrl,
         },
-        pendingTelegramOAuthFlows,
+        pendingOAuthFlows: pendingTelegramOAuthFlows,
         isTermsAccepted,
-        config.uiBaseUrl,
-      )
+        uiBaseUrl: config.uiBaseUrl,
+      })
     : undefined;
 
 const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
-  channelSecretStore,
 });
 
 // Seed list for the `trusted` egress preset.
@@ -588,10 +584,10 @@ const { server: apiServer } = startApiServerApp({
   api,
   db,
   channelManager,
-  channelSecretStore,
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
+  telegramBindFlows,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -651,7 +647,6 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
   if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
-  channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

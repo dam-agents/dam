@@ -63,6 +63,23 @@ describe("audit-log saga", () => {
     expect(rec.level).toBe("info");
   });
 
+  it("projects the messenger identity into detail, never into actor", () => {
+    const h = harness();
+    active = h.sub;
+    emit({
+      type: EventType.ChannelTurnRelayed,
+      channel: "telegram",
+      agentId: "agent-2",
+      actorSub: null,
+      externalActorId: "tg-777",
+      outcome: "success",
+    });
+    const rec = h.records()[0]!;
+    expect(rec.actor).toBe(null);
+    expect(rec.actorKind).toBe("external");
+    expect(rec.detail).toEqual({ externalActorId: "tg-777" });
+  });
+
   it("logs a failed channel turn at warn", () => {
     const h = harness();
     active = h.sub;

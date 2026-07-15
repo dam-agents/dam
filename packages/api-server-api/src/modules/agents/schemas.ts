@@ -41,7 +41,6 @@ export const agentWakeInputSchema = idSchema;
 export const agentStopInputSchema = idSchema;
 export const agentPauseInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema;
-export const agentDisconnectTelegramInputSchema = idSchema;
 
 export const agentCreateInputSchema = z
   .object({
@@ -110,9 +109,19 @@ export const agentConnectSlackInputSchema = z.object({
   slackChannelId: z.string().min(1),
 });
 
-export const agentConnectTelegramInputSchema = z.object({
-  id: z.string().min(1),
-  botToken: z.string().min(1),
+export const agentListTelegramChatsInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const agentUnbindTelegramChatInputSchema = z.object({
+  agentId: z.string().min(1),
+  conversationId: z.string().min(1),
+});
+
+export const agentBindTelegramChatInputSchema = z.object({
+  agentId: z.string().min(1),
+  // Opaque bind-flow id minted by the Telegram OAuth callback.
+  flowId: z.string().min(1),
 });
 
 // The Agent CR spec shape is the generated AgentSpecCR (crd-types.gen.ts, from

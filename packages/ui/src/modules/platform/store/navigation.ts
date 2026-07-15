@@ -33,6 +33,10 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set) => ({
   view: (() => {
+    // The Telegram bind page is entered via an external redirect carrying a
+    // one-shot ?flow= param — a stale OAuth return-view must not replace it.
+    if (window.location.pathname === "/telegram/bind")
+      return pathToState(window.location.pathname).view;
     // Holds the path to restore after an OAuth roundtrip (e.g. /settings/connections).
     const saved = sessionStorage.getItem("platform-return-view");
     if (saved) {

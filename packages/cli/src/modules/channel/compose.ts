@@ -12,8 +12,6 @@ import { buildDisallowCommand } from "./commands/disallow.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildSlackConnectCommand } from "./commands/slack-connect.js";
 import { buildSlackDisconnectCommand } from "./commands/slack-disconnect.js";
-import { buildTelegramConnectCommand } from "./commands/telegram-connect.js";
-import { buildTelegramDisconnectCommand } from "./commands/telegram-disconnect.js";
 import {
   createChannelService,
   type ChannelService,
@@ -51,7 +49,7 @@ export function composeChannelModule(
   };
 
   const parent = new Command("channel").description(
-    "Manage messenger channel bindings (Slack, Telegram)",
+    "Manage messenger channel bindings (Telegram chats bind in-chat via /login)",
   );
   parent.addCommand(
     buildAvailableCommand({
@@ -74,13 +72,6 @@ export function composeChannelModule(
   slack.addCommand(buildSlackConnectCommand(agentScoped));
   slack.addCommand(buildSlackDisconnectCommand(agentScoped));
   parent.addCommand(slack);
-
-  const telegram = new Command("telegram").description(
-    "Bind or unbind an Agent's Telegram bot",
-  );
-  telegram.addCommand(buildTelegramConnectCommand(agentScoped));
-  telegram.addCommand(buildTelegramDisconnectCommand(agentScoped));
-  parent.addCommand(telegram);
 
   // allow/disallow touch only the Agent's allowedUserEmails field, so they need
   // the resolver + AgentService but no ChannelService.
