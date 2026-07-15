@@ -31,6 +31,7 @@ export function SkillsSurface({
   const {
     sources,
     sourcesLoaded,
+    stateLoaded,
     skillsBySource,
     loadingBySource,
     errorBySource,
@@ -72,6 +73,7 @@ export function SkillsSurface({
                 installedRef={installedRef}
                 busyKey={busyKey}
                 disabled={!agentId || isError}
+                stateLoaded={stateLoaded}
                 onToggle={toggle}
               />
             ))}

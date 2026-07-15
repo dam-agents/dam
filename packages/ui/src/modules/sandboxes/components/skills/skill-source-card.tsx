@@ -1,4 +1,6 @@
 import type { Skill, SkillRef, SkillSource } from "api-server-api";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
 import { SkillRow } from "./skill-row.js";
@@ -35,9 +37,10 @@ function SourceError({ error }: { error: string }) {
 
 /**
  * A single Skill Source rendered as a card: header (name · `N of M on` · repo
- * URL) over its skill rows. Source-admin actions (03), sorting/collapse (02),
- * and drift (06) attach here in later slices — the header keeps a trailing slot
- * for the kebab so adding them doesn't reshape the tree.
+ * URL) over its skill rows. Enabled skills sort to the top; when a source has
+ * both enabled and available skills the available ones collapse under an
+ * "Expand all" / "Hide available" control (slice 02). Source-admin actions (03)
+ * and drift (06) attach here in later slices.
  */
 export function SkillSourceCard({
   source,
@@ -47,6 +50,7 @@ export function SkillSourceCard({
   installedRef,
   busyKey,
   disabled,
+  stateLoaded,
   onToggle,
 }: {
   source: SkillSource;
@@ -59,13 +63,38 @@ export function SkillSourceCard({
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
+  /** Whether the installed set has loaded — gates the collapse-default snapshot. */
+  stateLoaded: boolean;
   onToggle: (skill: Skill) => void;
 }) {
   const busy = loading || skills === undefined;
   const list = skills ?? [];
-  const installedCount = list.filter(
+  const enabled = list.filter(
     (s) => installedRef(s.source, s.name) !== undefined,
-  ).length;
+  );
+  const available = list.filter(
+    (s) => installedRef(s.source, s.name) === undefined,
+  );
+  // Enabled skills sit at the top; available follow in scan order.
+  const sorted = [...enabled, ...available];
+  const collapsible = enabled.length > 0 && available.length > 0;
+
+  // Snapshot the default collapse once the installed set is known: a source
+  // with enabled skills opens collapsed (enabled only). Snapshotting — rather
+  // than deriving live — keeps an immediate toggle from collapsing the list
+  // mid-edit; it re-snapshots when the card remounts (nav away / refresh).
+  const defaultCollapsedRef = useRef<boolean | null>(null);
+  if (defaultCollapsedRef.current === null && !busy && stateLoaded) {
+    defaultCollapsedRef.current = collapsible;
+  }
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const expanded =
+    userExpanded ??
+    (defaultCollapsedRef.current === null
+      ? true
+      : !defaultCollapsedRef.current);
+
+  const visible = expanded ? sorted : enabled;
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -77,7 +106,7 @@ export function SkillSourceCard({
             </p>
             {!busy && !error && (
               <span className="shrink-0 text-[13px] text-muted-foreground">
-                {installedCount} of {list.length} on
+                {enabled.length} of {list.length} on
               </span>
             )}
           </div>
@@ -96,7 +125,7 @@ export function SkillSourceCard({
       )}
       {!busy &&
         !error &&
-        list.map((skill) => (
+        visible.map((skill) => (
           <SkillRow
             key={skillKey(skill.source, skill.name)}
             skill={skill}
@@ -106,6 +135,17 @@ export function SkillSourceCard({
             onToggle={() => onToggle(skill)}
           />
         ))}
+
+      {!busy && !error && collapsible && (
+        <button
+          type="button"
+          onClick={() => setUserExpanded(!expanded)}
+          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {expanded ? "Hide available" : "Expand all"}
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      )}
     </div>
   );
 }

@@ -18,6 +18,9 @@ export interface SkillsSurface {
   /** False until the first `sources.list` resolves, so the surface can show a
    *  skeleton instead of flashing an empty "no sources" state. */
   sourcesLoaded: boolean;
+  /** False until the first `skills.state` resolves, so a source card can snapshot
+   *  its collapse default only once the installed set is actually known. */
+  stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
   loadingBySource: Record<string, boolean>;
   errorBySource: Record<string, string | null>;
@@ -51,6 +54,7 @@ export function useSkillsSurface(
 
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const [stateLoaded, setStateLoaded] = useState(false);
   const [skillsBySource, setSkillsBySource] = useState<Record<string, Skill[]>>(
     {},
   );
@@ -95,6 +99,7 @@ export function useSkillsSurface(
   useEffect(() => {
     let cancelled = false;
     setSourcesLoaded(false);
+    setStateLoaded(false);
 
     const refreshInstalled = async () => {
       if (!agentId) {
@@ -102,6 +107,7 @@ export function useSkillsSurface(
           setInstalled([]);
           setStandalone([]);
           setPublishes([]);
+          setStateLoaded(true);
         }
         return;
       }
@@ -112,7 +118,10 @@ export function useSkillsSurface(
           setStandalone(state.standalone);
           setPublishes(state.instancePublishes);
         }
-      } catch {}
+      } catch {
+      } finally {
+        if (!cancelled) setStateLoaded(true);
+      }
     };
 
     (async () => {
@@ -182,6 +191,7 @@ export function useSkillsSurface(
   return {
     sources,
     sourcesLoaded,
+    stateLoaded,
     skillsBySource,
     loadingBySource,
     errorBySource,
