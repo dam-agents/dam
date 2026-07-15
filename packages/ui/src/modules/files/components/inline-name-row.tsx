@@ -60,10 +60,28 @@ function InlineNameInput({
   const ref = useRef<HTMLInputElement | null>(null);
   // Guard against double-firing commit from blur + Enter; both paths race.
   const committedRef = useRef(false);
+  // True while the focus grab below is running; blurs during that window are
+  // the menu's focus trap yanking, not user intent — don't commit on them.
+  const grabbingRef = useRef(true);
 
+  // The row is usually spawned from a menu whose focus trap stays alive
+  // through its exit animation and which refocuses its trigger at the end —
+  // a single focus() loses. Re-assert briefly, then behave normally.
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
+    const el = ref.current;
+    if (!el) return;
+    let raf = 0;
+    let ticks = 0;
+    const tick = () => {
+      if (document.activeElement !== el) {
+        el.focus();
+        el.select();
+      }
+      if (++ticks < 30) raf = requestAnimationFrame(tick);
+      else grabbingRef.current = false;
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const commit = () => {
@@ -91,7 +109,9 @@ function InlineNameInput({
           onCancel();
         }
       }}
-      onBlur={commit}
+      onBlur={() => {
+        if (!grabbingRef.current) commit();
+      }}
       onClick={(e) => e.stopPropagation()}
     />
   );
