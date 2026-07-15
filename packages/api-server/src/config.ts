@@ -191,17 +191,28 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(5 * 1024 * 1024 * 1024),
-  /** Hard ceiling for a single Experiment Candidate artifact stored in
-   *  Postgres, in bytes. Enforced by the artifact service before the blob is
-   *  written, so an oversized Candidate can't bloat the database. Default
-   *  10 MiB — Candidates are meant to be small (a prompt, a config, a small
-   *  program); larger artifacts want object storage, not a row. Tune via
-   *  `MAX_ARTIFACT_BYTES`. */
+  /** Hard ceiling for a single Experiment Candidate artifact, in bytes.
+   *  Tune via `MAX_ARTIFACT_BYTES`. */
   maxArtifactBytes: z.coerce
     .number()
     .int()
     .positive()
-    .default(10 * 1024 * 1024),
+    .default(50 * 1024 * 1024),
+  /** S3-compatible object store for Candidate artifacts. Unset = no store:
+   *  candidate recording fails closed. */
+  objectStorageEndpoint: z.url().optional(),
+  /** Authority agents dial for direct uploads — links are signed against it
+   *  (SigV4 binds the Host header). Defaults to the endpoint. */
+  objectStorageAgentEndpoint: z.url().optional(),
+  /** Browser-reachable authority for direct downloads. Unset = relay. */
+  objectStoragePublicEndpoint: z.url().optional(),
+  objectStorageRegion: z.string().min(1).default("us-east-1"),
+  objectStorageBucket: z.string().min(1).default("platform-artifacts"),
+  /** Both set or both unset; unset = SDK default provider chain (IRSA). */
+  objectStorageAccessKeyId: z.string().nullable().default(null),
+  objectStorageSecretAccessKey: z.string().nullable().default(null),
+  /** Path-style addressing — needed by SeaweedFS/self-hosted; false for AWS. */
+  objectStorageForcePathStyle: z.stringbool().default(true),
   /** Inactivity-deadline window for Experiment arms, in seconds. A `running`
    *  arm that records no Run and never calls `finish_arm` for this long is
    *  reaped to `failed` by the background sweep, so a started Experiment always
@@ -236,14 +247,24 @@ export type Config = z.infer<typeof configSchema>;
 
 // A turn blocked on an egress approval must outlive the hold, else the ceiling
 // kills the connection before the human can respond.
-const validatedConfigSchema = configSchema.refine(
-  (c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds,
-  {
+const validatedConfigSchema = configSchema
+  .refine((c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds, {
     message:
       "acpTurnCeilingSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval does not die before the hold resolves",
     path: ["acpTurnCeilingSeconds"],
-  },
-);
+  })
+  // Half a credential pair silently falls back to the SDK provider chain —
+  // fail at startup instead.
+  .refine(
+    (c) =>
+      (c.objectStorageAccessKeyId == null) ===
+      (c.objectStorageSecretAccessKey == null),
+    {
+      message:
+        "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY must be set together (or both left unset for the SDK default provider chain)",
+      path: ["objectStorageAccessKeyId"],
+    },
+  );
 
 export function loadConfig(): Config {
   return validatedConfigSchema.parse({
@@ -313,6 +334,16 @@ export function loadConfig(): Config {
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
+    objectStorageEndpoint: process.env.OBJECT_STORAGE_ENDPOINT,
+    objectStorageAgentEndpoint:
+      process.env.OBJECT_STORAGE_AGENT_ENDPOINT ??
+      process.env.OBJECT_STORAGE_ENDPOINT,
+    objectStoragePublicEndpoint: process.env.OBJECT_STORAGE_PUBLIC_ENDPOINT,
+    objectStorageRegion: process.env.OBJECT_STORAGE_REGION,
+    objectStorageBucket: process.env.OBJECT_STORAGE_BUCKET,
+    objectStorageAccessKeyId: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
+    objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     experimentArmInactivitySeconds:
       process.env.EXPERIMENT_ARM_INACTIVITY_SECONDS,
     brand: {

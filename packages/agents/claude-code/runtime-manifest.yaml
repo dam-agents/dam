@@ -51,6 +51,10 @@ drivers:
             - value: bypassPermissions
               name: "Bypass Permissions"
               description: "Bypass all permission checks"
+        # Claude Code's persisted effortLevel setting accepts low|medium|high|xhigh.
+        # "max" is session-only (/effort, --effort, CLAUDE_CODE_EFFORT_LEVEL accept
+        # it, gated to Opus 4.7+/Fable): Claude Code never persists it, and its
+        # settings.json schema silently drops it — so it must not be offered here.
         - id: effort
           name: Effort
           description: Reasoning effort level
@@ -62,8 +66,9 @@ drivers:
               name: "Medium"
             - value: high
               name: "High"
-            - value: max
-              name: "Max"
+            - value: xhigh
+              name: "Extra High"
+              description: "May use excessive tokens. Use sparingly for the hardest tasks."
       # Haiku supports neither "auto" mode nor effort levels.
       modelConstraints:
         haiku:

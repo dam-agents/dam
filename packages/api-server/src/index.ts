@@ -81,6 +81,7 @@ import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import {
   composeApprovalsSystem,
@@ -127,6 +128,33 @@ const dbTls = {
 };
 await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
 const { db, sql } = createDb(config.databaseUrl, dbTls);
+
+// Candidate-artifact storage, shared by both app servers. ensureReady
+// provisions the bucket and fails boot fast on an unreachable store.
+const artifactsModule = composeArtifactsModule({
+  maxBytes: config.maxArtifactBytes,
+  objectStorage: config.objectStorageEndpoint
+    ? {
+        endpoint: config.objectStorageEndpoint,
+        agentEndpoint:
+          config.objectStorageAgentEndpoint ?? config.objectStorageEndpoint,
+        publicEndpoint: config.objectStoragePublicEndpoint ?? null,
+        region: config.objectStorageRegion,
+        bucket: config.objectStorageBucket,
+        forcePathStyle: config.objectStorageForcePathStyle,
+        credentials:
+          config.objectStorageAccessKeyId != null &&
+          config.objectStorageSecretAccessKey != null
+            ? {
+                accessKeyId: config.objectStorageAccessKeyId,
+                secretAccessKey: config.objectStorageSecretAccessKey,
+              }
+            : null,
+      }
+    : null,
+});
+await artifactsModule.ensureReady();
+const artifacts = artifactsModule.service;
 
 if (!config.redisUrl)
   throw new Error("REDIS_URL is required (Redis is a platform primitive)");
@@ -479,6 +507,11 @@ const {
   },
   wrapperFrameSender,
   holdSeconds: config.approvalHoldSeconds,
+  // The presigned link is the per-request authorization for the store, so
+  // no HITL decision. Bare hostname — the gate strips ports.
+  platformAllowedHosts: config.objectStorageAgentEndpoint
+    ? [new URL(config.objectStorageAgentEndpoint).hostname]
+    : [],
 });
 deliverySweeper.start();
 
@@ -608,6 +641,7 @@ const { server: apiServer } = startApiServerApp({
   terms: termsService,
   isTermsAccepted,
   e2e: e2eService,
+  artifacts,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -619,6 +653,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   runtimeHello: runtimeDelivery.hello,
   schedulesBoot,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  artifacts,
 });
 
 // Instance identity for ext-authz now flows from the per-instance

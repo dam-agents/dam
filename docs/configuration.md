@@ -36,7 +36,28 @@ agentTemplates:
 
 Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a connected GitHub account.
 
-## Slack Integration
+## Object storage
+
+Experiment Candidate artifacts are stored in an S3-compatible object store. The chart bundles a single-node SeaweedFS by default, so a fresh install needs no setup. For production, point the platform at your own store instead — same shape as the external-database config (`apiServer.db`): a set endpoint wins over the shared local instance.
+
+```yaml
+seaweedfs:
+  enabled: false
+
+apiServer:
+  objectStorage:
+    endpoint: "https://s3.eu-central-1.amazonaws.com"
+    region: "eu-central-1"
+    bucket: "my-platform-artifacts"
+    # Leave both empty to use the AWS SDK default provider chain (e.g. IRSA).
+    accessKeyId: "…"
+    secretAccessKey: "…"
+    forcePathStyle: false # path-style is for SeaweedFS/self-hosted; AWS wants virtual-hosted
+```
+
+The api-server creates the bucket at startup if it is missing (grant CreateBucket, or pre-create the bucket to run with tighter credentials). Disabling both the bundled store and the endpoint disables candidate recording — the reporting tools fail with a clear error.
+
+Artifact bytes move directly: agents upload candidates to the store through their gateway using short-lived links the platform mints, so the size cap is policy, not a transport limit. Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for external stores usually the same as `endpoint`) to have candidate downloads redirect to the store as well; leave it empty and the api-server serves downloads itself — note it buffers each download in memory, so if you raise `apiServer.maxArtifactBytes` well past the default, set `publicEndpoint` too (and size the bundled store's volume to match).
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. Multiple instances can share a channel — the bot routes messages per thread.
 

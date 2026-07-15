@@ -71,6 +71,7 @@ export interface ComposeApprovalsSystemDeps {
   ruleMatcher: EgressRuleMatcher;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
+  platformAllowedHosts: readonly string[];
   /** Sweep cadence and freshness window for the outbox retry. */
   sweep?: {
     intervalMs?: number;
@@ -92,6 +93,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
     holdSeconds: deps.holdSeconds,
+    platformAllowedHosts: deps.platformAllowedHosts,
   });
   const sweeper = createDeliverySweeper({
     repo,

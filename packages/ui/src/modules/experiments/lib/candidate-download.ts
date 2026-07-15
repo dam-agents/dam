@@ -6,9 +6,25 @@ function filenameFromDisposition(header: string | null): string | null {
   return match?.[1] ?? null;
 }
 
-/** Download a Run's Candidate archive. The api-server serves it from Postgres
- *  on an authenticated `/api/*` route, so this can't be a plain anchor href —
- *  it fetches with the bearer token, then hands the blob to the browser. */
+function isDirectDownload(body: unknown): body is { url: string } {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "url" in body &&
+    typeof (body as { url: unknown }).url === "string"
+  );
+}
+
+function saveAs(href: string, filename?: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  if (filename) anchor.download = filename;
+  anchor.click();
+}
+
+/** Download a Run's Candidate. The route is authenticated (no plain anchor).
+ *  It answers either JSON `{ url }` — a direct store link we navigate to,
+ *  since fetching it cross-origin would hit CORS — or the relayed blob. */
 export async function downloadCandidate(
   experimentId: string,
   runId: string,
@@ -21,14 +37,22 @@ export async function downloadCandidate(
   if (!response.ok) {
     throw new Error(`Download failed (${response.status})`);
   }
+
+  if (response.headers.get("Content-Type")?.includes("application/json")) {
+    const body: unknown = await response.json();
+    if (!isDirectDownload(body)) {
+      throw new Error("Download failed (malformed direct-download response)");
+    }
+    saveAs(body.url);
+    return;
+  }
+
   const blob = await response.blob();
   const filename =
     filenameFromDisposition(response.headers.get("Content-Disposition")) ??
     "candidate.zip";
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  saveAs(url, filename);
+  // Deferred: revoking in the click's tick can cancel the download.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

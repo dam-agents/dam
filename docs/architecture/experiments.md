@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-07-01
+Last verified: 2026-07-15
 
 ## Overview
 
@@ -12,7 +12,7 @@ The platform's role is deliberately narrow: it **starts Arms, captures Runs, and
 
 There is no bespoke experiment harness. A generic Agent runs its own iterate-and-score loop and populates the ledger, driven by two things the platform already had:
 
-- **The interface is exposed as MCP tools.** Every agent pod already runs a platform-outbound MCP server — the same one the harness uses to reach channels, skills, and schedules. Experiments adds two tools to it: one to append a scored Run, one to declare the Arm finished. MCP is the one tool-calling surface every modern harness already speaks, so putting the reporting interface there means any harness image can report back with no per-harness client and no new transport. The harness passes no Experiment or Arm id — the platform attributes the call to the caller's active Arm from its network-verified Agent identity (mechanics under [Trial flow](#trial-flow)).
+- **The interface is exposed as MCP tools.** Every agent pod already runs a platform-outbound MCP server — the same one the harness uses to reach channels, skills, and schedules. Experiments adds its reporting tools to it: one to request a Candidate upload link, one to append a scored Run, one to declare the Arm finished. MCP is the one tool-calling surface every modern harness already speaks, so putting the reporting interface there means any harness image can report back with no per-harness client and no new transport. The harness passes no Experiment or Arm id — the platform attributes the call to the caller's active Arm from its network-verified Agent identity (mechanics under [Trial flow](#trial-flow)).
 - **The contract rides in the Trial prompt.** The tools exist, but nothing makes a generic harness call them unprompted. So the composed prompt carries the full reporting contract inline — an autonomous-trial directive telling the harness to run unattended to completion and to report every scored candidate, through those tools, the moment its score lands.
 
 The contract lives in the session-scoped prompt rather than a skill for two reasons: a skill reaches only Claude-family harnesses (those that mount skill files), whereas the prompt is harness-agnostic; and a skill would leak reporting nags into every non-experiment session, whereas the prompt is scoped to the Trial. The MCP tools (how to report) plus the prompt (what to do) are what make Experiments work across any harness image without per-harness code.
@@ -52,6 +52,7 @@ sequenceDiagram
   participant API as api-server<br/>(Experiments)
   participant RT as agent-runtime
   participant H as harness
+  participant S as object store
 
   U->>API: start Experiment
   API->>API: mark Arms running, compose Trial prompt per Arm
@@ -60,8 +61,12 @@ sequenceDiagram
     RT->>H: open Trial session, submit prompt
   end
   loop each scored candidate
-    H->>API: record_run (MCP): score + candidate file
-    API->>API: store Candidate blob, append Run to ledger
+    H->>API: request_candidate_upload (MCP)
+    API-->>H: short-lived single-object upload link
+    H->>S: upload candidate (via paired gateway)
+    H->>API: record_run (MCP): score + upload reference
+    API->>S: verify upload (exists, within cap)
+    API->>API: append Run to ledger
   end
   H->>API: finish_arm (MCP)
   API->>API: Arm completed; Experiment completed once all Arms terminal
@@ -69,11 +74,15 @@ sequenceDiagram
 
 **Launch.** Start marks each Arm running and composes its Trial prompt — the shared prompt, then the Arm Variation, then the autonomous-trial directive. The prompt is delivered as an `experiment-trigger` event on the runtime channel, which wakes a hibernated Agent and opens the Trial session ([connections](connections.md#event)). A Trial that fails to launch fails its Arm immediately rather than waiting for the liveness sweep — an Arm that never started can never report or finish.
 
-**Ingestion and attribution.** The harness reports through two outbound MCP tools — one to append a scored Run, one to declare the Arm finished. Neither takes an Experiment or Arm id: the platform resolves the caller's active Arm from the Agent's network-verified identity (the mesh waypoint guarantees the MCP principal matches the pod), so a harness cannot report against an Experiment it isn't running. Both are rejected once the calling Arm is no longer running — the ledger is closed after Stop or completion. The completion tool is success-only: a harness that gives up simply stops and is caught by the liveness sweep.
+**Ingestion and attribution.** The harness reports through the outbound MCP tools — one to request a Candidate upload link, one to append a scored Run, one to declare the Arm finished. None takes an Experiment or Arm id: the platform resolves the caller's active Arm from the Agent's network-verified identity (the mesh waypoint guarantees the MCP principal matches the pod), so a harness cannot report against an Experiment it isn't running. All are rejected once the calling Arm is no longer running — the ledger is closed after Stop or completion. Appending a Run carries the Candidate by reference to a completed direct upload: the platform verifies the upload — including the size cap — before the Run lands, and a reference outside the caller's own Arm reads as unknown. A file-path fallback remains for harnesses that cannot upload themselves — the platform reads the file from the Agent's workspace and stores it on their behalf. The completion tool is success-only: a harness that gives up simply stops and is caught by the liveness sweep.
 
 ## Candidate storage
 
-A Candidate is stored inline as a capped blob in Postgres, written and read by the api-server — not on a per-Agent PVC and not in object storage (agents are egress-locked to their gateway, so S3 is unreachable). Living in Postgres is what makes a Candidate **downloadable while the producing Agent is hibernated**: Postgres is independent of agent pods and the api-server, its sole reader and writer, is always running. On a Run, the reporting path reads the candidate file from the Agent's workspace over the harness file API and hands the bytes to the api-server, which stores the blob and points the Run at it. Downloads are owner-scoped — the Run is resolved through the owner's Experiment first, so a non-owned Experiment reads back as not-found and the opaque storage key is never trusted from the client. Substrate details are owned by [persistence](persistence.md).
+A Candidate lives in the object store ([persistence](persistence.md) owns the substrate) — never on a per-Agent PVC and never in the database, which keeps only the ledger reference. The platform stays the authority on who may move the bytes; the bytes themselves move directly.
+
+The reporting flow is **direct transfer**: the harness requests an upload link over MCP, the api-server attributes the caller and mints a short-lived link scoped to that single object, and the harness uploads straight to the store through its paired gateway. The api-server never carries the bytes; it verifies the completed upload — existence and the size cap, discarding an oversized object — before the Run lands in the ledger. The link is the authorization: the store rejects a different object, an expired link, or a request with no link, so the agent gains no standing access to storage. This is what lets the per-Candidate size cap be pure policy rather than a transport limit; the cap stays configurable and its effective value is quoted to the harness in the Trial prompt's reporting contract, so harnesses self-limit against the real ceiling. A file-path relay flow remains for harnesses that cannot upload themselves: the platform reads the file from the Agent's workspace over the harness file API (which carries its own per-file transfer ceiling) and stores it on their behalf. An install with no object store cannot record Candidates — the reporting tools fail closed with a clear error.
+
+The store is independent of agent pods and the api-server is always running, preserving the core guarantee that a Candidate is **downloadable while the producing Agent is hibernated**. Downloads are owner-scoped — the Run is resolved through the owner's Experiment first, so a non-owned Experiment reads back as not-found and the opaque storage reference is never trusted from the client. When the store has a browser-reachable endpoint, an authorized download answers with a short-lived direct link the browser fetches itself (the same capability shape as uploads); otherwise the api-server relays the blob.
 
 ## Completion and liveness
 

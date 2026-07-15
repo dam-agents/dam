@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
-  customType,
   text,
   jsonb,
   uniqueIndex,
@@ -13,15 +12,6 @@ import {
   bigint,
   integer,
 } from "drizzle-orm/pg-core";
-
-/** Postgres `bytea`. drizzle-orm/pg-core has no built-in binary column; the
- *  postgres.js driver maps a JS Buffer to/from bytea natively, so this only
- *  needs to declare the SQL type. Used for inline candidate-artifact blobs. */
-const bytea = customType<{ data: Buffer; default: false }>({
-  dataType() {
-    return "bytea";
-  },
-});
 
 /** Outcome of a recorded activity. Constrained at the DB so a typo or a
  *  forgotten field surfaces as a constraint violation, not as a row that
@@ -553,27 +543,4 @@ export const experimentRuns = pgTable(
       table.runNumber,
     ),
   ],
-);
-
-/** Candidate artifact blobs for Experiments — the downloadable archive a Run
- *  produced. Stored in Postgres so the api-server can serve it while the
- *  producing agent is hibernated (Postgres is independent of agent pods);
- *  api-server-owned, like the rest of this schema. Capped small (the artifact
- *  service rejects over-cap puts) and held inline as `bytea`. Addressed by an
- *  opaque text `key` the caller path-namespaces by experiment/agent/run; a Run
- *  points at it via `experiment_runs.candidate_ref` — no hard FK, so the store
- *  stays decoupled from the ledger. */
-export const runArtifacts = pgTable(
-  "run_artifacts",
-  {
-    id: text("id").primaryKey(),
-    key: text("key").notNull(),
-    contentType: text("content_type").notNull(),
-    sizeBytes: integer("size_bytes").notNull(),
-    content: bytea("content").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [uniqueIndex("run_artifacts_key_idx").on(table.key)],
 );

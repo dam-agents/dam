@@ -8,9 +8,15 @@ export interface Artifact {
   createdAt: Date;
 }
 
-/** Storage port for Candidate artifacts. The Postgres adapter is the only impl
- *  today; the port exists so the backend can be swapped (the storage choice has
- *  already changed more than once) without touching callers. */
+/** Metadata of a stored blob, without its content. */
+export interface ArtifactStat {
+  contentType: string;
+  sizeBytes: number;
+}
+
+/** Storage port for Candidate artifacts. The presign methods mint short-lived
+ *  single-object direct-transfer links; a backend that can't (no
+ *  browser-reachable endpoint) returns null and callers relay the bytes. */
 export interface ArtifactStore {
   /** Store the blob at `key`, overwriting any existing blob there. */
   put(input: {
@@ -18,8 +24,17 @@ export interface ArtifactStore {
     content: Buffer;
     contentType: string;
   }): Promise<void>;
-  /** Fetch the blob at `key`, or null if none exists. */
   get(key: string): Promise<Artifact | null>;
-  /** Whether a blob exists at `key`. */
   exists(key: string): Promise<boolean>;
+  head(key: string): Promise<ArtifactStat | null>;
+  /** Missing is not an error. */
+  delete(key: string): Promise<void>;
+  presignUpload(
+    key: string,
+    opts: { expiresSeconds: number },
+  ): Promise<string | null>;
+  presignDownload(
+    key: string,
+    opts: { filename: string; expiresSeconds: number },
+  ): Promise<string | null>;
 }
