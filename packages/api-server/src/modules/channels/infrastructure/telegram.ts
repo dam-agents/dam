@@ -218,21 +218,24 @@ export function createTelegramWorker(
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       }
     } finally {
-      emitTurn(instanceName, outcome, failureReason);
+      emitTurn(instanceName, outcome, author.userId, failureReason);
     }
   }
 
   function emitTurn(
     instanceName: string,
     outcome: TurnOutcome,
+    telegramUserId: string,
     reason?: string,
   ) {
-    // Only the instance owner runs /login, so we can't attribute Telegram turns to a real actor.
+    // Only the instance owner runs /login, so there is no platform identity
+    // to attribute the turn to — the Telegram user id is the actor record.
     emit({
       type: EventType.ChannelTurnRelayed,
       channel: "telegram",
       agentId: instanceName,
       actorSub: null,
+      externalActorId: telegramUserId,
       outcome,
       ...(reason !== undefined ? { reason } : {}),
     });

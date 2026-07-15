@@ -136,6 +136,9 @@ export type ChannelTurnRelayed = {
   agentId: string;
   /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
   actorSub: string | null;
+  /** Messenger-native id of the driving user (e.g. Telegram user id) — the
+   *  actor record for relays that carry no platform identity. */
+  externalActorId?: string;
   /** "success" when the ACP turn completed and the reply was posted; "failure"
    *  on any caught error in the relay path (ACP throw, fork provisioning
    *  failure, post-back failure). Drives the success/failure breakouts in the
