@@ -25,7 +25,9 @@ function makeThread(opts?: { isDM?: boolean }) {
     posts,
     subscribed: false,
     async post(message) {
-      posts.push(typeof message === "string" ? message : JSON.stringify(message));
+      posts.push(
+        typeof message === "string" ? message : JSON.stringify(message),
+      );
     },
     async subscribe() {
       thread.subscribed = true;
