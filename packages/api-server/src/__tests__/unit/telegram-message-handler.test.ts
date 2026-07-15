@@ -24,8 +24,8 @@ function makeThread(opts?: { isDM?: boolean }) {
     isDM: opts?.isDM ?? false,
     posts,
     subscribed: false,
-    async post(text: string) {
-      posts.push(text);
+    async post(message) {
+      posts.push(typeof message === "string" ? message : JSON.stringify(message));
     },
     async subscribe() {
       thread.subscribed = true;
@@ -103,10 +103,12 @@ describe("telegram message handler", () => {
       threadId: "chat-42",
       chatTitle: "Team chat",
     });
-    expect(thread.posts.join("\n")).toContain(
-      "connect this chat to one of your agents",
-    );
-    expect(thread.posts.join("\n")).toContain("https://kc.example");
+    // The login link posts as a card: text + an inline URL button, so the
+    // raw OAuth URL never shows in the chat.
+    const posted = thread.posts.join("\n");
+    expect(posted).toContain("Connect this chat to one of your agents");
+    expect(posted).toContain("link-button");
+    expect(posted).toContain("https://kc.example");
   });
 
   it("unbinds on /logout from a bound chat", async () => {
@@ -157,7 +159,7 @@ describe("telegram message handler", () => {
       const dm = makeThread({ isDM: true });
       await h.handle(dm, { text, author: author() }, true);
       expect(dm.posts.join("\n")).toContain(
-        "connect this chat to one of your agents",
+        "Connect this chat to one of your agents",
       );
     }
     expect(h.pendingOAuthFlows.size).toBe(3);

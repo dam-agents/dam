@@ -1,4 +1,13 @@
-import { Chat, type Thread, type StateAdapter } from "chat";
+import {
+  Actions,
+  Card,
+  CardText,
+  Chat,
+  LinkButton,
+  type CardElement,
+  type Thread,
+  type StateAdapter,
+} from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { PostMessageOptions } from "../services/channel-manager.js";
@@ -128,7 +137,7 @@ async function fetchTelegramBotUsername(
 export interface ThreadLike {
   id: string;
   isDM: boolean;
-  post(text: string): Promise<unknown>;
+  post(message: string | CardElement): Promise<unknown>;
   subscribe(): Promise<unknown>;
 }
 
@@ -213,9 +222,23 @@ export function createTelegramMessageHandler(deps: {
       createdAt: Date.now(),
     });
     const url = buildAuthorizeUrl(deps.oauthConfig, oauthState, codeChallenge);
-    await thread.post(
-      `Open this link to connect this chat to one of your agents:\n${url}`,
-    );
+    // A card renders as text + an inline-keyboard URL button, hiding the raw
+    // OAuth URL. Fall back to the bare link if Telegram rejects the button
+    // (e.g. a URL it can't validate) — the login must still be reachable.
+    try {
+      await thread.post(
+        Card({
+          children: [
+            CardText("Connect this chat to one of your agents:"),
+            Actions([LinkButton({ label: "Connect an agent", url })]),
+          ],
+        }),
+      );
+    } catch {
+      await thread.post(
+        `Open this link to connect this chat to one of your agents:\n${url}`,
+      );
+    }
   }
 
   async function handleLogout(thread: ThreadLike, telegramUserId: string) {
