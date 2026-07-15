@@ -43,12 +43,24 @@ export async function reloadUntilAgentVisible(page: Page): Promise<void> {
   await expect(page.getByText("Running")).toBeVisible();
 }
 
+/** Chat message input; placeholder flips to "Queue a message..." mid-turn. */
+export function chatInput(page: Page): Locator {
+  return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
+}
+
+/** Selecting an agent lands on its sandbox home; chat is behind the
+ *  "Open in" launch menu. */
 export async function gotoAgentDetail(
   page: Page,
   agentName: string,
   agentId: string,
 ): Promise<void> {
   await page.getByRole("heading", { name: agentName }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/sandboxes/${encodeURIComponent(agentId)}`),
+  );
+  await page.getByRole("button", { name: /open in/i }).click();
+  await page.getByRole("menuitem", { name: /chat \(browser\)/i }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
@@ -58,7 +70,7 @@ export async function sendMessageToAgent(
   page: Page,
   message: string,
 ): Promise<void> {
-  const input = page.getByPlaceholder(/message agent/i);
+  const input = chatInput(page);
   await expect(input).toBeVisible();
   await input.fill(message);
   await input.press("Enter");

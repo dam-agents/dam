@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../config.js";
 import {
   agentCardStatus,
+  chatInput,
   gotoAgentDetail,
   sendMessageToAgent,
   setMockAgentReply,
@@ -32,7 +33,7 @@ test("deleting the active session clears it and lets a fresh session start (#108
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
     await gotoAgentDetail(page, agentName, agentId);
-    await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
+    await expect(chatInput(page)).toBeVisible();
 
     await sendMessageToAgent(page, firstPrompt);
     await expect(page.getByText(scriptedReply)).toBeVisible({
@@ -53,7 +54,10 @@ test("deleting the active session clears it and lets a fresh session start (#108
 
   await test.step("(A) deleting the active session removes it without a refresh", async () => {
     await activeRow.hover();
-    await activeRow.getByTestId("session-delete-button").click();
+    // Delete moved behind the row's overflow menu in the chat-shell rework
+    // (#2769); the menu item is portaled, so target it at page scope.
+    await activeRow.getByTestId("session-menu-button").click();
+    await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
       .getByRole("button", { name: "Confirm" })
@@ -64,7 +68,7 @@ test("deleting the active session clears it and lets a fresh session start (#108
   });
 
   await test.step("(B) a session started right after the delete appears in the sidebar", async () => {
-    await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
+    await expect(chatInput(page)).toBeVisible();
     await sendMessageToAgent(page, secondPrompt);
     await expect(page.getByText(scriptedReply)).toBeVisible({
       timeout: 30_000,

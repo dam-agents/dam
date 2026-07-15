@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../config.js";
 import {
   agentCardStatus,
+  chatInput,
   gotoAgentDetail,
   readChatMessages,
   sendMessageToAgent,
@@ -37,7 +38,7 @@ test("exchange messages with the agent", async ({ page }) => {
 
     await gotoAgentDetail(page, agentName, agentId);
 
-    await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
+    await expect(chatInput(page)).toBeVisible();
   });
 
   await test.step("send a message and receive the scripted reply", async () => {
@@ -76,7 +77,7 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
     await gotoAgentDetail(page, agentName, agentId);
-    await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
+    await expect(chatInput(page)).toBeVisible();
   });
 
   await test.step("send a prompt and let the interleaved turn stream", async () => {
