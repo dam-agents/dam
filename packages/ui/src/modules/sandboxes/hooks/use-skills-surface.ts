@@ -31,6 +31,17 @@ export interface SkillsSurface {
   busyKey: string | null;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
+  /** Add a GitHub Skill Source; returns it (and lists its skills) or null. */
+  createSource: (input: {
+    name: string;
+    gitUrl: string;
+    path?: string;
+  }) => Promise<SkillSource | null>;
+  /** Delete a Skill Source; returns whether it was removed. */
+  removeSource: (id: string) => Promise<boolean>;
+  /** Re-scan a source: refresh its scan cache, then re-list. The card shows a
+   *  spinner (via loadingBySource) for the duration. */
+  refreshSource: (id: string) => Promise<void>;
 }
 
 /**
@@ -188,6 +199,56 @@ export function useSkillsSurface(
     [agentId, isError, readOnly, installedRef],
   );
 
+  const createSource = useCallback(
+    async (input: { name: string; gitUrl: string; path?: string }) => {
+      const result = await runAction(
+        () =>
+          api.skills.sources.create.mutate({
+            name: input.name.trim(),
+            gitUrl: input.gitUrl.trim(),
+            path: input.path?.trim() || undefined,
+          }),
+        "Failed to add source",
+      );
+      if (result === ACTION_FAILED) return null;
+      // Appending drives the load effect to scan the new source's skills.
+      setSources((s) => [...s, result]);
+      return result;
+    },
+    [],
+  );
+
+  const removeSource = useCallback(async (id: string) => {
+    const result = await runAction(
+      () => api.skills.sources.delete.mutate({ id }),
+      "Failed to remove source",
+    );
+    if (result === ACTION_FAILED) return false;
+    setSources((s) => s.filter((x) => x.id !== id));
+    setSkillsBySource((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    return true;
+  }, []);
+
+  const refreshSource = useCallback(
+    async (id: string) => {
+      setLoadingBySource((l) => ({ ...l, [id]: true }));
+      const ok = await runAction(
+        () => api.skills.sources.refresh.mutate({ id }),
+        "Failed to re-scan source",
+      );
+      if (ok === ACTION_FAILED) {
+        setLoadingBySource((l) => ({ ...l, [id]: false }));
+        return;
+      }
+      await loadSkills(id);
+    },
+    [loadSkills],
+  );
+
   return {
     sources,
     sourcesLoaded,
@@ -201,5 +262,8 @@ export function useSkillsSurface(
     busyKey,
     installedRef,
     toggle,
+    createSource,
+    removeSource,
+    refreshSource,
   };
 }

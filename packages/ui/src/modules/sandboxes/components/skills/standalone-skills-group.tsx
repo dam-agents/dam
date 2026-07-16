@@ -1,4 +1,5 @@
 import type { LocalSkill } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -11,13 +12,19 @@ import { cn } from "@/lib/utils";
 export function StandaloneSkillsGroup({
   skills,
   readOnly,
+  action,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
+  /** Header-right slot (e.g. the "+ Add source" button). */
+  action?: ReactNode;
 }) {
   return (
     <section>
-      <SectionLabel spaced>Created in this sandbox</SectionLabel>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SectionLabel>Created in this sandbox</SectionLabel>
+        {action}
+      </div>
       <div
         className={cn(
           "rounded-lg border border-border",

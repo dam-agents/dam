@@ -1,7 +1,19 @@
 import type { Skill, SkillRef, SkillSource } from "api-server-api";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Loader2,
+  MoreHorizontal,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
@@ -39,10 +51,10 @@ function SourceError({ error }: { error: string }) {
 
 /**
  * A single Skill Source rendered as a card: header (name · `N of M on` · repo
- * URL) over its skill rows. Enabled skills sort to the top; when a source has
- * both enabled and available skills the available ones collapse under an
- * "Expand all" / "Hide available" control (slice 02). Source-admin actions (03)
- * and drift (06) attach here in later slices.
+ * URL · kebab) over its skill rows. Enabled skills sort to the top and the
+ * available ones collapse under an "Expand all" / "Hide available" control.
+ * The kebab administers the source (re-scan / view repo / remove); a re-scan
+ * shows a header spinner while the rows stay put.
  */
 export function SkillSourceCard({
   source,
@@ -55,6 +67,8 @@ export function SkillSourceCard({
   stateLoaded,
   readOnly,
   onToggle,
+  onRescan,
+  onRemove,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -71,8 +85,10 @@ export function SkillSourceCard({
   /** Read-only (agent stopped): render the card on a muted background. */
   readOnly: boolean;
   onToggle: (skill: Skill) => void;
+  onRescan: () => void;
+  onRemove: () => void;
 }) {
-  const busy = loading || skills === undefined;
+  const loaded = skills !== undefined;
   const list = skills ?? [];
   const enabled = list.filter(
     (s) => installedRef(s.source, s.name) !== undefined,
@@ -89,7 +105,7 @@ export function SkillSourceCard({
   // than deriving live — keeps an immediate toggle from collapsing the list
   // mid-edit; it re-snapshots when the card remounts (nav away / refresh).
   const defaultCollapsedRef = useRef<boolean | null>(null);
-  if (defaultCollapsedRef.current === null && !busy && stateLoaded) {
+  if (defaultCollapsedRef.current === null && loaded && stateLoaded) {
     defaultCollapsedRef.current = collapsible;
   }
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
@@ -99,10 +115,10 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  // Collapsed shows enabled only; otherwise the full sorted list. Gating on
-  // `collapsible` means a source that drops to zero enabled (or zero available)
-  // can't get stuck showing an empty collapsed list with no way to expand.
   const visible = collapsible && !expanded ? enabled : sorted;
+
+  // Non-user sources (Seed List / template) are protected from deletion.
+  const canRemove = !source.system && !source.fromTemplate;
 
   return (
     <div
@@ -111,13 +127,13 @@ export function SkillSourceCard({
         readOnly ? "bg-muted" : "bg-card",
       )}
     >
-      <div className="flex items-start gap-2 px-4 py-3">
+      <div className="flex items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[15px] font-semibold text-foreground">
               {source.name}
             </p>
-            {!busy && !error && (
+            {loaded && !error && (
               <span className="shrink-0 text-[13px] text-muted-foreground">
                 {enabled.length} of {list.length} on
               </span>
@@ -127,16 +143,48 @@ export function SkillSourceCard({
             {repoLabel(source)}
           </p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {loading && (
+            <Loader2 size={15} className="animate-spin text-muted-foreground" />
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title="Source actions"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                }
+              >
+                <span className="flex-1">View repo</span>
+                <ExternalLink size={14} />
+              </DropdownMenuItem>
+              {canRemove && (
+                <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                  Remove source
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {busy && !error && <SkillRowsSkeleton />}
-      {!busy && error && <SourceError error={error} />}
-      {!busy && !error && list.length === 0 && (
+      {!loaded && !error && <SkillRowsSkeleton />}
+      {error && <SourceError error={error} />}
+      {loaded && !error && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
           No skills in this source.
         </p>
       )}
-      {!busy &&
+      {loaded &&
         !error &&
         visible.map((skill) => (
           <SkillRow
@@ -149,7 +197,7 @@ export function SkillSourceCard({
           />
         ))}
 
-      {!busy && !error && collapsible && (
+      {loaded && !error && collapsible && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
