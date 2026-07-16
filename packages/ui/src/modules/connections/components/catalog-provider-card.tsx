@@ -67,7 +67,10 @@ export function CatalogProviderCard({
             <CatalogConnectionRow
               key={c.id}
               connection={c}
-              subtitle={connectionKindSubtitle(c, templateById.get(c.templateId))}
+              subtitle={connectionKindSubtitle(
+                c,
+                templateById.get(c.templateId),
+              )}
               grant={
                 sandbox && {
                   granted: sandbox.grantedIds.has(c.id),

@@ -147,7 +147,9 @@ export function groupCatalog({
 }): Map<CatalogTab, CatalogProviderGroup[]> {
   const templateById = new Map(allTemplates.map((t) => [t.id, t]));
   const staticByTemplateId = new Map(
-    STATIC_PROVIDERS.flatMap((p) => p.templateIds.map((id) => [id, p] as const)),
+    STATIC_PROVIDERS.flatMap((p) =>
+      p.templateIds.map((id) => [id, p] as const),
+    ),
   );
 
   const groups = new Map<string, CatalogProviderGroup>();
@@ -218,7 +220,10 @@ export function connectionKindSubtitle(
     return "GitHub app";
   if (connection.templateId === "github-pat") return "Personal access token";
   const host = connection.host ?? connection.hosts[0];
-  if (host && (connection.category === "mcp" || connection.authKind === "header"))
+  if (
+    host &&
+    (connection.category === "mcp" || connection.authKind === "header")
+  )
     return host;
   return template?.name ?? connection.templateId;
 }

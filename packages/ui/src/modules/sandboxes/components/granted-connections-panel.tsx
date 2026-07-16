@@ -12,8 +12,6 @@ interface Props {
   groups: CatalogProviderGroup[];
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
-  onDelete: (id: string, name: string) => void;
-  deletingId: string | null;
   onOpenCatalog: () => void;
 }
 
@@ -24,8 +22,6 @@ export function GrantedConnectionsPanel({
   groups,
   templateById,
   onToggleGrant,
-  onDelete,
-  deletingId,
   onOpenCatalog,
 }: Props) {
   if (groups.length === 0)
@@ -77,8 +73,7 @@ export function GrantedConnectionsPanel({
               onToggle: (on) => onToggleGrant(c.id, on),
               actionHidden: true,
             })}
-            onDelete={onDelete}
-            deletingId={deletingId}
+            onManage={onOpenCatalog}
           />
         ))}
       </Inset>

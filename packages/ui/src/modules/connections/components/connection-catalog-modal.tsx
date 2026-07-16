@@ -64,7 +64,11 @@ export function ConnectionCatalogModal({
     const providerId = group.provider.id;
     if (group.templates.length > 1) setPane({ kind: "choose", providerId });
     else if (group.templates[0])
-      setPane({ kind: "create", templateId: group.templates[0].id, providerId });
+      setPane({
+        kind: "create",
+        templateId: group.templates[0].id,
+        providerId,
+      });
   };
 
   const groupById = (providerId: string) =>

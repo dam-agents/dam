@@ -11,8 +11,9 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   showCount?: boolean;
   grant?: (connection: ConnectionView) => RowGrantControls | undefined;
-  onDelete: (id: string, name: string) => void;
-  deletingId: string | null;
+  onManage?: () => void;
+  onDelete?: (id: string, name: string) => void;
+  deletingId?: string | null;
 }
 
 /** Provider group card listing existing connections — the "My connections"
@@ -22,8 +23,9 @@ export function ConnectionGroupCard({
   templateById,
   showCount = false,
   grant,
+  onManage,
   onDelete,
-  deletingId,
+  deletingId = null,
 }: Props) {
   const { provider, connections } = group;
   return (
@@ -54,7 +56,8 @@ export function ConnectionGroupCard({
             connection={c}
             subtitle={connectionKindSubtitle(c, templateById.get(c.templateId))}
             grant={grant?.(c)}
-            onDelete={() => onDelete(c.id, c.name)}
+            onManage={onManage}
+            onDelete={onDelete && (() => onDelete(c.id, c.name))}
             deleting={deletingId === c.id}
           />
         ))}

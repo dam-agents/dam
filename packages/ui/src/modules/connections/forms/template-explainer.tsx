@@ -36,9 +36,8 @@ function GithubAuthExplainer() {
           <strong>once per organization</strong>.
         </p>
         <p>
-          If you aren't an organization owner, an owner must approve or
-          complete the install. Reach out to them first so they're expecting
-          the request.
+          If you aren't an organization owner, an owner must approve or complete
+          the install. Reach out to them first so they're expecting the request.
         </p>
       </div>
     </DisclosureBox>

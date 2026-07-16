@@ -113,17 +113,17 @@ export function useSandboxSettingsForm() {
     resetField,
     formState,
   } = useForm<SettingsValues>({
-      resolver: zodResolver(settingsSchema),
-      mode: "onChange",
-      defaultValues: {
-        name: "",
-        assignedAppIds: [],
-        envVars: [],
-        hibernationTimeoutMin: 60,
-        sizeCpuMilli: 1000,
-        sizeMemoryMi: 1024,
-      },
-    });
+    resolver: zodResolver(settingsSchema),
+    mode: "onChange",
+    defaultValues: {
+      name: "",
+      assignedAppIds: [],
+      envVars: [],
+      hibernationTimeoutMin: 60,
+      sizeCpuMilli: 1000,
+      sizeMemoryMi: 1024,
+    },
+  });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
   const saving = isSubmitting;
 

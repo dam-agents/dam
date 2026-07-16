@@ -86,9 +86,7 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
       .map((id) => apps.find((a) => a.id === id))
       .filter((a) => a !== undefined)
       .map((a) => catalogProviderTitle(a.templateId) ?? a.name);
-    return (
-      formatNameList([...new Set(titles)]) ?? "No connections added"
-    );
+    return formatNameList([...new Set(titles)]) ?? "No connections added";
   }, [connectionsQuery.data, apps, providerAppIds]);
 
   const skills = useMemo(() => {

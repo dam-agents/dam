@@ -24,16 +24,20 @@ interface Props {
   subtitle: string;
   /** Sandbox staging controls; omit outside a sandbox context. */
   grant?: RowGrantControls;
-  onDelete: () => void;
-  deleting: boolean;
+  /** ⋮ → "Manage connections" (sandbox/wizard lists, opens the catalogue). */
+  onManage?: () => void;
+  /** ⋮ → "Delete this connection" (settings and the catalogue only). */
+  onDelete?: () => void;
+  deleting?: boolean;
 }
 
 export function CatalogConnectionRow({
   connection,
   subtitle,
   grant,
+  onManage,
   onDelete,
-  deleting,
+  deleting = false,
 }: Props) {
   return (
     <div
@@ -87,9 +91,20 @@ export function CatalogConnectionRow({
               Remove from this sandbox
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem tone="danger" disabled={deleting} onSelect={onDelete}>
-            Delete this connection
-          </DropdownMenuItem>
+          {onManage && (
+            <DropdownMenuItem onSelect={onManage}>
+              Manage connections
+            </DropdownMenuItem>
+          )}
+          {onDelete && (
+            <DropdownMenuItem
+              tone="danger"
+              disabled={deleting}
+              onSelect={onDelete}
+            >
+              Delete this connection
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

@@ -43,8 +43,7 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
     [allTemplates, connections, showInternal],
   );
   const populated = useMemo(
-    () =>
-      [...byTab.values()].flat().filter((g) => g.connections.length > 0),
+    () => [...byTab.values()].flat().filter((g) => g.connections.length > 0),
     [byTab],
   );
   const templateById = useMemo(
