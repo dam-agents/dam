@@ -1185,7 +1185,7 @@ agentTemplates:
         memory: "16Gi"
         nvidia.com/gpu: "1"
 
-  # Published by CI (build-nous / merge-nous in cd.yml). Experimental: the
+  # Published by CI (build-workloads / merge-workloads in cd.yml). Experimental: the
   # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
   nous:
     enabled: true
@@ -1230,6 +1230,19 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md"
     image:
       repository: quay.io/dam-agents/openevolve
+      tag: ""
+    storageSize: "5Gi"
+
+  shinkaevolve:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "ShinkaEvolve"
+    description: "ShinkaEvolve — sample-efficient evolutionary program-optimization agent"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md"
+    image:
+      repository: quay.io/dam-agents/shinkaevolve
       tag: ""
     storageSize: "5Gi"
 

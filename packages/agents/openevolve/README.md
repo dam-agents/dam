@@ -42,14 +42,16 @@ Override the pinned release with `OPENEVOLVE_VERSION`:
 OPENEVOLVE_VERSION=0.2.27 mise run agents:openevolve:image
 ```
 
-`values-local.yaml` enables the openevolve template against the locally-built
-`platform-openevolve:latest`.
+`values-local.yaml` points the openevolve template at the locally-built
+`platform-openevolve:latest` but keeps it `enabled: false`; flip that to
+`true` to show it in the local catalog.
 
 ## CI / publishing
 
-The openevolve image is published by CI (`.github/workflows/cd.yml`):
-`build-openevolve` runs after `merge-agents` — it builds `FROM` claude-code, so
-it pulls its base by the same per-commit tag — and `merge-openevolve` publishes
-the multi-arch manifest to the public `quay.io/dam-agents/openevolve` (no
-`imagePullSecret`). The template is enabled in `values.yaml` under "Pre-configured
-Images" (`category: preconfigured`, `experimental: true`).
+The openevolve image is published by CI (`.github/workflows/cd.yml`): the
+matrixed `build-workloads` job runs after `merge-agents` — it builds `FROM`
+claude-code, so it pulls its base by the same per-commit tag — and
+`merge-workloads` publishes the multi-arch manifest to the public
+`quay.io/dam-agents/openevolve` (no `imagePullSecret`). The template is enabled
+in `values.yaml` under "Pre-configured Images" (`category: preconfigured`,
+`experimental: true`).
