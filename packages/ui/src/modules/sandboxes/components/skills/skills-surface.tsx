@@ -72,7 +72,10 @@ export function SkillsSurface({
     if (ok) await removeSource(src.id);
   };
 
-  const addSourceButton = (
+  // Read-only (agent stopped / starting): the whole surface is non-interactive,
+  // so don't render a live-looking "Add source" that silently does nothing — the
+  // "Start agent to edit" affordance is the single call to action.
+  const addSourceButton = readOnly ? null : (
     <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
       <Plus size={14} /> Add source
     </Button>

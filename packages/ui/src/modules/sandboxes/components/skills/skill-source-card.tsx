@@ -154,33 +154,38 @@ export function SkillSourceCard({
           {loading && (
             <Loader2 size={15} className="animate-spin text-muted-foreground" />
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                title="Source actions"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <MoreHorizontal size={18} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-                }
-              >
-                <span className="flex-1">View repo</span>
-                <ExternalLink size={14} />
-              </DropdownMenuItem>
-              {canRemove && (
-                <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  Remove source
+          {/* Source administration is hidden while read-only — the surface is
+              non-interactive, so a live-looking kebab would only offer dead
+              actions. */}
+          {!readOnly && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title="Source actions"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <span className="flex-1">View repo</span>
+                  <ExternalLink size={14} />
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {canRemove && (
+                  <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                    Remove source
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -207,7 +212,7 @@ export function SkillSourceCard({
               skill={skill}
               installed={ref !== undefined}
               busy={busyKey === skillKey(skill.source, skill.name)}
-              disabled={disabled}
+              disabled={disabled || readOnly}
               hasDrift={hasDrift}
               compareUrl={
                 hasDrift && ref
@@ -216,7 +221,10 @@ export function SkillSourceCard({
               }
               onToggle={() => onToggle(skill)}
               onUpdate={() => onUpdate(skill)}
-              onOpen={() => onOpenSkill(skill)}
+              // Read-only: render the name as plain text, not a dead link — the
+              // render modal (and everything else here) is non-interactive while
+              // the agent is stopped.
+              onOpen={readOnly ? undefined : () => onOpenSkill(skill)}
             />
           );
         })}
