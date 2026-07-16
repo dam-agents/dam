@@ -246,3 +246,56 @@ export async function scanPublicGithubArchive(
     await fs.rm(tmp, { recursive: true, force: true });
   }
 }
+
+/**
+ * Read one skill's raw `SKILL.md` from a public GitHub repo. Mirrors the scan's
+ * fetch + Source-Root resolution and name identity (frontmatter `name`, else
+ * the directory basename), returning the matching skill's file text — or null
+ * if the source has no skill by that name. Throws `PublicArchiveNotFoundError`
+ * on 404 so the caller can distinguish a private repo.
+ */
+export async function readPublicGithubSkill(
+  gitUrl: string,
+  subPath: string | undefined,
+  name: string,
+): Promise<string | null> {
+  const host = detectHost(gitUrl);
+  if (!host)
+    throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
+
+  const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/HEAD.tar.gz`;
+  const res = await fetch(archiveUrl, { redirect: "follow" });
+  if (res.status === 404) throw new PublicArchiveNotFoundError(gitUrl);
+  if (!res.ok) throw new Error(`github archive ${res.status} for ${gitUrl}`);
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "platform-public-read-"));
+  try {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > MAX_TARBALL_BYTES) {
+      throw new Error(`tarball too large: ${buf.byteLength} bytes`);
+    }
+    const tgz = path.join(tmp, "src.tgz");
+    await fs.writeFile(tgz, buf);
+    await tar.x({ file: tgz, cwd: tmp });
+    await fs.rm(tgz);
+
+    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
+      (e) => e.isDirectory(),
+    );
+    if (extracted.length === 0) return null;
+    const repoDir = path.join(tmp, extracted[0].name);
+
+    for (const rel of await findSkillDirs(repoDir, subPath)) {
+      const content = await fs.readFile(
+        path.join(repoDir, rel, "SKILL.md"),
+        "utf8",
+      );
+      const skillName =
+        parseFrontmatter(content).name?.trim() || path.basename(rel);
+      if (skillName === name) return content;
+    }
+    return null;
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}

@@ -14,12 +14,15 @@ export function SkillRow({
   busy,
   disabled,
   onToggle,
+  onOpen,
 }: {
   skill: Skill;
   installed: boolean;
   busy: boolean;
   disabled: boolean;
   onToggle: () => void;
+  /** Open the skill's SKILL.md render modal (05). Makes the name clickable. */
+  onOpen?: () => void;
 }) {
   return (
     <div
@@ -29,9 +32,19 @@ export function SkillRow({
       )}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-medium text-foreground">
-          {skill.name}
-        </p>
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="block max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
+          >
+            {skill.name}
+          </button>
+        ) : (
+          <p className="truncate text-[15px] font-medium text-foreground">
+            {skill.name}
+          </p>
+        )}
         {skill.description && (
           <p
             className="truncate text-[13px] text-muted-foreground"

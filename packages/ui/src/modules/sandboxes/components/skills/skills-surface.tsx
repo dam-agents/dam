@@ -1,4 +1,4 @@
-import type { LocalSkill, SkillRef, SkillSource } from "api-server-api";
+import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
 import { Plus, Upload } from "lucide-react";
 import { useState } from "react";
 
@@ -11,6 +11,7 @@ import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
+import { SkillRenderModal } from "./skill-render-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
@@ -37,6 +38,10 @@ export function SkillsSurface({
   const showConfirm = useStore((s) => s.showConfirm);
   const [addOpen, setAddOpen] = useState(false);
   const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
+  const [renderFor, setRenderFor] = useState<{
+    source: SkillSource;
+    skill: Skill;
+  } | null>(null);
   const {
     sources,
     sourcesLoaded,
@@ -138,6 +143,9 @@ export function SkillsSurface({
                     onToggle={toggle}
                     onRescan={() => void refreshSource(src.id)}
                     onRemove={() => void removeWithConfirm(src)}
+                    onOpenSkill={(skill) =>
+                      setRenderFor({ source: src, skill })
+                    }
                   />
                 ))}
               </div>
@@ -159,6 +167,15 @@ export function SkillsSurface({
           sources={publishableSources}
           onPublish={publish}
           onClose={() => setPublishFor(null)}
+        />
+      )}
+
+      {renderFor && (
+        <SkillRenderModal
+          source={renderFor.source}
+          skill={renderFor.skill}
+          agentId={agentId}
+          onClose={() => setRenderFor(null)}
         />
       )}
     </div>

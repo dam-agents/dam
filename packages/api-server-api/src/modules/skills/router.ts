@@ -8,8 +8,10 @@ import {
 } from "../../auth-procedures.js";
 import {
   localSkillSchema,
+  skillContentSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
+  skillGetContentInputSchema,
   skillInstallInputSchema,
   skillListInputSchema,
   skillListLocalInputSchema,
@@ -57,6 +59,20 @@ export const skillsRouter = t.router({
       const src = await ctx.skills.getSource(input.sourceId);
       if (!src) throw new TRPCError({ code: "NOT_FOUND" });
       return ctx.skills.list(input.sourceId, input.agentId);
+    }),
+
+  getSkillContent: readAgentProcedure
+    .input(skillGetContentInputSchema)
+    .output(skillContentSchema)
+    .query(async ({ ctx, input }) => {
+      if (input.agentId) checkAgentBinding(ctx, input.agentId);
+      const src = await ctx.skills.getSource(input.sourceId);
+      if (!src) throw new TRPCError({ code: "NOT_FOUND" });
+      return ctx.skills.getSkillContent(
+        input.sourceId,
+        input.name,
+        input.agentId,
+      );
     }),
 
   install: manageAgentsProcedure

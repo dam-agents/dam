@@ -5,7 +5,10 @@ import { createAgentsRepository } from "../agents/infrastructure/agents-reposito
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
-import { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
+import {
+  readPublicGithubSkill,
+  scanPublicGithubArchive,
+} from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
@@ -82,6 +85,7 @@ export function composeSkillsModule(
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
     scanPublic: scanPublicGithubArchive,
+    readPublicSkill: readPublicGithubSkill,
     brandName,
   });
 }

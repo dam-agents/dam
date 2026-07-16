@@ -69,6 +69,7 @@ export function SkillSourceCard({
   onToggle,
   onRescan,
   onRemove,
+  onOpenSkill,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -87,6 +88,8 @@ export function SkillSourceCard({
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
+  /** Open a skill's SKILL.md render modal (05). */
+  onOpenSkill: (skill: Skill) => void;
 }) {
   const loaded = skills !== undefined;
   const list = skills ?? [];
@@ -194,6 +197,7 @@ export function SkillSourceCard({
             busy={busyKey === skillKey(skill.source, skill.name)}
             disabled={disabled}
             onToggle={() => onToggle(skill)}
+            onOpen={() => onOpenSkill(skill)}
           />
         ))}
 
