@@ -223,21 +223,32 @@ async function buildOAuthDcr(
   if (!meta) {
     throw new Error(`No OAuth discovery metadata at ${input.url}`);
   }
-  if (!meta.registrationEndpoint) {
-    throw new Error(
-      `MCP server at ${input.url} does not support dynamic client registration`,
-    );
-  }
 
-  const dcr = await registerOAuthClient({
-    registrationEndpoint: meta.registrationEndpoint,
-    clientName: `${brandName} Agent Platform`,
-    redirectUris: [oauthCallbackUrl],
-  });
+  // A supplied client is pre-registered with the server — endpoints come
+  // from discovery, registration is skipped.
+  let clientId: string;
+  let clientSecret: string | undefined;
+  if (input.clientId) {
+    clientId = input.clientId;
+    clientSecret = input.clientSecret;
+  } else {
+    if (!meta.registrationEndpoint) {
+      throw new Error(
+        `MCP server at ${input.url} does not support dynamic client registration`,
+      );
+    }
+    const dcr = await registerOAuthClient({
+      registrationEndpoint: meta.registrationEndpoint,
+      clientName: `${brandName} Agent Platform`,
+      redirectUris: [oauthCallbackUrl],
+    });
+    clientId = dcr.clientId;
+    clientSecret = dcr.clientSecret;
+  }
 
   const secrets = new Map<string, Record<string, string>>();
   const fields: Record<string, string> = {};
-  if (dcr.clientSecret) fields.client_secret = dcr.clientSecret;
+  if (clientSecret) fields.client_secret = clientSecret;
   if (Object.keys(fields).length > 0) secrets.set(secretPath.path, fields);
 
   const contributions: Contribution[] = [
@@ -259,13 +270,13 @@ async function buildOAuthDcr(
   return {
     auth: {
       kind: "oauth",
-      clientId: dcr.clientId,
+      clientId,
       refreshTokenRef: { ...secretPath, field: "refresh_token" },
       accessTokenRef: { ...secretPath, field: "access_token" },
       scopes: meta.scopes ?? template.scopes ?? [],
       authorizationUrl: meta.authorizationEndpoint,
       tokenUrl: meta.tokenEndpoint,
-      ...(dcr.clientSecret
+      ...(clientSecret
         ? { clientSecretRef: { ...secretPath, field: "client_secret" } }
         : {}),
     },
