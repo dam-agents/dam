@@ -19,7 +19,7 @@ import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
 import { sizeToQuantities } from "../lib/quantity.js";
 import { generateSandboxName } from "../lib/sandbox-name.js";
-import type { WizardStep } from "../lib/wizard-snapshot.js";
+import { loadSnapshot, type WizardStep } from "../lib/wizard-snapshot.js";
 
 const NO_TEMPLATES: TemplateView[] = [];
 
@@ -49,18 +49,26 @@ export function SandboxWizardView() {
 
   // Own the OAuth return here (app.tsx skips /sandboxes/new): the popup flow
   // never leaves the page, so this only fires after a popup-blocked full-page
-  // redirect — surface failures, then strip the query params.
+  // redirect — stage the authorized connection into the draft on success,
+  // surface failures, then strip the query params.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
     if (!result) return;
     window.history.replaceState({}, "", "/sandboxes/new");
-    if (result !== "success")
+    const connectionId = params.get("connection");
+    if (result === "success" && connectionId) {
+      const saved = loadSnapshot();
+      update({
+        connectionIds: [...new Set([...saved.connectionIds, connectionId])],
+      });
+    } else if (result !== "success") {
       emitToast({
         kind: "error",
         message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
       });
-  }, []);
+    }
+  }, [update]);
 
   useLayoutEffect(() => {
     if (snapshot.step === 2 && !snapshot.name.trim()) {

@@ -141,6 +141,14 @@ export function useTemplateCreateSubmit({
       }
       try {
         if (popup) {
+          if (popup.closed) {
+            // Closed while the create call was in flight — the close poll
+            // settled with no pending id, so clean up here.
+            setAuthorizing(false);
+            void discardPending(created.id);
+            fail("Authorization was cancelled.");
+            return;
+          }
           pendingIdRef.current = created.id;
           const r = await api.connections.startOAuth.mutate({
             connectionId: created.id,

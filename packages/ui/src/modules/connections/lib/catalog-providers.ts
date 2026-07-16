@@ -201,7 +201,9 @@ export function groupCatalog({
 export function catalogTabCounts(
   byTab: Map<CatalogTab, CatalogProviderGroup[]>,
 ): Record<CatalogTab, number> {
-  const counts = { apps: 0, mcp: 0, "custom-headers": 0 };
+  const counts = Object.fromEntries(
+    CATALOG_TAB_ORDER.map((tab) => [tab, 0]),
+  ) as Record<CatalogTab, number>;
   for (const [tab, groups] of byTab)
     counts[tab] = groups.reduce((n, g) => n + g.connections.length, 0);
   return counts;

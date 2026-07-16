@@ -1,71 +1,33 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  isProtectedAgentEnvName,
-  providerTypeForTemplateId,
-} from "api-server-api";
+import { isProtectedAgentEnvName } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 
-import {
-  allEnvVarsValid,
-  sanitizeEnvVars,
-} from "../../../components/env-vars-editor.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
-import {
-  useSetAgentConnections,
-  useUpdateAgent,
-} from "../../agents/api/mutations.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
-import type { InheritedEnv } from "../../agents/components/configure-agent/env-tab.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import {
-  useApplyEgressPreset,
-  useCreateEgressRule,
-  useRevokeEgressRule,
-} from "../../egress-rules/api/mutations.js";
 import {
   useCurrentPreset,
   useEgressRulesForAgent,
 } from "../../egress-rules/api/queries.js";
-import type { StagedNetworkAccessController } from "../../egress-rules/components/agent-egress-editor.js";
-import { splitHostPort } from "../../egress-rules/host-port.js";
-import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { confirmHibernationChange } from "../lib/hibernation.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
+import {
+  type SandboxSettingsStatus,
+  settingsSchema,
+  type SettingsValues,
+} from "./sandbox-settings-schema.js";
+import { useEgressPreview } from "./use-egress-preview.js";
+import { useInheritedEnvs } from "./use-inherited-envs.js";
+import { useProviderStaging } from "./use-provider-staging.js";
+import { useSandboxSettingsSave } from "./use-sandbox-settings-save.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
-const envVarSchema = z.object({ name: z.string(), value: z.string() });
-
-// Inlined from the deleted configure-agent-schema: set fields are sorted
-// arrays so React Hook Form's structural dirty check matches on content.
-const settingsSchema = z.object({
-  name: z.string().trim().min(1, "Required"),
-  assignedAppIds: z.array(z.string()),
-  envVars: z
-    .array(envVarSchema)
-    .refine(allEnvVarsValid, "All env vars need a name and a value"),
-  hibernationTimeoutMin: z
-    .number({ message: "Enter a number of minutes (0 = never)" })
-    .int()
-    .nonnegative(),
-  // Size (#1900) in slider units; applies on the next start.
-  sizeCpuMilli: z.number().int().positive(),
-  sizeMemoryMi: z.number().int().positive(),
-});
-type SettingsValues = z.infer<typeof settingsSchema>;
-
-export type SandboxSettingsStatus =
-  | "no-agent"
-  | "loading"
-  | "not-found"
-  | "ready";
+export type { SandboxSettingsStatus } from "./sandbox-settings-schema.js";
 
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
-  const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
   const agent = useMemo(
@@ -81,22 +43,6 @@ export function useSandboxSettingsForm() {
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
-
-  const updateAgent = useUpdateAgent();
-  const setAgentConnections = useSetAgentConnections();
-  const applyPreset = useApplyEgressPreset();
-  const createRule = useCreateEgressRule();
-  const revokeRule = useRevokeEgressRule();
-
-  const providerAppIds = useMemo(
-    () =>
-      new Set(
-        apps
-          .filter((a) => providerTypeForTemplateId(a.templateId) !== null)
-          .map((a) => a.id),
-      ),
-    [apps],
-  );
 
   const userInitialEnv = useMemo(
     () => (agent?.env ?? []).filter((e) => !isProtectedAgentEnvName(e.name)),
@@ -124,7 +70,7 @@ export function useSandboxSettingsForm() {
       sizeMemoryMi: 1024,
     },
   });
-  const { errors, isDirty, dirtyFields, isSubmitting } = formState;
+  const { errors, isDirty, isSubmitting } = formState;
   const saving = isSubmitting;
 
   // Network-access edits live outside RHF (none map to a schema field); this
@@ -168,6 +114,9 @@ export function useSandboxSettingsForm() {
   ]);
 
   const assignedAppIds = watch("assignedAppIds");
+  const envVars = watch("envVars");
+  const hibernationTimeoutMin = watch("hibernationTimeoutMin");
+  const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
   // App grants apply immediately elsewhere; re-adopt server truth so a later
   // provider save doesn't resend a stale grant list.
@@ -185,91 +134,32 @@ export function useSandboxSettingsForm() {
     assignedAppIds,
     resetField,
   ]);
-  const envVars = watch("envVars");
-  const hibernationTimeoutMin = watch("hibernationTimeoutMin");
-  const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  const selectedProvider = useMemo<ProviderRef | null>(() => {
-    const connId = assignedAppIds.find((id) => providerAppIds.has(id));
-    return connId ? { id: connId } : null;
-  }, [assignedAppIds, providerAppIds]);
+  const {
+    providerAppIds,
+    selectedProvider,
+    selectProvider,
+    dropProviderGrant,
+  } = useProviderStaging({
+    apps,
+    assignedAppIds,
+    setAssignedAppIds: (ids) =>
+      setValue("assignedAppIds", ids, { shouldDirty: true }),
+  });
 
-  // Selecting a provider swaps it in, clearing any other provider connection so
-  // an agent never carries two providers at once.
-  const selectProvider = (ref: ProviderRef) => {
-    setValue(
-      "assignedAppIds",
-      [
-        ...new Set([
-          ...assignedAppIds.filter((id) => !providerAppIds.has(id)),
-          ref.id,
-        ]),
-      ].sort(),
-      { shouldDirty: true },
-    );
-  };
-  const dropProviderGrant = (ref: ProviderRef) => {
-    setValue(
-      "assignedAppIds",
-      assignedAppIds.filter((id) => id !== ref.id).sort(),
-      { shouldDirty: true },
-    );
-  };
-  const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
-    const items: InheritedEnv[] = (agent?.env ?? [])
-      .filter((e) => isProtectedAgentEnvName(e.name))
-      .map((e) => ({
-        name: e.name,
-        value: e.value,
-        source: "system" as const,
-      }));
-    const userEnvNames = new Set(envVars.map((e) => e.name));
-    for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
-      const envContribs = a.contributions.filter(
-        (c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env",
-      );
-      for (const c of envContribs) {
-        if (userEnvNames.has(c.name)) continue;
-        items.push({
-          name: c.name,
-          value: c.placeholder,
-          source: { appLabel: a.name },
-        });
-      }
-    }
-    return items;
-  }, [agent?.env, apps, appIdsSet, envVars]);
+  const inheritedEnvs = useInheritedEnvs({
+    agentEnv: agent?.env ?? [],
+    apps,
+    appIdsSet,
+    envVars,
+  });
 
-  // Egress preview for a staged provider swap: rows for the incoming
-  // provider's hosts, strikethrough for the outgoing one's rules.
-  const baselineAppIds = useMemo(
-    () =>
-      new Set(
-        connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [],
-      ),
-    [connectionsQuery.data?.connections],
-  );
-  const pendingConnectionGrants = useMemo(() => {
-    const out: { connectionId: string; host: string; label: string }[] = [];
-    for (const id of assignedAppIds) {
-      if (baselineAppIds.has(id)) continue;
-      const a = apps.find((x) => x.id === id);
-      if (!a) continue;
-      for (const host of a.hosts)
-        out.push({ connectionId: id, host, label: a.name });
-    }
-    return out;
-  }, [assignedAppIds, baselineAppIds, apps]);
-  const pendingConnectionRevokes = useMemo(() => {
-    const next = new Set<string>();
-    for (const id of baselineAppIds) if (!appIdsSet.has(id)) next.add(id);
-    return next;
-  }, [baselineAppIds, appIdsSet]);
-  const connectionLabels = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of apps) m.set(a.id, a.name);
-    return m;
-  }, [apps]);
+  const egressStaged = useEgressPreview({
+    net,
+    apps,
+    assignedAppIds,
+    savedConnections: connectionsQuery.data?.connections,
+  });
 
   const dirty = isDirty || net.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
@@ -277,139 +167,17 @@ export function useSandboxSettingsForm() {
   // Browser-level guard (tab close, refresh, URL nav).
   useUnsavedGuard(dirty);
 
-  const egressStaged: StagedNetworkAccessController = {
-    preset: net.stagedPreset,
-    setPreset: net.setStagedPreset,
-    pendingDeletes: net.pendingDeletes,
-    togglePendingDelete: net.togglePendingDelete,
-    pendingAdds: net.pendingAdds,
-    appendPendingAdd: net.appendPendingAdd,
-    removePendingAdd: net.removePendingAdd,
-    pendingConnectionGrants,
-    pendingConnectionRevokes,
-    connectionLabels,
-  };
-
-  const onSave = handleSubmit(async (values) => {
-    if (!agentId || !dirty) return;
-    // Path-specific adds force a pod roll; confirm up front so declining
-    // aborts before anything commits. This view stays mounted (unlike the
-    // old modal), so a mid-save abort would otherwise leave already-committed
-    // fields shown as unsaved.
-    const restartingHosts = net.pendingAdds
-      .filter((a) => a.method !== "*" || a.pathPattern !== "*")
-      .map((a) => a.host);
-    if (
-      restartingHosts.length > 0 &&
-      !(await showConfirm(
-        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement.`,
-        "Restart agent?",
-        { confirmLabel: "Save & restart" },
-      ))
-    ) {
-      return;
-    }
-    if (
-      dirtyFields.hibernationTimeoutMin &&
-      agent &&
-      !(await confirmHibernationChange(
-        agent.hibernationTimeoutMin,
-        values.hibernationTimeoutMin,
-        showConfirm,
-      ))
-    ) {
-      return;
-    }
-    const sizeDirty = dirtyFields.sizeCpuMilli || dirtyFields.sizeMemoryMi;
-    if (
-      sizeDirty &&
-      agent &&
-      !(agent.state === "hibernated" || agent.overBudget) &&
-      !(await showConfirm(
-        "Saving will restart the sandbox to apply its new size — in-flight work is interrupted.",
-        "Restart sandbox?",
-        { confirmLabel: "Save & restart" },
-      ))
-    ) {
-      return;
-    }
-    try {
-      if (
-        dirtyFields.envVars ||
-        dirtyFields.name ||
-        dirtyFields.hibernationTimeoutMin ||
-        sizeDirty
-      ) {
-        await updateAgent.mutateAsync({
-          id: agentId,
-          ...(dirtyFields.envVars
-            ? { env: sanitizeEnvVars(values.envVars) }
-            : {}),
-          ...(dirtyFields.name ? { name: values.name.trim() } : {}),
-          ...(dirtyFields.hibernationTimeoutMin
-            ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
-            : {}),
-          // Only the touched dimension ships (the server merge-patches per
-          // dimension): re-sending an untouched one would rewrite a spec
-          // value this form couldn't parse (and so baselined to a fallback).
-          ...(sizeDirty
-            ? {
-                size: {
-                  ...(dirtyFields.sizeCpuMilli
-                    ? { cpu: `${values.sizeCpuMilli}m` }
-                    : {}),
-                  ...(dirtyFields.sizeMemoryMi
-                    ? { memory: `${values.sizeMemoryMi}Mi` }
-                    : {}),
-                },
-              }
-            : {}),
-        });
-      }
-      if (net.stagedPreset !== null) {
-        await applyPreset.mutateAsync({ agentId, preset: net.stagedPreset });
-      }
-      let savedAppIds = values.assignedAppIds;
-      if (dirtyFields.assignedAppIds) {
-        // Only the provider choice stages; app grants come from server truth.
-        const freshSaved =
-          connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [];
-        savedAppIds = [
-          ...new Set([
-            ...freshSaved.filter((id) => !providerAppIds.has(id)),
-            ...values.assignedAppIds.filter((id) => providerAppIds.has(id)),
-          ]),
-        ].sort();
-        await setAgentConnections.mutateAsync({
-          agentId,
-          connectionIds: savedAppIds,
-        });
-      }
-      for (const id of net.pendingDeletes) await revokeRule.mutateAsync({ id });
-      for (const add of net.pendingAdds) {
-        await createRule.mutateAsync({
-          agentId,
-          ...splitHostPort(add.host),
-          method: add.method,
-          pathPattern: add.pathPattern,
-          verdict: add.verdict,
-        });
-      }
-      net.reset();
-      // RHF `reset(values)` replaces the value set wholesale — every schema
-      // field must be present, or the omitted ones become undefined and all
-      // later saves fail validation invisibly.
-      reset({
-        name: values.name.trim(),
-        assignedAppIds: savedAppIds,
-        envVars: values.envVars,
-        hibernationTimeoutMin: values.hibernationTimeoutMin,
-        sizeCpuMilli: values.sizeCpuMilli,
-        sizeMemoryMi: values.sizeMemoryMi,
-      });
-    } catch {
-      // Mutation meta.errorToast surfaces the failure; stay on the page.
-    }
+  const onSave = useSandboxSettingsSave({
+    agentId,
+    agent,
+    dirty,
+    net,
+    providerAppIds,
+    savedConnectionIds:
+      connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [],
+    handleSubmit,
+    reset,
+    dirtyFields: formState.dirtyFields,
   });
 
   const status: SandboxSettingsStatus = !agentId
