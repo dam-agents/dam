@@ -59,6 +59,8 @@ data:
         password: ${env:CLICKHOUSE_PASSWORD}
         database: default
         create_schema: true
+        # Lands in the CREATE TABLE DDL only; existing tables keep their TTL.
+        ttl: {{ .Values.clickstack.collector.ttl }}
     extensions:
       health_check:
         endpoint: 0.0.0.0:13133

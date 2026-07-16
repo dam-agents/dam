@@ -251,6 +251,10 @@ clickstack:
     annotations: {}
     podAnnotations: {}
     image: quay.io/dam-agents/opentelemetry-collector-contrib:0.146.1
+    # Retention for the otel_* tables, matching the ClickStack bundled collector's
+    # default. Only applied when the exporter creates the tables — changing it later
+    # requires ALTER TABLE ... MODIFY TTL by hand.
+    ttl: 720h
     resources:
       requests:
         cpu: 100m

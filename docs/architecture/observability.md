@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-07-10
+Last verified: 2026-07-16
 
 ## Overview
 
@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 - **Collector** — an OpenTelemetry collector that receives OTLP and writes the signals into the telemetry store. It is platform-owned (deliberately not the collector ClickStack bundles — see *Access control*) and holds no upstream credentials; it only ingests telemetry.
-- **Telemetry store** — a columnar analytical database built for high-volume, high-cardinality, time-series telemetry. It is the only place telemetry lives.
+- **Telemetry store** — a columnar analytical database built for high-volume, high-cardinality, time-series telemetry. It is the only place telemetry lives. Retention is bounded: when the collector first creates the telemetry tables it stamps them with a TTL — 30 days by default, overridable per install through the chart — so signals age out instead of accumulating until the volume fills. The TTL lands only at table creation; changing it on an existing install means altering the tables by hand.
 - **Exploration UI** — reads the telemetry store directly so an operator can explore signals. Its own application state (dashboards, sources, saved views) lives in a separate document store that holds no telemetry.
 
 The whole stack sits inside the cluster trust boundary.
