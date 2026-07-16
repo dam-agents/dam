@@ -1,6 +1,7 @@
 import { Add, Checkmark, OverflowMenuHorizontal } from "@carbon/icons-react";
-import type { ConnectionView } from "api-server-api";
+import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { StatusBadge } from "./connection-row.js";
+import { GithubAppInstallLink } from "./github-app-install-link.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -50,6 +51,7 @@ export function CatalogConnectionRow({
         </div>
         <p className="truncate text-[14px] text-muted-foreground">{subtitle}</p>
       </div>
+      <GithubAppInstallLink connection={connection} />
       {grant &&
         !grant.actionHidden &&
         (grant.granted ? (
@@ -92,4 +94,19 @@ export function CatalogConnectionRow({
       </DropdownMenu>
     </div>
   );
+}
+
+const STATUS_BADGE: Record<
+  ConnectionStatus,
+  { label: string; variant: BadgeProps["variant"] }
+> = {
+  active: { label: "Connected", variant: "success" },
+  pending: { label: "Authorizing…", variant: "muted" },
+  expired: { label: "Expired", variant: "danger" },
+  disconnected: { label: "Disconnected", variant: "muted" },
+};
+
+function StatusBadge({ status }: { status: ConnectionStatus }) {
+  const { label, variant } = STATUS_BADGE[status];
+  return <Badge variant={variant}>{label}</Badge>;
 }

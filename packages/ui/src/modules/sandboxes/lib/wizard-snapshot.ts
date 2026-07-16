@@ -24,8 +24,6 @@ export const wizardSnapshotSchema = z.object({
     .default(null),
   egressPreset: egressPresetSchema,
   connectionIds: z.array(z.string()),
-  // Defaulted so a snapshot written by an earlier build still parses.
-  pendingConnectionId: z.string().nullable().default(null),
   // The chosen sandbox Size (#1900) in slider units (CPU millicores,
   // memory Mi). null = untouched — the template's default applies and no
   // `size` rides the create call.
@@ -44,7 +42,6 @@ export const EMPTY_SNAPSHOT: WizardSnapshot = {
   providerRef: null,
   egressPreset: "trusted",
   connectionIds: [],
-  pendingConnectionId: null,
   sizeCpuMilli: null,
   sizeMemoryMi: null,
 };

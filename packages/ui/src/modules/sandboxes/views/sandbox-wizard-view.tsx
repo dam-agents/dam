@@ -19,7 +19,7 @@ import { SetupStep } from "../components/steps/setup-step.js";
 import { useSandboxWizard } from "../hooks/use-sandbox-wizard.js";
 import { sizeToQuantities } from "../lib/quantity.js";
 import { generateSandboxName } from "../lib/sandbox-name.js";
-import { loadSnapshot, type WizardStep } from "../lib/wizard-snapshot.js";
+import type { WizardStep } from "../lib/wizard-snapshot.js";
 
 const NO_TEMPLATES: TemplateView[] = [];
 
@@ -47,36 +47,20 @@ export function SandboxWizardView() {
     return null;
   }, [snapshot.templateId, snapshot.customImage, templateList]);
 
-  // Own the OAuth return here (app.tsx skips /sandboxes/new): select the
-  // connection on success, drop it on failure, then strip the query params.
+  // Own the OAuth return here (app.tsx skips /sandboxes/new): the popup flow
+  // never leaves the page, so this only fires after a popup-blocked full-page
+  // redirect — surface failures, then strip the query params.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
     if (!result) return;
     window.history.replaceState({}, "", "/sandboxes/new");
-    const saved = loadSnapshot();
-    const pending = saved.pendingConnectionId;
-    if (result === "success" && pending) {
-      update({
-        pendingConnectionId: null,
-        connectionIds: [...new Set([...saved.connectionIds, pending])],
+    if (result !== "success")
+      emitToast({
+        kind: "error",
+        message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
       });
-    } else {
-      update({
-        pendingConnectionId: null,
-        ...(pending
-          ? {
-              connectionIds: saved.connectionIds.filter((id) => id !== pending),
-            }
-          : {}),
-      });
-      if (result !== "success")
-        emitToast({
-          kind: "error",
-          message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
-        });
-    }
-  }, [update]);
+  }, []);
 
   useLayoutEffect(() => {
     if (snapshot.step === 2 && !snapshot.name.trim()) {

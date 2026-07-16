@@ -1,18 +1,13 @@
-import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Inset } from "@/components/ui/inset";
-import { SectionLabel } from "@/components/ui/section-label";
 
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
-import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
+import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 
 interface Props {
   agentId: string;
@@ -55,65 +50,16 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   );
   const { populated: groups, templateById } = useCatalogGroups(granted);
 
-  const newButton = (
-    <Button
-      variant="outline"
-      className="h-[32px] px-3 text-[14px] font-normal"
-      onClick={() => setCatalogOpen(true)}
-      data-testid="open-connection-catalog"
-    >
-      <Add size={16} />
-      New
-    </Button>
-  );
-
   return (
     <section>
-      {granted.length > 0 ? (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <SectionLabel>My connections</SectionLabel>
-            {newButton}
-          </div>
-          <Inset className="flex flex-col gap-4">
-            {groups.map((group) => (
-              <ConnectionGroupCard
-                key={group.provider.id}
-                group={group}
-                templateById={templateById}
-                showCount
-                grant={(c) => ({
-                  granted: true,
-                  onToggle: (on) => toggleGrant(c.id, on),
-                  actionHidden: true,
-                })}
-                onDelete={(id, name) => void confirmAndDelete(id, name)}
-                deletingId={deletingId}
-              />
-            ))}
-          </Inset>
-        </>
-      ) : (
-        <>
-          <SectionLabel spaced>My connections</SectionLabel>
-          <Inset className="rounded-lg border border-border bg-card">
-            <div className="flex flex-col items-center gap-4 py-10">
-              <p className="text-[14px] text-foreground/80">
-                You have not added any Connections to this Sandbox yet
-              </p>
-              <Button
-                variant="outline"
-                className="h-[40px] text-[14px]"
-                onClick={() => setCatalogOpen(true)}
-                data-testid="open-connection-catalog"
-              >
-                <Add size={16} />
-                Add Connection
-              </Button>
-            </div>
-          </Inset>
-        </>
-      )}
+      <GrantedConnectionsPanel
+        groups={groups}
+        templateById={templateById}
+        onToggleGrant={toggleGrant}
+        onDelete={(id, name) => void confirmAndDelete(id, name)}
+        deletingId={deletingId}
+        onOpenCatalog={() => setCatalogOpen(true)}
+      />
       {catalogOpen && (
         <ConnectionCatalogModal
           onClose={() => setCatalogOpen(false)}

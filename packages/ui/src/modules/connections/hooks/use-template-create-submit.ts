@@ -31,13 +31,11 @@ export function useTemplateCreateSubmit({
   template,
   popupOAuth,
   oauthReturnView,
-  onOAuthRedirect,
   onCreated,
 }: {
   template: ConnectionTemplateView;
   popupOAuth?: boolean;
   oauthReturnView?: string;
-  onOAuthRedirect?: (connectionId: string) => void;
   onCreated: (id: string) => void;
 }) {
   const create = useCreateConnection();
@@ -156,8 +154,7 @@ export function useTemplateCreateSubmit({
           connectionId: created.id,
           ...(oauthReturnView ? { returnTo: oauthReturnView } : {}),
         });
-        if (oauthReturnView) onOAuthRedirect?.(created.id);
-        else
+        if (!oauthReturnView)
           sessionStorage.setItem(
             "platform-return-view",
             "/settings/connections",

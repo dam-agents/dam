@@ -23,8 +23,6 @@ export interface TemplateCreateFormProps {
   onCancel: () => void;
   /** Full-page OAuth return path; defaults to Settings → Connections. */
   oauthReturnView?: string;
-  /** Called with the new connection's id just before a full-page OAuth redirect. */
-  onOAuthRedirect?: (connectionId: string) => void;
   /** Prefer a popup for OAuth (full-page redirect when blocked). */
   popupOAuth?: boolean;
 }
@@ -37,7 +35,6 @@ export function TemplateCreateFormBody({
   onCreated,
   onCancel,
   oauthReturnView,
-  onOAuthRedirect,
   popupOAuth,
   layout = (fields, footer) => (
     <>
@@ -61,12 +58,11 @@ export function TemplateCreateFormBody({
 
   const { submit, pending, authorizing, verifying, needsOAuth } =
     useTemplateCreateSubmit({
-    template,
-    popupOAuth,
-    oauthReturnView,
-    onOAuthRedirect,
-    onCreated,
-  });
+      template,
+      popupOAuth,
+      oauthReturnView,
+      onCreated,
+    });
 
   const bringYourOwnApp =
     needsOAuth &&
