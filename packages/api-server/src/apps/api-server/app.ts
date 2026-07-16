@@ -130,6 +130,9 @@ export interface ApiServerAppDeps {
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
+  /** Agent ids ever registered to an owner (Postgres agent registry,
+   *  soft-deleted included) — keeps deleted agents' spend attributable. */
+  listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   /** ClickHouse-backed agent-metrics reader; `null` when the telemetry
    *  backend is disabled (the metrics API then fails closed). */
   metricsReader: MetricsReader | null;
@@ -160,6 +163,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     contributionsSettled,
     getAgentCapabilities,
     schedulesBoot,
+    listRegisteredAgentIds,
     metricsReader,
     terms,
     isTermsAccepted,
@@ -851,11 +855,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
     // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
     // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
+    // Live CRs are unioned with the Postgres agent registry so spend history
+    // survives agent deletion instead of shrinking retroactively.
     const metrics = metricsReader
       ? createMetricsService({
           reader: metricsReader,
           listOwnedAgentIds: async () => {
-            const ids = (await agents.list()).map((a) => a.id);
+            const [live, registered] = await Promise.all([
+              agents.list(),
+              listRegisteredAgentIds(user.sub),
+            ]);
+            const ids = [...new Set([...live.map((a) => a.id), ...registered])];
             return user.agentIds === "*"
               ? ids
               : ids.filter((id) => user.agentIds.includes(id));

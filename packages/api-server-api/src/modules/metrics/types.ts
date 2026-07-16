@@ -63,6 +63,7 @@ export interface MetricsOverview {
  *  Returns data only for agents the caller owns. */
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
-  /** Per-model spend over [from, to), across all of the caller's agents. */
+  /** Per-model spend over [from, to), across all of the caller's agents —
+   *  deleted ones included, so history doesn't shrink retroactively. */
   spend(query: MetricsSpendQuery): Promise<TokenSpendByModel[]>;
 }
