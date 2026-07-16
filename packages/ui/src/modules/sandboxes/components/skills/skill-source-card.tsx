@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
-import { cn } from "@/lib/utils";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
 import { SkillRow } from "./skill-row.js";
@@ -128,12 +127,7 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border",
-        readOnly ? "bg-muted" : "bg-card",
-      )}
-    >
+    <div className="rounded-lg border border-border bg-card">
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -154,38 +148,36 @@ export function SkillSourceCard({
           {loading && (
             <Loader2 size={15} className="animate-spin text-muted-foreground" />
           )}
-          {/* Source administration is hidden while read-only — the surface is
-              non-interactive, so a live-looking kebab would only offer dead
-              actions. */}
-          {!readOnly && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  title="Source actions"
-                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <MoreHorizontal size={18} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-                  }
-                >
-                  <span className="flex-1">View repo</span>
-                  <ExternalLink size={14} />
+          {/* Source administration (re-scan / view repo / remove) is
+              account-scoped and pod-independent, so it stays available even
+              while the agent is stopped. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title="Source actions"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                }
+              >
+                <span className="flex-1">View repo</span>
+                <ExternalLink size={14} />
+              </DropdownMenuItem>
+              {canRemove && (
+                <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                  Remove source
                 </DropdownMenuItem>
-                {canRemove && (
-                  <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                    Remove source
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -221,10 +213,9 @@ export function SkillSourceCard({
               }
               onToggle={() => onToggle(skill)}
               onUpdate={() => onUpdate(skill)}
-              // Read-only: render the name as plain text, not a dead link — the
-              // render modal (and everything else here) is non-interactive while
-              // the agent is stopped.
-              onOpen={readOnly ? undefined : () => onOpenSkill(skill)}
+              // Previewing SKILL.md reads from the api-server (public sources),
+              // so it works without a running pod — keep the name clickable.
+              onOpen={() => onOpenSkill(skill)}
             />
           );
         })}

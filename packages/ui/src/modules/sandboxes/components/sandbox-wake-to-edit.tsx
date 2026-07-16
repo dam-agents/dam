@@ -33,15 +33,19 @@ export function useOperableState(agentId: string): {
 export function WakeToEditButton({
   agentId,
   comingUp,
+  label = "Start agent to edit",
 }: {
   agentId: string;
   comingUp: boolean;
+  /** Wake-button label. Defaults to "Start agent to edit"; sections where only
+   *  some actions need the pod pass a more precise label. */
+  label?: string;
 }) {
   const wakeAgent = useWakeAgent();
   if (comingUp)
     return (
-      // Matches the weight/size of the "Start agent to edit" button it
-      // replaces (text-sm font-medium), so the slot reads consistently.
+      // Matches the weight/size of the wake button it replaces (text-sm
+      // font-medium), so the slot reads consistently.
       <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
         Agent is starting…
         <Loader2 size={14} className="animate-spin" />
@@ -49,7 +53,7 @@ export function WakeToEditButton({
     );
   return (
     <Button variant="outline" size="sm" onClick={() => wakeAgent.wake(agentId)}>
-      <Play /> Start agent to edit
+      <Play /> {label}
     </Button>
   );
 }

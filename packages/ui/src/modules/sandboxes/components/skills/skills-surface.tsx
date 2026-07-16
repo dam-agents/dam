@@ -4,7 +4,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
@@ -72,10 +71,11 @@ export function SkillsSurface({
     if (ok) await removeSource(src.id);
   };
 
-  // Read-only (agent stopped / starting): the whole surface is non-interactive,
-  // so don't render a live-looking "Add source" that silently does nothing — the
-  // "Start agent to edit" affordance is the single call to action.
-  const addSourceButton = readOnly ? null : (
+  // Source administration works without a running pod (it's account-scoped and
+  // public scans run from the api-server), so "Add source" stays live even while
+  // the agent is stopped — only pod-dependent actions (install/uninstall/update)
+  // are gated (see `readOnly` on the skill rows).
+  const addSourceButton = (
     <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
       <Plus size={14} /> Add source
     </Button>
@@ -88,12 +88,7 @@ export function SkillsSurface({
     standalone.length === 0;
 
   return (
-    // Read-only (agent stopped / starting): non-interactive, with each card on
-    // a muted background per the design. The add-source modal is portaled, so
-    // it escapes this region.
-    <div
-      className={cn("flex flex-col gap-8", readOnly && "pointer-events-none")}
-    >
+    <div className="flex flex-col gap-8">
       {isEmpty ? (
         <section>
           <SectionLabel spaced>Skills</SectionLabel>
