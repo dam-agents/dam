@@ -2,7 +2,6 @@ import { Check, Copy, ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Inset } from "@/components/ui/inset";
 
 /** Bring-your-own-OAuth-app instructions: provider setup link plus the exact
  *  redirect URI to register. */
@@ -24,7 +23,7 @@ export function OAuthAppHint({
   };
 
   return (
-    <Inset className="rounded-lg border border-border bg-muted/40 p-4 flex flex-col gap-2">
+    <div className="rounded-lg border border-border bg-muted/40 p-4 flex flex-col gap-2">
       <p className="text-[12px] text-foreground/80">
         Register an OAuth app at the provider, then paste its client credentials
         below.
@@ -68,6 +67,6 @@ export function OAuthAppHint({
           </div>
         </div>
       )}
-    </Inset>
+    </div>
   );
 }

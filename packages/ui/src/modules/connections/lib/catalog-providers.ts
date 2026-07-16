@@ -80,6 +80,51 @@ export function catalogProviderTitle(templateId: string): string | undefined {
   return STATIC_TITLE_BY_TEMPLATE_ID.get(templateId);
 }
 
+const METHOD_COPY: Record<string, { title: string; description: string }> = {
+  github: {
+    title: "Sign in with Github",
+    description:
+      "Connect by logging in with your Github account — no token to create or paste",
+  },
+  "github-pat": {
+    title: "Personal access token",
+    description:
+      "Paste a token you create on Github. Best when finer-grained access is preferred",
+  },
+};
+
+/** Auth-method chooser card copy for a template. */
+export function templateMethodCopy(template: ConnectionTemplateView): {
+  title: string;
+  description: string;
+} {
+  return (
+    METHOD_COPY[template.id] ?? {
+      title: template.name,
+      description: template.description ?? "",
+    }
+  );
+}
+
+const CREATE_COPY: Record<string, { title: string; subtitle?: string }> = {
+  github: {
+    title: "Sign in with Github",
+    subtitle: "After authorizing, install the app on your organization.",
+  },
+  "github-enterprise": {
+    title: "Sign in with Github Enterprise",
+    subtitle: "After authorizing, install the app on your organization.",
+  },
+};
+
+/** Create-pane heading for a template. */
+export function templateCreateHeading(template: ConnectionTemplateView): {
+  title: string;
+  subtitle?: string;
+} {
+  return CREATE_COPY[template.id] ?? { title: `Add ${template.name}` };
+}
+
 const tabForCategory = (
   category: ConnectionTemplateView["category"],
 ): CatalogTab => (category === "mcp" ? "mcp" : "apps");

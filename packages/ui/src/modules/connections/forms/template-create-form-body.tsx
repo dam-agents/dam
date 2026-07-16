@@ -1,15 +1,21 @@
-import type { ConnectionTemplateView } from "api-server-api";
+import type {
+  ConnectionTemplateInput,
+  ConnectionTemplateView,
+} from "api-server-api";
 import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { emitToast } from "@/lib/toast";
 
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { slugifyTemplateName } from "../lib/connection-name.js";
+import { DisclosureBox } from "./disclosure-box.js";
 import { labelFor, placeholderFor } from "./field-copy.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
+import { TemplateExplainer } from "./template-explainer.js";
 
 export interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
@@ -53,15 +59,8 @@ export function TemplateCreateFormBody({
   });
   const [overrideDefaults, setOverrideDefaults] = useState(false);
 
-  const {
-    submit,
-    error,
-    setError,
-    pending,
-    authorizing,
-    verifying,
-    needsOAuth,
-  } = useTemplateCreateSubmit({
+  const { submit, pending, authorizing, verifying, needsOAuth } =
+    useTemplateCreateSubmit({
     template,
     popupOAuth,
     oauthReturnView,
@@ -92,16 +91,18 @@ export function TemplateCreateFormBody({
       overrideDefaults,
     });
     if ("error" in payload) {
-      setError(payload.error);
+      emitToast({ kind: "error", message: payload.error });
       return;
     }
     void submit(payload);
   };
 
-  const requiredOrOptional = template.inputs.filter(
-    (i) => i.state === "required" || i.state === "optional",
-  );
+  const required = template.inputs.filter((i) => i.state === "required");
+  const optional = template.inputs.filter((i) => i.state === "optional");
   const overridable = template.inputs.filter((i) => i.state === "overridable");
+  // MCP forms tuck their optional OAuth/header fields away (DAM-31); other
+  // templates show them inline.
+  const optionalCollapsed = template.category === "mcp";
 
   const fieldsRegion = (
     <div className="flex flex-col gap-4">
@@ -121,21 +122,39 @@ export function TemplateCreateFormBody({
         />
       )}
 
-      {requiredOrOptional.map((input) => (
-        <LabeledInput
+      {required.map((input) => (
+        <TemplateFieldInput
           key={input.name}
-          label={
-            (input.label ?? labelFor(input.name)) +
-            (input.state === "optional" ? " (optional)" : "")
-          }
-          testId={`connection-field-${input.name}`}
-          placeholder={placeholderFor(input.name)}
-          type={input.secret ? "password" : "text"}
+          input={input}
           value={fields[input.name] ?? ""}
           onChange={(v) => setF(input.name, v)}
-          help={input.hint}
         />
       ))}
+
+      {!optionalCollapsed &&
+        optional.map((input) => (
+          <TemplateFieldInput
+            key={input.name}
+            input={input}
+            value={fields[input.name] ?? ""}
+            onChange={(v) => setF(input.name, v)}
+          />
+        ))}
+
+      {optionalCollapsed && optional.length > 0 && (
+        <DisclosureBox title="Advanced configuration">
+          <div className="flex flex-col gap-4">
+            {optional.map((input) => (
+              <TemplateFieldInput
+                key={input.name}
+                input={input}
+                value={fields[input.name] ?? ""}
+                onChange={(v) => setF(input.name, v)}
+              />
+            ))}
+          </div>
+        </DisclosureBox>
+      )}
 
       {overridable.length > 0 && (
         <OverridableSection
@@ -148,15 +167,13 @@ export function TemplateCreateFormBody({
         />
       )}
 
-      {requiredOrOptional.length === 0 && overridable.length === 0 && (
+      {template.inputs.length === 0 && (
         <p className="text-[12px] text-muted-foreground">
           No additional inputs — preconfigured.
         </p>
       )}
 
-      {error && (
-        <p className="text-[12px] text-destructive leading-relaxed">{error}</p>
-      )}
+      <TemplateExplainer templateId={template.id} />
     </div>
   );
 
@@ -184,4 +201,29 @@ export function TemplateCreateFormBody({
   );
 
   return <>{layout(fieldsRegion, footerRegion)}</>;
+}
+
+function TemplateFieldInput({
+  input,
+  value,
+  onChange,
+}: {
+  input: ConnectionTemplateInput;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <LabeledInput
+      label={
+        (input.label ?? labelFor(input.name)) +
+        (input.state === "optional" ? " (optional)" : "")
+      }
+      testId={`connection-field-${input.name}`}
+      placeholder={placeholderFor(input.name)}
+      type={input.secret ? "password" : "text"}
+      value={value}
+      onChange={onChange}
+      help={input.hint}
+    />
+  );
 }

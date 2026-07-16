@@ -1,4 +1,4 @@
-import { Close } from "@carbon/icons-react";
+import { ArrowLeft, Close } from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   type ConnectionView,
@@ -7,13 +7,14 @@ import {
 import { useMemo, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
+import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../api/queries.js";
-import { TemplateCreateForm } from "../forms/template-create-form.js";
+import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 import {
   filterOfferedTemplates,
@@ -22,10 +23,13 @@ import {
 import {
   CATALOG_TAB_LABEL,
   CATALOG_TAB_ORDER,
+  type CatalogProviderGroup,
   type CatalogTab,
   catalogTabCounts,
   groupCatalog,
+  templateCreateHeading,
 } from "../lib/catalog-providers.js";
+import { CatalogMethodChooser } from "./catalog-method-chooser.js";
 import {
   CatalogProviderCard,
   type SandboxGrantControls,
@@ -33,6 +37,11 @@ import {
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 const NO_CONNECTIONS: ConnectionView[] = [];
+
+type Pane =
+  | { kind: "browse" }
+  | { kind: "choose"; providerId: string }
+  | { kind: "create"; templateId: string; providerId: string };
 
 interface Props {
   onClose: () => void;
@@ -50,7 +59,7 @@ export function ConnectionCatalogModal({
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
-  const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
+  const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
   const connections = connectionsQ.data ?? NO_CONNECTIONS;
@@ -75,11 +84,30 @@ export function ConnectionCatalogModal({
     () => new Map(allTemplates.map((t) => [t.id, t])),
     [allTemplates],
   );
+  const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
 
   // Deleting a granted connection also drops its grant (#2426).
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
       sandbox.onToggleGrant(id, false);
+  };
+
+  const openNew = (group: CatalogProviderGroup) => {
+    const providerId = group.provider.id;
+    if (group.templates.length > 1) setPane({ kind: "choose", providerId });
+    else if (group.templates[0])
+      setPane({ kind: "create", templateId: group.templates[0].id, providerId });
+  };
+
+  const groupById = (providerId: string) =>
+    allGroups.find((g) => g.provider.id === providerId);
+  const backFromCreate = (providerId: string) => {
+    const group = groupById(providerId);
+    setPane(
+      group && group.templates.length > 1
+        ? { kind: "choose", providerId }
+        : { kind: "browse" },
+    );
   };
 
   return (
@@ -109,11 +137,14 @@ export function ConnectionCatalogModal({
             <button
               key={tab}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab);
+                setPane({ kind: "browse" });
+              }}
               data-testid={`catalog-tab-${tab}`}
               className={cn(
                 "flex h-[44px] items-center justify-between rounded-lg px-4 text-[14px]",
-                tab === activeTab
+                tab === activeTab && pane.kind === "browse"
                   ? "bg-muted font-semibold text-foreground"
                   : "text-foreground hover:bg-muted/60",
               )}
@@ -123,32 +154,144 @@ export function ConnectionCatalogModal({
             </button>
           ))}
         </nav>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-          {(byTab.get(activeTab) ?? []).map((group) => (
-            <CatalogProviderCard
-              key={group.provider.id}
-              group={group}
-              templateById={templateById}
-              sandbox={sandbox}
-              onCreate={setCreating}
-              onDelete={(id, name) => void handleDelete(id, name)}
-              deletingId={deletingId}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {pane.kind === "browse" && (
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+              {(byTab.get(activeTab) ?? []).map((group) => (
+                <CatalogProviderCard
+                  key={group.provider.id}
+                  group={group}
+                  templateById={templateById}
+                  sandbox={sandbox}
+                  onNew={() => openNew(group)}
+                  onDelete={(id, name) => void handleDelete(id, name)}
+                  deletingId={deletingId}
+                />
+              ))}
+            </div>
+          )}
+          {pane.kind === "choose" && (
+            <ChoosePane
+              group={groupById(pane.providerId)}
+              onBack={() => setPane({ kind: "browse" })}
+              onPick={(t) =>
+                setPane({
+                  kind: "create",
+                  templateId: t.id,
+                  providerId: pane.providerId,
+                })
+              }
             />
-          ))}
+          )}
+          {pane.kind === "create" && (
+            <CreatePane
+              template={templateById.get(pane.templateId)}
+              oauthReturnView={oauthReturnView}
+              onBack={() => backFromCreate(pane.providerId)}
+              onCreated={(id) => {
+                sandbox?.onToggleGrant(id, true);
+                emitToast({
+                  kind: "success",
+                  message: sandbox
+                    ? "Connection added to this sandbox."
+                    : "Connection created.",
+                });
+                onClose();
+              }}
+            />
+          )}
         </div>
       </div>
-      {creating && (
-        <TemplateCreateForm
-          template={creating}
-          popupOAuth
-          oauthReturnView={oauthReturnView}
-          onCreated={(id) => {
-            setCreating(null);
-            sandbox?.onToggleGrant(id, true);
-          }}
-          onCancel={() => setCreating(null)}
-        />
-      )}
     </Modal>
+  );
+}
+
+function ChoosePane({
+  group,
+  onBack,
+  onPick,
+}: {
+  group: CatalogProviderGroup | undefined;
+  onBack: () => void;
+  onPick: (template: ConnectionTemplateView) => void;
+}) {
+  if (!group) return null;
+  return (
+    <>
+      <PaneHeader
+        title={`Connect ${group.provider.title}`}
+        subtitle="Choose an authentication method"
+        onBack={onBack}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <CatalogMethodChooser templates={group.templates} onPick={onPick} />
+      </div>
+    </>
+  );
+}
+
+function CreatePane({
+  template,
+  oauthReturnView,
+  onBack,
+  onCreated,
+}: {
+  template: ConnectionTemplateView | undefined;
+  oauthReturnView?: string;
+  onBack: () => void;
+  onCreated: (id: string) => void;
+}) {
+  if (!template) return null;
+  const { title, subtitle } = templateCreateHeading(template);
+  return (
+    <>
+      <PaneHeader title={title} subtitle={subtitle} onBack={onBack} />
+      <TemplateCreateFormBody
+        key={template.id}
+        template={template}
+        popupOAuth
+        oauthReturnView={oauthReturnView}
+        onCreated={onCreated}
+        onCancel={onBack}
+        layout={(fields, footer) => (
+          <>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">{fields}</div>
+            <div className="flex justify-end gap-3 border-t border-border-light px-5 py-4">
+              {footer}
+            </div>
+          </>
+        )}
+      />
+    </>
+  );
+}
+
+function PaneHeader({
+  title,
+  subtitle,
+  onBack,
+}: {
+  title: string;
+  subtitle?: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-border-light px-5 py-4">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="Back"
+        data-testid="catalog-back"
+        className="text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft size={18} />
+      </button>
+      <div>
+        <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
+        {subtitle && (
+          <p className="mt-0.5 text-[14px] text-muted-foreground">{subtitle}</p>
+        )}
+      </div>
+    </div>
   );
 }

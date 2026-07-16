@@ -17,7 +17,7 @@ interface Props {
   group: CatalogProviderGroup;
   templateById: Map<string, ConnectionTemplateView>;
   sandbox?: SandboxGrantControls;
-  onCreate: (template: ConnectionTemplateView) => void;
+  onNew: () => void;
   onDelete: (id: string, name: string) => void;
   deletingId: string | null;
 }
@@ -26,20 +26,17 @@ export function CatalogProviderCard({
   group,
   templateById,
   sandbox,
-  onCreate,
+  onNew,
   onDelete,
   deletingId,
 }: Props) {
   const { provider, templates, connections } = group;
-  // Default to the OAuth flavor until the auth-method chooser lands.
-  const createTemplate =
-    templates.find((t) => t.authKind === "oauth") ?? templates[0];
 
-  const newButton = createTemplate && (
+  const newButton = templates.length > 0 && (
     <Button
       variant="outline"
       className="h-[32px] px-3 text-[14px] font-normal"
-      onClick={() => onCreate(createTemplate)}
+      onClick={onNew}
       data-testid={`catalog-new-${provider.id}`}
     >
       <Add size={16} />

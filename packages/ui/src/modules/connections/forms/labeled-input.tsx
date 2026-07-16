@@ -9,7 +9,6 @@ export function LabeledInput({
   value,
   onChange,
   help,
-  disableInset,
 }: {
   label: string;
   testId?: string;
@@ -18,10 +17,9 @@ export function LabeledInput({
   value: string;
   onChange: (v: string) => void;
   help?: string;
-  disableInset?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} disableInset={disableInset}>
+    <FormField label={label} hint={help} disableInset>
       <Input
         type={type ?? "text"}
         data-testid={testId}
