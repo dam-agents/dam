@@ -1,4 +1,4 @@
-import type { SkillRef, SkillSource } from "api-server-api";
+import type { LocalSkill, SkillRef, SkillSource } from "api-server-api";
 import { Plus, Upload } from "lucide-react";
 import { useState } from "react";
 
@@ -10,6 +10,7 @@ import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
+import { PublishSkillModal } from "./publish-skill-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
@@ -35,6 +36,7 @@ export function SkillsSurface({
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
   const [addOpen, setAddOpen] = useState(false);
+  const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
   const {
     sources,
     sourcesLoaded,
@@ -43,13 +45,17 @@ export function SkillsSurface({
     loadingBySource,
     errorBySource,
     standalone,
+    publishes,
     busyKey,
     installedRef,
     toggle,
     createSource,
     removeSource,
     refreshSource,
+    publish,
   } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
+
+  const publishableSources = sources.filter((s) => s.canPublish);
 
   const removeWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
@@ -97,6 +103,9 @@ export function SkillsSurface({
             <StandaloneSkillsGroup
               skills={standalone}
               readOnly={readOnly}
+              publishes={publishes}
+              canPublish={publishableSources.length > 0}
+              onPublish={setPublishFor}
               action={addSourceButton}
             />
           )}
@@ -141,6 +150,15 @@ export function SkillsSurface({
         <AddSkillSourceModal
           onClose={() => setAddOpen(false)}
           onCreate={createSource}
+        />
+      )}
+
+      {publishFor && (
+        <PublishSkillModal
+          skill={publishFor}
+          sources={publishableSources}
+          onPublish={publish}
+          onClose={() => setPublishFor(null)}
         />
       )}
     </div>

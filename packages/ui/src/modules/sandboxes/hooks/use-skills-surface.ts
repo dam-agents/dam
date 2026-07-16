@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
+import { emitToast } from "../../../lib/toast.js";
 
 /** Row identity shared by the surface and its child components. */
 export const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -26,11 +27,20 @@ export interface SkillsSurface {
   errorBySource: Record<string, string | null>;
   installed: SkillRef[];
   standalone: LocalSkill[];
+  /** Publish records for this agent — drives the "In review" pill. */
   publishes: SkillPublishRecord[];
   /** Row currently mid-install/uninstall, so its toggle can show a spinner. */
   busyKey: string | null;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
+  /** Publish a standalone skill upstream as a PR. Toasts the PR link on
+   *  success (or a CTA on a structured upstream error). Returns success. */
+  publish: (input: {
+    sourceId: string;
+    name: string;
+    title?: string;
+    body?: string;
+  }) => Promise<boolean>;
   /** Add a GitHub Skill Source; returns it (and lists its skills) or null. */
   createSource: (input: {
     name: string;
@@ -249,6 +259,71 @@ export function useSkillsSurface(
     [loadSkills],
   );
 
+  const publish = useCallback(
+    async (input: {
+      sourceId: string;
+      name: string;
+      title?: string;
+      body?: string;
+    }) => {
+      if (!agentId) return false;
+      try {
+        const result = await api.skills.publish.mutate({
+          agentId,
+          sourceId: input.sourceId,
+          name: input.name,
+          title: input.title?.trim() || undefined,
+          body: input.body?.trim() || undefined,
+        });
+        emitToast({
+          kind: "success",
+          message: `Published ${input.name}`,
+          action: {
+            label: "View PR",
+            onClick: () => window.open(result.prUrl, "_blank"),
+          },
+          ttl: 10_000,
+        });
+        // Optimistically record the publish so the "In review" pill shows now,
+        // ahead of the next state poll; drop the target's scan cache so the
+        // merged skill surfaces on the next list.
+        const src = sources.find((s) => s.id === input.sourceId);
+        setPublishes((p) => [
+          ...p,
+          {
+            skillName: input.name,
+            sourceId: input.sourceId,
+            sourceName: src?.name ?? "",
+            sourceGitUrl: src?.gitUrl ?? "",
+            prUrl: result.prUrl,
+            publishedAt: new Date().toISOString(),
+          },
+        ]);
+        void refreshSource(input.sourceId);
+        return true;
+      } catch (err) {
+        // publish-service encodes a CTA URL as `\nplatform-cta:<url>` on a
+        // structured upstream error (not connected / access not granted).
+        const raw =
+          err instanceof Error
+            ? err.message
+            : `Failed to publish ${input.name}`;
+        const cta = raw.match(/platform-cta:(\S+)/)?.[1];
+        const message = raw.replace(/\nplatform-cta:\S+/, "").trim();
+        emitToast({
+          kind: "error",
+          message,
+          action: cta
+            ? { label: "Fix it", onClick: () => window.open(cta, "_blank") }
+            : undefined,
+          ttl: 15_000,
+        });
+        return false;
+      }
+    },
+    [agentId, sources, refreshSource],
+  );
+
   return {
     sources,
     sourcesLoaded,
@@ -265,5 +340,6 @@ export function useSkillsSurface(
     createSource,
     removeSource,
     refreshSource,
+    publish,
   };
 }
