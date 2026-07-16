@@ -26,6 +26,19 @@ function repoLabel(source: SkillSource): string {
   return source.path ? `${base} · ${source.path}` : base;
 }
 
+/** GitHub compare view (installed → latest) for a drifted skill; null for
+ *  non-git-like hosts. Uses the whole-source commit SHAs — coarser than the
+ *  skill's own diff, but the closest a compare URL can point to. */
+function driftCompareUrl(
+  gitUrl: string,
+  from: string,
+  to: string,
+): string | null {
+  const base = gitUrl.replace(/\.git$/, "").replace(/\/$/, "");
+  if (!/(github|gitlab|bitbucket)/i.test(base)) return null;
+  return `${base}/compare/${from}...${to}`;
+}
+
 /** Splits a scan/publish error into its message and an optional call-to-action
  *  URL, which the services encode as `\nplatform-cta:<url>` (not connected /
  *  access not granted / repo not allow-listed). */
@@ -69,6 +82,7 @@ export function SkillSourceCard({
   onToggle,
   onRescan,
   onRemove,
+  onUpdate,
   onOpenSkill,
 }: {
   source: SkillSource;
@@ -88,6 +102,8 @@ export function SkillSourceCard({
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
+  /** Re-install a drifted skill at the latest version (06). */
+  onUpdate: (skill: Skill) => void;
   /** Open a skill's SKILL.md render modal (05). */
   onOpenSkill: (skill: Skill) => void;
 }) {
@@ -189,17 +205,33 @@ export function SkillSourceCard({
       )}
       {loaded &&
         !error &&
-        visible.map((skill) => (
-          <SkillRow
-            key={skillKey(skill.source, skill.name)}
-            skill={skill}
-            installed={installedRef(skill.source, skill.name) !== undefined}
-            busy={busyKey === skillKey(skill.source, skill.name)}
-            disabled={disabled}
-            onToggle={() => onToggle(skill)}
-            onOpen={() => onOpenSkill(skill)}
-          />
-        ))}
+        visible.map((skill) => {
+          const ref = installedRef(skill.source, skill.name);
+          // Drift = installed content differs from the latest scan. contentHash
+          // is absent only for skills installed before it was recorded — skip
+          // drift for those until the next install fills it in.
+          const hasDrift =
+            ref?.contentHash !== undefined &&
+            ref.contentHash !== skill.contentHash;
+          return (
+            <SkillRow
+              key={skillKey(skill.source, skill.name)}
+              skill={skill}
+              installed={ref !== undefined}
+              busy={busyKey === skillKey(skill.source, skill.name)}
+              disabled={disabled}
+              hasDrift={hasDrift}
+              compareUrl={
+                hasDrift && ref
+                  ? driftCompareUrl(source.gitUrl, ref.version, skill.version)
+                  : null
+              }
+              onToggle={() => onToggle(skill)}
+              onUpdate={() => onUpdate(skill)}
+              onOpen={() => onOpenSkill(skill)}
+            />
+          );
+        })}
 
       {loaded && !error && collapsible && (
         <button

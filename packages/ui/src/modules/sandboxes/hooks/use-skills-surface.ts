@@ -33,6 +33,9 @@ export interface SkillsSurface {
   busyKey: string | null;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
+  /** Re-install a drifted skill at the latest scanned version, clearing drift
+   *  once the installed contentHash matches the scan again. */
+  update: (skill: Skill) => Promise<void>;
   /** Publish a standalone skill upstream as a PR. Toasts the PR link on
    *  success (or a CTA on a structured upstream error). Returns success. */
   publish: (input: {
@@ -209,6 +212,30 @@ export function useSkillsSurface(
     [agentId, isError, readOnly, installedRef],
   );
 
+  const update = useCallback(
+    async (skill: Skill) => {
+      if (!agentId || isError || readOnly) return;
+      const key = skillKey(skill.source, skill.name);
+      setBusyKey(key);
+      // Re-install at the scanned version+hash: an already-installed skill, so
+      // this is the "adopt latest" path, not a toggle (which would uninstall).
+      const result = await runAction(
+        () =>
+          api.skills.install.mutate({
+            agentId,
+            source: skill.source,
+            name: skill.name,
+            version: skill.version,
+            contentHash: skill.contentHash,
+          }),
+        `Failed to update ${skill.name}`,
+      );
+      if (result !== ACTION_FAILED) setInstalled(result);
+      setBusyKey(null);
+    },
+    [agentId, isError, readOnly],
+  );
+
   const createSource = useCallback(
     async (input: { name: string; gitUrl: string; path?: string }) => {
       const result = await runAction(
@@ -337,6 +364,7 @@ export function useSkillsSurface(
     busyKey,
     installedRef,
     toggle,
+    update,
     createSource,
     removeSource,
     refreshSource,

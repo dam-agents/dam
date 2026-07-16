@@ -54,6 +54,7 @@ export function SkillsSurface({
     busyKey,
     installedRef,
     toggle,
+    update,
     createSource,
     removeSource,
     refreshSource,
@@ -141,6 +142,7 @@ export function SkillsSurface({
                     stateLoaded={stateLoaded}
                     readOnly={readOnly}
                     onToggle={toggle}
+                    onUpdate={update}
                     onRescan={() => void refreshSource(src.id)}
                     onRemove={() => void removeWithConfirm(src)}
                     onOpenSkill={(skill) =>
