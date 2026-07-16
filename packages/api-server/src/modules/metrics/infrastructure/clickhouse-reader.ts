@@ -39,6 +39,12 @@ export const ownedApiRequests = (w: MetricsWindow): string => {
     ...(w.hours === undefined
       ? []
       : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
+    ...(w.fromIso === undefined
+      ? []
+      : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
+    ...(w.toIso === undefined
+      ? []
+      : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
   ];
   if (w.sessionId === undefined) return base.join("\n  AND ");
   // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
@@ -66,6 +72,8 @@ export const ownedApiRequests = (w: MetricsWindow): string => {
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   agentIds,
   ...(w.hours === undefined ? {} : { hours: w.hours }),
+  ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
+  ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
 });
 

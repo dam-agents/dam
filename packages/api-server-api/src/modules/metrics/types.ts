@@ -1,7 +1,11 @@
 import type { z } from "zod";
-import type { metricsOverviewInputSchema } from "./schemas.js";
+import type {
+  metricsOverviewInputSchema,
+  metricsSpendInputSchema,
+} from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
+export type MetricsSpendQuery = z.infer<typeof metricsSpendInputSchema>;
 
 /** Token counts + cost rolled up per model, over the window. */
 export interface TokenSpendByModel {
@@ -59,4 +63,7 @@ export interface MetricsOverview {
  *  Returns data only for agents the caller owns. */
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
+  /** Per-model spend over [from, to), across all of the caller's agents —
+   *  deleted ones included, so history doesn't shrink retroactively. */
+  spend(query: MetricsSpendQuery): Promise<TokenSpendByModel[]>;
 }

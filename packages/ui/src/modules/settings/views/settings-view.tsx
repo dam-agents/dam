@@ -21,6 +21,7 @@ import {
   setShowInternalConnections,
 } from "../../connections/internal-only.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
+import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { ChannelsPanel } from "../../sessions/components/channels-panel.js";
 import { useAppVersion } from "../api/queries.js";
@@ -32,6 +33,7 @@ const baseTabs: { id: SettingsTab; label: string }[] = [
   { id: "providers", label: "Providers" },
   { id: "connections", label: "Connections" },
   { id: "api-keys", label: "API keys" },
+  { id: "usage", label: "Usage" },
 ];
 
 const themeOptions = [
@@ -222,6 +224,12 @@ export function SettingsView() {
         {activeTab === "connections" && (
           <div className="anim-in">
             <ConnectionsView />
+          </div>
+        )}
+
+        {activeTab === "usage" && (
+          <div className="anim-in">
+            <UsageView />
           </div>
         )}
       </div>

@@ -170,6 +170,7 @@ export type { ChannelsService } from "./modules/channels/types.js";
 export type {
   MetricsService,
   MetricsQuery,
+  MetricsSpendQuery,
   MetricsOverview,
   TokenSpendByModel,
   SessionRuntime,

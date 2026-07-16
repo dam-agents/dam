@@ -83,8 +83,45 @@ describe("metrics ownership gate", () => {
     expect(calls).toEqual([]);
   });
 
+  it("spend scopes to all owned agents and passes the range through", async () => {
+    const { reader, calls, windows } = spyReader();
+    const svc = createMetricsService({ reader, listOwnedAgentIds: owned });
+    await svc.spend({
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-08-01T00:00:00.000Z",
+    });
+    expect(calls).toEqual([["agent-a", "agent-b"]]);
+    expect(windows).toEqual([
+      {
+        fromIso: "2026-07-01T00:00:00.000Z",
+        toIso: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("spend returns nothing when the caller owns no agents", async () => {
+    const { reader, calls } = spyReader();
+    const svc = createMetricsService({
+      reader,
+      listOwnedAgentIds: () => Promise.resolve([]),
+    });
+    expect(
+      await svc.spend({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+      }),
+    ).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
   it("disabled service fails closed", async () => {
     const svc = createDisabledMetricsService();
     await expect(svc.overview(query)).rejects.toThrow(/not enabled/);
+    await expect(
+      svc.spend({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow(/not enabled/);
   });
 });

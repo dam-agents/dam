@@ -8,9 +8,12 @@ import type {
 } from "api-server-api";
 
 /** Row filters beyond ownership, independent and composable: an optional
- *  lookback window and an optional exact session. Both absent = all rows. */
+ *  lookback window, an optional absolute [fromIso, toIso) range, and an
+ *  optional exact session. All absent = all rows. */
 export interface MetricsWindow {
   hours?: number;
+  fromIso?: string;
+  toIso?: string;
   sessionId?: string;
 }
 
@@ -69,18 +72,26 @@ export function createMetricsService(deps: {
         ]);
       return { tokenSpendByModel, runtimeBySession, contextPerCall };
     },
+
+    async spend(query) {
+      const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
+      if (ids.length === 0) return [];
+      return deps.reader.tokenSpendByModel(ids, {
+        fromIso: query.from,
+        toIso: query.to,
+      });
+    },
   };
 }
 
 /** Wired when the metrics backend (ClickStack) is disabled — every read
  *  fails loud rather than masquerading as "no data yet". */
 export function createDisabledMetricsService(): MetricsService {
-  return {
-    overview: async () => {
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message: "Agent metrics backend is not enabled on this deployment.",
-      });
-    },
+  const fail = async (): Promise<never> => {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Agent metrics backend is not enabled on this deployment.",
+    });
   };
+  return { overview: fail, spend: fail };
 }

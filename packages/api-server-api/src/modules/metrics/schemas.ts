@@ -12,3 +12,11 @@ export const metricsOverviewInputSchema = z.object({
   sinceHours: z.coerce.number().int().positive().max(720).optional(),
   limit: z.coerce.number().int().positive().max(1000).default(100),
 });
+
+// Per-model spend over an absolute half-open range [from, to), across all of
+// the caller's agents. Instants (not calendar fields) so the client decides
+// what a "month" means in its own timezone.
+export const metricsSpendInputSchema = z.object({
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+});

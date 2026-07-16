@@ -32,6 +32,19 @@ describe("ownedApiRequests", () => {
     expect(sql).not.toContain("ServiceName");
   });
 
+  it("bounds by the absolute range as half-open [from, to)", () => {
+    const sql = ownedApiRequests({
+      fromIso: "2026-07-01",
+      toIso: "2026-08-01",
+    });
+    expect(sql).toContain(
+      "Timestamp >= parseDateTimeBestEffort({fromIso:String})",
+    );
+    expect(sql).toContain(
+      "Timestamp < parseDateTimeBestEffort({toIso:String})",
+    );
+  });
+
   it("applies no session predicate without a sessionId", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).not.toContain("sessionId");

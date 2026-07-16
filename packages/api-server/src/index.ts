@@ -72,6 +72,7 @@ import {
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
@@ -637,6 +638,7 @@ const { server: apiServer } = startApiServerApp({
       .then((r) => r?.runtimeCapabilities ?? null),
   schedulesBoot,
   mountUsageRoutes: usage.mount,
+  listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
   metricsReader: composeMetricsReader(config),
   terms: termsService,
   isTermsAccepted,
