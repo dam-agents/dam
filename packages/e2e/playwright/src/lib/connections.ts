@@ -20,7 +20,9 @@ export async function createCustomHeaderConnection(
     .getByRole("button", { name: "Settings" })
     .click();
   await page.getByRole("button", { name: "Connections", exact: true }).click();
-  await page.getByTestId("connection-template-custom-header").click();
+  await page.getByTestId("open-connection-catalog").click();
+  await page.getByTestId("catalog-tab-custom-headers").click();
+  await page.getByTestId("catalog-new-custom-header").click();
 
   await page.getByTestId("connection-field-name").fill(input.name);
   await page.getByTestId("connection-field-host").fill(input.host);
@@ -32,7 +34,8 @@ export async function createCustomHeaderConnection(
   await page.getByTestId("connection-field-envName").fill(input.envName);
 
   await page.getByTestId("connection-create-submit").click();
-  await expect(page.getByTestId("connection-create-submit")).toBeHidden();
+  // A successful create closes the whole catalogue modal.
+  await expect(page.getByTestId("catalog-close")).toBeHidden();
 }
 
 export async function getConnectionId(

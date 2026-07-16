@@ -17,11 +17,13 @@ const regrantValue = "e2e-regrant-secret-5e1c";
 const regrantHost = "regrant.example.com";
 const regrantHeaderName = "x-regrant-key";
 
-// Regression for #2426: disconnecting a granted connection on the sandbox
-// settings page and creating a replacement of the same type left the deleted
-// id staged in the form, so Save failed with "connection ... not owned by
-// caller".
-test("recreating a disconnected connection saves cleanly", async ({ page }) => {
+// Regression for #2426: deleting a granted connection and creating a
+// replacement of the same type must leave the agent's grants clean — the
+// deleted id gone, the replacement granted (grants apply immediately on the
+// sandbox connections page; creating from the catalogue auto-grants).
+test("recreating a disconnected connection regrants cleanly", async ({
+  page,
+}) => {
   test.setTimeout(240_000);
 
   const token = await getAccessToken();
@@ -69,38 +71,39 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
     });
   });
 
-  await test.step("open the sandbox settings page", async () => {
-    // Connections are their own section under the sandbox home now (#2793).
+  await test.step("open the sandbox connections page", async () => {
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await expect(
       page.getByRole("heading", { level: 1, name: agentName }),
     ).toBeVisible();
     await expect(
-      page.getByTestId(`connection-grant-${originalId}`).getByRole("checkbox"),
-    ).toBeChecked();
+      page.getByTestId(`catalog-connection-${originalId}`),
+    ).toBeVisible();
   });
 
-  await test.step("disconnect the granted connection", async () => {
+  await test.step("delete the granted connection via the catalogue", async () => {
+    // Delete lives only in the catalogue modal (and settings) — the sandbox
+    // list's row menu offers Remove/Manage instead.
+    await page.getByTestId("open-connection-catalog").click();
+    await page.getByTestId("catalog-tab-custom-headers").click();
+    // The section behind the modal renders the same row testids — scope to
+    // the modal's provider card.
+    const card = page.getByTestId("catalog-provider-custom-header");
+    await card.getByTestId(`catalog-menu-${originalId}`).click();
     await page
-      .getByTestId(`connection-grant-${originalId}`)
-      .getByRole("button", { name: "Disconnect" })
+      .getByRole("menuitem", { name: "Delete this connection" })
       .click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Disconnect" })
+      .getByRole("button", { name: "Delete connection" })
       .click();
-    await expect(page.getByTestId(`connection-grant-${originalId}`)) //
-      .toBeHidden();
+    await expect(
+      card.getByTestId(`catalog-connection-${originalId}`),
+    ).toBeHidden();
   });
 
   await test.step("create a replacement of the same type", async () => {
-    // The provider section renders its own "Show all" toggle — scope to the
-    // connections section.
-    await page
-      .locator("section", { hasText: "My connections" })
-      .getByRole("button", { name: /show all/i })
-      .click();
-    await page.getByTestId("connection-template-custom-header").click();
+    await page.getByTestId("catalog-new-custom-header").click();
 
     await page.getByTestId("connection-field-name").fill(recreatedName);
     await page.getByTestId("connection-field-host").fill(regrantHost);
@@ -111,18 +114,15 @@ test("recreating a disconnected connection saves cleanly", async ({ page }) => {
     await page.getByTestId("connection-field-value").fill(regrantValue);
     await page.getByTestId("connection-field-envName").fill(regrantEnvName);
     await page.getByTestId("connection-create-submit").click();
-    await expect(page.getByTestId("connection-create-submit")).toBeHidden();
+    // A successful create auto-grants and closes the catalogue modal.
+    await expect(page.getByTestId("catalog-close")).toBeHidden();
   });
 
-  await test.step("save succeeds and the new grant lands", async () => {
+  await test.step("the new grant lands and the old one is gone", async () => {
     const recreatedId = await getConnectionId(api, recreatedName);
     await expect(
-      page.getByTestId(`connection-grant-${recreatedId}`).getByRole("checkbox"),
-    ).toBeChecked();
-
-    await page
-      .getByRole("button", { name: "Submit changes", exact: true })
-      .click();
+      page.getByTestId(`catalog-connection-${recreatedId}`),
+    ).toBeVisible();
 
     await expect
       .poll(
