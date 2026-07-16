@@ -137,6 +137,10 @@ export const skillGetContentInputSchema = z.object({
 /** Raw `SKILL.md` text (frontmatter + markdown body); the UI renders it. */
 export const skillContentSchema = z.object({
   content: z.string(),
+  /** Source-relative directory the SKILL.md was found in, when resolvable —
+   *  lets the UI build an accurate blob link instead of guessing the dir from
+   *  the (frontmatter) skill name. */
+  dir: z.string().optional(),
 });
 
 export const skillInstallInputSchema = z.object({

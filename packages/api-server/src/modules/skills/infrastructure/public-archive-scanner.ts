@@ -250,15 +250,16 @@ export async function scanPublicGithubArchive(
 /**
  * Read one skill's raw `SKILL.md` from a public GitHub repo. Mirrors the scan's
  * fetch + Source-Root resolution and name identity (frontmatter `name`, else
- * the directory basename), returning the matching skill's file text — or null
- * if the source has no skill by that name. Throws `PublicArchiveNotFoundError`
- * on 404 so the caller can distinguish a private repo.
+ * the directory basename), returning the matching skill's file text plus the
+ * source-relative directory it lives in — or null if the source has no skill by
+ * that name. Throws `PublicArchiveNotFoundError` on 404 so the caller can
+ * distinguish a private repo.
  */
 export async function readPublicGithubSkill(
   gitUrl: string,
   subPath: string | undefined,
   name: string,
-): Promise<string | null> {
+): Promise<{ content: string; dir: string } | null> {
   const host = detectHost(gitUrl);
   if (!host)
     throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
@@ -292,7 +293,7 @@ export async function readPublicGithubSkill(
       );
       const skillName =
         parseFrontmatter(content).name?.trim() || path.basename(rel);
-      if (skillName === name) return content;
+      if (skillName === name) return { content, dir: rel };
     }
     return null;
   } finally {

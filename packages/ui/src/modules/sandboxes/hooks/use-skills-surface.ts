@@ -8,6 +8,7 @@ import type {
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
+import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 
@@ -329,14 +330,11 @@ export function useSkillsSurface(
         void refreshSource(input.sourceId);
         return true;
       } catch (err) {
-        // publish-service encodes a CTA URL as `\nplatform-cta:<url>` on a
-        // structured upstream error (not connected / access not granted).
         const raw =
           err instanceof Error
             ? err.message
             : `Failed to publish ${input.name}`;
-        const cta = raw.match(/platform-cta:(\S+)/)?.[1];
-        const message = raw.replace(/\nplatform-cta:\S+/, "").trim();
+        const { message, cta } = parsePlatformCta(raw);
         emitToast({
           kind: "error",
           message,

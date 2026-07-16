@@ -44,8 +44,7 @@ export interface SkillsService {
   getSkillContent: (
     sourceId: string,
     name: string,
-    agentId?: string,
-  ) => Promise<{ content: string }>;
+  ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;

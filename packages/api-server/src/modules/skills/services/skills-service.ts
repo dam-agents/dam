@@ -76,13 +76,14 @@ export interface SkillsServiceDeps {
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
   scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
-  /** Read one skill's raw `SKILL.md` from a public GitHub repo. Throws
-   *  `PublicArchiveNotFoundError` on 404 (private repo). */
+  /** Read one skill's raw `SKILL.md` (plus its source-relative directory) from
+   *  a public GitHub repo. Throws `PublicArchiveNotFoundError` on 404 (private
+   *  repo). */
   readPublicSkill: (
     gitUrl: string,
     path: string | undefined,
     name: string,
-  ) => Promise<string | null>;
+  ) => Promise<{ content: string; dir: string } | null>;
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
@@ -374,9 +375,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: "in-product preview isn't available for private sources yet",
         });
       }
-      let content: string | null;
+      let read: { content: string; dir: string } | null;
       try {
-        content = await deps.readPublicSkill(src.gitUrl, src.path, name);
+        read = await deps.readPublicSkill(src.gitUrl, src.path, name);
       } catch (err) {
         if (err instanceof PublicArchiveNotFoundError) {
           throw new TRPCError({
@@ -387,13 +388,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
         throw err;
       }
-      if (content === null) {
+      if (read === null) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: `skill ${JSON.stringify(name)} not found in source`,
         });
       }
-      return { content };
+      return { content: read.content, dir: read.dir };
     },
 
     async install(input: SkillInstallInput) {

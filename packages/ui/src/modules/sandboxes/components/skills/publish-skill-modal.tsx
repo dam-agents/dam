@@ -13,14 +13,7 @@ import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-
-/** `host/org/repo` → `org/repo` for the source dropdown label. */
-function orgRepo(gitUrl: string): string {
-  return gitUrl
-    .replace(/^https?:\/\//, "")
-    .replace(/^[^/]+\//, "")
-    .replace(/\.git$/, "");
-}
+import { orgRepo } from "@/lib/git-source";
 
 /**
  * Publish a Standalone Local Skill upstream as a pull request. Prefills the PR

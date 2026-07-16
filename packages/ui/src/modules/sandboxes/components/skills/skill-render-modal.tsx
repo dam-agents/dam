@@ -4,19 +4,9 @@ import { ExternalLink, X } from "lucide-react";
 
 import { Markdown } from "@/components/markdown";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { gitBlobUrl } from "@/lib/git-source";
 
 import { trpc } from "../../../../trpc.js";
-
-/** Best-effort GitHub link to the skill's SKILL.md at its pinned commit. */
-function githubUrl(source: SkillSource, skill: Skill): string | null {
-  const base = source.gitUrl.replace(/\.git$/, "").replace(/\/$/, "");
-  const isGitLike =
-    /^(?:https?:\/\/)?(?:[\w.-]+@)?(?:github|gitlab|bitbucket)/i.test(base) ||
-    /github/i.test(base);
-  if (!isGitLike) return null;
-  const dir = source.path ?? "skills";
-  return `${base}/blob/${skill.version}/${dir}/${skill.name}/SKILL.md`;
-}
 
 /**
  * Renders a skill's `SKILL.md` in-product (frontmatter + markdown body) so a
@@ -36,7 +26,6 @@ export function SkillRenderModal({
   agentId: string | null;
   onClose: () => void;
 }) {
-  const link = githubUrl(source, skill);
   const { data, isPending, isError } = useQuery(
     trpc.skills.getSkillContent.queryOptions({
       sourceId: source.id,
@@ -44,6 +33,11 @@ export function SkillRenderModal({
       ...(agentId ? { agentId } : {}),
     }),
   );
+  // Prefer the exact directory the content read resolved; before it loads (or
+  // for a private source that can't be read) fall back to guessing the dir
+  // from the source path + skill name — best-effort, may 404 if they diverge.
+  const dir = data?.dir ?? `${source.path ?? "skills"}/${skill.name}`;
+  const link = gitBlobUrl(source.gitUrl, skill.version, `${dir}/SKILL.md`);
 
   return (
     <Modal widthClass="w-[720px]">

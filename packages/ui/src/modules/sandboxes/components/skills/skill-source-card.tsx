@@ -14,6 +14,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { gitCompareUrl, repoSlug } from "@/lib/git-source";
+import { parsePlatformCta } from "@/lib/platform-cta";
 import { cn } from "@/lib/utils";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
@@ -22,29 +24,15 @@ import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
 /** Strip the scheme and trailing `.git` so a repo reads as `host/org/repo`. */
 function repoLabel(source: SkillSource): string {
-  const base = source.gitUrl.replace(/^https?:\/\//, "").replace(/\.git$/, "");
+  const base = repoSlug(source.gitUrl);
   return source.path ? `${base} · ${source.path}` : base;
-}
-
-/** GitHub compare view (installed → latest) for a drifted skill; null for
- *  non-git-like hosts. Uses the whole-source commit SHAs — coarser than the
- *  skill's own diff, but the closest a compare URL can point to. */
-function driftCompareUrl(
-  gitUrl: string,
-  from: string,
-  to: string,
-): string | null {
-  const base = gitUrl.replace(/\.git$/, "").replace(/\/$/, "");
-  if (!/(github|gitlab|bitbucket)/i.test(base)) return null;
-  return `${base}/compare/${from}...${to}`;
 }
 
 /** Splits a scan/publish error into its message and an optional call-to-action
  *  URL, which the services encode as `\nplatform-cta:<url>` (not connected /
  *  access not granted / repo not allow-listed). */
 function SourceError({ error }: { error: string }) {
-  const cta = error.match(/platform-cta:(\S+)/)?.[1];
-  const message = error.replace(/\nplatform-cta:\S+/, "").trim();
+  const { message, cta } = parsePlatformCta(error);
   return (
     <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-[13px] text-danger">
       <span className="flex-1">{message}</span>
@@ -223,7 +211,7 @@ export function SkillSourceCard({
               hasDrift={hasDrift}
               compareUrl={
                 hasDrift && ref
-                  ? driftCompareUrl(source.gitUrl, ref.version, skill.version)
+                  ? gitCompareUrl(source.gitUrl, ref.version, skill.version)
                   : null
               }
               onToggle={() => onToggle(skill)}

@@ -223,5 +223,8 @@ export function transitionPausingAgents(
     if (agent.state !== "running") continue;
     next.set(id, entry);
   }
-  return next;
+  // `next` is always a subset of `current`, so equal sizes mean identical
+  // membership — return the same reference so callers can skip a redundant
+  // store update (and re-render) on every poll while a pill is live.
+  return next.size === current.size ? current : next;
 }
