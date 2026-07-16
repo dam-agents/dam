@@ -146,7 +146,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
+export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
   return (
     <table className="w-full border-collapse tabular-nums">
       <thead>

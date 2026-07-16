@@ -3,7 +3,10 @@ import {
   checkAgentBinding,
   readAgentProcedure,
 } from "../../auth-procedures.js";
-import { metricsOverviewInputSchema } from "./schemas.js";
+import {
+  metricsOverviewInputSchema,
+  metricsSpendInputSchema,
+} from "./schemas.js";
 
 // Ownership is enforced in the service (it resolves the caller's owned agent
 // IDs and filters on them). When a specific agentId is requested we also apply
@@ -15,4 +18,7 @@ export const metricsRouter = t.router({
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.metrics.overview(input);
     }),
+  spend: readAgentProcedure
+    .input(metricsSpendInputSchema)
+    .query(({ ctx, input }) => ctx.metrics.spend(input)),
 });
