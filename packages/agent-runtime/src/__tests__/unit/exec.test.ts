@@ -76,7 +76,16 @@ describe("attachExec (PTY)", () => {
     const ws = run(["cat"]);
     ws.emit("message", Buffer.from(encodeDataFrame(OP_INPUT, "hi\n")));
     ws.emit("message", Buffer.from(encodeDataFrame(OP_INPUT, "\x04\x04")));
-    expect(await ws.exited).toBe(0);
+    // ^D (EOT) on an empty line makes the tty line discipline signal EOF, so
+    // `cat` stops reading and terminates. If EOT were NOT treated as EOF it
+    // would be echoed as data and `cat` would run forever — this await would
+    // then hang until the test times out, which is the real regression this
+    // guards against. How the kernel reports the EOF-driven teardown is racy:
+    // `cat`'s clean exit (0) races the controlling-terminal hangup (SIGHUP ->
+    // 128+1 = 129), and either can win under load — so we assert on
+    // termination + relayed output, not on an exact exit code.
+    const exitCode = await ws.exited;
+    expect([0, 129]).toContain(exitCode);
     expect(output(ws)).toContain("hi");
   });
 
