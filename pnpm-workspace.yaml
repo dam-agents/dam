@@ -48,11 +48,6 @@ trustPolicyExclude:
   - "@mariozechner/clipboard-linux-x64-musl@0.3.6"
   - "@mariozechner/clipboard-win32-arm64-msvc@0.3.6"
   - "@mariozechner/clipboard-win32-x64-msvc@0.3.6"
-minimumReleaseAgeExclude:
-  # brace-expansion 2.1.2 fixes CVE-2026-13149 (high) on the 2.x line, pulled
-  # in via the override in package.json; published 2026-07-08 (<7 days).
-  # Safe to drop once it ages past 7 days.
-  - "brace-expansion@2.1.2"
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

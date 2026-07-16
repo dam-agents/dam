@@ -39,7 +39,7 @@
     "chat": "^4.26.0",
     "cron-parser": "^5.5.0",
     "db": "workspace:*",
-    "hono": "^4.12.25",
+    "hono": "^4.12.27",
     "import-in-the-middle": "^3.2.0",
     "ioredis": "^5.10.1",
     "jose": "^6.0.11",
