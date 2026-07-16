@@ -30,10 +30,22 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };
 
+// Per-template helper text, keyed by template id then input name.
+const TEMPLATE_FIELD_HINTS: Record<string, Record<string, string>> = {
+  "github-pat": {
+    value:
+      "Create a fine-grained token at github.com/settings/tokens — scope it to the exact repos and permissions you want.",
+  },
+};
+
 export function labelFor(key: string): string {
   return FIELD_LABELS[key] ?? key;
 }
 
 export function placeholderFor(key: string): string | undefined {
   return FIELD_PLACEHOLDERS[key];
+}
+
+export function hintFor(templateId: string, key: string): string | undefined {
+  return TEMPLATE_FIELD_HINTS[templateId]?.[key];
 }

@@ -115,6 +115,10 @@ const CREATE_COPY: Record<string, { title: string; subtitle?: string }> = {
     title: "Sign in with Github Enterprise",
     subtitle: "After authorizing, install the app on your organization.",
   },
+  "github-pat": {
+    title: "Personal access token",
+    subtitle: "Paste a fine-grained token scoped to the repos you need.",
+  },
 };
 
 /** Create-pane heading for a template. */

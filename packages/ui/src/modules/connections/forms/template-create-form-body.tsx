@@ -11,7 +11,7 @@ import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js"
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { slugifyTemplateName } from "../lib/connection-name.js";
 import { DisclosureBox } from "./disclosure-box.js";
-import { labelFor, placeholderFor } from "./field-copy.js";
+import { hintFor, labelFor, placeholderFor } from "./field-copy.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
@@ -125,6 +125,7 @@ export function TemplateCreateFormBody({
       {required.map((input) => (
         <TemplateFieldInput
           key={input.name}
+          templateId={template.id}
           input={input}
           value={fields[input.name] ?? ""}
           onChange={(v) => setF(input.name, v)}
@@ -135,6 +136,7 @@ export function TemplateCreateFormBody({
         optional.map((input) => (
           <TemplateFieldInput
             key={input.name}
+            templateId={template.id}
             input={input}
             value={fields[input.name] ?? ""}
             onChange={(v) => setF(input.name, v)}
@@ -147,6 +149,7 @@ export function TemplateCreateFormBody({
             {optional.map((input) => (
               <TemplateFieldInput
                 key={input.name}
+                templateId={template.id}
                 input={input}
                 value={fields[input.name] ?? ""}
                 onChange={(v) => setF(input.name, v)}
@@ -204,10 +207,12 @@ export function TemplateCreateFormBody({
 }
 
 function TemplateFieldInput({
+  templateId,
   input,
   value,
   onChange,
 }: {
+  templateId: string;
   input: ConnectionTemplateInput;
   value: string;
   onChange: (v: string) => void;
@@ -223,7 +228,7 @@ function TemplateFieldInput({
       type={input.secret ? "password" : "text"}
       value={value}
       onChange={onChange}
-      help={input.hint}
+      help={hintFor(templateId, input.name) ?? input.hint}
     />
   );
 }

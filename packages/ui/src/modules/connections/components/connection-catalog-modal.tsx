@@ -1,32 +1,21 @@
 import { ArrowLeft, Close } from "@carbon/icons-react";
-import {
-  type ConnectionTemplateView,
-  type ConnectionView,
-  PROVIDER_TEMPLATE_IDS,
-} from "api-server-api";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-import {
-  useAppConnections,
-  useConnectionTemplates,
-} from "../api/queries.js";
+import { useAppConnections } from "../api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
+import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
-import {
-  filterOfferedTemplates,
-  isShowInternalConnectionsEnabled,
-} from "../internal-only.js";
 import {
   CATALOG_TAB_LABEL,
   CATALOG_TAB_ORDER,
   type CatalogProviderGroup,
   type CatalogTab,
   catalogTabCounts,
-  groupCatalog,
   templateCreateHeading,
 } from "../lib/catalog-providers.js";
 import { CatalogMethodChooser } from "./catalog-method-chooser.js";
@@ -35,7 +24,6 @@ import {
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
 
-const NO_TEMPLATES: ConnectionTemplateView[] = [];
 const NO_CONNECTIONS: ConnectionView[] = [];
 
 type Pane =
@@ -55,35 +43,15 @@ export function ConnectionCatalogModal({
   sandbox,
   oauthReturnView,
 }: Props) {
-  const templatesQ = useConnectionTemplates();
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
-  const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const connections = connectionsQ.data ?? NO_CONNECTIONS;
-
-  const showInternal = isShowInternalConnectionsEnabled();
-  const byTab = useMemo(
-    () =>
-      groupCatalog({
-        offeredTemplates: filterOfferedTemplates(
-          allTemplates,
-          showInternal,
-        ).filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id)),
-        allTemplates,
-        connections: connections.filter(
-          (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
-        ),
-      }),
-    [allTemplates, connections, showInternal],
+  const { byTab, templateById } = useCatalogGroups(
+    connectionsQ.data ?? NO_CONNECTIONS,
   );
   const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
-  const templateById = useMemo(
-    () => new Map(allTemplates.map((t) => [t.id, t])),
-    [allTemplates],
-  );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
 
   // Deleting a granted connection also drops its grant (#2426).
