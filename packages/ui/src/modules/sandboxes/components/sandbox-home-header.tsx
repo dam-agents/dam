@@ -12,12 +12,9 @@ import {
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  useDeleteAgent,
-  usePauseAgent,
-  useStopAgent,
-} from "../../agents/api/mutations.js";
+import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
+import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
@@ -34,8 +31,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
-  const pauseAgent = usePauseAgent();
-  const stopAgent = useStopAgent();
+  const suspend = useSuspendAgent();
 
   const onStop = async () => {
     // Schedules override a stop by design (#1900) — say so before it lands.
@@ -55,7 +51,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
       </>
     );
     if (!(await showConfirm(msg, "Stop Sandbox"))) return;
-    stopAgent.mutate({ id: agent.id });
+    suspend.stop(agent.id);
   };
 
   const onDelete = async () => {
@@ -102,9 +98,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
             )}
             {display.state === "running" && (
               <>
-                <DropdownMenuItem
-                  onSelect={() => pauseAgent.mutate({ id: agent.id })}
-                >
+                <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
                   Pause — wakes on next use
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void onStop()}>

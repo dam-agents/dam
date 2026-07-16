@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
+import { useSyncPausingAgents } from "../../agents/hooks/use-suspend-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
@@ -26,6 +27,12 @@ export function SandboxHomeView() {
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
   );
+  const pausingAgents = useStore((s) => s.pausingAgents);
+  useSyncPausingAgents();
+  const pausingIds = useMemo(
+    () => new Set(pausingAgents.keys()),
+    [pausingAgents],
+  );
 
   const summaries = useSectionSummaries(f.agent);
 
@@ -47,7 +54,7 @@ export function SandboxHomeView() {
   }
 
   const { agent } = f;
-  const display = resolveAgentDisplay(agent, restartingIds);
+  const display = resolveAgentDisplay(agent, restartingIds, pausingIds);
 
   const footer = (
     <>
