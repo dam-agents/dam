@@ -70,6 +70,7 @@ export async function buildConnection(
       return buildNone(
         template as Extract<ConnectionTemplate, { authKind: "none" }>,
         input,
+        mintSecretRef,
       );
   }
 }
@@ -494,6 +495,7 @@ function buildHeader(
 function buildNone(
   template: Extract<ConnectionTemplate, { authKind: "none" }>,
   input: Extract<ConnectionCreateInput, { authKind: "none" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
   const contributions: Contribution[] = [...template.contributions];
 
@@ -505,6 +507,34 @@ function buildNone(
       name: template.id,
       url: input.url,
     });
+
+    // Optional header credential: injected at the gateway (egress-inject +
+    // header auth), never written into the mcp-entry the harness sees.
+    if (input.headerName && input.value) {
+      const headerName = input.headerName;
+      const valueFormat = "{value}";
+      contributions.push({
+        kind: "egress-inject",
+        host: url.hostname,
+        ...(url.port ? { port: Number(url.port) } : {}),
+        headerName,
+        valueFormat,
+      });
+      const secretPath = mintSecretRef(`connection:${template.id}`);
+      const sdsFields = buildConnectionSdsFields(contributions, input.value);
+      return {
+        auth: {
+          kind: "header",
+          valueRef: { ...secretPath, field: "value" },
+          headerName,
+          valueFormat,
+        },
+        contributions,
+        secrets: new Map([
+          [secretPath.path, { value: input.value, ...sdsFields }],
+        ]),
+      };
+    }
   }
 
   return {

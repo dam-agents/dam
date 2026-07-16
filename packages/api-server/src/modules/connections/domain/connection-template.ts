@@ -295,6 +295,14 @@ function inputsFor(
       return out;
     }
     case "none":
-      return t.category === "mcp" ? [required("url")] : [];
+      // Custom MCP servers may carry an optional header credential (API
+      // key) injected at the gateway.
+      return t.category === "mcp"
+        ? [
+            required("url"),
+            optional("headerName"),
+            { name: "value", state: "optional", secret: true },
+          ]
+        : [];
   }
 }
