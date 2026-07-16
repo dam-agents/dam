@@ -59,7 +59,7 @@ export function useDisconnectConnection() {
           </div>
         )}
       </>,
-      `Delete "${name}"?`,
+      `Delete ${name}?`,
       { kind: "destructive", confirmLabel: "Delete connection" },
     );
     if (ok) del.mutate({ id });
