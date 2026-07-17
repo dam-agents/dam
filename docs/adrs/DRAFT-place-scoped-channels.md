@@ -18,10 +18,7 @@ every Slack user, a per-turn pod-pair spin-up with a two-minute
 provisioning window, and three known defects (unbounded concurrent
 forks, a same-thread session race on the shared workspace volume,
 fork state lost on api-server restart) — while Claude Tag validated
-the place-scoped model at scale. The first draft of this ADR proposed
-converging every messenger on place-scoping and deleting the fork
-subsystem; review concluded the per-speaker credential boundary is
-worth keeping available.
+the place-scoped model at scale.
 
 ## Decision
 
@@ -50,9 +47,9 @@ per-turn foreign-replier forks.
 
 ## Alternatives Considered
 
-- **Full place-scoping (first draft)** — deletes the fork subsystem
-  and its defects, but removes the per-speaker credential boundary
-  everywhere.
+- **Full place-scoping on every messenger** — deletes the fork
+  subsystem and its defects, but removes the per-speaker credential
+  boundary everywhere.
 - **Status quo** — the model stays an accident of the adapter; Slack
   channels have no path to zero-onboarding access.
 - **Drop forks, keep identity linking** — keeps the login friction
