@@ -13,6 +13,7 @@ import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
+import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
 import type { K8sAllowOnlySecretsPort } from "./infrastructure/k8s-allow-only-secrets-port.js";
 
 export interface ComposeEgressRulesDeps {
@@ -74,11 +75,13 @@ export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
  * System-level write adapter consumed by the approvals module's
  * approve-permanent / deny-forever paths. Narrow port — only `insert`,
  * matching the `EgressRuleWriter` interface declared on the consumer side.
+ * `ownerSub` labels the allow-only Secret when the rule needs L7 promotion.
  */
 export interface EgressRuleWriterAdapter {
   insert(input: {
     id: string;
     agentId: string;
+    ownerSub: string;
     host: string;
     method: string;
     pathPattern: string;
@@ -88,13 +91,14 @@ export interface EgressRuleWriterAdapter {
   }): Promise<void>;
 }
 
-export function createEgressRuleWriterAdapter(db: Db): EgressRuleWriterAdapter {
-  const repo = createEgressRulesRepository(db);
-  return {
-    async insert(input) {
-      await repo.insert(input);
-    },
-  };
+export function createEgressRuleWriterAdapter(
+  db: Db,
+  allowOnlySecrets?: K8sAllowOnlySecretsPort,
+): EgressRuleWriterAdapter {
+  return createEgressRuleWriter({
+    repo: createEgressRulesRepository(db),
+    allowOnlySecrets,
+  });
 }
 
 /**

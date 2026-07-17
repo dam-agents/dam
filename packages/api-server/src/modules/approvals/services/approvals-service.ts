@@ -25,11 +25,14 @@ export interface ApprovalsNotifier {
 /** Narrow port the approvals service consumes for the
  *  approve-permanent / deny-forever paths. The egress-rules module's
  *  `compose.ts` provides an adapter; the approvals service never sees the
- *  full `EgressRulesRepository`. */
+ *  full `EgressRulesRepository`. `ownerSub` is the agent owner's sub (the
+ *  pending row's owner) — the writer needs it to label the allow-only
+ *  Secret when a narrow rule requires L7 promotion (#2322). */
 export interface EgressRuleWriter {
   insert(input: {
     id: string;
     agentId: string;
+    ownerSub: string;
     host: string;
     method: string;
     pathPattern: string;
@@ -193,6 +196,7 @@ export function createApprovalsService(
         await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
+          ownerSub: row.ownerSub,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
@@ -238,6 +242,7 @@ export function createApprovalsService(
         await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
+          ownerSub: row.ownerSub,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
@@ -276,6 +281,7 @@ export function createApprovalsService(
         await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
+          ownerSub: row.ownerSub,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",

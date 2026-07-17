@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createEgressRulesService } from "../../modules/egress-rules/services/egress-rules-service.js";
+import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
 import { createConnectionRulesSync } from "../../modules/egress-rules/services/connection-rules-sync.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
@@ -103,6 +104,69 @@ describe("egress-rules-service: port promotes a manual rule onto the L7 chain", 
       verdict: "allow",
     });
 
+    expect(ensureCalls).toBe(0);
+  });
+});
+
+describe("egress-rule-writer: inbox verdicts get the same L7 promotion (#2322)", () => {
+  it("promotes a narrow rule, labeling the Secret with the agent owner's sub", async () => {
+    const { repo, inserted } = fakeRepo();
+    const ensured: Array<{ owner: string; host: string }> = [];
+    const writer = createEgressRuleWriter({
+      repo,
+      allowOnlySecrets: {
+        ensure: async (owner, host) => {
+          ensured.push({ owner, host });
+        },
+      },
+    });
+
+    // A narrow rule can be born from an inbox verdict when the held request
+    // was plain HTTP (method/path visible without MITM). Without promotion
+    // its HTTPS half is silently unenforced.
+    await writer.insert({
+      id: "r1",
+      agentId: "a1",
+      ownerSub: "agent-owner",
+      host: "api.example.com",
+      method: "GET",
+      pathPattern: "/status/*",
+      verdict: "allow",
+      decidedBy: "agent-owner",
+      source: "inbox",
+    });
+
+    expect(inserted).toHaveLength(1);
+    expect(ensured).toEqual([
+      { owner: "agent-owner", host: "api.example.com" },
+    ]);
+  });
+
+  it("does NOT promote a host-wide rule (stays on the L4 path)", async () => {
+    const { repo, inserted } = fakeRepo();
+    let ensureCalls = 0;
+    const writer = createEgressRuleWriter({
+      repo,
+      allowOnlySecrets: {
+        ensure: async () => {
+          ensureCalls++;
+        },
+      },
+    });
+
+    await writer.insert({
+      id: "r1",
+      agentId: "a1",
+      ownerSub: "agent-owner",
+      host: "api.example.com",
+      method: "*",
+      pathPattern: "*",
+      verdict: "allow",
+      decidedBy: "agent-owner",
+      source: "inbox",
+    });
+
+    expect(inserted).toHaveLength(1);
     expect(ensureCalls).toBe(0);
   });
 });
