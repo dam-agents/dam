@@ -1,3 +1,10 @@
+---
+id: 014
+title: E2E integration testing against dedicated k3s cluster
+status: accepted
+subsystem: platform-topology
+summary: Run full-stack end-to-end tests against a dedicated ephemeral k3s cluster provisioned via mise, isolated from the dev cluster.
+---
 # ADR-014: E2E integration testing against dedicated k3s cluster
 
 **Date:** 2026-04-08

@@ -1,3 +1,10 @@
+---
+id: 039
+title: Platform CLI foundation — TypeScript on Node, npm distribution
+status: accepted
+subsystem: cli
+summary: The CLI is a TypeScript Node package distributed via npm, sharing the tRPC contract, with XDG-based config and a server-advertised version floor.
+---
 # ADR-039: Platform CLI foundation — TypeScript on Node, npm distribution
 
 **Date:** 2026-05-05

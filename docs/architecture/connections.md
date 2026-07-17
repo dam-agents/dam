@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-10
+Last verified: 2026-07-14
 
 ## Overview
 
@@ -175,37 +175,17 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 ### App preset: Kubernetes / OpenShift
 
 The external-cluster connection (#2314). The user supplies the cluster API
-endpoint (as an `oc login`-style URL or bare `host[:port]`), a service-account
-token, and — only when the API cert isn't publicly trusted — the cluster's CA.
-The build synthesizes three contributions: an `egress-inject` carrying the port,
-the streaming-upgrade opt-in, and (when a CA was given) the upstream-CA marker;
-a `file` contribution writing a ready-to-use kubeconfig at a **per-connection
-path** (the file, and the kubeconfig's cluster/user/context, are all named after
-the connection — unique per user); and a `KUBECONFIG` `env` pointing at that
-file. The kubeconfig's trust
-anchor is the platform MITM CA already mounted in every agent pod, and its user
-carries only an **inert placeholder token** — the gateway overwrites it with
-the real service-account token on the wire, so `kubectl`/`oc` work out of the
-box while the real token only ever exists gateway-side. (The placeholder exists
-because `kubectl` refuses to issue a request with a credential-less user; `oc`
-would send an anonymous one.)
-
-Multiple cluster connections compose rather than clobber: each writes its own
-kubeconfig file, and the `env` driver joins their `KUBECONFIG` entries into the
-`:`-separated list `kubectl`/`oc` merge at load time (kubeconfig has no
-include-another-file mechanism, so this is the idiomatic route). The driver
-resolves `$HOME` and dedups; the first-granted connection's context is the
-default. Because the cluster/user/context are keyed by the connection name — not
-the API host — two clusters that share a host on different ports stay distinct in
-the merged config (the host alone dropped the port and collided), and each is
-addressable as `--context <connection-name>`.
-
-The CA is optional and never reaches the agent — it configures the gateway's
-upstream validation only. Publicly-trusted endpoints (most managed clusters)
-need nothing; the connect flow probes the endpoint with full validation and, if
-its cert isn't publicly trusted, asks the user to paste the cluster CA
-(`certificate-authority-data` from a kubeconfig) rather than trusting it
-blindly.
+endpoint, a service-account token, and — only when the API cert isn't publicly
+trusted — the cluster's CA. The build synthesizes an `egress-inject`, a `file`
+contribution writing a ready-to-use kubeconfig at a **per-connection path**, and
+a `KUBECONFIG` `env` pointing at it. The kubeconfig carries only an inert
+placeholder token; the gateway overwrites it with the real service-account token
+on the wire, so the token only ever exists gateway-side. Multiple cluster
+connections compose: each writes its own kubeconfig keyed by connection name, and
+the `env` driver joins their `KUBECONFIG` entries into the `:`-separated list
+`kubectl`/`oc` merge at load, so clusters that share a host on different ports
+stay distinct. The CA is optional, never reaches the agent, and configures
+gateway-side upstream validation only.
 
 ```jsonc
 {
@@ -415,18 +395,7 @@ await stateQueue.add(
 return ok();   // user-facing response returns immediately
 ```
 
-For a schedule firing:
-
-```ts
-await db.transaction(async (tx) => {
-  const v = await tx.bumpAgentVersion(agentId);
-  await tx.runtime_events.insert({
-    id, agentId, kind: "trigger", payload: { scheduleId, task, … }, version: v, expiresAt,
-  });
-  await tx.runtime_state_outbox.upsert({ agentId, version: v, lastEnqueuedAt: now() });
-});
-await stateQueue.add("state", { agentId }, { jobId: `state:${agentId}` });
-```
+A schedule firing follows the same shape, inserting a `runtime_events` row in place of the grant before the outbox upsert.
 
 The user-facing response does not depend on agent reachability. If BullMQ's enqueue fails or Redis drops the pending job, the cron sweep re-enqueues the row.
 

@@ -1,3 +1,10 @@
+---
+id: 022
+title: "Harness API server — separate port with restricted API surface"
+status: accepted
+subsystem: agent-lifecycle
+summary: Run a second HTTP server on port 4001 in the API server process exposing only trigger and MCP endpoints reachable by agent pods.
+---
 # ADR-022: Harness API server — separate port with restricted API surface
 
 **Date:** 2026-04-17

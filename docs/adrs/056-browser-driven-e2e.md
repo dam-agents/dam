@@ -1,3 +1,11 @@
+---
+id: 056
+title: Browser-driven E2E tracer with values-gated test affordances
+status: accepted
+subsystem: platform-topology
+supersedes: 014
+summary: Playwright browser-driven tests replace API-level vitest e2e, running against a fresh cluster with test affordances gated behind e2e.* Helm values.
+---
 # ADR-056: Browser-driven E2E tracer with values-gated test affordances
 
 **Date:** 2026-05-28

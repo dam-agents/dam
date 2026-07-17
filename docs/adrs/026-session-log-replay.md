@@ -1,3 +1,10 @@
+---
+id: 026
+title: Persistent ACP sessions via per-session log and cursor fan-out
+status: accepted
+subsystem: persistence
+summary: Treat each session as a runtime-owned append-only log with per-channel cursors, fanning events to all engaged clients and serving session/load from memory.
+---
 # ADR-026: Persistent ACP sessions via per-session log and cursor fan-out
 
 **Date:** 2026-04-20

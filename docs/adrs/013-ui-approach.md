@@ -1,3 +1,10 @@
+---
+id: 013
+title: "UI approach — chat-primary, dashboard for inspection"
+status: accepted
+subsystem: agent-lifecycle
+summary: Make chat the primary interaction surface with a dashboard for inspection and override, built as a custom React UI; Slack is the first external channel.
+---
 # ADR-013: UI approach — chat-primary, dashboard for inspection
 
 **Date:** 2026-04-07

@@ -1,3 +1,10 @@
+---
+id: 032
+title: "Centralized pod-reachability primitive; observed pod Ready is the truth"
+status: proposed
+subsystem: agent-lifecycle
+summary: Every caller reaches an agent pod through one single-flight ensureReady(instanceId) primitive that treats observed pod Ready, not desiredState, as authoritative.
+---
 # ADR-032: Centralized pod-reachability primitive; observed pod Ready is the truth
 
 **Date:** 2026-04-24

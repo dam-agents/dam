@@ -1,3 +1,10 @@
+---
+id: 044
+title: "Provider twin secrets — multiple injection points per credential"
+status: accepted
+subsystem: connections
+summary: A provider preset declares extra wire injection points; the api-server fans one credential across linked twin Secrets and cascades every lifecycle op, keeping it one card to the user.
+---
 # ADR-044: Provider twin secrets — multiple injection points per credential
 
 **Date:** 2026-05-14

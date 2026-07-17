@@ -39,9 +39,7 @@
       "Bash(gh run list*)",
       "Bash(gh run view*)"
     ],
-    "deny": [
-      "Read(docs/adrs/**)"
-    ]
+    "deny": []
   },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
@@ -58,6 +56,17 @@
     }
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/doc-size-hook.mjs"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",

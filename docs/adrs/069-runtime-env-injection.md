@@ -1,3 +1,10 @@
+---
+id: 069
+title: Credential env via the runtime channel — injected at harness spawn, not baked into the pod
+status: accepted
+subsystem: agent-lifecycle
+summary: Credential-placeholder env rides the runtime channel and merges into the harness environment at spawn, so grant changes respawn the harness instead of rolling the pod.
+---
 # ADR-069: Credential env via the runtime channel — injected at harness spawn, not baked into the pod
 
 **Date:** 2026-06-04

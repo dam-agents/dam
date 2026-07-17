@@ -1,3 +1,10 @@
+---
+id: 057
+title: Structured logging for the api-server
+status: accepted
+subsystem: logging
+summary: The api-server emits one-JSON-line-per-record Pino logs on stdout, first used for a real-identity security audit trail at standard log levels.
+---
 # ADR-057: Structured logging for the api-server
 
 **Date:** 2026-05-29

@@ -1,3 +1,10 @@
+---
+id: 068
+title: Frozen shared CRDs — operator-applied schema upgrades
+status: accepted
+subsystem: platform-topology
+summary: Shared CRDs ship in the chart crds/ dir and are never touched on upgrade; schema changes happen only through an operator-run script that verifies live-cluster backwards-compatibility before applying.
+---
 # ADR-068: Frozen shared CRDs — operator-applied schema upgrades
 
 **Date:** 2026-06-11

@@ -1,3 +1,10 @@
+---
+id: 040
+title: "Unified secret contributions — controller-merged at render time"
+status: accepted
+subsystem: connections
+summary: A secret's host/path and env mappings flow through one server-orchestrated fanout; the controller merges envs into the pod at render time, with user-typed envs winning collisions.
+---
 # ADR-040: Unified secret contributions — controller-merged at render time
 
 **Date:** 2026-05-07

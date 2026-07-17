@@ -1,3 +1,10 @@
+---
+id: 015
+title: Multi-user authentication via Keycloak + OneCLI fork with token exchange
+status: accepted
+subsystem: security-and-credentials
+summary: Authenticate users through Keycloak OIDC and scope K8s resources by an owner label, with per-user credentials brokered by the API server.
+---
 # ADR-015: Multi-user authentication via Keycloak + OneCLI fork with token exchange
 
 **Date:** 2026-04-08

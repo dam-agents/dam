@@ -27,6 +27,21 @@ git diff --stat {BASE_SHA}..{HEAD_SHA}
 git diff {BASE_SHA}..{HEAD_SHA}
 ```
 
+## Review-time ADR / architecture policy
+
+If the diff touches `docs/adrs/` or `docs/architecture/`, run both skills below in this
+same pass and fold their output into one **ADR / docs** section of your report:
+
+- **`adr-policy`** — when `docs/adrs/` changed. Surfaces the deterministic immutability
+  gate (`node scripts/adr-immutable.mjs --merge-base`, blocking) plus judgment findings:
+  re-litigation, `supersedes` correctness, summary honesty.
+- **`doc-drift`** — when `docs/architecture/` changed, or when an ADR status change should
+  flag its `subsystem` page for a re-fold look (doc-drift check 7).
+
+They cover different things — the log vs the docs — so run both; do not merge or skip one.
+A `❌` from the immutability gate is blocking; everything else the two skills surface is
+judgment for the human.
+
 ## Review Checklist
 
 **Code Quality:**

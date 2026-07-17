@@ -1,3 +1,9 @@
+---
+title: Multi-agent collaboration — isolated Agents with shared artifacts
+status: proposed
+subsystem: agent-lifecycle
+summary: Each agent is its own pod and Agent resource, fully isolated by default, collaborating only through explicitly declared shared artifacts rather than shared workspaces.
+---
 # DRAFT: Multi-agent collaboration — isolated Agents with shared artifacts
 
 **Date:** 2026-04-07

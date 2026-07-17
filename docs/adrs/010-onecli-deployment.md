@@ -1,3 +1,10 @@
+---
+id: 010
+title: "OneCLI deployment — single image, two Services, platform-managed lifecycle"
+status: accepted
+subsystem: security-and-credentials
+summary: Deploy OneCLI as one Deployment exposing separate gateway and web Services, backed by cert-manager CA and PostgreSQL, with Controller-managed tokens.
+---
 # ADR-010: OneCLI deployment — single image, two Services, platform-managed lifecycle
 
 **Date:** 2026-04-02

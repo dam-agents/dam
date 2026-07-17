@@ -1,3 +1,10 @@
+---
+id: 035
+title: Unified HITL UX — verdict authority outside the agent pod
+status: accepted
+subsystem: security-and-credentials
+summary: HITL approvals surface as one ACP request_permission primitive with verdict authority in the API Server, backed by Postgres egress_rules driving L4/L7 ext_authz network gating.
+---
 # ADR-035: Unified HITL UX — verdict authority outside the agent pod
 
 **Date:** 2026-04-27

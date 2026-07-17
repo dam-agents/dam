@@ -1,3 +1,10 @@
+---
+id: 045
+title: "File import — bundled, top-level replace into the work dir"
+status: accepted
+subsystem: agent-lifecycle
+summary: Imports are a one-shot bundled tar streamed through api-server that top-level-replaces same-named entries into the agent's work dir, extracted by agent-runtime.
+---
 # ADR-045: File import — bundled, top-level replace into the work dir
 
 **Date:** 2026-05-13

@@ -1,3 +1,10 @@
+---
+id: 061
+title: Warm PVC pool for instant agent workspace provisioning
+status: accepted
+subsystem: persistence
+summary: The controller keeps size-keyed pools of pre-provisioned bound volumes on an immediate-binding class; new agents claim a spare at create or fall back to dynamic provisioning.
+---
 # ADR-061: Warm PVC pool for instant agent workspace provisioning
 
 **Date:** 2026-06-08

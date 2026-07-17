@@ -1,3 +1,10 @@
+---
+id: 005
+title: "Gateway pattern for credentials — agent never sees tokens"
+status: accepted
+subsystem: security-and-credentials
+summary: Route all external service calls through a credential-injecting gateway so the agent never holds tokens, with per-service policy, audit logging, and human-in-the-loop approval.
+---
 # ADR-005: Gateway pattern for credentials — agent never sees tokens
 
 **Date:** 2026-04-01

@@ -1,3 +1,10 @@
+---
+id: 067
+title: Local model gateway fronts custom Anthropic upstreams for claude-code
+status: accepted
+subsystem: security-and-credentials
+summary: claude-code fronts custom Anthropic upstreams with a loopback passthrough gateway that serves the live catalog under a discovery-accepted prefix and maps names back to upstream ids per request.
+---
 # ADR-067: Local model gateway fronts custom Anthropic upstreams for claude-code
 
 **Date:** 2026-06-10

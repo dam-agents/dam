@@ -31,8 +31,10 @@ landing page at [`docs/architecture.md`](../../../docs/architecture.md). Everyth
 **out of scope** — do not flag it, even if it looks drifted:
 
 - Vocabulary in [`tseng/vocabulary.md`](../../../tseng/vocabulary.md).
-- ADRs (`docs/adrs/`) — human-facing only and unreadable to agents; never flag "this code
-  should have an ADR" or anything else about ADR coverage.
+- ADRs (`docs/adrs/`) — out of this skill's scope with **one** narrow exception (check 7
+  below): never flag "this code should have an ADR", ADR prose quality, or anything else
+  about ADR coverage. ADR log integrity and decision judgment are
+  [`adr-policy`](../adr-policy/SKILL.md)'s job.
 - READMEs, `CLAUDE.md`, code comments, guidelines, strategy docs.
 - Cross-reference rot in non-architecture docs.
 
@@ -41,13 +43,18 @@ If a check would land outside `docs/architecture/`, drop it.
 ## Direction of drift: code → docs
 
 Code leads, docs trail. Drift is measured **code vs docs**, in that direction only. ADRs play
-no part in any check: they are human-facing only and agents cannot read `docs/adrs/` (denied
-in settings), so no check may depend on an ADR's content or existence.
+no part in the code→docs checks (1–6): they are human-first, so no code-drift check may depend
+on an ADR's content or existence.
 
 Drift only exists when **code in the diff** changes subsystem behavior/responsibility and the
-matching architecture page does not reflect that code. Anchor every check on something concrete
-in the diff. If the only evidence is "an ADR exists", ignore it — silently. Do not narrate
-the exclusion.
+matching architecture page does not reflect that code. Anchor every code→docs check on something
+concrete in the diff. If the only evidence for one of those checks is "an ADR exists", ignore it
+— silently. Do not narrate the exclusion.
+
+**One exception (check 7):** an ADR *state change* in the diff — an accepted record flipped to
+deprecated/superseded — flags its own `subsystem` page as *possible* rot. This is the sole
+ADR-anchored signal, it is never blocking, and it flags a page for a human look, not a required
+edit. Everything else about ADRs stays out of scope.
 
 ## What this skill checks
 
@@ -72,6 +79,14 @@ Each check is grounded in code changes observed in the diff and lands inside
    renamed, or deleted in the diff: inbound links from *other architecture pages* and from
    `docs/architecture.md` must be updated. Inbound links from outside `docs/architecture/`
    are out of scope.
+7. **ADR state-change impact** (the one ADR-anchored check) — if the diff flips an accepted
+   ADR to `deprecated` or supersedes it (a new ADR whose `supersedes` points at a live
+   record), the page named by that ADR's `subsystem` frontmatter may still describe the
+   superseded state. The cap only catches rot on *growth*; a superseded decision rots a page
+   at unchanged size, so nothing else catches it. Flag that page as ⚠️ **possible drift** —
+   "an ADR it derives from changed state; needs a re-fold look." Never a ❌, never an edit you
+   prescribe: net-new state, not observed mismatch. Anchor on the ADR status change in the
+   diff; if no ADR status changed, this check produces nothing.
 
 ## Report
 
@@ -81,9 +96,10 @@ Take the subagent's output and present a focused report to the user:
 - **Drift** — every ❌, with file/line evidence and the proposed edit. Group by check number.
 - **Possible drift** — every ⚠️, with the human-judgement question that needs answering.
 
-Items excluded by the rules above (ADR-related, trivial, out-of-scope) must not appear
-anywhere in the report — not in either section, not as a parenthetical, not as a footnote.
-If there is nothing to flag, the report is just the verdict.
+Items excluded by the rules above (trivial, out-of-scope, and every ADR concern except the
+check-7 state-change signal) must not appear anywhere in the report — not in either section,
+not as a parenthetical, not as a footnote. If there is nothing to flag, the report is just the
+verdict.
 
 ## Guidelines
 
@@ -92,5 +108,10 @@ If there is nothing to flag, the report is just the verdict.
   the guidelines don't forbid (e.g., short architecture pages — there is no length cap).
 - **Trivial changes are exempt.** README typos, comment-only edits, dependency bumps with no
   behavior change, lint fixes, and test-only changes do not trigger doc drift. Don't report.
-- **Code is the anchor.** Every flagged drift must point at a concrete code change in the diff.
-  Never flag drift whose only evidence is an ADR file or its absence.
+- **Code is the anchor** for checks 1–6. Every flagged code→docs drift must point at a concrete
+  code change in the diff. Never flag such drift whose only evidence is an ADR file or its
+  absence. Check 7 is the lone exception: it anchors on an ADR *status change* in the diff and
+  only ever emits ⚠️, never ❌.
+- **Log integrity is not this skill's job.** Re-litigation, `supersedes` correctness, and summary
+  honesty belong to [`adr-policy`](../adr-policy/SKILL.md). On a PR touching `docs/adrs/` the
+  code-review agent runs both skills in one pass; keep to docs-vs-code (plus check 7) here.
