@@ -14,7 +14,10 @@ import { PublishSkillModal } from "./publish-skill-modal.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
-import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
+import {
+  StandaloneSkillsGroup,
+  StandaloneSkillsPlaceholder,
+} from "./standalone-skills-group.js";
 
 /**
  * The redesigned skills surface: skills grouped by location — Standalone Local
@@ -86,7 +89,11 @@ export function SkillsSurface({
     </Button>
   );
 
+  // While stopped, `standalone` is always empty (the list lives on the offline
+  // pod), so an empty standalone list isn't evidence the sandbox is bare —
+  // don't collapse to the "add a source" empty state then.
   const isEmpty =
+    !readOnly &&
     sourcesLoaded &&
     stateLoaded &&
     sources.length === 0 &&
@@ -118,7 +125,7 @@ export function SkillsSurface({
         </section>
       ) : (
         <>
-          {standalone.length > 0 && (
+          {standalone.length > 0 ? (
             <StandaloneSkillsGroup
               skills={standalone}
               readOnly={readOnly}
@@ -127,6 +134,10 @@ export function SkillsSurface({
               onPublish={setPublishFor}
               action={addSourceButton}
             />
+          ) : (
+            // Stopped/starting: the list is on the offline pod, so show the
+            // section with a placeholder instead of dropping it.
+            readOnly && <StandaloneSkillsPlaceholder />
           )}
 
           <section>

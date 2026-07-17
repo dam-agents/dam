@@ -16,6 +16,29 @@ import {
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
+/**
+ * Stopped/starting counterpart to {@link StandaloneSkillsGroup}. The standalone
+ * list is read live from the pod's PVC (`listLocal`), so it's unavailable while
+ * the agent is hibernated — `skills.state` returns an empty standalone list. We
+ * still render the section (header + explanatory placeholder) rather than
+ * dropping it, so it stays present and read-only in parity with the GitHub
+ * group instead of vanishing (#944 review).
+ */
+export function StandaloneSkillsPlaceholder() {
+  return (
+    <section>
+      <div className="mb-3">
+        <SectionLabel>Created in this sandbox</SectionLabel>
+      </div>
+      <div className="rounded-lg border border-border bg-muted px-4 py-6">
+        <p className="text-[13px] text-muted-foreground">
+          Skills created in this sandbox appear here once it's running.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /** Latest publish record per skill name — drives the "In review" pill. */
 function latestPublishByName(
   publishes: SkillPublishRecord[],
