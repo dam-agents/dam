@@ -42,7 +42,12 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     { authUrl: "http://kc", clientId: "c" } as never,
     new Map(),
     async () => OWNER,
-    { resolveInstanceBySlackChannel: async () => "agent-1" } as never,
+    {
+      resolveSlackBinding: async () => ({
+        instanceName: "agent-1",
+        owner: OWNER,
+      }),
+    } as never,
     "dam",
     async () => true,
     "http://ui",

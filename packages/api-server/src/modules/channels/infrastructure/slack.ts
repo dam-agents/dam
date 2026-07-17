@@ -147,7 +147,13 @@ async function getContextMessages(
 }
 
 export interface ChannelRegistry {
-  resolveInstanceBySlackChannel(slackChannelId: string): Promise<string | null>;
+  /** The binding (if any) for a Slack channel: agent, binding owner, and the
+   *  ADR-075 access mode (absent = person-scoped). */
+  resolveSlackBinding(slackChannelId: string): Promise<{
+    instanceName: string;
+    owner: string;
+    mode?: "shared" | "person-scoped";
+  } | null>;
   resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
 }
 
@@ -230,7 +236,9 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
-    actorSub: string;
+    /** Null on shared-mode relays; the Keycloak sub on person-scoped ones. */
+    actorSub: string | null;
+    externalActorId?: string;
     slackUserId: string;
     images: FetchedImage[];
   }) {
@@ -372,6 +380,9 @@ export function createSlackWorker(
         channel: "slack",
         agentId: instanceName,
         actorSub: ctx.actorSub,
+        ...(ctx.externalActorId
+          ? { externalActorId: ctx.externalActorId }
+          : {}),
         outcome,
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
@@ -656,11 +667,68 @@ export function createSlackWorker(
       .exhaustive();
   }
 
+  async function fetchTurnImages(
+    event: SlackMentionEvent,
+    slackUserId: string,
+  ): Promise<FetchedImage[] | null> {
+    if (!gateway) return null;
+    const fetchResult = await fetchSlackImages(gateway, event.files);
+    if (fetchResult.kind === "cap_exceeded") {
+      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
+      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.threadTs,
+        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
+      );
+      return null;
+    }
+    const { images, failures } = fetchResult;
+    for (const f of failures) {
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.threadTs,
+        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
+      );
+    }
+    return images;
+  }
+
   async function handleAppMention(event: SlackMentionEvent) {
     if (!gateway) return;
 
     const slackUserId = event.user;
     if (!slackUserId) return;
+
+    const threadTs = event.threadTs ?? event.ts;
+    const binding = await channelRegistry.resolveSlackBinding(event.channel);
+    if (!binding) {
+      await gateway.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "No instance connected to this channel.",
+      });
+      return;
+    }
+
+    if (binding.mode === "shared") {
+      const images = await fetchTurnImages(event, slackUserId);
+      if (images === null) return;
+      await relaySharedTurn({
+        channel: event.channel,
+        threadTs,
+        eventTs: event.ts,
+        text: event.text,
+        hasThread: !!event.threadTs,
+        slackUserId,
+        instanceName: binding.instanceName,
+        owner: binding.owner,
+        images,
+      });
+      return;
+    }
 
     const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
@@ -682,40 +750,8 @@ export function createSlackWorker(
       return;
     }
 
-    const threadTs = event.threadTs ?? event.ts;
-    const instanceName = await channelRegistry.resolveInstanceBySlackChannel(
-      event.channel,
-    );
-    if (!instanceName) {
-      await gateway.postEphemeral({
-        channel: event.channel,
-        user: slackUserId,
-        text: "No instance connected to this channel.",
-      });
-      return;
-    }
-
-    const fetchResult = await fetchSlackImages(gateway, event.files);
-    if (fetchResult.kind === "cap_exceeded") {
-      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
-      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
-      await ephemeral(
-        event.channel,
-        slackUserId,
-        event.threadTs,
-        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
-      );
-      return;
-    }
-    const { images, failures } = fetchResult;
-    for (const f of failures) {
-      await ephemeral(
-        event.channel,
-        slackUserId,
-        event.threadTs,
-        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
-      );
-    }
+    const images = await fetchTurnImages(event, slackUserId);
+    if (images === null) return;
 
     await routeReply({
       channel: event.channel,
@@ -725,8 +761,63 @@ export function createSlackWorker(
       hasThread: !!event.threadTs,
       slackUserId,
       keycloakSub,
-      instanceName,
+      instanceName: binding.instanceName,
       images,
+    });
+  }
+
+  // ADR-075 shared mode: the binding is the authorization — anyone Slack
+  // admits to the channel drives the agent under the agent's credentials.
+  async function relaySharedTurn(args: {
+    channel: string;
+    threadTs: string;
+    eventTs: string;
+    text: string;
+    hasThread: boolean;
+    slackUserId: string;
+    instanceName: string;
+    owner: string;
+    images: FetchedImage[];
+  }) {
+    if (!gateway) return;
+
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: null,
+      actorKind: "external",
+      surface: "slack",
+      agentId: args.instanceName,
+      decision: "allow",
+      detail: {
+        basis: "place",
+        slackUserId: args.slackUserId,
+        channelId: args.channel,
+      },
+    });
+
+    // The binding owner lends the credentials, so their ToU acceptance gates
+    // every shared turn — mirrors Telegram's binding.authorizedBy gate.
+    if (!(await isTermsAccepted(args.owner))) {
+      await gateway.postEphemeral({
+        channel: args.channel,
+        user: args.slackUserId,
+        text: `This agent can't reply yet — its owner must accept the Terms of Use at ${uiBaseUrl}.`,
+      });
+      return;
+    }
+
+    await relayOwnerTurn({
+      instanceName: args.instanceName,
+      channel: args.channel,
+      threadTs: args.threadTs,
+      eventTs: args.eventTs,
+      // Shared sessions are multi-speaker: label who is talking.
+      text: `<@${args.slackUserId}>: ${args.text}`,
+      hasThread: args.hasThread,
+      actorSub: null,
+      externalActorId: args.slackUserId,
+      slackUserId: args.slackUserId,
+      images: args.images,
     });
   }
 

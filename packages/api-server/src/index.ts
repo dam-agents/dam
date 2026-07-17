@@ -380,8 +380,15 @@ const chatSdkState = config.telegramBotToken
   : undefined;
 
 const channelRegistry: ChannelRegistry = {
-  resolveInstanceBySlackChannel: async (slackChannelId) =>
-    (await findBySlackChannelId(db)(slackChannelId))?.agentId ?? null,
+  resolveSlackBinding: async (slackChannelId) => {
+    const row = await findBySlackChannelId(db)(slackChannelId);
+    if (!row) return null;
+    return {
+      instanceName: row.agentId,
+      owner: row.owner,
+      ...(row.mode ? { mode: row.mode } : {}),
+    };
+  },
   resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
