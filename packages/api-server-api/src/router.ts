@@ -1,6 +1,7 @@
 import { t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
+import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
@@ -8,6 +9,7 @@ import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
+import { featuresRouter } from "./modules/features/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
@@ -28,6 +30,8 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
+  artifactLibrary: artifactLibraryRouter,
+  features: featuresRouter,
   files: filesRouter,
   metrics: metricsRouter,
   terms: termsRouter,

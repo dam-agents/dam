@@ -19,10 +19,8 @@ import {
 } from "../../connections/components/connection-row.js";
 import { TemplateCreateForm } from "../../connections/forms/template-create-form.js";
 import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
-import {
-  filterOfferedTemplates,
-  isShowInternalConnectionsEnabled,
-} from "../../connections/internal-only.js";
+import { filterOfferedTemplates } from "../../connections/internal-only.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { CardList } from "./card-list.js";
 
@@ -70,7 +68,7 @@ export function ConnectionsSection({
       onToggleGrant(id, false);
   };
 
-  const showInternal = isShowInternalConnectionsEnabled();
+  const showInternal = useFeatures().data?.["advanced-connections"] ?? false;
   const byCategory = useMemo(() => {
     const m = new Map<string, ConnectionTemplateView[]>();
     for (const t of filterOfferedTemplates(allTemplates, showInternal)) {

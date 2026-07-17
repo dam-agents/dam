@@ -10,6 +10,7 @@ import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
@@ -18,6 +19,8 @@ export function createHarnessRouter(deps: {
   agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
+  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  isArtifactsFeatureEnabled: (owner: string) => Promise<boolean>;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   runtimeHello: RuntimeDeliveryService;
@@ -31,6 +34,8 @@ export function createHarnessRouter(deps: {
     agentHome: deps.agentHome,
     schedulesServiceFor: deps.schedulesServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
+    artifactLibraryFor: deps.artifactLibraryFor,
+    isArtifactsFeatureEnabled: deps.isArtifactsFeatureEnabled,
     artifacts: deps.artifacts,
     maxArtifactBytes: deps.maxArtifactBytes,
   });

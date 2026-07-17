@@ -70,6 +70,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 071 | [Postgres role separation — no SUPERUSER on app roles](071-postgres-role-separation.md) |  | persistence | Bundled Postgres runs two NOSUPERUSER per-service database owners plus one reserved SUPERUSER for DBA work, replacing the single shared superuser role. |
 | 072 | [Gateway credential injection for gRPC hosts](072-grpc-credential-injection.md) |  | security-and-credentials | A host's terminating chain can opt into HTTP/2 so gateway credential injection covers gRPC streams, with only the secret credential half injected and the non-secret half allowed as plain pod env. |
 | 073 | [Per-template scheduling for runtimeClassName and nodeSelector](073-per-template-scheduling.md) |  | agent-lifecycle | runtimeClassName and nodeSelector become per-template overridable agent-spec fields while all other scheduling stays chart-wide. |
+| 074 | [Periodic work on BullMQ](074-periodic-jobs-bullmq.md) |  |  |  |
 | 074 | [Unified `drivers:` manifest with pluggable events and default-on built-ins](074-unified-drivers.md) |  | agent-lifecycle | The runtime manifest folds contribution and event kinds into one drivers map resolved through the plugin registry, with built-ins on by default and event handlers now externally overridable. |
 
 ## Superseded

@@ -24,12 +24,17 @@ export {
   experiments,
   experimentArms,
   experimentRuns,
+  userFeatures,
+  artifactFolders,
+  libraryArtifacts,
+  libraryArtifactVersions,
 } from "./schema.js";
 export {
   eq,
   and,
   or,
   gt,
+  ilike,
   inArray,
   asc,
   desc,

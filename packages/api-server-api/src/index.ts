@@ -118,6 +118,36 @@ export {
   experimentCreateInputSchema,
   experimentIdInputSchema,
 } from "./modules/experiments/schemas.js";
+export type {
+  ArtifactKind,
+  ArtifactVisibility,
+  ArtifactFolder,
+  LibraryArtifact,
+  ArtifactVersionInfo,
+  ArtifactContent,
+  ArtifactListFilter,
+  ArtifactCreateInput,
+  ArtifactUpdateInput,
+  ArtifactSharingInput,
+  FolderUpdateInput,
+  ArtifactUploadTicket,
+  ArtifactLibraryService,
+} from "./modules/artifact-library/types.js";
+export {
+  artifactKindSchema,
+  artifactVisibilitySchema,
+  INLINE_CONTENT_MAX_BYTES,
+} from "./modules/artifact-library/schemas.js";
+export {
+  ARTIFACT_INTERNAL_LINK_PREFIX,
+  artifactInternalLink,
+} from "./modules/artifact-library/types.js";
+export type {
+  FeatureId,
+  FeatureFlags,
+  FeaturesService,
+} from "./modules/features/types.js";
+export { featureIdSchema } from "./modules/features/schemas.js";
 export {
   quietWindowSchema,
   scheduleCreateCronInputSchema,

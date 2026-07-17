@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
 import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
+import {
+  type ArtifactsSlice,
+  createArtifactsSlice,
+} from "./modules/artifacts/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import { pathToState } from "./modules/platform/lib/routes.js";
 import {
@@ -38,6 +42,7 @@ export type PlatformStore = DialogSlice &
   AgentsSlice &
   SessionsSlice &
   FilesSlice &
+  ArtifactsSlice &
   PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -47,6 +52,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createFilesSlice(...a),
+  ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
 

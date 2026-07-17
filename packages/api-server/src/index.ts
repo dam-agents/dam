@@ -108,8 +108,10 @@ import { migrateSecretsToConnections } from "./modules/connections/migration/sec
 import { createLegacySecretEnvSource } from "./modules/connections/migration/legacy-secret-env-source.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
+import { composeArtifactExpirySweeper } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
+import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -587,6 +589,29 @@ const experimentArmSweeper = composeExperimentArmSweeper({
 });
 experimentArmSweeper.start();
 
+// Periodic background work runs as BullMQ job schedulers, one queue per job
+// ("periodic.<name>") — one execution per period across replicas, and a
+// hung tick can only stall its own lane. Ticks stay idempotent; the queue
+// is scheduling and visibility, never correctness. The remaining interval
+// sweepers above migrate here incrementally.
+const periodicJobs = createPeriodicJobs({
+  connection: bullConnection,
+  log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
+});
+
+// Artifact-library expiry sweep: hard-deletes artifacts (private ones too)
+// whose expiry passed more than the grace window ago (the viewer 410s public
+// ones meanwhile). Hourly is plenty — expiry granularity is hours.
+const artifactExpirySweeper = composeArtifactExpirySweeper({
+  db,
+  artifacts: artifactsModule.service,
+  batchSize: 200,
+});
+await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
+  artifactExpirySweeper.tick(),
+);
+periodicJobs.start();
+
 const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
@@ -693,6 +718,7 @@ async function shutdown() {
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await experimentArmSweeper.stop();
+  await periodicJobs.close();
   await channelManager.stopAll();
   await runtimeDelivery.sweep.stop();
   await runtimeDelivery.worker.close();

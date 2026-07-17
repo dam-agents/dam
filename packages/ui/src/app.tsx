@@ -7,9 +7,11 @@ import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentDetailView } from "./modules/experiments/views/experiment-detail-view.js";
 import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
+import { useFeatures } from "./modules/features/api/queries.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -46,9 +48,27 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
 
   useAgentCrashToasts();
   useFirstRunRedirect();
+
+  // Feature-gated destinations bounce to Home once the per-user flags are
+  // known — deep links to disabled features never leave a dead view up.
+  const { data: features } = useFeatures();
+  useEffect(() => {
+    if (!features) return;
+    const experimentsView =
+      view === "experiments" ||
+      view === "experiment-new" ||
+      view === "experiment-detail";
+    if (
+      (experimentsView && !features.experiments) ||
+      (view === "artifacts" && !features.artifacts)
+    ) {
+      setView("list");
+    }
+  }, [features, view, setView]);
 
   useEffect(() => {
     // The sandbox-creation wizard owns its own OAuth-return handling so it can
@@ -139,6 +159,8 @@ function MainApp() {
                 <ExperimentsListView />
               ) : view === "experiment-detail" ? (
                 <ExperimentDetailView />
+              ) : view === "artifacts" ? (
+                <ArtifactsView />
               ) : (
                 <ListView />
               )}

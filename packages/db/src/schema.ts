@@ -520,6 +520,117 @@ export const experimentArms = pgTable(
   ],
 );
 
+// Per-user feature flags (hidden Features menu). Only explicitly toggled
+// features have rows — every feature defaults OFF, so absence = disabled.
+// Stored server-side (not localStorage) because feature surfaces include the
+// per-agent MCP tools, which only the server can hide.
+export const userFeatures = pgTable(
+  "user_features",
+  {
+    owner: text("owner").notNull(),
+    feature: text("feature").notNull(),
+    enabled: boolean("enabled").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.owner, table.feature] })],
+);
+
+// Artifact library (#2810): user- and agent-published artifacts, organized in
+// folders, shared by public slug on the dedicated share host. The unguessable
+// slug is the entire access control — no passwords by design. The current
+// version's content lives in the object store at `storage_ref`; prior
+// versions are rows in `library_artifact_versions`. Intra-module rows carry
+// real FKs for integrity (versions cascade with their artifact; folder
+// deletion ungroups via SET NULL); only references that leave Postgres
+// (owner → Keycloak, agent → K8s) stay plain strings.
+export const artifactFolders = pgTable(
+  "artifact_folders",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("artifact_folders_owner_idx").on(table.owner),
+    uniqueIndex("artifact_folders_slug_unique_idx").on(table.slug),
+    uniqueIndex("artifact_folders_owner_name_unique_idx").on(
+      table.owner,
+      table.name,
+    ),
+  ],
+);
+
+// `agent_id` is attribution only (which agent published it) — artifacts
+// deliberately outlive their creating agent, so it is a plain string, never a
+// reference that cascades. `visibility` lifecycle: private (default, in-app
+// only) → public (share link live).
+export const libraryArtifacts = pgTable(
+  "library_artifacts",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    agentId: text("agent_id"),
+    folderId: text("folder_id").references(() => artifactFolders.id, {
+      onDelete: "set null",
+    }),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    kind: text("kind").notNull(),
+    contentType: text("content_type").notNull(),
+    fileName: text("file_name").notNull(),
+    storageRef: text("storage_ref").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    version: integer("version").notNull().default(1),
+    visibility: text("visibility").notNull().default("private"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    viewCount: integer("view_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("library_artifacts_owner_idx").on(table.owner),
+    uniqueIndex("library_artifacts_slug_unique_idx").on(table.slug),
+    index("library_artifacts_folder_idx").on(table.folderId),
+    index("library_artifacts_agent_idx").on(table.agentId),
+    // The expiry sweeper scans only rows that can still expire.
+    index("library_artifacts_expires_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.expiresAt} is not null`),
+  ],
+);
+
+// Prior versions only — the current version lives on `library_artifacts`
+// itself, so the hot read path (viewer resolve-by-slug) needs no join.
+export const libraryArtifactVersions = pgTable(
+  "library_artifact_versions",
+  {
+    artifactId: text("artifact_id")
+      .notNull()
+      .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    storageRef: text("storage_ref").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
+);
+
 export const experimentRuns = pgTable(
   "experiment_runs",
   {

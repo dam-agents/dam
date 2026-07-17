@@ -1,0 +1,18 @@
+import { t } from "../../trpc.js";
+import {
+  browserOnlyProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
+import { featureSetFlagInputSchema } from "./schemas.js";
+
+export const featuresRouter = t.router({
+  flags: readAgentProcedure.query(({ ctx }) => ctx.features.flags()),
+
+  // browser-only: feature toggles are an interactive, per-person decision —
+  // API keys can't flip pre-release surfaces on for their owner.
+  setFlag: browserOnlyProcedure
+    .input(featureSetFlagInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.features.setFlag(input.feature, input.enabled),
+    ),
+});

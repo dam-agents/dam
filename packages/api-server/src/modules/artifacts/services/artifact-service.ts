@@ -19,6 +19,8 @@ export interface ArtifactService {
   }): Promise<void>;
   get(key: string): Promise<Artifact | null>;
   exists(key: string): Promise<boolean>;
+  /** Missing is not an error. */
+  delete(key: string): Promise<void>;
   readonly maxBytes: number;
   /** null when no object store is configured — callers relay instead. */
   createUploadUrl(
@@ -49,6 +51,7 @@ export function createArtifactService(deps: {
     },
     get: (key) => deps.store.get(key),
     exists: (key) => deps.store.exists(key),
+    delete: (key) => deps.store.delete(key),
 
     async createUploadUrl(key) {
       const url = await deps.store.presignUpload(key, {

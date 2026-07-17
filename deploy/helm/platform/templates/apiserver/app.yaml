@@ -207,6 +207,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "platform.fullname" . }}-apiserver-apikeys
                   key: API_KEY_HMAC_KEY
+            - name: SHARE_BASE_URL
+              value: {{ include "platform.url.share" . | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"

@@ -49,6 +49,9 @@ trustPolicyExclude:
   - "@mariozechner/clipboard-win32-arm64-msvc@0.3.6"
   - "@mariozechner/clipboard-win32-x64-msvc@0.3.6"
 allowBuilds:
+  # argon2 (node-argon2) resolves its prebuilt native binding in install;
+  # without it, artifact-library password hashing fails at require time.
+  argon2: true
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).
   grpc-tools: true

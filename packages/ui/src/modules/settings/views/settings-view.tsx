@@ -16,11 +16,13 @@ import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
-import {
-  isShowInternalConnectionsEnabled,
-  setShowInternalConnections,
-} from "../../connections/internal-only.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { FeaturesTab } from "../../features/components/features-tab.js";
+import {
+  isFeaturesMenuRevealed,
+  setFeaturesMenuRevealed,
+} from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { ChannelsPanel } from "../../sessions/components/channels-panel.js";
@@ -58,14 +60,27 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  // Hidden behind the version-tap toggle, like the internal connections:
-  // messenger channel bindings are not a regular-user surface yet.
-  const showChannels = isShowInternalConnectionsEnabled();
-  const tabs = showChannels
-    ? [...baseTabs, { id: "channels" as const, label: "Channels" }]
-    : baseTabs;
+  const { data: flags } = useFeatures();
+  // Channels rides the advanced-connections feature: messenger channel
+  // bindings are not a regular-user surface yet.
+  const showChannels = flags?.["advanced-connections"] ?? false;
+  // The Features tab stays reachable once revealed here, and for anyone who
+  // already has a flag on (so it can be found again on another browser).
+  const showFeatures =
+    isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
+  const tabs = [
+    ...baseTabs,
+    ...(showChannels ? [{ id: "channels" as const, label: "Channels" }] : []),
+    ...(showFeatures
+      ? [{ id: "features" as const, label: "Experimental features" }]
+      : []),
+  ];
   const rawTab = useStore((s) => s.settingsTab);
-  const activeTab = rawTab === "channels" && !showChannels ? "account" : rawTab;
+  const activeTab =
+    (rawTab === "channels" && !showChannels) ||
+    (rawTab === "features" && !showFeatures)
+      ? "account"
+      : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -74,15 +89,17 @@ export function SettingsView() {
   const { data: appVersion } = useAppVersion();
   const [versionTaps, setVersionTaps] = useState(0);
 
-  // Hidden: five taps on the version string flips the internal-only
-  // connections catalog (same toggle as the platformConnections devtools helper).
+  // Hidden: five taps on the version string reveals the Features tab —
+  // the per-user toggles for pre-release surfaces live there.
   const onVersionTap = () => {
     if (versionTaps + 1 < 5) {
       setVersionTaps(versionTaps + 1);
       return;
     }
-    setShowInternalConnections(!isShowInternalConnectionsEnabled());
-    window.location.reload();
+    setVersionTaps(0);
+    const revealed = !isFeaturesMenuRevealed();
+    setFeaturesMenuRevealed(revealed);
+    navigateToSettings(revealed ? "features" : "account");
   };
 
   return (
@@ -232,13 +249,15 @@ export function SettingsView() {
             <UsageView />
           </div>
         )}
+
+        {activeTab === "features" && <FeaturesTab />}
       </div>
     </div>
   );
 }
 
 /** Internal-only tab: pick an agent, then manage its messenger channels.
- *  Revealed by the same five-tap version toggle as internal connections. */
+ *  Rides the advanced-connections feature flag. */
 function ChannelsSettings() {
   const agents = useAgentsList();
   const [agentId, setAgentId] = useState<string>("");

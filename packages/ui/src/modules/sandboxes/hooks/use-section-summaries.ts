@@ -12,7 +12,9 @@ import {
   type SandboxSubtitleLookup,
   sandboxSubtitleParts,
 } from "../../agents/utils/sandbox-subtitle.js";
+import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -97,10 +99,25 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return `${running} Schedule${running === 1 ? "" : "s"} running`;
   }, [agent, schedules]);
 
+  const artifactsEnabled = useFeatures().data?.artifacts ?? false;
+  const { data: agentArtifacts } = useArtifacts(
+    agent && artifactsEnabled ? { agentId: agent.id } : null,
+  );
+  const artifactsSummary = useMemo(() => {
+    if (!agent || !agentArtifacts) return undefined;
+    if (agentArtifacts.length === 0) return "No artifacts";
+    const shared = agentArtifacts.filter(
+      (a) => a.visibility === "public",
+    ).length;
+    const base = `${agentArtifacts.length} artifact${agentArtifacts.length === 1 ? "" : "s"}`;
+    return shared > 0 ? `${base} · ${shared} shared` : base;
+  }, [agent, agentArtifacts]);
+
   return {
     setup,
     connections,
     skills,
     schedules: schedulesSummary,
+    artifacts: artifactsSummary,
   };
 }

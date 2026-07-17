@@ -1,0 +1,147 @@
+# Artifact library
+
+Last verified: 2026-07-17
+
+## Overview
+
+The **Artifact Library** is where agents and users publish work products —
+HTML pages, React/JSX components, markdown, code, plain text, and binary
+files — organize them into **Folders**, and share them with people outside
+the platform. An **Artifact** is owner-scoped like every other resource, is
+attributed to the Agent that published it (or to the user, for manual
+uploads), and outlives both the sandbox and the agent that produced it.
+Publishing a new revision keeps the same identity and share link and appends
+to a per-artifact **version history** viewers can flip through.
+
+The design is a port of a proven external tool (the "slop" artifact vault)
+onto platform rails: content bytes live in the S3-compatible object store the
+experiments subsystem introduced, metadata lives in Postgres, the agent-facing
+surface is the per-agent platform MCP server, and public serving happens on a
+dedicated **share host**.
+
+## Sharing model
+
+- An artifact is **private** by default: visible in-app only.
+- Making it **public** activates its share link — a URL on the share host
+  keyed by an unguessable random **slug**. The slug is the *entire* access
+  control: there is no account, token, or password on the public side —
+  whoever holds the link may view, and guarding the link is the sharer's
+  responsibility (deliberately: a second factor sent alongside a leaked link
+  leaks with it).
+- An optional **expiry** bounds the *artifact's* lifetime — it is a retention
+  setting, not just a link setting, and applies regardless of visibility (a
+  private artifact with an expiry is deleted the same way; storage lifecycle
+  is a separate concern from sharing). On the public side, an expired link
+  answers "gone" (with a distinct "recently expired" page during a grace
+  window in which the owner can still renew); once the grace window passes, a
+  background sweep hard-deletes the content.
+- A folder has a public page of its own, listing only the *shared* artifacts
+  inside it; a folder with nothing shared is indistinguishable from a
+  nonexistent one.
+- Each successful public render increments a per-artifact **view count**,
+  surfaced in-app as a cheap reach signal.
+
+## The share host — trust boundary
+
+User-generated content is never served from the app origin. A dedicated
+**share host** (a separate subdomain, mandatory, wired through the cluster
+ingress and configured via Helm) serves *only* shared artifacts and folder
+pages. The api-server host-gates every request before any app route or auth
+middleware: requests for the share host are dispatched to a self-contained
+public viewer app; everything else falls through to the platform surface.
+The two origins therefore never share cookies or tokens — a malicious
+artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies,
+because none of them exist on its origin.
+
+Within a share page, the artifact renders inside a sandboxed iframe: the
+outer page is platform chrome (title banner, version navigation, source
+download) and the inner document is the user content. Rendering is entirely
+client-side — the server never compiles or sanitizes user content, it only
+wraps it:
+
+- **HTML** renders as authored (links retargeted to open new tabs).
+- **JSX** is transformed in the visitor's browser (babel-standalone) with
+  dependencies resolved from public CDNs via an import map pinned to the
+  versions Claude-style artifacts expect (react, recharts, d3, three, …).
+- **Markdown** renders client-side through a sanitizer; **code and text**
+  render as highlighted source.
+- **Images** preview inline; other binaries get a download page. Raw bytes
+  are served inline only for images — everything else is download-only, so
+  no user-controlled document can execute on the share origin *outside* the
+  sandbox.
+
+The viewer sends conservative headers (no-referrer, nosniff, framing pinned
+to self) but deliberately no restrictive content CSP: a `srcdoc` iframe
+inherits the parent CSP, and the sandbox attribute plus the dedicated origin
+are the actual isolation. The viewer app also keeps its dependency surface
+minimal (metadata reads, blob reads) so it could move into a
+separate deployment later; it lives in the api-server today because the
+planned agent-calling bridge for interactive artifacts needs the relay
+machinery that already lives there.
+
+## Publishing paths
+
+```mermaid
+flowchart LR
+  harness[harness] -->|MCP tools| api-server
+  browser[browser] -->|tRPC + upload route| api-server
+  api-server -->|metadata| postgres[(postgres)]
+  api-server <-->|blobs + presigned links| store[(object store)]
+  harness -->|direct PUT via gateway| store
+  visitor[external visitor] -->|share host| api-server
+```
+
+- **Agents** publish through artifact tools on the per-agent platform MCP
+  server (the same in-pod outbound surface as channels, skills, schedules,
+  and experiments). Small text content travels inline; anything bigger takes
+  the **direct-transfer** path pioneered by experiment candidates: the tool
+  mints a short-lived presigned upload link, the harness PUTs bytes straight
+  to the store through its paired gateway, and the create call references the
+  completed upload. The platform verifies the upload (existence, size cap)
+  before the artifact row lands, and an upload reference outside the caller's
+  own staging namespace reads as unknown. Attribution is the mesh-verified
+  agent identity — a harness cannot publish as another agent, and the
+  owner-scoped service means it can only ever touch its owner's library.
+- **Users** publish from the Artifacts page in the UI: bytes go through an
+  authenticated upload route on the app origin (avoiding browser↔store CORS),
+  then the same create call. Downloads mirror the experiments candidate
+  route: a presigned direct link when the store has a browser-reachable
+  endpoint, a relayed blob otherwise.
+
+## UI surfaces
+
+- **Artifacts** is a top-level destination in the navigation rail: the whole
+  library grouped by folder, with search, upload, folder management, sharing
+  controls, and in-app previews that reuse the chat file-viewer stack
+  (markdown prose, highlighted code, inline images).
+- Each sandbox's home view gains an **Artifacts section** listing what that
+  agent published, with the same actions.
+
+## Lifecycle and cleanup
+
+Deleting an artifact removes the metadata row and all version rows in one
+transaction, then deletes the blobs best-effort — a failed blob delete can
+leave an orphaned (unreachable) object in the store, never a dangling row.
+The database enforces the composition with foreign keys: version rows cascade
+with their artifact, and folder deletion detaches its artifacts. Deleting a
+folder ungroups its artifacts (their share state is untouched).
+The **expiry sweep** runs as a scheduled platform periodic job (its own
+queue and worker lane) — one execution per period across replicas, with the
+tick itself idempotent —
+and permanently removes artifacts — private ones included — whose expiry
+passed more than the grace window ago. Agent deletion does
+**not** touch artifacts — attribution simply points at a name that no longer
+resolves.
+
+The whole library ships behind a per-user experimental-feature flag (see
+[features](features.md)): the flag reveals the UI surfaces and registers the
+agent MCP tools per session; the underlying endpoints stay owner-scoped and
+are not flag-gated.
+
+## Where the code lives
+
+- Contract (types, schemas, tRPC router): [`packages/api-server-api/src/modules/artifact-library/`](../../packages/api-server-api/src/modules/artifact-library/)
+- Implementation (service, repository, viewer app, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
+- Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
+- UI destination: [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
+- Share host wiring (ingress rule, env): [`deploy/helm/platform/`](../../deploy/helm/platform/)

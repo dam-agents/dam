@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-14
+Last verified: 2026-07-17
 
 ## Overview
 
@@ -77,23 +77,11 @@ Beyond the auth credential, a template may declare optional **config inputs** �
 
 #### Internal-only templates
 
-Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered (on both the Connections settings page and the sandbox creation wizard), not Connections already created. Testers reveal the full catalog by running `platformConnections.showInternal()` in the browser devtools console, or by tapping the version string on the settings page five times.
+Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered (on both the Connections settings page and the sandbox creation wizard), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
 
 ### Connection
 
-A uniform shape — every Connection looks the same regardless of category or auth mode:
-
-```ts
-interface Connection {
-  id: string;
-  ownerId: string;            // K8s sub
-  templateId: string;         // which Template this was built from
-  name: string;               // user-visible label
-  inputs: Record<string, unknown>;   // raw user-typed values, for re-render
-  auth: AuthConfig;
-  contributions: Contribution[];
-}
-```
+A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the raw user inputs (kept for re-render), the auth credential state, and the projected contributions.
 
 The `auth` field carries credential-acquisition state in one of four modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
@@ -156,21 +144,9 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 
 ### Custom MCP server
 
-```jsonc
-{
-  "id": "conn-1d2e",
-  "templateId": "custom-mcp",
-  "name": "Acme internal MCP",
-  "inputs": { "url": "https://mcp.acme.internal/sse", "authMode": "oauth" },
-  "auth": { "kind": "oauth", "clientId": "…", "scopes": [], "…": "…" },
-  "contributions": [
-    { "kind": "egress-allow", "host": "mcp.acme.internal" },
-    { "kind": "mcp-entry",    "name": "acme",
-      "url": "https://mcp.acme.internal/sse",
-      "headers": { "Authorization": "Bearer dummy-placeholder" } }
-  ]
-}
-```
+An OAuth-authenticated MCP endpoint contributes just two things: an
+`egress-allow` for its host and an `mcp-entry` carrying the server URL and an
+Authorization header whose bearer value is a gateway-substituted placeholder.
 
 ### App preset: Kubernetes / OpenShift
 
@@ -289,17 +265,7 @@ Concurrent dispatches from different replicas race naturally: the agent rejects 
 
 Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
-```ts
-runtime.v1.hello({
-  lastAppliedVersion?: number;
-  lastAppliedHash?: string;
-  protocolVersion: "v1";
-  agentRuntimeVersion: string;
-  capabilities: { contributions: ContributionKind[]; events: EventKind[]; harnessConfig?: boolean };
-}) => {
-  events: Event[];
-}
-```
+The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply.
 
 The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
 
@@ -379,21 +345,7 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 
 ### Mutation transaction
 
-Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job:
-
-```ts
-await db.transaction(async (tx) => {
-  const v = await tx.bumpAgentVersion(agentId);
-  await tx.connections.grant(agentId, connectionId);
-  await tx.runtime_state_outbox.upsert({ agentId, version: v, lastEnqueuedAt: now() });
-});
-await stateQueue.add(
-  "state",
-  { agentId },
-  { jobId: `state:${agentId}` },   // stable id → natural coalescing
-);
-return ok();   // user-facing response returns immediately
-```
+Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job keyed by a stable per-agent job id — pending dispatches for the same agent coalesce naturally, and the user-facing response returns immediately.
 
 A schedule firing follows the same shape, inserting a `runtime_events` row in place of the grant before the outbox upsert.
 

@@ -18,10 +18,8 @@ import {
 import { GithubAppInstallLink } from "../../../connections/components/github-app-install-link.js";
 import { TemplateCreateForm } from "../../../connections/forms/template-create-form.js";
 import { useDisconnectConnection } from "../../../connections/hooks/use-disconnect-connection.js";
-import {
-  filterOfferedTemplates,
-  isShowInternalConnectionsEnabled,
-} from "../../../connections/internal-only.js";
+import { filterOfferedTemplates } from "../../../connections/internal-only.js";
+import { useFeatures } from "../../../features/api/queries.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import {
   saveSnapshot,
@@ -58,7 +56,7 @@ export function ConnectionsStep({ snapshot, update }: Props) {
     [allTemplates],
   );
 
-  const showInternal = isShowInternalConnectionsEnabled();
+  const showInternal = useFeatures().data?.["advanced-connections"] ?? false;
 
   const byCategory = useMemo(() => {
     const offered = filterOfferedTemplates(allTemplates, showInternal);

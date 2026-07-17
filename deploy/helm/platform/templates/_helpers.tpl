@@ -162,6 +162,17 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
+{{- /* Public share host serving artifact-library content. A dedicated origin
+       by design: user-generated content must never share the app origin's
+       cookies/tokens. Routed to the api-server (host-gated there). */ -}}
+{{- define "platform.url.share" -}}
+{{- if .Values.urls.share }}
+{{- .Values.urls.share }}
+{{- else }}
+{{- printf "%s://share.%s" .Values.scheme (include "platform.hostport" .) }}
+{{- end }}
+{{- end }}
+
 {{/*
 Extract just the hostname (no scheme, no port, no path) from a URL.
 Usage: {{ include "platform.url.host" (include "platform.url.ui" .) }}

@@ -8,6 +8,8 @@ import {
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
+import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
+import { isFeatureEnabled } from "../../modules/features/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
@@ -72,6 +74,15 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         owner,
         maxArtifactBytes: config.maxArtifactBytes,
       }).experiments,
+    artifactLibraryFor: (owner) =>
+      composeArtifactLibraryForOwner({
+        db,
+        artifacts,
+        owner,
+        shareBaseUrl: config.shareBaseUrl,
+      }).artifactLibrary,
+    isArtifactsFeatureEnabled: (owner) =>
+      isFeatureEnabled(db, owner, "artifacts"),
     artifacts,
     maxArtifactBytes: config.maxArtifactBytes,
   });

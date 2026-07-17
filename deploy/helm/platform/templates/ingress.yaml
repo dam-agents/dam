@@ -22,6 +22,7 @@
 {{- if .Values.urls.keycloak -}}
 {{- $keycloakHost = include "platform.url.host" .Values.urls.keycloak -}}
 {{- end -}}
+{{- $shareHost := include "platform.url.host" (include "platform.url.share" .) -}}
 {{- $uiSvc := printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- $apiSvc := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
 apiVersion: networking.k8s.io/v1
@@ -44,6 +45,18 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
+    {{- /* Public share host — artifact-library content only, all paths to
+           the api-server (which host-gates them onto the viewer app). */}}
+    - host: {{ $shareHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $apiSvc }}
+                port:
+                  name: http
     {{- if $uiHost }}
     - host: {{ $uiHost }}
       http:

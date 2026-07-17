@@ -46,6 +46,14 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { createCandidateRoutes } from "../../modules/experiments/candidate-route.js";
+import {
+  composeArtifactLibraryForOwner,
+  composeShareViewer,
+  createArtifactLibraryRoutes,
+  createShareHostGate,
+  createShareViewerApp,
+} from "../../modules/artifact-library/index.js";
+import { composeFeaturesForOwner } from "../../modules/features/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
@@ -262,6 +270,19 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     Variables: { user: UserIdentity; roles: string[] };
   }>();
 
+  // Public share host — a separate origin serving ONLY user-generated
+  // artifact content. Host-gated before every app route and before auth: a
+  // request for the share host must never fall through to the app surface
+  // (and vice versa), so app cookies/tokens and shared content stay on
+  // disjoint origins. Registered first; the gate short-circuits by returning
+  // the viewer's Response.
+  const shareViewerApp = createShareViewerApp({
+    viewer: composeShareViewer({ db, artifacts }),
+    brandName: config.brand.name,
+    uiBaseUrl: config.uiBaseUrl,
+  });
+  app.use("*", createShareHostGate(config.shareBaseUrl, shareViewerApp));
+
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/version", (c) =>
     c.json({
@@ -355,6 +376,22 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           owner,
           maxArtifactBytes: config.maxArtifactBytes,
         }).experiments,
+      artifacts,
+    }),
+  );
+
+  // Artifact-library binary paths — non-tRPC (upload carries raw bytes in,
+  // download streams bytes or returns a presigned direct link).
+  app.route(
+    "/",
+    createArtifactLibraryRoutes({
+      artifactLibraryFor: (owner) =>
+        composeArtifactLibraryForOwner({
+          db,
+          artifacts,
+          owner,
+          shareBaseUrl: config.shareBaseUrl,
+        }).artifactLibrary,
       artifacts,
     }),
   );
@@ -818,6 +855,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
+    const { artifactLibrary } = composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner: user.sub,
+      shareBaseUrl: config.shareBaseUrl,
+    });
+    const { features } = composeFeaturesForOwner({ db, owner: user.sub });
     const skills = composeSkillsModule(
       api,
       config.namespace,
@@ -895,6 +939,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         approvals,
         egressRules,
         experiments,
+        artifactLibrary,
+        features,
         files,
         harnessConfig,
         metrics,

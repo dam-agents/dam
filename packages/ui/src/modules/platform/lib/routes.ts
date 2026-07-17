@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { isShowExperimentsEnabled } from "../../experiments/internal-only.js";
-
 export const viewSchema = z.enum([
   "list",
   "chat",
@@ -14,6 +12,7 @@ export const viewSchema = z.enum([
   "experiments",
   "experiment-new",
   "experiment-detail",
+  "artifacts",
 ]);
 export type View = z.infer<typeof viewSchema>;
 
@@ -25,6 +24,7 @@ export const settingsTabSchema = z.enum([
   "api-keys",
   "usage",
   "channels",
+  "features",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
@@ -33,6 +33,7 @@ export const sandboxSectionSchema = z.enum([
   "connections",
   "skills",
   "schedules",
+  "artifacts",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
@@ -63,6 +64,7 @@ export function viewToPath(
   if (view === "experiment-new") return "/experiments/new";
   if (view === "experiment-detail" && experimentId)
     return `/experiments/${encodeURIComponent(experimentId)}`;
+  if (view === "artifacts") return "/artifacts";
   return "/";
 }
 
@@ -89,8 +91,9 @@ export function pathToState(path: string): {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
+  if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(
-    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|skills|schedules))?$/,
+    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|skills|schedules|artifacts))?$/,
   );
   if (sandboxHomeMatch)
     return {
@@ -98,11 +101,6 @@ export function pathToState(path: string): {
       agentId: decodeURIComponent(sandboxHomeMatch[1]!),
       sandboxSection: (sandboxHomeMatch[2] as SandboxSection) ?? "setup",
     };
-  if (
-    (path === "/experiments" || path.startsWith("/experiments/")) &&
-    !isShowExperimentsEnabled()
-  )
-    return { view: "list" };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/experiments/new") return { view: "experiment-new" };
   const experimentDetailMatch = path.match(/^\/experiments\/([^/]+)$/);
