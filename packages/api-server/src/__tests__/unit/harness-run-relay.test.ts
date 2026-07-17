@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { type EventEmitter, once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -58,7 +58,9 @@ async function relayServer(deps: {
     relay.handleUpgrade(req, socket, head, "a1"),
   );
   server.listen(0);
-  await once(server, "listening");
+  // The @types/node bump (#2806) broke once()'s emitter overloads for
+  // http.Server / ChildProcess; go through the events-module type.
+  await once(server as unknown as EventEmitter, "listening");
   return server;
 }
 
@@ -103,7 +105,9 @@ describe("harness-run-relay", () => {
     let stderr = "";
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
 
-    const [code] = (await once(child, "exit")) as [number];
+    const [code] = (await once(child as unknown as EventEmitter, "exit")) as [
+      number,
+    ];
     expect(stderr).toBe("");
     expect(code).toBe(0);
     expect(stdout).toContain("hi");
