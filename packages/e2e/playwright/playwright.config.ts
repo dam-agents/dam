@@ -88,5 +88,16 @@ export default defineConfig({
       dependencies: ["slack"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      // Deliberately last in the chain: its 3-CPU boxes would push every
+      // other spec's agent start over the 4-CPU budget ceiling, and a
+      // mid-test failure leaves boxes up that only this ordering keeps from
+      // poisoning the rest of the suite. Its sizing also assumes the earlier
+      // specs' shared agent (≤1 CPU) may still be running — see the spec.
+      name: "budgets",
+      testMatch: /11-.*\.spec\.ts$/,
+      dependencies: ["connection-regrant"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

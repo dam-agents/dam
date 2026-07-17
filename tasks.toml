@@ -184,6 +184,10 @@ KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 echo "Deleting agents in platform-agents..."
 "${KCTL[@]}" -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
 "${KCTL[@]}" -n platform-agents delete forks.agent-platform.ai --all --ignore-not-found
+# UserBudgets are operator-managed (no API path), so a ceiling someone
+# kubectl-applied while testing survives the DB drop and silently rewrites
+# the budget arithmetic 11-budgets.spec.ts pins to the chart defaults.
+"${KCTL[@]}" -n platform-agents delete userbudgets.agent-platform.ai --all --ignore-not-found
 "${KCTL[@]}" -n platform-agents delete configmap \
   -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' \
   --ignore-not-found
