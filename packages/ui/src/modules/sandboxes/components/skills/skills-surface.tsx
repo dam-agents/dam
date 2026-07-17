@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
@@ -19,18 +20,23 @@ import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
  * The redesigned skills surface: skills grouped by location — Standalone Local
  * Skills ("Created in this sandbox") and Skill Sources ("Sourced from GitHub").
  * Toggles install/uninstall immediately; the "+ Add source" control and the
- * per-source kebab (re-scan / view repo / remove) administer sources. Read-only
- * while the agent is stopped; the container renders the wake affordance.
+ * per-source kebab (re-scan / view repo / remove) administer sources. While the
+ * agent is stopped/starting the whole surface is a dimmed, non-interactive
+ * read-only snapshot; the container renders the wake affordance.
  */
 export function SkillsSurface({
   agentId,
   agentState,
   readOnly,
+  comingUp,
   onInstalledChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
+  /** Agent is coming up (starting) — still read-only, but rendered a touch
+   *  less dimmed than a full stop to signal it's on its way. */
+  comingUp?: boolean;
   onInstalledChange?: (installed: SkillRef[]) => void;
 }) {
   const isError = agentState === "error";
@@ -71,11 +77,10 @@ export function SkillsSurface({
     if (ok) await removeSource(src.id);
   };
 
-  // Source administration works without a running pod (it's account-scoped and
-  // public scans run from the api-server), so "Add source" stays live even while
-  // the agent is stopped — only pod-dependent actions (install/uninstall/update)
-  // are gated (see `readOnly` on the skill rows).
-  const addSourceButton = (
+  // Read-only while the agent is stopped/starting (matches the design):
+  // administering sources is a running-agent action, so drop "Add source"
+  // rather than dim a dead control.
+  const addSourceButton = readOnly ? null : (
     <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
       <Plus size={14} /> Add source
     </Button>
@@ -88,7 +93,15 @@ export function SkillsSurface({
     standalone.length === 0;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div
+      className={cn(
+        "flex flex-col gap-8",
+        // Stopped / starting: a dimmed, non-interactive read-only snapshot.
+        // Starting reads a touch brighter than a full stop.
+        readOnly && "pointer-events-none",
+        readOnly && (comingUp ? "opacity-70" : "opacity-45"),
+      )}
+    >
       {isEmpty ? (
         <section>
           <SectionLabel spaced>Skills</SectionLabel>
@@ -140,7 +153,6 @@ export function SkillsSurface({
                     busyKey={busyKey}
                     disabled={!agentId || isError}
                     stateLoaded={stateLoaded}
-                    readOnly={readOnly}
                     onToggle={toggle}
                     onUpdate={update}
                     onRescan={() => void refreshSource(src.id)}

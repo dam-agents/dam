@@ -1,3 +1,4 @@
+import { Locked } from "@carbon/icons-react";
 import type { SkillRef } from "api-server-api";
 import { useCallback, useRef } from "react";
 
@@ -37,21 +38,17 @@ export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
     <section className="mb-8">
       {!operable && (
         <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-          <span className="text-[13px] text-muted-foreground">
-            Installing skills needs the agent running — sources can still be
-            managed.
+          <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <Locked size={14} /> Skills are read-only while the agent is stopped
           </span>
-          <WakeToEditButton
-            agentId={agent.id}
-            comingUp={comingUp}
-            label="Start agent"
-          />
+          <WakeToEditButton agentId={agent.id} comingUp={comingUp} />
         </div>
       )}
       <SkillsSurface
         agentId={agent.id}
         agentState={agent.state}
         readOnly={!operable}
+        comingUp={comingUp}
         onInstalledChange={onInstalledChange}
       />
     </section>

@@ -65,7 +65,6 @@ export function SkillSourceCard({
   busyKey,
   disabled,
   stateLoaded,
-  readOnly,
   onToggle,
   onRescan,
   onRemove,
@@ -84,8 +83,6 @@ export function SkillSourceCard({
   disabled: boolean;
   /** Whether the installed set has loaded — gates the collapse-default snapshot. */
   stateLoaded: boolean;
-  /** Read-only (agent stopped): render the card on a muted background. */
-  readOnly: boolean;
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
@@ -204,7 +201,7 @@ export function SkillSourceCard({
               skill={skill}
               installed={ref !== undefined}
               busy={busyKey === skillKey(skill.source, skill.name)}
-              disabled={disabled || readOnly}
+              disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={
                 hasDrift && ref
