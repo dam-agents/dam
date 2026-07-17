@@ -5,3 +5,11 @@
 # apiServer:
 #   slackBotToken: "xoxb-..."
 #   slackAppToken: "xapp-..."
+#
+# Raise the per-user compute ceiling (summed limits across your running agents).
+# The chart default is 4 CPU / 8Gi. Sandbox loops fan out or overlap during reap,
+# so a driver plus a couple of 4Gi coding sandboxes needs more headroom:
+# controller:
+#   userBudgets:
+#     defaultCpu: "6"
+#     defaultMemory: "16Gi"
