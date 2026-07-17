@@ -1,3 +1,11 @@
+---
+id: 076
+title: "Per-channel access modes — shared and person-scoped"
+status: accepted
+subsystem: channels
+summary: Each channel binding picks its access mode at bind time — shared (place-scoped, Agent credentials, open speaker set) or person-scoped (identity linking, allow-list, per-turn forks).
+---
+
 # ADR-076: Per-Channel Access Modes — Shared and Person-Scoped
 
 **Date:** 2026-07-17
