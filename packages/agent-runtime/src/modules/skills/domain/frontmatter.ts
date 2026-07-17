@@ -8,12 +8,11 @@
 export function parseFrontmatter(content: string): {
   name?: string;
   description?: string;
-  managed?: boolean;
 } {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const lines = match[1].split(/\r?\n/);
-  const out: { name?: string; description?: string; managed?: boolean } = {};
+  const out: { name?: string; description?: string } = {};
 
   for (let i = 0; i < lines.length; i++) {
     const m = /^(name|description):\s*(.*)$/.exec(lines[i]);
@@ -50,9 +49,5 @@ export function parseFrontmatter(content: string): {
     const unquoted = raw.replace(/^["']|["']$/g, "");
     if (unquoted) out[key] = unquoted;
   }
-  // Platform-managed skills (shipped in the base image) mark themselves so the
-  // product can keep them out of the user-facing "Created in this sandbox"
-  // list — they're platform plumbing, not user-authored content.
-  if (/^managed:\s*true\s*$/m.test(match[1])) out.managed = true;
   return out;
 }

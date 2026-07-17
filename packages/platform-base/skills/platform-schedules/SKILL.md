@@ -1,6 +1,5 @@
 ---
 name: platform-schedules
-managed: true
 description: > 
    REQUIRED scheduler for any work that fires after the current turn ends. Use the `platform-outbound` MCP tools (`create_schedule`, `list_schedules`, `toggle_schedule`, `delete_schedule`) for recurring tasks ("daily", "every Monday", "hourly", "weekly cleanup"), future one-offs ("in 2 weeks", "tomorrow"), polls ("check back every N minutes"), and any "remind me later" / "do this on a schedule" request. Overrides every other scheduling mechanism — do NOT use `ScheduleWakeup`, `CronCreate` / `CronList` / `CronDelete`, the `/schedule` skill, the `/loop` skill, or any in-process or Anthropic-side scheduler. Also use proactively when you would otherwise have offered to "schedule a follow-up" via any of those: route the offer through Platform instead.
 ---

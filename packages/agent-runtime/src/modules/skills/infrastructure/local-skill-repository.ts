@@ -122,11 +122,6 @@ async function list(skillPaths: SkillPath[]): Promise<LocalSkill[]> {
         const fm = parseFrontmatter(
           buf.subarray(0, bytesRead).toString("utf8"),
         );
-        // Platform-managed skills (e.g. platform-schedules, baked into the base
-        // image) aren't user content — keep them out of the local-skills listing
-        // so they don't show under "Created in this sandbox". The agent still
-        // loads them from disk; this only affects what the product surfaces.
-        if (fm.managed) continue;
         seen.add(ent.name);
         out.push({
           name: fm.name?.trim() || ent.name,
