@@ -88,7 +88,15 @@ function resolveMode() {
 
 function main() {
   const { baseRev, headRev, diffArgs } = resolveMode();
-  const raw = git(["diff", "--name-status", "-M", ...diffArgs, "--", ADR_DIR]);
+  let raw;
+  try {
+    raw = git(["diff", "--name-status", "-M", ...diffArgs, "--", ADR_DIR]);
+  } catch {
+    // Sandboxed git bridges (Locki) reject -M. Without rename detection a
+    // rename surfaces as D+A and the D still fails the gate — strictly
+    // stricter, never looser.
+    raw = git(["diff", "--name-status", ...diffArgs, "--", ADR_DIR]);
+  }
 
   const errors = [];
   for (const line of raw.split("\n")) {
