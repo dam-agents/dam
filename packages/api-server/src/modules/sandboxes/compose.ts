@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
+import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { createSandboxesRepository } from "./infrastructure/sandboxes-repository.js";
 import {
   createSandboxesService,
@@ -36,12 +37,14 @@ export function composeSandboxesForOwner(opts: {
 export function composeSandboxSweeper(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
+  k8s: Pick<K8sClient, "readPodRestart">;
   intervalMs: number;
   batchSize: number;
 }): SandboxSweeper {
   return createSandboxSweeper({
     repo: createSandboxesRepository(opts.db),
     agentsFor: opts.agentsFor,
+    k8s: opts.k8s,
     intervalMs: opts.intervalMs,
     batchSize: opts.batchSize,
   });

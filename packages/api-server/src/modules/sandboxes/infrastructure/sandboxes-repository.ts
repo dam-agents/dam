@@ -31,6 +31,8 @@ export interface SandboxesRepository {
   fail(id: string, reason: string): Promise<void>;
   /** `running` rows whose deadline has passed — the liveness sweep fails these. */
   listExpiredRunning(now: Date, limit: number): Promise<SandboxRow[]>;
+  /** All `running` rows — the restart sweep checks each one's pod for a crash. */
+  listRunning(limit: number): Promise<SandboxRow[]>;
   /** Terminal rows whose sandbox Agent is still to be reaped by the sweep. */
   listTerminal(limit: number): Promise<SandboxRow[]>;
   delete(id: string): Promise<void>;
@@ -102,6 +104,15 @@ export function createSandboxesRepository(db: Db): SandboxesRepository {
             lt(sandboxesTable.expiresAt, now),
           ),
         )
+        .limit(limit);
+      return rows.map(toRow);
+    },
+
+    async listRunning(limit) {
+      const rows = await db
+        .select()
+        .from(sandboxesTable)
+        .where(eq(sandboxesTable.status, "running"))
         .limit(limit);
       return rows.map(toRow);
     },

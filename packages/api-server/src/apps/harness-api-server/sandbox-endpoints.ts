@@ -5,6 +5,8 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   AttenuationError,
   InvalidSchemaError,
+  MIN_SANDBOX_TTL_MS,
+  MAX_SANDBOX_TTL_MS,
   type SandboxesService,
 } from "../../modules/sandboxes/index.js";
 import { securityLog } from "../../core/security-log.js";
@@ -26,6 +28,26 @@ const spawnBody = z
     // The result JSON Schema — arbitrary JSON, validated structurally by ajv
     // when the sandbox reports (a malformed schema is rejected at spawn).
     schema: z.unknown(),
+    // Optional liveness deadline for this node, in ms. Bounded server-side; a
+    // shorter value fails a wedged/misconfigured node fast, a longer one lets a
+    // heavy node run past the default hour.
+    ttlMs: z
+      .number()
+      .int()
+      .min(MIN_SANDBOX_TTL_MS)
+      .max(MAX_SANDBOX_TTL_MS)
+      .optional(),
+    // Optional resource limits. A heavy Make (clone + install + build) OOM-kills
+    // at the template's small default memory, so let the driver raise it. Same
+    // grammar and floors as the agent size knob.
+    memory: z
+      .string()
+      .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
+      .optional(),
+    cpu: z
+      .string()
+      .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
+      .optional(),
   })
   .refine((d) => d.image !== undefined || d.templateId !== undefined, {
     message: "either image or templateId is required",
@@ -54,6 +76,13 @@ export function mountSandboxRoutes(
     }
 
     const connections = body.connections ?? [];
+    const size =
+      body.cpu !== undefined || body.memory !== undefined
+        ? {
+            ...(body.cpu !== undefined ? { cpu: body.cpu } : {}),
+            ...(body.memory !== undefined ? { memory: body.memory } : {}),
+          }
+        : undefined;
     const conns = deps.connectionsServiceFor(verified.owner);
     const granted = await conns.getAgentConnections(driverId);
     const driverGrantIds = granted.connections.map((g) => g.connectionId);
@@ -67,6 +96,8 @@ export function mountSandboxRoutes(
         connections,
         prompt: body.prompt,
         schema: body.schema,
+        ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
+        ...(size ? { size } : {}),
       });
       return c.json({ id }, 201);
     } catch (err) {

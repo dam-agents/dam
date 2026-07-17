@@ -1,12 +1,17 @@
 /**
  * Liveness + auto-destroy sweep for sandbox nodes.
  *
- * Two jobs, both the platform's responsibility (the driver never has to):
+ * Three jobs, all the platform's responsibility (the driver never has to):
  *   1. Liveness — a sandbox that ends silently (crash, hibernate, or an agent
  *      that just never calls node_done) would otherwise stay `running` forever
  *      and wedge the driver's poll. Every tick, `running` rows past their
  *      `expiresAt` deadline are failed. This is the handoff's "a step that ends
  *      silently wedges the loop" caveat.
+ *   1b. Crash fast-fail — a one-shot node whose pod restarts mid-turn (OOMKill,
+ *      eviction) is orphaned: the trigger already fired and is recorded in the
+ *      runtime's persisted state, so the prompt is not redelivered and the turn
+ *      never resumes. Rather than let it idle to the liveness deadline, any
+ *      `running` sandbox whose pod shows a restart is failed immediately.
  *   2. Auto-destroy — a sandbox is an ephemeral Agent; once its row is terminal
  *      (`done`/`failed`) the Agent has served its purpose, so it is deleted
  *      (cascading its pod/gateway/PVC). Deletion is deferred to the sweep rather
@@ -21,6 +26,7 @@
  */
 
 import type { AgentsService } from "api-server-api";
+import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import type { SandboxesRepository } from "../infrastructure/sandboxes-repository.js";
 
 export interface SandboxSweeper {
@@ -38,6 +44,8 @@ export interface CreateSandboxSweeperDeps {
   repo: SandboxesRepository;
   /** Owner-scoped agents service, for deleting a terminal sandbox's Agent. */
   agentsFor: (owner: string) => AgentsService;
+  /** Reads pod restart status to catch a node crashed mid-turn. */
+  k8s: Pick<K8sClient, "readPodRestart">;
   intervalMs: number;
   /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
@@ -63,6 +71,27 @@ export function createSandboxSweeper(
         } catch (err) {
           process.stderr.write(
             `[sandbox-sweeper] fail ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+      }
+
+      // 1b. Fail sandboxes whose pod crashed/restarted mid-turn. The one-shot
+      //     trigger already fired (recorded in the runtime's persisted state), so
+      //     after a restart the prompt is not redelivered and the turn cannot
+      //     resume — it would otherwise idle until its liveness deadline.
+      const running = await deps.repo.listRunning(deps.batchSize);
+      for (const row of running) {
+        try {
+          const restart = await deps.k8s.readPodRestart(`${row.id}-0`);
+          if (restart && restart.restarts > 0) {
+            await deps.repo.fail(
+              row.id,
+              `sandbox pod restarted${restart.reason ? ` (${restart.reason})` : ""}; one-shot turn cannot resume`,
+            );
+          }
+        } catch (err) {
+          process.stderr.write(
+            `[sandbox-sweeper] restart-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
           );
         }
       }
