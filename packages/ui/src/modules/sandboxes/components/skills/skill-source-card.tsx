@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
+import { cn } from "@/lib/utils";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
 import { SkillRow } from "./skill-row.js";
@@ -65,6 +66,7 @@ export function SkillSourceCard({
   busyKey,
   disabled,
   stateLoaded,
+  readOnly,
   onToggle,
   onRescan,
   onRemove,
@@ -83,6 +85,9 @@ export function SkillSourceCard({
   disabled: boolean;
   /** Whether the installed set has loaded — gates the collapse-default snapshot. */
   stateLoaded: boolean;
+  /** Read-only (agent stopped/starting): render the card on a muted background
+   *  — the dimming + non-interactivity come from the parent surface. */
+  readOnly: boolean;
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
@@ -124,7 +129,12 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div
+      className={cn(
+        "rounded-lg border border-border",
+        readOnly ? "bg-muted" : "bg-card",
+      )}
+    >
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

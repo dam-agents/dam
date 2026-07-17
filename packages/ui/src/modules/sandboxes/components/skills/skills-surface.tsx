@@ -97,9 +97,9 @@ export function SkillsSurface({
       className={cn(
         "flex flex-col gap-8",
         // Stopped / starting: a dimmed, non-interactive read-only snapshot.
-        // Starting reads a touch brighter than a full stop.
+        // Per Figma: rows at 40% opacity when stopped, 60% while starting.
         readOnly && "pointer-events-none",
-        readOnly && (comingUp ? "opacity-70" : "opacity-45"),
+        readOnly && (comingUp ? "opacity-60" : "opacity-40"),
       )}
     >
       {isEmpty ? (
@@ -153,6 +153,7 @@ export function SkillsSurface({
                     busyKey={busyKey}
                     disabled={!agentId || isError}
                     stateLoaded={stateLoaded}
+                    readOnly={readOnly}
                     onToggle={toggle}
                     onUpdate={update}
                     onRescan={() => void refreshSource(src.id)}
