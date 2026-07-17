@@ -119,9 +119,12 @@ export function allChannelAgentIds(db: Db) {
 export function findBySlackChannelId(db: Db) {
   return async (
     slackChannelId: string,
-  ): Promise<{ agentId: string } | null> => {
+  ): Promise<{ agentId: string; mode?: "shared" | "person-scoped" } | null> => {
     const rows = await db
-      .select({ agentId: channels.agentId })
+      .select({
+        agentId: channels.agentId,
+        mode: sql<string | null>`${channels.config}->>'mode'`,
+      })
       .from(channels)
       .where(
         and(
@@ -130,7 +133,13 @@ export function findBySlackChannelId(db: Db) {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      agentId: row.agentId,
+      // Only "shared" is ever stored; anything else reads as the default.
+      ...(row.mode === "shared" ? { mode: "shared" as const } : {}),
+    };
   };
 }
 

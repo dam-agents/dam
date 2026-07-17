@@ -107,6 +107,8 @@ export const agentUpdateInputSchema = z.object({
 export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
+  // ADR-075 access mode; absent = person-scoped.
+  mode: z.enum(["shared", "person-scoped"]).optional(),
 });
 
 export const agentListTelegramChatsInputSchema = z.object({

@@ -357,7 +357,7 @@ export function createAgentsService(deps: {
    *  Slack bindings are unique across the whole install. */
   findSlackChannelBinding: (
     slackChannelId: string,
-  ) => Promise<{ agentId: string } | null>;
+  ) => Promise<{ agentId: string; mode?: "shared" | "person-scoped" } | null>;
   /** Absent in the system-wide composition — binding is a user-facing flow. */
   telegramBinding?: TelegramBindingPort;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
@@ -936,7 +936,7 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId) {
+    async connectSlack(id, slackChannelId, mode) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return err({ type: "AgentNotFound" });
 
@@ -950,11 +950,19 @@ export function createAgentsService(deps: {
       if (existing && existing.agentId !== id)
         return err({ type: "ChannelAlreadyBound" as const });
 
+      // Mode is fixed per binding (ADR-075): flipping it must be a deliberate
+      // disconnect + reconnect, never a side effect of re-connecting.
+      const requestedMode = mode ?? "person-scoped";
+      if (existing && (existing.mode ?? "person-scoped") !== requestedMode)
+        return err({ type: "ModeChangeRequiresRebind" as const });
+
       const txResult = await deps.unitOfWork(async (tx) => {
         try {
           await deps.channelsTxRepo.upsertChannel(tx, id, {
             type: ChannelType.Slack,
             slackChannelId,
+            // Only the non-default is stored; absent = person-scoped.
+            ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
           });
         } catch (e) {
           if (isSlackChannelUniqueViolation(e)) {
@@ -968,7 +976,12 @@ export function createAgentsService(deps: {
 
       if (!txResult.ok) return txResult;
 
-      emit({ type: EventType.SlackConnected, agentId: id, slackChannelId });
+      emit({
+        type: EventType.SlackConnected,
+        agentId: id,
+        slackChannelId,
+        ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
+      });
 
       const allowedSubs = await deps.listAllowedUsersByAgent(id);
       const emails = await subsToEmails(allowedSubs);

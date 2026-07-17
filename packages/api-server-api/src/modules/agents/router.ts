@@ -128,7 +128,11 @@ export const agentsRouter = t.router({
           code: "PRECONDITION_FAILED",
           message: "Slack app token not configured",
         });
-      const res = await ctx.agents.connectSlack(input.id, input.slackChannelId);
+      const res = await ctx.agents.connectSlack(
+        input.id,
+        input.slackChannelId,
+        input.mode,
+      );
       if (res.ok) return toView(res.value);
       switch (res.error.type) {
         case "AgentNotFound":
@@ -137,6 +141,12 @@ export const agentsRouter = t.router({
           throw new TRPCError({
             code: "CONFLICT",
             message: "Slack channel already bound",
+          });
+        case "ModeChangeRequiresRebind":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "Access mode is fixed per binding — disconnect the channel first",
           });
       }
     }),

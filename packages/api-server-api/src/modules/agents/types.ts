@@ -24,6 +24,8 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
+  /** Access mode of the binding (ADR-075); absent = person-scoped. */
+  mode?: "shared" | "person-scoped";
 }
 
 export type ChannelConfig = SlackChannel;
@@ -81,7 +83,9 @@ export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
-  | { type: "ChannelAlreadyBound" };
+  | { type: "ChannelAlreadyBound" }
+  /** Mode is fixed per binding (ADR-075): switching requires disconnect + reconnect. */
+  | { type: "ModeChangeRequiresRebind" };
 
 export type ConnectSlackResult =
   | { ok: true; value: Agent }
@@ -149,6 +153,7 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
+    mode?: "shared" | "person-scoped",
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
   /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
