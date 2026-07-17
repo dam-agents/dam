@@ -1,6 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import type { LocalSkill, SkillSource } from "api-server-api";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import {
   DialogBody,
@@ -14,6 +16,14 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { orgRepo } from "@/lib/git-source";
+
+const publishSchema = z.object({
+  sourceId: z.string().min(1),
+  title: z.string(),
+  body: z.string(),
+});
+
+type FormValues = z.infer<typeof publishSchema>;
 
 /**
  * Publish a Standalone Local Skill upstream as a pull request. Prefills the PR
@@ -36,18 +46,26 @@ export function PublishSkillModal({
   }) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const [sourceId, setSourceId] = useState(sources[0]?.id ?? "");
-  const [title, setTitle] = useState(`Add ${skill.name} skill`);
-  const [body, setBody] = useState(skill.description ?? "");
-  const [busy, setBusy] = useState(false);
+  const { register, handleSubmit, formState } = useForm<FormValues>({
+    resolver: zodResolver(publishSchema),
+    mode: "onChange",
+    defaultValues: {
+      sourceId: sources[0]?.id ?? "",
+      title: `Add ${skill.name} skill`,
+      body: skill.description ?? "",
+    },
+  });
+  const { isSubmitting, isValid } = formState;
 
-  const submit = async () => {
-    if (!sourceId || busy) return;
-    setBusy(true);
-    const ok = await onPublish({ sourceId, name: skill.name, title, body });
-    setBusy(false);
+  const onSubmit = handleSubmit(async (values) => {
+    const ok = await onPublish({
+      sourceId: values.sourceId,
+      name: skill.name,
+      title: values.title,
+      body: values.body,
+    });
     if (ok) onClose();
-  };
+  });
 
   return (
     <Modal>
@@ -65,48 +83,41 @@ export function PublishSkillModal({
         </button>
       </DialogHeader>
 
-      <DialogBody className="flex flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Publish to</SectionLabel>
-          <Select
-            size="sm"
-            value={sourceId}
-            onChange={(e) => setSourceId(e.target.value)}
-          >
-            {sources.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({orgRepo(s.gitUrl)})
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Pull request title</SectionLabel>
-          <Input
-            size="sm"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Description</SectionLabel>
-          <Textarea
-            className="min-h-[96px] resize-y text-[13px]"
-            rows={4}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-          />
-        </div>
-      </DialogBody>
+      <form onSubmit={onSubmit}>
+        <DialogBody className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Publish to</SectionLabel>
+            <Select size="sm" {...register("sourceId")}>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({orgRepo(s.gitUrl)})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Pull request title</SectionLabel>
+            <Input size="sm" {...register("title")} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Description</SectionLabel>
+            <Textarea
+              className="min-h-[96px] resize-y text-[13px]"
+              rows={4}
+              {...register("body")}
+            />
+          </div>
+        </DialogBody>
 
-      <DialogFooter className="border-t border-border">
-        <Button variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button disabled={!sourceId || busy} onClick={submit}>
-          {busy ? "Publishing…" : "Publish"}
-        </Button>
-      </DialogFooter>
+        <DialogFooter className="border-t border-border">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={!isValid || isSubmitting}>
+            {isSubmitting ? "Publishing…" : "Publish"}
+          </Button>
+        </DialogFooter>
+      </form>
     </Modal>
   );
 }

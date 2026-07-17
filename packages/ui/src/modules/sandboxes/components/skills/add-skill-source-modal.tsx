@@ -1,7 +1,9 @@
 import { LogoGithub } from "@carbon/icons-react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import type { SkillSource } from "api-server-api";
 import { Upload, X } from "lucide-react";
-import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import {
   DialogBody,
@@ -21,6 +23,37 @@ function withScheme(url: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+const addSourceSchema = z
+  .object({
+    name: z.string(),
+    gitUrl: z.string(),
+    path: z.string(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.name.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["name"],
+        message: "Required",
+      });
+    }
+    if (data.gitUrl.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["gitUrl"],
+        message: "Required",
+      });
+    } else if (!z.string().url().safeParse(withScheme(data.gitUrl)).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["gitUrl"],
+        message: "Enter a valid repository URL",
+      });
+    }
+  });
+
+type FormValues = z.infer<typeof addSourceSchema>;
+
 /**
  * Add a Skill Source. Only the GitHub-repository tab is functional; the
  * "Upload .md files" tab is shown disabled ("coming soon") since there's no
@@ -38,24 +71,21 @@ export function AddSkillSourceModal({
     path?: string;
   }) => Promise<SkillSource | null>;
 }) {
-  const [name, setName] = useState("");
-  const [gitUrl, setGitUrl] = useState("");
-  const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { register, handleSubmit, formState } = useForm<FormValues>({
+    resolver: zodResolver(addSourceSchema),
+    mode: "onChange",
+    defaultValues: { name: "", gitUrl: "", path: "" },
+  });
+  const { errors, isSubmitting, isValid } = formState;
 
-  const canSubmit = name.trim().length > 0 && gitUrl.trim().length > 0;
-
-  const submit = async () => {
-    if (!canSubmit || busy) return;
-    setBusy(true);
+  const onSubmit = handleSubmit(async (values) => {
     const created = await onCreate({
-      name,
-      gitUrl: withScheme(gitUrl),
-      path: path.trim() || undefined,
+      name: values.name.trim(),
+      gitUrl: withScheme(values.gitUrl),
+      path: values.path.trim() || undefined,
     });
-    setBusy(false);
     if (created) onClose();
-  };
+  });
 
   return (
     <Modal>
@@ -88,54 +118,58 @@ export function AddSkillSourceModal({
         </span>
       </div>
 
-      <DialogBody className="flex flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Skill group name</SectionLabel>
-          <Input
-            size="sm"
-            autoFocus
-            placeholder="My skills"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <p className="text-[13px] text-muted-foreground">
-            All .md skill files in this repo will be added under this group.
-          </p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Repository URL</SectionLabel>
-          <Input
-            size="sm"
-            variant="monospace"
-            placeholder="github.ibm.com/org/repo-name"
-            value={gitUrl}
-            onChange={(e) => setGitUrl(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Path (optional)</SectionLabel>
-          <Input
-            size="sm"
-            variant="monospace"
-            placeholder="skills/"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-          />
-        </div>
-      </DialogBody>
+      <form onSubmit={onSubmit}>
+        <DialogBody className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Skill group name</SectionLabel>
+            <Input
+              size="sm"
+              autoFocus
+              placeholder="My skills"
+              {...register("name")}
+            />
+            <p className="text-[13px] text-muted-foreground">
+              All .md skill files in this repo will be added under this group.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Repository URL</SectionLabel>
+            <Input
+              size="sm"
+              variant="monospace"
+              placeholder="github.ibm.com/org/repo-name"
+              {...register("gitUrl")}
+            />
+            {errors.gitUrl?.message === "Enter a valid repository URL" && (
+              <p className="text-[13px] text-destructive">
+                {errors.gitUrl.message}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Path (optional)</SectionLabel>
+            <Input
+              size="sm"
+              variant="monospace"
+              placeholder="skills/"
+              {...register("path")}
+            />
+          </div>
+        </DialogBody>
 
-      <DialogFooter className="border-t border-border">
-        <Button variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          className={cn(!canSubmit && "opacity-50")}
-          disabled={!canSubmit || busy}
-          onClick={submit}
-        >
-          {busy ? "Adding…" : "Add source"}
-        </Button>
-      </DialogFooter>
+        <DialogFooter className="border-t border-border">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            className={cn(!isValid && "opacity-50")}
+            disabled={!isValid || isSubmitting}
+          >
+            {isSubmitting ? "Adding…" : "Add source"}
+          </Button>
+        </DialogFooter>
+      </form>
     </Modal>
   );
 }
