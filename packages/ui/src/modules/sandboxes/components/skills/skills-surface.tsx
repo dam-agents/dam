@@ -1,5 +1,5 @@
 import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
-import { Plus, Upload } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -92,11 +92,13 @@ export function SkillsSurface({
       {isEmpty ? (
         <section>
           <SectionLabel spaced>Skills</SectionLabel>
+          {/* The design's empty state also invites dropping a `.md` file to
+              create a skill, but that upload path isn't built yet (deferred),
+              so the copy only promises what works today — adding a source.
+              Restore the drop affordance when the upload backend lands. */}
           <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border px-6 py-14 text-center">
-            <Upload size={20} className="text-muted-foreground" />
             <p className="text-[14px] text-muted-foreground">
-              Drop a .md file here to create a skill, or add a GitHub repo as a
-              source.
+              Add a GitHub repo as a source to install skills into this sandbox.
             </p>
             {addSourceButton}
           </div>
