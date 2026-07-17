@@ -23,6 +23,11 @@ function withScheme(url: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+/** Shown inline once the user has typed a malformed URL. The empty/"Required"
+ *  case is intentionally not surfaced (it would nag an untouched field) — the
+ *  disabled Add button already communicates it. */
+const INVALID_URL_MESSAGE = "Enter a valid repository URL";
+
 const addSourceSchema = z
   .object({
     name: z.string(),
@@ -47,7 +52,7 @@ const addSourceSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["gitUrl"],
-        message: "Enter a valid repository URL",
+        message: INVALID_URL_MESSAGE,
       });
     }
   });
@@ -140,7 +145,7 @@ export function AddSkillSourceModal({
               placeholder="github.ibm.com/org/repo-name"
               {...register("gitUrl")}
             />
-            {errors.gitUrl?.message === "Enter a valid repository URL" && (
+            {errors.gitUrl?.message === INVALID_URL_MESSAGE && (
               <p className="text-[13px] text-destructive">
                 {errors.gitUrl.message}
               </p>
