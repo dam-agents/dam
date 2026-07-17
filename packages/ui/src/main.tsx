@@ -1,6 +1,4 @@
 import "./App.css";
-import "./modules/connections/devtools.js";
-import "./modules/experiments/devtools.js";
 import "./modules/usage/devtools.js";
 
 import { QueryClientProvider } from "@tanstack/react-query";

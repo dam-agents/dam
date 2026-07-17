@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-07-13
+Last verified: 2026-07-16
 
 ## System context
 
@@ -66,6 +66,8 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [connections](architecture/connections.md) — unified Connection / Contribution model, runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, agent-side driver model.
 - [experiments](architecture/experiments.md) — group competing agent sessions under one goal as arms, and collect the scores and downloadable artifacts each reports for comparison.
+- [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link on a dedicated share host, with folders, expiry, and versions.
+- [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating UI surfaces and per-agent MCP tool registration (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh rather than ingestion tokens.

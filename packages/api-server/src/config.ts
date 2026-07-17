@@ -213,6 +213,12 @@ const configSchema = z.object({
   objectStorageSecretAccessKey: z.string().nullable().default(null),
   /** Path-style addressing — needed by SeaweedFS/self-hosted; false for AWS. */
   objectStorageForcePathStyle: z.stringbool().default(true),
+  /** Absolute origin of the public share host serving artifact-library
+   *  content (e.g. https://share.example.com). Mandatory — sharing is always
+   *  enabled and the host is wired through the cluster ingress; a dedicated
+   *  origin is the isolation boundary that keeps app cookies/tokens away
+   *  from user-generated content. */
+  shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
   /** Inactivity-deadline window for Experiment arms, in seconds. A `running`
    *  arm that records no Run and never calls `finish_arm` for this long is
    *  reaped to `failed` by the background sweep, so a started Experiment always
@@ -344,6 +350,7 @@ export function loadConfig(): Config {
     objectStorageAccessKeyId: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
     objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
+    shareBaseUrl: process.env.SHARE_BASE_URL,
     experimentArmInactivitySeconds:
       process.env.EXPERIMENT_ARM_INACTIVITY_SECONDS,
     brand: {

@@ -68,6 +68,9 @@ export const createFilesSlice: StateCreator<
       openFilePath: path,
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
+      // The docked file viewer and the docked artifact preview share the
+      // right dock — opening one closes the other.
+      ...(path !== null ? { openArtifactId: null } : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
   setFilesSectionOpen: (open) => set({ filesSectionOpen: open }),

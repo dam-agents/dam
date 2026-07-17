@@ -15,6 +15,7 @@ export function createUnconfiguredArtifactStore(): ArtifactStore {
   return {
     put: () => Promise.reject(unavailable()),
     get: () => Promise.resolve(null),
+    getStream: () => Promise.resolve(null),
     exists: () => Promise.resolve(false),
     head: () => Promise.resolve(null),
     delete: () => Promise.resolve(),

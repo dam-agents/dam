@@ -71,6 +71,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 072 | [Gateway credential injection for gRPC hosts](072-grpc-credential-injection.md) |  | security-and-credentials | A host's terminating chain can opt into HTTP/2 so gateway credential injection covers gRPC streams, with only the secret credential half injected and the non-secret half allowed as plain pod env. |
 | 073 | [Per-template scheduling for runtimeClassName and nodeSelector](073-per-template-scheduling.md) |  | agent-lifecycle | runtimeClassName and nodeSelector become per-template overridable agent-spec fields while all other scheduling stays chart-wide. |
 | 074 | [Unified `drivers:` manifest with pluggable events and default-on built-ins](074-unified-drivers.md) |  | agent-lifecycle | The runtime manifest folds contribution and event kinds into one drivers map resolved through the plugin registry, with built-ins on by default and event handlers now externally overridable. |
+| 075 | [Periodic work on BullMQ](075-periodic-jobs-bullmq.md) |  | api-server | Recurring reconciliation ticks run as BullMQ job schedulers on per-job queues instead of per-replica setInterval loops. |
 
 ## Superseded
 

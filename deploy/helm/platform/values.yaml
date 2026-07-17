@@ -74,6 +74,11 @@ urls:
   ui: "" # default: {scheme}://{domain}{:port}
   api: "" # back-compat fallback for urls.ui; same host
   keycloak: "" # default: {scheme}://keycloak.{domain}{:port}
+  # Public share host for the artifact library. Always served from its own
+  # origin so user-generated content never shares the app origin's cookies
+  # or tokens; routed to the api-server, which host-gates it onto the
+  # public viewer.
+  share: "" # default: {scheme}://share.{domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.

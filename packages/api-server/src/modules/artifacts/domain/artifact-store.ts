@@ -25,6 +25,13 @@ export interface ArtifactStore {
     contentType: string;
   }): Promise<void>;
   get(key: string): Promise<Artifact | null>;
+  /** Stream the blob without buffering it — relay paths pipe this straight
+   *  into the HTTP response so large objects never occupy the Node heap. */
+  getStream(key: string): Promise<{
+    stream: ReadableStream<Uint8Array>;
+    contentType: string;
+    sizeBytes: number;
+  } | null>;
   exists(key: string): Promise<boolean>;
   head(key: string): Promise<ArtifactStat | null>;
   /** Missing is not an error. */

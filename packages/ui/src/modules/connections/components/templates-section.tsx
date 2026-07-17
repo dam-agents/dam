@@ -9,14 +9,12 @@ import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useStartOAuth } from "../api/mutations.js";
 import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
-import {
-  filterOfferedTemplates,
-  isShowInternalConnectionsEnabled,
-} from "../internal-only.js";
+import { filterOfferedTemplates } from "../internal-only.js";
 import {
   ConnectionAction,
   ConnectionCatalogRow,
@@ -57,7 +55,7 @@ export function ConnectionTemplatesSection() {
     () => new Map(allTemplates.map((t) => [t.id, t])),
     [allTemplates],
   );
-  const showInternal = isShowInternalConnectionsEnabled();
+  const showInternal = useFeatures().data?.["advanced-connections"] ?? false;
   const byCategory = useMemo(() => {
     const m = new Map<string, ConnectionTemplateView[]>();
     for (const t of filterOfferedTemplates(allTemplates, showInternal)) {

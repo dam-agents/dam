@@ -88,7 +88,17 @@ function resolveMode() {
 
 function main() {
   const { baseRev, headRev, diffArgs } = resolveMode();
-  const raw = git(["diff", "--name-status", "-M", ...diffArgs, "--", ADR_DIR]);
+  // Rename detection (-M) reports a rename as one R line. Sandboxed
+  // environments that proxy git through a command allowlist (Locki) may
+  // reject the -M flag — fall back to a plain diff there: a rename then
+  // surfaces as D + A, and the D alone is already a violation, so the
+  // fallback can only be stricter, never miss one.
+  let raw;
+  try {
+    raw = git(["diff", "--name-status", "-M", ...diffArgs, "--", ADR_DIR]);
+  } catch {
+    raw = git(["diff", "--name-status", ...diffArgs, "--", ADR_DIR]);
+  }
 
   const errors = [];
   for (const line of raw.split("\n")) {

@@ -108,8 +108,10 @@ import { migrateSecretsToConnections } from "./modules/connections/migration/sec
 import { createLegacySecretEnvSource } from "./modules/connections/migration/legacy-secret-env-source.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
+import { composeArtifactExpirySweeper } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
+import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -535,10 +537,9 @@ const agentCleanupHooks = [
   agentEnvCleanupHook,
 ];
 
-// Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
-// keyed by an agent_id no longer in the live set, and runs each module's
-// cleanup. Runs on every replica — DELETEs are idempotent, the random
-// initial-delay jitter spreads scans out.
+// Cross-store orphan reaper. Lists live agent CRs, finds DB rows keyed by
+// an agent_id no longer in the live set, and runs each module's cleanup.
+// Scheduled on the periodic-jobs queue below.
 const agentArtifactsSweeper = createAgentArtifactsSweeper({
   k8s: agentsCleanupK8s,
   sources: [
@@ -568,10 +569,8 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       cleanup: agentEnvCleanupHook,
     },
   ],
-  intervalMs: 30 * 60_000,
   batchSize: 200,
 });
-agentArtifactsSweeper.start();
 
 // Inactivity-deadline sweep: reaps `running` Experiment arms that have gone
 // quiet (no Run, no finish_arm) past the configured window to `failed`, so a
@@ -586,6 +585,36 @@ const experimentArmSweeper = composeExperimentArmSweeper({
   batchSize: 200,
 });
 experimentArmSweeper.start();
+
+// Periodic background work runs as BullMQ job schedulers, one queue per job
+// ("periodic.<name>") — one execution per period across replicas, and a
+// hung tick can only stall its own lane. Ticks stay idempotent; the queue
+// is scheduling and visibility, never correctness. The remaining interval
+// sweepers (experiment arms, approvals delivery, cron sweep, OAuth refresh)
+// migrate here incrementally.
+const periodicJobs = createPeriodicJobs({
+  connection: bullConnection,
+  log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
+});
+
+// Cross-store orphan reap every 30 minutes — cheap diff scans, orphans are
+// rare and non-urgent.
+await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
+  agentArtifactsSweeper.tick(),
+);
+
+// Artifact-library expiry sweep: hard-deletes artifacts (private ones too)
+// whose expiry passed more than the grace window ago (the viewer 410s public
+// ones meanwhile). Hourly is plenty — expiry granularity is hours.
+const artifactExpirySweeper = composeArtifactExpirySweeper({
+  db,
+  artifacts: artifactsModule.service,
+  batchSize: 200,
+});
+await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
+  artifactExpirySweeper.tick(),
+);
+periodicJobs.start();
 
 const schedulesBoot = composeSchedulesAtBoot({
   db,
@@ -691,8 +720,8 @@ async function shutdown() {
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();
-  await agentArtifactsSweeper.stop();
   await experimentArmSweeper.stop();
+  await periodicJobs.close();
   await channelManager.stopAll();
   await runtimeDelivery.sweep.stop();
   await runtimeDelivery.worker.close();

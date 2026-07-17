@@ -28,6 +28,8 @@ import {
 } from "../../modules/experiments/domain/candidate-key.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
+import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -111,6 +113,12 @@ export interface McpSessionDeps {
   skills: SkillsService;
   schedules: SchedulesService;
   experiments: ExperimentsService;
+  artifactLibrary: ArtifactLibraryServiceImpl;
+  /** Per-user feature flag: when off the artifact tools are not registered
+   *  at all — the feature is invisible to the harness, not merely erroring.
+   *  Checked per session; a cached session keeps its tool set until it
+   *  expires (30 min TTL). */
+  artifactsFeatureEnabled: boolean;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   agentHome: string;
@@ -690,6 +698,16 @@ export function createMcpSession(
     },
   );
 
+  // ---- Artifact-library tools ----------------------------------------------
+  // Publish/share/version artifacts; owner-scoped service, creations
+  // attributed to the network-verified caller. Feature-gated per user.
+  if (deps.artifactsFeatureEnabled) {
+    registerArtifactLibraryTools(server, {
+      artifactLibrary: deps.artifactLibrary,
+      agentId,
+    });
+  }
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -717,6 +735,8 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
+  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  isArtifactsFeatureEnabled: (owner: string) => Promise<boolean>;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   agentHome: string;
@@ -773,12 +793,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
+    const artifactLibrary = deps.artifactLibraryFor(verified.owner);
+    const artifactsFeatureEnabled = await deps.isArtifactsFeatureEnabled(
+      verified.owner,
+    );
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
       schedules,
       experiments,
+      artifactLibrary,
+      artifactsFeatureEnabled,
       artifacts: deps.artifacts,
       maxArtifactBytes: deps.maxArtifactBytes,
       agentHome: deps.agentHome,

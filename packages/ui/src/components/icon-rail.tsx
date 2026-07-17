@@ -2,6 +2,7 @@ import {
   type CarbonIconType,
   Chemistry,
   Email as Inbox,
+  Folders,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
-import { isShowExperimentsEnabled } from "../modules/experiments/internal-only.js";
+import { useFeatures } from "../modules/features/api/queries.js";
 import { useStore } from "../store.js";
 
 const EMPTY: never[] = [];
@@ -37,7 +38,9 @@ export function IconRail({
 
   const { data: approvals = EMPTY } = useApprovalsForOwner();
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
-  const showExperiments = isShowExperimentsEnabled();
+  const { data: features } = useFeatures();
+  const showExperiments = features?.experiments ?? false;
+  const showArtifacts = features?.artifacts ?? false;
 
   const home: Destination = {
     label: "Home",
@@ -55,6 +58,13 @@ export function IconRail({
       view === "experiment-detail",
     badge: 0,
     navigate: navigateToExperiments,
+  };
+  const artifacts: Destination = {
+    label: "Artifacts",
+    icon: Folders,
+    active: view === "artifacts",
+    badge: 0,
+    navigate: () => setView("artifacts"),
   };
   const inbox: Destination = {
     label: "Inbox",
@@ -90,6 +100,7 @@ export function IconRail({
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...home} />
+          {showArtifacts && <RailItem {...artifacts} />}
           {showExperiments && <RailItem {...experiments} />}
         </div>
         <div className="flex-1" />
@@ -104,6 +115,7 @@ export function IconRail({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             home,
+            ...(showArtifacts ? [artifacts] : []),
             ...(showExperiments ? [experiments] : []),
             inbox,
             settings,
