@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-14
+Last verified: 2026-07-17
 
 ## Overview
 
@@ -81,19 +81,7 @@ Some templates (initially Spotify, Slack, YouTube, and all Google services) are 
 
 ### Connection
 
-A uniform shape — every Connection looks the same regardless of category or auth mode:
-
-```ts
-interface Connection {
-  id: string;
-  ownerId: string;            // K8s sub
-  templateId: string;         // which Template this was built from
-  name: string;               // user-visible label
-  inputs: Record<string, unknown>;   // raw user-typed values, for re-render
-  auth: AuthConfig;
-  contributions: Contribution[];
-}
-```
+A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the template it was built from, a user-visible name, the raw user inputs (kept for re-render), an `auth` config, and the `contributions[]` it emits.
 
 The `auth` field carries credential-acquisition state in one of four modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
@@ -185,26 +173,9 @@ connections compose: each writes its own kubeconfig keyed by connection name, an
 the `env` driver joins their `KUBECONFIG` entries into the `:`-separated list
 `kubectl`/`oc` merge at load, so clusters that share a host on different ports
 stay distinct. The CA is optional, never reaches the agent, and configures
-gateway-side upstream validation only.
-
-```jsonc
-{
-  "id": "conn-9c1d",
-  "templateId": "kubernetes",
-  "name": "prod-cluster",
-  "inputs": { "host": "api.prod.example:6443", "value": "…", "caData": "…" },
-  "auth": { "kind": "header", "valueRef": { "…": "…" }, "headerName": "Authorization", "valueFormat": "Bearer {value}" },
-  "contributions": [
-    { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
-      "headerName": "Authorization", "valueFormat": "Bearer {value}",
-      "upgrades": true, "upstreamCa": true },
-    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/prod-cluster.config" },
-    { "kind": "file", "path": "$HOME/.kube/connections/prod-cluster.config", "format": "yaml",
-      "mergeMode": "overwrite",
-      "content": { "clusters": [ { "name": "prod-cluster", "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "name": "prod-cluster", "user": { "token": "injected-by-gateway" } } ], "contexts": [ { "name": "prod-cluster", "context": { "cluster": "prod-cluster", "user": "prod-cluster" } } ], "current-context": "prod-cluster" } }
-  ]
-}
-```
+gateway-side upstream validation only. (The `egress-inject` it emits is the
+kind's fullest use: non-443 port, streaming upgrades, and upstream CA all at
+once.)
 
 ### Custom Header credential
 
@@ -289,19 +260,7 @@ Concurrent dispatches from different replicas race naturally: the agent rejects 
 
 Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
-```ts
-runtime.v1.hello({
-  lastAppliedVersion?: number;
-  lastAppliedHash?: string;
-  protocolVersion: "v1";
-  agentRuntimeVersion: string;
-  capabilities: { contributions: ContributionKind[]; events: EventKind[]; harnessConfig?: boolean };
-}) => {
-  events: Event[];
-}
-```
-
-The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
+The call reports the agent's applied cursor (version + hash), its protocol and build versions, and its capability sets (contribution kinds, event kinds, the `harnessConfig` flag); the response carries only an `events` array — always empty today, since catch-up state and events arrive via the worker's `applyState`, never inline.
 
 ```mermaid
 sequenceDiagram
