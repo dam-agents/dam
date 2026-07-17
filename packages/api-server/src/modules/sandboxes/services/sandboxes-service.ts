@@ -9,8 +9,21 @@ import type {
 } from "../infrastructure/sandboxes-repository.js";
 
 /** How long a sandbox may run before the liveness sweep fails it (silent-exit
- *  backstop — the handoff's "a step that ends silently wedges the loop"). */
-const SANDBOX_TTL_MS = 60 * 60 * 1000;
+ *  backstop — the handoff's "a step that ends silently wedges the loop"). The
+ *  driver picks the deadline per node via `ttlMs`: a long-running Make raises it,
+ *  a node expected to reply quickly lowers it so a misconfigured or wedged node
+ *  fails in minutes instead of hanging to the default hour. */
+export const DEFAULT_SANDBOX_TTL_MS = 60 * 60 * 1000;
+/** Lower bound — a node needs at least this long to boot and run a turn. */
+export const MIN_SANDBOX_TTL_MS = 60 * 1000;
+/** Upper bound — the hard ceiling on how long one node may occupy compute. */
+export const MAX_SANDBOX_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Clamp a requested TTL into the allowed range, defaulting when unset. */
+export function resolveSandboxTtlMs(ttlMs: number | undefined): number {
+  if (ttlMs === undefined) return DEFAULT_SANDBOX_TTL_MS;
+  return Math.min(MAX_SANDBOX_TTL_MS, Math.max(MIN_SANDBOX_TTL_MS, ttlMs));
+}
 
 /** Thrown by `spawn` when the requested connections aren't a subset of the
  *  driver's own grants. The endpoint maps this to 403. */
@@ -40,6 +53,14 @@ export interface SpawnInput {
   prompt: string;
   /** JSON Schema the node_done result is validated against. */
   schema: unknown;
+  /** Liveness deadline for this node, clamped to
+   *  [MIN_SANDBOX_TTL_MS, MAX_SANDBOX_TTL_MS]; defaults to
+   *  DEFAULT_SANDBOX_TTL_MS when unset. */
+  ttlMs?: number;
+  /** Resource limits for the node (K8s cpu/memory). A heavy Make needs more than
+   *  the template's default memory (a 1Gi default OOM-kills a clone + install).
+   *  Omitted dimensions inherit the template. */
+  size?: { cpu?: string; memory?: string };
 }
 
 export interface RecordResult {
@@ -96,9 +117,12 @@ export function createSandboxesService(deps: {
         ...(input.connections.length
           ? { connectionIds: input.connections }
           : {}),
+        ...(input.size ? { size: input.size } : {}),
       });
 
-      const expiresAt = new Date(now().getTime() + SANDBOX_TTL_MS);
+      const expiresAt = new Date(
+        now().getTime() + resolveSandboxTtlMs(input.ttlMs),
+      );
       await deps.repo.insert({
         id: agent.id,
         driverAgentId: input.driverAgentId,

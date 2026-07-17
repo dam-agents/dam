@@ -693,6 +693,7 @@ const harnessAgentsServiceFor = (owner: string) => {
 const sandboxSweeper = composeSandboxSweeper({
   db,
   agentsFor: harnessAgentsServiceFor,
+  k8s: k8sClient,
   intervalMs: 60_000,
   batchSize: 200,
 });

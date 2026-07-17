@@ -14,6 +14,14 @@ export interface K8sClient {
 
   // Agents/forks are custom resources and templates are file-mounted now,
   // so the api-server makes no ConfigMap calls — none are exposed.
+  /** Restart info for a pod: the highest container restart count and the reason
+   *  the last dead container gave (e.g. "OOMKilled"). Null if the pod is gone.
+   *  Read-only; used by the sandbox sweeper to fail a one-shot node whose pod
+   *  crashed mid-turn (its trigger will not re-fire, so it can never report). */
+  readPodRestart(
+    podName: string,
+  ): Promise<{ restarts: number; reason: string | null } | null>;
+
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
   createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
@@ -90,6 +98,26 @@ export function createK8sClient(
 
   return {
     namespace,
+
+    async readPodRestart(podName) {
+      try {
+        const pod = await api.readNamespacedPod({ name: podName, namespace });
+        const statuses = pod.status?.containerStatuses ?? [];
+        let restarts = 0;
+        let reason: string | null = null;
+        for (const cs of statuses) {
+          const count = cs.restartCount ?? 0;
+          if (count > restarts) {
+            restarts = count;
+            reason = cs.lastState?.terminated?.reason ?? null;
+          }
+        }
+        return { restarts, reason };
+      } catch (err) {
+        if (is404(err)) return null;
+        throw err;
+      }
+    },
 
     async listSecrets(labelSelector) {
       const res = await api.listNamespacedSecret({ namespace, labelSelector });

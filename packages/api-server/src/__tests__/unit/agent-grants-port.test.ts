@@ -30,6 +30,7 @@ function fakeClient(initial: KubeObject[]) {
   const client: K8sClient = {
     namespace: "platform-agents",
 
+    readPodRestart: async () => null,
     listSecrets: async () => [],
     getSecret: async () => null,
     createSecret: unsupported,
