@@ -1,7 +1,7 @@
-# ADR-NNN: Per-Channel Access Modes — Shared and Person-Scoped
+# ADR-076: Per-Channel Access Modes — Shared and Person-Scoped
 
 **Date:** 2026-07-17
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @pilartomas
 
 ## Context
