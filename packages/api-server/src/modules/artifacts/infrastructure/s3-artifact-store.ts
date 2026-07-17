@@ -77,6 +77,24 @@ export function createS3ArtifactStore(deps: {
       };
     },
 
+    async getStream(key) {
+      let res;
+      try {
+        res = await deps.client.send(
+          new GetObjectCommand({ Bucket: deps.bucket, Key: key }),
+        );
+      } catch (err) {
+        if (err instanceof NoSuchKey || err instanceof NotFound) return null;
+        throw err;
+      }
+      if (!res.Body) return null;
+      return {
+        stream: res.Body.transformToWebStream(),
+        contentType: res.ContentType ?? "application/octet-stream",
+        sizeBytes: res.ContentLength ?? 0,
+      };
+    },
+
     async exists(key): Promise<boolean> {
       return (await head(key)) !== null;
     },

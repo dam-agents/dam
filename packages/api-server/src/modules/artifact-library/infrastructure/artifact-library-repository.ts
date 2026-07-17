@@ -62,6 +62,10 @@ export interface ArtifactListQuery {
   limit: number;
 }
 
+/** Public folder pages list at most this many artifacts — the query serves
+ *  an unauthenticated route, so it stays bounded like `listArtifacts`. */
+export const SHARED_FOLDER_PAGE_LIMIT = 500;
+
 export type ArtifactPatch = Partial<
   Pick<
     ArtifactRow,
@@ -85,7 +89,8 @@ export interface ArtifactLibraryRepository {
   getArtifact(id: string, owner: string): Promise<ArtifactRow | null>;
   getArtifactBySlug(slug: string): Promise<ArtifactRow | null>;
   listArtifacts(query: ArtifactListQuery): Promise<ArtifactRow[]>;
-  /** Artifacts of a folder visible on its public page. */
+  /** Artifacts of a folder visible on its public page. Bounded — this is
+   *  reachable unauthenticated, so it must never scale with row count. */
   listSharedInFolder(folderId: string): Promise<ArtifactRow[]>;
   countSharedInFolder(folderId: string): Promise<number>;
   updateArtifact(
@@ -219,7 +224,8 @@ export function createArtifactLibraryRepository(
             eq(artifactsTable.visibility, "public"),
           ),
         )
-        .orderBy(desc(artifactsTable.createdAt));
+        .orderBy(desc(artifactsTable.createdAt))
+        .limit(SHARED_FOLDER_PAGE_LIMIT);
     },
 
     async countSharedInFolder(folderId) {

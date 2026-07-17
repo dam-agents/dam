@@ -73,11 +73,24 @@ wraps it:
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned
 to self) but deliberately no restrictive content CSP: a `srcdoc` iframe
 inherits the parent CSP, and the sandbox attribute plus the dedicated origin
-are the actual isolation. The viewer app also keeps its dependency surface
-minimal (metadata reads, blob reads) so it could move into a
-separate deployment later; it lives in the api-server today because the
-planned agent-calling bridge for interactive artifacts needs the relay
-machinery that already lives there.
+are the actual isolation.
+
+Blob bytes relay through the api-server with constant memory: raw views
+stream store → response without ever buffering the object (the store is
+deliberately never exposed to the public side — no presigned links leave
+this origin), page renders buffer only size-capped text sources (anything
+bigger falls back to the download card), and the public folder listing is
+bounded. What remains on the api-server per public view is bounded work: a
+small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
+
+The viewer runs inside the api-server process — a deliberate, accepted
+trade-off for now rather than an oversight: origin isolation is real, but
+the event loop and DB pool are shared with the control plane. The viewer
+keeps its dependency surface minimal (metadata reads, blob reads) exactly
+so it can move into its own deployment when sustained public traffic
+warrants it; it lives in the api-server today because the planned
+agent-calling bridge for interactive artifacts needs the relay machinery
+that already lives there.
 
 ## Publishing paths
 

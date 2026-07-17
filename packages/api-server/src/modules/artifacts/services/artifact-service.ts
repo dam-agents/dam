@@ -18,6 +18,8 @@ export interface ArtifactService {
     contentType: string;
   }): Promise<void>;
   get(key: string): Promise<Artifact | null>;
+  /** Streaming read for relay paths — bytes never accumulate in the heap. */
+  getStream(key: string): ReturnType<ArtifactStore["getStream"]>;
   exists(key: string): Promise<boolean>;
   /** Missing is not an error. */
   delete(key: string): Promise<void>;
@@ -50,6 +52,7 @@ export function createArtifactService(deps: {
       await deps.store.put(input);
     },
     get: (key) => deps.store.get(key),
+    getStream: (key) => deps.store.getStream(key),
     exists: (key) => deps.store.exists(key),
     delete: (key) => deps.store.delete(key),
 

@@ -25,12 +25,32 @@ export type FolderResolution =
 export interface ShareViewerService {
   resolveArtifact(slug: string): Promise<SharedResolution>;
   resolveFolder(slug: string): Promise<FolderResolution>;
-  /** Bytes for a resolved artifact (optionally a past version). */
+  /** Content type + size of a version, without touching the blob — lets the
+   *  viewer branch (image / download / too-large) before buffering anything. */
+  meta(
+    artifact: ArtifactRow,
+    version?: number,
+  ): Promise<{ contentType: string; sizeBytes: number } | null>;
+  /** Bytes for a resolved artifact (optionally a past version). `maxBytes`
+   *  refuses to buffer anything larger (returns null) — the render path uses
+   *  it so a large artifact can never occupy api-server heap; the raw relay
+   *  omits it. */
   content(
     artifact: ArtifactRow,
     version?: number,
+    maxBytes?: number,
   ): Promise<{
     content: Buffer;
+    contentType: string;
+    sizeBytes: number;
+  } | null>;
+  /** Streaming read for the raw relay (no browser-reachable store
+   *  endpoint): bytes pipe straight to the response, never the heap. */
+  contentStream(
+    artifact: ArtifactRow,
+    version?: number,
+  ): Promise<{
+    stream: ReadableStream<Uint8Array>;
     contentType: string;
     sizeBytes: number;
   } | null>;
@@ -53,6 +73,26 @@ export function createShareViewerService(deps: {
     const graceEnd =
       row.expiresAt.getTime() + EXPIRATION_GRACE_PERIOD_DAYS * 86_400_000;
     return { expired: true, withinGrace: Date.now() < graceEnd };
+  }
+
+  /** The blob ref behind a version: the head row carries the current one,
+   *  prior versions live in their own rows. */
+  async function resolveRef(
+    artifact: ArtifactRow,
+    version?: number,
+  ): Promise<{
+    storageRef: string;
+    contentType: string;
+    sizeBytes: number;
+  } | null> {
+    if (version === undefined || version === artifact.version) {
+      return {
+        storageRef: artifact.storageRef,
+        contentType: artifact.contentType,
+        sizeBytes: artifact.sizeBytes,
+      };
+    }
+    return repo.getVersion(artifact.id, version);
   }
 
   return {
@@ -80,15 +120,17 @@ export function createShareViewerService(deps: {
       return { state: "ok", folder, artifacts };
     },
 
-    async content(artifact, version) {
-      const ref =
-        version === undefined || version === artifact.version
-          ? {
-              storageRef: artifact.storageRef,
-              contentType: artifact.contentType,
-            }
-          : await repo.getVersion(artifact.id, version);
+    async meta(artifact, version) {
+      const ref = await resolveRef(artifact, version);
+      return ref
+        ? { contentType: ref.contentType, sizeBytes: ref.sizeBytes }
+        : null;
+    },
+
+    async content(artifact, version, maxBytes) {
+      const ref = await resolveRef(artifact, version);
       if (!ref) return null;
+      if (maxBytes !== undefined && ref.sizeBytes > maxBytes) return null;
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
       return {
@@ -96,6 +138,15 @@ export function createShareViewerService(deps: {
         contentType: ref.contentType,
         sizeBytes: blob.sizeBytes,
       };
+    },
+
+    async contentStream(artifact, version) {
+      const ref = await resolveRef(artifact, version);
+      if (!ref) return null;
+      const streamed = await artifacts.getStream(ref.storageRef);
+      if (!streamed) return null;
+      // Trust the row's contentType (the store may answer octet-stream).
+      return { ...streamed, contentType: ref.contentType };
     },
 
     async versionCount(artifactId) {

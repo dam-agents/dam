@@ -9,6 +9,7 @@ function stubStore(overrides: Partial<ArtifactStore> = {}): ArtifactStore {
   return {
     put: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(null),
+    getStream: vi.fn().mockResolvedValue(null),
     exists: vi.fn().mockResolvedValue(false),
     head: vi.fn().mockResolvedValue(null),
     delete: vi.fn().mockResolvedValue(undefined),

@@ -96,11 +96,11 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     });
     if (directUrl) return c.json({ url: directUrl });
 
-    const blob = await deps.artifacts.get(ref.storageRef);
+    const blob = await deps.artifacts.getStream(ref.storageRef);
     if (!blob) return c.json({ error: "not found" }, 404);
-    return new Response(new Uint8Array(blob.content), {
+    return new Response(blob.stream, {
       headers: {
-        "Content-Type": blob.contentType || "application/octet-stream",
+        "Content-Type": ref.contentType || "application/octet-stream",
         "Content-Length": String(blob.sizeBytes),
         "Content-Disposition": `attachment; filename="${filename}"`,
       },

@@ -537,10 +537,9 @@ const agentCleanupHooks = [
   agentEnvCleanupHook,
 ];
 
-// Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
-// keyed by an agent_id no longer in the live set, and runs each module's
-// cleanup. Runs on every replica — DELETEs are idempotent, the random
-// initial-delay jitter spreads scans out.
+// Cross-store orphan reaper. Lists live agent CRs, finds DB rows keyed by
+// an agent_id no longer in the live set, and runs each module's cleanup.
+// Scheduled on the periodic-jobs queue below.
 const agentArtifactsSweeper = createAgentArtifactsSweeper({
   k8s: agentsCleanupK8s,
   sources: [
@@ -570,10 +569,8 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       cleanup: agentEnvCleanupHook,
     },
   ],
-  intervalMs: 30 * 60_000,
   batchSize: 200,
 });
-agentArtifactsSweeper.start();
 
 // Inactivity-deadline sweep: reaps `running` Experiment arms that have gone
 // quiet (no Run, no finish_arm) past the configured window to `failed`, so a
@@ -593,11 +590,18 @@ experimentArmSweeper.start();
 // ("periodic.<name>") — one execution per period across replicas, and a
 // hung tick can only stall its own lane. Ticks stay idempotent; the queue
 // is scheduling and visibility, never correctness. The remaining interval
-// sweepers above migrate here incrementally.
+// sweepers (experiment arms, approvals delivery, cron sweep, OAuth refresh)
+// migrate here incrementally.
 const periodicJobs = createPeriodicJobs({
   connection: bullConnection,
   log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
 });
+
+// Cross-store orphan reap every 30 minutes — cheap diff scans, orphans are
+// rare and non-urgent.
+await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
+  agentArtifactsSweeper.tick(),
+);
 
 // Artifact-library expiry sweep: hard-deletes artifacts (private ones too)
 // whose expiry passed more than the grace window ago (the viewer 410s public
@@ -716,7 +720,6 @@ async function shutdown() {
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();
-  await agentArtifactsSweeper.stop();
   await experimentArmSweeper.stop();
   await periodicJobs.close();
   await channelManager.stopAll();

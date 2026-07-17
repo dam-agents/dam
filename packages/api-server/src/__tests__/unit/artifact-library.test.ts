@@ -231,6 +231,40 @@ describe("share viewer resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Share viewer blob access: metadata without buffering, size-capped content.
+
+describe("share viewer — meta and content cap", () => {
+  const row = artifactRow({ sizeBytes: 40 });
+  const viewer = createShareViewerService({
+    repo: fakeRepo([row]),
+    artifacts: {
+      get: () =>
+        Promise.resolve({
+          key: row.storageRef,
+          content: Buffer.from("x".repeat(40)),
+          contentType: "text/html",
+          sizeBytes: 40,
+          createdAt: new Date(),
+        }),
+    } as never,
+  });
+
+  it("meta reads size and type without fetching the blob", async () => {
+    await expect(viewer.meta(row)).resolves.toEqual({
+      contentType: "text/html",
+      sizeBytes: 40,
+    });
+  });
+
+  it("content refuses to buffer past maxBytes", async () => {
+    await expect(viewer.content(row, undefined, 10)).resolves.toBeNull();
+    await expect(viewer.content(row, undefined, 100)).resolves.toMatchObject({
+      sizeBytes: 40,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // In-app preview documents — same renderer as the share page.
 
 describe("library service — getPreviewHtml", () => {

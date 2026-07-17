@@ -40,9 +40,18 @@ function fakeViewer(
     resolveArtifact: () => Promise.resolve({ state: "not-found" }),
     resolveFolder: () =>
       Promise.resolve({ state: "not-found" } as FolderResolution),
+    meta: () => Promise.resolve({ contentType: "text/html", sizeBytes: 40 }),
     content: () =>
       Promise.resolve({
         content: Buffer.from("<h1>hello</h1><script>alert(1)</script>"),
+        contentType: "text/html",
+        sizeBytes: 40,
+      }),
+    contentStream: () =>
+      Promise.resolve({
+        stream: new Blob([
+          Buffer.from("<h1>hello</h1><script>alert(1)</script>"),
+        ]).stream(),
         contentType: "text/html",
         sizeBytes: 40,
       }),
@@ -115,6 +124,8 @@ describe("share viewer app", () => {
     const raw = await app.request("/a/slug-a/raw");
     expect(raw.headers.get("Content-Type")).toBe("application/octet-stream");
     expect(raw.headers.get("Content-Disposition")).toContain("attachment");
+    // The relay streams — consume the body to prove bytes actually arrive.
+    expect(await raw.text()).toContain("<h1>hello</h1>");
 
     const imageApp = appWith(
       fakeViewer({
@@ -123,9 +134,10 @@ describe("share viewer app", () => {
             state: "ok",
             artifact: artifactRow({ kind: "binary", contentType: "image/png" }),
           } satisfies SharedResolution),
-        content: () =>
+        meta: () => Promise.resolve({ contentType: "image/png", sizeBytes: 1 }),
+        contentStream: () =>
           Promise.resolve({
-            content: Buffer.from([0x89]),
+            stream: new Blob([Buffer.from([0x89])]).stream(),
             contentType: "image/png",
             sizeBytes: 1,
           }),
@@ -147,9 +159,11 @@ describe("share viewer app", () => {
               contentType: "image/svg+xml",
             }),
           } satisfies SharedResolution),
-        content: () =>
+        contentStream: () =>
           Promise.resolve({
-            content: Buffer.from("<svg><script>alert(1)</script></svg>"),
+            stream: new Blob([
+              Buffer.from("<svg><script>alert(1)</script></svg>"),
+            ]).stream(),
             contentType: "image/svg+xml",
             sizeBytes: 37,
           }),
@@ -160,6 +174,31 @@ describe("share viewer app", () => {
     // the sandbox directive blocks script execution on direct navigation.
     expect(raw.headers.get("Content-Disposition")).toBeNull();
     expect(raw.headers.get("Content-Security-Policy")).toContain("sandbox");
+  });
+
+  it("renders the download card instead of buffering oversized text", async () => {
+    const big = 50 * 1024 * 1024;
+    const app = appWith(
+      fakeViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({ sizeBytes: big }),
+          } satisfies SharedResolution),
+        meta: () =>
+          Promise.resolve({ contentType: "text/html", sizeBytes: big }),
+        // The real service refuses maxBytes overruns; mirror that here.
+        content: (_a, _v, maxBytes) =>
+          maxBytes !== undefined && big > maxBytes
+            ? Promise.resolve(null)
+            : Promise.reject(new Error("should have been size-capped")),
+      }),
+    );
+    const res = await app.request("/a/slug-a");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Download");
+    expect(html).not.toContain('srcdoc="<h1>');
   });
 
   it("redirects everything that isn't a share route to the app origin", async () => {

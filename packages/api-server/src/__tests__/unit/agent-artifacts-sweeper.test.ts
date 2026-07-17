@@ -40,7 +40,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 
@@ -72,7 +71,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 2,
     });
 
@@ -104,7 +102,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 
@@ -127,7 +124,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 

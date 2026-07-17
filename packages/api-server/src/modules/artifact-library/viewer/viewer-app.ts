@@ -22,6 +22,12 @@ import {
   renderWrapper,
 } from "./renderer.js";
 
+/** Text-kind render ceiling — the wrapper embeds the source into the page,
+ *  so this bounds how much of a blob a single public view can pull into the
+ *  api-server heap. Bigger artifacts fall back to the download card (which
+ *  redirects to the store). Mirrors the in-app preview cap. */
+const RENDER_MAX_BYTES = 10 * 1024 * 1024;
+
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
   brandName: string;
@@ -81,29 +87,34 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       requested !== undefined && requested <= versionCount
         ? requested
         : artifact.version;
-    const blob = await viewer.content(
-      artifact,
-      version === artifact.version ? undefined : version,
-    );
-    if (!blob) return c.html(renderNotFound(), 404);
+    const versionArg = version === artifact.version ? undefined : version;
+    // Branch on metadata only — binary blobs are never buffered here (images
+    // load via <img src=raw>, downloads via the raw redirect), and text
+    // renders are size-capped.
+    const meta = await viewer.meta(artifact, versionArg);
+    if (!meta) return c.html(renderNotFound(), 404);
 
     const kind = artifact.kind as ArtifactKind;
     const rawUrl = `/a/${slug}/raw?v=${version}`;
-    let inner: string;
-    if (kind !== "binary")
-      inner = renderTextKindInner(kind, blob.content.toString("utf8"), {
+    const downloadInner = () =>
+      renderDownloadInner({
         title: artifact.title,
         fileName: artifact.fileName,
-      });
-    else if (blob.contentType.startsWith("image/"))
-      inner = renderImageInner(rawUrl, artifact.title);
-    else
-      inner = renderDownloadInner({
-        title: artifact.title,
-        fileName: artifact.fileName,
-        sizeBytes: blob.sizeBytes,
+        sizeBytes: meta.sizeBytes,
         rawUrl: `${rawUrl}&download=1`,
       });
+    let inner: string;
+    if (kind !== "binary") {
+      const blob = await viewer.content(artifact, versionArg, RENDER_MAX_BYTES);
+      inner = blob
+        ? renderTextKindInner(kind, blob.content.toString("utf8"), {
+            title: artifact.title,
+            fileName: artifact.fileName,
+          })
+        : downloadInner();
+    } else if (meta.contentType.startsWith("image/"))
+      inner = renderImageInner(rawUrl, artifact.title);
+    else inner = downloadInner();
 
     viewer.recordView(artifact.id);
     return c.html(
@@ -127,12 +138,16 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
 
     const artifact = resolution.artifact;
     const requested = parseVersion(c.req.query("v"));
-    const blob = await viewer.content(
-      artifact,
+    const versionArg =
       requested === undefined || requested === artifact.version
         ? undefined
-        : requested,
-    );
+        : requested;
+    const safeName = artifact.fileName.replace(/[\r\n"\\]/g, "");
+
+    // Stream store → response with constant memory; the store itself is
+    // never exposed to the public side (no presigned links on this origin),
+    // so bytes relay through the api-server but never accumulate in it.
+    const blob = await viewer.contentStream(artifact, versionArg);
     if (!blob) return c.text("not found", 404);
 
     // Inline rendering of raw bytes on this origin is allowed only for
@@ -146,10 +161,9 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       "Content-Length": String(blob.sizeBytes),
     });
     if (!isImage || forceDownload) {
-      const safeName = artifact.fileName.replace(/[\r\n"\\]/g, "");
       headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
     }
-    return new Response(new Uint8Array(blob.content), { headers });
+    return new Response(blob.stream, { headers });
   });
 
   app.get("/f/:slug", async (c) => {
