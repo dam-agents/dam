@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-14
+Last verified: 2026-07-17
 
 ## Overview
 
@@ -416,9 +416,11 @@ filter on the catch-all chain sees SNI only.
 
 ## Per-turn fork pods (Slack foreign replier)
 
-Who may drive a thread at all is decided upstream: channel-side
-identities are linked to platform users, and the per-Agent
-`allowedUsers` gate admits or rejects each replier.
+This section covers person-scoped Slack bindings — the default access
+mode ([channels](channels.md)). Who may drive a thread at all is
+decided upstream: channel-side identities are linked to platform
+users, and the per-Agent `allowedUsers` gate admits or rejects each
+replier.
 
 When a user other than the Agent owner replies in a Slack thread,
 the api-server creates a Fork CR that the controller materialises
@@ -431,6 +433,20 @@ agent's `agent-platform.ai/agent` label still points at the parent
 Agent so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
 Agent's pair.
+
+## Shared-mode channel turns
+
+Binding a conversation surface in **shared** mode — a Slack binding's
+bind-time choice, and structurally every Telegram binding — lends the
+Agent, credentials included, to everyone the messenger admits there
+([channels](channels.md)). Every shared turn relays to the main agent
+pod and runs under the Agent's own credential set, gated by the
+owner's HITL rules and egress rules exactly like any other turn; no
+per-speaker credential selection happens, and no fork pods are
+involved. The binding owner's Terms-of-Use acceptance gates each turn
+— the terms bind the party whose credentials run it — and the
+security log attributes the allow to the messenger-native sender id
+with basis *place*.
 
 ## `dam-run` executor pods
 

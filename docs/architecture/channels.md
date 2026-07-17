@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-07-15
+Last verified: 2026-07-17
 
 ## Overview
 
@@ -10,14 +10,23 @@ Channel bindings are **1:1 with Agent**: a Slack channel may be bound to at most
 
 Channels split along a structural axis that has real consequences for secrets and identity:
 
-- **Platform channel** — one app serves the whole install. The operator configures it once via Helm values; per-Agent config is just *which conversation this Agent listens to*. Identity linking ties messenger users to Keycloak subs at the workspace level. Slack is the platform channel today.
-- Both messengers are platform channels today. Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *conversation* binds to exactly one Agent — the owner consents by completing an in-chat `/login` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+- **Platform channel** — one app serves the whole install. The operator configures it once via Helm values; per-Agent config is just *which conversation this Agent listens to*. Both messengers are platform channels today. On Slack, identity linking ties messenger users to Keycloak subs at the workspace level.
+- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *conversation* binds to exactly one Agent — the owner consents by completing an in-chat `/login` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+
+### Access modes
+
+A Slack binding carries an **access mode**, chosen at bind time (UI form or CLI flag) and fixed for the binding's lifetime — switching modes is a deliberate disconnect + reconnect, never a side effect of re-connecting; a connect that requests a different mode for an existing binding is rejected with that instruction. The binding record stores only the non-default mode; an absent mode means person-scoped.
+
+- **Person-scoped** (default) — the identity-linked model described throughout this page: Slack users link their platform identity, the per-Agent allowed-users gate admits repliers, owner turns relay to the main pod, and foreign-replier turns fork under the replier's own credentials.
+- **Shared** — the binding itself is the authorization: anyone the messenger admits to the channel drives the Agent. No identity link, no allow-list. Every shared turn relays single-track to the main agent pod under the Agent's own credentials; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id; and the prompt text is speaker-labelled with the sender's Slack mention, so a multi-speaker session stays attributable inside the conversation itself.
+
+Telegram is structurally shared-only — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent. Shared Slack bindings deliberately mirror those semantics.
 
 Inbound traffic and outbound traffic take different paths. Inbound is push from the messenger into the api-server worker, which routes the message to the agent pod over ACP. Outbound is pull initiated by the agent: the harness calls a tool on the api-server's per-Agent MCP endpoint, and the api-server delegates to the right worker.
 
 Two cross-cutting concerns are owned elsewhere and only summarized here:
 
-- **Foreign replier fork.** Slack's two-tier access (channel membership + per-Agent allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn paired pod set — a fork agent Job and a fork gateway Pod, each with its own NetworkPolicy — whose gateway mounts the replier's K8s credential Secrets. The pair spec, the foreign-credential selection, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
+- **Foreign replier fork** (person-scoped Slack bindings). Slack's two-tier access (channel membership + per-Agent allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn paired pod set — a fork agent Job and a fork gateway Pod, each with its own NetworkPolicy — whose gateway mounts the replier's K8s credential Secrets. The pair spec, the foreign-credential selection, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
 - **Thread-session binding.** A thread maps to one resumable session, so the agent gets real conversational continuity. The binding is the session's own `_meta.platform.threadTs`, resolved by listing sessions over ACP and matching — there is no server-side session store.
 
 ## Topology
@@ -56,7 +65,7 @@ flowchart LR
   MCP --> CM
 ```
 
-Bot and App-Level Tokens come from Helm values and live in api-server env — no per-Agent Secret. The workspace-wide identity-link table backs the `/platform login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)).
+Bot and App-Level Tokens come from Helm values and live in api-server env — no per-Agent Secret. Resolving the channel's binding yields the Agent, the binding owner, and the access mode. On person-scoped bindings the workspace-wide identity-link table backs the `/platform login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)); on shared bindings the relay is single-track to the main pod.
 
 ### Telegram — platform channel
 
@@ -98,9 +107,9 @@ Both workers implement the same internal contract — `start`, `stop`, `stopAll`
 
 - **Transport.** Socket Mode, one workspace-level WebSocket from the api-server to Slack. The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened. Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.
 - **Token provenance.** App-Level Token (`xapp-…`) and Bot Token come from Helm values, set at install time. Not stored per-Agent.
-- **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`. All subsequent interactions require a linked identity; unlinked users get an ephemeral prompt to log in. The link table is the source of truth for "who is this Slack user in Platform terms."
-- **Access control.** Two tiers. Channel membership is the coarse gate — users must be in the Slack channel to see the bot's interactions. Per-Agent allowed users is the fine gate — each Agent optionally declares the subs that may *trigger* work; non-listed users in the channel still see responses but cannot drive a session. Combined with foreign-replier forking, this lets a thread have multiple authorized drivers whose actions land under their own identities.
-- **Agent selection per thread.** When a user posts in a channel, the worker checks which Agents they have access to in that channel. One match → route directly. Multiple matches → emit an `external_select` block that lazy-loads from the api-server. The selected Agent is stored as `thread_ts → agent_id` in memory; once a thread is bound to an Agent, every subsequent message in the thread goes to the same Agent.
+- **Identity linking** (person-scoped bindings). A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`. All subsequent interactions require a linked identity; unlinked users get an ephemeral prompt to log in. The link table is the source of truth for "who is this Slack user in Platform terms." Shared bindings never consult it.
+- **Access control.** Decided by the binding's access mode. Person-scoped: two tiers — channel membership is the coarse gate (users must be in the Slack channel to see the bot's interactions); per-Agent allowed users is the fine gate (each Agent optionally declares the subs that may *trigger* work; non-listed users in the channel still see responses but cannot drive a session). Combined with foreign-replier forking, this lets a thread have multiple authorized drivers whose actions land under their own identities. Shared: channel membership is the only per-person gate, and Slack owns it — the platform never resolves who is typing; binding the channel is the consent that lends the Agent to the channel.
+- **Agent resolution.** A channel binds to at most one Agent globally, so a mention resolves to exactly one Agent by channel id; a mention in an unbound channel is refused with an ephemeral.
 
 ### Telegram — platform channel
 
@@ -143,12 +152,12 @@ sequenceDiagram
 
 A few observations the diagram glosses over:
 
-- **Identity gates differ per adapter.** Slack runs the linked-identity check, the per-Agent allowed-users check, and the owner-vs-foreign decision (the latter selects whether the relay targets the main pod or a fork Job). Telegram resolves the chat's binding and checks the binding owner's Terms-of-Use acceptance; there is no foreign fork because there is no per-user identity to fork under.
+- **Identity gates differ per adapter and mode.** On person-scoped Slack bindings the worker runs the linked-identity check, the per-Agent allowed-users check, and the owner-vs-foreign decision (the latter selects whether the relay targets the main pod or a fork Job). On shared Slack bindings the gates collapse to the binding check plus the binding owner's Terms-of-Use acceptance — no sender identity is resolved. Telegram behaves like shared Slack: it resolves the chat's binding and checks the binding owner's terms acceptance; there is no foreign fork because there is no per-user identity to fork under.
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI. Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note and waits one more window before answering, so a healthy-but-slow start never loses the turn. A hard failure (pod crash, bad image, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string, and never raw controller messages. Telegram replies with the same copy on wake failures (no early notice, no extended wait).
 - **Resume vs. new is decided by the ACP session list.** The original Slack design treated every message as a new session; today the binding lives on the session itself: the worker lists sessions over ACP and resumes the one whose `_meta.platform.threadTs` matches. If `unstable_resumeSession` fails (PVC lost, session expired), the worker falls back to creating a new session with thread history injected from the messenger API — degrading to pre-feature behavior for that thread, no regression.
 - **`threadKey` is adapter-specific.** Slack uses `thread_ts`; Telegram uses the conversation id (chat id + optional forum topic). It is carried on the session as `_meta.platform.threadTs` and matched in-process against the ACP session list; there is no longer a DB uniqueness guard, so two concurrent first messages in a brand-new thread can mint two sessions for the same key.
-- **Turn relays emit `ChannelTurnRelayed`.** Both Slack and Telegram workers emit a `ChannelTurnRelayed` event on the in-process bus after the ACP turn finishes, carrying `channel`, `agentId`, `actorSub` (the relaying user's Keycloak `sub`, or `null` on Telegram where there is no per-user identity — Telegram turns instead carry `externalActorId`, the sender's Telegram user id), and `outcome` (`"success" | "failure"`). Failed turns additionally carry a low-cardinality failure reason (the classified wake-failure cause, a fork failure, or a generic relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact. The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)); the forks subsystem also subscribes to drive paired-pod teardown on Slack.
+- **Turn relays emit `ChannelTurnRelayed`.** Both Slack and Telegram workers emit a `ChannelTurnRelayed` event on the in-process bus after the ACP turn finishes, carrying `channel`, `agentId`, `actorSub` (the relaying user's Keycloak `sub` on person-scoped Slack turns; `null` on shared Slack and Telegram turns, where no platform identity is resolved — those turns instead carry `externalActorId`, the messenger-native id of the sender), and `outcome` (`"success" | "failure"`). Failed turns additionally carry a low-cardinality failure reason (the classified wake-failure cause, a fork failure, or a generic relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact. The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)); the forks subsystem also subscribes to drive paired-pod teardown on Slack.
 
 ## Outbound — agent to channel
 
@@ -204,7 +213,7 @@ The two messengers diverge slightly on what a top-level post means:
 - **Slack:** the worker posts to the channel id (or the last-active channel for the Agent) with no `thread_ts`, producing a new top-level message. A reply from a Slack user is a new mention.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups. The worker posts to the chat id; if the agent's prompt was triggered by a previous message in the same chat, that chat is still the conversation.
 
-## Per-Agent vs. shared channel
+## Per-Agent vs. platform channel
 
 Both messengers are platform channels: install-wide credentials from Helm and a conversation→Agent binding table, differing only in where the binding is gestured (the UI for Slack, in-chat `/login` + the web agent picker for Telegram). Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 
@@ -212,6 +221,6 @@ Both messengers are platform channels: install-wide credentials from Helm and a 
 
 Channels touch two stores; the substrate details live on [persistence](persistence.md):
 
-- **Identity-link tables (Postgres).** `identity_links` keyed on `(provider, external_user_id)` mapping to `keycloak_sub` — Slack populates it today, but the `provider` column makes the table reusable for any future workspace channel. `telegram_conversations` records the conversation→Agent binding for Telegram (plus the binding owner's sub). Different shapes by design — Slack has a workspace, Telegram does not. Both messengers' tokens live in api-server env from Helm values; there are no channel Secrets in k8s.
+- **Identity-link and binding tables (Postgres).** `identity_links` keyed on `(provider, external_user_id)` mapping to `keycloak_sub` — Slack's person-scoped bindings populate it today, but the `provider` column makes the table reusable for any future workspace channel. Slack channel bindings live in the channel rows owned by the agents module; each binding carries its access mode (absent = person-scoped). `telegram_conversations` records the conversation→Agent binding for Telegram (plus the binding owner's sub). Different shapes by design — Slack has a workspace, Telegram does not. Both messengers' tokens live in api-server env from Helm values; there are no channel Secrets in k8s.
 
 Channels do **not** participate in the Agent ConfigMap spec/status split. An earlier design kept channel config in the Agent ConfigMap; that was superseded: channel routing metadata lives in Postgres, secrets in k8s Secrets, Agent ConfigMaps stay channel-free.
