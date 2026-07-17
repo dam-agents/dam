@@ -9,6 +9,7 @@ import type {
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
+import { needsL7Promotion } from "../domain/l7-promotion.js";
 import type { K8sAllowOnlySecretsPort } from "../infrastructure/k8s-allow-only-secrets-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -27,16 +28,6 @@ export interface CreateEgressRulesServiceDeps {
   trustedHosts: readonly string[];
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
-}
-
-/** Needs the L7/MITM path when it constrains method/path or a non-443 port;
- *  wildcard 443 rules stay on the L4 (SNI-only) path. */
-function needsL7Promotion(
-  method: string,
-  pathPattern: string,
-  port?: number,
-): boolean {
-  return method !== "*" || pathPattern !== "*" || port != null;
 }
 
 function toView(row: EgressRuleRow): EgressRuleView {

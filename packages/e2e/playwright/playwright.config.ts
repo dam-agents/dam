@@ -83,9 +83,21 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // Rolls the shared agent's gateway (path rules force a MITM chain), so
+      // it runs after every spec that drives the agent's chat/egress flows.
+      name: "egress-path-rules",
+      testMatch: /11-.*\.spec\.ts$/,
+      dependencies: ["slack"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
+    {
+      // Deleting + recreating a connection can wedge the gateway rollout on
+      // the deleted Secret (stuck ContainerCreating; the StatefulSet's
+      // maxUnavailable needs an alpha feature gate to evict it). Nothing here
+      // needs the agent Ready afterwards, so this runs last.
       name: "connection-regrant",
       testMatch: /10-.*\.spec\.ts$/,
-      dependencies: ["slack"],
+      dependencies: ["egress-path-rules"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
   ],

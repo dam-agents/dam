@@ -874,11 +874,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
+    const allowOnlySecrets = createK8sAllowOnlySecretsPort(k8sClient);
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
       isAgentOwnedBy,
-      allowOnlySecrets: createK8sAllowOnlySecretsPort(k8sClient),
+      allowOnlySecrets,
       presetSeeder,
       trustedHosts,
     });
@@ -888,7 +889,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
-      egressRuleWriter: createEgressRuleWriterAdapter(db),
+      egressRuleWriter: createEgressRuleWriterAdapter(db, allowOnlySecrets),
       bus: redisBus,
       wrapperFrameSender,
     });

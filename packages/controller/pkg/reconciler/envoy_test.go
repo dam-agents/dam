@@ -97,6 +97,26 @@ func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// Allow-only Secrets are enforcement plumbing, not credentials: dropping
+// them silently voids path-scoped egress rules over HTTPS (#2322 — the #109
+// always-selective grants rework did exactly that). They must survive the
+// filter regardless of grant lists.
+func TestFilterByGrants_AllowOnlyPassesThroughUngranted(t *testing.T) {
+	secrets := []corev1.Secret{
+		ownerSecret("platform-allow-abc12345-api-example-com", envoySecretTypeAllowOnly, ""),
+		ownerSecret("platform-cred-aaa", "anthropic", ""),
+		ownerSecret("platform-conn-github", "connection", "github"),
+	}
+
+	got := filterByGrants(secrets, nil, nil)
+	assert.Equal(t, []string{"platform-allow-abc12345-api-example-com"}, names(got))
+
+	got = filterByGrants(secrets, []string{"aaa"}, []string{"github"})
+	assert.ElementsMatch(t,
+		[]string{"platform-allow-abc12345-api-example-com", "platform-cred-aaa", "platform-conn-github"},
+		names(got))
+}
+
 func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 	secrets := []corev1.Secret{
 		ownerSecret("platform-cred-aaa", "anthropic", ""),

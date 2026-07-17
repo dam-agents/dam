@@ -181,6 +181,11 @@ func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface
 //   - Connection secrets (`agent-platform.ai/secret-type` = connection):
 //     keyed by `agent-platform.ai/connection`, looked up in the granted
 //     connection IDs.
+//   - Allow-only secrets (`agent-platform.ai/secret-type` = allow-only) pass
+//     through ungated: they carry no credential — they exist to promote a
+//     host onto the L7 chain so path-scoped egress rules are enforceable
+//     over HTTPS. Grants gate credential access, not rule enforcement;
+//     filtering these out silently voids the owner's rules (#2322).
 //
 // An empty grant slice results in an empty intersection.
 func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
@@ -193,6 +198,8 @@ func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnection
 	out := secrets[:0:0]
 	for _, s := range secrets {
 		switch s.Labels[envoySecretTypeLabel] {
+		case envoySecretTypeAllowOnly:
+			out = append(out, s)
 		case "connection":
 			connKey := s.Labels[envoyConnectionLabel]
 			if grantedConnIds[connKey] {
