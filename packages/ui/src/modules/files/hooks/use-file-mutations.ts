@@ -27,6 +27,12 @@ interface RenameEntryInput {
   nextName: string;
 }
 
+interface MoveEntryInput {
+  from: string;
+  toDir: string;
+  kind: FileEntryKind;
+}
+
 function joinPath(dir: string, name: string): string {
   return dir ? `${dir}/${name}` : name;
 }
@@ -34,6 +40,10 @@ function joinPath(dir: string, name: string): string {
 function parentOf(path: string): string {
   const i = path.lastIndexOf("/");
   return i >= 0 ? path.slice(0, i) : "";
+}
+
+function nameOf(path: string): string {
+  return path.split("/").pop() ?? path;
 }
 
 function isConflictError(err: unknown): boolean {
@@ -96,29 +106,39 @@ export function useFileMutations(agentId: string | null) {
     [createFile, createFolder],
   );
 
-  const renameEntry = useCallback(
-    async ({ from, nextName }: RenameEntryInput) => {
-      const to = joinPath(parentOf(from), nextName);
+  const relocate = useCallback(
+    async (
+      from: string,
+      to: string,
+      failLabel: string,
+      sourceKind?: FileEntryKind,
+    ) => {
       if (to === from) return;
 
       const tryRename = async (overwrite: boolean) => {
         await renameMutation.mutateAsync({ from, to, overwrite });
         if (agentId) renameExpandedDir(agentId, from, to);
         if (openFilePath === from) setOpenFilePath(to);
+        else if (openFilePath?.startsWith(from + "/"))
+          setOpenFilePath(to + openFilePath.slice(from.length));
       };
 
       try {
         await tryRename(false);
       } catch (err) {
         if (!isConflictError(err)) {
+          emitToast({ kind: "error", message: errorMessage(err, failLabel) });
+          return;
+        }
+        if (sourceKind === "dir") {
           emitToast({
             kind: "error",
-            message: errorMessage(err, "Rename failed"),
+            message: `A folder named "${nameOf(to)}" already exists there. Folders can't be overwritten — rename or delete the existing one first.`,
           });
           return;
         }
         const ok = await showConfirm(
-          `"${nextName}" already exists. Overwrite?`,
+          `"${nameOf(to)}" already exists. Overwrite?`,
           "Overwrite",
         );
         if (!ok) return;
@@ -127,7 +147,7 @@ export function useFileMutations(agentId: string | null) {
         } catch (err2) {
           emitToast({
             kind: "error",
-            message: errorMessage(err2, "Rename failed"),
+            message: errorMessage(err2, failLabel),
           });
         }
       }
@@ -140,6 +160,22 @@ export function useFileMutations(agentId: string | null) {
       setOpenFilePath,
       showConfirm,
     ],
+  );
+
+  const renameEntry = useCallback(
+    ({ from, nextName }: RenameEntryInput) =>
+      relocate(from, joinPath(parentOf(from), nextName), "Rename failed"),
+    [relocate],
+  );
+
+  const moveEntry = useCallback(
+    async ({ from, toDir, kind }: MoveEntryInput) => {
+      if (parentOf(from) === toDir) return;
+      // A folder can't move into itself or its own subtree.
+      if (from === toDir || toDir.startsWith(from + "/")) return;
+      await relocate(from, joinPath(toDir, nameOf(from)), "Move failed", kind);
+    },
+    [relocate],
   );
 
   const deleteEntry = useCallback(
@@ -265,6 +301,7 @@ export function useFileMutations(agentId: string | null) {
   return {
     createEntry,
     renameEntry,
+    moveEntry,
     deleteEntry,
     uploadFiles,
     uploadBundle,

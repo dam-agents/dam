@@ -16,7 +16,7 @@
 #   resolve-image.sh build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
 #   resolve-image.sh gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   resolve-image.sh paths <component>          -> effective source paths (debug)
-#   resolve-image.sh --self-check               -> run assertions (no docker/git/network)
+#   resolve-image.sh --self-check               -> run assertions (no docker/network; git optional)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs), RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI main/tag: publish all).
@@ -25,24 +25,36 @@ set -euo pipefail
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 
+# Test-only files never ship (final images copy dist/ + node_modules), so they
+# don't move the last-touching commit. Ceiling: a reused image may differ in
+# builder-stage test sources; runtime content is identical.
+TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
+
 # platform-base's build context is the repo root but it only COPYs these paths;
 # keep in sync with packages/platform-base/Dockerfile.
 PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/dev-config scripts/install-pnpm.js package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
+# claude-code-derived workloads; single registration point, also emitted as
+# CI's `workloads` build/merge matrix
+WORKLOADS="nous openevolve shinkaevolve"
+
+is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
+
 own_paths() {
+  if is_workload "$1"; then echo "packages/agents/$1"; return; fi
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
-    claude-code|codex|pi-agent|bob|k-search|nous|openevolve) echo "packages/agents/$1" ;;
+    claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
     mock) echo "packages/e2e/agents/mock" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
 
 base_of() {
+  if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
     platform-base) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
-    nous|openevolve) echo "claude-code" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -57,13 +69,17 @@ effective_paths() {
 
 registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
 
+# Last commit touching the component's effective source (tests excluded).
+# Empty when git/history is unavailable — callers pick their own fallback.
+source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $TEST_EXCLUDES 2>/dev/null || true; }
+
 resolve() {
   local comp="$1" paths sha ref
   [ -n "${RESOLVE_NO_REUSE:-}" ] && { echo BUILD; return; }
   paths="$(effective_paths "$comp")"
   # Uncommitted change (or untracked file) in the effective source ⇒ must build.
-  [ -n "$(git status --porcelain -- $paths 2>/dev/null)" ] && { echo BUILD; return; }
-  sha="$(git log -1 --format=%H -- $paths 2>/dev/null || true)"
+  [ -n "$(git status --porcelain -- $paths $TEST_EXCLUDES 2>/dev/null)" ] && { echo BUILD; return; }
+  sha="$(source_sha "$comp")"
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
@@ -92,8 +108,14 @@ tag_for() {
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag nous oe
+  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
+  # source_shas: per-component last-touching-source sha — non-PR runs tag their
+  # images with it so PR reuse hits even when that commit was never a green
+  # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
+  src="$(for a in platform-base claude-code codex pi-agent bob k-search $WORKLOADS; do
+    s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
+  done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
   pb_tag="$(tag_for platform-base)"
   built=()
@@ -102,10 +124,13 @@ gha_outputs() {
   done
   agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
   cc_tag="$(tag_for claude-code)"
-  nous=false; [ "$(resolve nous | cut -d' ' -f1)" = BUILD ] && nous=true
-  oe=false;   [ "$(resolve openevolve | cut -d' ' -f1)" = BUILD ] && oe=true
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nnous=%s\nopenevolve=%s\nclaude_code_base_tag=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$nous" "$oe" "$cc_tag"
+  wl_built=()
+  for w in $WORKLOADS; do
+    [ "$(resolve "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
+  done
+  workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
+  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
+    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
 }
 
 self_check() {
@@ -113,6 +138,7 @@ self_check() {
   chk() { if [ "$1" != "$2" ]; then echo "FAIL: expected [$2] got [$1]" >&2; f=1; fi; }
   has() { case "$1" in *"$2"*) ;; *) echo "FAIL: [$1] missing [$2]" >&2; f=1 ;; esac; }
   chk "$(base_of nous)" claude-code
+  chk "$(base_of shinkaevolve)" claude-code
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
   chk "$(local_tag platform-base)" platform-base
@@ -120,12 +146,16 @@ self_check() {
   has "$(effective_paths nous)" packages/platform-base
   has "$(effective_paths nous)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/nous
+  has "$(effective_paths shinkaevolve)" packages/agents/shinkaevolve
+  has "$(effective_paths shinkaevolve)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (main/tag) output without git/docker.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'platform_base=true'
   has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
+  has "$out" 'workloads=["nous","openevolve","shinkaevolve"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
+  has "$out" 'source_shas={"platform-base":"'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 

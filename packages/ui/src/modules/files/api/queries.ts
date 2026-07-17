@@ -149,6 +149,8 @@ function invalidateFiles(
 export function useFileWriteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       path: string;
       content: string;
@@ -166,6 +168,8 @@ export function useFileWriteMutation(agentId: string | null) {
 export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string; content?: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.create.mutate({
@@ -182,6 +186,8 @@ export function useFileCreateMutation(agentId: string | null) {
 export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.mkdir.mutate(input);
@@ -195,6 +201,8 @@ export function useFolderCreateMutation(agentId: string | null) {
 export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       from: string;
       to: string;
@@ -217,6 +225,8 @@ export function useFileRenameMutation(agentId: string | null) {
 export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.remove.mutate(input);
@@ -271,6 +281,8 @@ export async function uploadMessageAttachment(
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: (input: {
       path: string;
       contentBase64: string;

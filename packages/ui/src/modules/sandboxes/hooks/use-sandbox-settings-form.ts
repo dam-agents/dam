@@ -34,6 +34,7 @@ import { splitHostPort } from "../../egress-rules/host-port.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
+import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 const envVarSchema = z.object({ name: z.string(), value: z.string() });
@@ -50,6 +51,9 @@ const settingsSchema = z.object({
     .number({ message: "Enter a number of minutes (0 = never)" })
     .int()
     .nonnegative(),
+  // Size (#1900) in slider units; applies on the next start.
+  sizeCpuMilli: z.number().int().positive(),
+  sizeMemoryMi: z.number().int().positive(),
 });
 type SettingsValues = z.infer<typeof settingsSchema>;
 
@@ -61,7 +65,6 @@ export type SandboxSettingsStatus =
 
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
-  const setView = useStore((s) => s.setView);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const agentsQuery = useAgents();
@@ -109,6 +112,8 @@ export function useSandboxSettingsForm() {
         assignedAppIds: [],
         envVars: [],
         hibernationTimeoutMin: 60,
+        sizeCpuMilli: 1000,
+        sizeMemoryMi: 1024,
       },
     });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
@@ -142,6 +147,8 @@ export function useSandboxSettingsForm() {
         .sort(),
       envVars: userInitialEnv,
       hibernationTimeoutMin: agent.hibernationTimeoutMin,
+      sizeCpuMilli: parseCpuMilli(agent.size.cpu) ?? 1000,
+      sizeMemoryMi: parseMemoryMi(agent.size.memory) ?? 1024,
     });
     setFormReady(true);
   }, [
@@ -253,8 +260,7 @@ export function useSandboxSettingsForm() {
   const dirty = isDirty || net.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
 
-  // Browser-level guard (tab close, refresh, URL nav); `goBack` covers in-app
-  // navigation.
+  // Browser-level guard (tab close, refresh, URL nav).
   useUnsavedGuard(dirty);
 
   const egressStaged: StagedNetworkAccessController = {
@@ -300,11 +306,25 @@ export function useSandboxSettingsForm() {
     ) {
       return;
     }
+    const sizeDirty = dirtyFields.sizeCpuMilli || dirtyFields.sizeMemoryMi;
+    if (
+      sizeDirty &&
+      agent &&
+      !(agent.state === "hibernated" || agent.overBudget) &&
+      !(await showConfirm(
+        "Saving will restart the sandbox to apply its new size — in-flight work is interrupted.",
+        "Restart sandbox?",
+        { confirmLabel: "Save & restart" },
+      ))
+    ) {
+      return;
+    }
     try {
       if (
         dirtyFields.envVars ||
         dirtyFields.name ||
-        dirtyFields.hibernationTimeoutMin
+        dirtyFields.hibernationTimeoutMin ||
+        sizeDirty
       ) {
         await updateAgent.mutateAsync({
           id: agentId,
@@ -314,6 +334,21 @@ export function useSandboxSettingsForm() {
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
           ...(dirtyFields.hibernationTimeoutMin
             ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
+            : {}),
+          // Only the touched dimension ships (the server merge-patches per
+          // dimension): re-sending an untouched one would rewrite a spec
+          // value this form couldn't parse (and so baselined to a fallback).
+          ...(sizeDirty
+            ? {
+                size: {
+                  ...(dirtyFields.sizeCpuMilli
+                    ? { cpu: `${values.sizeCpuMilli}m` }
+                    : {}),
+                  ...(dirtyFields.sizeMemoryMi
+                    ? { memory: `${values.sizeMemoryMi}Mi` }
+                    : {}),
+                },
+              }
             : {}),
         });
       }
@@ -337,25 +372,21 @@ export function useSandboxSettingsForm() {
         });
       }
       net.reset();
+      // RHF `reset(values)` replaces the value set wholesale — every schema
+      // field must be present, or the omitted ones become undefined and all
+      // later saves fail validation invisibly.
       reset({
         name: values.name.trim(),
         assignedAppIds: values.assignedAppIds,
         envVars: values.envVars,
         hibernationTimeoutMin: values.hibernationTimeoutMin,
+        sizeCpuMilli: values.sizeCpuMilli,
+        sizeMemoryMi: values.sizeMemoryMi,
       });
     } catch {
       // Mutation meta.errorToast surfaces the failure; stay on the page.
     }
   });
-
-  const goBack = () => {
-    if (
-      dirty &&
-      !window.confirm("Discard unsaved changes and leave this sandbox?")
-    )
-      return;
-    setView("list");
-  };
 
   const status: SandboxSettingsStatus = !agentId
     ? "no-agent"
@@ -375,7 +406,6 @@ export function useSandboxSettingsForm() {
     status,
     agent,
     templateName,
-    goBack,
     register,
     control,
     errors,
@@ -389,6 +419,18 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
+    sizeCpuMilli: watch("sizeCpuMilli"),
+    sizeMemoryMi: watch("sizeMemoryMi"),
+    setSize: (patch: { sizeCpuMilli?: number; sizeMemoryMi?: number }) => {
+      if (patch.sizeCpuMilli !== undefined)
+        setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
+      if (patch.sizeMemoryMi !== undefined)
+        setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
+    },
+    // A live resize restarts the pod (the CR patch re-renders the pair);
+    // sleeping sandboxes apply the new Size on their next start.
+    sizeRestartsAgent:
+      agent !== null && !(agent.state === "hibernated" || agent.overBudget),
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:

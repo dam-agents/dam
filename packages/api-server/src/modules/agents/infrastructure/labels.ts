@@ -43,6 +43,11 @@ export const KIND_AGENT = "Agent";
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 
+// User-initiated hard stop (#1900): non-empty ⇒ the controller scales the
+// pair to zero now. Sticky: background activity bumps never clear it — only
+// an explicit wake or a schedule fire does.
+export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+
 // Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status
@@ -56,3 +61,6 @@ export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
 // — both report Ready=False — from conditions alone. Mirrors the controller
 // constant.
 export const READY_REASON_HIBERNATED = "Hibernated";
+// Parked (#1900): the agent wants to run but starting it would push its
+// owner past their compute Ceiling; the condition message carries the figures.
+export const READY_REASON_OVER_BUDGET = "OverBudget";

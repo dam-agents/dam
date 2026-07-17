@@ -11,10 +11,11 @@ import { ExperimentDetailView } from "./modules/experiments/views/experiment-det
 import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
-import { SandboxSettingsView } from "./modules/sandboxes/views/sandbox-settings-view.js";
+import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
+import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { pathToState, useStore } from "./store.js";
 
@@ -39,6 +40,7 @@ export default function App() {
   }, [theme]);
 
   if (view === "terms") return <TermsView />;
+  if (view === "telegram-bind") return <TelegramBindView />;
   return <MainApp />;
 }
 
@@ -83,55 +85,33 @@ function MainApp() {
       useStore.setState({ selectedAgent: null, view: "list" });
     };
     const onPopState = () => {
-      const path = window.location.pathname;
-      if (path.startsWith("/chat/"))
-        enterChat(decodeURIComponent(path.slice(6)));
-      else if (path === "/settings" || path.startsWith("/settings/")) {
-        const { settingsTab } = pathToState(path);
-        useStore.setState({
-          view: "settings",
-          settingsTab: settingsTab ?? "account",
-        });
-      } else if (path === "/inbox") useStore.setState({ view: "inbox" });
-      else if (path === "/terms") useStore.setState({ view: "terms" });
-      else if (path === "/sandboxes/new")
-        useStore.setState({ view: "sandbox-new", agentId: null });
-      else if (/^\/sandboxes\/[^/]+$/.test(path))
-        useStore.setState({
-          view: "sandbox-settings",
-          agentId: decodeURIComponent(path.slice("/sandboxes/".length)),
-        });
-      else if (path === "/experiments")
-        useStore.setState({
-          view: "experiments",
-          agentId: null,
-          experimentId: null,
-        });
-      else if (path === "/experiments/new")
-        useStore.setState({
-          view: "experiment-new",
-          agentId: null,
-          experimentId: null,
-        });
-      else if (/^\/experiments\/[^/]+$/.test(path))
-        useStore.setState({
-          view: "experiment-detail",
-          experimentId: decodeURIComponent(path.slice("/experiments/".length)),
-        });
-      else leaveChat();
+      const state = pathToState(window.location.pathname);
+      if (state.view === "chat") return enterChat(state.agent!);
+      // Unknown paths resolve to "list"; leaveChat also tears down chat context.
+      if (state.view === "list") return leaveChat();
+      useStore.setState({
+        view: state.view,
+        agentId: state.agentId ?? null,
+        experimentId: state.experimentId ?? null,
+        settingsTab: state.settingsTab ?? "account",
+        sandboxSection: state.sandboxSection ?? "setup",
+      });
     };
-    // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
-    const path = window.location.pathname;
-    if (path.startsWith("/chat/")) enterChat(decodeURIComponent(path.slice(6)));
+    onPopState();
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat view is full-screen (has its own layout)
+  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar here.
   if (view === "chat")
     return (
       <>
-        <ChatView />
+        <div className="flex h-dvh bg-background overflow-hidden">
+          <IconRail hideMobileBar />
+          <div className="relative z-10 flex-1 min-w-0">
+            <ChatView />
+          </div>
+        </div>
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -147,8 +127,8 @@ function MainApp() {
             <SandboxWizardView />
           ) : view === "experiment-new" ? (
             <ExperimentWizardView />
-          ) : view === "sandbox-settings" ? (
-            <SandboxSettingsView />
+          ) : view === "sandbox-home" ? (
+            <SandboxHomeView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
               {view === "settings" ? (

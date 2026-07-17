@@ -149,6 +149,7 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: async () => ({ verdict: "allow" }) },
       holdSeconds: 30,
+      platformAllowedHosts: [],
     });
 
     const verdict = await gate.gateRequest({
@@ -172,6 +173,7 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      platformAllowedHosts: [],
     });
 
     const verdict = await gate.gateRequest({
@@ -194,6 +196,7 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      platformAllowedHosts: [],
     });
 
     const inflight = gate.gateRequest({
@@ -225,6 +228,7 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      platformAllowedHosts: [],
     });
 
     const inflight = gate.gateRequest({
@@ -254,6 +258,7 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      platformAllowedHosts: [],
     });
 
     const first = gate.gateRequest({
@@ -285,5 +290,53 @@ describe("ext-authz gate", () => {
     bus.fire(`approval:${id}`, "");
     expect(await first).toBe("allow");
     expect(await retry).toBe("allow");
+  });
+
+  it("allows a platform-provided host without consulting rules or holding", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const ruleMatch = vi.fn(async () => null);
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      identityResolver,
+      ruleMatcher: { match: ruleMatch },
+      holdSeconds: 30,
+      platformAllowedHosts: ["platform-seaweedfs.platform.svc.cluster.local"],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "inst-1",
+      host: "platform-seaweedfs.platform.svc.cluster.local",
+      method: "PUT",
+      path: "/platform-artifacts/exp/agent/u/c.bin",
+    });
+
+    expect(verdict).toBe("allow");
+    expect(ruleMatch).not.toHaveBeenCalled();
+    expect(repo.inserts).toBe(0);
+    expect(bus.publishes).toHaveLength(0);
+  });
+
+  it("still fails closed on unresolved identity even for a platform host", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      identityResolver,
+      ruleMatcher: noMatchRules,
+      holdSeconds: 30,
+      platformAllowedHosts: ["store.internal"],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "missing",
+      host: "store.internal",
+      method: "PUT",
+      path: "/b/k",
+    });
+
+    expect(verdict).toBe("deny");
   });
 });

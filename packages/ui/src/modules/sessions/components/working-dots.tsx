@@ -5,22 +5,29 @@ import { cn } from "@/lib/utils";
 export function WorkingDots({
   className,
   title,
+  size = "sm",
 }: {
   className?: string;
   title?: string;
+  size?: "sm" | "md";
 }) {
+  const dot = cn(
+    "rounded-full bg-current",
+    size === "md" ? "w-[5px] h-[5px]" : "w-[4px] h-[4px]",
+  );
   return (
     <span
       className={cn(
-        "working-dots inline-flex items-center gap-[1px]",
+        "working-dots inline-flex items-center",
+        size === "md" ? "gap-[2px]" : "gap-[1px]",
         className,
       )}
       title={title}
       data-testid="working-dots"
     >
-      <span className="w-[4px] h-[4px] rounded-full bg-current" />
-      <span className="w-[4px] h-[4px] rounded-full bg-current" />
-      <span className="w-[4px] h-[4px] rounded-full bg-current" />
+      <span className={dot} />
+      <span className={dot} />
+      <span className={dot} />
     </span>
   );
 }

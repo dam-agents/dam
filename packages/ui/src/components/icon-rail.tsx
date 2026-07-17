@@ -25,7 +25,11 @@ interface Destination {
   navigate: () => void;
 }
 
-export function IconRail() {
+export function IconRail({
+  hideMobileBar = false,
+}: {
+  hideMobileBar?: boolean;
+} = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -96,13 +100,18 @@ export function IconRail() {
         </div>
       </nav>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-        {[home, ...(showExperiments ? [experiments] : []), inbox, settings].map(
-          (destination) => (
+      {!hideMobileBar && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
+          {[
+            home,
+            ...(showExperiments ? [experiments] : []),
+            inbox,
+            settings,
+          ].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
-          ),
-        )}
-      </nav>
+          ))}
+        </nav>
+      )}
     </>
   );
 }
@@ -161,7 +170,7 @@ function IconWithBadge({
       {badge > 0 && (
         <Badge
           variant="default"
-          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
+          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
         >
           {badge > 9 ? "9+" : badge}
         </Badge>

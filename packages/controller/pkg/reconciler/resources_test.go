@@ -41,6 +41,9 @@ var testConfig = &config.Config{
 		StorageSize:     "10Gi",
 	},
 	AgentProbesEnabled: true,
+	RequestsFraction:   0.5,
+	RequestsMinCPU:     resource.MustParse("100m"),
+	RequestsMinMemory:  resource.MustParse("128Mi"),
 }
 
 // testAgent carries the merged Agent fields: image/mounts/env
@@ -175,6 +178,55 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	require.NotNil(t, c.SecurityContext)
 	require.NotNil(t, c.SecurityContext.Capabilities)
 	assert.Equal(t, []corev1.Capability{"ALL"}, c.SecurityContext.Capabilities.Drop)
+}
+
+// Limits are the stamped "size" (#1900); requests derive from them at
+// render: max(limit × fraction, floor), clamped to the limit. Chart-default
+// limits fill missing dimensions so no agent renders unbounded.
+func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentTemplateDefaults.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
+	spec := *testAgent
+	spec.Resources = types.ResourceSpec{
+		Limits: map[string]string{"cpu": "2", "memory": "2Gi"},
+	}
+	ss := BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c := ss.Spec.Template.Spec.Containers[0]
+	// String comparison: derived Quantities are numerically canonical but
+	// carry a different internal scale than MustParse.
+	assert.Equal(t, "2", c.Resources.Limits.Cpu().String())
+	assert.Equal(t, "2Gi", c.Resources.Limits.Memory().String())
+	assert.Equal(t, "1", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "1Gi", c.Resources.Requests.Memory().String())
+
+	// Floors: a tiny size derives the floor, clamped to the limit so the
+	// pod stays valid.
+	spec.Resources = types.ResourceSpec{
+		Limits: map[string]string{"cpu": "150m", "memory": "64Mi"},
+	}
+	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c = ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "100m", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "64Mi", c.Resources.Requests.Memory().String())
+
+	// Partial limits fill per dimension from the chart default — a CPU-only
+	// size must not leave memory unbounded; spec-set requests bypass
+	// derivation (operator escape hatch).
+	spec.Resources = types.ResourceSpec{
+		Limits:   map[string]string{"cpu": "500m"},
+		Requests: map[string]string{"cpu": "250m"},
+	}
+	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c = ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "500m", c.Resources.Limits.Cpu().String())
+	assert.Equal(t, "1Gi", c.Resources.Limits.Memory().String())
+	assert.Equal(t, "250m", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "512Mi", c.Resources.Requests.Memory().String())
 }
 
 func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {

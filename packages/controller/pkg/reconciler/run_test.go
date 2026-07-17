@@ -152,3 +152,17 @@ func TestRunReconcile_ReapsOverAgeRun(t *testing.T) {
 		Get(context.Background(), "run-stale", metav1.GetOptions{})
 	assert.True(t, errors.IsNotFound(err), "over-age run should be deleted")
 }
+
+// A Failed Run the api-server never deleted (crash mid-run, lost delete) must
+// still be reaped — the reaper runs before the terminal-phase short-circuit.
+func TestRunReconcile_ReapsOverAgeFailedRun(t *testing.T) {
+	run := runCR("run-stale-failed", time.Unix(1_000_000, 0).Add(-2*RunMaxLifetime))
+	run.Status = apiv1.RunStatus{Phase: apiv1.RunPhaseFailed}
+	r, _ := setupRunReconciler(t, run)
+
+	require.NoError(t, r.Reconcile(context.Background(), run))
+
+	_, err := r.dynamic.Resource(RunsGVR).Namespace("test-agents").
+		Get(context.Background(), "run-stale-failed", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "over-age failed run should be deleted")
+}

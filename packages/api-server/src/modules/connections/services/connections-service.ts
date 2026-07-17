@@ -28,8 +28,10 @@ import {
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
+import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
+import { mintClientCredentialsToken } from "./client-credentials.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -41,6 +43,7 @@ export function createConnectionsService(deps: {
   secretStore: SecretStore;
   fanOut: ContributionFanOut;
   oauthFlow: OAuthFlowService;
+  oauthEngine: OAuthEngine;
   oauthCallbackUrl: string;
   brandName: string;
 }): ConnectionsService {
@@ -57,10 +60,12 @@ export function createConnectionsService(deps: {
       )
       .map((c) => c.host);
     const oauthExtras =
-      conn.auth.kind === "oauth"
+      conn.auth.kind === "oauth" || conn.auth.kind === "client-credentials"
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
-            ...(conn.auth.appSlug ? { appSlug: conn.auth.appSlug } : {}),
+            ...(conn.auth.kind === "oauth" && conn.auth.appSlug
+              ? { appSlug: conn.auth.appSlug }
+              : {}),
             ...(conn.auth.connectedAt
               ? {
                   connectedAt: new Date(
@@ -206,6 +211,10 @@ export function createConnectionsService(deps: {
           if (conn.auth.refreshTokenRef) {
             paths.add(conn.auth.refreshTokenRef.path);
           }
+          break;
+        case "client-credentials":
+          paths.add(conn.auth.accessTokenRef.path);
+          paths.add(conn.auth.clientSecretRef.path);
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
@@ -368,6 +377,40 @@ export function createConnectionsService(deps: {
       );
       const secretPath = connectionSecretPath(built.auth);
 
+      // Client-credentials mints its first access token here, synchronously:
+      // bad credentials fail the create before anything is persisted, and the
+      // real token + SDS land in the initial secret write below.
+      let auth = built.auth;
+      if (auth.kind === "client-credentials" && secretPath) {
+        const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
+        if (!clientSecret) {
+          throw new Error(`template ${template.id}: missing clientSecret`);
+        }
+        const minted = await mintClientCredentialsToken(deps.oauthEngine, {
+          connectionRef: `connection:${id}:${template.id}`,
+          auth,
+          clientSecret,
+        });
+        auth = {
+          ...auth,
+          connectedAt: Math.floor(Date.now() / 1000),
+          expiresAt: minted.expiresAt,
+        };
+        built.secrets.set(secretPath, {
+          ...(built.secrets.get(secretPath) ?? {}),
+          access_token: minted.accessToken,
+          ...buildConnectionSdsFields(contributions, minted.accessToken),
+        });
+        securityLog("info", "oauth.token_mint", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: id,
+          result: "success",
+          detail: { templateId: template.id, grant: "client_credentials" },
+        });
+      }
+
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
@@ -395,7 +438,7 @@ export function createConnectionsService(deps: {
           templateId: template.id,
           name: input.name,
           inputs: stripSecretsFromInputs(input),
-          auth: built.auth,
+          auth,
           contributions,
         });
       } catch (err) {
@@ -438,7 +481,7 @@ export function createConnectionsService(deps: {
 }
 
 function stripSecretsFromInputs(input: {
-  authKind: "oauth" | "header" | "none";
+  authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
   const SECRET_KEYS = ["value", "clientSecret"];
@@ -458,6 +501,15 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
       return conn.auth.connectedAt || conn.auth.expiresAt
         ? "active"
         : "pending";
+    case "client-credentials":
+      // expiresAt is always stamped at mint (provider expiry or the 1h
+      // fallback) — the unset guard is defensive. Past-expiry means the
+      // refresh loop has been failing to re-mint (it retries every tick
+      // and re-mints before expiry when healthy).
+      return conn.auth.expiresAt &&
+        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
+        ? "expired"
+        : "active";
     case "header":
       return "active";
     case "none":
@@ -472,6 +524,7 @@ function newConnectionId(): string {
 function connectionSecretPath(auth: Connection["auth"]): string | null {
   switch (auth.kind) {
     case "oauth":
+    case "client-credentials":
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;

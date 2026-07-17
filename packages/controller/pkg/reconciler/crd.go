@@ -17,6 +17,9 @@ var (
 	AgentsGVR = apiv1.GroupVersion.WithResource("agents")
 	ForksGVR  = apiv1.GroupVersion.WithResource("forks")
 	RunsGVR   = apiv1.GroupVersion.WithResource("runs")
+	// UserBudgetsGVR is read live at each budget check (no informer):
+	// 0→1 transitions are rare and a live read keeps enforcement unlagged.
+	UserBudgetsGVR = apiv1.GroupVersion.WithResource("userbudgets")
 
 	agentGVK = apiv1.GroupVersion.WithKind("Agent")
 	forkGVK  = apiv1.GroupVersion.WithKind("Fork")

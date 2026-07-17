@@ -14,6 +14,7 @@ import {
   LABEL_TEMPLATE_REF,
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
+  READY_REASON_OVER_BUDGET,
   VERSION,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
@@ -49,6 +50,12 @@ export interface InfraAgent {
   /** Intentionally scaled to zero — Ready=False with the Hibernated reason.
    *  Distinguishes a hibernated agent from one still starting. */
   hibernated: boolean;
+  /** Parked (#1900) — Ready=False with the OverBudget reason: the agent
+   *  wants to run but starting it would breach its owner's Ceiling. */
+  overBudget: boolean;
+  /** The controller's reserved/ceiling figures for a parked agent —
+   *  user-facing copy (quantities only, no resource names). */
+  overBudgetMessage?: string;
   /** Last reconcile error, surfaced from the Reconciled condition. */
   error?: string;
   /** Reconciled condition reason when False (ReconcileError |
@@ -74,6 +81,9 @@ export function computeAgentState(
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
+  // Parked (#1900) before the "starting" fallthrough: a parked agent is not
+  // coming up — presenting it as perpetually starting would mislead pollers.
+  if (infra.overBudget) return "over_budget";
   return "starting";
 }
 
@@ -139,6 +149,12 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready: ready?.status === "True",
     hibernated:
       ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED,
+    overBudget:
+      ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
+    overBudgetMessage:
+      ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET
+        ? ready.message || undefined
+        : undefined,
     error,
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
@@ -168,6 +184,8 @@ export function assembleAgent(
       globalIdleTimeoutMin,
     ),
     error: infra.error,
+    overBudget: infra.overBudget,
+    overBudgetMessage: infra.overBudgetMessage,
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,
     channels,

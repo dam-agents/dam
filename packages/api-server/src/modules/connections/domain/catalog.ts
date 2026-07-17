@@ -9,6 +9,7 @@ import {
   BOB_HOST,
 } from "api-server-api";
 import type {
+  ClientCredentialsConnectionTemplate,
   ConnectionTemplate,
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
@@ -731,6 +732,20 @@ const CUSTOM_HEADER: HeaderConnectionTemplate = {
   contributions: [],
 };
 
+const CUSTOM_CLIENT_CREDENTIALS: ClientCredentialsConnectionTemplate = {
+  id: "custom-client-credentials",
+  name: "OAuth client credentials",
+  category: "other",
+  isCustom: true,
+  description:
+    "Machine-to-machine OAuth: access tokens are minted from a client ID and secret and injected on outbound calls to a host.",
+  iconSlug: "key",
+  authKind: "client-credentials",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [],
+};
+
 const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   id: "custom-mcp-oauth",
   name: "Custom MCP server (OAuth)",
@@ -773,6 +788,7 @@ export function buildCatalog(
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
     CUSTOM_HEADER,
+    CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,
   ];

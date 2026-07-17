@@ -23,6 +23,25 @@ export const oauthAuth = z.object({
   appSlug: z.string().min(1).optional(),
 });
 
+// Client-credentials grant: the platform exchanges the stored client secret
+// for short-lived access tokens (at create and again before each expiry);
+// only the access token ever reaches the gateway's injection path.
+// `tokenUrl` is resolved from the issuer's OAuth metadata at create time.
+export const clientCredentialsAuth = z.object({
+  kind: z.literal("client-credentials"),
+  clientId: z.string(),
+  clientSecretRef: secretRef,
+  accessTokenRef: secretRef,
+  issuerUrl: z.string().url(),
+  tokenUrl: z.string().url(),
+  scopes: z.array(z.string()).default([]),
+  audience: z.string().min(1).optional(),
+  expiresAt: z.number().int().optional(),
+  connectedAt: z.number().int().optional(),
+  tokenEndpointAcceptJson: z.boolean().optional(),
+  host: z.string().min(1).optional(),
+});
+
 export const headerAuth = z.object({
   kind: z.literal("header"),
   valueRef: secretRef,
@@ -36,6 +55,7 @@ export const noneAuth = z.object({
 
 export const authConfig = z.discriminatedUnion("kind", [
   oauthAuth,
+  clientCredentialsAuth,
   headerAuth,
   noneAuth,
 ]);
@@ -61,6 +81,14 @@ export const connectionStatus = z.enum([
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 
+export const authKind = z.enum([
+  "oauth",
+  "client-credentials",
+  "header",
+  "none",
+]);
+export type AuthKind = z.infer<typeof authKind>;
+
 export const connectionView = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -68,7 +96,7 @@ export const connectionView = z.object({
   category: connectionCategory,
   name: z.string(),
   status: connectionStatus,
-  authKind: z.enum(["oauth", "header", "none"]),
+  authKind: authKind,
   contributions: z.array(contribution),
   connectedAt: z.string().optional(),
   hosts: z.array(z.string()),
@@ -76,9 +104,6 @@ export const connectionView = z.object({
   appSlug: z.string().min(1).optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
-
-export const authKind = z.enum(["oauth", "header", "none"]);
-export type AuthKind = z.infer<typeof authKind>;
 
 export const templateInputState = z.enum([
   "required",

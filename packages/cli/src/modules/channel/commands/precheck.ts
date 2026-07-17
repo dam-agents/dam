@@ -10,7 +10,7 @@ import type { ChannelService } from "../services/channel-service.js";
 // the same as the route would if the precheck were skipped.
 const UNAVAILABLE_MESSAGE: Record<ChannelType, string> = {
   [ChannelType.Slack]: "Slack app token not configured",
-  [ChannelType.Telegram]: "Telegram channel not enabled",
+  [ChannelType.Telegram]: "Telegram bot not configured",
 };
 
 /**

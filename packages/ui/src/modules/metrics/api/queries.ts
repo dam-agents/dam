@@ -2,6 +2,15 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
+/** Per-model spend across all of the user's agents over [from, to). */
+export function useModelSpend(from: string, to: string) {
+  return useQuery({
+    ...trpc.metrics.spend.queryOptions({ from, to }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 /** Metrics overview for one agent. Disabled while no agent is selected. */
 export function useMetricsOverview(
   agentId: string | null,

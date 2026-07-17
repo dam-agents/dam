@@ -4,7 +4,6 @@ import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
-import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -15,6 +14,8 @@ import {
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsSettledPort,
+  type ResizeGatePort,
+  type TelegramBindingPort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -46,17 +47,22 @@ export function composeAgentsModule(deps: {
   namespace: string;
   /** Global default idle timeout in minutes; the per-agent override resolves against it. */
   agentIdleTimeoutMinutes: number;
+  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  agentDefaultLimits: { cpu: string; memory: string };
+  /** Budget gate for live resizes (#1900); omitted by system compositions. */
+  resizeGate?: ResizeGatePort;
   /** `undefined` enables system-level composition (cross-owner) for the
    *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
   db: Db;
   userDirectory: KeycloakUserDirectory;
-  channelSecretStore: ChannelSecretStore;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Telegram chat→agent binding flow; omitted system-side. */
+  telegramBinding?: TelegramBindingPort;
   /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -85,6 +91,8 @@ export function composeAgentsModule(deps: {
       repo,
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
+      agentDefaultLimits: deps.agentDefaultLimits,
+      resizeGate: deps.resizeGate,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
@@ -105,7 +113,7 @@ export function composeAgentsModule(deps: {
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
       },
       findSlackChannelBinding: findBySlackChannelId(deps.db),
-      channelSecretStore: deps.channelSecretStore,
+      telegramBinding: deps.telegramBinding,
       listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
       listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
       setAllowedUsers: setAllowedUsers(deps.db, owner),

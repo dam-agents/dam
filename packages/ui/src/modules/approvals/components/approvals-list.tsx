@@ -19,18 +19,13 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { isHeldCallStillLive } from "../lib/hold.js";
 
 const STATUS_LABEL: Record<ApprovalView["status"], string> = {
   pending: "pending",
   resolved: "resolved",
   expired: "timed out",
 };
-
-function isHeldCallStillLive(row: ApprovalView): boolean {
-  return (
-    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
-  );
-}
 
 export interface ApprovalsListProps {
   rows: readonly ApprovalView[];
@@ -77,9 +72,7 @@ function ApprovalRow({
   const approveHost = useApproveHost();
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxSettings = useStore(
-    (s) => s.navigateToSandboxSettings,
-  );
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
@@ -195,7 +188,7 @@ function ApprovalRow({
               variant="ghost"
               size="xs"
               disabled={inflight}
-              onClick={() => navigateToSandboxSettings(row.agentId)}
+              onClick={() => navigateToSandboxHome(row.agentId)}
               title="Open this sandbox's settings (connections, network access, environment)"
             >
               <Settings2 size={11} /> Customize…

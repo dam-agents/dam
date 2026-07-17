@@ -42,27 +42,40 @@ export type {
   AgentUpdateInput,
   ConnectSlackError,
   ConnectSlackResult,
+  BindTelegramChatError,
+  BindTelegramChatResult,
+  ListTelegramChatsError,
+  TelegramChatView,
+  ListTelegramChatsResult,
+  UnbindTelegramChatError,
+  UnbindTelegramChatResult,
   Channel,
   SlackChannel,
-  TelegramChannel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
+  agentBindTelegramChatInputSchema,
+  agentListTelegramChatsInputSchema,
+  agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
-  agentConnectTelegramInputSchema,
   agentCreateInputSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
-  agentDisconnectTelegramInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
   agentUpdateInputSchema,
+  agentPauseInputSchema,
+  agentStopInputSchema,
   agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
 export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
+export type {
+  BudgetReserved,
+  BudgetsService,
+} from "./modules/budgets/types.js";
 export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
@@ -157,6 +170,7 @@ export type { ChannelsService } from "./modules/channels/types.js";
 export type {
   MetricsService,
   MetricsQuery,
+  MetricsSpendQuery,
   MetricsOverview,
   TokenSpendByModel,
   SessionRuntime,

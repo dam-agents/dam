@@ -80,6 +80,14 @@ interface SkillsPanelProps {
   agentState: AgentState | undefined;
   /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
   onOpenFile?: (path: string) => void;
+  /** Notified whenever the installed set changes (mount, poll, toggle) so a
+   *  consumer can mirror it without independently polling the destructive
+   *  `skills.state` endpoint. Must be stable. */
+  onInstalledChange?: (installed: SkillRef[]) => void;
+  /** Read-only: disable install/uninstall toggles (e.g. while the agent is
+   *  stopped, where toggling wakes+reconciles and reverts). The container is
+   *  expected to surface its own "start agent to edit" affordance. */
+  readOnly?: boolean;
 }
 
 const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -127,6 +135,8 @@ export function SkillsPanel({
   agentId,
   agentState,
   onOpenFile,
+  onInstalledChange,
+  readOnly = false,
 }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -157,6 +167,13 @@ export function SkillsPanel({
     body: "",
   });
   const [publishBusy, setPublishBusy] = useState(false);
+
+  // Publish the installed set to any interested consumer (e.g. the sandbox-home
+  // sidebar summary) so it stays live off this panel's data instead of polling
+  // `skills.state` itself.
+  useEffect(() => {
+    onInstalledChange?.(installed);
+  }, [installed, onInstalledChange]);
 
   /**
    * Ids whose collapse state is *inverted from the kind-level default*:
@@ -217,13 +234,14 @@ export function SkillsPanel({
 
   const refreshSource = useCallback(
     async (sourceId: string) => {
+      if (readOnly) return;
       const ok = await runAction(
         () => api.skills.sources.refresh.mutate({ id: sourceId }),
         "Failed to refresh source",
       );
       if (ok !== ACTION_FAILED) await loadSkills(sourceId);
     },
-    [loadSkills],
+    [loadSkills, readOnly],
   );
 
   useEffect(() => {
@@ -298,7 +316,7 @@ export function SkillsPanel({
     installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
-    if (!agentId || isError) return;
+    if (!agentId || isError || readOnly) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const currentlyInstalled = isInstalled(skill.source, skill.name);
@@ -324,7 +342,7 @@ export function SkillsPanel({
   };
 
   const updateDrift = async (skill: Skill) => {
-    if (!agentId || isError) return;
+    if (!agentId || isError || readOnly) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
@@ -343,6 +361,7 @@ export function SkillsPanel({
   };
 
   const addSource = async () => {
+    if (readOnly) return;
     if (!addForm.name.trim() || !addForm.gitUrl.trim()) return;
     setAddBusy(true);
     const result = await runAction(
@@ -377,6 +396,7 @@ export function SkillsPanel({
   }
 
   const openPublish = (skill: LocalSkill) => {
+    if (readOnly) return;
     const first = publishableSources[0];
     if (!first) return;
     setPublishFor(skill);
@@ -388,7 +408,7 @@ export function SkillsPanel({
   };
 
   const publish = async () => {
-    if (!agentId || !publishFor) return;
+    if (readOnly || !agentId || !publishFor) return;
     setPublishBusy(true);
     try {
       const result = await api.skills.publish.mutate({
@@ -437,6 +457,7 @@ export function SkillsPanel({
   };
 
   const deleteSource = async (src: SkillSource) => {
+    if (readOnly) return;
     const ok = await showConfirm(
       `Remove source "${src.name}"? Installed skills stay on running agents.`,
       "Remove Source",
@@ -463,7 +484,7 @@ export function SkillsPanel({
           Agent is in an error state — resolve it before managing skills.
         </div>
       )}
-      {isAsleep && (
+      {isAsleep && !readOnly && (
         <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted">
           Asleep — installing or removing a skill will wake the agent; this can
           take a moment.
@@ -581,7 +602,7 @@ export function SkillsPanel({
                         ? "Add a GitHub source first to publish there"
                         : "Publish this skill as a pull request"
                     }
-                    disabled={publishableSources.length === 0}
+                    disabled={publishableSources.length === 0 || readOnly}
                     onClick={() => openPublish(skill)}
                   >
                     <Share2 size={11} />
@@ -606,6 +627,7 @@ export function SkillsPanel({
           variant="outline"
           size="xs"
           className="w-full"
+          disabled={readOnly}
           onClick={() => {
             setAddForm({ name: "", gitUrl: "", path: "" });
             setShowAdd(true);
@@ -748,7 +770,7 @@ export function SkillsPanel({
               <span
                 role="button"
                 tabIndex={0}
-                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
+                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading || readOnly ? "pointer-events-none opacity-50" : ""}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!loading) void refreshSource(src.id);
@@ -768,7 +790,7 @@ export function SkillsPanel({
                 <span
                   role="button"
                   tabIndex={0}
-                  className="text-text-muted hover:text-danger transition-colors"
+                  className={`text-text-muted hover:text-danger transition-colors ${readOnly ? "pointer-events-none opacity-50" : ""}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     void deleteSource(src);
@@ -840,7 +862,7 @@ export function SkillsPanel({
                   installed.contentHash !== skill.contentHash;
                 const key = skillKey(skill.source, skill.name);
                 const rowBusy = busyRow === key;
-                const disabled = !agentId || isError || rowBusy;
+                const disabled = !agentId || isError || rowBusy || readOnly;
 
                 return (
                   <label

@@ -142,6 +142,37 @@ export function TemplateCreateForm({
             : {}),
         };
       }
+      case "client-credentials": {
+        return {
+          ...common,
+          authKind: "client-credentials",
+          ...(submittedValue("host") ? { host: submittedValue("host")! } : {}),
+          ...(submittedValue("issuerUrl")
+            ? { issuerUrl: submittedValue("issuerUrl")! }
+            : {}),
+          ...(submittedValue("clientId")
+            ? { clientId: submittedValue("clientId")! }
+            : {}),
+          ...(submittedValue("clientSecret")
+            ? { clientSecret: submittedValue("clientSecret")! }
+            : {}),
+          ...(submittedValue("scopes")
+            ? { scopes: submittedValue("scopes")! }
+            : {}),
+          ...(submittedValue("audience")
+            ? { audience: submittedValue("audience")! }
+            : {}),
+          ...(submittedValue("headerName")
+            ? { headerName: submittedValue("headerName")! }
+            : {}),
+          ...(submittedValue("valueFormat")
+            ? { valueFormat: submittedValue("valueFormat")! }
+            : {}),
+          ...(submittedValue("envName")
+            ? { envName: submittedValue("envName")! }
+            : {}),
+        };
+      }
       case "header": {
         const value = submittedValue("value");
         if (!value) return { error: "Secret value is required" };
@@ -581,11 +612,14 @@ function slugifyTemplateName(name: string): string {
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
+  issuerUrl: "Issuer URL",
   headerName: "Header name",
   valueFormat: "Value format",
   value: "Secret value",
   clientId: "Client ID",
   clientSecret: "Client secret",
+  scopes: "Scopes (space-separated)",
+  audience: "Audience",
   appSlug: "GitHub App slug",
   envName: "Environment variable",
   caData: "Server CA certificate (optional)",
@@ -594,11 +628,14 @@ const FIELD_LABELS: Record<string, string> = {
 const FIELD_PLACEHOLDERS: Record<string, string> = {
   url: "https://example.com",
   host: "api.example.com",
+  issuerUrl: "https://auth.example.com/realms/main",
   headerName: "X-API-Key",
   valueFormat: "{value}",
   value: "•••••",
   clientId: "Iv1.…",
   clientSecret: "•••••",
+  scopes: "read write",
+  audience: "https://api.example.com",
   appSlug: "my-platform-app",
   envName: "MY_API_KEY",
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",

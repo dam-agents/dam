@@ -17,8 +17,6 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
-  TelegramConnected = "TelegramConnected",
-  TelegramDisconnected = "TelegramDisconnected",
   ForkReady = "ForkReady",
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
@@ -80,16 +78,6 @@ export type SlackDisconnected = {
   agentId: string;
 };
 
-export type TelegramConnected = {
-  type: EventType.TelegramConnected;
-  agentId: string;
-};
-
-export type TelegramDisconnected = {
-  type: EventType.TelegramDisconnected;
-  agentId: string;
-};
-
 export type ForkFailureReason =
   | "CredentialMintFailed"
   | "OrchestrationFailed"
@@ -136,6 +124,9 @@ export type ChannelTurnRelayed = {
   agentId: string;
   /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
   actorSub: string | null;
+  /** Messenger-native id of the driving user (e.g. Telegram user id) — the
+   *  actor record for relays that carry no platform identity. */
+  externalActorId?: string;
   /** "success" when the ACP turn completed and the reply was posted; "failure"
    *  on any caught error in the relay path (ACP throw, fork provisioning
    *  failure, post-back failure). Drives the success/failure breakouts in the
@@ -213,8 +204,6 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
-  | TelegramConnected
-  | TelegramDisconnected
   | ForkReady
   | ForkFailed
   | ForkCompleted

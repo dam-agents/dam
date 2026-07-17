@@ -60,3 +60,59 @@ describe("loadConfig — acpTurnCeilingSeconds vs approvalHoldSeconds invariant"
     expect(config.acpTurnCeilingSeconds).toBe(3600);
   });
 });
+
+describe("loadConfig — object storage", () => {
+  const OBJECT_KEYS = [
+    "OBJECT_STORAGE_ENDPOINT",
+    "OBJECT_STORAGE_REGION",
+    "OBJECT_STORAGE_BUCKET",
+    "OBJECT_STORAGE_ACCESS_KEY_ID",
+    "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+    "OBJECT_STORAGE_FORCE_PATH_STYLE",
+    "MAX_ARTIFACT_BYTES",
+  ];
+  const managed = [...Object.keys(REQUIRED_ENV), ...OBJECT_KEYS];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("defaults the artifact cap to 50 MiB and the store group sanely", () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "http://seaweedfs:8333";
+    const config = loadConfig();
+    expect(config.objectStorageEndpoint).toBe("http://seaweedfs:8333");
+    expect(config.maxArtifactBytes).toBe(50 * 1024 * 1024);
+    expect(config.objectStorageBucket).toBe("platform-artifacts");
+    expect(config.objectStorageForcePathStyle).toBe(true);
+  });
+
+  it("lets an explicit MAX_ARTIFACT_BYTES win over the default", () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "http://seaweedfs:8333";
+    process.env.MAX_ARTIFACT_BYTES = "1048576";
+    expect(loadConfig().maxArtifactBytes).toBe(1048576);
+  });
+
+  it("parses FORCE_PATH_STYLE=false as a real false", () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "https://s3.us-east-1.amazonaws.com";
+    process.env.OBJECT_STORAGE_FORCE_PATH_STYLE = "false";
+    expect(loadConfig().objectStorageForcePathStyle).toBe(false);
+  });
+
+  it("rejects half a credential pair", () => {
+    process.env.OBJECT_STORAGE_ENDPOINT = "http://seaweedfs:8333";
+    process.env.OBJECT_STORAGE_ACCESS_KEY_ID = "platform";
+    expect(() => loadConfig()).toThrow(/must be set together/);
+  });
+});

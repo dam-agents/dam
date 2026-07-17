@@ -8,7 +8,7 @@ import {
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
-import { composeArtifactsModule } from "../../modules/artifacts/compose.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -28,6 +28,7 @@ export interface HarnessApiServerAppDeps {
   runtimeHello: RuntimeDeliveryService;
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
+  artifacts: ArtifactService;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -40,15 +41,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     schedulesBoot,
     runtimeMutator,
+    artifacts,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
-  const { service: artifacts } = composeArtifactsModule({
-    db,
-    maxBytes: config.maxArtifactBytes,
-  });
 
   const app = createHarnessRouter({
     channelManager,
@@ -69,8 +67,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
     experimentsServiceFor: (owner) =>
-      composeExperimentsForOwner({ db, owner }).experiments,
+      composeExperimentsForOwner({
+        db,
+        owner,
+        maxArtifactBytes: config.maxArtifactBytes,
+      }).experiments,
     artifacts,
+    maxArtifactBytes: config.maxArtifactBytes,
   });
 
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the
@@ -106,7 +109,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
 
   // A fresh harness process holds no live relays, so any Run CR that survived a
-  // crash is leaked — its executor pod would run untethered. Sweep them.
+  // crash is leaked — its executor pod would run untethered. Sweep them. Two
+  // accepted imperfections: during a RollingUpdate the outgoing replica may
+  // still hold live relays this sweep kills early (those streams die seconds
+  // later with the old pod anyway), and the sweep is one-shot best-effort —
+  // the controller's over-age reaper covers anything it misses.
   void runs
     .listRunIds()
     .then(async (ids) => {
@@ -117,7 +124,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         );
       }
     })
-    .catch(() => {});
+    .catch((err) => {
+      process.stderr.write(`harness-api run sweep failed: ${err}\n`);
+    });
 
   return { server };
 }

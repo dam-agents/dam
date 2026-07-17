@@ -56,6 +56,13 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     description: "The agent hit an error and isn't running.",
     spinning: false,
   },
+  over_budget: {
+    Icon: AlertCircle,
+    description:
+      "Starting this sandbox would exceed your compute budget. Pause or stop " +
+      "a running sandbox to free room, then start this one again.",
+    spinning: false,
+  },
 };
 
 /** Shared chrome for every overlay variant: full-view takeover, back button,

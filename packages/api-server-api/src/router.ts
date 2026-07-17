@@ -1,6 +1,7 @@
 import { t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
+import { budgetsRouter } from "./modules/budgets/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
@@ -33,6 +34,7 @@ export const appRouter = t.router({
   e2e: e2eRouter,
   apiKeys: apiKeysRouter,
   harnessConfig: harnessConfigRouter,
+  budgets: budgetsRouter,
 });
 
 export type AppRouter = typeof appRouter;

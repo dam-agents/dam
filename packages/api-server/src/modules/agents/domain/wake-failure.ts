@@ -12,6 +12,11 @@
 
 export type WakeFailureCause =
   | { kind: "not-found" }
+  /** The controller refused the start: it would breach the owner's compute
+   *  Ceiling (#1900). `message` is the controller's reserved/ceiling figures
+   *  — user-facing copy by design (quantities only). Fail-fast: the wake
+   *  primitive throws this on first observation, not at the deadline. */
+  | { kind: "over-budget"; message: string }
   /** Ready reason still Hibernated at the deadline: scale-up was never
    *  observed (controller down, reconcile wedged, K8s API stalled). */
   | { kind: "hibernated-not-scaled" }
@@ -32,6 +37,10 @@ export type WakeFailureCause =
 export interface WakeConditionsSnapshot {
   ready: boolean;
   hibernated: boolean;
+  /** Ready=False with the OverBudget reason (#1900). */
+  overBudget?: boolean;
+  /** The controller's reserved/ceiling figures when overBudget. */
+  overBudgetMessage?: string;
   /** Reconciled=False message. */
   error?: string;
   /** Reconciled condition reason when False. */
@@ -57,6 +66,8 @@ export function classifyWakeFailure(
   s: WakeConditionsSnapshot | null,
 ): WakeFailureCause {
   if (s === null) return { kind: "not-found" };
+  if (s.overBudget)
+    return { kind: "over-budget", message: s.overBudgetMessage ?? "" };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
     return {
@@ -86,6 +97,9 @@ export function wakeFailureReasonToken(c: WakeFailureCause): string {
   switch (c.kind) {
     case "agent-pod-failed":
       return `wake-timeout:agent-pod-failed:${c.terminationReason}`;
+    // Not a timeout — the controller rejected the start outright.
+    case "over-budget":
+      return "wake-rejected:over-budget";
     default:
       return `wake-timeout:${c.kind}`;
   }
@@ -103,11 +117,18 @@ export function isTransientWakeFailure(c: WakeFailureCause): boolean {
 
 /** Short human cause fragment for error messages and logs. Never
  *  interpolates raw controller messages — those can carry resource
- *  names and belong in logs, not user-facing strings. */
+ *  names and belong in logs, not user-facing strings. The one exception
+ *  is `over-budget`: the controller authors that message *as* user copy
+ *  (reserved/ceiling quantities only, no resource names). */
 export function describeWakeFailure(c: WakeFailureCause): string {
   switch (c.kind) {
     case "not-found":
       return "the agent no longer exists";
+    case "over-budget":
+      return (
+        c.message ||
+        "starting this agent would exceed your compute budget — stop a running sandbox to free room"
+      );
     case "hibernated-not-scaled":
       return "scale-up was never started";
     case "agent-pod-failed":
@@ -149,8 +170,12 @@ export class AgentWakeTimeoutError extends Error {
     failure: WakeFailureCause;
   }) {
     super(
-      `agent ${args.agentId} did not become ready within ` +
-        `${Math.round(args.timeoutMs / 1000)}s (${describeWakeFailure(args.failure)})`,
+      // Over-budget is a fail-fast rejection, not a timeout — "did not
+      // become ready within 120s" would misdescribe a 2s refusal.
+      args.failure.kind === "over-budget"
+        ? `agent ${args.agentId} was not started: ${describeWakeFailure(args.failure)}`
+        : `agent ${args.agentId} did not become ready within ` +
+            `${Math.round(args.timeoutMs / 1000)}s (${describeWakeFailure(args.failure)})`,
     );
     this.name = "AgentWakeTimeoutError";
     this.agentId = args.agentId;

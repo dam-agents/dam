@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-07-14
+Last verified: 2026-07-15
 
 ## Overview
 
@@ -68,7 +68,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
 - **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL inbox of prompts that did appear. Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
-- **`channel`** — Slack/Telegram bindings and the per-agent allow-list, owned by [channels.md](channels.md).
+- **`channel`** — Slack channel bindings and the per-agent allow-list, owned by [channels.md](channels.md). Telegram binds in-chat (`/login`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`schedule`** — time-triggered task recurrences on an agent, owned by [agent-lifecycle.md](agent-lifecycle.md).
 

@@ -33,6 +33,9 @@ interface ConnectOpts {
   host?: string;
   clientId?: string;
   clientSecret?: string;
+  issuerUrl?: string;
+  scopes?: string;
+  audience?: string;
   appSlug?: string;
   headerName?: string;
   valueFormat?: string;
@@ -70,6 +73,18 @@ export function buildConnectCommand(deps: {
     .option("--host <host>", "input: host")
     .option("--client-id <id>", "input: OAuth client id")
     .option("--client-secret <secret>", "input: OAuth client secret")
+    .option(
+      "--issuer-url <url>",
+      "input: OAuth issuer URL — the token endpoint is discovered from its metadata (client credentials)",
+    )
+    .option(
+      "--scopes <scopes>",
+      "input: OAuth scopes, space- or comma-separated (client credentials)",
+    )
+    .option(
+      "--audience <audience>",
+      "input: OAuth audience (client credentials)",
+    )
     .option("--app-slug <slug>", "input: GitHub App slug")
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -109,6 +124,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
+        "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
@@ -441,6 +458,20 @@ function buildPayload(
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
       };
+    case "client-credentials":
+      return {
+        ...common,
+        authKind: "client-credentials",
+        ...(v("host") ? { host: v("host")! } : {}),
+        ...(v("issuerUrl") ? { issuerUrl: v("issuerUrl")! } : {}),
+        ...(v("clientId") ? { clientId: v("clientId")! } : {}),
+        ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
+        ...(v("scopes") ? { scopes: v("scopes")! } : {}),
+        ...(v("audience") ? { audience: v("audience")! } : {}),
+        ...(v("headerName") ? { headerName: v("headerName")! } : {}),
+        ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
+        ...(v("envName") ? { envName: v("envName")! } : {}),
+      };
     case "header": {
       const value = v("value");
       if (!value) return { error: "the secret value is required (--value)" };
@@ -595,11 +626,14 @@ function flagListFor(inputs: readonly ConnectionTemplateInput[]): string {
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
+  issuerUrl: "Issuer URL",
   headerName: "Header name",
   valueFormat: "Value format",
   value: "Secret value",
   clientId: "Client ID",
   clientSecret: "Client secret",
+  scopes: "Scopes (space-separated)",
+  audience: "Audience",
   appSlug: "GitHub App slug",
   envName: "Env var name",
   caData: "Cluster CA certificate",

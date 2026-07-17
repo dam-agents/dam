@@ -65,6 +65,27 @@ spec:
             # agent claims instantly. Disabled by default; see controller.warmPool.
             - name: WARM_POOL
               value: {{ .Values.controller.warmPool | toJson | quote }}
+            # Per-user compute ceiling defaults (#1900); a UserBudget CR
+            # overrides them for one user. Enforced at the 0→1 scale-up.
+            - name: DEFAULT_USER_CPU_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
+            - name: DEFAULT_USER_MEMORY_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultMemory | quote }}
+            # Requests are derived from limits at render (#1900); see
+            # controller.requestsFromLimits in values.yaml.
+            - name: REQUESTS_FROM_LIMITS_FRACTION
+              value: {{ .Values.controller.requestsFromLimits.fraction | quote }}
+            - name: REQUESTS_FROM_LIMITS_MIN_CPU
+              value: {{ .Values.controller.requestsFromLimits.minCpu | quote }}
+            - name: REQUESTS_FROM_LIMITS_MIN_MEMORY
+              value: {{ .Values.controller.requestsFromLimits.minMemory | quote }}
+            # The Size materialized into any Agent spec lacking a limits
+            # dimension (#1900) — fill-if-absent on reconcile; see
+            # controller.agent.legacyAgentSize in values.yaml.
+            - name: AGENT_LEGACY_CPU_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.cpu | quote }}
+            - name: AGENT_LEGACY_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.memory | quote }}
             # harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.
@@ -79,6 +100,12 @@ spec:
               value: {{ .Values.istio.trustDomain | quote }}
             - name: PLATFORM_ISTIO_WAYPOINT_NAME
               value: {{ .Values.istio.waypointName | quote }}
+            {{- with include "platform.objectstorage.agentAuthorityHttp" . }}
+            # Plain-HTTP object-store authority — gateways render dedicated
+            # routes for it (harness-route shape) for presigned uploads.
+            - name: PLATFORM_OBJECT_STORE_AUTHORITY
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Telemetry attribution: when the bundled telemetry backend is on,
             # each gateway gains a collector egress chain that MITM-terminates

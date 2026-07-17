@@ -18,6 +18,17 @@ const invalidatesAgentsList = {
   invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
 };
 
+// Lifecycle mutations move Reserved (#1900) — refresh the meter immediately
+// rather than waiting out its 5s poll. Symmetric across everything that can
+// change what's running or how big it is: create/delete, wake/restart,
+// pause/stop, and resize (update).
+const invalidatesAgentsAndBudget = {
+  invalidates: [
+    ...invalidatesAgentsList.invalidates,
+    trpc.budgets.reserved.queryKey(),
+  ],
+};
+
 export interface CreateAgentInput {
   name: string;
   templateId?: string;
@@ -39,6 +50,9 @@ export interface CreateAgentInput {
   /** Pre-built tar / tar.gz / tgz to upload verbatim. Mutually exclusive
    *  with `importEntries`; if both are present, the raw bundle wins. */
   importRawBundle?: File;
+  /** The sandbox's Size (#1900): CPU/memory limits from the wizard sliders.
+   *  Omitted means the template's default (else the chart default). */
+  size?: { cpu?: string; memory?: string };
 }
 
 /**
@@ -102,7 +116,7 @@ export function useCreateAgent() {
       return agent;
     },
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to create agent",
     },
   });
@@ -112,7 +126,7 @@ export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to delete agent",
     },
   });
@@ -122,7 +136,7 @@ export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     meta: {
-      invalidates: [trpc.agents.list.queryKey(), agentsKeys.listWithChannels()],
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to update agent",
     },
   });
@@ -137,8 +151,30 @@ export function useWakeAgentMutation() {
   return useMutation({
     ...trpc.agents.wake.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to start agent",
+    },
+  });
+}
+
+/** Pause: sleeps now, wakes on its next use. Frees budget immediately. */
+export function usePauseAgent() {
+  return useMutation({
+    ...trpc.agents.pause.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to pause sandbox",
+    },
+  });
+}
+
+/** Hard stop: stays down until explicitly started (or a schedule fires). */
+export function useStopAgent() {
+  return useMutation({
+    ...trpc.agents.stop.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to stop sandbox",
     },
   });
 }
@@ -153,7 +189,7 @@ export function useRestartAgentMutation() {
   return useMutation({
     ...trpc.agents.restart.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to restart agent",
     },
   });
@@ -175,26 +211,6 @@ export function useDisconnectSlack() {
     meta: {
       ...invalidatesAgentsList,
       errorToast: "Failed to disconnect Slack",
-    },
-  });
-}
-
-export function useConnectTelegram() {
-  return useMutation({
-    ...trpc.agents.connectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to connect Telegram",
-    },
-  });
-}
-
-export function useDisconnectTelegram() {
-  return useMutation({
-    ...trpc.agents.disconnectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to disconnect Telegram",
     },
   });
 }

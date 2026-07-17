@@ -111,6 +111,7 @@ export function composeConnectionsForOwner(opts: {
     secretStore: opts.secretStore,
     fanOut,
     oauthFlow,
+    oauthEngine: opts.oauthEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
   });

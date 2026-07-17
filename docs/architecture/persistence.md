@@ -1,14 +1,15 @@
 # Persistence
 
-Last verified: 2026-07-01
+Last verified: 2026-07-15
 
 ## Overview
 
-Platform persists state on three durable substrates, split cleanly between the platform and the agent:
+Platform persists state on four durable substrates, split cleanly between the platform and the agent:
 
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned. The bundled instance runs under three roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
+- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: Experiment Candidate artifacts. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot record Candidates — the feature fails closed.
 - **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Forks), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:
@@ -19,7 +20,7 @@ Platform persists state on three durable substrates, split cleanly between the p
 
 The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
 
-The optional agent-telemetry backend adds a fourth durable substrate, outside this split — see [observability](observability.md). It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
+The optional agent-telemetry backend adds a fifth durable substrate, outside this split — see [observability](observability.md). It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
 
 ## Diagram
 
@@ -30,6 +31,7 @@ flowchart LR
   agent-runtime[agent-runtime pod]
 
   postgres[(Postgres)]
+  objectstore[(Object store<br/>S3-compatible)]
 
   subgraph k8s[K8s API]
     cr-spec[Agent / Fork CR<br/>spec]
@@ -40,6 +42,7 @@ flowchart LR
   pvc[(Per-Agent PVC)]
 
   api-server -->|write| postgres
+  api-server -->|read/write| objectstore
   api-server -->|write| cr-spec
   api-server -->|read| cr-status
   api-server -->|annotate| cr-anno
@@ -61,9 +64,16 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
-- **experiment candidates** — the downloadable Candidate artifact a Run produced, stored inline as a capped blob (`run_artifacts`). Living here rather than on a per-Agent PVC is what makes a Candidate downloadable while the producing agent is hibernated — Postgres is independent of agent pods, and the api-server (the sole reader/writer) is always running. Owned by [experiments](experiments.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
+
+### Object store
+
+The object store carries bulk binary blobs that would be wrong as database rows — data whose size, not queryability, is the point. Its first consumer is Experiment Candidate artifacts ([experiments](experiments.md)); it is also the durable-bulk-storage foundation intended for future features like storage backups and agent duplication.
+
+Ownership is api-server-centric: it holds the only standing credentials, the controller never touches the store, and bulk bytes move **directly** between producer/consumer and the store under platform-minted authorization — the api-server issues short-lived links scoped to a single object and operation (upload links to agents after attributing the caller, download links to browsers after owner checks), and the store rejects anything else. An agent's traffic still exits only through its paired gateway; what changes with the store present is that the gateway forwards store-bound requests without a per-request human decision, the link itself being the authorization ([security-and-credentials](security-and-credentials.md)). Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
+
+The store is any S3-compatible endpoint, chosen at deploy time via Helm: the chart bundles a single-node SeaweedFS by default (dev and local clusters work with no external account; Apache-2.0, so bundling carries no copyleft obligations), or the operator points the platform at an external store — a cloud bucket or an on-prem installation. The api-server provisions its bucket at startup when missing and fails boot fast when the store is unreachable. An install with no object store fails closed: bulk-blob features are unavailable until one is configured.
 
 ### Custom resources
 
@@ -112,15 +122,15 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 
 ## Lifetime
 
-| Event | Postgres | Agent CR (spec/status) | PVC |
-|---|---|---|---|
-| Pod restart | survives | survives | survives |
-| Hibernate (replicas → 0) | survives | survives | survives |
-| Wake (replicas → 1) | survives | survives | survives |
-| api-server restart | survives | survives | survives |
-| Controller restart | survives | survives | survives |
-| Agent delete | agent row marked deleted by api-server | CR removed | PVCs removed by controller |
-| Schedule delete | schedule row removed | n/a | n/a |
+| Event | Postgres | Object store | Agent CR (spec/status) | PVC |
+|---|---|---|---|---|
+| Pod restart | survives | survives | survives | survives |
+| Hibernate (replicas → 0) | survives | survives | survives | survives |
+| Wake (replicas → 1) | survives | survives | survives | survives |
+| api-server restart | survives | survives | survives | survives |
+| Controller restart | survives | survives | survives | survives |
+| Agent delete | agent row marked deleted by api-server | survives (Candidates belong to the Experiment, not the Agent) | CR removed | PVCs removed by controller |
+| Schedule delete | schedule row removed | n/a | n/a | n/a |
 
 Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 

@@ -6,14 +6,10 @@ import {
   EventType,
   type SlackConnected,
   type SlackDisconnected,
-  type TelegramConnected,
-  type TelegramDisconnected,
   type AgentDeleted,
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
-import type { StoredChannelConfig } from "../stored-channel.js";
-import type { ChannelSecretStore } from "../infrastructure/channel-secret-store.js";
 
 export interface ChannelAttachment {
   filename: string;
@@ -27,10 +23,10 @@ export interface PostMessageOptions {
   attachment?: ChannelAttachment;
 }
 
+/** The dispatch surface both adapters share; per-agent lifecycle is
+ *  Slack-only (Telegram is a single platform bot with data-only bindings). */
 interface Worker {
   type: ChannelType;
-  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
-  stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
     instanceName: string,
@@ -44,6 +40,8 @@ interface Worker {
 
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
+  /** Platform Telegram bot handle (no @), or null when Telegram is off. */
+  telegramBotUsername(): string | null;
   bootstrap(channelsByInstance: Map<string, ChannelConfig[]>): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
@@ -61,28 +59,12 @@ export interface ChannelManager {
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
   telegramWorker?: TelegramWorker;
-  channelSecretStore: ChannelSecretStore;
 }): ChannelManager {
-  const { slackWorker, telegramWorker, channelSecretStore } = deps;
+  const { slackWorker, telegramWorker } = deps;
   const workers: Worker[] = [slackWorker, telegramWorker].filter(
     Boolean,
   ) as Worker[];
   const subscriptions: Subscription[] = [];
-
-  async function startTelegram(agentId: string): Promise<void> {
-    if (!telegramWorker) return;
-    const botToken = await channelSecretStore.readTelegramToken(agentId);
-    if (!botToken) {
-      process.stderr.write(
-        `[channel-manager] Telegram secret missing for ${agentId}; skipping start\n`,
-      );
-      return;
-    }
-    await telegramWorker.start(agentId, {
-      type: ChannelType.Telegram,
-      botToken,
-    });
-  }
 
   subscriptions.push(
     events$()
@@ -107,29 +89,11 @@ export function createChannelManager(deps: {
 
   subscriptions.push(
     events$()
-      .pipe(ofType<TelegramConnected>(EventType.TelegramConnected))
-      .subscribe((event) => {
-        startTelegram(event.agentId).catch((err) => {
-          process.stderr.write(
-            `[channel-manager] Telegram start failed for ${event.agentId}: ${err}\n`,
-          );
-        });
-      }),
-  );
-
-  subscriptions.push(
-    events$()
-      .pipe(ofType<TelegramDisconnected>(EventType.TelegramDisconnected))
-      .subscribe((event) => {
-        if (telegramWorker) telegramWorker.stop(event.agentId);
-      }),
-  );
-
-  subscriptions.push(
-    events$()
       .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
       .subscribe((event) => {
-        for (const w of workers) w.stop(event.agentId);
+        // Telegram bindings are rows, not runtime state — the channel-cleanup
+        // saga deletes them; only Slack tracks per-agent worker state.
+        if (slackWorker) slackWorker.stop(event.agentId);
       }),
   );
 
@@ -138,12 +102,18 @@ export function createChannelManager(deps: {
       return Object.fromEntries(workers.map((w) => [w.type, true]));
     },
 
+    telegramBotUsername(): string | null {
+      return telegramWorker?.botUsername() ?? null;
+    },
+
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
+      // The platform bot polls unconditionally — /login must work in chats
+      // that have no binding yet.
+      if (telegramWorker) await telegramWorker.start();
+
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
-          if (channel.type === ChannelType.Telegram) {
-            await startTelegram(agentId);
-          } else if (channel.type === ChannelType.Slack && slackWorker) {
+          if (channel.type === ChannelType.Slack && slackWorker) {
             await slackWorker.start(agentId, channel);
           }
         }

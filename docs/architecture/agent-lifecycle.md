@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-07-08
+Last verified: 2026-07-14
 
 ## Overview
 
@@ -169,6 +169,10 @@ This is deliberate, not a gap to close. The platform *can* see that processes ar
 It's a blunt instrument, not a fix for the blind spot: a longer window (or `0`) on an Agent with known no-session work keeps it alive to finish, but doesn't make that work visible. The cost is real — there's no auto-reclaim, so a long or disabled timeout holds CPU, memory, and the harness open until lowered by hand; on an interactive Agent it just forfeits scale-to-zero for nothing.
 
 The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake. Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
+
+**The hard stop and pause (#1900).** The user-initiated scale-downs, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session. The api-server stamps `agent-platform.ai/stop-requested` (and clears the session pin); `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — a hard stop may interrupt work by design. The stop is **sticky**: background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on a stopped Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect it. Only deliberate paths clear the stamp and restart the Agent (back through the budget gate): an explicit wake, a schedule fire — schedules override a stop by design, and the UI warns at stop time when the Agent has any — and an experiment run's wake, which shares the schedule-fire primitive. Once scaled down, a stopped Agent looks like any hibernated one.
+
+**Pause** is the non-sticky sibling: the same stop stamp — plus a *staled* `last-activity`, so the Agent stays down once un-stuck — which the api-server clears itself once the Agent settles Hibernated (a settle-watcher polls for up to a minute; on failure the stop stays — fail-safe strict, one wake recovers). The clear is a **compare-and-clear** of the exact stamp the pause wrote: a stop (or second pause) issued during the settle window carries a newer stamp and stays sticky rather than being erased by the watcher. The transient stickiness during the descent is load-bearing — it is what keeps background polls from resurrecting the pair before it lands; staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake. A paused Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it. One nuance: a **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so its pause degrades to the sticky stop — the only stable "paused" it can have.
 
 ### Delete
 

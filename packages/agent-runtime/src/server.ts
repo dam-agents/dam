@@ -112,13 +112,18 @@ const podService = existsSync(podServicePath)
 
 if (envStore.ready()) podService?.refreshEnv();
 
-const { runtime: acpRuntime, triggerDriver } = composeAcp({
+const {
+  runtime: acpRuntime,
+  triggerDriver,
+  sessionMetadata,
+} = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
   stateBackend,
   envReader: envStore,
+  isTerminalSessionActive: isPtySessionActive,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -181,10 +186,20 @@ const trpcHandler = createHTTPHandler({
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
-// A detached PTY is reaped on harness quietness, not viewer loss, so in-flight
-// work survives switching away. The grace stays short for tab-refresh reattach.
+// A detached PTY survives while the harness produces output; the short grace
+// covers tab-refresh reattach.
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+// Recent non-echo output ≈ busy. The window is the indicator's tail after the
+// last output; sized near the TUI repaint tick, trading possible flicker for
+// a short tail.
+const PTY_ACTIVE_WINDOW_MS = 1_000;
+const PTY_INPUT_ECHO_MS = 500;
+
+function isPtySessionActive(sessionId: string): boolean {
+  const slot = ptySlots.get(sessionId);
+  return !!slot?.pty && Date.now() - slot.lastBusyAt < PTY_ACTIVE_WINDOW_MS;
+}
 
 interface PtySlot {
   pty: nodePty.IPty | null;
@@ -192,12 +207,29 @@ interface PtySlot {
   serialize: InstanceType<typeof SerializeAddon>;
   client: WsWebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** Any output — drives detached-idle reaping. */
   lastOutputAt: number;
+  lastSeenStampAt: number;
+  /** Echo-discounted output after the first keypress — drives `running`. */
+  lastBusyAt: number;
+  lastInputAt: number;
+  /** Boot render precedes any input and must not read as busy. */
+  sawInput: boolean;
 }
 
 const ptySlots = new Map<string, PtySlot>();
 const ptyLog = (sid: string, msg: string) =>
   process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+
+const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
+
+// An attached viewer sees everything the terminal does. Terminal sessions are
+// usually store-less; the first stamp creates their entry (with the explicit
+// mode, which `set` needs and which keeps the terminal decode).
+function markTerminalSeen(sessionId: string): void {
+  if (sessionMetadata.get(sessionId)) sessionMetadata.recordSeen(sessionId);
+  else sessionMetadata.set(sessionId, { mode: "terminal" });
+}
 
 function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
@@ -239,6 +271,7 @@ function attachPty(
     const slot = ptySlots.get(sessionId);
     if (!slot || slot.client !== ws) return;
     slot.client = null;
+    markTerminalSeen(sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -276,6 +309,9 @@ function attachPty(
           existing.client.close(1000, "replaced by new connection");
         }
         existing.client = ws;
+        markTerminalSeen(sessionId);
+        // The reattach resize repaint is a reaction too, not work.
+        existing.lastInputAt = Date.now();
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
         const serialized = existing.serialize.serialize();
@@ -320,12 +356,28 @@ function attachPty(
         client: ws,
         graceTimer: null,
         lastOutputAt: Date.now(),
+        lastSeenStampAt: Date.now(),
+        lastBusyAt: 0,
+        lastInputAt: 0,
+        sawInput: false,
       };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
+      markTerminalSeen(sessionId);
 
       pty.onData((data) => {
-        slot.lastOutputAt = Date.now();
+        const now = Date.now();
+        slot.lastOutputAt = now;
+        if (slot.sawInput && now - slot.lastInputAt > PTY_INPUT_ECHO_MS)
+          slot.lastBusyAt = now;
+        // Keep other clients' unread honest during long attached work.
+        if (
+          slot.client &&
+          now - slot.lastSeenStampAt > PTY_SEEN_STAMP_DEBOUNCE_MS
+        ) {
+          slot.lastSeenStampAt = now;
+          markTerminalSeen(sessionId);
+        }
         slot.headless.write(data);
         if (slot.client?.readyState === 1)
           slot.client.send(encodeDataFrame(OP_OUTPUT, data));
@@ -347,8 +399,17 @@ function attachPty(
     const slot = ptySlots.get(sessionId);
     if (!slot) return;
     if (frame.op === OP_INPUT) {
-      slot.pty?.write(new TextDecoder().decode(frame.data));
+      const now = Date.now();
+      slot.lastInputAt = now;
+      slot.sawInput = true;
+      const text = new TextDecoder().decode(frame.data);
+      // A submitted line counts as work starting; busy doesn't wait for the
+      // first non-echo repaint.
+      if (/[\r\n]/.test(text)) slot.lastBusyAt = now;
+      slot.pty?.write(text);
     } else if (frame.op === OP_RESIZE) {
+      // Suppresses the repaint echo without counting as the first keypress.
+      slot.lastInputAt = Date.now();
       slot.headless.resize(frame.cols, frame.rows);
       slot.pty?.resize(frame.cols, frame.rows);
     }
@@ -453,13 +514,22 @@ server.on("upgrade", (req, socket, head) => {
       socket.destroy();
       return;
     }
+    // Caller's W3C trace context, forwarded by dam-run: the command joins the
+    // spawning session's trace, so its telemetry folds into that session's
+    // metrics.
+    const traceparent = q.get("traceparent");
+    const tracestate = q.get("tracestate");
     execWss.handleUpgrade(req, socket, head, (ws) =>
       attachExec(ws, {
         argv,
         cols: Number(q.get("cols")) || 80,
         rows: Number(q.get("rows")) || 24,
         cwd: q.get("cwd") || workDir,
-        env: mergedSpawnEnv(envStore),
+        env: {
+          ...mergedSpawnEnv(envStore),
+          ...(traceparent ? { TRACEPARENT: traceparent } : {}),
+          ...(tracestate ? { TRACESTATE: tracestate } : {}),
+        },
         log: (msg) => process.stderr.write(`[exec] ${msg}\n`),
       }),
     );

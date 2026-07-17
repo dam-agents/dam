@@ -28,22 +28,52 @@ export function createClickhouseClient(cfg: {
 // the trusted owner id in ResourceAttributes (stamped by the agent gateway —
 // see docs/architecture/observability.md). Every query is gated on that owner
 // id against the caller's resolved allowlist.
-const ownedApiRequests = (w: MetricsWindow) =>
-  [
-    "ServiceName = 'claude-code'",
+//
+// `Body` alone scopes to Claude Code harness telemetry: ServiceName carries the
+// template name (OTEL_SERVICE_NAME, _helpers.tpl), so filtering it would hide
+// every template not literally named `claude-code` (e.g. `bugstone`).
+export const ownedApiRequests = (w: MetricsWindow): string => {
+  const base = [
     "Body = 'claude_code.api_request'",
     "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
     ...(w.hours === undefined
       ? []
       : ["Timestamp >= now() - toIntervalHour({hours:UInt32})"]),
-    ...(w.sessionId === undefined
+    ...(w.fromIso === undefined
       ? []
-      : ["LogAttributes['session.id'] = {sessionId:String}"]),
+      : ["Timestamp >= parseDateTimeBestEffort({fromIso:String})"]),
+    ...(w.toIso === undefined
+      ? []
+      : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
+  ];
+  if (w.sessionId === undefined) return base.join("\n  AND ");
+  // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
+  // own session.id but inherit the session's W3C trace context (TRACEPARENT),
+  // so their records carry the parent trace's TraceId. "This session" folds in
+  // every session sharing a trace with the target — whole sessions, not just
+  // same-trace rows, since a child's warmup calls carry no TraceId. Both
+  // subqueries reuse the ownership + time predicate, so the fold never reaches
+  // across owners; when the harness emitted no TraceId this degrades to the
+  // exact-session match.
+  const owned = base.join(" AND ");
+  return [
+    ...base,
+    `(LogAttributes['session.id'] = {sessionId:String}
+   OR LogAttributes['session.id'] IN (
+     SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
+     WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
+       SELECT DISTINCT TraceId FROM otel_logs
+       WHERE ${owned}
+         AND LogAttributes['session.id'] = {sessionId:String}
+         AND TraceId != '')))`,
   ].join("\n  AND ");
+};
 
 const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   agentIds,
   ...(w.hours === undefined ? {} : { hours: w.hours }),
+  ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
+  ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
 });
 

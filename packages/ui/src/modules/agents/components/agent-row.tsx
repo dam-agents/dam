@@ -23,7 +23,8 @@ interface Props {
   onSelect: () => void;
   onWake: () => void;
   onRestart: () => void;
-  onConfigure: () => void;
+  onPause: () => void;
+  onStop: () => void;
   onDelete: () => void;
 }
 
@@ -35,7 +36,8 @@ export function AgentRow({
   onSelect,
   onWake,
   onRestart,
-  onConfigure,
+  onPause,
+  onStop,
   onDelete,
 }: Props) {
   return (
@@ -54,7 +56,21 @@ export function AgentRow({
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <ContributionFailuresBadge failures={agent.contributionFailures} />
-        <StatusBadge state={display.state} />
+        {/* A parked sandbox explains itself: the controller's figures ride
+            the badge tooltip — focusable and labelled, so keyboard and
+            screen-reader users reach them, not just mouse hover. */}
+        <span
+          title={agent.overBudgetMessage ?? undefined}
+          {...(agent.overBudgetMessage
+            ? {
+                tabIndex: 0,
+                role: "note",
+                "aria-label": agent.overBudgetMessage,
+              }
+            : {})}
+        >
+          <StatusBadge state={display.state} />
+        </span>
         {/* Menu clicks (incl. portaled items, which bubble through the React
             tree) must not trigger the row's onSelect. */}
         <span onClick={(e) => e.stopPropagation()}>
@@ -66,7 +82,11 @@ export function AgentRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={onWake}>Wake</DropdownMenuItem>
+                <DropdownMenuItem onSelect={onWake}>
+                  {/* A parked sandbox was never asleep — it's waiting for
+                      room, and this retries the gate. */}
+                  {display.state === "over_budget" ? "Start" : "Wake"}
+                </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem
                   disabled={display.powerAction === null}
@@ -75,9 +95,16 @@ export function AgentRow({
                   Restart
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={onConfigure}>
-                Configure
-              </DropdownMenuItem>
+              {display.state === "running" && (
+                <>
+                  <DropdownMenuItem onSelect={onPause}>
+                    Pause — wakes on next use
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={onStop}>
+                    Stop — until started again
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 tone="danger"

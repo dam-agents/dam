@@ -12,6 +12,8 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 export interface ComposeExperimentsForOwnerOpts {
   db: Db;
   owner: string;
+  /** Candidate size cap quoted in the Trial prompt's reporting contract. */
+  maxArtifactBytes: number;
   /** Resolve whether the agent exists for this owner — gates `addArm` so an arm
    *  can only reference an owned agent. Omit in contexts without an agents
    *  service (the check is then skipped). */
@@ -39,6 +41,7 @@ export function composeExperimentsForOwner(
     experiments: createExperimentsService({
       owner: opts.owner,
       repo,
+      maxArtifactBytes: opts.maxArtifactBytes,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ...(trialLauncher ? { trialLauncher } : {}),
     }),

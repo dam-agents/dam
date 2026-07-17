@@ -13,6 +13,7 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
+import { ChannelType } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -25,10 +26,12 @@ import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
+  isAgentStoppedError,
   isAgentWakeTimeoutError,
   type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
+import { composeBudgetsModule } from "../../modules/budgets/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import {
   createDisabledMetricsService,
@@ -43,19 +46,20 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { createCandidateRoutes } from "../../modules/experiments/candidate-route.js";
-import { composeArtifactsModule } from "../../modules/artifacts/compose.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
+import type {
+  TelegramOAuthPending,
+  TelegramBindFlowStore,
+} from "../../modules/channels/infrastructure/telegram-flows.js";
 import {
-  isThreadAuthorized,
-  authorizeThread,
-  revokeThread,
-  listAuthorizedThreads,
-  getAuthorizedBy,
-} from "../../modules/channels/infrastructure/telegram-threads-repository.js";
+  findAgentByConversation,
+  bindConversation,
+  unbindConversation,
+} from "../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createSshRelay } from "./ssh-relay.js";
@@ -75,7 +79,6 @@ import { composeApiKeysModule } from "./../../modules/api-keys/index.js";
 import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
 import {
@@ -102,10 +105,12 @@ export interface ApiServerAppDeps {
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
-  channelSecretStore: ChannelSecretStore;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
+  /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
+  telegramBindFlows?: TelegramBindFlowStore;
+  /** Present when Telegram is enabled; backs the one-time connect links. */
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -125,12 +130,17 @@ export interface ApiServerAppDeps {
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
+  /** Agent ids ever registered to an owner (Postgres agent registry,
+   *  soft-deleted included) — keeps deleted agents' spend attributable. */
+  listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   /** ClickHouse-backed agent-metrics reader; `null` when the telemetry
    *  backend is disabled (the metrics API then fails closed). */
   metricsReader: MetricsReader | null;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
+  /** Owner-agnostic; consumers owner-scope each read themselves. */
+  artifacts: ArtifactService;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -139,10 +149,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     api,
     db,
     channelManager,
-    channelSecretStore,
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
+    telegramBindFlows,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -155,10 +165,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     contributionsSettled,
     getAgentCapabilities,
     schedulesBoot,
+    listRegisteredAgentIds,
     metricsReader,
     terms,
     isTermsAccepted,
     e2e,
+    artifacts,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -334,15 +346,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Candidate download — non-tRPC because it streams a binary artifact (zip).
   // Boot-time artifact service (owner-agnostic store); the route owner-scopes
   // each read through the experiments service.
-  const { service: artifacts } = composeArtifactsModule({
-    db,
-    maxBytes: config.maxArtifactBytes,
-  });
   app.route(
     "/",
     createCandidateRoutes({
       experimentsFor: (owner) =>
-        composeExperimentsForOwner({ db, owner }).experiments,
+        composeExperimentsForOwner({
+          db,
+          owner,
+          maxArtifactBytes: config.maxArtifactBytes,
+        }).experiments,
       artifacts,
     }),
   );
@@ -365,19 +377,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
   }
 
-  if (config.telegramEnabled) {
+  if (config.telegramBotToken && telegramBindFlows) {
     app.route(
       "/",
       createTelegramOAuthRoutes({
         pendingFlows: pendingTelegramOAuthFlows,
-        threads: {
-          isAuthorized: isThreadAuthorized(db),
-          authorize: authorizeThread(db),
-          list: listAuthorizedThreads(db),
-          revoke: revokeThread(db),
-          getAuthorizedBy: getAuthorizedBy(db),
-        },
-        isAgentOwner: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
+        bindFlows: telegramBindFlows,
         oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
@@ -385,6 +390,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           keycloakClientId: config.keycloakClientId,
           callbackUrl: `${config.uiBaseUrl}/api/telegram/oauth/callback`,
         },
+        uiBaseUrl: config.uiBaseUrl,
       }),
     );
   }
@@ -453,6 +459,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         {
           error: "agent unreachable",
           ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
         },
         502,
       );
@@ -604,6 +611,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         {
           error: "instance unreachable",
           ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
+          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
         },
         502,
       );
@@ -739,14 +747,45 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
+    // Reserved-vs-Ceiling meter + the live-resize gate (#1900). Composed
+    // before the agents module so the gate can be injected; reads via the
+    // boot-level repo (owner-scoped by the list selector).
+    const { budgets, resizeGate } = composeBudgetsModule({
+      k8s: k8sClient,
+      owner: user.sub,
+      listAgents: () => agentsRepo.list(user.sub),
+      defaultCeiling: {
+        cpu: config.defaultUserCpuBudget,
+        memory: config.defaultUserMemoryBudget,
+      },
+    });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+      agentDefaultLimits: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
+      resizeGate,
       owner: user.sub,
       db,
       userDirectory,
-      channelSecretStore,
+      telegramBinding: telegramBindFlows
+        ? {
+            peekFlow: telegramBindFlows.peek,
+            consumeFlow: telegramBindFlows.consume,
+            findAgentByConversation: findAgentByConversation(db),
+            bind: bindConversation(db),
+            postMessage: (agentId, conversationId, text) =>
+              channelManager.postMessage(agentId, ChannelType.Telegram, text, {
+                conversationId,
+              }),
+            listConversations: (agentId) =>
+              channelManager.listConversations(agentId, ChannelType.Telegram),
+            unbind: unbindConversation(db),
+          }
+        : undefined,
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
@@ -772,6 +811,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
+      maxArtifactBytes: config.maxArtifactBytes,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
       runtimeMutator,
       wakeAgent: async (agentId) => {
@@ -819,11 +859,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
     // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
     // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
+    // Live CRs are unioned with the Postgres agent registry so spend history
+    // survives agent deletion instead of shrinking retroactively.
     const metrics = metricsReader
       ? createMetricsService({
           reader: metricsReader,
           listOwnedAgentIds: async () => {
-            const ids = (await agents.list()).map((a) => a.id);
+            const [live, registered] = await Promise.all([
+              agents.list(),
+              listRegisteredAgentIds(user.sub),
+            ]);
+            const ids = [...new Set([...live.map((a) => a.id), ...registered])];
             return user.agentIds === "*"
               ? ids
               : ids.filter((id) => user.agentIds.includes(id));
@@ -840,7 +886,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         repos: reposService,
         agents,
         schedules,
-        channels: { available: channelManager.availableChannels() },
+        channels: {
+          available: channelManager.availableChannels(),
+          telegramBotUsername: () => channelManager.telegramBotUsername(),
+        },
         connections,
         skills,
         approvals,
@@ -852,6 +901,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         terms,
         e2e,
         apiKeys,
+        budgets,
         user,
         e2eEnabled: config.e2eEnabled,
       }),

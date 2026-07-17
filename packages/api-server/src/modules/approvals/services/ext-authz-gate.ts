@@ -56,6 +56,10 @@ export interface CreateExtAuthzGateDeps {
   ruleMatcher: EgressRuleMatcher;
   /** Bounded synchronous hold; the durable pending row outlives this. */
   holdSeconds: number;
+  /** Bare hostnames of platform-provided upstreams (the object store) that
+   *  carry their own per-request authorization — no HITL hold. Checked after
+   *  identity, before user rules. */
+  platformAllowedHosts: readonly string[];
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
@@ -77,6 +81,22 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           detail: { method, path },
         });
         return "deny";
+      }
+
+      if (deps.platformAllowedHosts.includes(host)) {
+        securityLog("info", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "allow",
+          // Query stripped: presigned-link signatures ride there (mirrors
+          // the gateway access log's REQ_WITHOUT_QUERY).
+          detail: { method, path: path.split("?")[0], basis: "platform" },
+        });
+        return "allow";
       }
 
       const matched = await deps.ruleMatcher.match(

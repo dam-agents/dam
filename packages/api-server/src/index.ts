@@ -12,7 +12,6 @@ import {
   createAgentRegistrySecretPort,
   createKeycloakUserDirectory,
   backfillUserEnv,
-  startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
@@ -39,12 +38,8 @@ import {
 } from "./modules/channels/infrastructure/slack.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
-import {
-  createTelegramWorker,
-  type TelegramOAuthPending,
-} from "./modules/channels/infrastructure/telegram.js";
+import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
-import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -52,13 +47,16 @@ import {
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
-  isThreadAuthorized,
-  authorizeThread,
-  revokeThread,
-  listAuthorizedThreads,
-  deleteThreadsByAgent,
-  getAuthorizedBy,
-} from "./modules/channels/infrastructure/telegram-threads-repository.js";
+  findAgentByConversation,
+  bindConversation,
+  listConversationsByAgent,
+  unbindConversation,
+  deleteConversationsByAgent,
+} from "./modules/channels/infrastructure/telegram-conversations-repository.js";
+import {
+  createTelegramBindFlowStore,
+  type TelegramOAuthPending,
+} from "./modules/channels/infrastructure/telegram-flows.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -74,6 +72,7 @@ import {
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
@@ -83,6 +82,7 @@ import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import {
   composeApprovalsSystem,
@@ -130,6 +130,33 @@ const dbTls = {
 await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
 const { db, sql } = createDb(config.databaseUrl, dbTls);
 
+// Candidate-artifact storage, shared by both app servers. ensureReady
+// provisions the bucket and fails boot fast on an unreachable store.
+const artifactsModule = composeArtifactsModule({
+  maxBytes: config.maxArtifactBytes,
+  objectStorage: config.objectStorageEndpoint
+    ? {
+        endpoint: config.objectStorageEndpoint,
+        agentEndpoint:
+          config.objectStorageAgentEndpoint ?? config.objectStorageEndpoint,
+        publicEndpoint: config.objectStoragePublicEndpoint ?? null,
+        region: config.objectStorageRegion,
+        bucket: config.objectStorageBucket,
+        forcePathStyle: config.objectStorageForcePathStyle,
+        credentials:
+          config.objectStorageAccessKeyId != null &&
+          config.objectStorageSecretAccessKey != null
+            ? {
+                accessKeyId: config.objectStorageAccessKeyId,
+                secretAccessKey: config.objectStorageSecretAccessKey,
+              }
+            : null,
+      }
+    : null,
+});
+await artifactsModule.ensureReady();
+const artifacts = artifactsModule.service;
+
 if (!config.redisUrl)
   throw new Error("REDIS_URL is required (Redis is a platform primitive)");
 const bullConnection = createBullConnection(
@@ -158,6 +185,12 @@ async function runUserEnvBackfill(): Promise<void> {
 }
 await runUserEnvBackfill();
 
+// Concrete spec.resources.limits on legacy agents (#1900) are the
+// controller's job: it materializes `legacyAgentSize` into any spec
+// missing a dimension on reconcile (fill-if-absent) — watch-driven, so it
+// also covers CRs created out-of-band, which a boot backfill here never
+// could.
+
 const runtimeDelivery = composeRuntimeDelivery({
   db,
   namespace: config.namespace,
@@ -179,7 +212,6 @@ const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
 };
-const channelSecretStore = createChannelSecretStore(k8sClient);
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
@@ -257,11 +289,9 @@ const { service: e2eService } = composeE2eModule({
   slack: fakeSlackGateway,
 });
 
-const channelSecretCleanupSub =
-  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
-  deleteThreadsByAgent(db),
+  deleteConversationsByAgent(db),
 );
 const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
   createAgentSkillsRepository(db).deleteByAgent(agentId),
@@ -311,10 +341,13 @@ const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
   agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+  agentDefaultLimits: {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  },
   owner: undefined,
   db,
   userDirectory,
-  channelSecretStore,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
@@ -328,7 +361,9 @@ const identityLinkService = createIdentityLinkService({
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
 const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
-
+const telegramBindFlows = config.telegramBotToken
+  ? createTelegramBindFlowStore()
+  : undefined;
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
@@ -340,7 +375,7 @@ const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callbac
 const chatSdkDatabaseUrl = config.databaseCaCertPath
   ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
   : config.databaseUrl;
-const chatSdkState = config.telegramEnabled
+const chatSdkState = config.telegramBotToken
   ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
   : undefined;
 
@@ -402,35 +437,35 @@ const slackWorker = slackGatewayFactory
   : undefined;
 
 const telegramWorker =
-  config.telegramEnabled && chatSdkState
-    ? createTelegramWorker(
+  config.telegramBotToken && chatSdkState
+    ? createTelegramWorker({
+        botToken: config.telegramBotToken,
+        configuredBotUsername: config.telegramBotUsername,
         makeAcpClient,
-        chatSdkState,
-        () => systemAgents,
-        {
-          isAuthorized: isThreadAuthorized(db),
-          authorize: authorizeThread(db),
-          list: listAuthorizedThreads(db),
-          revoke: revokeThread(db),
-          getAuthorizedBy: getAuthorizedBy(db),
+        state: chatSdkState,
+        agents: () => systemAgents,
+        conversations: {
+          findAgentByConversation: findAgentByConversation(db),
+          bind: bindConversation(db),
+          listByAgent: listConversationsByAgent(db),
+          unbind: unbindConversation(db),
         },
-        {
+        oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: telegramOauthCallbackUrl,
         },
-        pendingTelegramOAuthFlows,
+        pendingOAuthFlows: pendingTelegramOAuthFlows,
         isTermsAccepted,
-        config.uiBaseUrl,
-      )
+        uiBaseUrl: config.uiBaseUrl,
+      })
     : undefined;
 
 const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
-  channelSecretStore,
 });
 
 // Seed list for the `trusted` egress preset.
@@ -473,6 +508,11 @@ const {
   },
   wrapperFrameSender,
   holdSeconds: config.approvalHoldSeconds,
+  // The presigned link is the per-request authorization for the store, so
+  // no HITL decision. Bare hostname — the gate strips ports.
+  platformAllowedHosts: config.objectStorageAgentEndpoint
+    ? [new URL(config.objectStorageAgentEndpoint).hostname]
+    : [],
 });
 deliverySweeper.start();
 
@@ -578,10 +618,10 @@ const { server: apiServer } = startApiServerApp({
   api,
   db,
   channelManager,
-  channelSecretStore,
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
+  telegramBindFlows,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -598,10 +638,12 @@ const { server: apiServer } = startApiServerApp({
       .then((r) => r?.runtimeCapabilities ?? null),
   schedulesBoot,
   mountUsageRoutes: usage.mount,
+  listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
   metricsReader: composeMetricsReader(config),
   terms: termsService,
   isTermsAccepted,
   e2e: e2eService,
+  artifacts,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -613,6 +655,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   runtimeHello: runtimeDelivery.hello,
   schedulesBoot,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  artifacts,
 });
 
 // Instance identity for ext-authz now flows from the per-instance
@@ -641,7 +684,6 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
   if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
-  channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

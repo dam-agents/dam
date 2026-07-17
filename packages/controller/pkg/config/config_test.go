@@ -187,6 +187,7 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 			"agentHome": "/home/agent",
 			"imagePullPolicy": "IfNotPresent",
 			"storageSize": "10Gi",
+			"resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
 			"mounts": [{"path": "$HOME", "persist": true}, {"path": "/tmp"}],
 			"env": [{"name": "PORT", "value": "8080"}]
 		}`,
@@ -235,7 +236,7 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 // responsibility for satisfying validation themselves.
 const (
 	minAgentBaseJSON             = `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
-	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi"}`
+	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
 )
 
 func setEnv(t *testing.T, vars map[string]string) {

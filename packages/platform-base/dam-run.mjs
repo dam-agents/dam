@@ -33,7 +33,16 @@ const runUrl =
   encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
   "&cwd=" +
   encodeURIComponent(process.cwd()) +
-  `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}`;
+  `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}` +
+  // Forward the caller's W3C trace context (the harness sets TRACEPARENT for
+  // its subprocesses) so the executor's command joins the session's trace and
+  // its telemetry folds into the session's metrics.
+  (process.env.TRACEPARENT
+    ? `&traceparent=${encodeURIComponent(process.env.TRACEPARENT)}`
+    : "") +
+  (process.env.TRACESTATE
+    ? `&tracestate=${encodeURIComponent(process.env.TRACESTATE)}`
+    : "");
 
 const ws = new WebSocket(runUrl);
 ws.binaryType = "arraybuffer";
@@ -49,8 +58,18 @@ const finish = (code) => {
     } catch {}
   }
   process.stdin.pause();
-  process.exit(code);
+  // Flush stdout before exiting — process.exit truncates a backpressured
+  // pipe. The timer is a backstop for a wedged stdout consumer.
+  process.stdout.write("", () => process.exit(code));
+  setTimeout(() => process.exit(code), 2000);
 };
+
+// The relay completes the upgrade before it starts the executor, so a slow
+// handshake means the path to the api-server is broken, not a slow pod.
+const dialTimeout = setTimeout(() => {
+  process.stderr.write("dam-run: timed out connecting to the platform relay\n");
+  finish(1);
+}, 30_000);
 
 const send = (frame) => {
   if (ws.readyState === WebSocket.OPEN) ws.send(frame);
@@ -62,10 +81,16 @@ const resizeFrame = () => {
 };
 
 ws.onopen = () => {
+  clearTimeout(dialTimeout);
   send(resizeFrame());
   if (isTty) {
     process.stdin.setRawMode(true);
     process.stdout.on("resize", () => send(resizeFrame()));
+  } else {
+    // Piped stdin: a PTY has no true EOF, so signal it the terminal way, with
+    // EOT — twice, since the first only flushes a partial line (a raw-mode
+    // command would read the 0x04 bytes as data, same as in a real terminal).
+    process.stdin.on("end", () => send(new Uint8Array([OP_INPUT, 0x04, 0x04])));
   }
   process.stdin.on("data", (chunk) => {
     const frame = new Uint8Array(chunk.length + 1);

@@ -5,6 +5,7 @@ import type {
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
 import { isAgentWakeTimeoutError } from "../../modules/agents/domain/wake-failure.js";
+import { isAgentStoppedError } from "../../modules/agents/domain/agent-stopped.js";
 import { configureLogger } from "../../core/logger.js";
 
 type Condition = {
@@ -81,6 +82,14 @@ const READY: Condition[] = [{ type: "Ready", status: "True" }];
 const HIBERNATED: Condition[] = [
   { type: "Ready", status: "False", reason: "Hibernated" },
 ];
+const OVER_BUDGET: Condition[] = [
+  {
+    type: "Ready",
+    status: "False",
+    reason: "OverBudget",
+    message: "4.5/4 CPU — stop a running sandbox to free room",
+  },
+];
 
 function harness(initial: KubeObject[]) {
   const lines: Array<Record<string, unknown>> = [];
@@ -142,6 +151,10 @@ describe("ensureReady", () => {
     let notices = 0;
     const p1 = repo.ensureReady("a1", { onWaking: () => notices++ });
     const p2 = repo.ensureReady("a1", { onWaking: () => notices++ });
+    // Let the wake enter its poll (stop-check + readiness reads are awaits)
+    // before flipping the store to READY — mirrors real ordering, where no
+    // K8s read resolves synchronously.
+    await vi.advanceTimersByTimeAsync(0);
     store.set("a1", agentObj("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
     await Promise.all([p1, p2]);
@@ -248,6 +261,85 @@ describe("ensureReady", () => {
     }
   });
 
+  it("keeps polling past a stale denial and succeeds once the controller admits", async () => {
+    // The regression this guards (#2768 review must-fix 2): a parked agent
+    // keeps Ready=False/OverBudget standing, so a fresh wake's first poll
+    // tick reads the PREVIOUS attempt's denial. The heuristic — fail fast
+    // only on a denial observed to appear during this wake, or after the
+    // grace window — must let this wake ride through to the controller's
+    // re-evaluation instead of failing a start that room now permits.
+    const { repo, store } = harness([agentObj("a1", OVER_BUDGET)]);
+    const p = repo.ensureReady("a1");
+    await vi.advanceTimersByTimeAsync(0); // tick 0 sees the stale denial
+    store.set("a1", agentObj("a1", READY)); // controller admits: room is free
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it("fail-fast: a denial that appears during the wake rejects immediately", async () => {
+    // Hibernated at wake time, then the controller rules on our bump and
+    // parks us — a transition this wake itself observed is a fresh verdict,
+    // no grace needed.
+    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0); // wake begins; tick 0 sees Hibernated
+    store.set("a1", agentObj("a1", OVER_BUDGET));
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("over-budget");
+      expect(err.durationMs).toBeLessThan(10_000);
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")).toBeDefined();
+  });
+
+  it("fail-fast: a standing denial outlasting the grace window rejects with the figures", async () => {
+    // Already parked and the controller keeps refusing (or is wedged):
+    // once the grace passes, waiting out the full 120s budget helps nobody.
+    const { repo } = harness([agentObj("a1", OVER_BUDGET)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("over-budget");
+      expect(err.durationMs).toBeGreaterThanOrEqual(10_000);
+      expect(err.durationMs).toBeLessThan(120_000);
+    }
+  });
+
+  it("a stop landing mid-wake fails fast and is never cleared by the wake", async () => {
+    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0); // past the entry stop-check
+    const obj = store.get("a1");
+    obj!.metadata!.annotations!["agent-platform.ai/stop-requested"] =
+      "2026-07-14T00:00:00Z";
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentStoppedError(err)).toBe(true);
+    // ensureReady bumps activity but must not touch the stop key — only
+    // wake()/wakeIfHibernated() clear a stop.
+    expect(
+      store.get("a1")?.metadata?.annotations?.[
+        "agent-platform.ai/stop-requested"
+      ],
+    ).toBe("2026-07-14T00:00:00Z");
+  });
+
   it("late ready at the deadline counts as success", async () => {
     const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
     // Never Ready during the poll; flip Ready just as the deadline passes
@@ -279,6 +371,39 @@ describe("ensureReady", () => {
     expect(polls).toBeGreaterThan(1);
     expect(lines.find((l) => l.msg === "agent.wake.ready")?.lateReady).toBe(
       true,
+    );
+  });
+});
+
+describe("requestPause settle", () => {
+  const STOP_KEY = "agent-platform.ai/stop-requested";
+
+  it("clears its own stop once the controller reports Hibernated", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    const infra = await repo.requestPause("a1");
+    expect(infra).not.toBeNull();
+    const ann = () => store.get("a1")?.metadata?.annotations ?? {};
+    expect(ann()[STOP_KEY]).toBeTruthy();
+    // Controller scales the pair down and restamps Hibernated.
+    (store.get("a1") as { status?: unknown }).status = {
+      conditions: HIBERNATED,
+    };
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ann()[STOP_KEY]).toBe("");
+  });
+
+  it("leaves a stop stamped during the settle window in place", async () => {
+    // Pause's settle-watcher must compare-and-clear its OWN stamp: a stop
+    // issued mid-settle carries a different value and must stay sticky, or
+    // the pair would revive under the wake's fresh last-activity.
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    await repo.requestPause("a1");
+    const obj = store.get("a1");
+    obj!.metadata!.annotations![STOP_KEY] = "9999-01-01T00:00:00Z";
+    (obj as { status?: unknown }).status = { conditions: HIBERNATED };
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(store.get("a1")?.metadata?.annotations?.[STOP_KEY]).toBe(
+      "9999-01-01T00:00:00Z",
     );
   });
 });

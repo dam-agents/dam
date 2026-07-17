@@ -254,7 +254,21 @@ export function createFilesService(workingDir: string): FilesService {
         }
       }
       await mkdir(dirname(toAbs2), { recursive: true });
-      await rename(fromAbs, toAbs2);
+      try {
+        await rename(fromAbs, toAbs2);
+      } catch (e) {
+        // rename(2) can't replace a non-empty directory — surface it as a
+        // domain error instead of an internal one.
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM") {
+          return err(
+            forbidden(
+              `can't overwrite "${to}" — the destination folder is not empty`,
+            ),
+          );
+        }
+        throw e;
+      }
       return ok({ ok: true });
     },
     deleteSafe: async (

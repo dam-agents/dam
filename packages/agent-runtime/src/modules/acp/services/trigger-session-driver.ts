@@ -76,7 +76,7 @@ export function createTriggerSessionDriver(deps: {
         );
       }
 
-      deps.acpRuntime.attach(channel);
+      deps.acpRuntime.attach(channel, { viewer: false });
 
       try {
         await request("initialize", {

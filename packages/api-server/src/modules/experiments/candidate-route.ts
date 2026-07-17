@@ -44,6 +44,29 @@ export function createCandidateRoutes(deps: CandidateRoutesDeps) {
         .find((r) => r.id === runId);
       if (!run?.candidateRef) return c.json({ error: "not found" }, 404);
 
+      const filename = sanitizeFilename(
+        run.candidateRef.split("/").pop() ?? "",
+      );
+
+      // Direct download link, as JSON rather than a 302: the UI fetches with
+      // a bearer token, and a cross-origin redirect inside fetch() would be
+      // blocked by CORS on the store. No public endpoint falls through to relay.
+      const directUrl = await deps.artifacts.createDownloadUrl(
+        run.candidateRef,
+        filename,
+      );
+      if (directUrl) {
+        securityLog("info", "experiment.candidate_download", {
+          category: "resource",
+          actor: user.sub,
+          actorKind: "user",
+          target: experimentId,
+          result: "success",
+          detail: { runId, candidateRef: run.candidateRef, mode: "direct" },
+        });
+        return c.json({ url: directUrl });
+      }
+
       const artifact = await deps.artifacts.get(run.candidateRef);
       if (!artifact) return c.json({ error: "not found" }, 404);
 
@@ -53,12 +76,9 @@ export function createCandidateRoutes(deps: CandidateRoutesDeps) {
         actorKind: "user",
         target: experimentId,
         result: "success",
-        detail: { runId, candidateRef: run.candidateRef },
+        detail: { runId, candidateRef: run.candidateRef, mode: "relay" },
       });
 
-      const filename = sanitizeFilename(
-        run.candidateRef.split("/").pop() ?? "",
-      );
       // Pipe the blob to the client rather than copying it into a fresh buffer.
       const body = new ReadableStream<Uint8Array>({
         start(controller) {

@@ -181,9 +181,13 @@ spec:
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
-            {{- if .Values.apiServer.telegramEnabled }}
-            - name: TELEGRAM_ENABLED
-              value: "true"
+            {{- if .Values.apiServer.telegramBotToken }}
+            - name: TELEGRAM_BOT_TOKEN
+              value: {{ .Values.apiServer.telegramBotToken | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.telegramBotName }}
+            - name: TELEGRAM_BOT_USERNAME
+              value: {{ .Values.apiServer.telegramBotName | quote }}
             {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED
@@ -236,6 +240,19 @@ spec:
               value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
+            # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
+            # so create-time resource stamping (#1900) cannot drift from the
+            # controller's render-time defaults.
+            - name: AGENT_DEFAULT_CPU_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
+            - name: AGENT_DEFAULT_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+            # Default per-user ceiling (#1900), same value the controller
+            # enforces with; display-only here (the meter's ceiling figure).
+            - name: DEFAULT_USER_CPU_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
+            - name: DEFAULT_USER_MEMORY_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultMemory | quote }}
             {{- if .Values.skills.skillSources }}
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}
@@ -302,6 +319,35 @@ spec:
             {{- if .Values.apiServer.maxArtifactBytes }}
             - name: MAX_ARTIFACT_BYTES
               value: {{ .Values.apiServer.maxArtifactBytes | quote }}
+            {{- end }}
+            {{- if include "platform.objectstorage.enabled" . }}
+            # S3-compatible Candidate-artifact store.
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: {{ include "platform.objectstorage.endpoint" . | quote }}
+            - name: OBJECT_STORAGE_AGENT_ENDPOINT
+              value: {{ include "platform.objectstorage.agentEndpoint" . | quote }}
+            {{- if .Values.apiServer.objectStorage.publicEndpoint }}
+            - name: OBJECT_STORAGE_PUBLIC_ENDPOINT
+              value: {{ .Values.apiServer.objectStorage.publicEndpoint | quote }}
+            {{- end }}
+            - name: OBJECT_STORAGE_REGION
+              value: {{ .Values.apiServer.objectStorage.region | quote }}
+            - name: OBJECT_STORAGE_BUCKET
+              value: {{ .Values.apiServer.objectStorage.bucket | quote }}
+            - name: OBJECT_STORAGE_FORCE_PATH_STYLE
+              value: {{ .Values.apiServer.objectStorage.forcePathStyle | quote }}
+            {{- if include "platform.objectstorage.hasCredentials" . }}
+            - name: OBJECT_STORAGE_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: accessKeyId
+            - name: OBJECT_STORAGE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: secretAccessKey
+            {{- end }}
             {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts

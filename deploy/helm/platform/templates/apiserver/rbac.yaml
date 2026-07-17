@@ -61,6 +61,12 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents", "forks", "runs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # UserBudgets are operator-written and controller-enforced; the api-server
+  # only reads the caller's own (a direct get by the CEL-pinned name) for the
+  # reserved-vs-ceiling meter (#1900).
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["userbudgets"]
+    verbs: ["get"]
   # Secrets for credentials. ConfigMaps are gone from the api-server's API
   # surface: agents/forks are CRs and the chart-shipped templates
   # are mounted as files, loaded at boot — not read via the K8s API.

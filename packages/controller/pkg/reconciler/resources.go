@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"log/slog"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,6 +13,10 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
+
+// AgentContainerName is the agent container's name in the rendered pod. The
+// live-resize budget gate reads the running template's limits back off it.
+const AgentContainerName = "agent"
 
 // portInt32 narrows a config-supplied port (typed `int` because it comes
 // from `strconv.Atoi` on an env var) to int32 with an explicit upper-bound
@@ -248,16 +253,42 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
-	// Resources: template wins when set, else chart-wide default.
+	// Resources (#1900): limits are the user-facing "size" — the spec's
+	// stamped limits (user slider, else template, else chart default), with
+	// missing dimensions filled from the chart default so no agent renders
+	// unbounded. Requests are scheduling internals derived per dimension:
+	// max(limit × fraction, floor), clamped to the limit. A spec-set request
+	// (operator escape hatch via a template) bypasses derivation.
 	resourceReqs := corev1.ResourceRequirements{}
-	if agentSpec.Resources.Requests != nil {
-		resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
+	resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
+	if defaults.Resources != nil {
+		for name, q := range defaults.Resources.Limits {
+			if _, set := resourceReqs.Limits[name]; !set {
+				resourceReqs.Limits[name] = q
+			}
+		}
 	}
-	if agentSpec.Resources.Limits != nil {
-		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
+	if len(resourceReqs.Limits) == 0 {
+		resourceReqs.Limits = nil
 	}
-	if resourceReqs.Requests == nil && resourceReqs.Limits == nil && defaults.Resources != nil {
-		resourceReqs = *defaults.Resources
+	resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
+	for _, dim := range []struct {
+		name  corev1.ResourceName
+		floor resource.Quantity
+		milli bool // sub-unit precision (CPU); memory derives on whole bytes
+	}{
+		{corev1.ResourceCPU, cfg.RequestsMinCPU, true},
+		{corev1.ResourceMemory, cfg.RequestsMinMemory, false},
+	} {
+		if _, set := resourceReqs.Requests[dim.name]; set {
+			continue
+		}
+		if limit, ok := resourceReqs.Limits[dim.name]; ok {
+			resourceReqs.Requests[dim.name] = deriveRequest(limit, cfg.RequestsFraction, dim.floor, dim.milli)
+		}
+	}
+	if len(resourceReqs.Requests) == 0 {
+		resourceReqs.Requests = nil
 	}
 
 	// Init container: template wins, else chart-wide default.
@@ -337,7 +368,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	containers := []corev1.Container{{
-		Name:            "agent",
+		Name:            AgentContainerName,
 		Image:           agentSpec.Image,
 		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 		Ports: []corev1.ContainerPort{{
@@ -482,10 +513,40 @@ func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerRef
 	}
 }
 
+// toResourceList drops malformed and non-positive quantities (with a log)
+// instead of panicking the reconcile loop — the caller's default-fill then
+// applies the chart default for the missing dimension, which is the same
+// tolerance the budget's parseQuantityOr applies to the identical input. The
+// two must agree, or enforcement would count a value the pod doesn't run with.
 func toResourceList(m map[string]string) corev1.ResourceList {
 	rl := make(corev1.ResourceList)
 	for k, v := range m {
-		rl[corev1.ResourceName(k)] = resource.MustParse(v)
+		q, err := resource.ParseQuantity(v)
+		if err != nil || q.Sign() <= 0 {
+			slog.Warn("ignoring invalid resource quantity in agent spec; chart default applies",
+				"resource", k, "value", v)
+			continue
+		}
+		rl[corev1.ResourceName(k)] = q
 	}
 	return rl
+}
+
+// deriveRequest computes a pod request from its limit (#1900):
+// max(limit × fraction, floor), clamped to the limit so a floor above a tiny
+// limit can never render an invalid pod (request > limit).
+func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Quantity, milli bool) resource.Quantity {
+	var derived resource.Quantity
+	if milli {
+		derived = *resource.NewMilliQuantity(int64(float64(limit.MilliValue())*fraction), limit.Format)
+	} else {
+		derived = *resource.NewQuantity(int64(float64(limit.Value())*fraction), limit.Format)
+	}
+	if derived.Cmp(floor) < 0 {
+		derived = floor
+	}
+	if derived.Cmp(limit) > 0 {
+		derived = limit
+	}
+	return derived
 }

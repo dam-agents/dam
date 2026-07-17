@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import {
   DropdownMenu,
@@ -7,6 +7,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Inset } from "@/components/ui/inset";
+import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { queryClient } from "../../../query-client.js";
 import {
@@ -24,12 +27,29 @@ interface Choice {
   description?: string | null;
 }
 
+type ModelSettingsVariant = "chat" | "page";
+
 // The agent's persistent model/mode/config default, one picker per option group.
 // Each picker is a compact trigger that opens a menu showing every choice with
 // its description. No optimistic update: the displayed value is the live read,
 // with a "saving" hint until the change settles and the value is re-read in one
 // step. Hidden when no catalog.
-export function ModelSettingsPanel({ agentId }: { agentId: string | null }) {
+//
+// `variant` swaps the chat-rail chrome for the sandbox-home card; `disabled`
+// renders the pickers read-only (agent asleep) and `headerAction` fills the
+// page header's right slot (e.g. "Start agent to edit"). Chat passes none of
+// these, so its appearance and behavior are unchanged.
+export function ModelSettingsPanel({
+  agentId,
+  variant = "chat",
+  disabled = false,
+  headerAction,
+}: {
+  agentId: string | null;
+  variant?: ModelSettingsVariant;
+  disabled?: boolean;
+  headerAction?: ReactNode;
+}) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const { data: current } = useHarnessConfigCurrent(agentId);
   const apply = useApplyHarnessConfig();
@@ -104,53 +124,81 @@ export function ModelSettingsPanel({ agentId }: { agentId: string | null }) {
     });
   };
 
+  const isPage = variant === "page";
+  const groups = catalog.options.map((group) => {
+    // Model group uses live-discovered models when available, else the static catalog.
+    const source =
+      group.id === "model" && current?.availableModels?.length
+        ? current.availableModels
+        : group.choices;
+    // Gate non-model groups by the model's allowlist (absent = all; empty = hide).
+    const allowed = group.id === "model" ? undefined : constraints?.[group.id];
+    const choices: Choice[] = source
+      .filter((c) => !allowed || allowed.includes(c.value))
+      .map((c) => ({
+        id: c.value,
+        name: c.name,
+        description: c.description,
+      }));
+    const cur = valueOf(group.id);
+    // Surface a persisted value that isn't in the (gated) choice list so the
+    // picker shows what's actually set — otherwise a controlled picker with no
+    // matching option would read as "Not set". Covers both a hand-set value
+    // (not in the catalog) and one gated out by the current model.
+    if (cur && !choices.some((c) => c.id === cur)) {
+      choices.push({
+        id: cur,
+        name: cur,
+        description: source.some((c) => c.value === cur)
+          ? "Not available for the current model"
+          : "Set directly in the config file",
+      });
+    }
+    if (choices.length === 0) return null;
+    return (
+      <OptionGroup
+        key={group.id}
+        title={group.name}
+        choices={choices}
+        value={cur}
+        variant={variant}
+        disabled={disabled}
+        onSelect={(id) => change(group.id, id)}
+      />
+    );
+  });
+
+  const note = (
+    <p
+      className={cn(
+        "text-[11px] leading-snug text-text-muted",
+        isPage ? "pt-3" : "px-4 py-2.5",
+      )}
+    >
+      Applies to new sessions. A session that's already running keeps the
+      settings it started with — start a new session to use these.
+    </p>
+  );
+
+  if (isPage) {
+    return (
+      <section className="mb-8">
+        <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+          <SectionLabel>Model settings</SectionLabel>
+          {headerAction ?? (saving ? <SavingHint /> : null)}
+        </div>
+        <Inset className="rounded-lg border border-border p-4">
+          {groups}
+          {note}
+        </Inset>
+      </section>
+    );
+  }
+
   return (
     <Section title="Model" headerRight={saving ? <SavingHint /> : undefined}>
-      {catalog.options.map((group) => {
-        // Model group uses live-discovered models when available, else the static catalog.
-        const source =
-          group.id === "model" && current?.availableModels?.length
-            ? current.availableModels
-            : group.choices;
-        // Gate non-model groups by the model's allowlist (absent = all; empty = hide).
-        const allowed =
-          group.id === "model" ? undefined : constraints?.[group.id];
-        const choices: Choice[] = source
-          .filter((c) => !allowed || allowed.includes(c.value))
-          .map((c) => ({
-            id: c.value,
-            name: c.name,
-            description: c.description,
-          }));
-        const cur = valueOf(group.id);
-        // Surface a persisted value that isn't in the (gated) choice list so the
-        // picker shows what's actually set — otherwise a controlled picker with no
-        // matching option would read as "Not set". Covers both a hand-set value
-        // (not in the catalog) and one gated out by the current model.
-        if (cur && !choices.some((c) => c.id === cur)) {
-          choices.push({
-            id: cur,
-            name: cur,
-            description: source.some((c) => c.value === cur)
-              ? "Not available for the current model"
-              : "Set directly in the config file",
-          });
-        }
-        if (choices.length === 0) return null;
-        return (
-          <OptionGroup
-            key={group.id}
-            title={group.name}
-            choices={choices}
-            value={cur}
-            onSelect={(id) => change(group.id, id)}
-          />
-        );
-      })}
-      <p className="px-4 py-2.5 text-[11px] leading-snug text-text-muted">
-        Applies to new sessions. A session that's already running keeps the
-        settings it started with — start a new session to use these.
-      </p>
+      {groups}
+      {note}
     </Section>
   );
 }
@@ -168,51 +216,88 @@ function OptionGroup({
   title,
   choices,
   value,
+  variant = "chat",
+  disabled = false,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
+  variant?: ModelSettingsVariant;
+  disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
+  const isPage = variant === "page";
+  const triggerClass = cn(
+    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-text transition-colors",
+    isPage
+      ? "h-10 border-input px-4 text-sm"
+      : "h-8 border-border-light px-3 text-[13px]",
+  );
+  const face = (
+    <>
+      <span className="truncate">{selected?.name ?? "Not set"}</span>
+      <ChevronDown size={14} className="shrink-0 text-text-muted" />
+    </>
+  );
   return (
-    <div className="border-b border-border-light last:border-b-0 px-4 py-3">
+    <div
+      className={
+        isPage
+          ? "mb-4 last:mb-0"
+          : "border-b border-border-light last:border-b-0 px-4 py-3"
+      }
+    >
       <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
         {title}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label={title}
-            className="flex h-8 w-full items-center justify-between gap-2 rounded-md border border-border-light bg-transparent px-3 text-[13px] text-text transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="truncate">{selected?.name ?? "Not set"}</span>
-            <ChevronDown size={14} className="shrink-0 text-text-muted" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+      {disabled ? (
+        // Static value while read-only: mounting a real trigger would still open
+        // on click (Radix asChild doesn't honor a native `disabled` reliably).
+        <div
+          aria-disabled="true"
+          className={cn(triggerClass, "cursor-not-allowed opacity-50")}
         >
-          <OptionItem
-            label="Not set"
-            description="Clears the key — the harness picks on its own"
-            active={value === null}
-            onSelect={() => onSelect(null)}
-          />
-          {choices.map((c) => (
+          {face}
+        </div>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              aria-label={title}
+              className={cn(
+                triggerClass,
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                !isPage && "hover:bg-surface-raised",
+              )}
+            >
+              {face}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+          >
             <OptionItem
-              key={c.id}
-              label={c.name}
-              detail={c.name === c.id ? undefined : c.id}
-              description={c.description}
-              active={c.id === value}
-              onSelect={() => onSelect(c.id)}
+              label="Not set"
+              description="Clears the key — the harness picks on its own"
+              active={value === null}
+              onSelect={() => onSelect(null)}
             />
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {choices.map((c) => (
+              <OptionItem
+                key={c.id}
+                label={c.name}
+                detail={c.name === c.id ? undefined : c.id}
+                description={c.description}
+                active={c.id === value}
+                onSelect={() => onSelect(c.id)}
+              />
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

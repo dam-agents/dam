@@ -59,19 +59,22 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 	runName := run.Name
 	ownerRef := runOwnerRef(run)
 
-	phase := run.Status.Phase
-	if phase == apiv1.RunPhaseFailed || phase == apiv1.RunPhaseCompleted {
-		return nil
-	}
-
 	// Hard GC backstop for a Run the api-server never cleaned up. Deleting the
 	// CR cascades to the executor pod + egress NetworkPolicy via ownerRefs.
+	// Runs before the terminal-phase short-circuit (mirroring the Fork reaper)
+	// so a Failed CR the api-server never deleted — whose pod may sit
+	// Running-but-unready indefinitely — is reaped too.
 	if age := r.now().Sub(run.CreationTimestamp.Time); age > RunMaxLifetime {
 		slog.Warn("reaping over-age run", "run", runName, "age", age.String())
 		if err := r.dynamic.Resource(RunsGVR).Namespace(r.config.Namespace).
 			Delete(ctx, runName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 			return fmt.Errorf("reaping run %s: %w", runName, err)
 		}
+		return nil
+	}
+
+	phase := run.Status.Phase
+	if phase == apiv1.RunPhaseFailed || phase == apiv1.RunPhaseCompleted {
 		return nil
 	}
 
@@ -115,7 +118,10 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying executor pod: %v", err))
 	}
 
-	pod, _ := findEphemeralPod(ctx, r.client, r.config.Namespace, RunLabelRunID, runName)
+	pod, err := findEphemeralPod(ctx, r.client, r.config.Namespace, RunLabelRunID, runName)
+	if err != nil {
+		return fmt.Errorf("run %s: listing executor pod: %w", runName, err)
+	}
 	if pod != nil && isPodReady(*pod) && pod.Status.PodIP != "" {
 		return writeRunStatus(ctx, r.dynamic, r.config.Namespace, runName, apiv1.RunStatus{
 			Phase: apiv1.RunPhaseReady, PodIP: pod.Status.PodIP,

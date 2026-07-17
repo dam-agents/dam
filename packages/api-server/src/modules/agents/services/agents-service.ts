@@ -8,6 +8,9 @@ import {
   type TemplateSpec,
   type ChannelConfig,
   type DriverFailure,
+  type BindTelegramChatResult,
+  type ListTelegramChatsResult,
+  type UnbindTelegramChatResult,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -34,6 +37,8 @@ import {
 import {
   assembleSpecFromTemplate,
   assembleSpecFromImage,
+  resolveEffectiveHibernationTimeoutMin,
+  type DefaultResourceLimits,
 } from "../domain/spec-assembly.js";
 import {
   seedTelemetryIdentity,
@@ -43,7 +48,6 @@ import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
-import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -58,6 +62,189 @@ import { securityLog } from "../../../core/security-log.js";
  */
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+}
+
+/**
+ * Port consumed by `bindTelegramChat()`. Declared locally (like
+ * `PresetSeeder`) so the agents module doesn't import channels
+ * infrastructure; the composition root assembles it from the bind-flow
+ * store, the conversations repository, and the ChannelManager.
+ */
+export interface TelegramBindingPort {
+  peekFlow(flowId: string): {
+    conversationId: string;
+    telegramUserId: string;
+    keycloakSub: string;
+    chatTitle?: string;
+  } | null;
+  consumeFlow(flowId: string): void;
+  findAgentByConversation(
+    conversationId: string,
+  ): Promise<{ agentId: string; authorizedBy: string } | null>;
+  bind(
+    conversationId: string,
+    agentId: string,
+    authorizedBy: string,
+  ): Promise<"bound" | "conflict">;
+  /** Best-effort confirmation into the chat, via the channel manager. */
+  postMessage(
+    agentId: string,
+    conversationId: string,
+    text: string,
+  ): Promise<{ ok: true } | { error: string }>;
+  /** Bound conversations for an agent, with human titles. */
+  listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
+  unbind(conversationId: string): Promise<void>;
+}
+
+/**
+ * The bind flow, extracted from the service so tests can drive it with
+ * three narrow deps instead of the full service dependency set.
+ */
+export function executeTelegramBind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  binding: TelegramBindingPort;
+}) {
+  return async (
+    agentId: string,
+    flowId: string,
+  ): Promise<BindTelegramChatResult> => {
+    const flow = deps.binding.peekFlow(flowId);
+    if (!flow) return err({ type: "FlowInvalid" as const });
+
+    if (!deps.owner || flow.keycloakSub !== deps.owner) {
+      // A different signed-in user is trying to consume the flow. Same error
+      // as an unknown flow — don't reveal that the id exists; the flow stays
+      // alive so the right account can still complete within the TTL.
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        decision: "deny",
+        reason: "telegram-bind-sub-mismatch",
+        detail: { conversationId: flow.conversationId },
+      });
+      return err({ type: "FlowInvalid" as const });
+    }
+
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    const existing = await deps.binding.findAgentByConversation(
+      flow.conversationId,
+    );
+    if (existing && existing.agentId !== agentId) {
+      // Flow stays alive — the user may pick the right agent, or /logout
+      // in the chat and retry.
+      return err({ type: "ChatAlreadyBound" as const });
+    }
+    if (!existing) {
+      const outcome = await deps.binding.bind(
+        flow.conversationId,
+        agentId,
+        flow.keycloakSub,
+      );
+      if (outcome === "conflict") {
+        // Lost an insert race — re-read to tell idempotent-same-agent apart
+        // from a real clash.
+        const raced = await deps.binding.findAgentByConversation(
+          flow.conversationId,
+        );
+        if (!raced || raced.agentId !== agentId)
+          return err({ type: "ChatAlreadyBound" as const });
+      }
+    }
+
+    deps.binding.consumeFlow(flowId);
+
+    // The binding IS the consent grant: the owner lends this agent — its
+    // credentials included — to everyone in the conversation.
+    securityLog("info", "channel.chat_bound", {
+      category: "authz-list",
+      actor: deps.owner,
+      actorKind: "user",
+      surface: "telegram",
+      agentId,
+      result: "success",
+      detail: {
+        conversationId: flow.conversationId,
+        telegramUserId: flow.telegramUserId,
+      },
+    });
+
+    const post = await deps.binding.postMessage(
+      agentId,
+      flow.conversationId,
+      `This chat is now connected to ${agent.name}. Send /logout to disconnect.`,
+    );
+    if ("error" in post) {
+      // Best-effort: the binding is committed; the confirmation is courtesy.
+      securityLog("warn", "channel.chat_bound.notify_failed", {
+        category: "channel",
+        actor: deps.owner,
+        actorKind: "user",
+        surface: "telegram",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { conversationId: flow.conversationId },
+      });
+    }
+
+    return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+/** Owner-side disconnect, extracted like `executeTelegramBind` for tests. */
+export function executeTelegramUnbind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  binding: TelegramBindingPort;
+}) {
+  return async (
+    agentId: string,
+    conversationId: string,
+  ): Promise<UnbindTelegramChatResult> => {
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    const existing = await deps.binding.findAgentByConversation(conversationId);
+    if (!existing || existing.agentId !== agentId)
+      return err({ type: "ChatNotFound" as const });
+
+    // Courtesy note BEFORE the row goes away — outbound posting validates
+    // the binding, so this ordering is load-bearing. Best-effort either way.
+    const post = await deps.binding.postMessage(
+      agentId,
+      conversationId,
+      `This chat was disconnected from ${agent.name} by its owner. Send /login to connect it again.`,
+    );
+    if ("error" in post) {
+      securityLog("warn", "channel.chat_unbound.notify_failed", {
+        category: "channel",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "telegram",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { conversationId },
+      });
+    }
+
+    await deps.binding.unbind(conversationId);
+    securityLog("info", "channel.chat_unbound", {
+      category: "authz-list",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      surface: "telegram",
+      agentId,
+      result: "success",
+      detail: { conversationId, viaUi: true },
+    });
+    return ok(null);
+  };
 }
 
 /**
@@ -88,6 +275,34 @@ function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
   return { ...infra, spec: { ...infra.spec, env } };
 }
 
+/** Port: budget gate for resizing an UP agent (#1900) — a live resize rolls
+ *  the pod at replicas=1 and never crosses the controller's 0→1 gate, so the
+ *  api-server owns this one check. Wired from the budgets module; structural
+ *  so this module doesn't import across the boundary. */
+export interface ResizeGatePort {
+  assertResizeFits(
+    agent: InfraAgent,
+    newSize: { cpu?: string; memory?: string },
+  ): Promise<void>;
+}
+
+// Serializes resize check+patch per owner. In-process only — correctness
+// leans on the api-server running a single replica, the same standing as the
+// controller's single-worker invariant (see budgets.md).
+const ownerResizeLocks = new Map<string, Promise<unknown>>();
+async function withOwnerResizeLock<T>(
+  owner: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = ownerResizeLocks.get(owner) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  ownerResizeLocks.set(
+    owner,
+    run.catch(() => {}),
+  );
+  return run;
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   /** Postgres store for user-typed env. */
@@ -107,6 +322,11 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  agentDefaultLimits: DefaultResourceLimits;
+  /** Budget gate for live resizes; omitted by system compositions (which
+   *  never resize) — a live resize without it is rejected. */
+  resizeGate?: ResizeGatePort;
   /** Single-shot create: seeds spec grant fields before first render, then
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
@@ -138,7 +358,8 @@ export function createAgentsService(deps: {
   findSlackChannelBinding: (
     slackChannelId: string,
   ) => Promise<{ agentId: string } | null>;
-  channelSecretStore: ChannelSecretStore;
+  /** Absent in the system-wide composition — binding is a user-facing flow. */
+  telegramBinding?: TelegramBindingPort;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
   listAllowedUsersByAgent: (agentId: string) => Promise<string[]>;
   setAllowedUsers: (agentId: string, subs: string[]) => Promise<void>;
@@ -276,15 +497,23 @@ export function createAgentsService(deps: {
             message: `template "${input.templateId}" not found`,
           });
         }
-        spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
-          description: input.description,
-        });
+        spec = assembleSpecFromTemplate(
+          input.name,
+          tmpl.spec,
+          { description: input.description, size: input.size },
+          deps.agentDefaultLimits,
+        );
         templateId = input.templateId;
       } else {
-        spec = assembleSpecFromImage(input.name, {
-          image: input.image,
-          description: input.description,
-        });
+        spec = assembleSpecFromImage(
+          input.name,
+          {
+            image: input.image,
+            description: input.description,
+            size: input.size,
+          },
+          deps.agentDefaultLimits,
+        );
       }
       // Template-declared env rides the rail like user env (seeded below), not
       // the CR — the controller no longer reads spec.env.
@@ -451,11 +680,49 @@ export function createAgentsService(deps: {
           input.hibernationTimeoutMin === null
             ? null
             : minutesToDuration(input.hibernationTimeoutMin);
+      let gateLiveResize:
+        | ((
+            apply: () => Promise<InfraAgent | null>,
+          ) => Promise<InfraAgent | null>)
+        | null = null;
+      if (input.size !== undefined) {
+        // A sleeping agent's new Size passes the controller's 0→1 gate on
+        // its next start. An UP agent's resize is gated by the controller
+        // at render (an over-ceiling grow parks the pair); the check here
+        // is the synchronous courtesy in front of it — fail at save time
+        // with a typed error instead of parking a moment later. Serialized
+        // per owner around read+check+patch, with the read INSIDE the
+        // lock: the shrink shortcut and the up/sleeping split must
+        // classify against the same state the ceiling check runs on, or
+        // two rapid resizes could classify an increase as a shrink.
+        gateLiveResize = (apply) =>
+          withOwnerResizeLock(deps.owner ?? "", async () => {
+            const current = await deps.repo.get(input.id, deps.owner);
+            if (!current) return null;
+            if (!current.hibernated && !current.overBudget) {
+              const gate = deps.resizeGate;
+              if (!gate) {
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message: "Resizing a running sandbox is not supported here.",
+                });
+              }
+              await gate.assertResizeFits(current, input.size!);
+            }
+            return apply();
+          });
+        // Merge-patch merges nested objects, so only the provided
+        // dimensions change; requests (operator escape hatch) survive.
+        patch.resources = { limits: input.size };
+      }
       // Both branches do the owner check; an env-only update skips the no-op CR patch.
-      const infra =
+      const applyPatch = () =>
         Object.keys(patch).length > 0
-          ? await deps.repo.updateSpec(input.id, deps.owner, patch)
-          : await deps.repo.get(input.id, deps.owner);
+          ? deps.repo.updateSpec(input.id, deps.owner, patch)
+          : deps.repo.get(input.id, deps.owner);
+      const infra = gateLiveResize
+        ? await gateLiveResize(applyPatch)
+        : await applyPatch();
       if (!infra) return null;
 
       let env = input.env;
@@ -599,6 +866,69 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
+    async stop(id) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.stop" },
+        });
+        return null;
+      }
+      const infra = await deps.repo.requestStop(id);
+      if (!infra) return null;
+      securityLog("info", "agent.stop", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      return project(infra);
+    },
+
+    async pause(id) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.pause" },
+        });
+        return null;
+      }
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      // A never-hibernate agent (effective timeout 0) runs regardless of
+      // activity, so a non-sticky pause would silently self-revive within a
+      // reconcile. For those, pause degrades to the sticky stop — down until
+      // explicitly woken — which is the only stable "paused" it can have.
+      const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
+        current.spec.hibernationTimeout,
+        deps.agentIdleTimeoutMinutes,
+      );
+      const infra =
+        effectiveTimeout === 0
+          ? await deps.repo.requestStop(id)
+          : await deps.repo.requestPause(id);
+      if (!infra) return null;
+      securityLog("info", "agent.pause", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      return project(infra);
+    },
+
     async ensureReady(id, opts) {
       if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
         throw new Error(`agent ${id}: not found or not owned`);
@@ -665,29 +995,41 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async connectTelegram(id, botToken) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
-
-      await deps.channelSecretStore.storeTelegramToken(id, botToken);
-      await deps.upsertChannel(id, { type: ChannelType.Telegram });
-      emit({ type: EventType.TelegramConnected, agentId: id });
-
-      return project(infra);
+    async listTelegramChats(agentId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "TelegramUnavailable" as const });
+      const infra = await deps.repo.get(agentId, deps.owner);
+      if (!infra) return err({ type: "AgentNotFound" as const });
+      const chats = await binding.listConversations(infra.id);
+      return ok({
+        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+      });
     },
 
-    async disconnectTelegram(id) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return null;
+    async unbindTelegramChat(agentId, conversationId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "ChatNotFound" as const });
+      return executeTelegramUnbind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        binding,
+      })(agentId, conversationId);
+    },
 
-      await deps.deleteChannelByType(id, ChannelType.Telegram);
-      await deps.channelSecretStore.deleteChannelSecret(
-        id,
-        ChannelType.Telegram,
-      );
-      emit({ type: EventType.TelegramDisconnected, agentId: id });
-
-      return project(infra);
+    async bindTelegramChat(agentId, flowId) {
+      const binding = deps.telegramBinding;
+      if (!binding) return err({ type: "FlowInvalid" as const });
+      return executeTelegramBind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        binding,
+      })(agentId, flowId);
     },
 
     async isAllowedUser(agentId, keycloakSub) {

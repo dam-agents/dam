@@ -26,11 +26,7 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
 }
 
-export interface TelegramChannel extends Channel {
-  type: ChannelType.Telegram;
-}
-
-export type ChannelConfig = SlackChannel | TelegramChannel;
+export type ChannelConfig = SlackChannel;
 
 // --- Agent ---
 
@@ -40,6 +36,9 @@ export type AgentState =
   | "running"
   | "hibernating"
   | "hibernated"
+  /** Parked (#1900): wants to run, but starting it would breach the owner's
+   *  Ceiling. Waits at zero until a deliberate start after room frees. */
+  | "over_budget"
   | "error";
 
 // The public projection of the Agent CR spec: the generated AgentSpecCR (the
@@ -61,6 +60,11 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   /** Latest controller-reported error, if any. */
   error?: string;
+  /** Parked (#1900): starting this agent would breach its owner's compute
+   *  Ceiling; pods stay down; free room and start it again (never-hibernate agents restart by themselves). */
+  overBudget: boolean;
+  /** The controller's reserved/ceiling figures for a parked agent. */
+  overBudgetMessage?: string;
   /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */
   podTerminationReason?: string;
   /** Contributions that failed to install on the last settle; empty when healthy. */
@@ -83,6 +87,40 @@ export type ConnectSlackResult =
   | { ok: true; value: Agent }
   | { ok: false; error: ConnectSlackError };
 
+export type BindTelegramChatError =
+  /** Unknown, expired, or not-your-flow — deliberately one bucket so the
+   *  error is no oracle for whether a flow id exists. */
+  | { type: "FlowInvalid" }
+  | { type: "AgentNotFound" }
+  | { type: "ChatAlreadyBound" };
+
+export type BindTelegramChatResult =
+  | { ok: true; value: { chatTitle: string | null } }
+  | { ok: false; error: BindTelegramChatError };
+
+export type ListTelegramChatsError =
+  | { type: "AgentNotFound" }
+  /** Telegram is off for this install, so no bindings can be read. */
+  | { type: "TelegramUnavailable" };
+
+export interface TelegramChatView {
+  conversationId: string;
+  title: string;
+}
+
+export type ListTelegramChatsResult =
+  | { ok: true; value: { chats: TelegramChatView[] } }
+  | { ok: false; error: ListTelegramChatsError };
+
+export type UnbindTelegramChatError =
+  | { type: "AgentNotFound" }
+  /** The conversation isn't bound to this agent (unknown, or another's). */
+  | { type: "ChatNotFound" };
+
+export type UnbindTelegramChatResult =
+  | { ok: true; value: null }
+  | { ok: false; error: UnbindTelegramChatError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
@@ -91,6 +129,14 @@ export interface AgentsService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;
+  /** Hard stop (#1900): scale the agent down now to free its Reserved
+   *  compute. Sticky against background activity; an explicit wake or a
+   *  schedule fire restarts it. */
+  stop: (id: string) => Promise<Agent | null>;
+  /** Pause (#1900): scale down now like a stop, but non-sticky once down —
+   *  the agent wakes on its next deliberate use (open chat, message,
+   *  schedule), passing back through the budget gate. */
+  pause: (id: string) => Promise<Agent | null>;
   /**
    * Ensure the agent's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps
@@ -105,7 +151,19 @@ export interface AgentsService {
     slackChannelId: string,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
-  connectTelegram: (id: string, botToken: string) => Promise<Agent | null>;
-  disconnectTelegram: (id: string) => Promise<Agent | null>;
+  /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
+   *  bind that conversation to the caller's agent. */
+  bindTelegramChat: (
+    agentId: string,
+    flowId: string,
+  ) => Promise<BindTelegramChatResult>;
+  /** The Telegram conversations bound to the caller's agent, with titles. */
+  listTelegramChats: (agentId: string) => Promise<ListTelegramChatsResult>;
+  /** Owner-side disconnect of a bound conversation (the UI counterpart of
+   *  the in-chat /logout). */
+  unbindTelegramChat: (
+    agentId: string,
+    conversationId: string,
+  ) => Promise<UnbindTelegramChatResult>;
   isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

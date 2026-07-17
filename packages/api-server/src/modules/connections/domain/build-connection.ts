@@ -6,6 +6,8 @@ import type {
 } from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 import {
+  discoverIssuerFromResourceHost,
+  discoverIssuerMetadata,
   discoverMcpAuth,
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
@@ -48,6 +50,15 @@ export async function buildConnection(
         mintSecretRef,
         oauthCallbackUrl,
         brandName,
+      );
+    case "client-credentials":
+      return buildClientCredentials(
+        template as Extract<
+          ConnectionTemplate,
+          { authKind: "client-credentials" }
+        >,
+        input,
+        mintSecretRef,
       );
     case "header":
       return buildHeader(
@@ -260,6 +271,120 @@ async function buildOAuthDcr(
     },
     contributions,
     secrets,
+  };
+}
+
+// Resolves the token endpoint from the issuer's OAuth metadata (like the DCR
+// path above, discovery runs at build time so a bad issuer fails the create).
+// The secret map carries only the client secret: the access token (and the
+// SDS files baked from it) is minted by the service before the secret write.
+async function buildClientCredentials(
+  template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): Promise<BuildResult> {
+  const rawHost = input.host ?? template.host;
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
+  const { host, port } = parseClusterEndpoint(rawHost);
+
+  const subst = (s: string | undefined): string | undefined =>
+    s?.replace(/\{host\}/g, host);
+  const explicitIssuer = subst(input.issuerUrl ?? template.issuerUrl);
+
+  let issuerUrl: string;
+  let issuerMeta: { tokenEndpoint: string; grantTypesSupported?: string[] };
+  if (explicitIssuer) {
+    const meta = await discoverIssuerMetadata(explicitIssuer);
+    if (!meta) {
+      throw new Error(
+        `No OAuth authorization-server metadata found at ${explicitIssuer} — check that it is the issuer URL (its /.well-known/openid-configuration or /.well-known/oauth-authorization-server must resolve)`,
+      );
+    }
+    issuerUrl = explicitIssuer;
+    issuerMeta = meta;
+  } else {
+    const origin = `https://${host}${port ? `:${port}` : ""}`;
+    const derived = await discoverIssuerFromResourceHost(origin);
+    if (!derived) {
+      throw new Error(
+        `Couldn't discover an authorization server from ${origin} — supply the issuer URL explicitly`,
+      );
+    }
+    issuerUrl = derived.issuerUrl;
+    issuerMeta = derived;
+  }
+  // grant_types_supported is optional metadata (many issuers omit it) —
+  // absence is deliberately treated as supported.
+  if (
+    issuerMeta.grantTypesSupported &&
+    !issuerMeta.grantTypesSupported.includes("client_credentials")
+  ) {
+    throw new Error(
+      `The authorization server at ${issuerUrl} does not support the client_credentials grant`,
+    );
+  }
+  const clientId = input.clientId;
+  if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
+  if (!input.clientSecret) {
+    throw new Error(`template ${template.id}: missing clientSecret`);
+  }
+  const headerName = input.headerName ?? template.headerName ?? "Authorization";
+  const valueFormat =
+    input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
+  const scopes =
+    input.scopes
+      ?.split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean) ??
+    template.scopes ??
+    [];
+  const audience = input.audience ?? template.audience;
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const contributions: Contribution[] = [...template.contributions];
+
+  const hasHostContrib = contributions.some(
+    (c) =>
+      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      c.host === host,
+  );
+  if (!hasHostContrib) {
+    contributions.push({
+      kind: "egress-inject",
+      host,
+      ...(port ? { port } : {}),
+      headerName,
+      valueFormat,
+    });
+  }
+
+  if (input.envName) {
+    contributions.push({
+      kind: "env",
+      name: input.envName,
+      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
+    });
+  }
+
+  return {
+    auth: {
+      kind: "client-credentials",
+      clientId,
+      clientSecretRef: { ...secretPath, field: "client_secret" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      issuerUrl,
+      tokenUrl: issuerMeta.tokenEndpoint,
+      scopes,
+      ...(audience ? { audience } : {}),
+      ...(template.tokenEndpointAcceptJson
+        ? { tokenEndpointAcceptJson: true }
+        : {}),
+      host,
+    },
+    contributions,
+    secrets: new Map([
+      [secretPath.path, { client_secret: input.clientSecret }],
+    ]),
   };
 }
 

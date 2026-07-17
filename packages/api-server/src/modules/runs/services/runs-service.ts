@@ -5,9 +5,11 @@ import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 const RUNS_PLURAL = "runs";
 const API_VERSION = "agent-platform.ai/v1";
 
-// Slightly over the controller's RunPodReadyTimeout (120s) so a controller-set
-// Failed/Timeout status surfaces as the error rather than our own generic one.
-const READY_TIMEOUT_MS = 125_000;
+// Past the controller's worst case, so a controller-set Failed/Timeout status
+// surfaces as the error rather than our own generic one: it fails a Run at
+// RunPodReadyTimeout (120s) but only notices on a pod event or its 30s
+// informer resync, so the status can land ~150s in.
+const READY_TIMEOUT_MS = 155_000;
 const POLL_INTERVAL_MS = 500;
 
 const runStatusSchema = z
@@ -97,7 +99,11 @@ export function createRunsService(k8s: K8sClient): RunsService {
     },
 
     async delete(runId) {
-      await k8s.deleteCustomObject(RUNS_PLURAL, runId).catch(() => {});
+      // Non-fatal (the controller's over-age reaper is the backstop), but a
+      // failed delete leaves the executor running for up to an hour — log it.
+      await k8s.deleteCustomObject(RUNS_PLURAL, runId).catch((err) => {
+        process.stderr.write(`runs: deleting ${runId} failed: ${err}\n`);
+      });
     },
 
     async listRunIds() {

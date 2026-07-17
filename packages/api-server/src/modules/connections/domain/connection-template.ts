@@ -8,6 +8,7 @@ import { applyCallbackAlias } from "./oauth-callback-url.js";
 
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
+  | ClientCredentialsConnectionTemplate
   | HeaderConnectionTemplate
   | NoneConnectionTemplate;
 
@@ -36,6 +37,20 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   setupUrl?: string;
   localhostCallbackAlias?: string;
   credentialFamily?: string;
+}
+
+// Client-credentials grant: the platform mints access tokens from the stored
+// client secret; the token endpoint (discovered from the issuer's OAuth
+// metadata at create time) is dialed server-side, never by the agent.
+export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
+  authKind: "client-credentials";
+  host?: string;
+  issuerUrl?: string;
+  scopes?: string[];
+  audience?: string;
+  headerName?: string;
+  valueFormat?: string;
+  tokenEndpointAcceptJson?: boolean;
 }
 
 // An optional config input a header template ships; filling it emits an `env` contribution, leaving it blank emits nothing.
@@ -197,6 +212,24 @@ function inputsFor(
       }
       return out;
     }
+    case "client-credentials":
+      // Same visible pre-filled style as the custom header credential.
+      return [
+        required("host", { presetValue: t.host }),
+        {
+          name: "issuerUrl",
+          state: "optional",
+          ...(t.issuerUrl !== undefined ? { presetValue: t.issuerUrl } : {}),
+          hint: "Leave blank to discover the authorization server from the host.",
+        },
+        required("clientId"),
+        required("clientSecret", { secret: true }),
+        optional("scopes"),
+        optional("audience"),
+        required("headerName", { presetValue: t.headerName }),
+        required("valueFormat", { presetValue: t.valueFormat }),
+        optional("envName"),
+      ];
     case "header": {
       const out: ConnectionTemplateInput[] = [];
       if (t.isCustom) {

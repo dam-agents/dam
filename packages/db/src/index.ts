@@ -4,7 +4,7 @@ export {
   channels,
   identityLinks,
   allowedUsers,
-  telegramThreads,
+  telegramConversations,
   skillSources,
   agentSkills,
   agentSkillPublishes,
@@ -24,7 +24,6 @@ export {
   experiments,
   experimentArms,
   experimentRuns,
-  runArtifacts,
 } from "./schema.js";
 export {
   eq,

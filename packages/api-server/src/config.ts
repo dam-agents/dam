@@ -17,6 +17,21 @@ const adminAppSlugSchema = z
       "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
   });
 
+/** A positive Kubernetes resource quantity. Boot-validates the
+ *  chart-templated quantity strings: a typo'd Helm value (e.g. cpu "1Gi"
+ *  where "1" was meant is caught by the grammar only for true garbage, but
+ *  "1x" or "" crash here at startup) would otherwise propagate into every
+ *  created agent spec or silently zero the meter's ceiling. */
+const positiveQuantitySchema = z
+  .string()
+  .regex(
+    /^(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[mkMGTPE])?$/,
+    "must be a Kubernetes quantity, e.g. '1', '500m', '2Gi'",
+  )
+  .refine((v) => parseFloat(v) > 0, {
+    message: "must be a positive quantity",
+  });
+
 const configSchema = z.object({
   /** Build-time semver from this package's package.json — not env-driven.
    *  Bundled into `dist/index.js` by tsup at build time; in dev (tsx) it
@@ -63,7 +78,11 @@ const configSchema = z.object({
   slackBotToken: z.string().nullable().default(null),
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
-  telegramEnabled: z.coerce.boolean().default(false),
+  /** Bot token of the platform-wide Telegram bot; null disables Telegram. */
+  telegramBotToken: z.string().nullable().default(null),
+  /** The bot's @handle (without the @). Authoritative for connect links and
+   *  mention detection when set; otherwise discovered via getMe at start. */
+  telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   /** HMAC key used to pseudonymize Keycloak `sub` values written to
@@ -97,6 +116,20 @@ const configSchema = z.object({
    *  the controller's `controller.agent.base.idleTimeout` Helm value. Always
    *  supplied by loadConfig — the `AGENT_IDLE_TIMEOUT` fallback is the sole default. */
   agentIdleTimeoutMinutes: z.number().int().min(0),
+  /** Chart-default agent size (limits), templated from the same
+   *  `controller.agent.templateDefaults.resources.limits` Helm value the
+   *  controller consumes, so the two cannot drift. Stamped into every created
+   *  agent spec so Reserved (#1900) reads straight off
+   *  `spec.resources.limits`; requests are derived by the controller at
+   *  render. */
+  agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
+  agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
+  /** Chart-default per-user compute Ceiling (#1900), templated from the
+   *  same `controller.userBudgets` Helm value the controller enforces
+   *  with. Display-only here (the meter's ceiling figure when the caller
+   *  has no UserBudget CR) — enforcement never reads these. */
+  defaultUserCpuBudget: positiveQuantitySchema.default("4"),
+  defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   /** JSON array of system Skill Sources declared by the cluster admin via
    *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
    *  parseSeedSources at startup — malformed JSON or wrong shape crashes the
@@ -158,17 +191,28 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(5 * 1024 * 1024 * 1024),
-  /** Hard ceiling for a single Experiment Candidate artifact stored in
-   *  Postgres, in bytes. Enforced by the artifact service before the blob is
-   *  written, so an oversized Candidate can't bloat the database. Default
-   *  10 MiB — Candidates are meant to be small (a prompt, a config, a small
-   *  program); larger artifacts want object storage, not a row. Tune via
-   *  `MAX_ARTIFACT_BYTES`. */
+  /** Hard ceiling for a single Experiment Candidate artifact, in bytes.
+   *  Tune via `MAX_ARTIFACT_BYTES`. */
   maxArtifactBytes: z.coerce
     .number()
     .int()
     .positive()
-    .default(10 * 1024 * 1024),
+    .default(50 * 1024 * 1024),
+  /** S3-compatible object store for Candidate artifacts. Unset = no store:
+   *  candidate recording fails closed. */
+  objectStorageEndpoint: z.url().optional(),
+  /** Authority agents dial for direct uploads — links are signed against it
+   *  (SigV4 binds the Host header). Defaults to the endpoint. */
+  objectStorageAgentEndpoint: z.url().optional(),
+  /** Browser-reachable authority for direct downloads. Unset = relay. */
+  objectStoragePublicEndpoint: z.url().optional(),
+  objectStorageRegion: z.string().min(1).default("us-east-1"),
+  objectStorageBucket: z.string().min(1).default("platform-artifacts"),
+  /** Both set or both unset; unset = SDK default provider chain (IRSA). */
+  objectStorageAccessKeyId: z.string().nullable().default(null),
+  objectStorageSecretAccessKey: z.string().nullable().default(null),
+  /** Path-style addressing — needed by SeaweedFS/self-hosted; false for AWS. */
+  objectStorageForcePathStyle: z.stringbool().default(true),
   /** Inactivity-deadline window for Experiment arms, in seconds. A `running`
    *  arm that records no Run and never calls `finish_arm` for this long is
    *  reaped to `failed` by the background sweep, so a started Experiment always
@@ -203,14 +247,24 @@ export type Config = z.infer<typeof configSchema>;
 
 // A turn blocked on an egress approval must outlive the hold, else the ceiling
 // kills the connection before the human can respond.
-const validatedConfigSchema = configSchema.refine(
-  (c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds,
-  {
+const validatedConfigSchema = configSchema
+  .refine((c) => c.acpTurnCeilingSeconds >= c.approvalHoldSeconds, {
     message:
       "acpTurnCeilingSeconds must be >= approvalHoldSeconds so a turn blocked on an egress approval does not die before the hold resolves",
     path: ["acpTurnCeilingSeconds"],
-  },
-);
+  })
+  // Half a credential pair silently falls back to the SDK provider chain —
+  // fail at startup instead.
+  .refine(
+    (c) =>
+      (c.objectStorageAccessKeyId == null) ===
+      (c.objectStorageSecretAccessKey == null),
+    {
+      message:
+        "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY must be set together (or both left unset for the SDK default provider chain)",
+      path: ["objectStorageAccessKeyId"],
+    },
+  );
 
 export function loadConfig(): Config {
   return validatedConfigSchema.parse({
@@ -233,7 +287,8 @@ export function loadConfig(): Config {
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
-    telegramEnabled: process.env.TELEGRAM_ENABLED,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+    telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
@@ -253,6 +308,10 @@ export function loadConfig(): Config {
     agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),
+    agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
+    agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
+    defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
+    defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret:
@@ -275,6 +334,16 @@ export function loadConfig(): Config {
     gitReposPath: process.env.GIT_REPOS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     maxArtifactBytes: process.env.MAX_ARTIFACT_BYTES,
+    objectStorageEndpoint: process.env.OBJECT_STORAGE_ENDPOINT,
+    objectStorageAgentEndpoint:
+      process.env.OBJECT_STORAGE_AGENT_ENDPOINT ??
+      process.env.OBJECT_STORAGE_ENDPOINT,
+    objectStoragePublicEndpoint: process.env.OBJECT_STORAGE_PUBLIC_ENDPOINT,
+    objectStorageRegion: process.env.OBJECT_STORAGE_REGION,
+    objectStorageBucket: process.env.OBJECT_STORAGE_BUCKET,
+    objectStorageAccessKeyId: process.env.OBJECT_STORAGE_ACCESS_KEY_ID,
+    objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     experimentArmInactivitySeconds:
       process.env.EXPERIMENT_ARM_INACTIVITY_SECONDS,
     brand: {

@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Close as X,
   Download,
   Edit as Pencil,
@@ -10,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import { TruncateStart } from "../../../components/truncate-start.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -188,101 +188,105 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-auto px-2 py-1 text-[12px] font-semibold text-muted-foreground hover:text-primary shrink-0"
-          onClick={onClose}
-        >
-          <ArrowLeft size={12} /> Back
-        </Button>
-        <span
-          className="text-[12px] font-mono text-foreground/80 truncate flex-1"
+      <div className="flex items-center gap-2 px-4 h-[48px] border-b border-border-light shrink-0">
+        <TruncateStart
+          className="text-[14px] font-medium text-text flex-1"
           title={path}
         >
           {pathLabel}
-        </span>
-        {editable && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
-            onClick={() => setEditMode(true)}
-            title="Edit file"
-          >
-            <Pencil size={11} /> Edit
-          </Button>
-        )}
-        {editMode && (
+        </TruncateStart>
+        {editMode ? (
           <>
             <Button
               variant="ghost"
-              size="sm"
-              className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground/80"
+              size="xs"
+              className="text-[14px]"
               onClick={cancelEdit}
               title="Cancel"
             >
-              <X size={11} /> Cancel
+              <X size={14} /> Cancel
             </Button>
             <Button
-              size="sm"
-              className="h-auto px-2 py-0.5 text-[11px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 hover:text-primary"
-              variant="ghost"
+              variant="outline"
+              size="xs"
+              className="text-[14px]"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
               title="Save (Cmd/Ctrl+S)"
             >
-              <Save size={11} /> {writeMutation.isPending ? "Saving…" : "Save"}
+              <Save size={14} /> {writeMutation.isPending ? "Saving…" : "Save"}
             </Button>
           </>
+        ) : (
+          <>
+            {editable && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-[14px]"
+                onClick={() => setEditMode(true)}
+                title="Edit file"
+              >
+                <Pencil size={14} /> Edit
+              </Button>
+            )}
+            {!tooLarge && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-[14px]"
+                onClick={downloadFile}
+                title="Download file"
+              >
+                <Download size={14} /> Download
+              </Button>
+            )}
+            {isSvg && (
+              <RenderToggle
+                rendered={renderSvg}
+                onToggle={() => setRenderSvg((p) => !p)}
+                rawTitle="Show raw SVG"
+                renderTitle="Render SVG"
+              />
+            )}
+            {isMarkdown && (
+              <RenderToggle
+                rendered={renderMd}
+                onToggle={() => setRenderMd((p) => !p)}
+                rawTitle="Show raw"
+                renderTitle="Render markdown"
+              />
+            )}
+            {isHtml && (
+              <RenderToggle
+                rendered={renderHtml}
+                onToggle={() => setRenderHtml((p) => !p)}
+                rawTitle="Show raw HTML"
+                renderTitle="Render HTML"
+              />
+            )}
+            {isRenderedPreview && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0"
+                onClick={() => setIsExpanded(true)}
+                title="Open fullscreen"
+              >
+                <Maximize size={14} />
+              </Button>
+            )}
+          </>
         )}
-        {isRenderedPreview && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
-            onClick={() => setIsExpanded(true)}
-            title="Open fullscreen"
-          >
-            <Maximize size={11} /> Fullscreen
-          </Button>
-        )}
-        {!tooLarge && !editMode && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
-            onClick={downloadFile}
-            title="Download file"
-          >
-            <Download size={11} />
-          </Button>
-        )}
-        {isSvg && !editMode && (
-          <RenderToggle
-            rendered={renderSvg}
-            onToggle={() => setRenderSvg((p) => !p)}
-            rawTitle="Show raw SVG"
-            renderTitle="Render SVG"
-          />
-        )}
-        {isMarkdown && !editMode && (
-          <RenderToggle
-            rendered={renderMd}
-            onToggle={() => setRenderMd((p) => !p)}
-            rawTitle="Show raw"
-            renderTitle="Render markdown"
-          />
-        )}
-        {isHtml && !editMode && (
-          <RenderToggle
-            rendered={renderHtml}
-            onToggle={() => setRenderHtml((p) => !p)}
-            rawTitle="Show raw HTML"
-            renderTitle="Render HTML"
-          />
-        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          onClick={onClose}
+          title="Close"
+        >
+          <X size={16} />
+        </Button>
       </div>
       <div
         className={

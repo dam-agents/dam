@@ -14,6 +14,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "The agent couldn't be woken — the platform never started it. " +
         "Try again; if this keeps happening, contact an admin."
       );
+    case "over-budget":
+      return (
+        "This agent can't start right now: its owner is at their compute " +
+        "budget. Ask the owner to free room and start it again."
+      );
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":

@@ -35,4 +35,6 @@ export interface SessionView {
   updatedAt?: string | null;
   /** Live turn state from `session/list` enrichment — true while a turn is in flight. */
   running?: boolean;
+  /** When a viewer last saw the session; unread = updatedAt newer than this. */
+  seenAt?: string | null;
 }
