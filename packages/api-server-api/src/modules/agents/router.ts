@@ -143,8 +143,10 @@ export const agentsRouter = t.router({
             message: "Slack channel already bound",
           });
         case "ModeChangeRequiresRebind":
+          // PRECONDITION_FAILED so CLI/UI relay this message verbatim instead
+          // of collapsing it into the already-bound CONFLICT copy.
           throw new TRPCError({
-            code: "CONFLICT",
+            code: "PRECONDITION_FAILED",
             message:
               "Access mode is fixed per binding — disconnect the channel first",
           });

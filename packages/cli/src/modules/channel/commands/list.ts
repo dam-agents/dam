@@ -24,12 +24,13 @@ function renderHuman(
     channels.length === 0
       ? "No channels connected.\n"
       : renderTable([
-          ["TYPE", "IDENTIFIER"],
+          ["TYPE", "IDENTIFIER", "MODE"],
           ...channels.map((c) =>
             // Telegram has no readable identifier — the bot token is write-only.
+            // Telegram is structurally shared-only (ADR-075).
             c.type === ChannelType.Slack
-              ? ["slack", c.slackChannelId]
-              : ["telegram", "—"],
+              ? ["slack", c.slackChannelId, c.mode ?? "person-scoped"]
+              : ["telegram", "—", "shared"],
           ),
         ]);
   const allowed =
