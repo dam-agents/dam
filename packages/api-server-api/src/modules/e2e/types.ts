@@ -26,6 +26,8 @@ export type PerformFetchInput = Omit<
 >;
 
 export type SlackFireMentionInput = z.infer<typeof slackFireMentionInputSchema>;
+/** Same wire shape as a mention — only the trigger differs (ambient mode). */
+export type SlackFireMessageInput = SlackFireMentionInput;
 export type SlackFireCommandInput = z.infer<typeof slackFireCommandInputSchema>;
 export type SlackFireCommandResult = z.infer<
   typeof slackFireCommandResultSchema
@@ -45,6 +47,7 @@ export interface E2eService {
     input: PerformFetchInput,
   ): Promise<PerformFetchResult>;
   slackFireMention(input: SlackFireMentionInput): Promise<ResetResult>;
+  slackFireMessage(input: SlackFireMessageInput): Promise<ResetResult>;
   slackFireCommand(
     input: SlackFireCommandInput,
   ): Promise<SlackFireCommandResult>;

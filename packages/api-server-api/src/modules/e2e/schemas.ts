@@ -85,6 +85,10 @@ export const slackFireMentionInputSchema = z
   })
   .strict();
 
+// A plain (non-mention) channel message for ambient mode — same wire shape
+// as a mention, only the trigger differs.
+export const slackFireMessageInputSchema = slackFireMentionInputSchema;
+
 export const slackFireCommandInputSchema = z
   .object({
     text: z.string(),

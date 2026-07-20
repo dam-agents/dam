@@ -12,6 +12,7 @@ import {
   slackFireCommandInputSchema,
   slackFireCommandResultSchema,
   slackFireMentionInputSchema,
+  slackFireMessageInputSchema,
   slackReadOutboundResultSchema,
 } from "./schemas.js";
 
@@ -69,6 +70,14 @@ export const e2eRouter = t.router({
     .mutation(({ ctx, input }) => {
       gate(ctx);
       return ctx.e2e.slackFireMention(input);
+    }),
+
+  slackFireMessage: t.procedure
+    .input(slackFireMessageInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackFireMessage(input);
     }),
 
   slackFireCommand: t.procedure

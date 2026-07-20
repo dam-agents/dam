@@ -473,9 +473,11 @@ export function createAgentsService(deps: {
   };
   /** The Agent (if any) a Slack channel id is already bound to — global, since
    *  Slack bindings are unique across the whole install. */
-  findSlackChannelBinding: (
-    slackChannelId: string,
-  ) => Promise<{ agentId: string; mode?: "shared" | "person-scoped" } | null>;
+  findSlackChannelBinding: (slackChannelId: string) => Promise<{
+    agentId: string;
+    mode?: "shared" | "person-scoped";
+    ambient?: boolean;
+  } | null>;
   /** Absent in the system-wide composition — binding is a user-facing flow. */
   telegramBinding?: TelegramBindingPort;
   /** Absent in the system-wide composition — the in-chat Slack bind is a
@@ -547,6 +549,7 @@ export function createAgentsService(deps: {
     id: string,
     slackChannelId: string,
     mode?: "shared" | "person-scoped",
+    ambient?: boolean,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
@@ -567,6 +570,10 @@ export function createAgentsService(deps: {
     if (existing && (existing.mode ?? "person-scoped") !== requestedMode)
       return err({ type: "ModeChangeRequiresRebind" as const });
 
+    // The router schema already enforces ambient ⇒ shared; re-derived here so
+    // a direct service caller can't mint an ambient person-scoped binding.
+    const requestedAmbient = requestedMode === "shared" && ambient === true;
+
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
         await deps.channelsTxRepo.upsertChannel(tx, id, {
@@ -574,6 +581,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           // Only the non-default is stored; absent = person-scoped.
           ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
+          ...(requestedAmbient ? { ambient: true } : {}),
         });
       } catch (e) {
         if (isSlackChannelUniqueViolation(e)) {
@@ -593,6 +601,44 @@ export function createAgentsService(deps: {
       slackChannelId,
       ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
     });
+
+    // An ambient flip changes what the channel's members should expect — the
+    // agent now reads (or stops reading) every message — so it is audited and
+    // announced in the channel itself. The post is best-effort, like the
+    // in-chat bind confirmation.
+    const wasAmbient = existing?.ambient === true;
+    if (wasAmbient !== requestedAmbient) {
+      securityLog("info", "channel.ambient_toggled", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, ambient: requestedAmbient },
+      });
+      if (deps.slackBinding) {
+        const text = requestedAmbient
+          ? `${infra.name} is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run the ambient off command to make it mentions-only again.`
+          : `${infra.name} left ambient mode — it now only responds when mentioned.`;
+        const post = await deps.slackBinding.postMessage(
+          id,
+          slackChannelId,
+          text,
+        );
+        if ("error" in post) {
+          securityLog("warn", "channel.ambient_toggled.notify_failed", {
+            category: "channel",
+            actor: deps.owner ?? null,
+            actorKind: "user",
+            surface: "slack",
+            agentId: id,
+            result: "failure",
+            detail: { slackChannelId, error: post.error },
+          });
+        }
+      }
+    }
 
     const allowedSubs = await deps.listAllowedUsersByAgent(id);
     const emails = await subsToEmails(allowedSubs);
@@ -1125,8 +1171,8 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, mode) {
-      return connectSlackImpl(id, slackChannelId, mode);
+    async connectSlack(id, slackChannelId, mode, ambient) {
+      return connectSlackImpl(id, slackChannelId, mode, ambient);
     },
 
     async disconnectSlack(id) {

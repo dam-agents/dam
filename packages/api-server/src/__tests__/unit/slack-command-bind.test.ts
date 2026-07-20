@@ -58,7 +58,8 @@ function harness(opts: {
     async (ch) => {
       unbindCalls.push(ch);
     },
-    "dam",
+    async () => {},
+    { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     () => acp,

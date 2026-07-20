@@ -29,7 +29,11 @@ function renderHuman(
             // Telegram has no readable identifier — the bot token is write-only.
             // Telegram is structurally shared-only.
             c.type === ChannelType.Slack
-              ? ["slack", c.slackChannelId, c.mode ?? "person-scoped"]
+              ? [
+                  "slack",
+                  c.slackChannelId,
+                  c.ambient ? "shared (ambient)" : (c.mode ?? "person-scoped"),
+                ]
               : ["telegram", "—", "shared"],
           ),
         ]);

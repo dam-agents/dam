@@ -18,6 +18,7 @@ import {
   findBySlackChannelId,
   findSlackChannelByAgent,
   deleteSlackChannelBinding,
+  setSlackChannelAmbient,
 } from "./modules/agents/index.js";
 import {
   createAgentSkillsRepository,
@@ -394,6 +395,7 @@ const channelRegistry: ChannelRegistry = {
       instanceName: row.agentId,
       owner: row.owner,
       ...(row.mode ? { mode: row.mode } : {}),
+      ...(row.ambient ? { ambient: true } : {}),
     };
   },
   resolveSlackChannelByInstance: findSlackChannelByAgent(db),
@@ -444,7 +446,8 @@ const slackWorker = slackGatewayFactory
       (agentId) => agentsRepo.getOwner(agentId),
       channelRegistry,
       deleteSlackChannelBinding(db),
-      config.brand.short,
+      setSlackChannelAmbient(db),
+      { name: config.brand.name, short: config.brand.short },
       isTermsAccepted,
       config.uiBaseUrl,
       makeForkAcpClient,

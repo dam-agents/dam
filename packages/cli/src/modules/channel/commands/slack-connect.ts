@@ -33,6 +33,10 @@ export function buildSlackConnectCommand(deps: {
       "access mode: 'person-scoped' (default) or 'shared'",
     )
     .option(
+      "--ambient",
+      "ambient mode (shared only): the agent reads along and may chime in without being mentioned",
+    )
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -41,7 +45,8 @@ export function buildSlackConnectCommand(deps: {
       "after",
       "\nExamples:\n" +
         "  dam channel slack connect my-agent --channel-id C0123ABCD\n" +
-        "  dam channel slack connect my-agent --channel-id C0123ABCD --mode shared\n",
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --mode shared\n" +
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --mode shared --ambient\n",
     )
     .action(
       async (
@@ -49,6 +54,7 @@ export function buildSlackConnectCommand(deps: {
         opts: {
           channelId: string;
           mode?: string;
+          ambient?: boolean;
           server?: string;
           json?: boolean;
         },
@@ -71,6 +77,10 @@ export function buildSlackConnectCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
         const mode = opts.mode as "shared" | "person-scoped" | undefined;
+        if (opts.ambient && mode !== "shared") {
+          process.stderr.write("error: --ambient requires --mode shared\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
 
         const host = await resolveActiveHost(deps, {
           flag: opts.server ? { server: opts.server } : undefined,
@@ -92,7 +102,12 @@ export function buildSlackConnectCommand(deps: {
         const svc = deps.createChannelService(host);
         await ensureProviderAvailable(svc, ChannelType.Slack, host);
 
-        const res = await svc.connectSlack(resolved.value.id, channelId, mode);
+        const res = await svc.connectSlack(
+          resolved.value.id,
+          channelId,
+          mode,
+          opts.ambient,
+        );
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
@@ -134,14 +149,38 @@ export function buildSlackConnectCommand(deps: {
           }
         }
 
+        if (opts.ambient) {
+          // Same older-server hazard for the ambient key, checked after the
+          // mode guard above so a stripped mode rolls back first. A stripped
+          // ambient lands mentions-only — the safe direction (the agent
+          // listens less, not more) — so keep the binding but fail loudly
+          // instead of claiming ambient.
+          const slackCh = res.value.find((c) => c.type === ChannelType.Slack);
+          if (slackCh?.type === ChannelType.Slack && !slackCh.ambient) {
+            process.stderr.write(
+              "error: this server does not support ambient mode — the channel is connected in shared mode without it\n",
+            );
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+        }
+
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
             `✓ Slack channel ${channelId} connected to ${resolved.value.name}${
-              mode === "shared" ? " in shared mode" : ""
+              mode === "shared"
+                ? opts.ambient
+                  ? " in shared mode with ambient on"
+                  : " in shared mode"
+                : ""
             }.\n`,
           );
+          if (opts.ambient) {
+            process.stderr.write(
+              "note: the agent reads along in this channel and may chime in without being mentioned; the channel gets a visible notice\n",
+            );
+          }
           if (mode === "shared") {
             process.stderr.write(
               "note: everyone in the channel drives this agent under its credentials; your Terms-of-Use acceptance covers every turn\n",

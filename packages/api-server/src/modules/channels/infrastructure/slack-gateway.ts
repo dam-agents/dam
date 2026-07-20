@@ -21,11 +21,19 @@ export interface SlackSlashCommand {
   channelId: string;
 }
 
+/** A plain channel message the bot reads along with (ambient mode). Same
+ *  shape as a mention — only the trigger differs. Gateways deliver only
+ *  human, non-mention channel messages here: bot posts (including the
+ *  agent's own), message edits/joins, DMs, and mentions (those arrive via
+ *  `onMention`) are filtered out at the gateway. */
+export type SlackChannelMessageEvent = SlackMentionEvent;
+
 export type SlackAck = (response: { text: string }) => Promise<void>;
 
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
+  onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
 }
 
 export interface SlackMessage {

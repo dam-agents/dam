@@ -133,6 +133,7 @@ export const agentsRouter = t.router({
         input.id,
         input.slackChannelId,
         input.mode,
+        input.ambient,
       );
       if (res.ok) return toView(res.value);
       switch (res.error.type) {

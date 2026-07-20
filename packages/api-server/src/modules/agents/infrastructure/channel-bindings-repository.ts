@@ -123,12 +123,14 @@ export function findBySlackChannelId(db: Db) {
     agentId: string;
     owner: string;
     mode?: "shared" | "person-scoped";
+    ambient?: boolean;
   } | null> => {
     const rows = await db
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
         mode: sql<string | null>`${channels.config}->>'mode'`,
+        ambient: sql<string | null>`${channels.config}->>'ambient'`,
       })
       .from(channels)
       .where(
@@ -145,7 +147,29 @@ export function findBySlackChannelId(db: Db) {
       owner: row.owner,
       // Only "shared" is ever stored; anything else reads as the default.
       ...(row.mode === "shared" ? { mode: "shared" as const } : {}),
+      ...(row.ambient === "true" ? { ambient: true } : {}),
     };
+  };
+}
+
+/** Flip ambient mode on a Slack binding in place. Keys on the globally-unique
+ *  Slack channel id (no owner scope): the in-chat toggle runs system-side and
+ *  authorizes the caller itself, like {@link deleteSlackChannelBinding}. */
+export function setSlackChannelAmbient(db: Db) {
+  return async (slackChannelId: string, ambient: boolean): Promise<void> => {
+    await db
+      .update(channels)
+      .set({
+        config: ambient
+          ? sql`${channels.config} || '{"ambient": true}'::jsonb`
+          : sql`${channels.config} - 'ambient'`,
+      })
+      .where(
+        and(
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      );
   };
 }
 

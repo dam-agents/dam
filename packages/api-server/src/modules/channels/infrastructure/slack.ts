@@ -37,6 +37,7 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import type {
   SlackAck,
+  SlackChannelMessageEvent,
   SlackGateway,
   SlackImageFile,
   SlackMentionEvent,
@@ -44,6 +45,53 @@ import type {
 } from "./slack-gateway.js";
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
+
+/** The exact reply an ambient prompt instructs the agent to give when it has
+ *  nothing to add; the worker swallows it instead of posting. */
+export const AMBIENT_DECLINE_TOKEN = "NO_RESPONSE";
+
+/** Wrap an ambient message so the agent knows how it appears in the channel
+ *  and may decline. The bot identity comes from the install's brand config;
+ *  the agent's own name is deliberately NOT injected — that identity belongs
+ *  to the agent's workspace setup ("the name you know yourself by" is its
+ *  hook). Applied per turn: ambient sessions interleave with mention-driven
+ *  turns, so the contract can't live in the session alone. */
+function frameAmbientPrompt(
+  text: string,
+  brand: { name: string; short: string },
+): string {
+  return [
+    "<ambient>",
+    "You are reading along in a shared Slack channel, where you appear as " +
+      `the bot "${brand.name}" (mentioned as @${brand.short}). The ` +
+      "following message(s) were not @-mentions. A message that calls you " +
+      `by name — "${brand.name}", or the name you know yourself by — is ` +
+      "addressed to you: answer it as you would a mention. Otherwise chime " +
+      "in only when you can clearly help — answer a question you know the " +
+      "answer to, pick up a task someone described, or flag a clear " +
+      "mistake. If in doubt, stay silent: reply with exactly " +
+      `${AMBIENT_DECLINE_TOKEN} and nothing else.`,
+    "</ambient>",
+    "",
+    text,
+  ].join("\n");
+}
+
+function isAmbientDecline(response: string): boolean {
+  // Tolerate the token arriving wrapped in whitespace, quotes, or backticks.
+  // An empty turn (tool-only, silent stop) is a decline too — the mention
+  // path's "(no response)" fallback would be unsolicited noise here.
+  const stripped = response.trim().replace(/^[`"']+|[`"'.]+$/g, "");
+  return stripped === "" || stripped === AMBIENT_DECLINE_TOKEN;
+}
+
+/** Session key for a channel's rolling ambient session: top-level channel
+ *  messages share one session (the agent "reads along"), while thread replies
+ *  keep their per-thread sessions. Slack thread_ts values are numeric, so the
+ *  prefix cannot collide with a real thread key. */
+function ambientThreadKey(channelId: string): string {
+  return `ambient:${channelId}`;
+}
 
 export type FetchedImage = {
   block: ContentBlock;
@@ -147,12 +195,14 @@ async function getContextMessages(
 }
 
 export interface ChannelRegistry {
-  /** The binding (if any) for a Slack channel: agent, binding owner, and the
-   *  access mode (absent = person-scoped). */
+  /** The binding (if any) for a Slack channel: agent, binding owner, the
+   *  access mode (absent = person-scoped), and whether ambient mode is on
+   *  (shared bindings only; absent = off). */
   resolveSlackBinding(slackChannelId: string): Promise<{
     instanceName: string;
     owner: string;
     mode?: "shared" | "person-scoped";
+    ambient?: boolean;
   } | null>;
   resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
 }
@@ -196,14 +246,23 @@ export function createSlackWorker(
    *  calling this; unlike the owner-scoped platform disconnect it runs
    *  system-side. */
   unbindSlackChannel: (slackChannelId: string) => Promise<void>,
-  /** Lowercase brand identifier used in slash-command help text (e.g.
-   *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
-  brandShort: string,
+  /** Flip ambient mode on a Slack binding, owner-agnostic. Same authorization
+   *  story as `unbindSlackChannel`: the in-chat ambient command checks the
+   *  caller (binder or agent owner) itself and runs system-side. */
+  setSlackChannelAmbient: (
+    slackChannelId: string,
+    ambient: boolean,
+  ) => Promise<void>,
+  /** Install brand identity: `short` is the lowercase slash-command name
+   *  (e.g. short="name" → /name login), `name` the bot display name the
+   *  ambient frame announces. Sourced from BRAND_NAME / BRAND_SHORT env. */
+  brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
   makeForkAcpClient: ForkAcpClientFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
+  const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
   async function ephemeral(
@@ -235,6 +294,44 @@ export function createSlackWorker(
       return [];
     });
     return sessions.find((s) => s.platform?.threadTs === threadTs) ?? null;
+  }
+
+  /** One ACP turn against the session keyed by `threadKey`
+   *  (`_meta.platform.threadTs`): wake the pod, resume the matching session
+   *  (falling back to a fresh context-injected one when resume fails), or
+   *  create it. Returns the assistant response; posting is the caller's. */
+  async function runSessionTurn(args: {
+    instanceName: string;
+    threadKey: string;
+    resumePrompt: string | ContentBlock[];
+    buildFreshPrompt: () => Promise<string | ContentBlock[]>;
+    onWaking?: () => void;
+    onImagesDropped?: () => void;
+  }): Promise<string> {
+    await agents().ensureReady(args.instanceName, { onWaking: args.onWaking });
+    const acp = makeAcpClient(args.instanceName);
+    const platformMeta = {
+      type: SessionType.ChannelSlack,
+      threadTs: args.threadKey,
+    };
+    const existing = await findThreadSession(acp, args.threadKey);
+    if (existing) {
+      try {
+        return await acp.sendPrompt(args.resumePrompt, {
+          resumeSessionId: existing.sessionId,
+          onImagesDropped: args.onImagesDropped,
+        });
+      } catch {
+        return acp.sendPrompt(await args.buildFreshPrompt(), {
+          platformMeta,
+          onImagesDropped: args.onImagesDropped,
+        });
+      }
+    }
+    return acp.sendPrompt(await args.buildFreshPrompt(), {
+      platformMeta,
+      onImagesDropped: args.onImagesDropped,
+    });
   }
 
   async function relayOwnerTurn(ctx: {
@@ -285,15 +382,6 @@ export function createSlackWorker(
     };
 
     const runTurn = async () => {
-      await agents().ensureReady(instanceName, { onWaking });
-      const acp = makeAcpClient(instanceName);
-      const platformMeta = {
-        type: SessionType.ChannelSlack,
-        threadTs: ctx.threadTs,
-      };
-
-      let response: string;
-      const existing = await findThreadSession(acp, ctx.threadTs);
       const resumePrompt: string | ContentBlock[] =
         ctx.images.length === 0
           ? ctx.text
@@ -301,27 +389,14 @@ export function createSlackWorker(
               { type: "text", text: ctx.text },
               ...ctx.images.map((i) => i.block),
             ];
-
-      if (existing) {
-        try {
-          response = await acp.sendPrompt(resumePrompt, {
-            resumeSessionId: existing.sessionId,
-            onImagesDropped,
-          });
-        } catch {
-          const prompt = await buildThreadPrompt(gw, ctx);
-          response = await acp.sendPrompt(prompt, {
-            platformMeta,
-            onImagesDropped,
-          });
-        }
-      } else {
-        const prompt = await buildThreadPrompt(gw, ctx);
-        response = await acp.sendPrompt(prompt, {
-          platformMeta,
-          onImagesDropped,
-        });
-      }
+      const response = await runSessionTurn({
+        instanceName,
+        threadKey: ctx.threadTs,
+        resumePrompt,
+        buildFreshPrompt: () => buildThreadPrompt(gw, ctx),
+        onWaking,
+        onImagesDropped,
+      });
 
       await postAssistantMessage(
         ctx.channel,
@@ -766,12 +841,138 @@ export function createSlackWorker(
           text: `Channel disconnected. Run \`/${brandShort} bind\` to connect an agent again.`,
         });
       })
+      .with(P.union("ambient", "ambient on", "ambient off"), async (cmd) => {
+        await handleAmbientCommand(cmd, command, ack);
+      })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, \`/${brandShort} login\`, or \`/${brandShort} logout\``,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, \`/${brandShort} ambient on|off\`, \`/${brandShort} login\`, or \`/${brandShort} logout\``,
         });
       })
       .exhaustive();
+  }
+
+  // The in-chat dial for ambient mode: `ambient` reports the state, `ambient
+  // on|off` flips it — allowed for the binder or the agent's owner, same
+  // authorization as unbind. The flip is announced channel-visibly: it
+  // changes what everyone here should expect, so it is not whispered to the
+  // invoker alone.
+  async function handleAmbientCommand(
+    subcommand: "ambient" | "ambient on" | "ambient off",
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const binding = await channelRegistry.resolveSlackBinding(
+      command.channelId,
+    );
+    if (!binding) {
+      await ack({ text: "This channel isn't connected to an agent." });
+      return;
+    }
+    if (binding.mode !== "shared") {
+      await ack({
+        text: "Ambient mode needs a shared connection — this channel is person-scoped. Disconnect the channel and reconnect it in shared mode first.",
+      });
+      return;
+    }
+    const isAmbient = binding.ambient === true;
+    if (subcommand === "ambient") {
+      await ack({
+        text: `Ambient mode is ${
+          isAmbient
+            ? "on — the agent reads along and may chime in without being mentioned"
+            : "off — the agent only responds to mentions"
+        }. Use \`/${brandShort} ambient on\` or \`/${brandShort} ambient off\` to change it.`,
+      });
+      return;
+    }
+    const enable = subcommand === "ambient on";
+
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "unlinked",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+      });
+      return;
+    }
+
+    const agentOwner = await getInstanceOwner(binding.instanceName);
+    const allowed = invoker === binding.owner || invoker === agentOwner;
+    if (!allowed) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "not-binder-or-owner",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
+      });
+      return;
+    }
+
+    if (enable === isAmbient) {
+      await ack({ text: `Ambient mode is already ${enable ? "on" : "off"}.` });
+      return;
+    }
+
+    await setSlackChannelAmbient(command.channelId, enable);
+    securityLog("info", "channel.ambient_toggled", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: binding.instanceName,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        ambient: enable,
+      },
+    });
+
+    if (gateway) {
+      try {
+        await gateway.postMessage({
+          channel: command.channelId,
+          text: enable
+            ? `\`${binding.instanceName}\` is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient off\` to make it mentions-only again.`
+            : `\`${binding.instanceName}\` left ambient mode — it now only responds when mentioned.`,
+        });
+      } catch (err) {
+        process.stderr.write(
+          `[slack] ambient announcement failed: ${formatError(err)}\n`,
+        );
+      }
+    }
+
+    const termsPending =
+      enable && !(await isTermsAccepted(binding.owner))
+        ? ` Heads-up: the person who connected this channel hasn't accepted the Terms of Use at ${uiBaseUrl} yet, so the agent stays silent until they do.`
+        : "";
+    await ack({
+      text: `Ambient mode turned ${enable ? "on" : "off"}.${termsPending}`,
+    });
   }
 
   async function fetchTurnImages(
@@ -928,6 +1129,249 @@ export function createSlackWorker(
     });
   }
 
+  // Ambient turns stay out of the channel's way: no reaction, no wake
+  // notices, and failures are logged, never posted — nobody summoned the
+  // agent, so there is nothing to apologize for in-channel.
+  async function relayAmbientTurn(args: {
+    instanceName: string;
+    channel: string;
+    /** `_meta.platform.threadTs` session key: the real thread_ts for thread
+     *  replies, the synthetic ambient key for top-level channel flow. */
+    threadKey: string;
+    /** Where a reply (if the agent chimes in) is threaded. */
+    replyThreadTs: string;
+    /** The triggering message ts, excluded from injected context. */
+    eventTs: string;
+    hasThread: boolean;
+    /** Speaker-labelled; multi-line when messages were coalesced. */
+    text: string;
+    images: FetchedImage[];
+    externalActorId: string;
+  }) {
+    if (!gateway) return;
+    const gw = gateway;
+
+    let outcome: TurnOutcome = "failure";
+    let failureReason: string | undefined;
+    const framed = frameAmbientPrompt(args.text, brand);
+    const resumePrompt: string | ContentBlock[] =
+      args.images.length === 0
+        ? framed
+        : [{ type: "text", text: framed }, ...args.images.map((i) => i.block)];
+
+    const runTurn = () =>
+      runSessionTurn({
+        instanceName: args.instanceName,
+        threadKey: args.threadKey,
+        resumePrompt,
+        buildFreshPrompt: () =>
+          buildThreadPrompt(gw, {
+            channel: args.channel,
+            threadTs: args.threadKey,
+            eventTs: args.eventTs,
+            text: framed,
+            hasThread: args.hasThread,
+            images: args.images,
+          }),
+      });
+
+    try {
+      let response: string;
+      try {
+        response = await runTurn();
+      } catch (err) {
+        if (
+          !isAgentWakeTimeoutError(err) ||
+          !isTransientWakeFailure(err.failure)
+        ) {
+          throw err;
+        }
+        // Transient wake overrun: retry silently — no still-starting note.
+        response = await runTurn();
+      }
+      if (!isAmbientDecline(response)) {
+        await postAssistantMessage(
+          args.channel,
+          args.replyThreadTs,
+          args.instanceName,
+          response,
+        );
+      }
+      outcome = "success";
+    } catch (err) {
+      failureReason = isAgentStoppedError(err)
+        ? "agent-stopped"
+        : isAgentWakeTimeoutError(err)
+          ? wakeFailureReasonToken(err.failure)
+          : "acp-error";
+      getLogger().warn(
+        {
+          agentId: args.instanceName,
+          reason: failureReason,
+          error: formatError(err),
+        },
+        "slack.ambient_turn.failed",
+      );
+    } finally {
+      emit({
+        type: EventType.ChannelTurnRelayed,
+        channel: "slack",
+        agentId: args.instanceName,
+        actorSub: null,
+        externalActorId: args.externalActorId,
+        outcome,
+        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+      });
+    }
+  }
+
+  type AmbientPendingMessage = {
+    /** Speaker-labelled message text. */
+    text: string;
+    eventTs: string;
+    slackUserId: string;
+    images: FetchedImage[];
+  };
+
+  // Top-level ambient traffic is serialized per channel and coalesced:
+  // messages arriving while a turn is in flight flush as one multi-message
+  // prompt, so a busy channel never races concurrent prompts into the shared
+  // ambient session (thread sessions keep the mention path's no-guard
+  // semantics — ambient thread replies are comparatively rare).
+  const ambientQueues = new Map<
+    string,
+    { pending: AmbientPendingMessage[]; draining: boolean }
+  >();
+
+  function enqueueAmbient(channelId: string, msg: AmbientPendingMessage) {
+    let queue = ambientQueues.get(channelId);
+    if (!queue) {
+      queue = { pending: [], draining: false };
+      ambientQueues.set(channelId, queue);
+    }
+    queue.pending.push(msg);
+    if (!queue.draining) void drainAmbientQueue(channelId, queue);
+  }
+
+  async function drainAmbientQueue(
+    channelId: string,
+    queue: { pending: AmbientPendingMessage[]; draining: boolean },
+  ) {
+    queue.draining = true;
+    try {
+      while (queue.pending.length > 0) {
+        const batch = queue.pending.splice(0);
+        const last = batch.at(-1);
+        if (!last) continue;
+        // Re-resolve: the binding may have been unbound, dialed back to
+        // mentions-only, or rebound to a different owner while the batch
+        // waited — the ToU gate must hold against the owner whose
+        // credentials actually run the turn, so it is re-checked here too.
+        const binding = await channelRegistry.resolveSlackBinding(channelId);
+        if (!binding || binding.mode !== "shared" || !binding.ambient) {
+          continue;
+        }
+        if (!(await isTermsAccepted(binding.owner))) {
+          getLogger().debug(
+            { agentId: binding.instanceName, channelId },
+            "slack.ambient_turn.skipped_terms",
+          );
+          continue;
+        }
+        await relayAmbientTurn({
+          instanceName: binding.instanceName,
+          channel: channelId,
+          threadKey: ambientThreadKey(channelId),
+          replyThreadTs: last.eventTs,
+          eventTs: last.eventTs,
+          hasThread: false,
+          text: batch.map((m) => m.text).join("\n"),
+          images: batch.flatMap((m) => m.images),
+          externalActorId: last.slackUserId,
+        });
+      }
+    } catch (err) {
+      // The drain floats outside any awaited chain — a rejection here (e.g.
+      // a transient DB error resolving the binding) must never escape as an
+      // unhandled rejection. The dropped batch stays dropped (ambient turns
+      // fail silently); the next message re-kicks the drain.
+      getLogger().warn(
+        { channelId, error: formatError(err) },
+        "slack.ambient_drain.failed",
+      );
+    } finally {
+      // No await between the empty check and this reset, so a message can't
+      // slip past both; any later enqueue sees draining=false and re-kicks.
+      queue.draining = false;
+    }
+  }
+
+  // Ambient inbound: a channel message that mentioned nobody. Only shared
+  // bindings with ambient on relay it; everything else drops silently — the
+  // sender did not address the agent, so there is nothing to explain.
+  async function handleChannelMessage(event: SlackChannelMessageEvent) {
+    if (!gateway) return;
+    const slackUserId = event.user;
+    if (!slackUserId) return;
+
+    const binding = await channelRegistry.resolveSlackBinding(event.channel);
+    if (!binding || binding.mode !== "shared" || !binding.ambient) return;
+
+    // The binding owner's ToU acceptance gates ambient turns like any shared
+    // turn — but silently: an ephemeral would ping people who never asked.
+    if (!(await isTermsAccepted(binding.owner))) {
+      getLogger().debug(
+        { agentId: binding.instanceName, channelId: event.channel },
+        "slack.ambient_turn.skipped_terms",
+      );
+      return;
+    }
+
+    // Images ride along when they fit; ambient turns never post error
+    // ephemerals, so oversized or unfetchable attachments just drop.
+    const fetchResult = await fetchSlackImages(gateway, event.files);
+    const images = fetchResult.kind === "ok" ? fetchResult.images : [];
+
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: null,
+      actorKind: "external",
+      surface: "slack",
+      agentId: binding.instanceName,
+      decision: "allow",
+      detail: {
+        basis: "place",
+        trigger: "ambient",
+        slackUserId,
+        channelId: event.channel,
+      },
+    });
+
+    const text = `<@${slackUserId}>: ${event.text}`;
+    if (event.threadTs) {
+      // Thread replies keep their per-thread session — the same key a
+      // mention in that thread would resume.
+      await relayAmbientTurn({
+        instanceName: binding.instanceName,
+        channel: event.channel,
+        threadKey: event.threadTs,
+        replyThreadTs: event.threadTs,
+        eventTs: event.ts,
+        hasThread: true,
+        text,
+        images,
+        externalActorId: slackUserId,
+      });
+      return;
+    }
+    enqueueAmbient(event.channel, {
+      text,
+      eventTs: event.ts,
+      slackUserId,
+      images,
+    });
+  }
+
   async function routeReply(args: {
     channel: string;
     threadTs: string;
@@ -1005,25 +1449,38 @@ export function createSlackWorker(
   }
 
   let gatewayFailed = false;
+  let gatewayStarting: Promise<SlackGateway | null> | null = null;
 
+  // Single-flight: a connect emits SlackConnected (whose handler starts the
+  // worker) while the same request may already be posting an announcement —
+  // both paths must share one start, never race two socket connections.
   async function ensureGateway(): Promise<SlackGateway | null> {
     if (gateway) return gateway;
     if (gatewayFailed) return null;
+    gatewayStarting ??= startGateway();
+    return gatewayStarting;
+  }
 
-    const gw = createGateway();
-    const connected = await gw.start({
-      onMention: handleAppMention,
-      onCommand: handleCommand,
-    });
-    if (!connected) {
-      gatewayFailed = true;
-      process.stderr.write("[slack] Slack bot not connected\n");
-      return null;
+  async function startGateway(): Promise<SlackGateway | null> {
+    try {
+      const gw = createGateway();
+      const connected = await gw.start({
+        onMention: handleAppMention,
+        onCommand: handleCommand,
+        onMessage: handleChannelMessage,
+      });
+      if (!connected) {
+        gatewayFailed = true;
+        process.stderr.write("[slack] Slack bot not connected\n");
+        return null;
+      }
+
+      gateway = gw;
+      process.stderr.write("Slack bot started (single app)\n");
+      return gateway;
+    } finally {
+      gatewayStarting = null;
     }
-
-    gateway = gw;
-    process.stderr.write("Slack bot started (single app)\n");
-    return gateway;
   }
 
   return {
@@ -1077,7 +1534,11 @@ export function createSlackWorker(
         };
       }
 
-      if (!gateway) {
+      // Outbound may arrive before any inbound event started the gateway —
+      // e.g. the announcement posted right after the first-ever connect,
+      // which races the SlackConnected handler's fire-and-forget start.
+      const gw = await ensureGateway();
+      if (!gw) {
         return { error: "slack bot not running" };
       }
 
@@ -1094,14 +1555,14 @@ export function createSlackWorker(
         // some block shapes — keeping the upload simple side-steps both issues
         // and gives consistent text formatting in either path.
         if (text) {
-          await gateway.postMessage({
+          await gw.postMessage({
             channel: slackChannelId,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
           });
         }
         if (attachment) {
-          await gateway.uploadFile({
+          await gw.uploadFile({
             channelId: slackChannelId,
             file: attachment.data,
             filename: attachment.filename,
