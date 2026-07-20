@@ -144,6 +144,9 @@ export interface AgentView {
         slackChannelId: string;
         /** Access mode; absent = person-scoped. */
         mode?: "shared" | "person-scoped";
+        /** Ambient mode (shared only): the agent reads along and may chime
+         *  in without being mentioned; absent = off. */
+        ambient?: boolean;
       }
     | { type: "telegram" }
   )[];
