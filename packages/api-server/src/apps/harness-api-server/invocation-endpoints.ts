@@ -1,12 +1,14 @@
 import type { Hono } from "hono";
-import { z } from "zod";
-import type { ConnectionsService, TemplatesService } from "api-server-api";
+import type { z } from "zod";
+import {
+  spawnInvocationRequestSchema,
+  type ConnectionsService,
+  type TemplatesService,
+} from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   AttenuationError,
   InvalidSchemaError,
-  MIN_INVOCATION_TTL_MS,
-  MAX_INVOCATION_TTL_MS,
   type InvocationsService,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
@@ -18,40 +20,6 @@ export interface InvocationEndpointsDeps {
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
 }
-
-const spawnBody = z
-  .object({
-    image: z.string().min(1).optional(),
-    templateId: z.string().min(1).optional(),
-    connections: z.array(z.string().min(1)).optional(),
-    prompt: z.string().min(1),
-    // The result JSON Schema — arbitrary JSON, validated structurally by ajv
-    // when the target reports (a malformed schema is rejected at spawn).
-    schema: z.unknown(),
-    // Optional liveness deadline for this target, in ms. Bounded server-side; a
-    // shorter value fails a wedged/misconfigured target fast, a longer one lets
-    // a heavy target run past the default hour.
-    ttlMs: z
-      .number()
-      .int()
-      .min(MIN_INVOCATION_TTL_MS)
-      .max(MAX_INVOCATION_TTL_MS)
-      .optional(),
-    // Optional resource limits. A heavy Make (clone + install + build)
-    // OOM-kills at the template's small default memory, so let the driver raise
-    // it. Same grammar and floors as the agent size knob.
-    memory: z
-      .string()
-      .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
-      .optional(),
-    cpu: z
-      .string()
-      .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
-      .optional(),
-  })
-  .refine((d) => d.image !== undefined || d.templateId !== undefined, {
-    message: "either image or templateId is required",
-  });
 
 /** Mounts the driver-facing spawn primitive on the harness surface. Every route
  *  is scoped to the driver's identity — the `:id` the waypoint already
@@ -69,9 +37,9 @@ export function mountInvocationRoutes(
     const verified = await resolveAgent(deps.k8s, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
-    let body: z.infer<typeof spawnBody>;
+    let body: z.infer<typeof spawnInvocationRequestSchema>;
     try {
-      body = spawnBody.parse(await c.req.json());
+      body = spawnInvocationRequestSchema.parse(await c.req.json());
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }

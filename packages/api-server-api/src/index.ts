@@ -23,6 +23,21 @@ export { templateGetInputSchema } from "./modules/templates/schemas.js";
 export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
 
+export {
+  spawnInvocationRequestSchema,
+  spawnInvocationResponseSchema,
+  invocationViewSchema,
+  DEFAULT_INVOCATION_TTL_MS,
+  MIN_INVOCATION_TTL_MS,
+  MAX_INVOCATION_TTL_MS,
+} from "./modules/invocations/schemas.js";
+export type {
+  SpawnInvocationRequest,
+  SpawnInvocationResponse,
+  InvocationView,
+  InvocationStatus,
+} from "./modules/invocations/types.js";
+
 export type {
   HarnessConfigChange,
   HarnessConfigStatus,
