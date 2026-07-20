@@ -56,13 +56,20 @@ export function TemplateCreateFormBody({
   });
   const [overrideDefaults, setOverrideDefaults] = useState(false);
 
-  const { submit, pending, authorizing, verifying, needsOAuth } =
-    useTemplateCreateSubmit({
-      template,
-      popupOAuth,
-      oauthReturnView,
-      onCreated,
-    });
+  const {
+    submit,
+    pending,
+    authorizing,
+    verifying,
+    needsOAuth,
+    awaitingPopup,
+    refocusPopup,
+  } = useTemplateCreateSubmit({
+    template,
+    popupOAuth,
+    oauthReturnView,
+    onCreated,
+  });
 
   const bringYourOwnApp =
     needsOAuth &&
@@ -182,19 +189,26 @@ export function TemplateCreateFormBody({
         Cancel
       </Button>
       <Button
-        onClick={onSubmit}
-        disabled={pending}
+        onClick={awaitingPopup ? refocusPopup : onSubmit}
+        disabled={pending && !awaitingPopup}
+        title={
+          awaitingPopup
+            ? "Bring the authorization window back to the front"
+            : undefined
+        }
         data-testid="connection-create-submit"
       >
         {verifying
           ? "Verifying…"
-          : authorizing
-            ? "Redirecting…"
-            : pending
-              ? "…"
-              : needsOAuth
-                ? "Create + Authorize"
-                : "Create"}
+          : awaitingPopup
+            ? "Waiting for authorization — reopen"
+            : authorizing
+              ? "Redirecting…"
+              : pending
+                ? "…"
+                : needsOAuth
+                  ? "Create + Authorize"
+                  : "Create"}
       </Button>
     </>
   );

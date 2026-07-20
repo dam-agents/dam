@@ -38,10 +38,14 @@ export function useDeleteConnection() {
   });
 }
 
-export function useDiscoverMcp() {
+// `silent` for background detection (the debounced URL probe), where a
+// transient failure shouldn't pop a global toast.
+export function useDiscoverMcp(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.discoverMcp.mutationOptions(),
-    meta: { errorToast: "Couldn't reach MCP server" },
+    meta: opts?.silent
+      ? { suppressErrorToast: true }
+      : { errorToast: "Couldn't reach MCP server" },
   });
 }
 

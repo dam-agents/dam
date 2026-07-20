@@ -89,5 +89,12 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     teardown();
   }, [teardown]);
 
-  return { open, close };
+  // Bring an open popup back to the front — it easily slips behind the main
+  // window. Best-effort: some browsers ignore programmatic focus of a
+  // background window, and it's a no-op once the popup has closed.
+  const focus = useCallback(() => {
+    if (popupRef.current && !popupRef.current.closed) popupRef.current.focus();
+  }, []);
+
+  return { open, close, focus };
 }
