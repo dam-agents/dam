@@ -71,10 +71,17 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   const restarting = useStore((s) =>
     agentId ? s.restartingAgents.has(agentId) : false,
   );
+  // Optimistic Pause/Stop: the pod is on its way down, so treat the agent as
+  // non-operable the moment the user clicks — before the poll reports the
+  // transition — so pod-dependent affordances gate immediately (no flicker of
+  // a still-"operable" surface right after a pause).
+  const pausing = useStore((s) =>
+    agentId ? s.pausingAgents.has(agentId) : false,
+  );
   const unreachable = useStore((s) =>
     agentId ? s.unreachableAgents.has(agentId) : false,
   );
-  return runState === "running" && !restarting && !unreachable;
+  return runState === "running" && !restarting && !pausing && !unreachable;
 }
 
 /**

@@ -8,8 +8,10 @@ import {
 } from "../../auth-procedures.js";
 import {
   localSkillSchema,
+  skillContentSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
+  skillGetContentInputSchema,
   skillInstallInputSchema,
   skillListInputSchema,
   skillListLocalInputSchema,
@@ -57,6 +59,17 @@ export const skillsRouter = t.router({
       const src = await ctx.skills.getSource(input.sourceId);
       if (!src) throw new TRPCError({ code: "NOT_FOUND" });
       return ctx.skills.list(input.sourceId, input.agentId);
+    }),
+
+  getSkillContent: readAgentProcedure
+    .input(skillGetContentInputSchema)
+    .output(skillContentSchema)
+    .query(async ({ ctx, input }) => {
+      // agentId only scopes the auth check — reading public content needs no
+      // pod (private preview is deferred). The service resolves the source and
+      // throws a descriptive NOT_FOUND, so there's no pre-resolve here.
+      if (input.agentId) checkAgentBinding(ctx, input.agentId);
+      return ctx.skills.getSkillContent(input.sourceId, input.name);
     }),
 
   install: manageAgentsProcedure

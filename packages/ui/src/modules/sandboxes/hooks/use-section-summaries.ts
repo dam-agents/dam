@@ -86,11 +86,14 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return formatNameList(names);
   }, [connectionsQuery.data, apps, providerAppIds]);
 
-  const skills = useMemo(
-    () =>
-      formatNameList((skillsState.data?.installed ?? []).map((s) => s.name)),
-    [skillsState.data],
-  );
+  const skills = useMemo(() => {
+    // Standalone (authored-in-sandbox) skills are on disk and active just like
+    // installed ones, so the summary lists both — standalone first to mirror
+    // the surface's "Created in this sandbox" group ordering.
+    const standalone = (skillsState.data?.standalone ?? []).map((s) => s.name);
+    const installed = (skillsState.data?.installed ?? []).map((s) => s.name);
+    return formatNameList([...standalone, ...installed]);
+  }, [skillsState.data]);
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;

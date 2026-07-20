@@ -41,6 +41,10 @@ export interface SkillsService {
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
   list: (sourceId: string, agentId?: string) => Promise<Skill[]>;
+  getSkillContent: (
+    sourceId: string,
+    name: string,
+  ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;

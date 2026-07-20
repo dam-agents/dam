@@ -10,17 +10,17 @@ import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import {
-  useDeleteAgent,
-  usePauseAgent,
-  useStopAgent,
-} from "../api/mutations.js";
+import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../hooks/use-restart-agent.js";
+import {
+  useSuspendAgent,
+  useSyncPausingAgents,
+} from "../hooks/use-suspend-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import {
@@ -40,10 +40,11 @@ export function ListView() {
   const agents = agentsData?.list ?? [];
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
+  const pausingAgents = useStore((s) => s.pausingAgents);
+  useSyncPausingAgents();
 
   const deleteAgent = useDeleteAgent();
-  const pauseAgent = usePauseAgent();
-  const stopAgent = useStopAgent();
+  const suspend = useSuspendAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
@@ -58,6 +59,10 @@ export function ListView() {
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
+  );
+  const pausingIds = useMemo(
+    () => new Set(pausingAgents.keys()),
+    [pausingAgents],
   );
 
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
@@ -88,7 +93,7 @@ export function ListView() {
       </>
     );
     if (!(await showConfirm(msg, "Stop Sandbox"))) return;
-    stopAgent.mutate({ id: agent.id });
+    suspend.stop(agent.id);
   };
 
   const deleteSandbox = async (agent: AgentView) => {
@@ -139,7 +144,7 @@ export function ListView() {
             <AgentRow
               key={agent.id}
               agent={agent}
-              display={resolveAgentDisplay(agent, restartingIds)}
+              display={resolveAgentDisplay(agent, restartingIds, pausingIds)}
               subtitle={sandboxSubtitle(agent, subtitleLookup)}
               deletePending={
                 deleteAgent.isPending && deleteAgent.variables?.id === agent.id
@@ -147,7 +152,7 @@ export function ListView() {
               onSelect={() => navigateToSandboxHome(agent.id)}
               onWake={() => wakeAgent.wake(agent.id)}
               onRestart={() => restartAgent(agent.id)}
-              onPause={() => pauseAgent.mutate({ id: agent.id })}
+              onPause={() => suspend.pause(agent.id)}
               onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}
             />

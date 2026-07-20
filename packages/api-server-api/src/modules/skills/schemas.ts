@@ -126,6 +126,23 @@ export const skillListInputSchema = z.object({
   agentId: z.string().min(1).optional(),
 });
 
+/** Read one skill's `SKILL.md` from its source, keyed by source + name.
+ *  `agentId` targets the pod for private sources (public scan needs none). */
+export const skillGetContentInputSchema = z.object({
+  sourceId: z.string().min(1),
+  name: z.string().min(1),
+  agentId: z.string().min(1).optional(),
+});
+
+/** Raw `SKILL.md` text (frontmatter + markdown body); the UI renders it. */
+export const skillContentSchema = z.object({
+  content: z.string(),
+  /** Source-relative directory the SKILL.md was found in, when resolvable —
+   *  lets the UI build an accurate blob link instead of guessing the dir from
+   *  the (frontmatter) skill name. */
+  dir: z.string().optional(),
+});
+
 export const skillInstallInputSchema = z.object({
   agentId: z.string().min(1),
   source: z.string().url(),

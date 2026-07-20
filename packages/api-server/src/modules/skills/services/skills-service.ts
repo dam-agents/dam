@@ -76,6 +76,14 @@ export interface SkillsServiceDeps {
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
   scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
+  /** Read one skill's raw `SKILL.md` (plus its source-relative directory) from
+   *  a public GitHub repo. Throws `PublicArchiveNotFoundError` on 404 (private
+   *  repo). */
+  readPublicSkill: (
+    gitUrl: string,
+    path: string | undefined,
+    name: string,
+  ) => Promise<{ content: string; dir: string } | null>;
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
@@ -347,6 +355,46 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
         throw err;
       }
+    },
+
+    async getSkillContent(sourceId: string, name: string) {
+      const src = await resolveSource(deps, sourceId);
+      if (!src) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill source ${JSON.stringify(sourceId)} not found`,
+        });
+      }
+      // Public GitHub: read directly from the api-server (no pod needed).
+      // Private sources' in-product preview is deferred — reading their content
+      // must route through the agent pod for the credential swap, which needs a
+      // new agent-runtime read; until then the UI falls back to a GitHub link.
+      if (!detectHost(src.gitUrl)) {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message: "in-product preview isn't available for private sources yet",
+        });
+      }
+      let read: { content: string; dir: string } | null;
+      try {
+        read = await deps.readPublicSkill(src.gitUrl, src.path, name);
+      } catch (err) {
+        if (err instanceof PublicArchiveNotFoundError) {
+          throw new TRPCError({
+            code: "NOT_IMPLEMENTED",
+            message:
+              "in-product preview isn't available for private sources yet",
+          });
+        }
+        throw err;
+      }
+      if (read === null) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill ${JSON.stringify(name)} not found in source`,
+        });
+      }
+      return { content: read.content, dir: read.dir };
     },
 
     async install(input: SkillInstallInput) {
