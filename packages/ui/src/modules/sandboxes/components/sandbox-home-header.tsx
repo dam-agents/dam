@@ -1,5 +1,6 @@
 import { OverflowMenuVertical } from "@carbon/icons-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -74,6 +75,15 @@ export function SandboxHomeHeader({ agent, display }: Props) {
           {agent.name}
         </h1>
         <StatusBadge state={display.state} />
+        {agent.templateUpdate && (
+          <Badge
+            variant="info"
+            className="shrink-0"
+            title={`Template update available: ${agent.templateUpdate.toImage}`}
+          >
+            Update available
+          </Badge>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <OpenInMenu agent={agent} />

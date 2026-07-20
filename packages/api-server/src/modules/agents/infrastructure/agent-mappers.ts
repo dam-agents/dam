@@ -5,6 +5,7 @@ import type {
   AgentState,
   ChannelConfig,
   DriverFailure,
+  TemplateUpdate,
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
@@ -199,11 +200,13 @@ export function assembleAgent(
   contributionFailures: DriverFailure[],
   globalIdleTimeoutMin: number,
   preparingWorkspace = false,
+  templateUpdate?: TemplateUpdate,
 ): Agent {
   return {
     id: infra.id,
     name: infra.name,
     templateId: infra.templateId,
+    templateUpdate,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

@@ -40,6 +40,7 @@ export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
 export const agentStopInputSchema = idSchema;
 export const agentPauseInputSchema = idSchema;
+export const agentUpgradeInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema;
 
 export const agentCreateInputSchema = z

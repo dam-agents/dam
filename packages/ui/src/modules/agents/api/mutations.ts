@@ -196,6 +196,18 @@ export function useRestartAgentMutation() {
   });
 }
 
+// Upgrading rolls a running pod onto the new image, so it moves Reserved
+// like a restart does.
+export function useUpgradeAgentMutation() {
+  return useMutation({
+    ...trpc.agents.upgrade.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to upgrade sandbox",
+    },
+  });
+}
+
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),

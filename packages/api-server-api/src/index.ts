@@ -55,6 +55,9 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentUpdateInput,
+  TemplateUpdate,
+  UpgradeAgentError,
+  UpgradeAgentResult,
   ConnectSlackError,
   ConnectSlackResult,
   BindSlackChannelError,
@@ -84,6 +87,7 @@ export {
   agentUpdateInputSchema,
   agentPauseInputSchema,
   agentStopInputSchema,
+  agentUpgradeInputSchema,
   agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
 export {

@@ -119,6 +119,9 @@ export interface AgentView {
   id: string;
   name: string;
   templateId: string | null;
+  /** Present when the sandbox is behind its template (#1077): the template
+   *  now ships a different image than the one captured at create time. */
+  templateUpdate: { fromImage: string; toImage: string } | null;
   image: string;
   description?: string;
   env?: EnvVar[];
