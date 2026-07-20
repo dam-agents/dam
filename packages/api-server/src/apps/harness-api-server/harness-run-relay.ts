@@ -35,7 +35,8 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
 // than sit silent.
 const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
 
-function keepalive(sock: WebSocket) {
+/** Shared with the dam-vm relay — see the cadence rationale above. */
+export function keepalive(sock: WebSocket) {
   let alive = true;
   sock.on("pong", () => {
     alive = true;

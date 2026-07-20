@@ -83,6 +83,20 @@ const configSchema = z.object({
   /** The bot's @handle (without the @). Authoritative for connect links and
    *  mention detection when set; otherwise discovered via getMe at start. */
   telegramBotUsername: z.string().nullable().default(null),
+  /** dam-vm VM host relay URL (e.g. `ws://203.0.113.7:8090/run`; `wss://`
+   *  works behind TLS). Unset → the harness `/vm` endpoint tells agents no
+   *  VM host is configured. */
+  vmHostUrl: z.string().nullable().default(null),
+  /** mTLS client cert + key the api-server presents to the VM host, issued by
+   *  the same private CA (IBM Cloud Secrets Manager) that signed the host's
+   *  server cert. Possession of a CA-signed client cert IS the deployment's
+   *  credential — there is no separate API key. Agents/users never see these. */
+  vmHostClientCert: z.string().nullable().default(null),
+  vmHostClientKey: z.string().nullable().default(null),
+  /** CA cert (PEM) to verify the VM host's server cert. For the Secrets
+   *  Manager private CA this is its CA/chain. Unset → system trust store
+   *  (a host fronted by a publicly-trusted cert); plain `ws://` ignores it. */
+  vmHostCaCert: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   /** HMAC key used to pseudonymize Keycloak `sub` values written to
@@ -295,6 +309,10 @@ export function loadConfig(): Config {
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
+    vmHostUrl: process.env.PLATFORM_VM_HOST_URL,
+    vmHostClientCert: process.env.PLATFORM_VM_HOST_CLIENT_CERT,
+    vmHostClientKey: process.env.PLATFORM_VM_HOST_CLIENT_KEY,
+    vmHostCaCert: process.env.PLATFORM_VM_HOST_CA_CERT,
     e2eEnabled: process.env.E2E_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,

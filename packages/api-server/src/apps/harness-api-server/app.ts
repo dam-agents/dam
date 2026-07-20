@@ -16,6 +16,7 @@ import { createTemplatesRepository } from "../../modules/templates/infrastructur
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
 import { createRunRelay } from "./harness-run-relay.js";
+import { createVmRelay } from "./harness-vm-relay.js";
 import { createRunsService } from "../../modules/runs/services/runs-service.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -96,6 +97,15 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     runs,
   });
+  // `dam-vm` streams ride the same harness port to /api/agents/<id>/vm and
+  // are relayed to the operator's VM host with the deployment API key +
+  // waypoint-proven agent id attached (packages/dam-vm).
+  const vmRelay = createVmRelay({
+    url: config.vmHostUrl,
+    clientCert: config.vmHostClientCert,
+    clientKey: config.vmHostClientKey,
+    caCert: config.vmHostCaCert,
+  });
 
   const server = serve(
     { fetch: app.fetch, port: config.harnessServerPort },
@@ -111,12 +121,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
     );
-    const m = url.pathname.match(/^\/api\/agents\/([^/]+)\/run$/);
+    const m = url.pathname.match(/^\/api\/agents\/([^/]+)\/(run|vm)$/);
     if (!m) {
       socket.destroy();
       return;
     }
-    runRelay.handleUpgrade(req, socket, head, decodeURIComponent(m[1]!));
+    const agentId = decodeURIComponent(m[1]!);
+    if (m[2] === "run") runRelay.handleUpgrade(req, socket, head, agentId);
+    else vmRelay.handleUpgrade(req, socket, head, agentId);
   });
 
   // A fresh harness process holds no live relays, so any Run CR that survived a

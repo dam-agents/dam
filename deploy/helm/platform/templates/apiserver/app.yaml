@@ -189,6 +189,18 @@ spec:
             - name: TELEGRAM_BOT_USERNAME
               value: {{ .Values.apiServer.telegramBotName | quote }}
             {{- end }}
+            {{- if .Values.apiServer.vmHost.url }}
+            - name: PLATFORM_VM_HOST_URL
+              value: {{ .Values.apiServer.vmHost.url | quote }}
+            - name: PLATFORM_VM_HOST_CLIENT_CERT
+              value: {{ .Values.apiServer.vmHost.clientCert | quote }}
+            - name: PLATFORM_VM_HOST_CLIENT_KEY
+              value: {{ .Values.apiServer.vmHost.clientKey | quote }}
+            {{- if .Values.apiServer.vmHost.caCert }}
+            - name: PLATFORM_VM_HOST_CA_CERT
+              value: {{ .Values.apiServer.vmHost.caCert | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED
               value: "true"
