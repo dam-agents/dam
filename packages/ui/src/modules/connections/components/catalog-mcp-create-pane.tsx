@@ -32,9 +32,7 @@ export function McpCreatePane({
   onBack,
   onCreated,
 }: Props) {
-  const [name, setName] = useState(() =>
-    slugifyTemplateName("MCP server"),
-  );
+  const [name, setName] = useState(() => slugifyTemplateName("MCP server"));
   const [url, setUrl] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -127,7 +125,14 @@ export function McpCreatePane({
     if (authorizing) return "Redirecting…";
     if (pending) return "…";
     return needsOAuth ? "Create + Authorize" : "Create";
-  }, [showDetecting, verifying, awaitingPopup, authorizing, pending, needsOAuth]);
+  }, [
+    showDetecting,
+    verifying,
+    awaitingPopup,
+    authorizing,
+    pending,
+    needsOAuth,
+  ]);
 
   return (
     <>
