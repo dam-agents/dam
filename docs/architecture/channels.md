@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-07-17
+Last verified: 2026-07-20
 
 ## Overview
 
@@ -108,6 +108,7 @@ Both workers implement the same internal contract — `start`, `stop`, `stopAll`
 - **Transport.** Socket Mode, one workspace-level WebSocket from the api-server to Slack. The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened. Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.
 - **Token provenance.** App-Level Token (`xapp-…`) and Bot Token come from Helm values, set at install time. Not stored per-Agent.
 - **Identity linking** (person-scoped bindings). A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`. All subsequent interactions require a linked identity; unlinked users get an ephemeral prompt to log in. The link table is the source of truth for "who is this Slack user in Platform terms." Shared bindings never consult it.
+- **In-chat binding** (creates a shared binding). Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel. There is no admin gate (unlike Telegram's group-admin check); the ownership check on the picked Agent is the control, and the bind also links the initiator's identity so they can later release it. A bind never overrides an existing one — an already-bound channel is refused until it is unbound. `/platform unbind` releases the binding and is allowed for the binder or the Agent's owner; the owner can also disconnect from the platform UI/CLI as an escape hatch.
 - **Access control.** Decided by the binding's access mode. Person-scoped: two tiers — channel membership is the coarse gate (users must be in the Slack channel to see the bot's interactions); per-Agent allowed users is the fine gate (each Agent optionally declares the subs that may *trigger* work; non-listed users in the channel still see responses but cannot drive a session). Combined with foreign-replier forking, this lets a thread have multiple authorized drivers whose actions land under their own identities. Shared: channel membership is the only per-person gate, and Slack owns it — the platform never resolves who is typing; binding the channel is the consent that lends the Agent to the channel.
 - **Agent resolution.** A channel binds to at most one Agent globally, so a mention resolves to exactly one Agent by channel id; a mention in an unbound channel is refused with an ephemeral.
 
@@ -215,7 +216,7 @@ The two messengers diverge slightly on what a top-level post means:
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: install-wide credentials from Helm and a conversation→Agent binding table, differing only in where the binding is gestured (the UI for Slack, in-chat `/login` + the web agent picker for Telegram). Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
+Both messengers are platform channels: install-wide credentials from Helm and a conversation→Agent binding table, differing mainly in where the binding is gestured — Slack from the UI/CLI (person-scoped or shared) or an in-chat `/platform bind` (shared), Telegram from an in-chat `/login` plus the web agent picker. Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 
 ## Persistence touchpoints
 
