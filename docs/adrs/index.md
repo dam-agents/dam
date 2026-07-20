@@ -73,6 +73,8 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 074 | [Unified `drivers:` manifest with pluggable events and default-on built-ins](074-unified-drivers.md) |  | agent-lifecycle | The runtime manifest folds contribution and event kinds into one drivers map resolved through the plugin registry, with built-ins on by default and event handlers now externally overridable. |
 | 075 | [Periodic work on BullMQ](075-periodic-jobs-bullmq.md) |  | api-server | Recurring reconciliation ticks run as BullMQ job schedulers on per-job queues instead of per-replica setInterval loops. |
 | 076 | [Per-channel access modes — shared and person-scoped](076-channel-access-modes.md) |  | channels | Each channel binding picks its access mode at bind time — shared (place-scoped, Agent credentials, open speaker set) or person-scoped (identity linking, allow-list, per-turn forks). |
+| 077 | [Sandbox is an ephemeral Agent, not a Sandbox CRD or a Fork](077-sandbox-as-ephemeral-agent.md) |  | agent-lifecycle | A spawnable sandbox is a normal ephemeral Agent a driver creates, prompts once, and polls, reusing the Agent primitive rather than a new Sandbox CRD or a fork of the driver. |
+| 078 | [A loop is a driver program over the spawn primitive, not a platform conductor](078-loop-as-driver-program.md) |  | experiments | A multi-step loop is an ordinary program a driver Agent runs against the spawn primitive; the platform owns the primitive and the agent owns the orchestration. |
 
 ## Superseded
 
