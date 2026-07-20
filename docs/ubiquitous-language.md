@@ -63,7 +63,7 @@ Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as 
 |------|-----------|
 | Invocation | A run-once request from a driver Agent to a target Agent: a `(driver, target, prompt, result schema) → one validated result` binding. Orthogonal to whether the target is ephemeral — pairing an Invocation with a freshly-spawned Sweepable Agent is the common case, not part of the definition |
 | Driver | The Agent that creates an Invocation and polls it for the result. Attenuation ceiling: an Invocation's connections must be a subset of the driver's own grants |
-| node_done | The fixed MCP tool the target Agent calls to report its result; the server validates it against the stashed Result Schema (structural only, never truth) and flips the Invocation terminal. Attribution is by the reporting agent's own id. *(name is a spawn/loop-era holdover — rename candidate, e.g. `report_result`)* |
+| report_result | The fixed MCP tool the target Agent calls to report its result; the server validates it against the stashed Result Schema (structural only, never truth) and flips the Invocation terminal. Attribution is by the reporting agent's own id. *(renamed from the spawn/loop-era `node_done`)* |
 | Result Schema | The driver-supplied JSON Schema an Invocation's result must match; stored on the Invocation record, never on any Kubernetes resource, so the platform stays blind to content |
 | Liveness Deadline | The per-Invocation deadline (driver-set `ttlMs`, clamped ~1min..6h) after which a still-running Invocation is failed, so a target that exits silently can't wedge the driver's poll. Distinct from Agent Lifetime |
 

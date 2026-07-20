@@ -24,6 +24,11 @@ export {
 export { startChannelCleanupSaga } from "./sagas/channel-cleanup.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export {
+  createAgentSweep,
+  isSweepDue,
+  type AgentSweep,
+} from "./services/agent-sweep.js";
+export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,
   isTransientWakeFailure,

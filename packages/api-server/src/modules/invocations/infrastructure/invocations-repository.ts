@@ -1,22 +1,29 @@
-import { and, eq, lt, inArray, type Db, sandboxes as sandboxesTable } from "db";
+import {
+  and,
+  eq,
+  lt,
+  inArray,
+  type Db,
+  invocations as invocationsTable,
+} from "db";
 
-/** Lifecycle of a sandbox node. `running` until the agent reports (or the
+/** Lifecycle of an Invocation. `running` until the target reports (or the
  *  liveness deadline fails it); terminal at `done`/`failed`. */
-export type SandboxStatus = "running" | "done" | "failed";
+export type InvocationStatus = "running" | "done" | "failed";
 
-export interface SandboxRow {
+export interface InvocationRow {
   id: string;
   driverAgentId: string;
   owner: string;
   resultSchema: unknown;
   result: unknown;
-  status: SandboxStatus;
+  status: InvocationStatus;
   errorReason: string | null;
   expiresAt: Date;
   completedAt: Date | null;
 }
 
-export interface SandboxesRepository {
+export interface InvocationsRepository {
   insert(input: {
     id: string;
     driverAgentId: string;
@@ -24,38 +31,38 @@ export interface SandboxesRepository {
     resultSchema: unknown;
     expiresAt: Date;
   }): Promise<void>;
-  get(id: string): Promise<SandboxRow | null>;
+  get(id: string): Promise<InvocationRow | null>;
   /** Store the validated result and flip to `done`. No-op (returns false) if the
-   *  sandbox is no longer `running` — a late report after a liveness fail. */
+   *  Invocation is no longer `running` — a late report after a liveness fail. */
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
   /** `running` rows whose deadline has passed — the liveness sweep fails these. */
-  listExpiredRunning(now: Date, limit: number): Promise<SandboxRow[]>;
+  listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
   /** All `running` rows — the restart sweep checks each one's pod for a crash. */
-  listRunning(limit: number): Promise<SandboxRow[]>;
-  /** Terminal rows whose sandbox Agent is still to be reaped by the sweep. */
-  listTerminal(limit: number): Promise<SandboxRow[]>;
+  listRunning(limit: number): Promise<InvocationRow[]>;
+  /** Terminal rows whose result is old enough to drop (retention elapsed). */
+  listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
   delete(id: string): Promise<void>;
 }
 
-function toRow(r: typeof sandboxesTable.$inferSelect): SandboxRow {
+function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
     driverAgentId: r.driverAgentId,
     owner: r.owner,
     resultSchema: r.resultSchema,
     result: r.result,
-    status: r.status as SandboxStatus,
+    status: r.status as InvocationStatus,
     errorReason: r.errorReason,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
   };
 }
 
-export function createSandboxesRepository(db: Db): SandboxesRepository {
+export function createInvocationsRepository(db: Db): InvocationsRepository {
   return {
     async insert(input) {
-      await db.insert(sandboxesTable).values({
+      await db.insert(invocationsTable).values({
         id: input.id,
         driverAgentId: input.driverAgentId,
         owner: input.owner,
@@ -68,40 +75,46 @@ export function createSandboxesRepository(db: Db): SandboxesRepository {
     async get(id) {
       const rows = await db
         .select()
-        .from(sandboxesTable)
-        .where(eq(sandboxesTable.id, id))
+        .from(invocationsTable)
+        .where(eq(invocationsTable.id, id))
         .limit(1);
       return rows[0] ? toRow(rows[0]) : null;
     },
 
     async complete(id, result) {
       const updated = await db
-        .update(sandboxesTable)
+        .update(invocationsTable)
         .set({ result, status: "done", completedAt: new Date() })
         .where(
-          and(eq(sandboxesTable.id, id), eq(sandboxesTable.status, "running")),
+          and(
+            eq(invocationsTable.id, id),
+            eq(invocationsTable.status, "running"),
+          ),
         )
-        .returning({ id: sandboxesTable.id });
+        .returning({ id: invocationsTable.id });
       return updated.length > 0;
     },
 
     async fail(id, reason) {
       await db
-        .update(sandboxesTable)
+        .update(invocationsTable)
         .set({ status: "failed", errorReason: reason, completedAt: new Date() })
         .where(
-          and(eq(sandboxesTable.id, id), eq(sandboxesTable.status, "running")),
+          and(
+            eq(invocationsTable.id, id),
+            eq(invocationsTable.status, "running"),
+          ),
         );
     },
 
     async listExpiredRunning(now, limit) {
       const rows = await db
         .select()
-        .from(sandboxesTable)
+        .from(invocationsTable)
         .where(
           and(
-            eq(sandboxesTable.status, "running"),
-            lt(sandboxesTable.expiresAt, now),
+            eq(invocationsTable.status, "running"),
+            lt(invocationsTable.expiresAt, now),
           ),
         )
         .limit(limit);
@@ -111,23 +124,28 @@ export function createSandboxesRepository(db: Db): SandboxesRepository {
     async listRunning(limit) {
       const rows = await db
         .select()
-        .from(sandboxesTable)
-        .where(eq(sandboxesTable.status, "running"))
+        .from(invocationsTable)
+        .where(eq(invocationsTable.status, "running"))
         .limit(limit);
       return rows.map(toRow);
     },
 
-    async listTerminal(limit) {
+    async listAgedTerminal(before, limit) {
       const rows = await db
         .select()
-        .from(sandboxesTable)
-        .where(inArray(sandboxesTable.status, ["done", "failed"]))
+        .from(invocationsTable)
+        .where(
+          and(
+            inArray(invocationsTable.status, ["done", "failed"]),
+            lt(invocationsTable.completedAt, before),
+          ),
+        )
         .limit(limit);
       return rows.map(toRow);
     },
 
     async delete(id) {
-      await db.delete(sandboxesTable).where(eq(sandboxesTable.id, id));
+      await db.delete(invocationsTable).where(eq(invocationsTable.id, id));
     },
   };
 }

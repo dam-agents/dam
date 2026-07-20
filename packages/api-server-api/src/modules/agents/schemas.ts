@@ -84,6 +84,14 @@ export const agentCreateInputSchema = z
     // Requests are derived server-side — never a user concept. Floors match
     // the chart's derivation floors; the budget gate is the only ceiling.
     size: agentSizeSchema.optional(),
+    // Sweepable (#2816): mark this agent for automatic deletion by the Agent
+    // Sweep once it hibernates. Set on ephemeral agents (Invocation targets);
+    // durable owned agents omit it. Stamped as an annotation at create.
+    sweepable: z.boolean().optional(),
+    // Agent Lifetime (#2816): optional grace in ms a Sweepable agent may stay
+    // hibernated before the Sweep deletes it. Default zero — deleted as soon
+    // as it hibernates. Ignored unless `sweepable`.
+    lifetimeMs: z.number().int().min(0).optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",
