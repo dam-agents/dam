@@ -104,7 +104,7 @@ then resolves with that result. Progress lines (`[invoke] spawned ... -> agent-x
 | `pollMs` | Poll interval, default 5000. |
 | `timeoutMs` | Client backstop. Defaults to just past `ttlMs` so the server fails first. |
 
-Returns the validated result. Throws `SandboxFailed` if it fails (silent exit
+Returns the validated result. Throws `InvocationFailed` if it fails (silent exit
 past its deadline, or an internal error). Let it throw to abort, or wrap in
 `try/catch` to retry.
 

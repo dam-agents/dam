@@ -41,12 +41,12 @@ export async function listConnections(): Promise<ConnectionInfo[]> {
 /** Thrown when an Invocation reports a `failed` status (silent exit past its
  *  liveness deadline, or an internal error). The loop author decides whether to
  *  retry (own try/catch) or abort (let it throw). */
-export class SandboxFailed extends Error {
-  readonly sandboxId: string;
+export class InvocationFailed extends Error {
+  readonly invocationId: string;
   constructor(id: string, label: string) {
     super(`invocation ${label} (${id}) failed`);
-    this.name = "SandboxFailed";
-    this.sandboxId = id;
+    this.name = "InvocationFailed";
+    this.invocationId = id;
   }
 }
 
@@ -157,7 +157,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     }
     if (view.status === "failed") {
       log(`failed ${tag} (${id})`);
-      throw new SandboxFailed(id, tag);
+      throw new InvocationFailed(id, tag);
     }
     if (Date.now() > deadline) {
       throw new Error(

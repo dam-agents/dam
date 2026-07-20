@@ -52,13 +52,13 @@ Eval returns `verdict`:
 - `continue` -> the loop iterates with the curated knowledge and latest candidate.
 
 There is no "fail" verdict. Not passing simply continues. Hard stops are `passed`,
-the generation cap, or a thrown `SandboxFailed`.
+the generation cap, or a thrown `InvocationFailed`.
 
 ## When a node fails — spawn() THROWS
 
 A sandbox can fail: it runs past its ~60-minute liveness deadline without
 reporting, exits silently, or never starts. When that happens **`spawn()` throws
-`SandboxFailed`**. An uncaught throw propagates to the top and **kills the whole
+`InvocationFailed`**. An uncaught throw propagates to the top and **kills the whole
 `node workflow.ts` process** — one failed node takes down every remaining ticket
 and generation. This is the single most common way these workflows die.
 
@@ -130,7 +130,7 @@ Also don't ask a sandbox for tooling its image can't reach (an egress-denied
 // threaded below). No resumability: if the run crashes, knowledge is lost and
 // you rerun from generation 1 — candidates already pushed survive as git refs.
 
-import { spawn, s, SandboxFailed } from "/usr/local/lib/driver-sdk.mjs";
+import { spawn, s, InvocationFailed } from "/usr/local/lib/driver-sdk.mjs";
 
 const IMAGE = "<template-id from listImages()>";
 const CONNECTIONS = ["<repo-connection-id>", "<model-connection-id>"]; // subset of your grants
@@ -171,7 +171,7 @@ let candidate: string | null = null;
 for (let gen = 1; gen <= MAX_GENERATIONS; gen++) {
   console.log(`\n=== generation ${gen} ===`);
 
-  // These spawns THROW SandboxFailed on failure, which aborts the run — fine for
+  // These spawns THROW InvocationFailed on failure, which aborts the run — fine for
   // a depth loop (rerun is cheap). For best-effort or multi-item loops, wrap each
   // spawn in withRetry (see "When a node fails" above) and handle a null return.
   const make = await spawn({
@@ -227,7 +227,7 @@ breadth — depth is breadth with a population of one.
 - **No resumability.** A crash loses `knowledge` and the loop position. Candidates
   survive as git refs, so a rerun re-sees earlier branches. Design the passing bar
   and Make prompt so a rerun is cheap.
-- **spawn() throws on failure.** One uncaught `SandboxFailed` kills the whole run.
+- **spawn() throws on failure.** One uncaught `InvocationFailed` kills the whole run.
   Choose abort vs retry deliberately (see "When a node fails"); never claim retry
   you did not code.
 - **~60-minute node ceiling.** A sandbox that runs past its liveness deadline is

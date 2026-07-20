@@ -16,7 +16,7 @@ export {
   spawn,
   listImages,
   listConnections,
-  SandboxFailed,
+  InvocationFailed,
   type SpawnOptions,
   type ImageInfo,
   type ConnectionInfo,
