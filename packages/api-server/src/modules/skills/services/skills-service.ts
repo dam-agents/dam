@@ -263,7 +263,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
     async createSource(input: SkillCreateSourceInput) {
       try {
-        return await deps.repo.create(input, deps.owner);
+        const created = await deps.repo.create(input, deps.owner);
+        const [enriched] = enrichSources([created]);
+        return enriched;
       } catch (err) {
         if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
           throw new TRPCError({
