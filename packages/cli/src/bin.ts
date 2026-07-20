@@ -11,7 +11,7 @@ try {
 } catch (err) {
   if (err instanceof TermsStaleAtTransportError) {
     process.stderr.write(
-      `error: Terms of Use acceptance required\nhint: open ${err.host} to accept\n`,
+      "error: Terms of Use acceptance required\nhint: run `dam terms accept` to review and accept\n",
     );
     process.exit(1);
   }

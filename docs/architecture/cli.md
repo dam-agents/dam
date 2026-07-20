@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-07-17
+Last verified: 2026-07-20
 
 ## Overview
 
@@ -41,7 +41,7 @@ Credentials are keyed by host URL, so switching between deployments never clobbe
 
 The `auth` module exposes one seam — **`TokenProvider`** — that every authenticated verb consumes. Its precedence: the `DAM_TOKEN` env var (used verbatim, never refreshed) > the stored per-host credential (refreshed proactively near expiry, with rotated refresh tokens persisted) > a not-logged-in error. A refresh that fails with an invalid grant clears the entry and surfaces a session-expired signal directing the user back to `dam auth login`.
 
-Those are the client-side signals. The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors. A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it. A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. a pending-approval account), so the remedy is an admin, not re-authentication. Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
+Those are the client-side signals. The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors. A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it. A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. a pending-approval account), so the remedy is an admin, not re-authentication. Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures. The 412 Terms gate's remedy is now `dam terms accept` (see the `terms` group), so a headless/CI caller can review and clear the gate entirely from the CLI with no browser.
 
 For headless / CI use, `DAM_TOKEN=<bearer>` is used verbatim and bypasses the credential store. It accepts either a Keycloak access token or a Platform **API key** (`pk_…` prefix); the CLI does not branch — the server's bearer middleware dispatches by prefix. There is no `--token` flag, to keep tokens out of shell history and `ps`.
 
@@ -71,6 +71,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`channel`** — Slack channel bindings and the per-agent allow-list, owned by [channels.md](channels.md). Slack connect takes the binding's access mode (`--mode`, person-scoped by default; fixed per binding, so changing it is disconnect + reconnect), and the channel listing shows each binding's mode — Telegram rows always shared, since the mode is structural there. A shared connect against a server that doesn't understand modes is verified and rolled back rather than silently landing person-scoped. Telegram binds in-chat (`/login`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`schedule`** — time-triggered task recurrences on an agent, owned by [agent-lifecycle.md](agent-lifecycle.md).
+- **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions
 
