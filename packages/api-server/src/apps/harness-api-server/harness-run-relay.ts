@@ -35,7 +35,50 @@ const KEEPALIVE_INTERVAL_MS = 30_000;
 // than sit silent.
 const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
 
-function keepalive(sock: WebSocket) {
+/**
+ * Buffer client frames (e.g. the tty's initial OP_RESIZE) until the upstream
+ * leg is open, then splice the two sockets together. Attaches its message
+ * listener synchronously, so frames arriving while the caller awaits are not
+ * lost. Shared with the dam-vm relay.
+ */
+export function spliceClient(client: WebSocket) {
+  const pending: [Buffer, boolean][] = [];
+  let pendingBytes = 0;
+  let overflow = false;
+  const buffer = (d: Buffer, b: boolean) => {
+    if (overflow) return;
+    pendingBytes += d.byteLength;
+    if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
+      overflow = true;
+      try {
+        client.close(1013, "buffer full");
+      } catch {
+        client.terminate();
+      }
+      return;
+    }
+    pending.push([d, b]);
+  };
+  client.on("message", buffer);
+  return {
+    overflowed: () => overflow,
+    splice(upstream: WebSocket) {
+      client.off("message", buffer);
+      for (const [d, b] of pending) upstream.send(d, { binary: b });
+      client.on("message", (d, isBinary) => {
+        if (upstream.readyState === WebSocket.OPEN)
+          upstream.send(d, { binary: isBinary });
+      });
+      upstream.on("message", (d, isBinary) => {
+        if (client.readyState === WebSocket.OPEN)
+          client.send(d, { binary: isBinary });
+      });
+    },
+  };
+}
+
+/** Shared with the dam-vm relay — see the cadence rationale above. */
+export function keepalive(sock: WebSocket) {
   let alive = true;
   sock.on("pong", () => {
     alive = true;
@@ -95,30 +138,11 @@ export function createRunRelay(deps: {
         void deps.runs.delete(runId);
       };
 
-      // Buffer client frames (e.g. the tty's initial OP_RESIZE) until the
-      // executor's /api/exec is connected.
-      const pending: [Buffer, boolean][] = [];
-      let pendingBytes = 0;
-      let overflow = false;
-      const buffer = (d: Buffer, b: boolean) => {
-        if (overflow) return;
-        pendingBytes += d.byteLength;
-        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
-          overflow = true;
-          try {
-            client.close(1013, "buffer full");
-          } catch {
-            client.terminate();
-          }
-          return;
-        }
-        pending.push([d, b]);
-      };
       // Attached before the first await: the socket is live from the upgrade,
       // and a close (or frame) emitted while we resolve/create/wait must not
       // be missed — a missed close would leave the executor running
       // untethered until the reaper, pinning a concurrency slot.
-      client.on("message", buffer);
+      const spliced = spliceClient(client);
       client.on("close", () => {
         clientGone = true;
         release();
@@ -133,7 +157,7 @@ export function createRunRelay(deps: {
           client.close(1011, "agent not found");
           return release();
         }
-        if (clientGone || overflow) return release();
+        if (clientGone || spliced.overflowed()) return release();
 
         await deps.runs.create(runId, agentId, identity.uid);
         // A close that raced create(): release() already ran and its delete
@@ -141,7 +165,7 @@ export function createRunRelay(deps: {
         if (released) return void deps.runs.delete(runId);
 
         const podIP = await deps.runs.waitReady(runId, abort.signal);
-        if (clientGone || overflow) return release();
+        if (clientGone || spliced.overflowed()) return release();
 
         // dam-run passed the exec params (argv/cwd/cols/rows) as query on the
         // upgrade URL; forward that query verbatim to the executor's /api/exec.
@@ -153,17 +177,8 @@ export function createRunRelay(deps: {
         const us = upstream;
         keepalive(us);
         us.on("open", () => {
-          if (clientGone || overflow) return release();
-          client.off("message", buffer);
-          for (const [d, b] of pending) us.send(d, { binary: b });
-          client.on("message", (d, isBinary) => {
-            if (us.readyState === WebSocket.OPEN)
-              us.send(d, { binary: isBinary });
-          });
-          us.on("message", (d, isBinary) => {
-            if (client.readyState === WebSocket.OPEN)
-              client.send(d, { binary: isBinary });
-          });
+          if (clientGone || spliced.overflowed()) return release();
+          spliced.splice(us);
         });
         us.on("close", (code) => {
           // Normally the exec side sent OP_EXIT and closed 1000, and dam-run

@@ -1,0 +1,6 @@
+# mTLS material issued by `mise run dam-vm:issue-certs` into cert/.
+# Never commit keys/certs.
+cert/
+*.key
+*.crt
+*.srl

@@ -585,6 +585,25 @@ apiServer:
   # t.me connect links and for mention detection; when empty the api-server
   # discovers it at startup via the Bot API.
   telegramBotName: ""
+  # -- Optional VM host for the in-image `dam-vm` CLI: an operator-provisioned
+  # Incus box (packages/dam-vm/README.md). The api-server relays each agent's
+  # /vm stream there over the harness path, authenticating the hop with the
+  # mTLS client cert below and attaching the agent's identity; agents hold no
+  # credential. Leave url empty to disable (`dam-vm` then reports that no VM
+  # host is configured).
+  vmHost:
+    # e.g. "wss://203.0.113.7:8090/run". Auth is mutual TLS — no API key.
+    url: ""
+    # Client cert + key the api-server presents, issued by the same private CA
+    # that signed the VM host's server cert (openssl via `mise run
+    # dam-vm:issue-certs`, or a managed CA). This cert IS the deployment
+    # credential — the chart stores it in a Secret, not a plaintext env var.
+    # Supply via a sealed/secret values overlay in production; clientKey is private.
+    clientCert: ""
+    clientKey: ""
+    # CA (PEM) that verifies the host's server cert (the Secrets Manager
+    # private CA). Leave empty only for a host fronted by a publicly-trusted cert.
+    caCert: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the
   # usage reporting endpoints. Disable to stop all writes (the read

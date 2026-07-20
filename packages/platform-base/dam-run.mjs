@@ -1,14 +1,23 @@
 #!/usr/bin/env node
-// dam-run — run a command in a fresh, separate sandbox pod that shares this
-// pod's image, configuration, and RWX /home/agent volume. Stdio is streamed
-// through a PTY so it reads like a local invocation; the executor pod dies when
-// this process exits.
+// dam-run / dam-vm — one script, two install names (mode = invoked name).
+//   dam-run <cmd>: run a command in a fresh, separate sandbox pod that shares
+//     this pod's image, configuration, and RWX /home/agent volume. The
+//     executor pod dies when this process exits.
+//   dam-vm [cmd]: run a command in this agent's Incus container on the
+//     deployment's VM host (packages/dam-vm) — a root-capable machine with its
+//     own filesystem that shares nothing with this pod: no credentials, no
+//     workspace, cwd /root. No argv → interactive login shell. The container
+//     survives across invocations while in active use but is deleted after
+//     ~1 h idle — an ephemeral machine, not durable storage.
+// Both ride the same rails: derive the harness URL from PLATFORM_MCP_URL, open
+// one WebSocket (/run or /vm), and stream stdio through a PTY via the shared
+// frame protocol so it reads like a local invocation.
 //
 // Dependency-free: uses Node's global WebSocket (which honors NODE_USE_ENV_PROXY
 // + NODE_EXTRA_CA_CERTS already set in the agent env, so it routes through the
 // paired gateway and trusts Envoy's CA). The WHATWG WebSocket can't set request
-// headers, so args ride the URL query; the api-server relay forwards them to the
-// executor's /api/exec.
+// headers, so args ride the URL query; the api-server relay forwards them.
+import { basename } from "node:path";
 
 // Frame opcodes — must match packages/api-server-api/src/modules/terminal/protocol.ts.
 const OP_INPUT = 0x00;
@@ -16,26 +25,29 @@ const OP_OUTPUT = 0x01;
 const OP_RESIZE = 0x02;
 const OP_EXIT = 0x03;
 
+const NAME = basename(process.argv[1], ".mjs"); // dam-run | dam-vm
+const IS_VM = NAME === "dam-vm";
+
 const argv = process.argv.slice(2);
-if (argv.length === 0) {
+if (argv.length === 0 && !IS_VM) {
   process.stderr.write("usage: dam-run <command> [args...]\n");
   process.exit(2);
 }
 
 const mcpUrl = process.env.PLATFORM_MCP_URL;
 if (!mcpUrl || !/\/mcp$/.test(mcpUrl)) {
-  process.stderr.write("dam-run: PLATFORM_MCP_URL not set; not inside a sandbox pod?\n");
+  process.stderr.write(`${NAME}: PLATFORM_MCP_URL not set; not inside a sandbox pod?\n`);
   process.exit(1);
 }
 const runUrl =
-  mcpUrl.replace(/\/mcp$/, "/run").replace(/^http/, "ws") +
+  mcpUrl.replace(/\/mcp$/, IS_VM ? "/vm" : "/run").replace(/^http/, "ws") +
   "?argv=" +
   encodeURIComponent(Buffer.from(JSON.stringify(argv)).toString("base64")) +
-  "&cwd=" +
-  encodeURIComponent(process.cwd()) +
+  // no cwd for the VM: its filesystem is its own, commands run in /root
+  (IS_VM ? "" : "&cwd=" + encodeURIComponent(process.cwd())) +
   `&cols=${process.stdout.columns || 80}&rows=${process.stdout.rows || 24}` +
   // Forward the caller's W3C trace context (the harness sets TRACEPARENT for
-  // its subprocesses) so the executor's command joins the session's trace and
+  // its subprocesses) so the remote command joins the session's trace and
   // its telemetry folds into the session's metrics.
   (process.env.TRACEPARENT
     ? `&traceparent=${encodeURIComponent(process.env.TRACEPARENT)}`
@@ -64,10 +76,11 @@ const finish = (code) => {
   setTimeout(() => process.exit(code), 2000);
 };
 
-// The relay completes the upgrade before it starts the executor, so a slow
-// handshake means the path to the api-server is broken, not a slow pod.
+// The relay completes the upgrade before it dials the remote target, so a slow
+// handshake means the path to the api-server is broken, not a slow executor
+// pod / cold container (those show up as post-open silence instead).
 const dialTimeout = setTimeout(() => {
-  process.stderr.write("dam-run: timed out connecting to the platform relay\n");
+  process.stderr.write(`${NAME}: timed out connecting to the platform relay\n`);
   finish(1);
 }, 30_000);
 
@@ -111,17 +124,18 @@ ws.onmessage = (ev) => {
 
 ws.onclose = (ev) => {
   if (!exited && ev.code !== 1000 && ev.reason) {
-    process.stderr.write(`dam-run: ${ev.reason}\n`);
+    process.stderr.write(`${NAME}: ${ev.reason}\n`);
   }
   finish(1); // a close without a prior OP_EXIT is a failure
 };
 ws.onerror = () => {
-  if (!exited) process.stderr.write("dam-run: connection failed\n");
+  if (!exited) process.stderr.write(`${NAME}: connection failed\n`);
   finish(1);
 };
 
-// Closing the socket makes the api-server delete the Run, reaping the executor.
-// In a tty, Ctrl-C reaches the remote PTY as input via raw mode instead.
+// Closing the socket tears down the remote side: dam-run's Run CR is deleted,
+// reaping the executor; dam-vm's incus exec ends (the container stays up for
+// the next call). In a tty, Ctrl-C reaches the remote PTY as input instead.
 const SIGNUM = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {

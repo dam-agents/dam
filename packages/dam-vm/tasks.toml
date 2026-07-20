@@ -1,0 +1,150 @@
+["dam-vm:check"]
+depends = ["dam-vm:check:*"]
+
+["dam-vm:check:syntax"]
+description = "Syntax-check the dam-vm server and provisioning script"
+dir = "{{config_root}}/packages/dam-vm"
+sources = ["*.mjs", "provision.sh"]
+run = [
+  "node --check dam-vm-server.mjs",
+  "bash -n provision.sh",
+]
+
+["dam-vm:check:lint"]
+dir = "{{config_root}}/packages/dam-vm"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["*.mjs", "test/**/*.mjs", "eslint.config.js", "../dev-config/eslint.base.js"]
+
+["dam-vm:check:format"]
+dir = "{{config_root}}/packages/dam-vm"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check '*.mjs' 'test/**/*.mjs'"
+sources = ["*.mjs", "test/**/*.mjs", "../../.prettierrc"]
+
+["dam-vm:fix"]
+depends = ["dam-vm:fix:*"]
+
+["dam-vm:fix:lint"]
+dir = "{{config_root}}/packages/dam-vm"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["dam-vm:fix:format"]
+dir = "{{config_root}}/packages/dam-vm"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write '*.mjs' 'test/**/*.mjs'"
+
+["dam-vm:test"]
+description = "Auth/handshake tests for dam-vm-server (Incus not required)"
+dir = "{{config_root}}/packages/dam-vm"
+depends = ["common:setup:pnpm"]
+run = "node --test"
+
+["dam-vm:issue-certs"]
+description = "Issue mTLS certs (openssl private CA) for the dam-vm host + each DAM cluster. Args: -- <vm-host> <cluster-id>..."
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+# Issue the mTLS material for dam-vm with a plain openssl private CA — the
+# no-managed-service alternative to IBM Cloud Secrets Manager. Same output
+# shape either way (a CA + a server leaf + one client leaf per DAM cluster),
+# so moving to a managed CA later is a cert swap, no code change.
+#
+#   mise run dam-vm:issue-certs -- <vm-host-ip-or-dns> <cluster-id> [<cluster-id> ...]
+#
+# The CA is created once and REUSED on re-runs (adding a cluster later does not
+# invalidate existing ones). Delete the cert dir to rotate the CA.
+# Env: OUT_DIR (default packages/dam-vm/cert), CERT_DAYS (default 825; the CA lives 10y).
+set -euo pipefail
+
+if [ $# -lt 2 ]; then
+  echo "usage: mise run dam-vm:issue-certs -- <vm-host-ip-or-dns> <cluster-id> [<cluster-id> ...]" >&2
+  exit 1
+fi
+SERVER_HOST="$1"; shift
+
+OUT="${OUT_DIR:-packages/dam-vm/cert}"
+DAYS="${CERT_DAYS:-825}"
+mkdir -p "$OUT"; cd "$OUT"
+
+# Cluster ids become the client-cert CN and the container namespace. The
+# server requires a canonical CN ([a-z0-9], ≤16 — no hyphens, which would make
+# the hyphen-joined container name ambiguous across clusters) and rejects
+# anything else, so enforce that shape here at issue time.
+for c in "$@"; do
+  if ! [[ "$c" =~ ^[a-z0-9]{1,16}$ ]]; then
+    echo "error: cluster id '$c' must be [a-z0-9] only (no hyphens), <=16 chars" >&2
+    exit 1
+  fi
+done
+
+san_for() { case "$1" in [0-9]*.[0-9]*.[0-9]*.[0-9]*) echo "IP:$1";; *) echo "DNS:$1";; esac; }
+
+if [ -s client-ca.crt ] && [ -s ca.key ]; then
+  echo "reusing existing CA (client-ca.crt)"
+else
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    -keyout ca.key -out client-ca.crt -subj "/CN=dam-vm-ca" 2>/dev/null
+  echo "created CA"
+fi
+chmod 600 ca.key
+
+cat > server.ext <<EOF
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=$(san_for "$SERVER_HOST"),IP:127.0.0.1,DNS:localhost
+EOF
+openssl req -newkey rsa:2048 -nodes -keyout tls.key -out server.csr -subj "/CN=dam-vm" 2>/dev/null
+openssl x509 -req -in server.csr -CA client-ca.crt -CAkey ca.key -CAcreateserial \
+  -days "$DAYS" -sha256 -out tls.crt -extfile server.ext 2>/dev/null
+chmod 600 tls.key
+echo "issued server leaf for $SERVER_HOST"
+
+cat > client.ext <<EOF
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature
+extendedKeyUsage=clientAuth
+EOF
+for c in "$@"; do
+  openssl req -newkey rsa:2048 -nodes -keyout "$c.key" -out "$c.csr" -subj "/CN=$c" 2>/dev/null
+  openssl x509 -req -in "$c.csr" -CA client-ca.crt -CAkey ca.key -CAcreateserial \
+    -days "$DAYS" -sha256 -out "$c.crt" -extfile client.ext 2>/dev/null
+  chmod 600 "$c.key"
+  echo "issued client leaf for cluster '$c'"
+done
+rm -f ./*.csr server.ext client.ext
+
+indent() { sed 's/^/        /' "$1"; }
+
+cat <<EOF
+
+===========================================================================
+All certs are in $OUT/ (git-ignored, keys chmod 600 — never commit them).
+
+1) VM HOST: the server files (tls.crt, tls.key, client-ca.crt) are under
+   packages/dam-vm/cert/, so 'scp -r packages/dam-vm ...' carries them and
+   provision.sh installs them to /etc/dam-vm/. Nothing else to do.
+
+2) EACH DAM CLUSTER: paste its block into that cluster's (sealed) helm values.
+===========================================================================
+EOF
+
+for c in "$@"; do
+  cat <<EOF
+
+# -- cluster: $c --
+apiServer:
+  vmHost:
+    url: "wss://$SERVER_HOST:8090/run"
+    clientCert: |
+$(indent "$c.crt")
+    clientKey: |
+$(indent "$c.key")
+    caCert: |
+$(indent client-ca.crt)
+EOF
+done
+'''
