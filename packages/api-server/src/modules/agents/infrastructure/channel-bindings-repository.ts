@@ -153,6 +153,23 @@ export function isSlackChannelUniqueViolation(e: unknown): boolean {
   return isUniqueViolation(e, "channels_slack_channel_unique_idx");
 }
 
+/** Delete the Slack binding for a channel id, regardless of owner. The in-chat
+ *  unbind runs system-side (it has no owner scope) and authorizes the caller
+ *  itself, so — unlike the owner-scoped `deleteChannelByType` — this keys only
+ *  on the globally-unique Slack channel id. */
+export function deleteSlackChannelBinding(db: Db) {
+  return async (slackChannelId: string): Promise<void> => {
+    await db
+      .delete(channels)
+      .where(
+        and(
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      );
+  };
+}
+
 export function findSlackChannelByAgent(db: Db) {
   return async (agentId: string): Promise<string | null> => {
     const rows = await db

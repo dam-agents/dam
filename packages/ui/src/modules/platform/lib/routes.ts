@@ -9,6 +9,7 @@ export const viewSchema = z.enum([
   "inbox",
   "terms",
   "telegram-bind",
+  "slack-bind",
   "sandbox-new",
   "sandbox-home",
   "experiments",
@@ -52,6 +53,7 @@ export function viewToPath(
   if (view === "inbox") return "/inbox";
   if (view === "terms") return "/terms";
   if (view === "telegram-bind") return "/telegram/bind";
+  if (view === "slack-bind") return "/slack/bind";
   if (view === "sandbox-new") return "/sandboxes/new";
   if (view === "sandbox-home" && agentId) {
     const base = `/sandboxes/${encodeURIComponent(agentId)}`;
@@ -88,6 +90,7 @@ export function pathToState(path: string): {
   if (path === "/inbox") return { view: "inbox" };
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
+  if (path === "/slack/bind") return { view: "slack-bind" };
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
   const sandboxHomeMatch = path.match(
     /^\/sandboxes\/([^/]+)(?:\/(setup|connections|skills|schedules))?$/,

@@ -48,6 +48,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
         owner: OWNER,
       }),
     } as never,
+    async () => {},
     "dam",
     async () => true,
     "http://ui",

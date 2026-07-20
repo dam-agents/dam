@@ -39,4 +39,5 @@ export {
   listChannelsByOwner,
   findBySlackChannelId,
   findSlackChannelByAgent,
+  deleteSlackChannelBinding,
 } from "./infrastructure/channel-bindings-repository.js";

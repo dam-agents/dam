@@ -6,6 +6,7 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  agentBindSlackChannelInputSchema,
   agentBindTelegramChatInputSchema,
   agentListTelegramChatsInputSchema,
   agentUnbindTelegramChatInputSchema,
@@ -159,6 +160,36 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.disconnectSlack(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
+    }),
+
+  bindSlackChannel: manageAgentsProcedure
+    .input(agentBindSlackChannelInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.channels.available.slack)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Slack app token not configured",
+        });
+      const res = await ctx.agents.bindSlackChannel(
+        input.agentId,
+        input.flowId,
+      );
+      if (res.ok) return res.value;
+      switch (res.error.type) {
+        case "FlowInvalid":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Bind link is invalid or expired — run the bind command again in Slack",
+          });
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "ChannelAlreadyBound":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This channel is already connected to an agent",
+          });
+      }
     }),
 
   listTelegramChats: manageAgentsProcedure

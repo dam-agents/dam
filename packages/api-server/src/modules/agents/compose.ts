@@ -16,6 +16,7 @@ import {
   type ContributionsSettledPort,
   type ResizeGatePort,
   type TelegramBindingPort,
+  type SlackBindingPort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -63,6 +64,8 @@ export function composeAgentsModule(deps: {
   contributionsSettled: ContributionsSettledPort;
   /** Telegram chat→agent binding flow; omitted system-side. */
   telegramBinding?: TelegramBindingPort;
+  /** Slack in-chat channel→agent binding flow; omitted system-side. */
+  slackBinding?: SlackBindingPort;
   /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -114,6 +117,7 @@ export function composeAgentsModule(deps: {
       },
       findSlackChannelBinding: findBySlackChannelId(deps.db),
       telegramBinding: deps.telegramBinding,
+      slackBinding: deps.slackBinding,
       listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
       listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
       setAllowedUsers: setAllowedUsers(deps.db, owner),
