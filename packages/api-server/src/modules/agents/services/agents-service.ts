@@ -9,6 +9,8 @@ import {
   type ChannelConfig,
   type DriverFailure,
   type BindTelegramChatResult,
+  type BindSlackChannelResult,
+  type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   ChannelType,
@@ -248,6 +250,122 @@ export function executeTelegramUnbind(deps: {
 }
 
 /**
+ * Port consumed by `bindSlackChannel()`. Unlike Telegram, the durable write
+ * is the shared `channels` row (owner + config.mode), so the port only carries
+ * the bind-flow bearer store and the confirmation post; the ownership check
+ * and the write reuse the service's own `connectSlack` path.
+ */
+export interface SlackBindingPort {
+  peekFlow(flowId: string): {
+    slackChannelId: string;
+    slackUserId: string;
+    keycloakSub: string;
+    channelTitle?: string;
+  } | null;
+  consumeFlow(flowId: string): void;
+  /** Best-effort confirmation into the channel, via the channel manager. */
+  postMessage(
+    agentId: string,
+    slackChannelId: string,
+    text: string,
+  ): Promise<{ ok: true } | { error: string }>;
+}
+
+/**
+ * The in-chat Slack bind flow, extracted like `executeTelegramBind` so tests
+ * can drive it with narrow deps. The binder must own the agent (`getAgent` is
+ * owner-scoped) and must be the flow's authenticated user; an already-bound
+ * channel is rejected outright (no in-place override).
+ */
+export function executeSlackBind(deps: {
+  owner: string | undefined;
+  getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
+  findChannelBinding: (
+    slackChannelId: string,
+  ) => Promise<{ agentId: string } | null>;
+  connectShared: (
+    agentId: string,
+    slackChannelId: string,
+  ) => Promise<ConnectSlackResult>;
+  binding: SlackBindingPort;
+}) {
+  return async (
+    agentId: string,
+    flowId: string,
+  ): Promise<BindSlackChannelResult> => {
+    const flow = deps.binding.peekFlow(flowId);
+    if (!flow) return err({ type: "FlowInvalid" as const });
+
+    if (!deps.owner || flow.keycloakSub !== deps.owner) {
+      // A different signed-in user is trying to consume the flow. Same error
+      // as an unknown flow — no oracle; the flow stays alive within its TTL.
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        decision: "deny",
+        reason: "slack-bind-sub-mismatch",
+        detail: { slackChannelId: flow.slackChannelId },
+      });
+      return err({ type: "FlowInvalid" as const });
+    }
+
+    const agent = await deps.getAgent(agentId);
+    if (!agent) return err({ type: "AgentNotFound" as const });
+
+    // No override: reject if the channel is already bound to any agent — the
+    // prior binder must unbind first.
+    const existing = await deps.findChannelBinding(flow.slackChannelId);
+    if (existing) return err({ type: "ChannelAlreadyBound" as const });
+
+    const connected = await deps.connectShared(agentId, flow.slackChannelId);
+    if (!connected.ok) {
+      // Ownership was already proven by getAgent, so a non-ok here is a lost
+      // race (the channel was bound between the check and the write).
+      return err({ type: "ChannelAlreadyBound" as const });
+    }
+
+    deps.binding.consumeFlow(flowId);
+
+    // The binding IS the consent grant: the binder lends this agent — its
+    // credentials included — to everyone in the channel.
+    securityLog("info", "channel.chat_bound", {
+      category: "authz-list",
+      actor: deps.owner,
+      actorKind: "user",
+      surface: "slack",
+      agentId,
+      result: "success",
+      detail: {
+        slackChannelId: flow.slackChannelId,
+        slackUserId: flow.slackUserId,
+      },
+    });
+
+    const post = await deps.binding.postMessage(
+      agentId,
+      flow.slackChannelId,
+      `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+    );
+    if ("error" in post) {
+      // Best-effort: the binding is committed; the confirmation is courtesy.
+      securityLog("warn", "channel.chat_bound.notify_failed", {
+        category: "channel",
+        actor: deps.owner,
+        actorKind: "user",
+        surface: "slack",
+        agentId,
+        result: "failure",
+        reason: post.error,
+        detail: { slackChannelId: flow.slackChannelId },
+      });
+    }
+
+    return ok({ channelTitle: flow.channelTitle ?? null });
+  };
+}
+
+/**
  * Cleanup hook invoked after a successful K8s ConfigMap delete. Each
  * registered hook clears its module's per-agent durable state — egress
  * rules, pending approvals, anything else keyed by `agent_id` in
@@ -357,9 +475,12 @@ export function createAgentsService(deps: {
    *  Slack bindings are unique across the whole install. */
   findSlackChannelBinding: (
     slackChannelId: string,
-  ) => Promise<{ agentId: string } | null>;
+  ) => Promise<{ agentId: string; mode?: "shared" | "person-scoped" } | null>;
   /** Absent in the system-wide composition — binding is a user-facing flow. */
   telegramBinding?: TelegramBindingPort;
+  /** Absent in the system-wide composition — the in-chat Slack bind is a
+   *  user-facing flow driven from the authenticated UI picker. */
+  slackBinding?: SlackBindingPort;
   listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
   listAllowedUsersByAgent: (agentId: string) => Promise<string[]>;
   setAllowedUsers: (agentId: string, subs: string[]) => Promise<void>;
@@ -419,6 +540,74 @@ export function createAgentsService(deps: {
       status.preparingWorkspace,
     );
   }
+
+  // Shared by the public connectSlack method and the in-chat bind flow, so
+  // both take the same transactional-uniqueness, mode-guard, and event path.
+  const connectSlackImpl = async (
+    id: string,
+    slackChannelId: string,
+    mode?: "shared" | "person-scoped",
+  ): Promise<ConnectSlackResult> => {
+    const infra = await deps.repo.get(id, deps.owner);
+    if (!infra) return err({ type: "AgentNotFound" });
+
+    // One Slack channel binds to one Agent globally. Pre-check rather than
+    // relying on the unique-index violation: catching it inside the
+    // transaction below doesn't work — the aborted tx rethrows the raw error
+    // as it unwinds — so a channel bound to a different Agent would otherwise
+    // surface as a generic 500 instead of ChannelAlreadyBound. The in-tx
+    // catch stays as a backstop for the (accepted) concurrent-connect race.
+    const existing = await deps.findSlackChannelBinding(slackChannelId);
+    if (existing && existing.agentId !== id)
+      return err({ type: "ChannelAlreadyBound" as const });
+
+    // Mode is fixed per binding: flipping it must be a deliberate
+    // disconnect + reconnect, never a side effect of re-connecting.
+    const requestedMode = mode ?? "person-scoped";
+    if (existing && (existing.mode ?? "person-scoped") !== requestedMode)
+      return err({ type: "ModeChangeRequiresRebind" as const });
+
+    const txResult = await deps.unitOfWork(async (tx) => {
+      try {
+        await deps.channelsTxRepo.upsertChannel(tx, id, {
+          type: ChannelType.Slack,
+          slackChannelId,
+          // Only the non-default is stored; absent = person-scoped.
+          ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
+        });
+      } catch (e) {
+        if (isSlackChannelUniqueViolation(e)) {
+          return err({ type: "ChannelAlreadyBound" as const });
+        }
+        throw e;
+      }
+      const channels = await deps.channelsTxRepo.listByAgent(tx, id);
+      return ok({ channels });
+    });
+
+    if (!txResult.ok) return txResult;
+
+    emit({
+      type: EventType.SlackConnected,
+      agentId: id,
+      slackChannelId,
+      ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
+    });
+
+    const allowedSubs = await deps.listAllowedUsersByAgent(id);
+    const emails = await subsToEmails(allowedSubs);
+    const status = await safeStatus(id);
+    return ok(
+      assembleAgent(
+        infra,
+        txResult.value.channels,
+        emails,
+        status.failures,
+        deps.agentIdleTimeoutMinutes,
+        status.preparingWorkspace,
+      ),
+    );
+  };
 
   return {
     async list() {
@@ -936,53 +1125,8 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId) {
-      const infra = await deps.repo.get(id, deps.owner);
-      if (!infra) return err({ type: "AgentNotFound" });
-
-      // One Slack channel binds to one Agent globally. Pre-check rather than
-      // relying on the unique-index violation: catching it inside the
-      // transaction below doesn't work — the aborted tx rethrows the raw error
-      // as it unwinds — so a channel bound to a different Agent would otherwise
-      // surface as a generic 500 instead of ChannelAlreadyBound. The in-tx
-      // catch stays as a backstop for the (accepted) concurrent-connect race.
-      const existing = await deps.findSlackChannelBinding(slackChannelId);
-      if (existing && existing.agentId !== id)
-        return err({ type: "ChannelAlreadyBound" as const });
-
-      const txResult = await deps.unitOfWork(async (tx) => {
-        try {
-          await deps.channelsTxRepo.upsertChannel(tx, id, {
-            type: ChannelType.Slack,
-            slackChannelId,
-          });
-        } catch (e) {
-          if (isSlackChannelUniqueViolation(e)) {
-            return err({ type: "ChannelAlreadyBound" as const });
-          }
-          throw e;
-        }
-        const channels = await deps.channelsTxRepo.listByAgent(tx, id);
-        return ok({ channels });
-      });
-
-      if (!txResult.ok) return txResult;
-
-      emit({ type: EventType.SlackConnected, agentId: id, slackChannelId });
-
-      const allowedSubs = await deps.listAllowedUsersByAgent(id);
-      const emails = await subsToEmails(allowedSubs);
-      const status = await safeStatus(id);
-      return ok(
-        assembleAgent(
-          infra,
-          txResult.value.channels,
-          emails,
-          status.failures,
-          deps.agentIdleTimeoutMinutes,
-          status.preparingWorkspace,
-        ),
-      );
+    async connectSlack(id, slackChannelId, mode) {
+      return connectSlackImpl(id, slackChannelId, mode);
     },
 
     async disconnectSlack(id) {
@@ -1028,6 +1172,22 @@ export function createAgentsService(deps: {
           const infra = await deps.repo.get(id, deps.owner);
           return infra ? { id: infra.id, name: infra.name } : null;
         },
+        binding,
+      })(agentId, flowId);
+    },
+
+    async bindSlackChannel(agentId, flowId) {
+      const binding = deps.slackBinding;
+      if (!binding) return err({ type: "FlowInvalid" as const });
+      return executeSlackBind({
+        owner: deps.owner,
+        getAgent: async (id) => {
+          const infra = await deps.repo.get(id, deps.owner);
+          return infra ? { id: infra.id, name: infra.name } : null;
+        },
+        findChannelBinding: deps.findSlackChannelBinding,
+        connectShared: (id, slackChannelId) =>
+          connectSlackImpl(id, slackChannelId, "shared"),
         binding,
       })(agentId, flowId);
     },

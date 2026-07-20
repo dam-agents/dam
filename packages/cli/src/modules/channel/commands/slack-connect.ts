@@ -29,6 +29,10 @@ export function buildSlackConnectCommand(deps: {
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .requiredOption("--channel-id <id>", "Slack channel id (e.g. C0123ABCD)")
     .option(
+      "--mode <mode>",
+      "access mode: 'person-scoped' (default) or 'shared'",
+    )
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -36,12 +40,18 @@ export function buildSlackConnectCommand(deps: {
     .addHelpText(
       "after",
       "\nExamples:\n" +
-        "  dam channel slack connect my-agent --channel-id C0123ABCD\n",
+        "  dam channel slack connect my-agent --channel-id C0123ABCD\n" +
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --mode shared\n",
     )
     .action(
       async (
         ref: string,
-        opts: { channelId: string; server?: string; json?: boolean },
+        opts: {
+          channelId: string;
+          mode?: string;
+          server?: string;
+          json?: boolean;
+        },
       ) => {
         // Reject a blank/whitespace channel id before any network call — the
         // server's min(1) accepts whitespace and a blank value is meaningless.
@@ -50,6 +60,17 @@ export function buildSlackConnectCommand(deps: {
           process.stderr.write("error: --channel-id must not be empty\n");
           process.exit(EXIT_INVALID_INPUT);
         }
+        if (
+          opts.mode !== undefined &&
+          opts.mode !== "shared" &&
+          opts.mode !== "person-scoped"
+        ) {
+          process.stderr.write(
+            "error: --mode must be 'shared' or 'person-scoped'\n",
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        const mode = opts.mode as "shared" | "person-scoped" | undefined;
 
         const host = await resolveActiveHost(deps, {
           flag: opts.server ? { server: opts.server } : undefined,
@@ -71,7 +92,7 @@ export function buildSlackConnectCommand(deps: {
         const svc = deps.createChannelService(host);
         await ensureProviderAvailable(svc, ChannelType.Slack, host);
 
-        const res = await svc.connectSlack(resolved.value.id, channelId);
+        const res = await svc.connectSlack(resolved.value.id, channelId, mode);
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
@@ -90,15 +111,46 @@ export function buildSlackConnectCommand(deps: {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
+        if (mode === "shared") {
+          // An older server strips unknown input keys, silently landing the
+          // bind person-scoped — verify and roll back instead of lying.
+          const slackCh = res.value.find((c) => c.type === ChannelType.Slack);
+          if (!slackCh || slackCh.mode !== "shared") {
+            const rolledBack = await svc.disconnectSlack(resolved.value.id);
+            if (rolledBack.ok) {
+              process.stderr.write(
+                "error: this server does not support shared access mode — binding rolled back\n",
+              );
+            } else {
+              // The bind landed person-scoped and the rollback disconnect
+              // failed too — the channel is still bound; say so rather than
+              // claim a clean rollback that did not happen.
+              process.stderr.write(
+                "error: this server does not support shared access mode, and rolling the binding back failed — the channel is still bound in person-scoped mode; disconnect it manually\n",
+              );
+              printServiceError(rolledBack.error, host);
+            }
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+        }
+
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
-            `✓ Slack channel ${channelId} connected to ${resolved.value.name}.\n`,
+            `✓ Slack channel ${channelId} connected to ${resolved.value.name}${
+              mode === "shared" ? " in shared mode" : ""
+            }.\n`,
           );
-          process.stderr.write(
-            "hint: users must run `/platform login` inside Slack before they can drive this agent\n",
-          );
+          if (mode === "shared") {
+            process.stderr.write(
+              "note: everyone in the channel drives this agent under its credentials; your Terms-of-Use acceptance covers every turn\n",
+            );
+          } else {
+            process.stderr.write(
+              "hint: users must run `/platform login` inside Slack before they can drive this agent\n",
+            );
+          }
         }
         process.exit(EXIT_SUCCESS);
       },

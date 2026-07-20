@@ -49,8 +49,24 @@ export function ChannelsPanel({ agentId }: { agentId?: string } = {}) {
   );
 }
 
+const MODE_OPTIONS = [
+  {
+    value: "person-scoped" as const,
+    label: "Person-scoped",
+    description:
+      "Each user links their own account; only the owner and allowed users drive the agent, each under their own credentials.",
+  },
+  {
+    value: "shared" as const,
+    label: "Shared (system agent)",
+    description:
+      "Anyone in the channel drives the agent under the agent's credentials — no login. Turns are attributed by Slack user id, and your Terms-of-Use acceptance covers every turn.",
+  },
+];
+
 function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
   const slackChannel = agent?.channels.find((c) => c.type === "slack");
+  const bound = !!slackChannel;
 
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
@@ -59,6 +75,11 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
   const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
   const [channelId, setChannelId] = useState(
     slackChannel?.type === "slack" ? slackChannel.slackChannelId : "",
+  );
+  const [mode, setMode] = useState<"shared" | "person-scoped">(
+    slackChannel?.type === "slack"
+      ? (slackChannel.mode ?? "person-scoped")
+      : "person-scoped",
   );
   const [users, setUsers] = useState<string[]>(agent?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
@@ -86,6 +107,7 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
         await connectSlack.mutateAsync({
           id: agent.id,
           slackChannelId: channelId.trim(),
+          ...(mode === "shared" ? { mode } : {}),
         });
       } else if (!slackEnabled && slackChannel) {
         await disconnectSlack.mutateAsync({ id: agent.id });
@@ -99,6 +121,7 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
         await connectSlack.mutateAsync({
           id: agent.id,
           slackChannelId: channelId.trim(),
+          ...(mode === "shared" ? { mode } : {}),
         });
       }
       await updateAgent.mutateAsync({
@@ -146,54 +169,102 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
           </FormField>
 
           <div className="flex flex-col gap-1">
-            <SectionLabel>Allowed users</SectionLabel>
-            {users.length === 0 && (
+            <SectionLabel>Access mode</SectionLabel>
+            {MODE_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5 ${
+                  bound ? "opacity-60" : "cursor-pointer"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="slack-access-mode"
+                  value={opt.value}
+                  checked={mode === opt.value}
+                  disabled={bound}
+                  onChange={() => {
+                    setMode(opt.value);
+                    setDirty(true);
+                  }}
+                  className="mt-0.5"
+                />
+                <span className="flex flex-col">
+                  <span className="text-[13px] font-semibold text-foreground">
+                    {opt.label}
+                  </span>
+                  <span className="text-[12px] text-muted-foreground">
+                    {opt.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+            {bound && (
               <span className="text-[12px] text-muted-foreground italic">
-                Unrestricted — any linked Slack user can interact
+                The mode is fixed per binding — disconnect and reconnect to
+                change it.
               </span>
             )}
-            <div className="flex flex-col gap-1">
-              {users.map((u) => (
-                <div
-                  key={u}
-                  className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1"
-                >
-                  <span className="flex-1 text-[12px] font-mono text-foreground truncate">
-                    {u}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <SectionLabel>Allowed users</SectionLabel>
+            {mode === "shared" && (
+              <span className="text-[12px] text-muted-foreground italic">
+                Not used in shared mode — channel membership is the gate.
+              </span>
+            )}
+            {mode === "person-scoped" && (
+              <>
+                {users.length === 0 && (
+                  <span className="text-[12px] text-muted-foreground italic">
+                    Unrestricted — any linked Slack user can interact
                   </span>
+                )}
+                <div className="flex flex-col gap-1">
+                  {users.map((u) => (
+                    <div
+                      key={u}
+                      className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1"
+                    >
+                      <span className="flex-1 text-[12px] font-mono text-foreground truncate">
+                        {u}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        tone="danger"
+                        size="icon-xs"
+                        onClick={() => removeUser(u)}
+                        className="shrink-0"
+                      >
+                        <X size={12} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1 mt-1">
+                  <Input
+                    type="email"
+                    value={userInput}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && (e.preventDefault(), addUser())
+                    }
+                    placeholder="user@example.com"
+                    className="flex-1 h-7"
+                  />
                   <Button
-                    variant="ghost"
-                    tone="danger"
-                    size="icon-xs"
-                    onClick={() => removeUser(u)}
-                    className="shrink-0"
+                    variant="outline"
+                    size="icon"
+                    onClick={addUser}
+                    disabled={!userInput.trim()}
+                    className="h-7 w-7"
                   >
-                    <X size={12} />
+                    <Plus size={12} />
                   </Button>
                 </div>
-              ))}
-            </div>
-            <div className="flex gap-1 mt-1">
-              <Input
-                type="email"
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && (e.preventDefault(), addUser())
-                }
-                placeholder="user@example.com"
-                className="flex-1 h-7"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={addUser}
-                disabled={!userInput.trim()}
-                className="h-7 w-7"
-              >
-                <Plus size={12} />
-              </Button>
-            </div>
+              </>
+            )}
           </div>
         </>
       )}

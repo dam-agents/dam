@@ -107,6 +107,8 @@ export const agentUpdateInputSchema = z.object({
 export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
+  // Access mode; absent = person-scoped.
+  mode: z.enum(["shared", "person-scoped"]).optional(),
 });
 
 export const agentListTelegramChatsInputSchema = z.object({
@@ -121,6 +123,12 @@ export const agentUnbindTelegramChatInputSchema = z.object({
 export const agentBindTelegramChatInputSchema = z.object({
   agentId: z.string().min(1),
   // Opaque bind-flow id minted by the Telegram OAuth callback.
+  flowId: z.string().min(1),
+});
+
+export const agentBindSlackChannelInputSchema = z.object({
+  agentId: z.string().min(1),
+  // Opaque bind-flow id minted by the Slack in-chat bind OAuth callback.
   flowId: z.string().min(1),
 });
 

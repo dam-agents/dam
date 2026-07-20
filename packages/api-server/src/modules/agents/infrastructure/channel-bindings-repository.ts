@@ -119,9 +119,17 @@ export function allChannelAgentIds(db: Db) {
 export function findBySlackChannelId(db: Db) {
   return async (
     slackChannelId: string,
-  ): Promise<{ agentId: string } | null> => {
+  ): Promise<{
+    agentId: string;
+    owner: string;
+    mode?: "shared" | "person-scoped";
+  } | null> => {
     const rows = await db
-      .select({ agentId: channels.agentId })
+      .select({
+        agentId: channels.agentId,
+        owner: channels.owner,
+        mode: sql<string | null>`${channels.config}->>'mode'`,
+      })
       .from(channels)
       .where(
         and(
@@ -130,12 +138,36 @@ export function findBySlackChannelId(db: Db) {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      agentId: row.agentId,
+      owner: row.owner,
+      // Only "shared" is ever stored; anything else reads as the default.
+      ...(row.mode === "shared" ? { mode: "shared" as const } : {}),
+    };
   };
 }
 
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
   return isUniqueViolation(e, "channels_slack_channel_unique_idx");
+}
+
+/** Delete the Slack binding for a channel id, regardless of owner. The in-chat
+ *  unbind runs system-side (it has no owner scope) and authorizes the caller
+ *  itself, so — unlike the owner-scoped `deleteChannelByType` — this keys only
+ *  on the globally-unique Slack channel id. */
+export function deleteSlackChannelBinding(db: Db) {
+  return async (slackChannelId: string): Promise<void> => {
+    await db
+      .delete(channels)
+      .where(
+        and(
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      );
+  };
 }
 
 export function findSlackChannelByAgent(db: Db) {

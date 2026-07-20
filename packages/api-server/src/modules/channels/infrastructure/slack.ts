@@ -147,7 +147,13 @@ async function getContextMessages(
 }
 
 export interface ChannelRegistry {
-  resolveInstanceBySlackChannel(slackChannelId: string): Promise<string | null>;
+  /** The binding (if any) for a Slack channel: agent, binding owner, and the
+   *  access mode (absent = person-scoped). */
+  resolveSlackBinding(slackChannelId: string): Promise<{
+    instanceName: string;
+    owner: string;
+    mode?: "shared" | "person-scoped";
+  } | null>;
   resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
 }
 
@@ -170,6 +176,9 @@ export interface SlackOAuthPending {
   slackUserId: string;
   channelId: string;
   codeVerifier: string;
+  /** Whether the callback just links identity (`login`) or also mints a bind
+   *  flow and hands off to the agent picker (`bind`). */
+  intent: "login" | "bind";
   createdAt: number;
 }
 
@@ -182,6 +191,11 @@ export function createSlackWorker(
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
+  /** Delete the shared binding for a Slack channel, owner-agnostic. The in-chat
+   *  unbind command authorizes the caller (binder or agent owner) before
+   *  calling this; unlike the owner-scoped platform disconnect it runs
+   *  system-side. */
+  unbindSlackChannel: (slackChannelId: string) => Promise<void>,
   /** Lowercase brand identifier used in slash-command help text (e.g.
    *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
   brandShort: string,
@@ -230,7 +244,9 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
-    actorSub: string;
+    /** Null on shared-mode relays; the Keycloak sub on person-scoped ones. */
+    actorSub: string | null;
+    externalActorId?: string;
     slackUserId: string;
     images: FetchedImage[];
   }) {
@@ -372,6 +388,9 @@ export function createSlackWorker(
         channel: "slack",
         agentId: instanceName,
         actorSub: ctx.actorSub,
+        ...(ctx.externalActorId
+          ? { externalActorId: ctx.externalActorId }
+          : {}),
         outcome,
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
@@ -630,6 +649,7 @@ export function createSlackWorker(
           slackUserId: command.userId,
           channelId: command.channelId,
           codeVerifier,
+          intent: "login",
           createdAt: Date.now(),
         });
 
@@ -648,12 +668,139 @@ export function createSlackWorker(
         await identityLinks.unlink("slack", command.userId);
         await ack({ text: "Account unlinked." });
       })
+      .with("bind", async () => {
+        // Anyone in the channel may start a bind (no admin gate) — but the
+        // agent picker that follows only lists the signed-in user's own
+        // agents, so a channel only ever runs under an agent its binder owns.
+        const binding = await channelRegistry.resolveSlackBinding(
+          command.channelId,
+        );
+        if (binding) {
+          await ack({
+            text: `This channel is already connected to \`${binding.instanceName}\`. The person who connected it, or the agent's owner, must run \`/${brandShort} unbind\` first.`,
+          });
+          return;
+        }
+
+        const { state, codeVerifier, codeChallenge } = generatePkce();
+        pendingOAuthFlows.set(state, {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+          codeVerifier,
+          intent: "bind",
+          createdAt: Date.now(),
+        });
+
+        const bindUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
+        await ack({
+          text: `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.`,
+        });
+      })
+      .with("unbind", async () => {
+        const binding = await channelRegistry.resolveSlackBinding(
+          command.channelId,
+        );
+        if (!binding) {
+          await ack({ text: "This channel isn't connected to an agent." });
+          return;
+        }
+
+        const invoker = await identityLinks.resolve("slack", command.userId);
+        if (!invoker) {
+          securityLog("warn", "channel.authz_deny", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "slack",
+            agentId: binding.instanceName,
+            decision: "deny",
+            reason: "unlinked",
+            detail: {
+              slackUserId: command.userId,
+              channelId: command.channelId,
+            },
+          });
+          await ack({
+            text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} unbind\` again.`,
+          });
+          return;
+        }
+
+        const agentOwner = await getInstanceOwner(binding.instanceName);
+        const allowed = invoker === binding.owner || invoker === agentOwner;
+        if (!allowed) {
+          securityLog("warn", "channel.authz_deny", {
+            category: "channel",
+            actor: invoker,
+            actorKind: "user",
+            surface: "slack",
+            agentId: binding.instanceName,
+            decision: "deny",
+            reason: "not-binder-or-owner",
+            detail: {
+              slackUserId: command.userId,
+              channelId: command.channelId,
+            },
+          });
+          await ack({
+            text: "Only the person who connected this channel, or the agent's owner, can disconnect it.",
+          });
+          return;
+        }
+
+        await unbindSlackChannel(command.channelId);
+        securityLog("info", "channel.chat_unbound", {
+          category: "authz-list",
+          actor: invoker,
+          actorKind: "user",
+          surface: "slack",
+          agentId: binding.instanceName,
+          result: "success",
+          detail: { slackUserId: command.userId, channelId: command.channelId },
+        });
+        emit({
+          type: EventType.SlackDisconnected,
+          agentId: binding.instanceName,
+        });
+        await ack({
+          text: `Channel disconnected. Run \`/${brandShort} bind\` to connect an agent again.`,
+        });
+      })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} login\` or \`/${brandShort} logout\``,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, \`/${brandShort} login\`, or \`/${brandShort} logout\``,
         });
       })
       .exhaustive();
+  }
+
+  async function fetchTurnImages(
+    event: SlackMentionEvent,
+    slackUserId: string,
+  ): Promise<FetchedImage[] | null> {
+    if (!gateway) return null;
+    const fetchResult = await fetchSlackImages(gateway, event.files);
+    if (fetchResult.kind === "cap_exceeded") {
+      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
+      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.threadTs,
+        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
+      );
+      return null;
+    }
+    const { images, failures } = fetchResult;
+    for (const f of failures) {
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.threadTs,
+        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
+      );
+    }
+    return images;
   }
 
   async function handleAppMention(event: SlackMentionEvent) {
@@ -661,6 +808,34 @@ export function createSlackWorker(
 
     const slackUserId = event.user;
     if (!slackUserId) return;
+
+    const threadTs = event.threadTs ?? event.ts;
+    const binding = await channelRegistry.resolveSlackBinding(event.channel);
+    if (!binding) {
+      await gateway.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: "No instance connected to this channel.",
+      });
+      return;
+    }
+
+    if (binding.mode === "shared") {
+      const images = await fetchTurnImages(event, slackUserId);
+      if (images === null) return;
+      await relaySharedTurn({
+        channel: event.channel,
+        threadTs,
+        eventTs: event.ts,
+        text: event.text,
+        hasThread: !!event.threadTs,
+        slackUserId,
+        instanceName: binding.instanceName,
+        owner: binding.owner,
+        images,
+      });
+      return;
+    }
 
     const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
@@ -682,40 +857,8 @@ export function createSlackWorker(
       return;
     }
 
-    const threadTs = event.threadTs ?? event.ts;
-    const instanceName = await channelRegistry.resolveInstanceBySlackChannel(
-      event.channel,
-    );
-    if (!instanceName) {
-      await gateway.postEphemeral({
-        channel: event.channel,
-        user: slackUserId,
-        text: "No instance connected to this channel.",
-      });
-      return;
-    }
-
-    const fetchResult = await fetchSlackImages(gateway, event.files);
-    if (fetchResult.kind === "cap_exceeded") {
-      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
-      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
-      await ephemeral(
-        event.channel,
-        slackUserId,
-        event.threadTs,
-        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
-      );
-      return;
-    }
-    const { images, failures } = fetchResult;
-    for (const f of failures) {
-      await ephemeral(
-        event.channel,
-        slackUserId,
-        event.threadTs,
-        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
-      );
-    }
+    const images = await fetchTurnImages(event, slackUserId);
+    if (images === null) return;
 
     await routeReply({
       channel: event.channel,
@@ -725,8 +868,63 @@ export function createSlackWorker(
       hasThread: !!event.threadTs,
       slackUserId,
       keycloakSub,
-      instanceName,
+      instanceName: binding.instanceName,
       images,
+    });
+  }
+
+  // Shared mode: the binding is the authorization — anyone Slack
+  // admits to the channel drives the agent under the agent's credentials.
+  async function relaySharedTurn(args: {
+    channel: string;
+    threadTs: string;
+    eventTs: string;
+    text: string;
+    hasThread: boolean;
+    slackUserId: string;
+    instanceName: string;
+    owner: string;
+    images: FetchedImage[];
+  }) {
+    if (!gateway) return;
+
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: null,
+      actorKind: "external",
+      surface: "slack",
+      agentId: args.instanceName,
+      decision: "allow",
+      detail: {
+        basis: "place",
+        slackUserId: args.slackUserId,
+        channelId: args.channel,
+      },
+    });
+
+    // The binding owner lends the credentials, so their ToU acceptance gates
+    // every shared turn — mirrors Telegram's binding.authorizedBy gate.
+    if (!(await isTermsAccepted(args.owner))) {
+      await gateway.postEphemeral({
+        channel: args.channel,
+        user: args.slackUserId,
+        text: `This agent can't reply yet — its owner must accept the Terms of Use at ${uiBaseUrl}.`,
+      });
+      return;
+    }
+
+    await relayOwnerTurn({
+      instanceName: args.instanceName,
+      channel: args.channel,
+      threadTs: args.threadTs,
+      eventTs: args.eventTs,
+      // Shared sessions are multi-speaker: label who is talking.
+      text: `<@${args.slackUserId}>: ${args.text}`,
+      hasThread: args.hasThread,
+      actorSub: null,
+      externalActorId: args.slackUserId,
+      slackUserId: args.slackUserId,
+      images: args.images,
     });
   }
 

@@ -24,6 +24,8 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
+  /** Access mode of the binding; absent = person-scoped. */
+  mode?: "shared" | "person-scoped";
 }
 
 export type ChannelConfig = SlackChannel;
@@ -81,11 +83,24 @@ export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
-  | { type: "ChannelAlreadyBound" };
+  | { type: "ChannelAlreadyBound" }
+  /** Mode is fixed per binding: switching requires disconnect + reconnect. */
+  | { type: "ModeChangeRequiresRebind" };
 
 export type ConnectSlackResult =
   | { ok: true; value: Agent }
   | { ok: false; error: ConnectSlackError };
+
+export type BindSlackChannelError =
+  /** Unknown, expired, or not-your-flow — deliberately one bucket so the
+   *  error is no oracle for whether a flow id exists. */
+  | { type: "FlowInvalid" }
+  | { type: "AgentNotFound" }
+  | { type: "ChannelAlreadyBound" };
+
+export type BindSlackChannelResult =
+  | { ok: true; value: { channelTitle: string | null } }
+  | { ok: false; error: BindSlackChannelError };
 
 export type BindTelegramChatError =
   /** Unknown, expired, or not-your-flow — deliberately one bucket so the
@@ -149,8 +164,15 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
+    mode?: "shared" | "person-scoped",
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
+  /** Consume a Slack bind flow (minted by the in-chat bind OAuth callback) and
+   *  bind that channel to the caller's agent in shared mode. */
+  bindSlackChannel: (
+    agentId: string,
+    flowId: string,
+  ) => Promise<BindSlackChannelResult>;
   /** Consume a Telegram bind flow (minted by the /login OAuth callback) and
    *  bind that conversation to the caller's agent. */
   bindTelegramChat: (

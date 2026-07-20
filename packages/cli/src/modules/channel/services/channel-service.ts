@@ -20,6 +20,7 @@ export interface ChannelService {
   connectSlack(
     id: string,
     slackChannelId: string,
+    mode?: "shared" | "person-scoped",
   ): Promise<
     Result<
       ChannelList,
@@ -41,11 +42,12 @@ export function createChannelService(deps: {
     async available() {
       return trpcCall(() => deps.trpc.channels.available.query());
     },
-    async connectSlack(id, slackChannelId) {
+    async connectSlack(id, slackChannelId, mode) {
       try {
         const agent = await deps.trpc.agents.connectSlack.mutate({
           id,
           slackChannelId,
+          ...(mode ? { mode } : {}),
         });
         return ok(agent.channels);
       } catch (e) {

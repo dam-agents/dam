@@ -74,6 +74,7 @@ export function createChannelManager(deps: {
           slackWorker.start(event.agentId, {
             type: ChannelType.Slack,
             slackChannelId: event.slackChannelId,
+            ...(event.mode ? { mode: event.mode } : {}),
           });
         }
       }),

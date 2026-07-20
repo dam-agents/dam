@@ -17,6 +17,7 @@ import {
   listChannelsByOwner,
   findBySlackChannelId,
   findSlackChannelByAgent,
+  deleteSlackChannelBinding,
 } from "./modules/agents/index.js";
 import {
   createAgentSkillsRepository,
@@ -57,6 +58,7 @@ import {
   createTelegramBindFlowStore,
   type TelegramOAuthPending,
 } from "./modules/channels/infrastructure/telegram-flows.js";
+import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -366,6 +368,9 @@ const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
 const telegramBindFlows = config.telegramBotToken
   ? createTelegramBindFlowStore()
   : undefined;
+// Unconditional: a trivial in-memory store, needed whenever the Slack OAuth
+// callback is mounted (real tokens or e2e). The bind command mints entries.
+const slackBindFlows = createSlackBindFlowStore();
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
@@ -382,8 +387,15 @@ const chatSdkState = config.telegramBotToken
   : undefined;
 
 const channelRegistry: ChannelRegistry = {
-  resolveInstanceBySlackChannel: async (slackChannelId) =>
-    (await findBySlackChannelId(db)(slackChannelId))?.agentId ?? null,
+  resolveSlackBinding: async (slackChannelId) => {
+    const row = await findBySlackChannelId(db)(slackChannelId);
+    if (!row) return null;
+    return {
+      instanceName: row.agentId,
+      owner: row.owner,
+      ...(row.mode ? { mode: row.mode } : {}),
+    };
+  },
   resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
@@ -431,6 +443,7 @@ const slackWorker = slackGatewayFactory
       pendingSlackOAuthFlows,
       (agentId) => agentsRepo.getOwner(agentId),
       channelRegistry,
+      deleteSlackChannelBinding(db),
       config.brand.short,
       isTermsAccepted,
       config.uiBaseUrl,
@@ -651,6 +664,7 @@ const { server: apiServer } = startApiServerApp({
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
   telegramBindFlows,
+  slackBindFlows,
   seedSources,
   redisBus,
   approvalsRelay,

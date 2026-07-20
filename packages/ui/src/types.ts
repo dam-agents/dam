@@ -139,7 +139,12 @@ export interface AgentView {
   /** Contributions that failed to install on the last settle; empty when healthy. */
   contributionFailures: { kind: string; message: string }[];
   channels: (
-    | { type: "slack"; slackChannelId: string }
+    | {
+        type: "slack";
+        slackChannelId: string;
+        /** Access mode; absent = person-scoped. */
+        mode?: "shared" | "person-scoped";
+      }
     | { type: "telegram" }
   )[];
   allowedUserEmails: string[];

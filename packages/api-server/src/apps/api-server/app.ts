@@ -63,6 +63,7 @@ import type {
   TelegramOAuthPending,
   TelegramBindFlowStore,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
+import type { SlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
 import {
   findAgentByConversation,
   bindConversation,
@@ -118,6 +119,8 @@ export interface ApiServerAppDeps {
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
   /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
   telegramBindFlows?: TelegramBindFlowStore;
+  /** Backs the Slack in-chat bind handoff (OAuth callback → agent picker). */
+  slackBindFlows: SlackBindFlowStore;
   /** Present when Telegram is enabled; backs the one-time connect links. */
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
@@ -161,6 +164,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
     telegramBindFlows,
+    slackBindFlows,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -401,8 +405,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       "/",
       createSlackOAuthRoutes({
         pendingFlows: pendingSlackOAuthFlows,
+        bindFlows: slackBindFlows,
         identityLinks: identityLinkService,
         brandShort: config.brand.short,
+        uiBaseUrl: config.uiBaseUrl,
         oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
@@ -823,6 +829,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
             unbind: unbindConversation(db),
           }
         : undefined,
+      slackBinding: {
+        peekFlow: slackBindFlows.peek,
+        consumeFlow: slackBindFlows.consume,
+        postMessage: (agentId, slackChannelId, text) =>
+          channelManager.postMessage(agentId, ChannelType.Slack, text, {
+            conversationId: slackChannelId,
+          }),
+      },
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
