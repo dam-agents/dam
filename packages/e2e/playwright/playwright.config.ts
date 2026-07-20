@@ -110,10 +110,14 @@ export default defineConfig({
     },
     {
       // Rolls the shared agent's gateway (path rules force a MITM chain), so
-      // it runs after every spec that drives the agent's chat/egress flows.
+      // it runs after every spec that drives the agent's chat/egress flows —
+      // "slack-ambient" is the tail of the Slack chain, so depending on it
+      // (not just "slack") keeps this and connection-regrant behind ALL
+      // agent-driving specs; scheduling by dependency depth alone ran the
+      // gateway-wedging regrant before the ambient spec.
       name: "egress-path-rules",
       testMatch: /11-.*\.spec\.ts$/,
-      dependencies: ["slack"],
+      dependencies: ["slack-ambient"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
