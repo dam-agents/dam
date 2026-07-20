@@ -16,8 +16,10 @@ The api-server↔host hop is **mutual TLS**. Both the host's server cert and the
 
 Two identities compose:
 
-- **Deployment (cluster) identity** — the client cert. Its CN names the calling DAM deployment. One VM host serves many clusters, each with its own client cert from the shared CA; the host **namespaces containers by CN**, so agents in different clusters that share an id never collide onto one VM, and a cluster cannot address another's namespace (it cannot present another's cert).
-- **Agent identity** — the waypoint already proved the caller cryptographically, so the api-server forwards the agent id inside the authenticated channel, and the host names the container `<cluster>/<agent>`. An agent can never choose an id, so it can never reach another agent's machine. Forks and Run executors act under their parent agent's identity and therefore share the parent's VM. Revocation is a denylist on the host, keyed by agent or cluster/agent.
+- **Deployment (cluster) identity** — the client cert. Its CN names the calling DAM deployment. One VM host serves many clusters, each with its own client cert from the shared CA; the host **namespaces containers by CN** (the CN must be canonical — the host rejects a non-conforming one rather than lossily mapping it), so agents in different clusters that share an id never collide onto one VM, and container capacity is capped per cluster so one deployment cannot starve another.
+- **Agent identity** — the waypoint already proved the caller cryptographically, so the api-server forwards the agent id inside the authenticated channel, and the host names the container `<cluster>/<agent>`. An agent can never choose an id, so it can never reach another agent's machine. Run executors borrow their parent agent's full gateway and so can reach the VM under the parent's identity; forks cannot — the waypoint scopes a fork's identity to the parent's MCP endpoint only. Revocation is a denylist on the host, keyed by agent or cluster/agent.
+
+Per-cluster namespacing is **not** cross-tenant isolation. The containers are privileged with nesting enabled (the motivating workload — running full k3s clusters inside — requires it, and lighter VM-based runtimes like Kata cannot host it), so a container escape is host root and reaches every cluster's containers. A shared VM host is therefore a single trust domain; the CN namespace and per-cluster cap prevent accidental collisions and cross-cluster starvation, not a malicious escape. Run a separate host per trust boundary where that matters.
 
 ## Trust boundary
 
@@ -25,4 +27,4 @@ The VM host sits outside the cluster trust boundary. Containers there receive no
 
 ## Lifecycle
 
-Containers are ephemeral: created on first use, kept while streams are active, and deleted by the VM host after an idle hour — filesystem and all. Per-agent concurrent streams are capped in the relay, mirroring the Run executor cap and for the same reason (it is the local bound on runaway recursion); overall container capacity is a host-wide limit shared across clusters. The VPS-side relay and provisioning live in [`packages/dam-vm/`](../../packages/dam-vm/); the in-pod CLI ships with the platform base image.
+Containers are ephemeral: created on first use, kept while streams are active, and deleted by the VM host after an idle hour — filesystem and all. Per-agent concurrent streams are capped in the relay, mirroring the Run executor cap and for the same reason (it is the local bound on runaway recursion); container count is capped per cluster on the host. The VPS-side relay and provisioning live in [`packages/dam-vm/`](../../packages/dam-vm/); the in-pod CLI ships with the platform base image.

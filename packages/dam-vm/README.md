@@ -92,10 +92,10 @@ The container appears as `dam-<cluster>-<agentId>`: `ssh ubuntu@<floating-ip> su
 
 ## Security notes
 
-- Auth is mutual TLS; there is no shared API key. A client without a CA-signed cert is refused at the TLS handshake. Rotate by re-issuing certs (step 2) and re-running provision (server) / updating helm (clients).
-- The client-cert CN is the cluster's trust boundary: it names the containers, and a cluster can't forge another's namespace (it can't present another's cert). Keep CNs distinct per cluster.
-- Cut off one agent: add `<agentId>` (all clusters) or `<cluster>/<agentId>` to `/etc/dam-vm/denied.json` (JSON array) and restart the service.
-- Containers are privileged with nesting enabled (so k3s/docker work inside) — treat the whole host as agent-controlled and keep nothing else on it. Capacity (`DAM_VM_MAX_CONTAINERS`) is host-wide across all clusters.
+- Auth is mutual TLS; there is no shared API key. A client without a CA-signed cert is refused at the TLS handshake. Each cluster's client-cert CN must be a canonical id (the host rejects a non-conforming CN rather than mapping it lossily); keep CNs distinct per cluster.
+- Containers are privileged with nesting enabled (so full k3s/docker run inside) — treat the whole host as agent-controlled and keep nothing else on it.
+- **A shared host is one trust domain.** A privileged container can escape to host root, so the per-cluster CN namespace and per-cluster cap (`DAM_VM_MAX_CONTAINERS`, counted per cluster) prevent accidental collisions and cross-cluster starvation — not a malicious escape. Run a separate host per trust boundary where isolation between clusters actually matters.
+- Rotate certs by re-issuing (step 2) and re-running provision (server) / updating helm (clients). Revocation (`denied.json`, entries `<agentId>` or `<cluster>/<agentId>`) is read at startup, so cutting off an agent needs `systemctl restart dam-vm`, which drops live sessions.
 
 ## Ops
 

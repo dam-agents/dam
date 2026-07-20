@@ -17,10 +17,11 @@ const VM_HANDSHAKE_TIMEOUT_MS = 90_000;
 
 /**
  * Relays `dam-vm` terminal streams from the harness port to the operator's VM
- * host (packages/dam-vm), attaching the deployment API key and the
- * waypoint-proven agent id — the two values the agent must never hold or
- * choose. Unlike the run relay there is no CR and no executor pod: the VM
- * host owns container lifecycle (lazy create, idle delete).
+ * host (packages/dam-vm) over mutual TLS: it presents the deployment's client
+ * cert (which authenticates the whole hop) and forwards the waypoint-proven
+ * agent id in a header — neither of which the agent can hold or choose. Unlike
+ * the run relay there is no CR and no executor pod: the VM host owns container
+ * lifecycle (lazy create, idle delete).
  */
 export function createVmRelay(deps: {
   /** VM host relay URL, e.g. `wss://203.0.113.7:8090/run`; null → unconfigured. */
@@ -58,6 +59,10 @@ export function createVmRelay(deps: {
       }
       livePerAgent.set(agentId, live + 1);
 
+      // Unlike the run relay we do not resolveAgent() the K8s object here: the
+      // VM host is external and keys containers off the id regardless, so an
+      // existence check would add a round-trip without changing the outcome.
+      //
       // dam-vm passed the exec params (argv/cols/rows) as query on the upgrade
       // URL; forward the query verbatim. The agent id rides a header the
       // agent-side WHATWG WebSocket cannot set — trustworthy because the

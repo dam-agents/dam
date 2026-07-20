@@ -56,7 +56,7 @@ run = '''
 #
 # The CA is created once and REUSED on re-runs (adding a cluster later does not
 # invalidate existing ones). Delete the cert dir to rotate the CA.
-# Env: OUT_DIR (default packages/dam-vm/cert), CERT_DAYS (default 3650).
+# Env: OUT_DIR (default packages/dam-vm/cert), CERT_DAYS (default 825; the CA lives 10y).
 set -euo pipefail
 
 if [ $# -lt 2 ]; then
@@ -66,12 +66,12 @@ fi
 SERVER_HOST="$1"; shift
 
 OUT="${OUT_DIR:-packages/dam-vm/cert}"
-DAYS="${CERT_DAYS:-3650}"
+DAYS="${CERT_DAYS:-825}"
 mkdir -p "$OUT"; cd "$OUT"
 
-# Cluster ids become the client-cert CN, which the server sanitizes to
-# [a-z0-9-] (≤16) and uses as the container namespace. Enforce the final shape
-# up front so what you type is what you get — no surprise sanitization.
+# Cluster ids become the client-cert CN and the container namespace. The
+# server requires a canonical CN ([a-z0-9-], ≤16) and rejects anything else,
+# so enforce that shape here at issue time.
 for c in "$@"; do
   if ! [[ "$c" =~ ^[a-z0-9]([a-z0-9-]{0,14}[a-z0-9])?$ ]]; then
     echo "error: cluster id '$c' must be [a-z0-9-], start/end alphanumeric, <=16 chars" >&2

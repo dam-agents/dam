@@ -99,7 +99,13 @@ else
   echo "         and client-ca.crt and re-run for mutual TLS." >&2
 fi
 
-# --- Phase 7: dam-vm-server as a systemd service ---------------------------
+# --- Phase 7: pre-pull the base image --------------------------------------
+# Otherwise the very first `dam-vm` call blocks on a ~2 GB image fetch and can
+# exceed the server's per-launch budget. Idempotent (no-op once cached).
+IMAGE="${DAM_VM_IMAGE:-images:ubuntu/24.04}"
+incus image copy "$IMAGE" local: 2>/dev/null || true
+
+# --- Phase 8: dam-vm-server as a systemd service ---------------------------
 install -d /opt/dam-vm
 install -m 644 "$SRC_DIR/dam-vm-server.mjs" "$SRC_DIR/package.json" /opt/dam-vm/
 (cd /opt/dam-vm && npm install --omit=dev --no-fund --no-audit)
@@ -122,22 +128,15 @@ systemctl daemon-reload
 systemctl enable dam-vm
 systemctl restart dam-vm # restart, not start: pick up new code on re-provision
 
-# --- Phase 8: report the config -------------------------------------------
-# The server generates the API key on first start.
-for _ in $(seq 1 20); do [ -s /etc/dam-vm/api-key ] && break; sleep 0.5; done
-[ -s /etc/dam-vm/api-key ] || { echo "ERROR: server did not come up — journalctl -u dam-vm" >&2; exit 1; }
-
-echo
-echo "dam-vm is up (wss). Configure the DAM deployment (helm values):"
-echo
-echo "  apiServer:"
-echo "    vmHost:"
-echo "      url: \"wss://<this VPS's floating IP>:8090/run\""
-echo "      apiKey: \"$(cat /etc/dam-vm/api-key)\""
-echo "      caCert: |"
-sed 's/^/        /' /etc/dam-vm/tls.crt
-echo
-echo "Then open TCP 8090 to the DAM cluster's egress IP only (cloud security"
-echo "group). The cert's SAN must match the host in url — if you put a"
-echo "different address/hostname there, re-run with DAM_VM_PUBLIC_IP=<that> after"
-echo "deleting /etc/dam-vm/tls.crt."
+# --- Phase 9: report status ------------------------------------------------
+sleep 1
+if systemctl is-active --quiet dam-vm; then
+  MODE=$([ -s /etc/dam-vm/tls.crt ] && echo "wss (mutual TLS)" || echo "PLAIN ws (loopback only — no certs installed)")
+  echo
+  echo "dam-vm is up: $MODE"
+  echo "The helm values for each cluster were printed by 'mise run dam-vm:issue-certs'."
+  echo "Then open TCP 8090 to each DAM cluster's egress IP (cloud security group)."
+else
+  echo "ERROR: dam-vm did not come up — journalctl -u dam-vm" >&2
+  exit 1
+fi

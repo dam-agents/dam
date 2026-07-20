@@ -595,9 +595,10 @@ apiServer:
     # e.g. "wss://203.0.113.7:8090/run". Auth is mutual TLS — no API key.
     url: ""
     # Client cert + key the api-server presents, issued by the same private CA
-    # (IBM Cloud Secrets Manager) that signed the VM host's server cert. This
-    # cert IS the deployment credential. Supply via a sealed/secret values
-    # overlay in production — clientKey is private.
+    # that signed the VM host's server cert (openssl via `mise run
+    # dam-vm:issue-certs`, or a managed CA). This cert IS the deployment
+    # credential — the chart stores it in a Secret, not a plaintext env var.
+    # Supply via a sealed/secret values overlay in production; clientKey is private.
     clientCert: ""
     clientKey: ""
     # CA (PEM) that verifies the host's server cert (the Secrets Manager

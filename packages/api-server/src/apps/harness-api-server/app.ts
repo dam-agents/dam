@@ -98,8 +98,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runs,
   });
   // `dam-vm` streams ride the same harness port to /api/agents/<id>/vm and
-  // are relayed to the operator's VM host with the deployment API key +
-  // waypoint-proven agent id attached (packages/dam-vm).
+  // are relayed to the operator's VM host over mutual TLS (deployment client
+  // cert) with the waypoint-proven agent id attached (packages/dam-vm).
   const vmRelay = createVmRelay({
     url: config.vmHostUrl,
     clientCert: config.vmHostClientCert,

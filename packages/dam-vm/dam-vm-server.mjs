@@ -6,9 +6,10 @@
 // `incus exec` under a PTY.
 //
 // Auth: mutual TLS. The api-server presents a client cert issued by the same
-// IBM Cloud Secrets Manager private CA that signed this host's server cert;
-// the TLS layer rejects any connection whose client cert the CA didn't sign,
-// so only the DAM deployment can reach the relay — no application-level key.
+// private CA (openssl via `mise run dam-vm:issue-certs`, or a managed CA like
+// IBM Cloud Secrets Manager) that signed this host's server cert; the TLS
+// layer rejects any connection whose client cert the CA didn't sign, so only
+// the DAM deployment can reach the relay — no application-level key.
 // Inside that authenticated channel the relay sets one header:
 //   x-dam-vm-agent  the agent's platform identity, already proven
 //                   cryptographically by DAM's waypoint before the relay
@@ -17,16 +18,20 @@
 //
 // One VPS serves many DAM clusters: the client-cert CN namespaces each
 // cluster's containers (dam-<cluster>-<agentId>), so same-named agents in
-// different clusters never share a VM. Issue one client cert per cluster
-// (distinct CN) from the shared CA. Capacity (MAX_CONTAINERS) is host-wide.
+// different clusters never collide. This is NOT cross-tenant isolation —
+// containers are privileged+nesting (k3s needs it), so a container escape is
+// host root and thus reaches every cluster's containers; a shared VPS is one
+// trust domain. The CN namespace + per-cluster MAX_CONTAINERS just prevent
+// accidental collisions and cross-cluster DoS. Issue one client cert per
+// cluster (distinct canonical CN) from the shared CA.
 //
 // deps: ws @lydell/node-pty (installed by provision.sh)
 // optional denylist: /etc/dam-vm/denied.json → ["<agentId>" | "<cluster>/<agentId>", ...]
-// Listens on 0.0.0.0:8090 (DAM_VM_LISTEN_HOST / DAM_VM_PORT). TLS material
-// lives at /etc/dam-vm/{tls.crt,tls.key,client-ca.crt} (server leaf + key,
-// and the CA used to verify client certs). Without a server cert it falls
-// back to plain ws:// for a 127.0.0.1-behind-a-proxy setup. The security-group
-// rule scoping 8090 to the DAM deployment's egress IP is a second layer.
+// TLS material lives at /etc/dam-vm/{tls.crt,tls.key,client-ca.crt} (server
+// leaf + key, and the CA used to verify client certs), bound on
+// DAM_VM_LISTEN_HOST:DAM_VM_PORT (default 0.0.0.0:8090). Without a server cert
+// it falls back to plain ws:// bound to 127.0.0.1 ONLY (for a local TLS proxy)
+// — it is never served unauthenticated off-box.
 
 import { WebSocketServer } from "ws";
 import { spawn as ptySpawn } from "@lydell/node-pty";
@@ -52,15 +57,16 @@ const IDLE_DELETE_MIN = parseInt(process.env.DAM_VM_IDLE_DELETE_MIN, 10) || 60;
 const AGENT_ID_RE = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
 
 // A DAM deployment ("cluster") is identified by the CN of its mTLS client
-// cert. That CN namespaces containers, so agents from different clusters that
-// happen to share an id never collide onto one VM. A cluster cannot forge
-// another's namespace: the CN is bound to a CA-signed cert it can't present.
-const clusterIdFromCert = (peerCert) =>
-  (peerCert?.subject?.CN || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 16);
+// cert, which namespaces its containers. The CN must ALREADY be a canonical
+// cluster id (same shape `dam-vm:issue-certs` enforces) — we do NOT sanitize
+// or truncate, because silently mapping two distinct CNs onto one namespace
+// would let two clusters share VMs. A non-canonical CN is rejected. This
+// bounds `dam-<cluster>-<agentId>` under Incus's 63-char name limit too.
+const CLUSTER_ID_RE = /^[a-z0-9]([a-z0-9-]{0,14}[a-z0-9])?$/;
+const clusterIdFromCert = (peerCert) => {
+  const cn = peerCert?.subject?.CN || "";
+  return CLUSTER_ID_RE.test(cn) ? cn : "";
+};
 
 let denied = [];
 try {
@@ -71,11 +77,11 @@ try {
 // (the operation's progress renderer never finishes against a non-TTY pipe),
 // so stdout is sent to /dev/null unless a caller needs to parse it (the JSON
 // reads). stderr is always captured for error messages.
-const incus = (args, { capture = false } = {}) =>
+const incus = (args, { capture = false, timeoutMs = 120_000 } = {}) =>
   new Promise((resolve, reject) => {
     const child = spawn("incus", args, {
       stdio: ["ignore", capture ? "pipe" : "ignore", "pipe"],
-      timeout: 120_000,
+      timeout: timeoutMs,
     });
     let out = "",
       err = "";
@@ -115,11 +121,17 @@ const touch = (name) =>
 async function ensureContainer(clusterId, agentId) {
   const name = `dam-${clusterId}-${agentId}`;
   if (!(await exists(name))) {
+    // Cap is per-cluster (prefix-scoped) so one deployment can't exhaust the
+    // shared host and DoS the others.
     const count = JSON.parse(
-      await incus(["list", "dam-", "--format", "json"], { capture: true }),
+      await incus(["list", `dam-${clusterId}-`, "--format", "json"], {
+        capture: true,
+      }),
     ).length;
     if (count >= MAX_CONTAINERS) throw new Error("container capacity reached");
-    await incus(["launch", IMAGE, name]);
+    // A cold host pulls the ~2 GB base image on the first launch; give it far
+    // more than the default per-command budget (provision.sh pre-pulls too).
+    await incus(["launch", IMAGE, name], { timeoutMs: 600_000 });
     // give cloud-init/network a moment on first boot
     await new Promise((r) => setTimeout(r, 3000));
   } else {
@@ -151,7 +163,21 @@ setInterval(async () => {
   for (const c of list) {
     if (active.get(c.name)) continue;
     const last = parseInt(c.config?.["user.last_active"], 10) || 0;
-    if (last < cutoff) await incus(["delete", "-f", c.name]).catch(() => {});
+    if (last >= cutoff) continue;
+    // The list snapshot is up to a scan-interval stale, so re-confirm — a
+    // fresh connection or a touch() may have raced in — right before the
+    // destructive delete, so we never nuke a live agent's filesystem.
+    if (active.get(c.name)) continue;
+    const fresh = parseInt(
+      (
+        await incus(["config", "get", c.name, "user.last_active"], {
+          capture: true,
+        }).catch(() => "")
+      ).trim(),
+      10,
+    );
+    if (fresh && fresh >= cutoff) continue;
+    await incus(["delete", "-f", c.name]).catch(() => {});
   }
 }, 5 * 60_000).unref();
 
@@ -186,6 +212,10 @@ try {
   server = createHttpServer(handler);
   scheme = "ws";
 }
+// Plain ws:// has no client-cert auth, so it must never be exposed off-box:
+// force loopback regardless of DAM_VM_LISTEN_HOST (it's only for a local TLS
+// proxy). mTLS binds wherever configured.
+const bindHost = scheme === "ws" ? "127.0.0.1" : LISTEN_HOST;
 const wss = new WebSocketServer({ server, path: "/run" });
 
 wss.on("connection", async (ws, req) => {
@@ -275,8 +305,8 @@ wss.on("connection", async (ws, req) => {
   });
 });
 
-server.listen(LISTEN_PORT, LISTEN_HOST, () =>
+server.listen(LISTEN_PORT, bindHost, () =>
   console.log(
-    `dam-vm-server (${scheme}) on ${LISTEN_HOST}:${server.address().port}, max ${MAX_CONTAINERS} containers`,
+    `dam-vm-server (${scheme}) on ${bindHost}:${server.address().port}, max ${MAX_CONTAINERS}/cluster`,
   ),
 );
