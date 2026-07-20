@@ -47,34 +47,26 @@ export function SandboxWizardView() {
     return null;
   }, [snapshot.templateId, snapshot.customImage, templateList]);
 
-  // Own the OAuth return here (app.tsx skips /sandboxes/new): select the
-  // connection on success, drop it on failure, then strip the query params.
+  // Own the OAuth return here (app.tsx skips /sandboxes/new): the popup flow
+  // never leaves the page, so this only fires after a popup-blocked full-page
+  // redirect — stage the authorized connection into the draft on success,
+  // surface failures, then strip the query params.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
     if (!result) return;
     window.history.replaceState({}, "", "/sandboxes/new");
-    const saved = loadSnapshot();
-    const pending = saved.pendingConnectionId;
-    if (result === "success" && pending) {
+    const connectionId = params.get("connection");
+    if (result === "success" && connectionId) {
+      const saved = loadSnapshot();
       update({
-        pendingConnectionId: null,
-        connectionIds: [...new Set([...saved.connectionIds, pending])],
+        connectionIds: [...new Set([...saved.connectionIds, connectionId])],
       });
-    } else {
-      update({
-        pendingConnectionId: null,
-        ...(pending
-          ? {
-              connectionIds: saved.connectionIds.filter((id) => id !== pending),
-            }
-          : {}),
+    } else if (result !== "success") {
+      emitToast({
+        kind: "error",
+        message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
       });
-      if (result !== "success")
-        emitToast({
-          kind: "error",
-          message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
-        });
     }
   }, [update]);
 

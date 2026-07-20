@@ -66,11 +66,18 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   await test.step("grant the connection and create", async () => {
     const connectionId = await getConnectionId(api, connectionName);
 
-    const checkbox = page
-      .getByTestId(`connection-grant-${connectionId}`)
-      .getByRole("checkbox");
-    await checkbox.click();
-    await expect(checkbox).toBeChecked();
+    await page.getByTestId("open-connection-catalog").click();
+    await page.getByTestId("catalog-tab-custom-headers").click();
+    await page.getByTestId(`catalog-add-${connectionId}`).click();
+    await expect(
+      page
+        .getByTestId(`catalog-connection-${connectionId}`)
+        .getByText("In this sandbox"),
+    ).toBeVisible();
+    await page.getByTestId("catalog-close").click();
+    await expect(
+      page.getByTestId(`catalog-connection-${connectionId}`),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: /create sandbox/i }).click();
   });

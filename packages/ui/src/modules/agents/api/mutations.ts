@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import type { AgentConnections } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -217,7 +218,39 @@ export function useDisconnectSlack() {
 
 export function useSetAgentConnections() {
   return useMutation({
-    ...trpc.connections.setAgentConnections.mutationOptions(),
+    mutationFn: (vars: { agentId: string; connectionIds: string[] }) =>
+      api.connections.setAgentConnections.mutate(vars),
+    // Optimistically rewrite the grants cache so consecutive toggles compound
+    // — both reading the pre-mutation set would make the second full-set
+    // write silently drop the first grant.
+    onMutate: async (vars) => {
+      const key = trpc.connections.getAgentConnections.queryKey({
+        agentId: vars.agentId,
+      });
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AgentConnections>(key);
+      if (previous) {
+        const byId = new Map(
+          previous.connections.map((c) => [c.connectionId, c]),
+        );
+        queryClient.setQueryData<AgentConnections>(key, {
+          ...previous,
+          connections: vars.connectionIds.map(
+            (id) =>
+              byId.get(id) ?? {
+                connectionId: id,
+                grantedAt: new Date().toISOString(),
+              },
+          ),
+        });
+      }
+      return { previous, key };
+    },
+    // `meta.invalidates` fires only on success, so roll back here.
+    onError: (_err, _vars, context) => {
+      if (context?.previous)
+        queryClient.setQueryData(context.key, context.previous);
+    },
     meta: {
       // Server-side `setAgentConnections` syncs `connection:<id>` egress
       // rules per granted provider's API hosts.

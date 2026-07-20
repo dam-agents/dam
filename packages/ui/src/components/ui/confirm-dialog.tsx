@@ -1,4 +1,8 @@
-import { Warning as WarningIcon } from "@carbon/icons-react";
+import {
+  TrashCan,
+  Warning as WarningIcon,
+  WarningAlt,
+} from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import {
@@ -11,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type ConfirmDialogKind = "default" | "destructive";
@@ -28,13 +33,10 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
 }
 
-// Reusable confirm/alert dialog. The destructive variant paints the icon
-// chip with the destructive token (white glyph on red) so the consequence
-// reads at a glance, but the action button keeps the default token —
-// destructive-on-destructive doubled the visual weight without adding any
-// information. Use this for any "are you sure?" flow — the global
-// DialogOverlay drives it from the store; ad-hoc destructive prompts can
-// render it directly.
+// Reusable confirm/alert dialog. The destructive variant uses a muted red
+// icon chip and a red action button with a trash glyph (DAM-9). Use this for
+// any "are you sure?" flow — the global DialogOverlay drives it from the
+// store; ad-hoc destructive prompts can render it directly.
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -61,29 +63,30 @@ export function ConfirmDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <div className="flex items-start gap-3">
+          <div className="flex items-center gap-3">
             <div
               className={cn(
                 "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
-                destructive ? "bg-destructive" : "bg-primary/10",
+                destructive ? "bg-destructive/10" : "bg-primary/10",
               )}
             >
-              <WarningIcon
-                className={cn(
-                  "h-4 w-4",
-                  destructive ? "text-white" : "text-primary",
-                )}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <AlertDialogTitle>{title}</AlertDialogTitle>
-              {description && (
-                <AlertDialogDescription className="pt-1">
-                  {description}
-                </AlertDialogDescription>
+              {destructive ? (
+                <WarningAlt className="h-4 w-4 text-destructive" />
+              ) : (
+                <WarningIcon className="h-4 w-4 text-primary" />
               )}
             </div>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
           </div>
+          {description && (
+            // asChild renders a div — the message can carry block elements
+            // (lists, boxes), which are invalid inside the default <p>.
+            <AlertDialogDescription asChild>
+              <div className="pt-1 text-[14px] text-muted-foreground">
+                {description}
+              </div>
+            </AlertDialogDescription>
+          )}
         </AlertDialogHeader>
         <AlertDialogFooter>
           {showCancel && (
@@ -91,7 +94,14 @@ export function ConfirmDialog({
               {cancelLabel}
             </AlertDialogCancel>
           )}
-          <AlertDialogAction onClick={() => onConfirm()} autoFocus>
+          <AlertDialogAction
+            onClick={() => onConfirm()}
+            autoFocus
+            className={cn(
+              destructive && buttonVariants({ variant: "destructive" }),
+            )}
+          >
+            {destructive && <TrashCan size={16} />}
             {resolvedConfirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

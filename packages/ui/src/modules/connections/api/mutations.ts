@@ -38,13 +38,6 @@ export function useDeleteConnection() {
   });
 }
 
-export function useStartOAuth() {
-  return useMutation({
-    ...trpc.connections.startOAuth.mutationOptions(),
-    meta: { errorToast: "Couldn't start OAuth" },
-  });
-}
-
 export function useDiscoverMcp() {
   return useMutation({
     ...trpc.connections.discoverMcp.mutationOptions(),
