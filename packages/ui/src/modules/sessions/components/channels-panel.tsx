@@ -242,9 +242,8 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
                   <span className="text-[12px] text-muted-foreground">
                     The agent reads along in the channel and may chime in
                     without being mentioned when it can clearly help. The
-                    channel is notified when this changes, and it can be
-                    turned off anytime — here or with the in-chat ambient
-                    command.
+                    channel is notified when this changes, and it can be turned
+                    off anytime — here or with the in-chat ambient command.
                   </span>
                 </span>
               </label>

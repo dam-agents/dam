@@ -473,9 +473,7 @@ export function createAgentsService(deps: {
   };
   /** The Agent (if any) a Slack channel id is already bound to — global, since
    *  Slack bindings are unique across the whole install. */
-  findSlackChannelBinding: (
-    slackChannelId: string,
-  ) => Promise<{
+  findSlackChannelBinding: (slackChannelId: string) => Promise<{
     agentId: string;
     mode?: "shared" | "person-scoped";
     ambient?: boolean;

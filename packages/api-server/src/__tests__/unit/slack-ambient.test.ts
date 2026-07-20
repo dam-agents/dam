@@ -128,8 +128,7 @@ function harness(opts: {
       }
       expect(done()).toBe(true);
     },
-    messages: () =>
-      gw.readOutbound().filter((r) => r.kind === "message"),
+    messages: () => gw.readOutbound().filter((r) => r.kind === "message"),
     reactions: () => gw.readOutbound().filter((r) => r.kind === "reaction"),
     texts: () => gw.readOutbound().map((r) => ("text" in r ? r.text : "")),
     turnEvents: () =>
@@ -232,7 +231,10 @@ describe("slack ambient inbound", () => {
   });
 
   it(`ambient on: swallows a ${AMBIENT_DECLINE_TOKEN} reply — the agent stays silent`, async () => {
-    const h = harness({ binding: ambient, respond: () => AMBIENT_DECLINE_TOKEN });
+    const h = harness({
+      binding: ambient,
+      respond: () => AMBIENT_DECLINE_TOKEN,
+    });
     await h.message(STRANGER, "lunch anyone?");
     await h.settled(() => h.turnEvents().length === 1);
 
