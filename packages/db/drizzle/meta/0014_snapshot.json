@@ -1,5 +1,5 @@
 {
-  "id": "d33538b0-234f-4885-a6ee-25d47421e355",
+  "id": "ec6307b2-2f40-4e87-9813-a0b88fa2c489",
   "prevId": "06707eb8-afb5-46bc-8662-3648f9085065",
   "version": "7",
   "dialect": "postgresql",
@@ -1438,6 +1438,113 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.invocations": {
+      "name": "invocations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "driver_agent_id": {
+          "name": "driver_agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result_schema": {
+          "name": "result_schema",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "error_reason": {
+          "name": "error_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "invocations_driver_idx": {
+          "name": "invocations_driver_idx",
+          "columns": [
+            {
+              "expression": "driver_agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "invocations_status_expiry_idx": {
+          "name": "invocations_status_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"invocations\".\"status\" = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.library_artifact_versions": {
       "name": "library_artifact_versions",
       "schema": "",
@@ -2052,113 +2159,6 @@
           ],
           "isUnique": false,
           "where": "\"runtime_state_outbox\".\"apply_failures\" <> '[]'::jsonb OR \"runtime_state_outbox\".\"last_settled_version\" < \"runtime_state_outbox\".\"version\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.sandboxes": {
-      "name": "sandboxes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "driver_agent_id": {
-          "name": "driver_agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "result_schema": {
-          "name": "result_schema",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "result": {
-          "name": "result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'running'"
-        },
-        "error_reason": {
-          "name": "error_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "sandboxes_driver_idx": {
-          "name": "sandboxes_driver_idx",
-          "columns": [
-            {
-              "expression": "driver_agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "sandboxes_status_expiry_idx": {
-          "name": "sandboxes_status_expiry_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sandboxes\".\"status\" = 'running'",
           "concurrently": false,
           "method": "btree",
           "with": {}

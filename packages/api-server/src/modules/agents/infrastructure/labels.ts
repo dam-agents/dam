@@ -48,6 +48,15 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 // an explicit wake or a schedule fire does.
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
 
+// Sweepable (#2816): non-empty ⇒ the Agent Sweep deletes this agent once it
+// hibernates. Set on ephemeral agents (Invocation targets today); durable
+// owned agents never carry it. api-server-only — the controller ignores it.
+export const ANN_SWEEPABLE = "agent-platform.ai/sweepable";
+// Agent Lifetime (#2816): optional grace, in ms, a Sweepable agent may stay
+// hibernated before the Sweep deletes it. Absent or "0" ⇒ deleted as soon as
+// it hibernates. Distinct from an Invocation's per-result liveness deadline.
+export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";
+
 // Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status

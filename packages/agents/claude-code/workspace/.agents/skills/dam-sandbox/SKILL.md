@@ -150,8 +150,9 @@ inspect the JSON Schema it produces.
 ## Things to know
 
 - **A sandbox is unattended.** No human answers it, so its prompt must let it
-  make its own calls and run end to end. It reports via a `node_done` tool that
-  the platform injects — you don't wire that up, and it's told how in its prompt.
+  make its own calls and run end to end. It reports via a `report_result` tool
+  that the platform injects — you don't wire that up, and it's told how in its
+  prompt.
 - **Validation is structural, not truth.** The platform checks the result has the
   right shape, never that it's correct. Judging correctness is your prompt's job.
 - **No resumability.** If this agent's turn crashes mid-run, any in-memory state

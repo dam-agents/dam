@@ -21,7 +21,7 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { createAcpClient } from "../../core/acp-client.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
-import type { SandboxesService } from "../../modules/sandboxes/index.js";
+import type { InvocationsService } from "../../modules/invocations/index.js";
 import { formatByteCap } from "../../modules/experiments/domain/trial-prompt.js";
 import {
   armCandidateKey,
@@ -120,7 +120,7 @@ export interface McpSessionDeps {
    *  Checked per session; a cached session keeps its tool set until it
    *  expires (30 min TTL). */
   artifactsFeatureEnabled: boolean;
-  sandboxes: SandboxesService;
+  invocations: InvocationsService;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   agentHome: string;
@@ -711,20 +711,20 @@ export function createMcpSession(
   }
 
   server.tool(
-    "node_done",
-    "Report this sandbox node's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the node is marked done; if not, you get back what was wrong so you can call node_done again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling node_done reports nothing. Only works while this agent is a running sandbox; attribution is automatic from your agent identity.",
+    "report_result",
+    "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
     {
       result: z
         .unknown()
         .describe(
-          "The node result — a JSON value matching the schema in your prompt.",
+          "The result — a JSON value matching the schema in your prompt.",
         ),
     },
     async ({ result }) => {
-      const outcome = await deps.sandboxes.recordResult(agentId, result);
+      const outcome = await deps.invocations.recordResult(agentId, result);
       if (!outcome.ok) {
         return errorResult(
-          `node_done rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call node_done again.`,
+          `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
         );
       }
       return {
@@ -762,7 +762,7 @@ export interface MountMcpDeps {
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   isArtifactsFeatureEnabled: (owner: string) => Promise<boolean>;
-  sandboxesServiceFor: (owner: string) => SandboxesService;
+  invocationsServiceFor: (owner: string) => InvocationsService;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   agentHome: string;
@@ -823,7 +823,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const artifactsFeatureEnabled = await deps.isArtifactsFeatureEnabled(
       verified.owner,
     );
-    const sandboxes = deps.sandboxesServiceFor(verified.owner);
+    const invocations = deps.invocationsServiceFor(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -832,7 +832,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       experiments,
       artifactLibrary,
       artifactsFeatureEnabled,
-      sandboxes,
+      invocations,
       artifacts: deps.artifacts,
       maxArtifactBytes: deps.maxArtifactBytes,
       agentHome: deps.agentHome,

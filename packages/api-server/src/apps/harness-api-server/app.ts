@@ -14,7 +14,7 @@ import {
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
 import { isFeatureEnabled } from "../../modules/features/index.js";
-import { composeSandboxesForOwner } from "../../modules/sandboxes/index.js";
+import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
@@ -37,7 +37,7 @@ export interface HarnessApiServerAppDeps {
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
-  /** Owner-scoped agents service, for spawning sandbox agents. */
+  /** Owner-scoped agents service, for spawning Invocation target agents. */
   agentsServiceFor: (owner: string) => AgentsService;
   /** Owner-scoped connections service, for the driver's grants + attenuation. */
   connectionsServiceFor: (owner: string) => ConnectionsService;
@@ -66,8 +66,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
 
-  const sandboxesServiceFor = (owner: string) =>
-    composeSandboxesForOwner({
+  const invocationsServiceFor = (owner: string) =>
+    composeInvocationsForOwner({
       db,
       owner,
       agents: agentsServiceFor(owner),
@@ -108,7 +108,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).artifactLibrary,
     isArtifactsFeatureEnabled: (owner) =>
       isFeatureEnabled(db, owner, "artifacts"),
-    sandboxesServiceFor,
+    invocationsServiceFor,
     connectionsServiceFor,
     templates,
     artifacts,

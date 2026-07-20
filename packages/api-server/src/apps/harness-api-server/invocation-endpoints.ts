@@ -5,16 +5,16 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   AttenuationError,
   InvalidSchemaError,
-  MIN_SANDBOX_TTL_MS,
-  MAX_SANDBOX_TTL_MS,
-  type SandboxesService,
-} from "../../modules/sandboxes/index.js";
+  MIN_INVOCATION_TTL_MS,
+  MAX_INVOCATION_TTL_MS,
+  type InvocationsService,
+} from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { resolveAgent } from "./agent-auth.js";
 
-export interface SandboxEndpointsDeps {
+export interface InvocationEndpointsDeps {
   k8s: K8sClient;
-  sandboxesServiceFor: (owner: string) => SandboxesService;
+  invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
 }
@@ -26,20 +26,20 @@ const spawnBody = z
     connections: z.array(z.string().min(1)).optional(),
     prompt: z.string().min(1),
     // The result JSON Schema — arbitrary JSON, validated structurally by ajv
-    // when the sandbox reports (a malformed schema is rejected at spawn).
+    // when the target reports (a malformed schema is rejected at spawn).
     schema: z.unknown(),
-    // Optional liveness deadline for this node, in ms. Bounded server-side; a
-    // shorter value fails a wedged/misconfigured node fast, a longer one lets a
-    // heavy node run past the default hour.
+    // Optional liveness deadline for this target, in ms. Bounded server-side; a
+    // shorter value fails a wedged/misconfigured target fast, a longer one lets
+    // a heavy target run past the default hour.
     ttlMs: z
       .number()
       .int()
-      .min(MIN_SANDBOX_TTL_MS)
-      .max(MAX_SANDBOX_TTL_MS)
+      .min(MIN_INVOCATION_TTL_MS)
+      .max(MAX_INVOCATION_TTL_MS)
       .optional(),
-    // Optional resource limits. A heavy Make (clone + install + build) OOM-kills
-    // at the template's small default memory, so let the driver raise it. Same
-    // grammar and floors as the agent size knob.
+    // Optional resource limits. A heavy Make (clone + install + build)
+    // OOM-kills at the template's small default memory, so let the driver raise
+    // it. Same grammar and floors as the agent size knob.
     memory: z
       .string()
       .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
@@ -53,16 +53,17 @@ const spawnBody = z
     message: "either image or templateId is required",
   });
 
-/** Mounts the driver-facing sandbox primitive on the harness surface. Every
- *  route is scoped to the driver's identity — the `:id` the waypoint already
+/** Mounts the driver-facing spawn primitive on the harness surface. Every route
+ *  is scoped to the driver's identity — the `:id` the waypoint already
  *  authenticated. Create-then-poll: POST returns an id, GET reports status +
- *  the schema-validated result. */
-export function mountSandboxRoutes(
+ *  the schema-validated result. The path stays `/sandboxes` (the driver SDK's
+ *  wire contract); the domain term is Invocation. */
+export function mountInvocationRoutes(
   app: Hono,
-  deps: SandboxEndpointsDeps,
+  deps: InvocationEndpointsDeps,
 ): void {
-  // Spawn a sandbox as the driver (:id). The driver's own connection grants are
-  // the attenuation ceiling for the requested subset.
+  // Spawn an Invocation as the driver (:id). The driver's own connection grants
+  // are the attenuation ceiling for the requested subset.
   app.post("/api/agents/:id/sandboxes", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
@@ -88,7 +89,7 @@ export function mountSandboxRoutes(
     const driverGrantIds = granted.connections.map((g) => g.connectionId);
 
     try {
-      const { id } = await deps.sandboxesServiceFor(verified.owner).spawn({
+      const { id } = await deps.invocationsServiceFor(verified.owner).spawn({
         driverAgentId: driverId,
         driverGrantIds,
         ...(body.image ? { image: body.image } : {}),
@@ -102,7 +103,7 @@ export function mountSandboxRoutes(
       return c.json({ id }, 201);
     } catch (err) {
       if (err instanceof AttenuationError) {
-        securityLog("warn", "sandbox.attenuation_denied", {
+        securityLog("warn", "invocation.attenuation_denied", {
           category: "authz",
           actor: verified.owner,
           actorKind: "agent",
@@ -121,21 +122,21 @@ export function mountSandboxRoutes(
     }
   });
 
-  // Poll a sandbox the driver spawned.
+  // Poll an Invocation the driver spawned.
   app.get("/api/agents/:id/sandboxes/:sandboxId", async (c) => {
     const driverId = c.req.param("id")!;
-    const sandboxId = c.req.param("sandboxId")!;
+    const invocationId = c.req.param("sandboxId")!;
     const verified = await resolveAgent(deps.k8s, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 
     const view = await deps
-      .sandboxesServiceFor(verified.owner)
-      .get(sandboxId, driverId);
+      .invocationsServiceFor(verified.owner)
+      .get(invocationId, driverId);
     if (!view) return c.json({ error: "not found" }, 404);
     return c.json(view);
   });
 
-  // The driver's own connection grants — the set it may pass to a sandbox.
+  // The driver's own connection grants — the set it may pass to an Invocation.
   app.get("/api/agents/:id/connections", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
@@ -153,7 +154,7 @@ export function mountSandboxRoutes(
     return c.json({ connections });
   });
 
-  // The image catalog a sandbox may run.
+  // The image catalog an Invocation target may run.
   app.get("/api/agents/:id/images", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);

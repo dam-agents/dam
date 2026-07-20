@@ -16,8 +16,9 @@ export interface K8sClient {
   // so the api-server makes no ConfigMap calls — none are exposed.
   /** Restart info for a pod: the highest container restart count and the reason
    *  the last dead container gave (e.g. "OOMKilled"). Null if the pod is gone.
-   *  Read-only; used by the sandbox sweeper to fail a one-shot node whose pod
-   *  crashed mid-turn (its trigger will not re-fire, so it can never report). */
+   *  Read-only; used by the Invocation liveness sweep to fail a one-shot target
+   *  whose pod crashed mid-turn (its trigger will not re-fire, so it can never
+   *  report). */
   readPodRestart(
     podName: string,
   ): Promise<{ restarts: number; reason: string | null } | null>;

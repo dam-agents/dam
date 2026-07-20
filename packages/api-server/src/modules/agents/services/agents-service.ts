@@ -42,6 +42,7 @@ import {
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
 } from "../domain/spec-assembly.js";
+import { ANN_LIFETIME_MS, ANN_SWEEPABLE } from "../infrastructure/labels.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -792,11 +793,27 @@ export function createAgentsService(deps: {
         spec.imagePullSecretRef = deps.registrySecretPort.secretName(agentId);
       }
 
+      // Sweepable (#2816): stamp the Agent Sweep annotations at create so an
+      // ephemeral agent is marked from birth (no window where a spawned target
+      // could hibernate before it is flagged). Durable agents omit them.
+      const sweepAnnotations: Record<string, string> = {};
+      if (input.sweepable) {
+        sweepAnnotations[ANN_SWEEPABLE] = "true";
+        if (input.lifetimeMs && input.lifetimeMs > 0)
+          sweepAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
+      }
+
       // No desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
       let infra: InfraAgent;
       try {
-        infra = await deps.repo.create(spec, owner, agentId, templateId);
+        infra = await deps.repo.create(
+          spec,
+          owner,
+          agentId,
+          templateId,
+          Object.keys(sweepAnnotations).length ? sweepAnnotations : undefined,
+        );
       } catch (e) {
         if (input.registryCredential) {
           try {

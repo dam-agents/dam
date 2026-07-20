@@ -28,7 +28,7 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
-  sandboxes,
+  invocations,
 } from "./schema.js";
 export {
   eq,
