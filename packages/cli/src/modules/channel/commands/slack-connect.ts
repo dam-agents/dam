@@ -30,7 +30,7 @@ export function buildSlackConnectCommand(deps: {
     .requiredOption("--channel-id <id>", "Slack channel id (e.g. C0123ABCD)")
     .option(
       "--mode <mode>",
-      "access mode: 'person-scoped' (default) or 'shared' (ADR-075)",
+      "access mode: 'person-scoped' (default) or 'shared'",
     )
     .option(
       "--server <url>",
@@ -116,10 +116,20 @@ export function buildSlackConnectCommand(deps: {
           // bind person-scoped — verify and roll back instead of lying.
           const slackCh = res.value.find((c) => c.type === ChannelType.Slack);
           if (!slackCh || slackCh.mode !== "shared") {
-            await svc.disconnectSlack(resolved.value.id);
-            process.stderr.write(
-              "error: this server does not support shared access mode — binding rolled back\n",
-            );
+            const rolledBack = await svc.disconnectSlack(resolved.value.id);
+            if (rolledBack.ok) {
+              process.stderr.write(
+                "error: this server does not support shared access mode — binding rolled back\n",
+              );
+            } else {
+              // The bind landed person-scoped and the rollback disconnect
+              // failed too — the channel is still bound; say so rather than
+              // claim a clean rollback that did not happen.
+              process.stderr.write(
+                "error: this server does not support shared access mode, and rolling the binding back failed — the channel is still bound in person-scoped mode; disconnect it manually\n",
+              );
+              printServiceError(rolledBack.error, host);
+            }
             process.exit(EXIT_RUNTIME_FAILURE);
           }
         }
