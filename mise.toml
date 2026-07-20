@@ -60,6 +60,7 @@ includes = [
     "packages/cli/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
+    "packages/driver-sdk/tasks.toml",
     "packages/e2e/agents/mock-api/tasks.toml",
     "packages/e2e/agents/mock/tasks.toml",
     "packages/e2e/playwright/tasks.toml",

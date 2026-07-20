@@ -1,6 +1,11 @@
 import { randomBytes } from "node:crypto";
 import Ajv, { type ValidateFunction } from "ajv";
-import type { AgentsService } from "api-server-api";
+import {
+  type AgentsService,
+  DEFAULT_INVOCATION_TTL_MS,
+  MIN_INVOCATION_TTL_MS,
+  MAX_INVOCATION_TTL_MS,
+} from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import type {
@@ -8,18 +13,14 @@ import type {
   InvocationStatus,
 } from "../infrastructure/invocations-repository.js";
 
-/** How long an Invocation may run before the liveness sweep fails it
- *  (silent-exit backstop — "a step that ends silently wedges the loop"). The
- *  driver picks the deadline per target via `ttlMs`: a long-running Make raises
- *  it, a target expected to reply quickly lowers it so a misconfigured or
- *  wedged target fails in minutes instead of hanging to the default hour. This
- *  bounds one result, not the agent — the agent's own lifetime is the Agent
- *  Sweep's concern. */
-export const DEFAULT_INVOCATION_TTL_MS = 60 * 60 * 1000;
-/** Lower bound — a target needs at least this long to boot and run a turn. */
-export const MIN_INVOCATION_TTL_MS = 60 * 1000;
-/** Upper bound — the hard ceiling on how long one target may occupy compute. */
-export const MAX_INVOCATION_TTL_MS = 6 * 60 * 60 * 1000;
+// The TTL bounds live in the shared contract (api-server-api) so the /invocations
+// request schema and the driver SDK validate against the same numbers. Re-export
+// them here so in-tree consumers keep importing from the invocations module.
+export {
+  DEFAULT_INVOCATION_TTL_MS,
+  MIN_INVOCATION_TTL_MS,
+  MAX_INVOCATION_TTL_MS,
+};
 
 /** Clamp a requested TTL into the allowed range, defaulting when unset. */
 export function resolveInvocationTtlMs(ttlMs: number | undefined): number {

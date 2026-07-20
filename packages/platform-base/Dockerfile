@@ -61,16 +61,22 @@ COPY packages/dev-config/package.json packages/dev-config/
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 COPY packages/api-server-api/package.json packages/api-server-api/
+COPY packages/driver-sdk/package.json packages/driver-sdk/
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
-    PNPM_STORE_DIR=/pnpm-store pnpm install --frozen-lockfile --filter agent-runtime...
+    PNPM_STORE_DIR=/pnpm-store pnpm install --frozen-lockfile --filter agent-runtime... --filter driver-sdk...
 
 COPY packages/dev-config/ packages/dev-config/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime/ packages/agent-runtime/
+COPY packages/driver-sdk/ packages/driver-sdk/
 
 RUN pnpm --filter agent-runtime exec tsup
+# driver-sdk: a dependency-free .mjs shipped at /usr/local/lib for the dam-invoke
+# skill (a sandbox IS an ephemeral Agent, ADR-077, so it lives in the base image
+# every harness inherits, not in one agent's build context).
+RUN pnpm --filter driver-sdk exec tsup
 
 # --legacy deploy would ignore the lockfile; inject-workspace-packages only
 # command-scoped to satisfy modern deploy's guard. Deploy's manifest has
@@ -95,6 +101,7 @@ COPY --from=base /etc/mise/ /etc/mise/
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
+COPY --from=builder /app/packages/driver-sdk/dist/driver-sdk.mjs /usr/local/lib/driver-sdk.mjs
 # The chmod restores world-readability: mise rewrites the lock 0600, which
 # would lock the runtime agent user out after a root-run install in a derived
 # image build — an unreadable lock degrades every shim call to API lookups.

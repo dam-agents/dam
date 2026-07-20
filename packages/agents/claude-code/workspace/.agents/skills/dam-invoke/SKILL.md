@@ -1,15 +1,15 @@
 ---
-name: dam-sandbox
-description: Spawn ephemeral DAM sandbox agents and get back a schema-validated result. Use when asked to spawn a sandbox, run work in an ephemeral/throwaway agent, fan work out to a fresh agent, or run a make/test/eval step in isolation and expect a typed result (a number, a verdict, an object). Provides a small node SDK (spawn / listImages / listConnections).
+name: dam-invoke
+description: Spawn ephemeral DAM agents (Invocations) and get back a schema-validated result. Use when asked to spawn an ephemeral/throwaway agent, fan work out to a fresh agent, or run a make/test/eval step in isolation and expect a typed result (a number, a verdict, an object). Provides a small node SDK (spawn / listImages / listConnections).
 allowed-tools: Bash(node *), Write
 ---
 
-# DAM sandbox
+# DAM invoke
 
-The platform can spawn an **ephemeral sandbox**: a fresh agent that runs one
-prompt to completion, reports one result, and is then reaped. You (the driver)
-create it, hand it a prompt plus the result shape you expect, and get the
-validated result back. The sandbox starts empty, runs unattended, and cannot ask
+The platform can spawn an **ephemeral agent** (an *Invocation*): a fresh agent
+that runs one prompt to completion, reports one result, and is then reaped. You
+(the driver) create it, hand it a prompt plus the result shape you expect, and
+get the validated result back. It starts empty, runs unattended, and cannot ask
 you anything.
 
 Use this to fan work out to fresh agents: a "make" step that produces something,
@@ -18,44 +18,44 @@ with a typed answer.
 
 ## The SDK
 
-A dependency-free node module lives at:
+A dependency-free node module ships in the image at:
 
 ```
-/home/agent/.agents/skills/dam-sandbox/sandbox-sdk.mjs
+/usr/local/lib/driver-sdk.mjs
 ```
 
 It self-configures from the pod environment (no URL or token to pass). Write a
 small `.mjs` script that imports it and run it with `node`.
 
 ```js
-import { spawn, listImages, listConnections, s } from "/home/agent/.agents/skills/dam-sandbox/sandbox-sdk.mjs";
+import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";
 ```
 
 ## Before you spawn: choose the image and connections — do not guess
 
-What the sandbox can do depends entirely on which image it runs and which
+What the Invocation can do depends entirely on which image it runs and which
 connections it gets. Never just take `listImages()[0]`. Instead:
 
 1. Run `listImages()` and `listConnections()` and show the human what is
    available. If it is not obvious which to use, **ask them** which image and
-   which connections the sandbox should get.
-2. **Image:** a sandbox that has to reason (compute, write code, judge) needs an
-   **LLM-capable** harness such as `claude-code`. A non-LLM image (for example a
-   plain shell image) has no model and cannot even start a session — its trigger
-   fails immediately with an auth error and the sandbox just hangs until its
+   which connections it should get.
+2. **Image:** an Invocation that has to reason (compute, write code, judge) needs
+   an **LLM-capable** harness such as `claude-code`. A non-LLM image (for example
+   a plain shell image) has no model and cannot even start a session — its
+   trigger fails immediately with an auth error and it just hangs until its
    deadline.
-3. **Connections:** any sandbox that runs a model needs a **model connection** in
-   `connections`, or it fails to start. Add whatever else the task needs (a repo,
-   an API). Everything you pass must be a subset of your own grants.
+3. **Connections:** any Invocation that runs a model needs a **model connection**
+   in `connections`, or it fails to start. Add whatever else the task needs (a
+   repo, an API). Everything you pass must be a subset of your own grants.
 
-## Quickstart: a sandbox that returns a single integer
+## Quickstart: an Invocation that returns a single integer
 
 Discover what is available, confirm the image and a model connection with the
 human, then spawn:
 
 ```js
 // spawn-demo.mjs
-import { spawn, listImages, listConnections } from "/home/agent/.agents/skills/dam-sandbox/sandbox-sdk.mjs";
+import { spawn, listImages, listConnections } from "/usr/local/lib/driver-sdk.mjs";
 
 const images = await listImages();
 const conns = await listConnections();
@@ -72,10 +72,10 @@ const answer = await spawn({
   template: image.id,
   connections: [model.id],
   prompt: "Compute 6 * 7 and report the result as a single integer.",
-  schema: "integer", // the sandbox must return one integer
+  schema: "integer", // it must return one integer
 });
 
-console.log("sandbox returned:", answer); // 42
+console.log("returned:", answer); // 42
 ```
 
 Run it:
@@ -84,9 +84,9 @@ Run it:
 node ~/spawn-demo.mjs
 ```
 
-`spawn()` blocks until the sandbox reports a result that passes validation, then
-resolves with that result. Progress lines (`[sandbox] spawned ... -> agent-xxx`,
-`[sandbox] done ...`) print to stderr so you can watch it run.
+`spawn()` blocks until the Invocation reports a result that passes validation,
+then resolves with that result. Progress lines (`[invoke] spawned ... -> agent-xxx`,
+`[invoke] done ...`) print to stderr so you can watch it run.
 
 ## `spawn(opts)`
 
@@ -94,9 +94,9 @@ resolves with that result. Progress lines (`[sandbox] spawned ... -> agent-xxx`,
 |---|---|
 | `template` | Template id from `listImages()`. **Preferred.** |
 | `image` | Full image ref (advanced). A bare name fails to pull — use `template`. |
-| `prompt` | What the sandbox should do (required). |
-| `schema` | Result shape the sandbox must return (required). Shorthand or raw JSON Schema. |
-| `connections` | Connection ids to grant the sandbox. Must be a subset of `listConnections()`. Default none. |
+| `prompt` | What the Invocation should do (required). |
+| `schema` | Result shape it must return (required). Shorthand or raw JSON Schema. |
+| `connections` | Connection ids to grant it. Must be a subset of `listConnections()`. Default none. |
 | `label` | Log label. Defaults to the template/image. |
 | `memory` | Memory limit, e.g. `"4Gi"`. Raise it for a heavy node. See below. |
 | `cpu` | CPU limit, e.g. `"2"` or `"500m"`. Inherits the template when omitted. |
@@ -104,8 +104,8 @@ resolves with that result. Progress lines (`[sandbox] spawned ... -> agent-xxx`,
 | `pollMs` | Poll interval, default 5000. |
 | `timeoutMs` | Client backstop. Defaults to just past `ttlMs` so the server fails first. |
 
-Returns the validated result. Throws `SandboxFailed` if the sandbox fails (silent
-exit past its deadline, or an internal error). Let it throw to abort, or wrap in
+Returns the validated result. Throws `SandboxFailed` if it fails (silent exit
+past its deadline, or an internal error). Let it throw to abort, or wrap in
 `try/catch` to retry.
 
 **Give a heavy node more `memory`.** The template's default (often 1Gi) is fine
@@ -142,14 +142,14 @@ inspect the JSON Schema it produces.
 ## Discovery
 
 - `listImages()` -> `[{ id, name, image, description }]`. Use `id` as `template`.
-- `listConnections()` -> `[{ id, name, hosts }]`. The sandbox may carry any
+- `listConnections()` -> `[{ id, name, hosts }]`. The Invocation may carry any
   subset of these and nothing more (**attenuation**). Requesting a connection you
-  don't hold returns 403. If the sandbox needs a connection you lack, ask the
-  human to grant it to this agent first.
+  don't hold returns 403. If it needs a connection you lack, ask the human to
+  grant it to this agent first.
 
 ## Things to know
 
-- **A sandbox is unattended.** No human answers it, so its prompt must let it
+- **An Invocation is unattended.** No human answers it, so its prompt must let it
   make its own calls and run end to end. It reports via a `report_result` tool
   that the platform injects — you don't wire that up, and it's told how in its
   prompt.
@@ -159,5 +159,5 @@ inspect the JSON Schema it produces.
   (a variable you were threading across spawns) is lost. Results already returned
   are gone with it unless your prompt pushed durable output to a connection (e.g.
   a git ref). Design long runs so a rerun is cheap.
-- **Attenuation is real security.** A sandbox can never exceed the connections you
-  grant it, and never exceed your own grants.
+- **Attenuation is real security.** An Invocation can never exceed the connections
+  you grant it, and never exceed your own grants.

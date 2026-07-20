@@ -1,6 +1,6 @@
 ---
 name: dam-loop
-description: Turn a vague goal into a reviewable Design-Build-Test-Learn (DBTL) loop as a workflow.ts script, built on the dam-sandbox SDK. Use when asked to build a loop, iterate on a goal across generations, set up a make/test/eval/curate loop, evolve a candidate, or "generate a workflow" that a human reviews and runs later. This skill writes the script; it does not run it.
+description: Turn a vague goal into a reviewable Design-Build-Test-Learn (DBTL) loop as a workflow.ts script, built on the driver SDK. Use when asked to build a loop, iterate on a goal across generations, set up a make/test/eval/curate loop, evolve a candidate, or "generate a workflow" that a human reviews and runs later. This skill writes the script; it does not run it.
 allowed-tools: Bash(node *), Write, Read
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Bash(node *), Write, Read
 A **loop** carries a candidate through Design, Build, Test, and Learn across
 generations, each generation a set of fresh sandboxes, until a candidate passes
 or a generation cap is hit. This skill helps you turn a human's goal into a
-readable `workflow.ts` that runs the loop on top of the [dam-sandbox](../dam-sandbox/SKILL.md)
+readable `workflow.ts` that runs the loop on top of the [dam-invoke](../dam-invoke/SKILL.md)
 SDK.
 
 **Your job here is to write `workflow.ts`, not to run it.** The human reviews the
@@ -87,7 +87,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T | nul
 }
 ```
 
-Also right-size each node (see the dam-sandbox skill):
+Also right-size each node (see the dam-invoke skill):
 
 - **`memory`** — a Make or Test that clones and runs an install/build OOM-kills at
   the template's small default (often 1Gi). Give those steps `memory: "4Gi"` or
@@ -105,7 +105,7 @@ Also don't ask a sandbox for tooling its image can't reach (an egress-denied
    step checks), what the Test gate is, and where candidates live (which
    connection / repo). Do not start writing until the passing bar is concrete.
 2. **Discover ids and confirm them with the human** so the file is runnable
-   later. Run `listImages()` and `listConnections()` from the dam-sandbox SDK,
+   later. Run `listImages()` and `listConnections()` from the driver SDK,
    show the human what is available, and confirm the choice — do not guess. Every
    step that reasons needs an **LLM-capable image** (e.g. `claude-code`, never a
    plain shell image) and a **model connection**; a non-LLM image or a missing
@@ -130,7 +130,7 @@ Also don't ask a sandbox for tooling its image can't reach (an egress-denied
 // threaded below). No resumability: if the run crashes, knowledge is lost and
 // you rerun from generation 1 — candidates already pushed survive as git refs.
 
-import { spawn, s, SandboxFailed } from "/home/agent/.agents/skills/dam-sandbox/sandbox-sdk.mjs";
+import { spawn, s, SandboxFailed } from "/usr/local/lib/driver-sdk.mjs";
 
 const IMAGE = "<template-id from listImages()>";
 const CONNECTIONS = ["<repo-connection-id>", "<model-connection-id>"]; // subset of your grants
