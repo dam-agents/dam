@@ -30,13 +30,21 @@ function repoLabel(source: SkillSource): string {
 
 /** Splits a scan/publish error into its message and an optional call-to-action
  *  URL, which the services encode as `\nplatform-cta:<url>` (not connected /
- *  access not granted / repo not allow-listed). */
-function SourceError({ error }: { error: string }) {
+ *  access not granted / repo not allow-listed). When there's no server CTA, an
+ *  errored source with sandbox context gets a client-built "Manage connections"
+ *  affordance instead — the server owns only the message. */
+function SourceError({
+  error,
+  onManageConnections,
+}: {
+  error: string;
+  onManageConnections?: () => void;
+}) {
   const { message, cta } = parsePlatformCta(error);
   return (
     <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-[13px] text-danger">
       <span className="flex-1">{message}</span>
-      {cta && (
+      {cta ? (
         <a
           href={cta}
           target="_blank"
@@ -45,6 +53,16 @@ function SourceError({ error }: { error: string }) {
         >
           Fix it →
         </a>
+      ) : (
+        onManageConnections && (
+          <button
+            type="button"
+            onClick={onManageConnections}
+            className="shrink-0 font-semibold underline hover:opacity-80"
+          >
+            Manage connections
+          </button>
+        )
       )}
     </div>
   );
@@ -72,6 +90,7 @@ export function SkillSourceCard({
   onRemove,
   onUpdate,
   onOpenSkill,
+  onManageConnections,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -95,6 +114,9 @@ export function SkillSourceCard({
   onUpdate: (skill: Skill) => void;
   /** Open a skill's SKILL.md render modal (05). */
   onOpenSkill: (skill: Skill) => void;
+  /** Navigate to the sandbox's Connections tab — shown as a "Manage
+   *  connections" affordance on a scan error with no server CTA. */
+  onManageConnections?: () => void;
 }) {
   const loaded = skills !== undefined;
   const list = skills ?? [];
@@ -189,7 +211,9 @@ export function SkillSourceCard({
       </div>
 
       {!loaded && !error && <SkillRowsSkeleton />}
-      {error && <SourceError error={error} />}
+      {error && (
+        <SourceError error={error} onManageConnections={onManageConnections} />
+      )}
       {loaded && !error && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
           No skills in this source.

@@ -50,6 +50,28 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
 
 export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
+/** Both real private-scan failure shapes — a bare GitHub 404 (repo not in the
+ *  connection's grant, or a typo) and a transport-level throw (egress rejected
+ *  at the gateway, no HTTP response) — mean the same thing to the user: the
+ *  connection can't reach the repo. Hedged because a 404 can't distinguish
+ *  "private, ungranted" from "doesn't exist". */
+const SCAN_ACCESS_MESSAGE =
+  "Can't access this repository. If it's private, grant your GitHub connection access to it, " +
+  "then re-scan — otherwise, double-check the repo URL.";
+
+function scanAccessError(): TRPCError {
+  return new TRPCError({ code: "FORBIDDEN", message: SCAN_ACCESS_MESSAGE });
+}
+
+/** A private-scan failure that arrived as a plain Error (not a structured
+ *  upstream envelope) is only the "can't reach the repo" case when it carries a
+ *  transport signature. Anything else rethrows raw so genuine bugs stay
+ *  visible rather than being masked by the friendly message. */
+function isTransportError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /fetch failed|econn|socket|network/i.test(err.message);
+}
+
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
   agentSkillsRepo: AgentSkillsRepository;
@@ -354,7 +376,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           deps.runtimeClient.scan(agentId, gitUrl, src.path),
         );
       } catch (err) {
-        if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
+        // A bare 404 means egress reached GitHub but the repo isn't in the
+        // connection's grant (or doesn't exist) — a "grant access" case, not
+        // the raw "GitHub: Not Found" upstreamToTrpc would produce. Every
+        // other upstream status (403 scope message, 5xx, structured body)
+        // keeps its existing translation.
+        if (err instanceof AgentRuntimeUpstreamError) {
+          if (err.upstream.status === 404) throw scanAccessError();
+          throw upstreamToTrpc(err);
+        }
+        if (isTransportError(err)) throw scanAccessError();
         throw err;
       }
     },

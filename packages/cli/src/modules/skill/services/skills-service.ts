@@ -264,6 +264,16 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
             .trim();
           return err({ kind: "source-needs-connection", message, cta });
         }
+        // A FORBIDDEN carries no cta (the server owns only the message): the
+        // "grant access, then re-scan" scan failure and the pre-existing
+        // "reconnect with the repo scope" 403 both land here — surface the
+        // server message verbatim as the same actionable output (exit 2).
+        if ((e as { data?: { code?: string } })?.data?.code === "FORBIDDEN") {
+          return err({
+            kind: "source-needs-connection",
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
         return classifyWakeError(e);
       }
     },
