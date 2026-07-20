@@ -148,7 +148,7 @@ async function getContextMessages(
 
 export interface ChannelRegistry {
   /** The binding (if any) for a Slack channel: agent, binding owner, and the
-   *  ADR-075 access mode (absent = person-scoped). */
+   *  access mode (absent = person-scoped). */
   resolveSlackBinding(slackChannelId: string): Promise<{
     instanceName: string;
     owner: string;
@@ -766,7 +766,7 @@ export function createSlackWorker(
     });
   }
 
-  // ADR-075 shared mode: the binding is the authorization — anyone Slack
+  // Shared mode: the binding is the authorization — anyone Slack
   // admits to the channel drives the agent under the agent's credentials.
   async function relaySharedTurn(args: {
     channel: string;

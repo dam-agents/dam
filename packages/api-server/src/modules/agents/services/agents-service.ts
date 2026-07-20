@@ -950,7 +950,7 @@ export function createAgentsService(deps: {
       if (existing && existing.agentId !== id)
         return err({ type: "ChannelAlreadyBound" as const });
 
-      // Mode is fixed per binding (ADR-075): flipping it must be a deliberate
+      // Mode is fixed per binding: flipping it must be a deliberate
       // disconnect + reconnect, never a side effect of re-connecting.
       const requestedMode = mode ?? "person-scoped";
       if (existing && (existing.mode ?? "person-scoped") !== requestedMode)

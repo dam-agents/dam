@@ -65,7 +65,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
-      // Pure-API shared-mode coverage (ADR-075, no storageState); runs after
+      // Pure-API shared-mode coverage (no storageState); runs after
       // "slack" because rebinding replaces the agent's single Slack binding.
       name: "slack-shared",
       testMatch: /08-slack-shared\.spec\.ts$/,

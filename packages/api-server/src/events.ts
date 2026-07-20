@@ -71,7 +71,7 @@ export type SlackConnected = {
   type: EventType.SlackConnected;
   agentId: string;
   slackChannelId: string;
-  /** ADR-075 access mode; absent = person-scoped. */
+  /** Access mode; absent = person-scoped. */
   mode?: "shared";
 };
 

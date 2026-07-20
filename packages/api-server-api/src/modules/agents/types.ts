@@ -24,7 +24,7 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
-  /** Access mode of the binding (ADR-075); absent = person-scoped. */
+  /** Access mode of the binding; absent = person-scoped. */
   mode?: "shared" | "person-scoped";
 }
 
@@ -84,7 +84,7 @@ export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
   | { type: "ChannelAlreadyBound" }
-  /** Mode is fixed per binding (ADR-075): switching requires disconnect + reconnect. */
+  /** Mode is fixed per binding: switching requires disconnect + reconnect. */
   | { type: "ModeChangeRequiresRebind" };
 
 export type ConnectSlackResult =

@@ -5,7 +5,7 @@ import { createApiClient } from "../lib/api-client.js";
 import { getAccessToken } from "../lib/auth.js";
 import { agentName, echoUrl, sentinel } from "../lib/fixtures.js";
 
-// Mode is fixed per binding (ADR-075), so shared coverage gets its own
+// Mode is fixed per binding, so shared coverage gets its own
 // channel; rebinding replaces the agent's single Slack binding from 07.
 const sharedChannelId = "C-E2E-SHARED";
 // Never logs in, links no account, holds no platform identity — channel

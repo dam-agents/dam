@@ -142,7 +142,7 @@ export interface AgentView {
     | {
         type: "slack";
         slackChannelId: string;
-        /** ADR-075 access mode; absent = person-scoped. */
+        /** Access mode; absent = person-scoped. */
         mode?: "shared" | "person-scoped";
       }
     | { type: "telegram" }

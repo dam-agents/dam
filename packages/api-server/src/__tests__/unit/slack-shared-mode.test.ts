@@ -98,7 +98,7 @@ const shared: Binding = {
   mode: "shared",
 };
 
-describe("slack shared-mode access (ADR-075)", () => {
+describe("slack shared-mode access", () => {
   it("shared: relays a mention from an arbitrary channel member — no login, no allow-list", async () => {
     const h = harness({ binding: shared });
     await h.mention(STRANGER);
