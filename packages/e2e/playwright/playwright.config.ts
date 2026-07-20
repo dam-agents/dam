@@ -81,6 +81,14 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // Ambient mode on a shared binding (pure API, no storageState); runs
+      // after "slack-inchat" because it too replaces the single Slack binding.
+      name: "slack-ambient",
+      testMatch: /10-slack-ambient\.spec\.ts$/,
+      dependencies: ["slack-inchat"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       // Creates and deletes its own session, so it leaves no residue for other
       // specs; depends on "agent" only to gate on a provisioned running agent.
       name: "session-delete",
@@ -94,7 +102,9 @@ export default defineConfig({
       // Listed late so its harness recycles on env changes can't interrupt
       // the message-driven suites.
       name: "user-env",
-      testMatch: /09-.*\.spec\.ts$/,
+      // Exact match — a numeral-prefix glob would also capture the Slack
+      // specs sharing the prefix and run them twice, outside their chain.
+      testMatch: /09-user-env\.spec\.ts$/,
       dependencies: ["agent"],
       use: { ...devices["Desktop Chrome"] },
     },
@@ -112,7 +122,9 @@ export default defineConfig({
       // maxUnavailable needs an alpha feature gate to evict it). Nothing here
       // needs the agent Ready afterwards, so this runs last.
       name: "connection-regrant",
-      testMatch: /10-.*\.spec\.ts$/,
+      // Exact match — the numeral-prefix glob would also capture the ambient
+      // Slack spec sharing the prefix and run it twice, outside its chain.
+      testMatch: /10-connection-regrant\.spec\.ts$/,
       dependencies: ["egress-path-rules"],
       use: { ...devices["Desktop Chrome"], storageState },
     },

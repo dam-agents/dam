@@ -3,6 +3,7 @@ import type {
   E2eService,
   SlackFireCommandInput,
   SlackFireMentionInput,
+  SlackFireMessageInput,
   SlackOutboundRecord,
 } from "api-server-api";
 import type { AppRouter as MockAppRouter } from "mock-agent-api";
@@ -11,6 +12,7 @@ import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface SlackE2eControl {
   fireMention(event: SlackFireMentionInput): Promise<void>;
+  fireMessage(event: SlackFireMessageInput): Promise<void>;
   fireCommand(command: SlackFireCommandInput): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
@@ -62,6 +64,10 @@ export function createE2eService(deps: {
       withClient(agentId, (c) => c.scriptedMock.performFetch.mutate(input)),
     slackFireMention: async (input) => {
       await requireSlack().fireMention(input);
+      return { ok: true };
+    },
+    slackFireMessage: async (input) => {
+      await requireSlack().fireMessage(input);
       return { ok: true };
     },
     slackFireCommand: async (input) => {
