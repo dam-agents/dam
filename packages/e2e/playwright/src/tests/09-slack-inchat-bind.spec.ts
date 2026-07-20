@@ -13,29 +13,16 @@ const freshChannelId = "C-E2E-INCHAT-FRESH";
 // A Slack user with no linked platform identity — channel membership only.
 const strangerSlackUserId = "U-E2E-INCHAT-STRANGER";
 
-test("in-chat /bind offers a connect link on an unbound channel", async () => {
-  test.setTimeout(120_000);
-  const token = await getAccessToken();
-  const api = createApiClient(token);
-  await waitForAgentRunning(api, agentName);
-
-  const { ack } = await api.e2e.slackFireCommand.mutate({
-    text: "bind",
-    userId: strangerSlackUserId,
-    channelId: freshChannelId,
-  });
-  // Anyone may start a bind; the agent picker (behind the link) is where
-  // ownership is enforced.
-  expect(ack).toContain("Connect an agent");
-});
-
-test("a bind cannot override an existing binding (prior binder must unbind first)", async () => {
-  test.setTimeout(120_000);
+// One ordered test: the initial connect starts the fake Slack gateway (the
+// e2e command endpoints require it), so every /bind and /unbind assertion runs
+// against a live gateway without depending on a prior spec's state.
+test("in-chat bind/unbind slash-command behavior", async () => {
+  test.setTimeout(180_000);
   const token = await getAccessToken();
   const api = createApiClient(token);
   const agentId = await waitForAgentRunning(api, agentName);
 
-  await test.step("owner binds the channel in shared mode", async () => {
+  await test.step("owner binds a channel in shared mode (starts the gateway)", async () => {
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: inchatChannelId,
@@ -43,7 +30,18 @@ test("a bind cannot override an existing binding (prior binder must unbind first
     });
   });
 
-  await test.step("/bind on the bound channel is refused", async () => {
+  await test.step("/bind on an unbound channel offers a connect link", async () => {
+    const { ack } = await api.e2e.slackFireCommand.mutate({
+      text: "bind",
+      userId: strangerSlackUserId,
+      channelId: freshChannelId,
+    });
+    // Anyone may start a bind; the agent picker (behind the link) is where
+    // ownership is enforced.
+    expect(ack).toContain("Connect an agent");
+  });
+
+  await test.step("/bind on the bound channel is refused (no override)", async () => {
     const { ack } = await api.e2e.slackFireCommand.mutate({
       text: "bind",
       userId: strangerSlackUserId,
