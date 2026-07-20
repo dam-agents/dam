@@ -1075,6 +1075,11 @@ controller:
 # per entry; set an entry to `null` to drop it. Fields named identically to
 # `controller.agent.templateDefaults.*` override the chart-wide default for
 # agents created from this template.
+# The rendered image ref (`repository:tag`, tag defaulting to the chart
+# appVersion) is the template's version identity: existing agents are offered
+# an upgrade when it differs from what they captured at create. Pinning `tag`
+# across releases therefore opts that template out of upgrade detection, and
+# non-image drift (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 # `category` groups the entry in the creation wizard's Step 1: "harness"

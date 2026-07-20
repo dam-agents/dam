@@ -385,6 +385,7 @@ export function executeTemplateUpgrade(deps: {
 }) {
   return async (
     id: string,
+    expectedToImage?: string,
   ): Promise<
     { ok: true; value: InfraAgent } | { ok: false; error: UpgradeAgentError }
   > => {
@@ -393,6 +394,11 @@ export function executeTemplateUpgrade(deps: {
     if (!infra.templateId) return err({ type: "TemplateNotFound" as const });
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return err({ type: "TemplateNotFound" as const });
+
+    // Binding consent: the confirmed image must still be what the template
+    // ships, or the user would apply a movement they never reviewed.
+    if (expectedToImage !== undefined && expectedToImage !== tmpl.spec.image)
+      return err({ type: "TemplateMoved" as const });
 
     const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
     // Already current — idempotent success, no patch, no pod roll.
@@ -1266,14 +1272,14 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async upgrade(id) {
+    async upgrade(id, expectedToImage) {
       const result = await executeTemplateUpgrade({
         owner: deps.owner,
         getAgent: (agentId) => deps.repo.get(agentId, deps.owner),
         readTemplateSpec: deps.readTemplateSpec,
         patchImage: (agentId, image) =>
           deps.repo.updateSpec(agentId, deps.owner, { image }),
-      })(id);
+      })(id, expectedToImage);
       if (!result.ok) return result;
       emit({ type: EventType.AgentUpdated, agentId: id });
       return ok(await project(result.value));

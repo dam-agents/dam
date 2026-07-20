@@ -99,7 +99,10 @@ export type UpgradeAgentError =
   | { type: "AgentNotFound" }
   /** Created from a raw image, or the template is no longer installed —
    *  deliberately one bucket: either way there is nothing to upgrade to. */
-  | { type: "TemplateNotFound" };
+  | { type: "TemplateNotFound" }
+  /** The template no longer ships the image the user consented to
+   *  (moved between showing the diff and confirming) — re-review. */
+  | { type: "TemplateMoved" };
 
 export type UpgradeAgentResult =
   | { ok: true; value: Agent }
@@ -178,8 +181,13 @@ export interface AgentsService {
   pause: (id: string) => Promise<Agent | null>;
   /** Re-apply the current template's image to this agent (#1077). A running
    *  agent rolls onto the new image; a hibernated one picks it up on its
-   *  next wake. Idempotent — an already-current agent succeeds unchanged. */
-  upgrade: (id: string) => Promise<UpgradeAgentResult>;
+   *  next wake. Idempotent — an already-current agent succeeds unchanged.
+   *  When `expectedToImage` is given, fails with TemplateMoved unless the
+   *  template still ships exactly that image (binding consent). */
+  upgrade: (
+    id: string,
+    expectedToImage?: string,
+  ) => Promise<UpgradeAgentResult>;
   /**
    * Ensure the agent's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps

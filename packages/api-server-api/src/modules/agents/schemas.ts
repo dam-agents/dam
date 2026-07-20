@@ -40,7 +40,11 @@ export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
 export const agentStopInputSchema = idSchema;
 export const agentPauseInputSchema = idSchema;
-export const agentUpgradeInputSchema = idSchema;
+// expectedToImage makes the confirmed diff binding: the server applies the
+// upgrade only if the template still ships that image (compare-and-swap).
+export const agentUpgradeInputSchema = idSchema.extend({
+  expectedToImage: z.string().min(1).optional(),
+});
 export const agentDisconnectSlackInputSchema = idSchema;
 
 export const agentCreateInputSchema = z

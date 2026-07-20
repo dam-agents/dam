@@ -126,7 +126,7 @@ export const agentsRouter = t.router({
   upgrade: manageAgentsProcedure
     .input(agentUpgradeInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const res = await ctx.agents.upgrade(input.id);
+      const res = await ctx.agents.upgrade(input.id, input.expectedToImage);
       if (res.ok) return toView(res.value);
       switch (res.error.type) {
         case "AgentNotFound":
@@ -135,6 +135,12 @@ export const agentsRouter = t.router({
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "No template to upgrade from",
+          });
+        case "TemplateMoved":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "The template changed since you reviewed the upgrade — check the new version and retry",
           });
       }
     }),

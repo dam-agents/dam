@@ -127,4 +127,25 @@ describe("template upgrade flow", () => {
       error: { type: "AgentNotFound" },
     });
   });
+
+  it("applies when the template still ships the confirmed image", async () => {
+    const h = harness();
+    const res = await h.run("agent-1", "quay.io/dam-agents/claude-code:0.2.8");
+    expect(res.ok && res.value.spec.image).toBe(
+      "quay.io/dam-agents/claude-code:0.2.8",
+    );
+  });
+
+  it("rejects a confirmation for an image the template no longer ships", async () => {
+    const h = harness({
+      templateImage: "quay.io/dam-agents/claude-code:0.2.9",
+    });
+    expect(
+      await h.run("agent-1", "quay.io/dam-agents/claude-code:0.2.8"),
+    ).toEqual({
+      ok: false,
+      error: { type: "TemplateMoved" },
+    });
+    expect(h.patchImage).not.toHaveBeenCalled();
+  });
 });

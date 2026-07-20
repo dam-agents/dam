@@ -33,7 +33,9 @@ export function TemplateUpdateNotice({ agent }: Props) {
       </>
     );
     if (!(await showConfirm(msg, "Upgrade Sandbox"))) return;
-    upgrade.mutate({ id: agent.id });
+    // expectedToImage binds the confirmation to the diff shown above: if the
+    // template moves meanwhile, the server rejects instead of surprising.
+    upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
   };
 
   return (
