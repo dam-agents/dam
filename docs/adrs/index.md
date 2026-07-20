@@ -72,6 +72,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 073 | [Per-template scheduling for runtimeClassName and nodeSelector](073-per-template-scheduling.md) |  | agent-lifecycle | runtimeClassName and nodeSelector become per-template overridable agent-spec fields while all other scheduling stays chart-wide. |
 | 074 | [Unified `drivers:` manifest with pluggable events and default-on built-ins](074-unified-drivers.md) |  | agent-lifecycle | The runtime manifest folds contribution and event kinds into one drivers map resolved through the plugin registry, with built-ins on by default and event handlers now externally overridable. |
 | 075 | [Periodic work on BullMQ](075-periodic-jobs-bullmq.md) |  | api-server | Recurring reconciliation ticks run as BullMQ job schedulers on per-job queues instead of per-replica setInterval loops. |
+| 076 | [Per-channel access modes — shared and person-scoped](076-channel-access-modes.md) |  | channels | Each channel binding picks its access mode at bind time — shared (place-scoped, Agent credentials, open speaker set) or person-scoped (identity linking, allow-list, per-turn forks). |
 
 ## Superseded
 
