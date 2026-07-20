@@ -81,6 +81,9 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
       ? (slackChannel.mode ?? "person-scoped")
       : "person-scoped",
   );
+  const [ambient, setAmbient] = useState(
+    slackChannel?.type === "slack" ? (slackChannel.ambient ?? false) : false,
+  );
   const [users, setUsers] = useState<string[]>(agent?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -108,6 +111,7 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
           id: agent.id,
           slackChannelId: channelId.trim(),
           ...(mode === "shared" ? { mode } : {}),
+          ...(mode === "shared" && ambient ? { ambient: true } : {}),
         });
       } else if (!slackEnabled && slackChannel) {
         await disconnectSlack.mutateAsync({ id: agent.id });
@@ -122,6 +126,22 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
           id: agent.id,
           slackChannelId: channelId.trim(),
           ...(mode === "shared" ? { mode } : {}),
+          ...(mode === "shared" && ambient ? { ambient: true } : {}),
+        });
+      } else if (
+        slackEnabled &&
+        slackChannel &&
+        slackChannel.type === "slack" &&
+        mode === "shared" &&
+        ambient !== (slackChannel.ambient ?? false)
+      ) {
+        // Ambient is mutable (unlike mode): a same-mode re-connect updates
+        // the existing binding in place.
+        await connectSlack.mutateAsync({
+          id: agent.id,
+          slackChannelId: slackChannel.slackChannelId,
+          mode: "shared",
+          ...(ambient ? { ambient: true } : {}),
         });
       }
       await updateAgent.mutateAsync({
@@ -204,6 +224,30 @@ function SlackChannelForm({ agent }: { agent: AgentView | undefined }) {
                 The mode is fixed per binding — disconnect and reconnect to
                 change it.
               </span>
+            )}
+            {mode === "shared" && (
+              <label className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5 cursor-pointer">
+                <Checkbox
+                  checked={ambient}
+                  onCheckedChange={(c) => {
+                    setAmbient(c === true);
+                    setDirty(true);
+                  }}
+                  className="mt-0.5"
+                />
+                <span className="flex flex-col">
+                  <span className="text-[13px] font-semibold text-foreground">
+                    Ambient mode
+                  </span>
+                  <span className="text-[12px] text-muted-foreground">
+                    The agent reads along in the channel and may chime in
+                    without being mentioned when it can clearly help. The
+                    channel is notified when this changes, and it can be
+                    turned off anytime — here or with the in-chat ambient
+                    command.
+                  </span>
+                </span>
+              </label>
             )}
           </div>
 
