@@ -25,14 +25,14 @@ Prerequisites: an IBM Cloud account with the `ibmcloud` CLI logged in (for the V
 
 ### 2. Issue the mTLS certs
 
-Auth is mutual TLS — the VPS and the api-server each present a cert signed by one private CA. Generate everything with one command (the id after the IP is a **cluster id** — one per DAM deployment that will use this VPS; `[a-z0-9-]`, ≤16 chars, becomes that cluster's container namespace):
+Auth is mutual TLS — the VPS and the api-server each present a cert signed by one private CA. Generate everything with one command (the id after the IP is a **cluster id** — one per DAM deployment that will use this VPS; `[a-z0-9]` only, ≤16 chars, no hyphens — it becomes that cluster's container namespace, and hyphens would make the hyphen-joined container names ambiguous across clusters):
 
 ```sh
 mise run dam-vm:issue-certs -- <floating-ip> <cluster-id> [<cluster-id> ...]
-# e.g. mise run dam-vm:issue-certs -- 203.0.113.7 dam-dev
+# e.g. mise run dam-vm:issue-certs -- 203.0.113.7 damdev
 ```
 
-This writes a CA + a server leaf (with the floating-IP SAN) + one client leaf per cluster into [`cert/`](./) (git-ignored), and **prints a ready-to-paste helm block per cluster**. Re-running reuses the CA (add a cluster anytime); `CERT_DAYS=` sets validity (default 3650). Managed alternative: issue the same certs from an IBM Cloud Secrets Manager private CA — no code change, just PEMs.
+This writes a CA + a server leaf (with the floating-IP SAN) + one client leaf per cluster into [`cert/`](./) (git-ignored), and **prints a ready-to-paste helm block per cluster**. Re-running reuses the CA (add a cluster anytime); `CERT_DAYS=` sets leaf validity (default 825; the CA lives 10 years). Managed alternative: issue the same certs from an IBM Cloud Secrets Manager private CA — no code change, just PEMs.
 
 ### 3. Provision the VPS
 
@@ -101,7 +101,7 @@ The container appears as `dam-<cluster>-<agentId>`: `ssh ubuntu@<floating-ip> su
 
 - Service: `systemctl status dam-vm`, logs: `journalctl -u dam-vm -f`
 - Containers: `incus list dam-` — named `dam-<cluster>-<agentId>`. Ephemeral: no live connection and no activity for `DAM_VM_IDLE_DELETE_MIN` (default 60 min) → deleted, filesystem and all. Delete one manually: `incus delete -f dam-<cluster>-<agentId>`.
-- Server knobs (env on the systemd unit): `DAM_VM_PORT`, `DAM_VM_LISTEN_HOST`, `DAM_VM_IMAGE`, `DAM_VM_MAX_CONTAINERS`, `DAM_VM_IDLE_DELETE_MIN`, `DAM_VM_TLS_CERT_FILE`, `DAM_VM_TLS_KEY_FILE`, `DAM_VM_CLIENT_CA_FILE`
+- Server knobs (`KEY=value` lines in `/etc/dam-vm/env`, read by the systemd unit and preserved across re-provisioning; `systemctl restart dam-vm` to apply): `DAM_VM_PORT`, `DAM_VM_LISTEN_HOST`, `DAM_VM_IMAGE`, `DAM_VM_MAX_CONTAINERS`, `DAM_VM_IDLE_DELETE_MIN`, `DAM_VM_TLS_CERT_FILE`, `DAM_VM_TLS_KEY_FILE`, `DAM_VM_CLIENT_CA_FILE`
 
 ## Tests
 

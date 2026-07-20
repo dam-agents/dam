@@ -60,9 +60,13 @@ const AGENT_ID_RE = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
 // cert, which namespaces its containers. The CN must ALREADY be a canonical
 // cluster id (same shape `dam-vm:issue-certs` enforces) — we do NOT sanitize
 // or truncate, because silently mapping two distinct CNs onto one namespace
-// would let two clusters share VMs. A non-canonical CN is rejected. This
-// bounds `dam-<cluster>-<agentId>` under Incus's 63-char name limit too.
-const CLUSTER_ID_RE = /^[a-z0-9]([a-z0-9-]{0,14}[a-z0-9])?$/;
+// would let two clusters share VMs. A non-canonical CN is rejected. No
+// hyphens: `-` separates the name segments, so a hyphenated cluster id would
+// make `dam-<cluster>-<agentId>` ambiguous (cluster foo + agent bar-x ≡
+// cluster foo-bar + agent x — a cross-cluster collision) and let one cluster's
+// prefix-scoped cap count a sibling's containers. This bounds the composed
+// name under Incus's 63-char limit too.
+const CLUSTER_ID_RE = /^[a-z0-9]{1,16}$/;
 const clusterIdFromCert = (peerCert) => {
   const cn = peerCert?.subject?.CN || "";
   return CLUSTER_ID_RE.test(cn) ? cn : "";
@@ -118,8 +122,20 @@ const touch = (name) =>
 
 // All managed containers share the `dam-` prefix (also guarantees the
 // Incus-required leading letter); the cluster segment isolates deployments.
-async function ensureContainer(clusterId, agentId) {
+// Concurrent calls for the same name share one in-flight ensure — otherwise
+// two cold connections would both `incus launch` and one would fail.
+const inflight = new Map(); // container name → Promise<name>
+function ensureContainer(clusterId, agentId) {
   const name = `dam-${clusterId}-${agentId}`;
+  let p = inflight.get(name);
+  if (!p) {
+    p = doEnsure(name, clusterId).finally(() => inflight.delete(name));
+    inflight.set(name, p);
+  }
+  return p;
+}
+
+async function doEnsure(name, clusterId) {
   if (!(await exists(name))) {
     // Cap is per-cluster (prefix-scoped) so one deployment can't exhaust the
     // shared host and DoS the others.
@@ -247,6 +263,12 @@ wss.on("connection", async (ws, req) => {
   if (argv.length === 0) argv = ["bash", "-l"];
   const cols = Math.min(500, parseInt(url.searchParams.get("cols"), 10) || 80);
   const rows = Math.min(300, parseInt(url.searchParams.get("rows"), 10) || 24);
+  // W3C trace context forwarded by dam-vm so the command joins the session's
+  // trace (same contract as the dam-run exec server).
+  const traceEnv = ["traceparent", "tracestate"].flatMap((k) => {
+    const v = url.searchParams.get(k);
+    return v ? ["--env", `${k.toUpperCase()}=${v}`] : [];
+  });
 
   let name;
   try {
@@ -265,6 +287,7 @@ wss.on("connection", async (ws, req) => {
       name,
       "--env",
       "TERM=xterm-256color",
+      ...traceEnv,
       "--cwd",
       "/root",
       "--",

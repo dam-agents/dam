@@ -68,34 +68,40 @@ before(async () => {
     "-extfile",
     p("san.ext"),
   ]);
-  // client leaf (CN = cluster id), signed by the same CA
-  ossl([
-    "req",
-    "-newkey",
-    "rsa:2048",
-    "-nodes",
-    "-keyout",
-    p("cli.key"),
-    "-out",
-    p("cli.csr"),
-    "-subj",
-    "/CN=test-cluster",
-  ]);
-  ossl([
-    "x509",
-    "-req",
-    "-in",
-    p("cli.csr"),
-    "-CA",
-    p("ca.crt"),
-    "-CAkey",
-    p("ca.key"),
-    "-CAcreateserial",
-    "-days",
-    "1",
-    "-out",
-    p("cli.crt"),
-  ]);
+  // client leaves signed by the same CA: a canonical CN (= cluster id) and a
+  // hyphenated one (hyphens would make container names ambiguous → rejected)
+  for (const [file, cn] of [
+    ["cli", "testcluster"],
+    ["hyph", "test-cluster"],
+  ]) {
+    ossl([
+      "req",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      p(`${file}.key`),
+      "-out",
+      p(`${file}.csr`),
+      "-subj",
+      `/CN=${cn}`,
+    ]);
+    ossl([
+      "x509",
+      "-req",
+      "-in",
+      p(`${file}.csr`),
+      "-CA",
+      p("ca.crt"),
+      "-CAkey",
+      p("ca.key"),
+      "-CAcreateserial",
+      "-days",
+      "1",
+      "-out",
+      p(`${file}.crt`),
+    ]);
+  }
   clientCert = readFileSync(p("cli.crt"), "utf8");
   clientKey = readFileSync(p("cli.key"), "utf8");
   caCert = readFileSync(p("ca.crt"), "utf8");
@@ -167,4 +173,13 @@ test("rejects a malformed agent id (authenticated client)", async () => {
     { "x-dam-vm-agent": "Not.Valid" },
   );
   assert.deepEqual(r, { code: 4400, reason: "bad agent id" });
+});
+
+test("rejects a CA-signed client whose CN is not a canonical cluster id", async () => {
+  const r = await closeOf(
+    { cert: readFileSync(p("hyph.crt")), key: readFileSync(p("hyph.key")) },
+    { argv: ARGV },
+    AGENT,
+  );
+  assert.deepEqual(r, { code: 4401, reason: "client cert has no usable CN" });
 });

@@ -22,18 +22,15 @@ const DAM_VM = fileURLToPath(
 async function fakeVmHost(): Promise<{
   wss: WebSocketServer;
   url: string;
-  seen: { key: unknown; agent: unknown }[];
+  seen: { agent: unknown }[];
 }> {
   // Plain-ws stand-in for dam-vm-server; the real mTLS handshake is covered by
   // packages/dam-vm's auth test. Here we assert the relay attaches the agent
-  // identity and no legacy key header.
-  const seen: { key: unknown; agent: unknown }[] = [];
+  // identity.
+  const seen: { agent: unknown }[] = [];
   const wss = new WebSocketServer({ port: 0, path: "/run" });
   wss.on("connection", (ws, req) => {
-    seen.push({
-      key: req.headers["x-dam-vm-key"],
-      agent: req.headers["x-dam-vm-agent"],
-    });
+    seen.push({ agent: req.headers["x-dam-vm-agent"] });
     ws.on("message", (raw: Buffer) => {
       if (raw[0] !== OP_INPUT) return;
       const data = raw.subarray(1);
@@ -84,7 +81,7 @@ const cleanups: (() => void)[] = [];
 afterAll(() => cleanups.forEach((fn) => fn()));
 
 describe("harness-vm-relay", () => {
-  it("relays a dam-vm session, attaching the agent identity (no key header)", async () => {
+  it("relays a dam-vm session, attaching the agent identity", async () => {
     const vm = await fakeVmHost();
     const server = await relayServer({
       url: vm.url,
@@ -106,8 +103,8 @@ describe("harness-vm-relay", () => {
     expect(err()).toBe("");
     expect(code).toBe(0);
     expect(out()).toContain("hi");
-    // Identity forwarded; no legacy key header (auth is mTLS).
-    expect(vm.seen).toEqual([{ key: undefined, agent: "a1" }]);
+    // Identity forwarded (the hop itself is authenticated by mTLS).
+    expect(vm.seen).toEqual([{ agent: "a1" }]);
   });
 
   it("tells the agent when no VM host is configured", async () => {

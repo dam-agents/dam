@@ -43,7 +43,7 @@ systemctl enable --now incus
 # image at /var/lib/incus/disks/default.img (sparse, grows up to `size`).
 # If you attach a secondary block volume, replace `size: 50GiB` with
 # `source: /dev/vdb` (or whatever the device is) for better performance.
-incus admin init --preseed << '__LOCKI_EOF__'
+incus admin init --preseed << '__PRESEED_EOF__'
 storage_pools:
   - name: default
     driver: btrfs
@@ -78,7 +78,7 @@ profiles:
         path: /dev/kmsg
         source: /dev/kmsg
         type: unix-char
-__LOCKI_EOF__
+__PRESEED_EOF__
 
 # --- Phase 6: install mTLS material ----------------------------------------
 # The api-server dials the VPS over the public internet, authenticated by
@@ -117,6 +117,9 @@ Wants=network-online.target
 After=network-online.target incus.service
 
 [Service]
+# Optional server knobs (DAM_VM_* — see README) survive re-provisioning here;
+# this unit file itself is overwritten on every provision run.
+EnvironmentFile=-/etc/dam-vm/env
 ExecStart=/usr/bin/node /opt/dam-vm/dam-vm-server.mjs
 Restart=always
 RestartSec=2
