@@ -73,6 +73,14 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // In-chat bind/unbind slash commands (pure API, no storageState); runs
+      // after "slack-shared" because it too replaces the single Slack binding.
+      name: "slack-inchat",
+      testMatch: /09-slack-inchat-bind\.spec\.ts$/,
+      dependencies: ["slack-shared"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       // Creates and deletes its own session, so it leaves no residue for other
       // specs; depends on "agent" only to gate on a provisioned running agent.
       name: "session-delete",
