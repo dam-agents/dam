@@ -106,6 +106,23 @@ export function createInvocationsService(deps: {
     }
   }
 
+  // The `report_result` tool takes an untyped `result` arg, so some target
+  // harnesses deliver it JSON-encoded: a `42` arrives as the string "42", an
+  // object as its JSON text. Validation is structural, not truth, so accept a
+  // stringified payload when parsing it yields a value that fits the schema.
+  function coerceResult(result: unknown, validate: ValidateFunction): unknown {
+    if (validate(result)) return result;
+    if (typeof result === "string") {
+      try {
+        const parsed: unknown = JSON.parse(result);
+        if (validate(parsed)) return parsed;
+      } catch {
+        // Not JSON — let the original value fail validation with a real error.
+      }
+    }
+    return result;
+  }
+
   return {
     async spawn(input) {
       // Attenuation: a target may only carry a subset of the driver's grants.
@@ -183,10 +200,11 @@ export function createInvocationsService(deps: {
         return { ok: false, errors: `invocation already ${row.status}` };
       }
       const validate = compileSchema(row.resultSchema);
-      if (!validate(result)) {
+      const value = coerceResult(result, validate);
+      if (!validate(value)) {
         return { ok: false, errors: ajv.errorsText(validate.errors) };
       }
-      const stored = await deps.repo.complete(invocationId, result);
+      const stored = await deps.repo.complete(invocationId, value);
       if (!stored) {
         // Lost a race with the liveness sweep — the Invocation was just failed.
         return { ok: false, errors: "invocation is no longer running" };
