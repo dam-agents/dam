@@ -56,15 +56,15 @@ const spawnBody = z
 /** Mounts the driver-facing spawn primitive on the harness surface. Every route
  *  is scoped to the driver's identity — the `:id` the waypoint already
  *  authenticated. Create-then-poll: POST returns an id, GET reports status +
- *  the schema-validated result. The path stays `/sandboxes` (the driver SDK's
- *  wire contract); the domain term is Invocation. */
+ *  the schema-validated result. The path is `/invocations`, matching the
+ *  domain term; the driver SDK is wired to the same path. */
 export function mountInvocationRoutes(
   app: Hono,
   deps: InvocationEndpointsDeps,
 ): void {
   // Spawn an Invocation as the driver (:id). The driver's own connection grants
   // are the attenuation ceiling for the requested subset.
-  app.post("/api/agents/:id/sandboxes", async (c) => {
+  app.post("/api/agents/:id/invocations", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
@@ -123,9 +123,9 @@ export function mountInvocationRoutes(
   });
 
   // Poll an Invocation the driver spawned.
-  app.get("/api/agents/:id/sandboxes/:sandboxId", async (c) => {
+  app.get("/api/agents/:id/invocations/:invocationId", async (c) => {
     const driverId = c.req.param("id")!;
-    const invocationId = c.req.param("sandboxId")!;
+    const invocationId = c.req.param("invocationId")!;
     const verified = await resolveAgent(deps.k8s, driverId);
     if (!verified) return c.json({ error: "not found" }, 404);
 

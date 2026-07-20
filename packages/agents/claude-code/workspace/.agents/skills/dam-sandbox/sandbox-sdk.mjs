@@ -215,7 +215,7 @@ export async function spawn(opts = {}) {
   if (memory !== undefined) body.memory = memory;
   if (cpu !== undefined) body.cpu = cpu;
 
-  const { id } = await req("POST", "/sandboxes", body);
+  const { id } = await req("POST", "/invocations", body);
   const tag = label ?? template ?? image;
   log(`spawned ${tag} -> ${id}`);
 
@@ -224,7 +224,7 @@ export async function spawn(opts = {}) {
   for (;;) {
     let view;
     try {
-      view = await req("GET", `/sandboxes/${encodeURIComponent(id)}`);
+      view = await req("GET", `/invocations/${encodeURIComponent(id)}`);
       consecutiveErrors = 0;
     } catch (err) {
       // A transient poll failure shouldn't kill a long loop; give up only after
