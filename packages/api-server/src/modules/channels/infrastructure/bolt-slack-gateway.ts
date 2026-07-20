@@ -45,6 +45,39 @@ export function createBoltSlackGateway(
         });
       });
 
+      bolt.event("message", async ({ event, context }) => {
+        // Ambient reading: deliver only plain human channel messages. Bot
+        // posts (including the agent's own replies) are skipped to prevent
+        // loops; edits/joins/etc. carry a subtype (file_share excepted —
+        // that's a plain message with an upload); DMs are out of scope; and
+        // a message that mentions the bot already arrives via app_mention.
+        const msg = event as {
+          channel: string;
+          channel_type?: string;
+          subtype?: string;
+          bot_id?: string;
+          user?: string;
+          ts: string;
+          thread_ts?: string;
+          text?: string;
+          files?: SlackImageFile[];
+        };
+        if (msg.channel_type !== "channel" && msg.channel_type !== "group")
+          return;
+        if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
+        if (msg.bot_id || !msg.user) return;
+        const botUserId = context.botUserId;
+        if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
+        await handlers.onMessage({
+          user: msg.user,
+          channel: msg.channel,
+          ts: msg.ts,
+          threadTs: msg.thread_ts,
+          text: msg.text ?? "",
+          files: msg.files,
+        });
+      });
+
       bolt.command(deps.commandName, async ({ command, ack }) => {
         await handlers.onCommand(
           {

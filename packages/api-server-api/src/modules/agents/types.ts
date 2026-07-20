@@ -26,6 +26,9 @@ export interface SlackChannel extends Channel {
   slackChannelId: string;
   /** Access mode of the binding; absent = person-scoped. */
   mode?: "shared" | "person-scoped";
+  /** Ambient mode (shared bindings only): the agent reads along in the
+   *  channel and may chime in without being mentioned; absent = off. */
+  ambient?: boolean;
 }
 
 export type ChannelConfig = SlackChannel;
@@ -165,6 +168,7 @@ export interface AgentsService {
     id: string,
     slackChannelId: string,
     mode?: "shared" | "person-scoped",
+    ambient?: boolean,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
   /** Consume a Slack bind flow (minted by the in-chat bind OAuth callback) and

@@ -63,6 +63,7 @@ function harness(opts: {
     async () => OWNER,
     { resolveSlackBinding: async () => opts.binding } as never,
     async () => {},
+    async () => {},
     "dam",
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",

@@ -29,8 +29,20 @@ oauth_config:
       - chat:write
       - users:read
       - users:read.email
+      - app_mentions:read
+      # Channel history backs context injection on new sessions, and the
+      # message.* event subscriptions below (ambient mode) require it too.
+      - channels:history
+      - groups:history
 
 settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      # Plain channel messages: only read when a binding has ambient mode on;
+      # public and private channels respectively.
+      - message.channels
+      - message.groups
   interactivity:
     is_enabled: true
   org_deploy_enabled: false

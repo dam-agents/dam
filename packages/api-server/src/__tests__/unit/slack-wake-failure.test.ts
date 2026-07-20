@@ -49,6 +49,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
       }),
     } as never,
     async () => {},
+    async () => {},
     "dam",
     async () => true,
     "http://ui",

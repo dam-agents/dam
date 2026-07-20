@@ -104,12 +104,20 @@ export const agentUpdateInputSchema = z.object({
   size: agentSizeSchema.optional(),
 });
 
-export const agentConnectSlackInputSchema = z.object({
-  id: z.string().min(1),
-  slackChannelId: z.string().min(1),
-  // Access mode; absent = person-scoped.
-  mode: z.enum(["shared", "person-scoped"]).optional(),
-});
+export const agentConnectSlackInputSchema = z
+  .object({
+    id: z.string().min(1),
+    slackChannelId: z.string().min(1),
+    // Access mode; absent = person-scoped.
+    mode: z.enum(["shared", "person-scoped"]).optional(),
+    // Ambient mode; absent = off. Unlike mode it is mutable: re-connecting
+    // with the same mode updates it in place.
+    ambient: z.boolean().optional(),
+  })
+  .refine((v) => !v.ambient || v.mode === "shared", {
+    message: "Ambient mode requires a shared binding",
+    path: ["ambient"],
+  });
 
 export const agentListTelegramChatsInputSchema = z.object({
   agentId: z.string().min(1),

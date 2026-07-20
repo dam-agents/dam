@@ -419,6 +419,7 @@ export type {
   SlackFireCommandInput,
   SlackFireCommandResult,
   SlackFireMentionInput,
+  SlackFireMessageInput,
   SlackOutboundRecord,
   SlackReadOutboundResult,
 } from "./modules/e2e/types.js";

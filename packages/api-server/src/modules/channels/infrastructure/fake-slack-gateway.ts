@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import type {
+  SlackChannelMessageEvent,
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
@@ -8,6 +9,9 @@ import type {
 
 export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: SlackMentionEvent): Promise<void>;
+  /** A plain (non-mention) channel message, as the real gateway would deliver
+   *  it post-filtering: human-authored, no subtype, not a DM. */
+  fireMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
@@ -86,6 +90,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     async fireMention(event) {
       await requireHandlers().onMention(event);
+    },
+
+    async fireMessage(event) {
+      await requireHandlers().onMessage(event);
     },
 
     async fireCommand(command) {
