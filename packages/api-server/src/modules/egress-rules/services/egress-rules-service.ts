@@ -77,7 +77,7 @@ export function createEgressRulesService(
         });
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
-      const row = await deps.repo.insert({
+      let row = await deps.repo.insert({
         id: randomUUID(),
         agentId: input.agentId,
         host: input.host,
@@ -88,6 +88,38 @@ export function createEgressRulesService(
         decidedBy: deps.ownerSub,
         source: "manual",
       });
+      // Insert conflicted with an existing rule carrying a different verdict.
+      // Nothing changed, so bail before the create audit log and L7 side
+      // effect — changing a verdict is the update/edit path's job.
+      if (row.verdict !== input.verdict) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `an equivalent rule already exists with verdict '${row.verdict}' — edit the existing rule instead`,
+        });
+      }
+      // Port is outside the rule's unique key and not editable, so a
+      // port-differing duplicate can't be stored or fixed by edit — reject
+      // rather than return a rule that misrepresents the requested port.
+      if ((row.port ?? null) !== (input.port ?? null)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `an equivalent rule already exists ${row.port ? `for port ${row.port}` : "without a port"} — revoke it and create the rule again`,
+        });
+      }
+      // Same-verdict duplicate of a preset/connection row: the manual create
+      // takes ownership (same intent as edit-promotes-to-manual), so a later
+      // preset sweep or connection revoke won't silently drop a rule the
+      // user explicitly asked for.
+      if (row.source !== "manual" && row.source !== "inbox") {
+        row =
+          (await deps.repo.updatePromoteToManual({
+            id: row.id,
+            method: row.method,
+            pathPattern: row.pathPattern,
+            verdict: row.verdict,
+            decidedBy: deps.ownerSub,
+          })) ?? row;
+      }
       securityLog("info", "egress_rule.create", {
         category: "authz-list",
         actor: deps.ownerSub,

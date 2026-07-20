@@ -37,6 +37,7 @@ function fakeRepo(overrides: Partial<EgressRulesRepository> = {}) {
     listConnectionDerivedForAgent: async () => [],
     hasUserOwnedRuleForHost: async () => false,
     findMatch: async () => null,
+    getActiveByTuple: async () => null,
     getById: async () => null,
     revoke: async () => {},
     updatePromoteToManual: async () => null,
