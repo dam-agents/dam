@@ -108,7 +108,8 @@ RUN set -eu; \
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
-COPY --chmod=755 packages/platform-base/dam-vm.mjs /usr/local/bin/dam-vm
+# same script, mode from the invoked name (argv[1] is not realpath'd)
+RUN ln -s dam-run /usr/local/bin/dam-vm
 COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json

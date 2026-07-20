@@ -1,6 +1,6 @@
 # dam-vm — per-agent VMs on an Incus host
 
-`dam-vm <cmd>` (baked into the platform base image next to `dam-run`; source at [`packages/platform-base/dam-vm.mjs`](../platform-base/dam-vm.mjs)) runs a command in the agent's own Incus system container on a VM host you provision — a plain Ubuntu VPS. With no command it opens an interactive login shell. Where `dam-run` gives an ephemeral pod that shares the agent's image/creds/workspace, the VM shares nothing: it's a root-capable machine with its own filesystem, for work a sandbox pod can't do (systemd, docker/k3s, nested containers). Containers persist across calls while in use and are deleted after ~1 h idle.
+`dam-vm <cmd>` (baked into the platform base image as a second name for the `dam-run` script — [`packages/platform-base/dam-run.mjs`](../platform-base/dam-run.mjs)) runs a command in the agent's own Incus system container on a VM host you provision — a plain Ubuntu VPS. With no command it opens an interactive login shell. Where `dam-run` gives an ephemeral pod that shares the agent's image/creds/workspace, the VM shares nothing: it's a root-capable machine with its own filesystem, for work a sandbox pod can't do (systemd, docker/k3s, nested containers). Containers persist across calls while in use and are deleted after ~1 h idle.
 
 **This package is the VPS side**: the relay server (`dam-vm-server`), the provisioning script, and a mise task that issues the certs. Architecture and trust model: [`docs/architecture/dam-vm.md`](../../docs/architecture/dam-vm.md).
 

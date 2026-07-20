@@ -15,93 +15,31 @@ import { WebSocket } from "ws";
 const pkgDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const dir = mkdtempSync(join(tmpdir(), "dam-vm-mtls-"));
 const p = (f) => join(dir, f);
-const ossl = (args) =>
-  execFileSync("openssl", args, { stdio: ["ignore", "ignore", "ignore"] });
+// args split on spaces — fine here, tmpdir paths and subjects have none
+const ossl = (cmd) =>
+  execFileSync("openssl", cmd.split(" "), { stdio: "ignore" });
+const leaf = (file, cn, ext = "") => {
+  ossl(
+    `req -newkey rsa:2048 -nodes -keyout ${p(file + ".key")} -out ${p(file + ".csr")} -subj /CN=${cn}`,
+  );
+  ossl(
+    `x509 -req -in ${p(file + ".csr")} -CA ${p("ca.crt")} -CAkey ${p("ca.key")} -CAcreateserial -days 1 -out ${p(file + ".crt")}${ext}`,
+  );
+};
 
 let server, port, clientCert, clientKey, caCert;
 
 before(async () => {
-  // CA
-  ossl([
-    "req",
-    "-x509",
-    "-newkey",
-    "rsa:2048",
-    "-nodes",
-    "-days",
-    "1",
-    "-keyout",
-    p("ca.key"),
-    "-out",
-    p("ca.crt"),
-    "-subj",
-    "/CN=test-ca",
-  ]);
+  ossl(
+    `req -x509 -newkey rsa:2048 -nodes -days 1 -keyout ${p("ca.key")} -out ${p("ca.crt")} -subj /CN=test-ca`,
+  );
   // server leaf with an IP SAN so the client validates it at 127.0.0.1
   writeFileSync(p("san.ext"), "subjectAltName=IP:127.0.0.1,DNS:localhost\n");
-  ossl([
-    "req",
-    "-newkey",
-    "rsa:2048",
-    "-nodes",
-    "-keyout",
-    p("srv.key"),
-    "-out",
-    p("srv.csr"),
-    "-subj",
-    "/CN=dam-vm",
-  ]);
-  ossl([
-    "x509",
-    "-req",
-    "-in",
-    p("srv.csr"),
-    "-CA",
-    p("ca.crt"),
-    "-CAkey",
-    p("ca.key"),
-    "-CAcreateserial",
-    "-days",
-    "1",
-    "-out",
-    p("srv.crt"),
-    "-extfile",
-    p("san.ext"),
-  ]);
+  leaf("srv", "dam-vm", ` -extfile ${p("san.ext")}`);
   // client leaves signed by the same CA: a canonical CN (= cluster id) and a
   // hyphenated one (hyphens would make container names ambiguous → rejected)
-  for (const [file, cn] of [
-    ["cli", "testcluster"],
-    ["hyph", "test-cluster"],
-  ]) {
-    ossl([
-      "req",
-      "-newkey",
-      "rsa:2048",
-      "-nodes",
-      "-keyout",
-      p(`${file}.key`),
-      "-out",
-      p(`${file}.csr`),
-      "-subj",
-      `/CN=${cn}`,
-    ]);
-    ossl([
-      "x509",
-      "-req",
-      "-in",
-      p(`${file}.csr`),
-      "-CA",
-      p("ca.crt"),
-      "-CAkey",
-      p("ca.key"),
-      "-CAcreateserial",
-      "-days",
-      "1",
-      "-out",
-      p(`${file}.crt`),
-    ]);
-  }
+  leaf("cli", "testcluster");
+  leaf("hyph", "test-cluster");
   clientCert = readFileSync(p("cli.crt"), "utf8");
   clientKey = readFileSync(p("cli.key"), "utf8");
   caCert = readFileSync(p("ca.crt"), "utf8");

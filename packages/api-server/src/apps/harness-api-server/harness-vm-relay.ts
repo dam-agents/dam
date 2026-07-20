@@ -1,15 +1,13 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { keepalive } from "./harness-run-relay.js";
+import { keepalive, spliceClient } from "./harness-run-relay.js";
 
 // Per-agent ceiling on concurrent `dam-vm` streams. Same rationale as the run
 // relay's cap: this is the only local bound on runaway loops (a dam-run
 // executor can spawn dam-vm with the parent's identity). The VM host
 // additionally caps containers globally.
 const MAX_CONCURRENT_VM_STREAMS_PER_AGENT = 16;
-
-const PENDING_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
 
 // First contact may cold-start the agent's container on the VM host (incus
 // launch + first boot), so the dial budget is generous.
@@ -89,42 +87,14 @@ export function createVmRelay(deps: {
         }
       };
 
-      // Buffer client frames (e.g. the tty's initial OP_RESIZE) until the VM
-      // host leg is open.
-      const pending: [Buffer, boolean][] = [];
-      let pendingBytes = 0;
-      let overflow = false;
-      const buffer = (d: Buffer, b: boolean) => {
-        if (overflow) return;
-        pendingBytes += d.byteLength;
-        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
-          overflow = true;
-          try {
-            client.close(1013, "buffer full");
-          } catch {
-            client.terminate();
-          }
-          return;
-        }
-        pending.push([d, b]);
-      };
-      client.on("message", buffer);
+      const spliced = spliceClient(client);
       client.on("close", release);
       keepalive(client);
       keepalive(upstream);
 
       upstream.on("open", () => {
-        if (released || overflow) return release();
-        client.off("message", buffer);
-        for (const [d, b] of pending) upstream.send(d, { binary: b });
-        client.on("message", (d, isBinary) => {
-          if (upstream.readyState === WebSocket.OPEN)
-            upstream.send(d, { binary: isBinary });
-        });
-        upstream.on("message", (d, isBinary) => {
-          if (client.readyState === WebSocket.OPEN)
-            client.send(d, { binary: isBinary });
-        });
+        if (released || spliced.overflowed()) return release();
+        spliced.splice(upstream);
       });
       upstream.on("close", (code, reason) => {
         // Forward the VM host's app-level closes (1000 after OP_EXIT, 4xxx

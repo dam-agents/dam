@@ -2,6 +2,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtempSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { afterAll, describe, expect, it } from "vitest";
@@ -12,8 +15,14 @@ const OP_INPUT = 0x00;
 const OP_OUTPUT = 0x01;
 const OP_EXIT = 0x03;
 
-const DAM_VM = fileURLToPath(
-  new URL("../../../../platform-base/dam-vm.mjs", import.meta.url),
+// dam-vm is dam-run.mjs invoked under the vm name (a symlink in the image);
+// recreate that here — the script picks its mode from argv[1]'s basename.
+const DAM_VM = join(mkdtempSync(join(tmpdir(), "dam-vm-cli-")), "dam-vm.mjs");
+symlinkSync(
+  fileURLToPath(
+    new URL("../../../../platform-base/dam-run.mjs", import.meta.url),
+  ),
+  DAM_VM,
 );
 
 // Stands in for dam-vm-server on the VM host: records the auth headers the
