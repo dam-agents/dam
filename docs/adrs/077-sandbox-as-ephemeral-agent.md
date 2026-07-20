@@ -15,7 +15,7 @@ summary: A spawnable node is a normal ephemeral Agent a driver creates, prompts 
 
 ## Context
 
-We want one platform primitive: spawn an ephemeral node with a chosen image and a subset of my connections, hand it a prompt, run an agent in it, and get back a schema-validated result. That primitive lets a multi-step loop be an ordinary program that calls it (ADR-078) instead of a hardcoded platform conductor. Two questions had to be answered together: how to model the spawnable unit, and where its lifecycle lives.
+We want one platform primitive: spawn an ephemeral node with a chosen image and a subset of my connections, hand it a prompt, run an agent in it, and get back a schema-validated result. That primitive lets a multi-step loop be an ordinary program that calls it instead of a hardcoded platform conductor. Two questions had to be answered together: how to model the spawnable unit, and where its lifecycle lives.
 
 The first cut called the unit a "Sandbox" and bundled three things under that one word: a fresh ephemeral agent, an autosweep lifecycle, and a run-once typed result. It shipped them as a single `sandboxes` module with its own table and a dedicated sweeper. But "Sandbox" already binds to the user-facing name for an Agent (#892), and bundling proved wrong: the three concerns are orthogonal. An inherited agent (post-Slack-message) wants ephemerality + autosweep but no result contract; a Fork wants ephemeral + run-once with free-form output. A separate concept with its own table and sweeper gives those future cases nothing to reuse.
 
