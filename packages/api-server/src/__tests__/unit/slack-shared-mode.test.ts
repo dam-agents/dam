@@ -64,7 +64,7 @@ function harness(opts: {
     { resolveSlackBinding: async () => opts.binding } as never,
     async () => {},
     async () => {},
-    "dam",
+    { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
     () => acp,

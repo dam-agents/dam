@@ -447,7 +447,7 @@ const slackWorker = slackGatewayFactory
       channelRegistry,
       deleteSlackChannelBinding(db),
       setSlackChannelAmbient(db),
-      config.brand.short,
+      { name: config.brand.name, short: config.brand.short },
       isTermsAccepted,
       config.uiBaseUrl,
       makeForkAcpClient,

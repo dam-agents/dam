@@ -50,17 +50,27 @@ const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
  *  nothing to add; the worker swallows it instead of posting. */
 export const AMBIENT_DECLINE_TOKEN = "NO_RESPONSE";
 
-/** Wrap an ambient message so the agent knows it wasn't addressed and may
- *  decline. Applied per turn: ambient sessions interleave with mention-driven
+/** Wrap an ambient message so the agent knows how it appears in the channel
+ *  and may decline. The bot identity comes from the install's brand config;
+ *  the agent's own name is deliberately NOT injected — that identity belongs
+ *  to the agent's workspace setup ("the name you know yourself by" is its
+ *  hook). Applied per turn: ambient sessions interleave with mention-driven
  *  turns, so the contract can't live in the session alone. */
-function frameAmbientPrompt(text: string): string {
+function frameAmbientPrompt(
+  text: string,
+  brand: { name: string; short: string },
+): string {
   return [
     "<ambient>",
-    "You are reading along in a shared Slack channel. The following " +
-      "message(s) were not addressed to you. Chime in only when you can " +
-      "clearly help — answer a question you know the answer to, pick up a " +
-      "task someone described, or flag a clear mistake. If in doubt, stay " +
-      `silent: reply with exactly ${AMBIENT_DECLINE_TOKEN} and nothing else.`,
+    "You are reading along in a shared Slack channel, where you appear as " +
+      `the bot "${brand.name}" (mentioned as @${brand.short}). The ` +
+      "following message(s) were not @-mentions. A message that calls you " +
+      `by name — "${brand.name}", or the name you know yourself by — is ` +
+      "addressed to you: answer it as you would a mention. Otherwise chime " +
+      "in only when you can clearly help — answer a question you know the " +
+      "answer to, pick up a task someone described, or flag a clear " +
+      "mistake. If in doubt, stay silent: reply with exactly " +
+      `${AMBIENT_DECLINE_TOKEN} and nothing else.`,
     "</ambient>",
     "",
     text,
@@ -243,14 +253,16 @@ export function createSlackWorker(
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>,
-  /** Lowercase brand identifier used in slash-command help text (e.g.
-   *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
-  brandShort: string,
+  /** Install brand identity: `short` is the lowercase slash-command name
+   *  (e.g. short="name" → /name login), `name` the bot display name the
+   *  ambient frame announces. Sourced from BRAND_NAME / BRAND_SHORT env. */
+  brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
   makeForkAcpClient: ForkAcpClientFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
+  const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
   async function ephemeral(
@@ -1141,7 +1153,7 @@ export function createSlackWorker(
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
-    const framed = frameAmbientPrompt(args.text);
+    const framed = frameAmbientPrompt(args.text, brand);
     const resumePrompt: string | ContentBlock[] =
       args.images.length === 0
         ? framed

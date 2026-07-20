@@ -78,7 +78,7 @@ function harness(opts: {
     async (channelId, ambient) => {
       ambientCalls.push({ channelId, ambient });
     },
-    "dam",
+    { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
     () => acp,
@@ -195,6 +195,12 @@ describe("slack ambient inbound", () => {
     expect(prompt).toContain("<ambient>");
     expect(prompt).toContain(AMBIENT_DECLINE_TOKEN);
     expect(prompt).toContain(`<@${STRANGER}>: what is our deploy process?`);
+    // The frame announces the server-side bot identity (brand config) and
+    // the answer-when-named contract; the agent's own name is deliberately
+    // absent — that identity belongs to the agent's workspace setup.
+    expect(prompt).toContain('appear as the bot "DAM" (mentioned as @dam)');
+    expect(prompt).toContain("answer it as you would a mention");
+    expect(prompt).not.toContain("agent-1");
 
     expect(h.messages()).toHaveLength(1);
     expect(h.messages()[0]).toMatchObject({

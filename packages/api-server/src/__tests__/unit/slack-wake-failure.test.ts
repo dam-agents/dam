@@ -50,7 +50,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     } as never,
     async () => {},
     async () => {},
-    "dam",
+    { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     () => acp,

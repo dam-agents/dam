@@ -88,6 +88,9 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
     const serialized = JSON.stringify(prompts);
     expect(serialized).toContain("<ambient>");
+    // Brand-independent phrase: the frame announces the install's bot
+    // identity so name-addressed messages are answered like mentions.
+    expect(serialized).toContain("appear as the bot");
     expect(serialized).toContain(`<@${strangerSlackUserId}>: ${questionText}`);
   });
 });
