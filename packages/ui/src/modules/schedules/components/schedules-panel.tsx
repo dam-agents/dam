@@ -1,10 +1,10 @@
-import { Plus } from "lucide-react";
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { useSchedules, useScheduleSessions } from "../api/queries.js";
-import { CreateScheduleForm } from "../forms/create-schedule-form.js";
+import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
 
 export function SchedulesPanel({
@@ -24,6 +24,8 @@ export function SchedulesPanel({
   const sessionsQuery = useScheduleSessions(agentId, expandedId);
   const sessionsForExpanded = sessionsQuery.data ?? [];
 
+  const editing = schedules.find((s) => s.id === editingId);
+
   return (
     <div className="flex flex-col">
       <div className="px-3 py-2.5 shrink-0">
@@ -31,54 +33,43 @@ export function SchedulesPanel({
           variant="outline"
           size="xs"
           className="w-full"
-          onClick={() => {
-            setIsCreating(true);
-            setEditingId(null);
-          }}
+          onClick={() => setIsCreating(true)}
         >
-          <Plus size={12} /> Add Schedule
+          <Add size={12} /> Add Schedule
         </Button>
       </div>
 
-      {isCreating && agentId && (
-        <CreateScheduleForm
+      {agentId && (isCreating || editing) && (
+        <ScheduleFormModal
           agentId={agentId}
-          onCancel={() => setIsCreating(false)}
-          onSaved={() => setIsCreating(false)}
+          existing={editing}
+          onClose={() => {
+            setIsCreating(false);
+            setEditingId(null);
+          }}
+          onSaved={() => {
+            setIsCreating(false);
+            setEditingId(null);
+          }}
         />
       )}
 
-      {schedules.length === 0 && !isCreating && (
+      {schedules.length === 0 && (
         <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>
       )}
-      {schedules.map((schedule) =>
-        editingId === schedule.id && agentId ? (
-          <CreateScheduleForm
-            key={schedule.id}
-            agentId={agentId}
-            existing={schedule}
-            onCancel={() => setEditingId(null)}
-            onSaved={() => setEditingId(null)}
-          />
-        ) : (
-          <ScheduleCard
-            key={schedule.id}
-            schedule={schedule}
-            isExpanded={expandedId === schedule.id}
-            sessions={expandedId === schedule.id ? sessionsForExpanded : []}
-            onToggleExpanded={() =>
-              setExpandedId((prev) =>
-                prev === schedule.id ? null : schedule.id,
-              )
-            }
-            onEdit={() => {
-              setEditingId(schedule.id);
-              setIsCreating(false);
-            }}
-            onResumeSession={onResumeSession}
-          />
-        ),
-      )}
+      {schedules.map((schedule) => (
+        <ScheduleCard
+          key={schedule.id}
+          schedule={schedule}
+          isExpanded={expandedId === schedule.id}
+          sessions={expandedId === schedule.id ? sessionsForExpanded : []}
+          onToggleExpanded={() =>
+            setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
+          }
+          onEdit={() => setEditingId(schedule.id)}
+          onResumeSession={onResumeSession}
+        />
+      ))}
     </div>
   );
 }
