@@ -2,12 +2,13 @@
 depends = ["dam-vm:check:*"]
 
 ["dam-vm:check:syntax"]
-description = "Syntax-check the dam-vm server and provisioning script"
+description = "Syntax-check the dam-vm server and shell scripts"
 dir = "{{config_root}}/packages/dam-vm"
-sources = ["*.mjs", "provision.sh"]
+sources = ["*.mjs", "*.sh"]
 run = [
   "node --check dam-vm-server.mjs",
   "bash -n provision.sh",
+  "bash -n container-init.sh",
 ]
 
 ["dam-vm:check:lint"]

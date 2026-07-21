@@ -38,17 +38,32 @@ sysctl --system > /dev/null
 # --- Phase 4: start the daemon --------------------------------------------
 systemctl enable --now incus
 
-# --- Phase 5: preseed init --------------------------------------------------
-# VPS root disk is typically ext4/xfs, so the pool is a loop-backed btrfs
-# image at /var/lib/incus/disks/default.img (sparse, grows up to `size`).
-# If you attach a secondary block volume, replace `size: 50GiB` with
-# `source: /dev/vdb` (or whatever the device is) for better performance.
-incus admin init --preseed << '__PRESEED_EOF__'
+# --- Phase 5: preseed init (idempotent) ------------------------------------
+# The pool MUST live on a dedicated data volume (DAM_VM_DISK, default /dev/vdb)
+# as a whole-disk btrfs filesystem — a loop image on the small boot disk fills
+# up and wedges the pool read-only, so it is disallowed. Skipped once incus is
+# already initialized (safe to re-run).
+DAM_VM_DISK="${DAM_VM_DISK:-/dev/vdb}"
+if incus storage list --format csv 2>/dev/null | grep -q .; then
+  echo "incus already initialized — leaving storage/network as-is"
+else
+  if [ ! -b "$DAM_VM_DISK" ]; then
+    echo "ERROR: no block device at DAM_VM_DISK=$DAM_VM_DISK." >&2
+    echo "       Attach a data volume and re-run (or set DAM_VM_DISK). A" >&2
+    echo "       dedicated pool disk is required — no loop-image fallback." >&2
+    exit 1
+  fi
+  if findmnt -S "$DAM_VM_DISK" >/dev/null 2>&1; then
+    echo "ERROR: $DAM_VM_DISK is mounted/in use — refusing to format it." >&2
+    exit 1
+  fi
+  echo "storage pool on $DAM_VM_DISK (whole-disk btrfs)"
+  incus admin init --preseed << __PRESEED_EOF__
 storage_pools:
   - name: default
     driver: btrfs
     config:
-      size: 50GiB
+      source: $DAM_VM_DISK
       btrfs.mount_options: compress=zstd:1,noatime
 networks:
   - name: incusbr0
@@ -79,6 +94,7 @@ profiles:
         source: /dev/kmsg
         type: unix-char
 __PRESEED_EOF__
+fi
 
 # --- Phase 6: install mTLS material ----------------------------------------
 # The api-server dials the VPS over the public internet, authenticated by
@@ -102,12 +118,14 @@ fi
 # --- Phase 7: pre-pull the base image --------------------------------------
 # Otherwise the very first `dam-vm` call blocks on a ~2 GB image fetch and can
 # exceed the server's per-launch budget. Idempotent (no-op once cached).
-IMAGE="${DAM_VM_IMAGE:-images:ubuntu/24.04}"
+IMAGE="${DAM_VM_IMAGE:-images:fedora/44}"
 incus image copy "$IMAGE" local: 2>/dev/null || true
 
 # --- Phase 8: dam-vm-server as a systemd service ---------------------------
 install -d /opt/dam-vm
 install -m 644 "$SRC_DIR/dam-vm-server.mjs" "$SRC_DIR/package.json" /opt/dam-vm/
+# container-init.sh: the shim setup dam-vm-server runs inside each container.
+install -m 755 "$SRC_DIR/container-init.sh" /opt/dam-vm/container-init.sh
 (cd /opt/dam-vm && npm install --omit=dev --no-fund --no-audit)
 
 cat > /etc/systemd/system/dam-vm.service << 'EOF'

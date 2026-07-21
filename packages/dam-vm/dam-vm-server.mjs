@@ -36,9 +36,13 @@ const LISTEN_HOST = process.env.DAM_VM_LISTEN_HOST || "0.0.0.0";
 const LISTEN_PORT = process.env.DAM_VM_PORT
   ? Number(process.env.DAM_VM_PORT)
   : 8090;
-const IMAGE = process.env.DAM_VM_IMAGE || "images:ubuntu/24.04";
+const IMAGE = process.env.DAM_VM_IMAGE || "images:fedora/44";
 const MAX_CONTAINERS = parseInt(process.env.DAM_VM_MAX_CONTAINERS, 10) || 50;
 const IDLE_DELETE_MIN = parseInt(process.env.DAM_VM_IDLE_DELETE_MIN, 10) || 60;
+const CONTAINER_INIT =
+  process.env.DAM_VM_CONTAINER_INIT || "/opt/dam-vm/container-init.sh";
+const SHIM_PATH =
+  "/opt/shims/high:/opt/shims/low:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 // DAM agent ids are K8s resource names. Bounded so the composed container name
 // `dam-<cluster>-<agentId>` stays under Incus's 63-char instance-name limit.
 const AGENT_ID_RE = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -119,6 +123,18 @@ function ensureContainer(clusterId, agentId) {
       await incus(["launch", IMAGE, name], { timeoutMs: 600_000 });
       // give cloud-init/network a moment on first boot
       await new Promise((r) => setTimeout(r, 3000));
+      try {
+        await incus([
+          "file",
+          "push",
+          CONTAINER_INIT,
+          `${name}/root/container-init.sh`,
+        ]);
+        await incus(["exec", name, "--", "sh", "/root/container-init.sh"]);
+        await incus(["config", "set", name, `environment.PATH=${SHIM_PATH}`]);
+      } catch (e) {
+        console.error(`shim init failed for ${name}: ${e.message}`);
+      }
     } else {
       // e.g. host rebooted with the container down
       try {

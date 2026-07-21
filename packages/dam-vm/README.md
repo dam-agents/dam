@@ -2,6 +2,8 @@
 
 `dam-vm <cmd>` (baked into the platform base image as a second name for the `dam-run` script — [`packages/platform-base/dam-run.mjs`](../platform-base/dam-run.mjs)) runs a command in the agent's own Incus system container on a VM host you provision — a plain Ubuntu VPS. With no command it opens an interactive login shell. Where `dam-run` gives an ephemeral pod that shares the agent's image/creds/workspace, the VM shares nothing: it's a root-capable machine with its own filesystem, for work a sandbox pod can't do (systemd, docker/k3s, nested containers). Containers persist across calls while in use and are deleted after ~1 h idle.
 
+Each container is **Fedora 44** with lazy **auto-install shims** ([`container-init.sh`](container-init.sh)): common tools — `mise`, `docker`, `git`, `node`/`npm`, `jq`, `yq`, `rg`, `fd`, `python`/`pip`, `uv`, `kubectl`, `k9s`, `poetry`, `bun` — install themselves via mise (or dnf) on first use, so the image stays small yet "just works".
+
 **This package is the VPS side**: the relay server (`dam-vm-server`), the provisioning script, and a mise task that issues the certs. Architecture and trust model: [`docs/architecture/dam-vm.md`](../../docs/architecture/dam-vm.md).
 
 How it connects: the in-pod CLI opens a WebSocket to the agent's `/vm` harness endpoint (same rails as `dam-run`); the api-server relays that stream to the VPS over **mutual TLS**, attaching the agent's waypoint-proven id. Agents hold no credential and can't reach the VPS directly. One VPS serves **many DAM clusters** — each authenticates with its own client cert whose CN namespaces its containers (`dam-<cluster>-<agentId>`), so same-named agents in different clusters never share a VM.
@@ -19,7 +21,7 @@ Prerequisites: an IBM Cloud account with the `ibmcloud` CLI logged in (for the V
   - Any name; image **Ubuntu 26.04** (24.04 LTS or newer works).
   - Instance type with enough CPU/RAM for the agent workloads (it may run multiple k3s stacks).
   - Attach an SSH key (create one if needed).
-  - 10 GB boot volume; add a data volume sized for the workloads.
+  - 10 GB boot volume, and **attach a data volume** sized for the workloads (200 GB+). This is required: provisioning puts the whole btrfs storage pool on it (`DAM_VM_DISK`, default `/dev/vdb`) so container images/rootfs never fill the small boot disk.
 - Open the instance → **Networking** tab → three-dot menu → **Edit floating IPs** → attach a floating IP; note it.
 - Verify: `ssh -i <key> ubuntu@<floating-ip>`.
 
@@ -41,7 +43,7 @@ scp -r packages/dam-vm ubuntu@<floating-ip>:
 ssh ubuntu@<floating-ip> sudo bash ./dam-vm/provision.sh
 ```
 
-Installs Incus (+ the host kernel modules/sysctls k3s-in-container needs), Node.js, the `cert/` material into `/etc/dam-vm/`, and the `dam-vm` systemd service (serving `wss://` with mutual TLS). Idempotent — re-run to upgrade the server or rotate certs. If you attached a data volume, point the Incus storage pool at it first (phase-5 comment in [`provision.sh`](provision.sh)).
+Installs Incus (+ the host kernel modules/sysctls k3s-in-container needs), Node.js, the `cert/` material into `/etc/dam-vm/`, the container shim script, and the `dam-vm` systemd service (serving `wss://` with mutual TLS). The storage pool is created as whole-disk btrfs on the data volume (`DAM_VM_DISK`, default `/dev/vdb`) — **required**: provisioning aborts if that block device is absent (a loop image on the boot disk fills up and wedges the pool read-only, so there's no fallback). Idempotent — re-run to upgrade the server, shims, or rotate certs (it leaves an already-initialized incus's storage/network alone).
 
 ### 4. Restrict the network path (recommended)
 
@@ -100,7 +102,7 @@ kubectl exec -n <agent-ns> <agent-pod> -c agent -- sh -c \
 # expect the VPS kernel, root, and "lxc" — a container on the host, not the agent pod
 ```
 
-The container appears as `dam-<cluster>-<agentId>`: `ssh ubuntu@<floating-ip> sudo incus list dam-`. The **first** call on a fresh host pulls the ~2 GB base image before the container starts (subsequent calls are instant); on a slow link that can exceed the server's 120 s per-command budget — pre-pull once with `sudo incus launch images:ubuntu/24.04 warmup && sudo incus delete -f warmup`.
+The container appears as `dam-<cluster>-<agentId>`: `ssh ubuntu@<floating-ip> sudo incus list dam-`. `provision.sh` pre-pulls the Fedora image, so the first call just boots + runs the shim init; the first use of any shimmed tool then does a one-time install (visible as an `installing <tool>…` line).
 
 ---
 
