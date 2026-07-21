@@ -31,5 +31,10 @@ export const EXIT_APPROVAL_NOT_ACTIONABLE = 8;
  *  schedule id (delete is idempotent — exits 0). Classified via data.code === "NOT_FOUND". */
 export const EXIT_SCHEDULE_NOT_FOUND = 9;
 
+/** `dam terms status` — the current Terms of Use haven't been accepted. Distinct
+ *  from EXIT_RUNTIME_FAILURE so a CI gate can tell "accept the terms" (actionable)
+ *  apart from a broken call (server unreachable, host resolution failure). */
+export const EXIT_TERMS_NOT_ACCEPTED = 10;
+
 /** POSIX convention: 128 + SIGINT(2). Emitted on Ctrl+C during bundle pack/upload. */
 export const EXIT_SIGINT = 130;
