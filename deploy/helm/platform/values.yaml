@@ -1272,6 +1272,27 @@ agentTemplates:
       tag: ""
     storageSize: "5Gi"
 
+  gepa:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "GEPA"
+    description: "GEPA — reflective prompt & text-optimization agent"
+    tags: ["Any provider"]
+    setupNote:
+      title: "Model provider connection required"
+      body: >-
+        GEPA's optimization loop needs a model-provider connection with
+        API-key-style credentials — the IBM LiteLLM proxy is the recommended
+        choice (it also powers the agent's own chat); an Anthropic API key
+        works too. An Anthropic OAuth-token connection only covers the chat
+        and cannot drive the optimization loop.
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md"
+    image:
+      repository: quay.io/dam-agents/gepa
+      tag: ""
+    storageSize: "5Gi"
+
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
 # the existing ACP relay. Default off — flipped on by the e2e/local install.

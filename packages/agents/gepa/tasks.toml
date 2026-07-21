@@ -1,0 +1,38 @@
+["agents:gepa:image"]
+description = "Build the gepa agent image (GEPA on the claude-code base), or reuse it from the registry when its source is unchanged"
+dir = "{{config_root}}"
+depends = ["agents:claude-code:image"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+build_args=()
+[ -n "${GEPA_VERSION:-}" ] && build_args+=(--build-arg "GEPA_VERSION=${GEPA_VERSION}")
+
+# empty-array guard for bash 3.2 `set -u`
+exec scripts/resolve-image.sh build-or-reuse gepa -- ${build_args[@]+"${build_args[@]}"} packages/agents/gepa
+'''
+
+["agents:gepa:scan"]
+depends = ["agents:gepa:scan:*"]
+
+["agents:gepa:scan:trivy"]
+dir = "{{config_root}}"
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/gepa:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/gepa:${usage_tag}"
+else
+  {{ mise_bin }} run agents:gepa:image
+  image="platform-gepa:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''
