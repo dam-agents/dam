@@ -43,6 +43,11 @@ provision:
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
         # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
+        # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
+        # its binary relabel step fails under set -e on a disabled-SELinux host.
+        if ! { command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" != Disabled ]; }; then
+          export INSTALL_K3S_SKIP_SELINUX_RPM=true
+        fi
         curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.36.1+k3s1" INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16443" sh -
       fi
       # Configure Traefik to also listen on port 4444 (auto-forwarded by lima)
