@@ -63,7 +63,7 @@ Artifact bytes move directly: agents upload candidates to the store through thei
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. A Slack channel binds to at most one instance globally; the binding routes every mention in that channel.
 
-1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `chat:write`, `files:read`, `files:write`, `reactions:write`, `commands`, `users:read`.
+1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `commands`, `users:read`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel.)
 2. Add slash command `/platform` pointing to your app.
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
 

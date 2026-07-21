@@ -27,6 +27,11 @@ oauth_config:
     bot:
       - commands
       - chat:write
+      # Cross-workspace outbound: list the channels the bot is in, check
+      # membership before posting, and open direct messages.
+      - channels:read
+      - groups:read
+      - im:write
       - users:read
       - users:read.email
       - app_mentions:read

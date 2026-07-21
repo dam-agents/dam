@@ -7,6 +7,12 @@ import type {
   SlackSlashCommand,
 } from "./slack-gateway.js";
 
+export interface FakeSlackChannel {
+  id: string;
+  name: string;
+  botIsMember: boolean;
+}
+
 export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: SlackMentionEvent): Promise<void>;
   /** A plain (non-mention) channel message, as the real gateway would deliver
@@ -15,11 +21,14 @@ export interface FakeSlackGateway extends SlackGateway {
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
+  /** Workspace channel directory; unlisted ids resolve as not found. */
+  setChannels(channels: FakeSlackChannel[]): void;
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
+  let channels: FakeSlackChannel[] = [];
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -88,6 +97,21 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       throw new Error("downloadFile is not supported by the fake gateway");
     },
 
+    async listBotChannels() {
+      return channels
+        .filter((c) => c.botIsMember)
+        .map(({ id, name }) => ({ id, name }));
+    },
+
+    async getConversationInfo(channelId) {
+      const channel = channels.find((c) => c.id === channelId);
+      return channel ? { isMember: channel.botIsMember } : null;
+    },
+
+    async openDirectMessage(userId) {
+      return `D-${userId}`;
+    },
+
     async fireMention(event) {
       await requireHandlers().onMention(event);
     },
@@ -110,6 +134,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     resetOutbound() {
       outbound.length = 0;
+    },
+
+    setChannels(next) {
+      channels = [...next];
     },
   };
 }

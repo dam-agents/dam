@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
 import type {
+  SlackChannelInfo,
   SlackGateway,
   SlackGatewayHandlers,
   SlackImageFile,
@@ -187,6 +188,47 @@ export function createBoltSlackGateway(
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.arrayBuffer();
+    },
+
+    async listBotChannels(): Promise<SlackChannelInfo[]> {
+      if (!app) return [];
+      const channels: SlackChannelInfo[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await app.client.users.conversations({
+          types: "public_channel,private_channel",
+          exclude_archived: true,
+          limit: 200,
+          cursor,
+        });
+        for (const c of page.channels ?? []) {
+          if (c.id) channels.push({ id: c.id, name: c.name ?? c.id });
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return channels;
+    },
+
+    async getConversationInfo(channelId: string) {
+      if (!app) return null;
+      try {
+        const info = await app.client.conversations.info({
+          channel: channelId,
+        });
+        if (!info.channel) return null;
+        return { isMember: !!info.channel.is_member };
+      } catch (err) {
+        if (formatError(err).includes("channel_not_found")) return null;
+        throw err;
+      }
+    },
+
+    async openDirectMessage(userId: string): Promise<string> {
+      if (!app) throw new Error("slack bot not running");
+      const opened = await app.client.conversations.open({ users: userId });
+      const id = opened.channel?.id;
+      if (!id) throw new Error("Slack returned no conversation id");
+      return id;
     },
   };
 }

@@ -168,7 +168,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other workspace channel the bot is a member of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -181,11 +181,16 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
+    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
-      chatId: z.string().optional(),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
+        ),
       attachment: z
         .object({
           path: z
