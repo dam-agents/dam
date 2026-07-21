@@ -1,4 +1,5 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { JOSEError, JWKSInvalid, JWKSTimeout } from "jose/errors";
 import type { Context, MiddlewareHandler } from "hono";
 import { ALL_SCOPES, type UserIdentity } from "api-server-api";
 import type { Result } from "../../core/result.js";
@@ -33,6 +34,57 @@ export class UnauthorizedError extends Error {
     super(`Unauthorized: ${reason}`);
     this.name = "UnauthorizedError";
   }
+}
+
+/** Token verification could not run: the JWKS could not be retrieved
+ *  (Keycloak unreachable, fetch timeout, non-200/non-JSON response). Not an
+ *  authentication verdict — the token was never evaluated. Mapped to 503 so
+ *  clients retry instead of treating an infra failure as a credential
+ *  rejection; still a deny (fails closed). */
+export class AuthUnavailableError extends Error {
+  readonly reason = "jwks-unavailable";
+  constructor(cause: unknown) {
+    super("Authentication unavailable: JWKS could not be retrieved", {
+      cause,
+    });
+    this.name = "AuthUnavailableError";
+  }
+}
+
+/** Strict allowlist of failures where the JWKS could not be retrieved or
+ *  ingested (jose 6.x): its fetch maps abort timeouts to JWKSTimeout, throws
+ *  bare JOSEError (ERR_JOSE_GENERIC — used nowhere else in the library) on a
+ *  non-200/non-JSON response, throws JWKSInvalid on a fetched-but-malformed
+ *  body (a broken gateway answering 200 with a JSON error), and rethrows
+ *  undici's network `TypeError: fetch failed` unwrapped.
+ *
+ *  The TypeError arm is gated on a `.cause`: undici's fetch failure always
+ *  carries one (ECONNREFUSED, ENOTFOUND, …), whereas jose's own internal
+ *  TypeErrors are message-only. This matters for security — jose can throw a
+ *  bare `TypeError('non-ASCII string encountered in encode()')` while building
+ *  the signing input from an attacker-supplied payload segment, *before* the
+ *  signature is checked; without the `.cause` gate a forged token would be
+ *  misclassified 503/`authn.unavailable` instead of 401/`authn.deny`, letting
+ *  an attacker move forged-token probes out of the deny audit stream. Gating
+ *  on `.cause` (not on the message string, which drifts across Node/undici)
+ *  keeps every real fetch failure a 503 while every token failure — and jose's
+ *  message-only key-material TypeErrors — stays a 401. JWKSNoMatchingKey
+ *  (rotated/foreign kid) is likewise a 401. */
+function isJwksRetrievalFailure(err: unknown): boolean {
+  return (
+    err instanceof JWKSTimeout ||
+    err instanceof JWKSInvalid ||
+    (err instanceof TypeError && err.cause != null) ||
+    (err instanceof JOSEError && err.code === "ERR_JOSE_GENERIC")
+  );
+}
+
+/** Value-free summary for the audit line: error name plus the undici cause
+ *  code (ECONNREFUSED, ENOTFOUND, …) when present. */
+function describeJwksFailure(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const code = (err.cause as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" ? `${err.name}: ${code}` : err.name;
 }
 
 export interface AuthConfig {
@@ -70,6 +122,7 @@ export interface AuthDeps {
 
 const PUBLIC_PATHS = new Set([
   "/api/health",
+  "/api/ready",
   "/api/auth/config",
   "/api/oauth/callback",
   "/api/slack/oauth/callback",
@@ -92,11 +145,17 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
   const JWKS = createRemoteJWKSet(new URL(config.jwksUrl));
 
   async function verifyJwt(token: string): Promise<VerifiedPrincipal> {
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: config.issuerUrl,
-      audience: config.audience,
-      algorithms: ["RS256"],
-    });
+    let payload: JWTPayload;
+    try {
+      ({ payload } = await jwtVerify(token, JWKS, {
+        issuer: config.issuerUrl,
+        audience: config.audience,
+        algorithms: ["RS256"],
+      }));
+    } catch (err) {
+      if (isJwksRetrievalFailure(err)) throw new AuthUnavailableError(err);
+      throw err;
+    }
 
     const claims = payload as Record<string, unknown>;
     const realmAccess = claims.realm_access as { roles?: string[] } | undefined;
@@ -198,6 +257,21 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
       });
       return next();
     } catch (err) {
+      if (err instanceof AuthUnavailableError) {
+        // No credential verdict was reached (hence no `decision` field): the
+        // JWKS fetch failed, so signal a retryable outage, not a rejection.
+        securityLog("warn", "authn.unavailable", {
+          category: "authn",
+          actor: null,
+          actorKind: "external",
+          result: "failure",
+          reason: err.reason,
+          target: c.req.path,
+          sourceIp: clientIp(c),
+          detail: { cause: describeJwksFailure(err.cause) },
+        });
+        return c.json({ error: "auth unavailable" }, 503);
+      }
       if (err instanceof ForbiddenError) {
         // Known principal denied for lack of a required role — the most
         // forensically interesting authz event.
@@ -242,5 +316,7 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     }
   };
 
-  return { middleware, verify };
+  // `reload()` fetches the JWKS immediately and populates jose's cache —
+  // the boot-time warm hook behind `/api/ready` (see jwks-warmup.ts).
+  return { middleware, verify, warmJwks: () => JWKS.reload() };
 }

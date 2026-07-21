@@ -76,7 +76,14 @@ import { createSessionPresence } from "./session-presence.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import type { Config } from "../../config.js";
-import { createAuth, ForbiddenError, clientIp } from "./auth.js";
+import {
+  createAuth,
+  AuthUnavailableError,
+  ForbiddenError,
+  UnauthorizedError,
+  clientIp,
+} from "./auth.js";
+import { startJwksWarmup } from "./jwks-warmup.js";
 import { securityLog } from "../../core/security-log.js";
 import { createTermsGate } from "./terms-gate.js";
 import type { IsAcceptedPort } from "../../modules/terms/compose.js";
@@ -265,6 +272,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       verifyOwnerActive: apiKeysModule.verifyOwnerActive,
     },
   );
+  const jwksWarmup = startJwksWarmup(auth.warmJwks);
 
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
@@ -288,6 +296,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   app.use("*", createShareHostGate(config.shareBaseUrl, shareViewerApp));
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
+  // Readiness (not liveness): 503 until the Keycloak JWKS has been fetched
+  // once, so a rolling update keeps the old pod serving while this pod's
+  // egress path converges. Latched — never flaps mid-life (see jwks-warmup.ts).
+  app.get("/api/ready", (c) =>
+    jwksWarmup.ready()
+      ? c.json({ status: "ok" })
+      : c.json({ status: "starting", waitingFor: "jwks" }, 503),
+  );
   app.get("/api/version", (c) =>
     c.json({
       serverVersion: config.serverVersion,
@@ -1070,6 +1086,24 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     try {
       user = (await auth.verify(token)).user;
     } catch (err) {
+      if (err instanceof AuthUnavailableError) {
+        // No credential verdict was reached (hence no `decision` field): the
+        // JWKS fetch failed, so signal a retryable outage, not a rejection.
+        securityLog("warn", "ws.authn_unavailable", {
+          category: "authn",
+          actor: null,
+          actorKind: "external",
+          surface: "ws",
+          agentId,
+          result: "failure",
+          reason: err.reason,
+          sourceIp,
+          detail: { relay: relayKind },
+        });
+        socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+        socket.destroy();
+        return;
+      }
       const forbidden = err instanceof ForbiddenError;
       securityLog("warn", forbidden ? "ws.authz_deny" : "ws.authn_deny", {
         category: forbidden ? "authz" : "authn",
@@ -1080,9 +1114,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         decision: "deny",
         reason: forbidden
           ? "missing-required-role"
-          : err instanceof Error
-            ? err.name
-            : "verify-failed",
+          : err instanceof UnauthorizedError
+            ? err.reason
+            : err instanceof Error
+              ? err.name
+              : "verify-failed",
         sourceIp,
         detail: { relay: relayKind },
       });

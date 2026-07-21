@@ -73,9 +73,12 @@ if (isOtelEnabled(process.env)) {
     // and its ~90 mostly-inapplicable dependencies.
     instrumentations: [
       new HttpInstrumentation({
-        // Kubelet probes hammer /api/health; not worth a span each.
-        ignoreIncomingRequestHook: (req) =>
-          (req.url ?? "").split("?", 1)[0] === "/api/health",
+        // Kubelet probes hammer /api/health and /api/ready; not worth a
+        // span each (readiness fires every 10s for the pod's whole life).
+        ignoreIncomingRequestHook: (req) => {
+          const path = (req.url ?? "").split("?", 1)[0];
+          return path === "/api/health" || path === "/api/ready";
+        },
       }),
       new UndiciInstrumentation(),
       new GrpcInstrumentation(),

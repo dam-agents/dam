@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-07-15
+Last verified: 2026-07-21
 
 ## Overview
 
@@ -35,8 +35,8 @@ Two disjoint mechanisms feed the one logger:
 
 | Surface | Representative events |
 |---|---|
-| Auth edge | `authn.deny` (bad/missing token), `authz.deny` (missing role). Successful logins are not logged here — the api-server only ever sees already-issued tokens on per-request verification; Keycloak's authentication-event log is the authoritative record of logins. |
-| HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (terminal/ACP attach to a credentialed pod) |
+| Auth edge | `authn.deny` (bad/missing token), `authz.deny` (missing role), `authn.unavailable` (JWKS unreachable — request denied 503 without an authn verdict, no `decision` field). Successful logins are not logged here — the api-server only ever sees already-issued tokens on per-request verification; Keycloak's authentication-event log is the authoritative record of logins. |
+| HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.authn_unavailable` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (terminal/ACP attach to a credentialed pod) |
 | Credentialed egress (HITL) | `egress.decision` (every allow/deny/expired), `egress.hold`; identity-unresolved and ext-authz transport denials |
 | Approvals | `approval.verdict` (approve/deny once/permanent/host) |
 | Authorization lists | `agent.allowed_users_set` (with added/removed diff), `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |

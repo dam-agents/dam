@@ -1,12 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { reloadMock } = vi.hoisted(() => ({ reloadMock: vi.fn() }));
+
 // Stub jose so the middleware can be exercised without a real Keycloak/JWKS.
+// Only the "jose" specifier is stubbed — "jose/errors" stays real, so the
+// classification tests below throw genuine jose error instances.
 vi.mock("jose", () => ({
-  createRemoteJWKSet: () => () => ({}),
+  createRemoteJWKSet: () => Object.assign(() => ({}), { reload: reloadMock }),
   jwtVerify: vi.fn(),
 }));
 
 import { jwtVerify } from "jose";
+import {
+  JOSEError,
+  JWKSInvalid,
+  JWKSNoMatchingKey,
+  JWKSTimeout,
+  JWTExpired,
+} from "jose/errors";
 import { createAuth } from "../../apps/api-server/auth.js";
 import { configureLogger } from "../../core/logger.js";
 
@@ -59,9 +70,9 @@ describe("auth middleware audit", () => {
 
   it("logs authn.deny with the verify-error class (never the token) on a bad JWT", async () => {
     const cap = capture();
-    const err = new Error("expired");
-    err.name = "JWTExpired";
-    verifyMock.mockRejectedValueOnce(err);
+    verifyMock.mockRejectedValueOnce(
+      new JWTExpired('"exp" claim timestamp check failed', {}),
+    );
     const { c, responses } = fakeCtx({
       authorization: "Bearer SECRET.JWT.VAL",
     });
@@ -70,6 +81,116 @@ describe("auth middleware audit", () => {
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.reason).toBe("JWTExpired");
     expect(JSON.stringify(cap.records())).not.toContain("SECRET.JWT.VAL");
+  });
+
+  it("returns 503 and logs authn.unavailable when the JWKS fetch fails", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect ECONNREFUSED"), {
+          code: "ECONNREFUSED",
+        }),
+      }),
+    );
+    const { c, responses } = fakeCtx({
+      authorization: "Bearer SECRET.JWT.VAL",
+    });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]).toEqual({
+      body: { error: "auth unavailable" },
+      status: 503,
+    });
+    const rec = cap.records().find((r) => r.msg === "authn.unavailable")!;
+    expect(rec.reason).toBe("jwks-unavailable");
+    expect(rec.detail.cause).toBe("TypeError: ECONNREFUSED");
+    expect(cap.records().some((r) => r.msg === "authn.deny")).toBe(false);
+    expect(JSON.stringify(cap.records())).not.toContain("SECRET.JWT.VAL");
+  });
+
+  it("keeps a message-only TypeError (jose-internal, attacker-forgeable) at 401", async () => {
+    // jose throws `TypeError('non-ASCII string encountered in encode()')` while
+    // building the signing input from an attacker-supplied payload segment,
+    // BEFORE the signature is checked — a forged token can force it. Unlike
+    // undici's fetch failure it carries no `.cause`, so it must NOT be treated
+    // as a JWKS outage; a forged token stays a credential denial (401), not 503.
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(
+      new TypeError("non-ASCII string encountered in encode()"),
+    );
+    const { c, responses } = fakeCtx({ authorization: "Bearer x" });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(401);
+    const rec = cap.records().find((r) => r.msg === "authn.deny")!;
+    expect(rec.reason).toBe("TypeError");
+    expect(cap.records().some((r) => r.msg === "authn.unavailable")).toBe(
+      false,
+    );
+  });
+
+  it("returns 503 on a JWKS fetch timeout", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(new JWKSTimeout());
+    const { c, responses } = fakeCtx({ authorization: "Bearer x" });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(503);
+    const rec = cap.records().find((r) => r.msg === "authn.unavailable")!;
+    expect(rec.reason).toBe("jwks-unavailable");
+  });
+
+  it("returns 503 when the JWKS endpoint answers non-200/non-JSON", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(
+      new JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response"),
+    );
+    const { c, responses } = fakeCtx({ authorization: "Bearer x" });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(503);
+    expect(cap.records().some((r) => r.msg === "authn.unavailable")).toBe(true);
+  });
+
+  it("returns 503 when a fetched JWKS body is malformed (200 non-key-set)", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(
+      new JWKSInvalid("JSON Web Key Set malformed"),
+    );
+    const { c, responses } = fakeCtx({ authorization: "Bearer x" });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(503);
+    expect(cap.records().some((r) => r.msg === "authn.unavailable")).toBe(true);
+  });
+
+  it("keeps a fetched-but-unmatched key (kid probing, rotation) at 401", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(new JWKSNoMatchingKey());
+    const { c, responses } = fakeCtx({ authorization: "Bearer x" });
+    await auth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(401);
+    const rec = cap.records().find((r) => r.msg === "authn.deny")!;
+    expect(rec.reason).toBe("JWKSNoMatchingKey");
+  });
+
+  it("keeps API-key denials at 401 with their reason", async () => {
+    const cap = capture();
+    const apiKeyAuth = createAuth(
+      {
+        issuerUrl: "http://kc/realms/platform",
+        jwksUrl: "http://kc/jwks",
+        uiClientId: "platform-ui",
+        cliClientId: "platform-cli",
+      },
+      { verifyApiKey: async () => ({ ok: false, error: "revoked" }) },
+    );
+    const { c, responses } = fakeCtx({ authorization: "Bearer pk_x" });
+    await apiKeyAuth.middleware(c as any, next as any);
+    expect(responses[0]!.status).toBe(401);
+    const rec = cap.records().find((r) => r.msg === "authn.deny")!;
+    expect(rec.reason).toBe("revoked");
+  });
+
+  it("warmJwks delegates to the remote JWK set's reload", async () => {
+    reloadMock.mockResolvedValueOnce(undefined);
+    await auth.warmJwks();
+    expect(reloadMock).toHaveBeenCalled();
   });
 
   it("logs authz.deny against the decoded sub when the required role is missing", async () => {

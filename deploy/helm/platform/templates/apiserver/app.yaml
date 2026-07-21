@@ -445,9 +445,14 @@ spec:
               readOnly: true
             {{- end }}
           {{- if .Values.probes.enabled }}
+          # Readiness gates on the Keycloak JWKS warm-up (503 until the key
+          # set has been fetched once), so a rolling update keeps the old pod
+          # serving until this pod can verify tokens. Liveness stays on the
+          # static health route — an unreachable Keycloak must degrade, not
+          # restart the pod.
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
