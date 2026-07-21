@@ -30,8 +30,11 @@ directory is persistent; the rest of the filesystem is reset on pod restart.
   it has its own filesystem (you are root, cwd `/root`), no credentials, no
   gateway, no `/home/agent`. It persists across invocations while in active
   use but is deleted after ~1 hour idle — copy results out before you're
-  done. Use it for work a sandbox pod can't do: systemd, docker/k3s, nested
-  containers, kernel-adjacent tooling. With no command it opens an
-  interactive login shell.
+  done: `dam-vm cat <vm-path> > <local-path>` streams a file back byte-exact
+  (binary included). Use it for work a sandbox pod can't do: systemd,
+  docker/k3s, nested containers, kernel-adjacent tooling. With no command it
+  opens an interactive login shell. The VM's ports aren't reachable from this
+  pod, so to drive a web app or GUI running inside the VM, run your browser
+  tooling from inside the VM (e.g. `dam-vm agent-browser …`).
 <!-- dam-vm:end -->
 

@@ -91,6 +91,24 @@ exec "\$(command-real-or-autoinstalled $bin)" "\$@"
 EOF
 done
 
+# agent-browser (vercel-labs/agent-browser) drives a real Chromium. Install
+# chromium from Fedora repos — it brings the graphics/X shared libs the browser
+# needs, which agent-browser's own Chrome-for-Testing download does not — plus
+# the tool via mise/aqua, then point the tool at the system browser so it skips
+# its own download.
+cat > /opt/shims/high/agent-browser << 'EOF'
+#!/bin/sh
+# Fedora's `chromium` package installs the launcher as `chromium-browser`.
+_chromium=$(command-real chromium-browser 2>/dev/null || command-real chromium 2>/dev/null) || {
+  auto-install chromium dnf install -yq chromium || exit 1
+  _chromium=$(command-real chromium-browser 2>/dev/null || command-real chromium 2>/dev/null)
+}
+command-real agent-browser >/dev/null 2>&1 \
+  || auto-install agent-browser sh -c 'MISE_AUTO_INSTALL=false MISE_NO_HOOKS=true mise use -g "aqua:vercel-labs/agent-browser" && mise install "aqua:vercel-labs/agent-browser"' || exit 1
+export AGENT_BROWSER_EXECUTABLE_PATH="$_chromium"
+exec "$(command-real-or-autoinstalled agent-browser)" "$@"
+EOF
+
 chmod +x /opt/shims/high/*
 
 # ── low shims (fill in tools that aren't installed) ──────────────────────────
