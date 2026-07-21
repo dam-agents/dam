@@ -598,11 +598,13 @@ apiServer:
     # that signed the VM host's server cert (openssl via `mise run
     # dam-vm:issue-certs`, or a managed CA). This cert IS the deployment
     # credential — the chart stores it in a Secret, not a plaintext env var.
-    # Supply via a sealed/secret values overlay in production; clientKey is private.
+    # clientKey is private, so keep this values file itself protected (this
+    # project has no secret-sealing tooling — treat it like the other operator
+    # secrets, e.g. the tokens above).
     clientCert: ""
     clientKey: ""
-    # CA (PEM) that verifies the host's server cert (the Secrets Manager
-    # private CA). Leave empty only for a host fronted by a publicly-trusted cert.
+    # CA (PEM) that verifies the host's server cert. Leave empty only for a
+    # host fronted by a publicly-trusted cert.
     caCert: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the

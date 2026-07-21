@@ -14,7 +14,7 @@ run = [
 dir = "{{config_root}}/packages/dam-vm"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec eslint ."
-sources = ["*.mjs", "test/**/*.mjs", "eslint.config.js", "../dev-config/eslint.base.js"]
+sources = ["*.mjs", "test/**/*.mjs", "eslint.config.js"]
 
 ["dam-vm:check:format"]
 dir = "{{config_root}}/packages/dam-vm"

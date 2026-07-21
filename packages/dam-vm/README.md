@@ -57,7 +57,7 @@ ibmcloud is security-group-rule-add "$SG" inbound tcp --port-min 8090 --port-max
 
 ### 5. Point each DAM cluster at the VPS
 
-Paste that cluster's block (printed by step 2) into its helm values — via a **sealed/secret overlay**, since `clientKey` is private:
+Add that cluster's block (printed by step 2) to its Helm values. The chart puts the cert/key into a Secret and injects the env via `secretKeyRef` — but the values themselves carry the private key, so treat this values file as a secret. This project has **no secret-sealing tooling** (no SealedSecrets/SOPS/External Secrets); operator secret values live wherever your deploy keeps them — e.g. the reference deployment stores the whole values file in a manually-managed `dam-values` Kubernetes Secret that `helm upgrade -f` reads. Put the block there, the same way other operator secrets (Slack token, Keycloak client secret, …) are handled.
 
 ```yaml
 apiServer:
@@ -74,7 +74,21 @@ apiServer:
       ...the CA chain...
 ```
 
-Apply the values and roll the api-server so it picks up the config. That's the whole integration — no agent env, no egress rules, no gateway changes.
+`helm upgrade` and the api-server picks it up. That's the whole integration — no agent env, no egress rules, no gateway changes.
+
+To wire an already-running cluster without a full redeploy, create the Secret and env directly (they mirror exactly what the chart renders):
+
+```sh
+oc create secret generic <release>-apiserver-vmhost -n <ns> \
+  --from-file=PLATFORM_VM_HOST_CLIENT_CERT=cert/<cluster>.crt \
+  --from-file=PLATFORM_VM_HOST_CLIENT_KEY=cert/<cluster>.key \
+  --from-file=PLATFORM_VM_HOST_CA_CERT=cert/client-ca.crt
+oc set env deploy/<release>-apiserver -n <ns> \
+  PLATFORM_VM_HOST_URL=wss://<floating-ip>:8090/run \
+  --from=secret/<release>-apiserver-vmhost
+```
+
+This is an override that a later `helm upgrade` reconciles — still add the block to the values so it survives (and label/annotate the hand-made Secret for Helm adoption to avoid an ownership clash).
 
 ### 6. Verify end-to-end
 
