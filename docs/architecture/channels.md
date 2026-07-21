@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-07-20
+Last verified: 2026-07-21
 
 ## Overview
 
@@ -203,8 +203,9 @@ sequenceDiagram
 
 What the agent sees:
 
-- **Two tools** are registered on the per-Agent MCP server: `describe_channel` returns the authorized chats (DMs / threads / groups) for a given channel type, and `send_channel_message` posts text to a chat. The agent picks the channel by argument (`slack` or `telegram`); `chatId` addresses a specific chat. Omitting `chatId` resolves per channel type: Telegram posts to the worker's last-active thread (error if none); Slack posts to the single channel bound to the Agent, and rejects a `chatId` that isn't that bound channel.
-- **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
+- **Two tools** are registered on the per-Agent MCP server: `describe_channel` returns the reachable chats for a given channel type, and `send_channel_message` posts text to a chat. The agent picks the channel by argument (`slack` or `telegram`); `chatId` addresses a specific chat. Omitting `chatId` resolves per channel type: Telegram posts to the worker's last-active thread (error if none); Slack posts to the channel bound to the Agent.
+- **Slack reach is the bot's own membership.** A bound Agent may post beyond its bound channel: any workspace channel the (install-wide) bot is a member of is a valid `chatId`, and a Slack user id opens a direct message with that person. `describe_channel` lists the bound channel first, then the other bot-member channels with their `#names` (degrading to the bound channel alone if discovery fails, e.g. on an app missing the read scopes). Membership is verified at send time — posting to a channel the bot is not in is refused with a pointer at `/invite` (private channels are invisible to the bot until invited, so they refuse as not-found, with the same pointer). The bound channel itself short-circuits every check, so it keeps working regardless of app scopes. Every outbound post is made by the bot and attributed to the Agent via the context block; the Slack workspace (who invites the bot where) is the reach boundary, and the app's granted scopes are the ceiling. This applies to both access modes — the mode governs who may drive the Agent inbound, not what the Agent does outbound. Telegram has no analogue: its outbound targets stay the conversations bound to the Agent.
+- **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle. The binding is also the gate for the widened Slack reach: an unbound Agent cannot post anywhere, even though the workspace bot exists.
 - **Bidirectional channel.** If a channel is connected to an Agent, every session on that Agent can post — interactive sessions and scheduled sessions alike. There is no per-session outbound flag.
 
 Why the dedicated MCP endpoint:
@@ -221,7 +222,7 @@ Outbound posts are **fire-and-forget at the thread level**. The agent posts a to
 
 The two messengers diverge slightly on what a top-level post means:
 
-- **Slack:** the worker posts to the channel id (or the last-active channel for the Agent) with no `thread_ts`, producing a new top-level message. A reply from a Slack user is a new mention.
+- **Slack:** the worker posts to the resolved target (bound channel by default) with no `thread_ts`, producing a new top-level message. A reply from a Slack user is a new mention, routed by the *reply channel's own* binding — in the posting Agent's bound channel it reaches that Agent; in a channel bound to a different Agent it drives that other Agent; in unbound channels and DMs it reaches no Agent today.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups. The worker posts to the chat id; if the agent's prompt was triggered by a previous message in the same chat, that chat is still the conversation.
 
 ## Per-Agent vs. platform channel

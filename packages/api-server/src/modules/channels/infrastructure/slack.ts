@@ -37,6 +37,7 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import type {
   SlackAck,
+  SlackChannelInfo,
   SlackChannelMessageEvent,
   SlackGateway,
   SlackImageFile,
@@ -230,6 +231,58 @@ export interface SlackOAuthPending {
    *  flow and hands off to the agent picker (`bind`). */
   intent: "login" | "bind";
   createdAt: number;
+}
+
+/** Resolve an outbound conversationId to the Slack conversation to post into.
+ *  The bound channel passes untouched; a user id opens a DM; any other
+ *  channel must have the bot as a member. The one workspace bot is shared by
+ *  all Agents, so its membership — governed Slack-side via /invite — is the
+ *  reach boundary. */
+async function resolveOutboundTarget(
+  gateway: SlackGateway,
+  boundChannelId: string,
+  conversationId: string | undefined,
+): Promise<{ id: string } | { error: string }> {
+  if (!conversationId || conversationId === boundChannelId) {
+    return { id: boundChannelId };
+  }
+  // Exactly one well-formed user id — conversations.open would accept a
+  // comma-separated list and mint a group DM, which is not on offer here.
+  if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
+    try {
+      return { id: await gateway.openDirectMessage(conversationId) };
+    } catch (err) {
+      return {
+        error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
+      };
+    }
+  }
+  // An existing DM conversation — Slack itself rejects DMs the bot is not
+  // party to, and conversations.info carries no membership flag for them.
+  if (conversationId.startsWith("D")) {
+    return { id: conversationId };
+  }
+  let info: { isMember: boolean } | null;
+  try {
+    info = await gateway.getConversationInfo(conversationId);
+  } catch (err) {
+    return {
+      error: `could not resolve conversation ${conversationId}: ${formatError(err)}`,
+    };
+  }
+  if (!info) {
+    // Private channels are invisible to the bot until it is invited, so
+    // they surface here rather than on the membership branch below.
+    return {
+      error: `conversation ${conversationId} not found — if it is a private channel, the bot must be invited to it first (/invite)`,
+    };
+  }
+  if (!info.isMember) {
+    return {
+      error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
+    };
+  }
+  return { id: conversationId };
 }
 
 export function createSlackWorker(
@@ -1511,9 +1564,37 @@ export function createSlackWorker(
     async listConversations(instanceName: string) {
       const slackChannelId =
         await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      return slackChannelId
-        ? [{ id: slackChannelId, title: slackChannelId }]
-        : [];
+      if (!slackChannelId) return [];
+
+      // The bound channel leads (agents treat chats[0] as their home
+      // surface), then every other channel the bot is a member of.
+      // Discovery failure (bot down, missing scopes) degrades to the
+      // bound channel alone. ensureGateway: like outbound posts, a
+      // describe_channel can arrive before any inbound event started
+      // the gateway.
+      let botChannels: SlackChannelInfo[] = [];
+      const gw = await ensureGateway();
+      if (gw) {
+        try {
+          botChannels = await gw.listBotChannels();
+        } catch (err) {
+          process.stderr.write(
+            `[slack] listBotChannels failed: ${formatError(err)}\n`,
+          );
+        }
+      }
+      const bound = botChannels.find((c) => c.id === slackChannelId);
+      const others = botChannels
+        .filter((c) => c.id !== slackChannelId)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((c) => ({ id: c.id, title: `#${c.name}` }));
+      return [
+        {
+          id: slackChannelId,
+          title: bound ? `#${bound.name}` : slackChannelId,
+        },
+        ...others,
+      ];
     },
 
     async postMessage(
@@ -1521,17 +1602,12 @@ export function createSlackWorker(
       text: string,
       options?: PostMessageOptions,
     ) {
+      // The binding is the Agent's membership card into the workspace: no
+      // binding, no Slack outbound — even though the workspace bot exists.
       const slackChannelId =
         await channelRegistry.resolveSlackChannelByInstance(instanceName);
       if (!slackChannelId) {
         return { error: "no channel connected" };
-      }
-
-      const { conversationId, attachment } = options ?? {};
-      if (conversationId && conversationId !== slackChannelId) {
-        return {
-          error: `conversationId ${conversationId} does not match the channel bound to this instance (${slackChannelId})`,
-        };
       }
 
       // Outbound may arrive before any inbound event started the gateway —
@@ -1540,6 +1616,21 @@ export function createSlackWorker(
       const gw = await ensureGateway();
       if (!gw) {
         return { error: "slack bot not running" };
+      }
+
+      const { conversationId, attachment } = options ?? {};
+      // Refuse before resolving: an empty send to a user id would still
+      // open a DM conversation as a side effect.
+      if (!text && !attachment) {
+        return { error: "nothing to send — pass text or an attachment" };
+      }
+      const target = await resolveOutboundTarget(
+        gw,
+        slackChannelId,
+        conversationId,
+      );
+      if ("error" in target) {
+        return target;
       }
 
       const contextBlock = {
@@ -1556,19 +1647,30 @@ export function createSlackWorker(
         // and gives consistent text formatting in either path.
         if (text) {
           await gw.postMessage({
-            channel: slackChannelId,
+            channel: target.id,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
           });
         }
         if (attachment) {
-          await gw.uploadFile({
-            channelId: slackChannelId,
-            file: attachment.data,
-            filename: attachment.filename,
-            title: attachment.title,
-            initialComment: text ? undefined : `_${instanceName}_`,
-          });
+          try {
+            await gw.uploadFile({
+              channelId: target.id,
+              file: attachment.data,
+              filename: attachment.filename,
+              title: attachment.title,
+              initialComment: text ? undefined : `_${instanceName}_`,
+            });
+          } catch (err) {
+            // The text message (if any) already landed — say so, or the
+            // caller (and the audit trail reading its result) would take
+            // the whole send for undelivered.
+            return {
+              error: text
+                ? `message posted, but the attachment upload failed: ${formatError(err)}`
+                : formatError(err),
+            };
+          }
         }
         return { ok: true as const };
       } catch (err) {

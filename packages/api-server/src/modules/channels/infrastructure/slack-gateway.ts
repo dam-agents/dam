@@ -66,6 +66,11 @@ export interface SlackUpload {
   initialComment?: string;
 }
 
+export interface SlackChannelInfo {
+  id: string;
+  name: string;
+}
+
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
@@ -87,4 +92,10 @@ export interface SlackGateway {
   }): Promise<SlackMessage[]>;
   uploadFile(args: SlackUpload): Promise<void>;
   downloadFile(urlPrivate: string): Promise<ArrayBuffer>;
+  /** Channels (public + private) the bot is a member of. */
+  listBotChannels(): Promise<SlackChannelInfo[]>;
+  /** Membership lookup for one conversation; null when Slack can't resolve it. */
+  getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
+  /** Open (or reuse) the bot's DM with a user; returns the conversation id. */
+  openDirectMessage(userId: string): Promise<string>;
 }
