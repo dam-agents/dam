@@ -24,7 +24,6 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  isArtifactsFeatureEnabled: (owner: string) => Promise<boolean>;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
@@ -42,7 +41,6 @@ export function createHarnessRouter(deps: {
     schedulesServiceFor: deps.schedulesServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
-    isArtifactsFeatureEnabled: deps.isArtifactsFeatureEnabled,
     invocationsServiceFor: deps.invocationsServiceFor,
     artifacts: deps.artifacts,
     maxArtifactBytes: deps.maxArtifactBytes,

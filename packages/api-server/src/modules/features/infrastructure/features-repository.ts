@@ -1,4 +1,4 @@
-import { and, eq, sql, type Db, userFeatures } from "db";
+import { eq, sql, type Db, userFeatures } from "db";
 
 export interface FeaturesRepository {
   /** Explicitly toggled features for an owner; absent = default (off). */
@@ -29,21 +29,4 @@ export function createFeaturesRepository(db: Db): FeaturesRepository {
         });
     },
   };
-}
-
-/** Boot-scoped single-flag read for surfaces composed outside a user request
- *  (the per-agent MCP session). */
-export async function isFeatureEnabled(
-  db: Db,
-  owner: string,
-  feature: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ enabled: userFeatures.enabled })
-    .from(userFeatures)
-    .where(
-      and(eq(userFeatures.owner, owner), eq(userFeatures.feature, feature)),
-    )
-    .limit(1);
-  return row?.enabled ?? false;
 }

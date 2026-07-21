@@ -1,34 +1,36 @@
 # Experimental features
 
-Last verified: 2026-07-17
+Last verified: 2026-07-21
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces. Every
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
-current features are the artifact library, experiments, and advanced
-connection types.
+current features are experiments and advanced connection types.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
-That is deliberate: feature surfaces are not only UI. The artifact library,
-for example, registers MCP tools on the per-agent platform MCP server, and
-whether those tools exist for an agent's session is decided from the owner's
-flags at session creation. A browser-local flag could not reach that
-decision. (Server-stored flags replaced earlier localStorage-based debug
-toggles for the same surfaces; users who had those set re-enable via the
-menu.)
+That is deliberate: feature surfaces are not necessarily UI-only. A
+pre-release surface can include agent-facing pieces — MCP tools on the
+per-agent platform MCP server, registered per session from the owner's flags
+— and a browser-local flag could not reach that decision. (Server-stored
+flags replaced earlier localStorage-based debug toggles for the same
+surfaces; users who had those set re-enable via the menu.)
 
 ## What a flag does — and does not — gate
 
 A feature flag is **progressive disclosure, not authorization**. It controls
 where a feature *appears*:
 
-- **UI surfaces** — navigation destinations, settings tabs, panels.
+- **UI surfaces** — navigation destinations, settings tabs, panels. All
+  current features gate only these.
 - **Agent surface** — whether the feature's MCP tools are registered into an
-  agent's MCP session. Registration is per session, so a toggle reaches live
-  agents when their session rolls over (bounded by the session TTL) and new
-  sessions immediately.
+  agent's MCP session, decided at session creation. A toggle then reaches
+  live agents when their session rolls over (bounded by the session TTL) and
+  new sessions immediately. No current feature carries an agent surface (the
+  artifact library did before its promotion to a standard surface); the
+  session-creation check is reintroduced with the next feature that needs
+  it.
 
 It does **not** gate the underlying API: the feature's tRPC endpoints remain
 available to the authenticated owner regardless of the flag. Every endpoint

@@ -15,7 +15,6 @@ import {
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
-import { useFeatures } from "../../features/api/queries.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -105,9 +104,8 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return `${running} Schedule${running === 1 ? "" : "s"} running`;
   }, [agent, schedules]);
 
-  const artifactsEnabled = useFeatures().data?.artifacts ?? false;
   const { data: agentArtifacts } = useArtifacts(
-    agent && artifactsEnabled ? { agentId: agent.id } : null,
+    agent ? { agentId: agent.id } : null,
   );
   const artifactsSummary = useMemo(() => {
     if (!agent || !agentArtifacts) return undefined;

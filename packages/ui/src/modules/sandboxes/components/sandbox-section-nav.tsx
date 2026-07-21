@@ -15,35 +15,20 @@ const SECTIONS: SectionEntry[] = [
   { section: "artifacts", title: "Artifacts" },
 ];
 
-/** Sections hidden while their feature flag is off. */
-const FEATURE_GATED: Partial<Record<SandboxSection, "artifacts">> = {
-  artifacts: "artifacts",
-};
-
 interface Props {
   active: SandboxSection;
   onNavigate: (section: SandboxSection) => void;
   // Live one-line summary per section, keyed by section id (slice 03).
   summaries?: Partial<Record<SandboxSection, string>>;
-  /** Feature-gated sections to include (from the caller's flags). */
-  showArtifacts?: boolean;
 }
 
-export function SandboxSectionNav({
-  active,
-  onNavigate,
-  summaries,
-  showArtifacts = false,
-}: Props) {
-  const sections = SECTIONS.filter(
-    (entry) => !FEATURE_GATED[entry.section] || showArtifacts,
-  );
+export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
   return (
     <nav
       aria-label="Sandbox sections"
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
-      {sections.map((entry) => (
+      {SECTIONS.map((entry) => (
         <SectionNavItem
           key={entry.section}
           title={entry.title}

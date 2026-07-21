@@ -13,7 +13,6 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
-import { isFeatureEnabled } from "../../modules/features/index.js";
 import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
@@ -107,8 +106,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         owner,
         shareBaseUrl: config.shareBaseUrl,
       }).artifactLibrary,
-    isArtifactsFeatureEnabled: (owner) =>
-      isFeatureEnabled(db, owner, "artifacts"),
     invocationsServiceFor,
     connectionsServiceFor,
     templates,

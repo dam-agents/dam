@@ -12,12 +12,6 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "artifacts",
-    label: "Artifacts",
-    description:
-      "Publish, organize, and share agent work products (HTML, JSX, markdown, code, files) with public links and expiry. Adds the Artifacts pages and the agents' artifact tools.",
-  },
-  {
     id: "experiments",
     label: "Experiments",
     description:
@@ -32,8 +26,8 @@ const FEATURE_ROWS: FeatureRow[] = [
 ];
 
 /** The hidden Features settings tab — per-user, per-feature toggles stored
- *  server-side, because feature surfaces include the agents' MCP tools which
- *  only the server can hide. */
+ *  server-side so feature surfaces beyond the browser (e.g. agents' MCP
+ *  tools) can be gated too. */
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
   const setFeature = useSetFeature();
@@ -44,8 +38,7 @@ export function FeaturesTab() {
         Experimental features
       </h2>
       <p className="mb-6 text-[14px] text-foreground/80">
-        Experimental features, toggled per user. Agents pick up changes on their
-        next session (within about half an hour for live ones).
+        Experimental features, toggled per user.
       </p>
 
       <div className="flex flex-col gap-3">

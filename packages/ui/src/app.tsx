@@ -64,10 +64,7 @@ function MainApp() {
       view === "experiments" ||
       view === "experiment-new" ||
       view === "experiment-detail";
-    if (
-      (experimentsView && !features.experiments) ||
-      (view === "artifacts" && !features.artifacts)
-    ) {
+    if (experimentsView && !features.experiments) {
       setView("list");
     }
   }, [features, view, setView]);

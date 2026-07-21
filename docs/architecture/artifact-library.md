@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-17
+Last verified: 2026-07-21
 
 ## Overview
 
@@ -145,11 +145,6 @@ and permanently removes artifacts — private ones included — whose expiry
 passed more than the grace window ago. Agent deletion does
 **not** touch artifacts — attribution simply points at a name that no longer
 resolves.
-
-The whole library ships behind a per-user experimental-feature flag (see
-[features](features.md)): the flag reveals the UI surfaces and registers the
-agent MCP tools per session; the underlying endpoints stay owner-scoped and
-are not flag-gated.
 
 ## Where the code lives
 
