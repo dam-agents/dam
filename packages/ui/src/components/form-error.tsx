@@ -4,5 +4,5 @@ interface Props {
 
 export function FormError({ message }: Props) {
   if (!message) return null;
-  return <p className="text-[14px] text-destructive">{message}</p>;
+  return <p className="text-[13px] text-destructive">{message}</p>;
 }

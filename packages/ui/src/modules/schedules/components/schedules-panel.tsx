@@ -2,10 +2,20 @@ import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { Inset } from "@/components/ui/inset";
+import { SectionLabel } from "@/components/ui/section-label";
 
-import { useSchedules, useScheduleSessions } from "../api/queries.js";
+import type { Schedule } from "../../../types.js";
+import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
+import { ScheduleResultsModal } from "./schedule-results-modal.js";
+
+type FormState =
+  | { mode: "create" }
+  | { mode: "edit"; schedule: Schedule }
+  | null;
 
 export function SchedulesPanel({
   agentId,
@@ -17,59 +27,72 @@ export function SchedulesPanel({
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
 
-  const sessionsQuery = useScheduleSessions(agentId, expandedId);
-  const sessionsForExpanded = sessionsQuery.data ?? [];
-
-  const editing = schedules.find((s) => s.id === editingId);
+  const closeForm = () => setForm(null);
 
   return (
-    <div className="flex flex-col">
-      <div className="px-3 py-2.5 shrink-0">
-        <Button
-          variant="outline"
-          size="xs"
-          className="w-full"
-          onClick={() => setIsCreating(true)}
-        >
-          <Add size={12} /> Add Schedule
-        </Button>
-      </div>
+    <>
+      {schedules.length === 0 ? (
+        <>
+          <SectionLabel spaced>Schedules</SectionLabel>
+          <EmptyStateCard
+            message="You have not set up any Schedules yet"
+            actionLabel="Create Schedule"
+            onAction={() => setForm({ mode: "create" })}
+          />
+        </>
+      ) : (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <SectionLabel>Schedules</SectionLabel>
+            <Button
+              variant="outline"
+              className="h-[32px] px-3 text-[14px] font-normal"
+              onClick={() => setForm({ mode: "create" })}
+            >
+              <Add size={16} />
+              Create Schedule
+            </Button>
+          </div>
+          <Inset className="flex flex-col gap-3">
+            {schedules.map((schedule) => (
+              <ScheduleCard
+                key={schedule.id}
+                schedule={schedule}
+                isExpanded={expandedId === schedule.id}
+                onToggleExpanded={() =>
+                  setExpandedId((prev) =>
+                    prev === schedule.id ? null : schedule.id,
+                  )
+                }
+                onEdit={() => setForm({ mode: "edit", schedule })}
+                onViewResults={() => setResultsFor(schedule)}
+              />
+            ))}
+          </Inset>
+        </>
+      )}
 
-      {agentId && (isCreating || editing) && (
+      {agentId && form && (
         <ScheduleFormModal
           agentId={agentId}
-          existing={editing}
-          onClose={() => {
-            setIsCreating(false);
-            setEditingId(null);
-          }}
-          onSaved={() => {
-            setIsCreating(false);
-            setEditingId(null);
-          }}
+          existing={form.mode === "edit" ? form.schedule : undefined}
+          onClose={closeForm}
+          onSaved={closeForm}
         />
       )}
 
-      {schedules.length === 0 && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>
-      )}
-      {schedules.map((schedule) => (
-        <ScheduleCard
-          key={schedule.id}
-          schedule={schedule}
-          isExpanded={expandedId === schedule.id}
-          sessions={expandedId === schedule.id ? sessionsForExpanded : []}
-          onToggleExpanded={() =>
-            setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
-          }
-          onEdit={() => setEditingId(schedule.id)}
+      {agentId && resultsFor && (
+        <ScheduleResultsModal
+          agentId={agentId}
+          schedule={resultsFor}
+          onClose={() => setResultsFor(null)}
           onResumeSession={onResumeSession}
         />
-      ))}
-    </div>
+      )}
+    </>
   );
 }
