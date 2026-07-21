@@ -830,6 +830,7 @@ async function shutdown() {
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onChannelTurnRelayedSub.unsubscribe();
+  onConnectionChangedSub.unsubscribe();
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();
