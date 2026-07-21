@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-  Run agent harnesses like Claude Code headless in the cloud.
+The platform for AI-powered research.
 </h3>
 
 <p align="center">
@@ -16,20 +16,38 @@
   <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>
   ·
   <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
+  ·
+  <a href="https://pages.github.ibm.com/dam-agents/docs/getting-started/quickstart/"><strong>Quick Start</strong></a>
 </p>
 
 ---
 
-## Why DAM?
+## DAM combines research tools with AI infrastructure to enable quicker, more impactful results. 
 
-- ☁️ **Runs in the cloud.** Agents execute continuously in the cloud and keep running after you close your laptop or go offline.
-- 🔐 **Isolated execution.** Each agent runs in an isolated container with all access routed through a policy-enforced gateway.
-- 🔑 **Zero trust credentials.** Connect agents to your tools without exposing credentials to the runtime.
-- 👥 **Built for teams.** Collaborate in Slack and run agents on schedules for recurring workflows.
+IBM's teams have proven the efficacy of implementing AI tools for research, from building ["agent factories" for hardware optimization](https://arxiv.org/abs/2603.25719) to developing [evolutionary frameworks to find quantum error correction codes](https://research.ibm.com/blog/ai-for-qec). **DAM packages all the tools research teams need to access those benefits in minutes, avoiding the lift of building bespoke tooling**.
 
----
+### 🔬 Evolve code.
+Experiments are scaffolded nativley from a library of re-usable templates, patterns and techniques proven to deliver results.
 
-## Ways to Use DAM
+### ☁️ Runs in the cloud.
+Loops execute continuously, executing even when you're away. From self-updating documentation to 
+
+### 🔐 Secure sandboxes.
+Each agent runs in an isolated container with all access routed through a policy-enforced gateway. Agents connect to tools without exposing credentials to the runtime.
+
+### 👥 Built for teams.
+Collaborate in Slack and run agents on schedules for recurring workflows.
+
+### 🧠 Knowledgeable decisions.
+Memory sources such as LLM Wikis on-the-fly MCP servers ensure agents start smart and experiments can capture and learn from their findings.
+### ⏱️ Scheduled workflows.
+Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
+### 🔧 Constantly growing.
+DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know]().
+
+
+
+### Where DAM runs
 
 | Mode | Description |
 |---|---|
@@ -37,34 +55,12 @@
 | **CLI** | Create agents, attach to live sessions, and manage instances from your local terminal. |
 | **Slack** | Message your agent from Slack threads. Teammates interact with their own credentials. |
 | **Schedules** | Run agents on a recurring timer — daily code reviews, nightly audits, continuous monitoring. |
-
----
-
-## Supported Agent Harnesses
-
-| Harness | Description |
-|---|---|
-| **Claude Code** | Reasoning-first assistant for complex coding tasks. |
-| **Pi Agent** | Multi-provider coding harness across leading LLMs. |
-| **Bob** | Enterprise coding assistant for IBM workflows. |
-| **Codex** | Execution-first system for end-to-end coding tasks. |
-
-Bring your own harness — any runtime compatible with [ACP](https://agentclientprotocol.com/get-started/introduction) can run on DAM.
-
----
-
-## Get Started
-
-Head to [ibm.biz/dam-agents](https://ibm.biz/dam-agents), create an instance from a template, and start chatting. 
-
-See the [documentation](https://ibm.biz/dam-docs) for quickstarts, core concepts, integration guides, and use cases.
-
 ---
 
 <details>
 <summary><strong>Developing DAM locally</strong></summary>
 
-For contributors working on the DAM platform itself.
+**For contributors working on the DAM platform itself.**
 
 ### Prerequisites
 
