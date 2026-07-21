@@ -70,6 +70,7 @@ export async function buildConnection(
       return buildNone(
         template as Extract<ConnectionTemplate, { authKind: "none" }>,
         input,
+        mintSecretRef,
       );
   }
 }
@@ -223,21 +224,32 @@ async function buildOAuthDcr(
   if (!meta) {
     throw new Error(`No OAuth discovery metadata at ${input.url}`);
   }
-  if (!meta.registrationEndpoint) {
-    throw new Error(
-      `MCP server at ${input.url} does not support dynamic client registration`,
-    );
-  }
 
-  const dcr = await registerOAuthClient({
-    registrationEndpoint: meta.registrationEndpoint,
-    clientName: `${brandName} Agent Platform`,
-    redirectUris: [oauthCallbackUrl],
-  });
+  // A supplied client is pre-registered with the server — endpoints come
+  // from discovery, registration is skipped.
+  let clientId: string;
+  let clientSecret: string | undefined;
+  if (input.clientId) {
+    clientId = input.clientId;
+    clientSecret = input.clientSecret;
+  } else {
+    if (!meta.registrationEndpoint) {
+      throw new Error(
+        `MCP server at ${input.url} does not support dynamic client registration`,
+      );
+    }
+    const dcr = await registerOAuthClient({
+      registrationEndpoint: meta.registrationEndpoint,
+      clientName: `${brandName} Agent Platform`,
+      redirectUris: [oauthCallbackUrl],
+    });
+    clientId = dcr.clientId;
+    clientSecret = dcr.clientSecret;
+  }
 
   const secrets = new Map<string, Record<string, string>>();
   const fields: Record<string, string> = {};
-  if (dcr.clientSecret) fields.client_secret = dcr.clientSecret;
+  if (clientSecret) fields.client_secret = clientSecret;
   if (Object.keys(fields).length > 0) secrets.set(secretPath.path, fields);
 
   const contributions: Contribution[] = [
@@ -259,13 +271,13 @@ async function buildOAuthDcr(
   return {
     auth: {
       kind: "oauth",
-      clientId: dcr.clientId,
+      clientId,
       refreshTokenRef: { ...secretPath, field: "refresh_token" },
       accessTokenRef: { ...secretPath, field: "access_token" },
       scopes: meta.scopes ?? template.scopes ?? [],
       authorizationUrl: meta.authorizationEndpoint,
       tokenUrl: meta.tokenEndpoint,
-      ...(dcr.clientSecret
+      ...(clientSecret
         ? { clientSecretRef: { ...secretPath, field: "client_secret" } }
         : {}),
     },
@@ -483,17 +495,50 @@ function buildHeader(
 function buildNone(
   template: Extract<ConnectionTemplate, { authKind: "none" }>,
   input: Extract<ConnectionCreateInput, { authKind: "none" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
   const contributions: Contribution[] = [...template.contributions];
 
   if (input.url) {
     const url = new URL(input.url);
-    contributions.push({ kind: "egress-allow", host: url.host });
+    contributions.push({
+      kind: "egress-allow",
+      host: url.hostname,
+      ...(url.port ? { port: Number(url.port) } : {}),
+    });
     contributions.push({
       kind: "mcp-entry",
       name: template.id,
       url: input.url,
     });
+
+    // Optional header credential: injected at the gateway (egress-inject +
+    // header auth), never written into the mcp-entry the harness sees.
+    if (input.headerName && input.value) {
+      const headerName = input.headerName;
+      const valueFormat = "{value}";
+      contributions.push({
+        kind: "egress-inject",
+        host: url.hostname,
+        ...(url.port ? { port: Number(url.port) } : {}),
+        headerName,
+        valueFormat,
+      });
+      const secretPath = mintSecretRef(`connection:${template.id}`);
+      const sdsFields = buildConnectionSdsFields(contributions, input.value);
+      return {
+        auth: {
+          kind: "header",
+          valueRef: { ...secretPath, field: "value" },
+          headerName,
+          valueFormat,
+        },
+        contributions,
+        secrets: new Map([
+          [secretPath.path, { value: input.value, ...sdsFields }],
+        ]),
+      };
+    }
   }
 
   return {

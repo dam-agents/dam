@@ -88,9 +88,11 @@ export function useTemplateCreateSubmit({
     fail(result.message ?? "Authorization was cancelled.");
   };
 
-  const { open: openPopup, close: closePopup } = useOAuthPopup(
-    (result) => void settlePopup(result),
-  );
+  const {
+    open: openPopup,
+    close: closePopup,
+    focus: focusPopup,
+  } = useOAuthPopup((result) => void settlePopup(result));
 
   const needsOAuth = template.authKind === "oauth";
   const pending =
@@ -215,5 +217,9 @@ export function useTemplateCreateSubmit({
     authorizing,
     verifying: discover.isPending,
     needsOAuth,
+    // A popup is open and we're waiting on it — the caller keeps its button
+    // live so a repeat click can bring the strayed popup back to the front.
+    awaitingPopup: !!popupOAuth && authorizing,
+    refocusPopup: focusPopup,
   };
 }

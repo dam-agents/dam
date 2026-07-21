@@ -180,7 +180,14 @@ function inputsFor(
 
   switch (t.authKind) {
     case "oauth": {
-      if (t.dynamicRegistration) return [required("url")];
+      // A pre-registered client skips dynamic client registration; endpoints
+      // still come from the server's OAuth discovery metadata.
+      if (t.dynamicRegistration)
+        return [
+          required("url"),
+          optional("clientId"),
+          { name: "clientSecret", state: "optional", secret: true },
+        ];
       const out: ConnectionTemplateInput[] = [];
 
       const urlsHavePlaceholder =
@@ -288,6 +295,14 @@ function inputsFor(
       return out;
     }
     case "none":
-      return t.category === "mcp" ? [required("url")] : [];
+      // Custom MCP servers may carry an optional header credential (API
+      // key) injected at the gateway.
+      return t.category === "mcp"
+        ? [
+            required("url"),
+            optional("headerName"),
+            { name: "value", state: "optional", secret: true },
+          ]
+        : [];
   }
 }

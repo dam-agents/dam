@@ -1,4 +1,4 @@
-import { ArrowLeft, Close } from "@carbon/icons-react";
+import { Close } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -18,18 +18,22 @@ import {
   catalogTabCounts,
   templateCreateHeading,
 } from "../lib/catalog-providers.js";
+import { McpCreatePane } from "./catalog-mcp-create-pane.js";
 import { CatalogMethodChooser } from "./catalog-method-chooser.js";
+import { CatalogPaneHeader } from "./catalog-pane-header.js";
 import {
   CatalogProviderCard,
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
+const MCP_PROVIDER_ID = "mcp-server";
 
 type Pane =
   | { kind: "browse" }
   | { kind: "choose"; providerId: string }
-  | { kind: "create"; templateId: string; providerId: string };
+  | { kind: "create"; templateId: string; providerId: string }
+  | { kind: "create-mcp" };
 
 interface Props {
   onClose: () => void;
@@ -62,13 +66,28 @@ export function ConnectionCatalogModal({
 
   const openNew = (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
-    if (group.templates.length > 1) setPane({ kind: "choose", providerId });
+    // MCP is one guided entry — the platform detects OAuth vs no-auth, so it
+    // skips the auth-method chooser (#423).
+    if (providerId === MCP_PROVIDER_ID) setPane({ kind: "create-mcp" });
+    else if (group.templates.length > 1)
+      setPane({ kind: "choose", providerId });
     else if (group.templates[0])
       setPane({
         kind: "create",
         templateId: group.templates[0].id,
         providerId,
       });
+  };
+
+  const onCreated = (id: string) => {
+    sandbox?.onToggleGrant(id, true);
+    emitToast({
+      kind: "success",
+      message: sandbox
+        ? "Connection added to this sandbox."
+        : "Connection created.",
+    });
+    onClose();
   };
 
   const groupById = (providerId: string) =>
@@ -160,16 +179,15 @@ export function ConnectionCatalogModal({
               template={templateById.get(pane.templateId)}
               oauthReturnView={oauthReturnView}
               onBack={() => backFromCreate(pane.providerId)}
-              onCreated={(id) => {
-                sandbox?.onToggleGrant(id, true);
-                emitToast({
-                  kind: "success",
-                  message: sandbox
-                    ? "Connection added to this sandbox."
-                    : "Connection created.",
-                });
-                onClose();
-              }}
+              onCreated={onCreated}
+            />
+          )}
+          {pane.kind === "create-mcp" && (
+            <McpCreatePane
+              templateById={templateById}
+              oauthReturnView={oauthReturnView}
+              onBack={() => setPane({ kind: "browse" })}
+              onCreated={onCreated}
             />
           )}
         </div>
@@ -190,7 +208,7 @@ function ChoosePane({
   if (!group) return null;
   return (
     <>
-      <PaneHeader
+      <CatalogPaneHeader
         title={`Connect ${group.provider.title}`}
         subtitle="Choose an authentication method"
         onBack={onBack}
@@ -217,7 +235,7 @@ function CreatePane({
   const { title, subtitle } = templateCreateHeading(template);
   return (
     <>
-      <PaneHeader title={title} subtitle={subtitle} onBack={onBack} />
+      <CatalogPaneHeader title={title} subtitle={subtitle} onBack={onBack} />
       <TemplateCreateFormBody
         key={template.id}
         template={template}
@@ -235,35 +253,5 @@ function CreatePane({
         )}
       />
     </>
-  );
-}
-
-function PaneHeader({
-  title,
-  subtitle,
-  onBack,
-}: {
-  title: string;
-  subtitle?: string;
-  onBack: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 border-b border-border-light px-5 py-4">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back"
-        data-testid="catalog-back"
-        className="text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft size={18} />
-      </button>
-      <div>
-        <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
-        {subtitle && (
-          <p className="mt-0.5 text-[14px] text-muted-foreground">{subtitle}</p>
-        )}
-      </div>
-    </div>
   );
 }

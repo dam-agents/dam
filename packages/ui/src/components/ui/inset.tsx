@@ -12,6 +12,15 @@ import { cn } from "@/lib/utils";
  */
 export const FIELD_INSET = "md:-ml-4";
 
+/**
+ * The inverse strategy for gutter-less containers (modals, bordered boxes):
+ * instead of outdenting the control into a gutter that isn't there — which
+ * would push the input onto the container's border — keep the control flush
+ * and indent the *label* to meet the control's text. Pairs with the control's
+ * 16px inner padding, so the two land at the same x.
+ */
+export const LABEL_INSET = "md:ml-4";
+
 export function Inset({
   className,
   children,

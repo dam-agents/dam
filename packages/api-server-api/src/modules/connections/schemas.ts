@@ -119,6 +119,10 @@ const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
   url: z.string().url().optional(),
+  // Optional header credential (API key) for MCP servers guarded by a
+  // static header — injected at the gateway, never written to harness config.
+  headerName: z.string().min(1).optional(),
+  value: z.string().min(1).optional(),
 });
 
 export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [

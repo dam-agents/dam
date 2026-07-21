@@ -88,6 +88,8 @@ export function buildCreatePayload(
         ...common,
         authKind: "none" as const,
         url: submitted("url"),
+        headerName: submitted("headerName"),
+        value: submitted("value"),
       });
   }
 }

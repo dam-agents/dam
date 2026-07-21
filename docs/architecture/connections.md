@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-17
+Last verified: 2026-07-21
 
 ## Overview
 
@@ -144,9 +144,10 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 
 ### Custom MCP server
 
-An OAuth-authenticated MCP endpoint contributes just two things: an
-`egress-allow` for its host and an `mcp-entry` carrying the server URL and an
-Authorization header whose bearer value is a gateway-substituted placeholder.
+An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry`
+carrying the server URL. OAuth adds a placeholder Authorization header on the
+`mcp-entry`; a static-header credential instead adds an `egress-inject` (as
+Custom Header does), keeping the secret gateway-side.
 
 ### App preset: Kubernetes / OpenShift
 
