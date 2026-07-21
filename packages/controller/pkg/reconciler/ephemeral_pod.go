@@ -168,6 +168,13 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", c.cfg.HarnessServerURL, c.parentAgentID)},
 	}
+	// Keep the dam-vm tool doc in the instructions when a VM host is configured
+	// (entrypoint strips it otherwise). Run executors borrow the parent's
+	// gateway and can use dam-vm; forks can't reach /vm but matching keeps the
+	// image behavior uniform.
+	if c.cfg.VMEnabled {
+		env = append(env, corev1.EnvVar{Name: "DAM_VM_ENABLED", Value: "1"})
+	}
 	env = append(env, c.extraEnv...)
 	// Placeholder credential envs from the K8s Secrets — same purpose as the
 	// long-lived shape: satisfy the harness's is-env-set check; the gateway's

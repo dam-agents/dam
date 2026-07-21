@@ -125,6 +125,7 @@ COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
 RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
+    chown 65532 /etc/AGENTS.md &&\
     chown -R 65532 /etc/mise /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /app /home/agent /usr/local/share/mise &&\
     ldconfig &&\
     echo 'sshd:x:74:' >> /etc/group &&\

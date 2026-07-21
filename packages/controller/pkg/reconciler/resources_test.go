@@ -337,6 +337,19 @@ func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 		envMap["PLATFORM_POD_FILES_EVENTS_URL"])
 }
 
+func TestBuildAgentStatefulSet_VMEnabledEnv(t *testing.T) {
+	// DAM_VM_ENABLED is injected only when a VM host is configured; the agent
+	// entrypoint keys the dam-vm tool doc off it.
+	off := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
+	_, present := envToMap(off.Spec.Template.Spec.Containers[0].Env)["DAM_VM_ENABLED"]
+	assert.False(t, present, "no DAM_VM_ENABLED when VM host unconfigured")
+
+	cfg := *testConfig
+	cfg.VMEnabled = true
+	on := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "")
+	assert.Equal(t, "1", envToMap(on.Spec.Template.Spec.Containers[0].Env)["DAM_VM_ENABLED"])
+}
+
 func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
