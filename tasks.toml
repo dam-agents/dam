@@ -207,7 +207,9 @@ echo "Dropping + recreating the platform database..."
      -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
      -c "CREATE DATABASE platform OWNER $POSTGRES_APISERVER_USER;"'
 "${KCTL[@]}" scale deployment platform-apiserver --replicas=1
-"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=120s
+# Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
+# ~240s); allow headroom past that bound for a fresh pod to become Available.
+"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=300s
 
 # 3. Clear stored Playwright auth so 01-auth re-runs the login + terms flow
 # (terms acceptance lived in the platform DB we just dropped; a fresh browser

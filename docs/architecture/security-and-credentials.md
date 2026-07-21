@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-17
+Last verified: 2026-07-21
 
 ## Overview
 
@@ -124,6 +124,19 @@ user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
+
+If the key set itself cannot be retrieved (Keycloak unreachable, fetch
+timeout, non-200 response), verification fails closed with **503** and
+reason `jwks-unavailable` — never 401: a transient infrastructure failure
+is signalled as retryable, not as a credential rejection. Every
+token-validity failure (expired, bad signature, unknown `kid`, wrong
+audience) remains 401. The api-server also warms the JWKS at boot and
+gates its readiness probe on the first successful fetch, so a rolling
+update keeps the previous pod serving until the new pod can verify
+tokens. The warm-up gives up after a bounded window (so a prolonged
+Keycloak outage cannot wedge a rollout indefinitely): past that, the pod
+reports ready and serves 503s on authenticated routes until Keycloak is
+reachable again.
 
 There is no token exchange — credential storage is K8s-native and label-
 scoped, so the api-server enforces ownership directly when reading and

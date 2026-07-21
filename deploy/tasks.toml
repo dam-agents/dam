@@ -583,7 +583,10 @@ rm -f "$tar"
 
 echo "Restarting apiserver pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=60s
+# Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
+# ~240s), so a fresh pod whose mesh egress is still converging needs headroom
+# past that bound before it reports Ready.
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=300s
 
 PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
