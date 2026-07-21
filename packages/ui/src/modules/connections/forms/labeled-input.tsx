@@ -40,7 +40,8 @@ export function LabeledInput({
     >
       {multiline ? (
         <Textarea
-          variant="monospace"
+          variant={error ? "invalid" : "monospace"}
+          className="font-mono"
           rows={8}
           data-testid={testId}
           placeholder={placeholder}
@@ -52,6 +53,7 @@ export function LabeledInput({
       ) : (
         <Input
           type={type ?? "text"}
+          variant={error ? "invalid" : undefined}
           data-testid={testId}
           placeholder={placeholder}
           value={value}

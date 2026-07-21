@@ -14,7 +14,7 @@ const FIELD_LABELS: Record<string, string> = {
   installationId: "Installation ID",
   privateKey: "Private key (PEM)",
   envName: "Environment variable",
-  caData: "Server CA certificate (optional)",
+  caData: "Server CA certificate",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
