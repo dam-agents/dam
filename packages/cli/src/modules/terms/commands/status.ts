@@ -4,6 +4,7 @@ import {
   EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
+  EXIT_TERMS_NOT_ACCEPTED,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
@@ -48,7 +49,7 @@ export function buildStatusCommand(deps: {
 
       const acceptedVersion = latest.value?.version ?? null;
       const accepted = acceptedVersion === current.value.version;
-      const exitCode = accepted ? EXIT_SUCCESS : EXIT_RUNTIME_FAILURE;
+      const exitCode = accepted ? EXIT_SUCCESS : EXIT_TERMS_NOT_ACCEPTED;
 
       if (opts.json) {
         return writeStdoutAndExit(
