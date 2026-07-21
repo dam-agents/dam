@@ -115,6 +115,7 @@ import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js"
 import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
 import { composeArtifactExpirySweeper } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { sweepLegacyCredentialSecrets } from "./modules/connections/sweep/legacy-secret-sweep.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -191,6 +192,18 @@ async function runUserEnvBackfill(): Promise<void> {
     backfillRetry = setTimeout(() => void runUserEnvBackfill(), 60_000);
 }
 await runUserEnvBackfill();
+
+// One-time sweep of the drained legacy credential Secrets the
+// secrets→connections migration left in place (#2198). Fire-and-forget:
+// nothing at runtime reads these Secrets, a failed pass retries on the
+// next boot, and the summary line doubles as the drain-gate confirmation.
+void sweepLegacyCredentialSecrets({
+  k8sClient,
+  log: (m) => getLogger().info(`[legacy-secret-sweep] ${m}`),
+  logError: (m) => getLogger().error(`[legacy-secret-sweep] ${m}`),
+}).catch((err) =>
+  getLogger().error(`[legacy-secret-sweep] pass failed: ${String(err)}`),
+);
 
 // Concrete spec.resources.limits on legacy agents (#1900) are the
 // controller's job: it materializes `legacyAgentSize` into any spec
