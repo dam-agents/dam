@@ -7,11 +7,13 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { emitToast } from "@/lib/toast";
 
+import { MCP_DOCS_URL } from "../../../constants.js";
 import { DisclosureBox } from "../forms/disclosure-box.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
+import { validateConnectionName } from "../lib/connection-name.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
 
@@ -22,7 +24,7 @@ const filled = (s: string) => s.trim() !== "";
 
 const mcpFormSchema = z
   .object({
-    name: z.string().min(1, "Required"),
+    name: z.string(),
     url: z.string(),
     clientId: z.string(),
     clientSecret: z.string(),
@@ -30,6 +32,15 @@ const mcpFormSchema = z
     headerValue: z.string(),
   })
   .superRefine((v, ctx) => {
+    // Reuse the contract name rules so the format error (lowercase, digits,
+    // hyphens) shows live rather than failing server-side on submit.
+    const nameError = validateConnectionName(v.name);
+    if (nameError)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["name"],
+        message: nameError,
+      });
     const urlError = validateMcpUrl(v.url);
     if (urlError)
       ctx.addIssue({
@@ -170,7 +181,7 @@ export function McpCreatePane({
             name="name"
             label="Name"
             placeholder="my-mcp-server"
-            help="Lowercase letters, digits, and single hyphens. Doubles as the MCP slug."
+            autoFocus
           />
           <McpField
             control={control}
@@ -178,31 +189,50 @@ export function McpCreatePane({
             label="Remote MCP server URL"
             placeholder="https://mcp.example.com/sse"
           />
-          <DisclosureBox title="Advanced configuration">
+          <DisclosureBox
+            title="Advanced configuration"
+            variant="section"
+            description={
+              <>
+                See{" "}
+                <a
+                  href={MCP_DOCS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
+                >
+                  documentation
+                </a>{" "}
+                for more details
+              </>
+            }
+          >
             <div className="flex flex-col gap-4">
               <McpField
                 control={control}
                 name="clientId"
-                label="OAuth ID (optional)"
-                placeholder="Client ID"
+                label="OAuth ID"
+                placeholder="Client ID (optional)"
               />
               <McpField
                 control={control}
                 name="clientSecret"
-                label="OAuth secret (optional)"
+                label="OAuth secret"
                 type="password"
+                placeholder="OAuth secret (optional)"
               />
               <McpField
                 control={control}
                 name="headerName"
-                label="Header name (optional)"
-                placeholder="X-API-Key"
+                label="Header name"
+                placeholder="Name (optional)"
               />
               <McpField
                 control={control}
                 name="headerValue"
-                label="Header value (optional)"
+                label="Header value"
                 type="password"
+                placeholder="Value (optional)"
               />
             </div>
           </DisclosureBox>
@@ -239,6 +269,7 @@ function McpField({
   placeholder,
   type,
   help,
+  autoFocus,
 }: {
   control: Control<McpFormValues>;
   name: keyof McpFormValues;
@@ -246,6 +277,7 @@ function McpField({
   placeholder?: string;
   type?: "text" | "password";
   help?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <Controller
@@ -262,6 +294,8 @@ function McpField({
           onBlur={field.onBlur}
           help={help}
           error={fieldState.error?.message}
+          autoFocus={autoFocus}
+          inset
         />
       )}
     />

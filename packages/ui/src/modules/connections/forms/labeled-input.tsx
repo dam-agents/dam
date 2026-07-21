@@ -11,6 +11,8 @@ export function LabeledInput({
   onBlur,
   help,
   error,
+  autoFocus,
+  inset,
 }: {
   label: string;
   testId?: string;
@@ -21,9 +23,17 @@ export function LabeledInput({
   onBlur?: () => void;
   help?: string;
   error?: string;
+  autoFocus?: boolean;
+  inset?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} error={error} disableInset>
+    <FormField
+      label={label}
+      hint={help}
+      error={error}
+      disableInset={!inset}
+      labelInset={inset}
+    >
       <Input
         type={type ?? "text"}
         data-testid={testId}
@@ -31,6 +41,7 @@ export function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        autoFocus={autoFocus}
       />
     </FormField>
   );
