@@ -34,6 +34,24 @@ const forkStatusSchema = z
   })
   .nullish();
 
+const forkSpecSchema = z.object({
+  agentName: z.string().min(1),
+  foreignSub: z.string().min(1),
+});
+
+/** Read the parent-agent + replier identity off a Fork CR's spec. Returns
+ *  null when the spec is malformed — callers treat that as "no such fork". */
+export function parseForkSpec(obj: {
+  spec?: unknown;
+}): { agentId: string; foreignSub: string } | null {
+  const parsed = forkSpecSchema.safeParse(obj.spec);
+  if (!parsed.success) return null;
+  return {
+    agentId: parsed.data.agentName,
+    foreignSub: parsed.data.foreignSub,
+  };
+}
+
 export function buildForkObject(args: {
   forkId: string;
   spec: ForkSpec;
@@ -42,7 +60,6 @@ export function buildForkObject(args: {
     agentName: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };
-  if (args.spec.sessionId !== undefined) spec.sessionId = args.spec.sessionId;
 
   return {
     apiVersion: `${GROUP}/${VERSION}`,
@@ -87,6 +104,7 @@ function normalisePhase(phase: string): ForkStatus["phase"] | null {
   switch (phase) {
     case "Pending":
     case "Ready":
+    case "Hibernated":
     case "Failed":
     case "Completed":
       return phase;
@@ -101,6 +119,7 @@ function normaliseReason(reason: string): ForkFailureReason | null {
     case "OrchestrationFailed":
     case "PodNotReady":
     case "Timeout":
+    case "OverBudget":
       return reason;
     default:
       return null;

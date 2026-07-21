@@ -94,6 +94,7 @@ export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
+export type { ForkView, ForksUiService } from "./modules/forks/types.js";
 export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {

@@ -31,6 +31,12 @@ export function createHarnessRouter(deps: {
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   runtimeHello: RuntimeDeliveryService;
+  resolveFork: (forkId: string) => Promise<{
+    forkId: string;
+    parentAgentId: string;
+    foreignSub: string;
+    podIP: string | null;
+  } | null>;
 }) {
   const app = new Hono();
 
@@ -46,6 +52,7 @@ export function createHarnessRouter(deps: {
     invocationsServiceFor: deps.invocationsServiceFor,
     artifacts: deps.artifacts,
     maxArtifactBytes: deps.maxArtifactBytes,
+    resolveFork: deps.resolveFork,
   });
   mountInvocationRoutes(app, {
     k8s: deps.k8s,

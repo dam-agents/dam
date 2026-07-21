@@ -24,23 +24,22 @@ import (
 
 const ForkPodReadyTimeout = 120 * time.Second
 
-// ForkMaxLifetime is a hard GC backstop, mirroring RunMaxLifetime: the
-// api-server deletes a Fork CR when its turn ends or fails, but if it
-// crashes (or its in-memory fork state is lost) the CR — and the gateway
-// Pod, Job, Service, SA, netpol, bootstrap CM and leaf Cert owner-refed to
-// it — would otherwise leak until the parent Agent is deleted.
-const ForkMaxLifetime = 60 * time.Minute
-
 type ForkReconciler struct {
 	client   kubernetes.Interface
 	dynamic  dynamic.Interface // required to apply per-fork cert-manager Certificates
 	config   *config.Config
 	resolver *AgentResolver
 	now      func() time.Time
+	// busyProbe reports whether the fork's agent pod is mid-work and must not
+	// have its pods reclaimed. Defaults to the live HTTP probe (podIsBusy);
+	// overridable in tests, mirroring IdleChecker.
+	busyProbe func(ctx context.Context, forkName string) bool
 }
 
 func NewForkReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver) *ForkReconciler {
-	return &ForkReconciler{client: client, config: cfg, resolver: resolver, now: time.Now}
+	r := &ForkReconciler{client: client, config: cfg, resolver: resolver, now: time.Now}
+	r.busyProbe = r.podIsBusy
+	return r
 }
 
 // WithDynamicClient supplies a dynamic client used to apply the cert-manager
@@ -53,16 +52,29 @@ func (r *ForkReconciler) WithDynamicClient(d dynamic.Interface) *ForkReconciler 
 func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error {
 	forkName := fork.Name
 	ownerRef := forkOwnerRef(fork)
+	idleFor := r.now().Sub(forkLastActivity(fork))
 
-	// Over-age reaper runs before the terminal-phase short-circuit so a
-	// Failed/Completed CR the api-server never deleted is reaped too —
-	// its gateway Pod crash-loops (RestartPolicy=Always) for as long as
-	// the CR exists.
-	if age := r.now().Sub(fork.CreationTimestamp.Time); age > ForkMaxLifetime {
-		slog.Warn("reaping over-age fork", "fork", forkName, "age", age.String())
+	// Two-tier idle policy (#2843), evaluated on every reconcile — the 30s
+	// informer resync is what advances a quiet fork through the tiers.
+	//
+	// Expire: idle past the long window → delete the CR; K8s GC sweeps the
+	// Job, gateway Pod, Service, SA, netpol, bootstrap CM and leaf Cert
+	// owner-refed to it. Runs ahead of the terminal-phase short-circuit so a
+	// Failed CR the api-server never cleaned up ages out too. Busy-guarded
+	// like hibernation — an in-flight turn is activity, however stale the
+	// annotation.
+	if r.config.ForkExpireAfter > 0 && idleFor >= r.config.ForkExpireAfter && !r.busyProbe(ctx, forkName) {
+		stillIdle, err := r.confirmIdle(ctx, forkName, r.config.ForkExpireAfter)
+		if err != nil {
+			return err
+		}
+		if !stillIdle {
+			return nil
+		}
+		slog.Info("expiring idle fork", "fork", forkName, "idle", idleFor.String())
 		if err := r.dynamic.Resource(ForksGVR).Namespace(r.config.Namespace).
 			Delete(ctx, forkName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-			return fmt.Errorf("reaping fork %s: %w", forkName, err)
+			return fmt.Errorf("expiring fork %s: %w", forkName, err)
 		}
 		return nil
 	}
@@ -70,6 +82,35 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	currentPhase := fork.Status.Phase
 	if currentPhase == apiv1.ForkPhaseFailed || currentPhase == apiv1.ForkPhaseCompleted {
 		return nil
+	}
+
+	// Hibernate: idle past the short window → tear down the pods (agent Job
+	// + gateway Pod), retaining the CR and its identity resources for the
+	// next wake. The busy probe guards a turn still running past the window;
+	// an unreachable pod counts as not busy, the same fail-open trade the
+	// agent idle checker makes.
+	if r.config.ForkHibernateAfter > 0 && idleFor >= r.config.ForkHibernateAfter {
+		if currentPhase == apiv1.ForkPhaseHibernated {
+			return nil
+		}
+		if r.busyProbe(ctx, forkName) {
+			slog.Info("fork idle by annotation but busy; skipping hibernation", "fork", forkName)
+			return nil
+		}
+		stillIdle, err := r.confirmIdle(ctx, forkName, r.config.ForkHibernateAfter)
+		if err != nil {
+			return err
+		}
+		if !stillIdle {
+			return nil
+		}
+		slog.Info("hibernating idle fork", "fork", forkName, "idle", idleFor.String())
+		if err := r.deleteForkPods(ctx, forkName); err != nil {
+			return err
+		}
+		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
+			Phase: apiv1.ForkPhaseHibernated,
+		})
 	}
 
 	timer := newReconcileTimer(ctx, "fork", forkName)
@@ -97,14 +138,17 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// `foreignSub` — the parent owner's secrets must NOT appear here.
 	// The per-fork
 	// bootstrap/leaf names are derived from `forkName`, so the resources
-	// are owned by the fork ConfigMap and GC'd with it.
+	// are owned by the Fork CR and GC'd with it.
 	credentialSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, forkSpec.ForeignSub)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
+	// The fork gateway dials its OWN ext-authz Service (second arg), so the
+	// Check's :authority carries the fork id and the api-server can tell a
+	// replier's turn from the parent's (#2843).
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkName, r.config, ownerRef, credentialSecrets)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -123,24 +167,31 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// their OWN identity (not the parent's) so a compromised fork cannot
 	// reach the parent's full `/api/agents/<parent>/*` surface — only
 	// the narrow paths the per-fork harness AuthorizationPolicy below
-	// admits. Owner-refed to the fork ConfigMap (same namespace), so
+	// admits. Owner-refed to the Fork CR (same namespace), so
 	// K8s GC reaps it on fork-cm delete.
 	if err := r.ensureForkServiceAccount(ctx, forkName, ownerRef); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 	timer.mark("serviceAccount")
 
-	// Per-fork harness policy admits the fork SA only to
-	// `/api/agents/<parent>/mcp` (not the parent's full surface), and
-	// the per-fork ext-authz policy admits the fork SA to the parent's
-	// per-agent ext-authz Service so the parent owner's HITL rules
-	// continue to gate the fork's egress. Both gate the fork *gateway*'s
+	// Per-fork harness policy admits the fork SA only to the fork's own
+	// `/api/agents/<forkId>/mcp` (never the parent's surface), and the
+	// per-fork ext-authz policy admits the fork SA to the fork's own
+	// ext-authz Service — the gate still resolves the parent owner's
+	// rules from the fork id (#2843). Both gate the fork *gateway*'s
 	// SPIFFE identity — the fork agent itself is not a mesh participant.
 	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, fork.Namespace, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
 	}
 	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, fork.Namespace, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
+	}
+
+	// Per-fork ext-authz Service (release namespace, no cross-namespace
+	// ownerRef possible) — the destination the bootstrap above dials and the
+	// policy above gates. Cleaned up in Delete alongside the policies.
+	if err := applyExtAuthzService(ctx, r.client, BuildExtAuthzService(forkName, r.config)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz service: %v", err))
 	}
 
 	// Per-pair agent egress NetworkPolicy — same shape and rationale as
@@ -159,8 +210,48 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, ownerRef)
 
-	if err := createPodIfMissing(ctx, r.client, gatewayPod); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
+	// A durable fork's gateway outlives the replier's credential set: when
+	// the secrets rev drifts (a connection added/removed since the pod
+	// started), recreate the bare Pod so Envoy reloads its bootstrap —
+	// the same roll the agent gateway gets from its StatefulSet template
+	// hash. The brief egress blip matches an agent gateway roll. (The fork
+	// agent Job's placeholder envs stay as-created; they refresh on the
+	// next hibernate/wake cycle.)
+	wantRev := gatewayPod.Annotations["agent-platform.ai/envoy-secrets-rev"]
+	gatewayCurrent := false
+	if existing, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, gatewayPod.Name, metav1.GetOptions{}); err == nil {
+		if existing.DeletionTimestamp == nil && existing.Annotations["agent-platform.ai/envoy-secrets-rev"] != wantRev {
+			slog.Info("rolling fork gateway on credential change", "fork", forkName)
+			if err := r.client.CoreV1().Pods(r.config.Namespace).Delete(ctx, gatewayPod.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+				return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rolling gateway pod: %v", err))
+			}
+		} else if existing.DeletionTimestamp == nil {
+			gatewayCurrent = true
+		}
+	} else if !errors.IsNotFound(err) {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("reading gateway pod: %v", err))
+	}
+	if !gatewayCurrent {
+		// Mid-roll (or first create): the pair must not report Ready with a
+		// stale or absent gateway — a relayed turn would egress without the
+		// replier's current credentials. Park the status on Pending so the
+		// api-server's watch holds the turn, and requeue to recreate as soon
+		// as the old pod drains (5s grace).
+		if err := createPodIfMissing(ctx, r.client, gatewayPod); err != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
+		}
+		fresh, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, gatewayPod.Name, metav1.GetOptions{})
+		if err != nil || fresh.DeletionTimestamp != nil ||
+			fresh.Annotations["agent-platform.ai/envoy-secrets-rev"] != wantRev {
+			if currentPhase == apiv1.ForkPhaseReady {
+				if err := writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
+					Phase: apiv1.ForkPhasePending, JobName: forkName,
+				}); err != nil {
+					return err
+				}
+			}
+			return fmt.Errorf("fork %s: gateway rolling, requeuing", forkName)
+		}
 	}
 	// Apply gateway Service + migrate any legacy headless, capture
 	// ClusterIP synchronously (see instance.go).
@@ -186,15 +277,35 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 	rewriteParentPVCs(desired.Spec.Template.Spec.Volumes, parentPVCs)
 
-	if err := r.applyForkJob(ctx, desired); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
+	// Budget gate (#2843): a fork reserves against the REPLIER at the
+	// parent's Size, checked at the 0→1 analog — Job creation, i.e. the
+	// first start and every wake from hibernation; an existing Job means
+	// the fork is already reserved and passes without reads. The owner lock
+	// is held through the create so the reservation write lands inside it.
+	// A denial fails the fork — no parking: the next reply rebuilds the
+	// slot and re-gates.
+	job, jobErr := r.client.BatchV1().Jobs(r.config.Namespace).Get(ctx, forkName, metav1.GetOptions{})
+	if errors.IsNotFound(jobErr) {
+		lock := ownerBudgetLock(forkSpec.ForeignSub)
+		lock.Lock()
+		verdict, verr := forkBudgetAllows(ctx, r.client, r.dynamic, r.config, forkSpec.ForeignSub, agentSpec)
+		if verr == nil && verdict.allowed {
+			verr = r.applyForkJob(ctx, desired)
+		}
+		lock.Unlock()
+		if verr != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", verr))
+		}
+		if !verdict.allowed {
+			slog.Info("fork start refused: over budget", "fork", forkName, "replier", forkSpec.ForeignSub)
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOverBudget, verdict.message)
+		}
+		job, jobErr = r.client.BatchV1().Jobs(r.config.Namespace).Get(ctx, forkName, metav1.GetOptions{})
+	}
+	if jobErr != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("reading job: %v", jobErr))
 	}
 	timer.mark("forkJob")
-
-	job, err := r.client.BatchV1().Jobs(r.config.Namespace).Get(ctx, forkName, metav1.GetOptions{})
-	if err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("reading job: %v", err))
-	}
 
 	pod, _ := findEphemeralPod(ctx, r.client, r.config.Namespace, ForkLabelForkID, forkName)
 
@@ -203,17 +314,31 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 
 	if pod != nil && isPodReady(*pod) && pod.Status.PodIP != "" {
+		// Durable forks re-reconcile on every resync; skip the redundant
+		// status write while nothing changed.
+		if currentPhase == apiv1.ForkPhaseReady && fork.Status.PodIP == pod.Status.PodIP {
+			return nil
+		}
 		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
 			Phase: apiv1.ForkPhaseReady, JobName: forkName, PodIP: pod.Status.PodIP,
 		})
 	}
 
-	if age := r.now().Sub(fork.CreationTimestamp.Time); age > ForkPodReadyTimeout {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonTimeout,
-			withPodTermination(fmt.Sprintf("pod not Ready after %s", ForkPodReadyTimeout), pod))
+	// The ready timeout applies only while the fork is *establishing*
+	// (never reached Ready on this Job): an established Ready fork whose
+	// pod blips unready — readiness probe hiccup under load — must ride
+	// out the blip, not be torn down mid-turn; a real death surfaces as a
+	// Job failure above (backoffLimit=0). Measured from the *Job's*
+	// creation, never the CR's — a durable CR outlives many hibernate/wake
+	// cycles, and each wake gets the full window.
+	if currentPhase != apiv1.ForkPhaseReady {
+		if age := r.now().Sub(job.CreationTimestamp.Time); age > ForkPodReadyTimeout {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonTimeout,
+				withPodTermination(fmt.Sprintf("pod not Ready after %s", ForkPodReadyTimeout), pod))
+		}
 	}
 
-	if currentPhase == "" {
+	if currentPhase == "" || currentPhase == apiv1.ForkPhaseHibernated {
 		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
 			Phase: apiv1.ForkPhasePending, JobName: forkName,
 		})
@@ -221,16 +346,78 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	return nil
 }
 
+// confirmIdle re-reads the fork LIVE and re-evaluates its idleness
+// immediately before a destructive transition: the reconcile object comes
+// from the informer cache, so an activity bump (a wake) landing after that
+// snapshot must veto the teardown it raced — otherwise a hibernate at the
+// window boundary can delete the pods a just-relayed turn is about to use.
+// Returns false when the fork is gone or no longer past the window.
+func (r *ForkReconciler) confirmIdle(ctx context.Context, forkName string, window time.Duration) (bool, error) {
+	u, err := r.dynamic.Resource(ForksGVR).Namespace(r.config.Namespace).Get(ctx, forkName, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("re-reading fork %s before teardown: %w", forkName, err)
+	}
+	live, err := FromCacheObject[apiv1.Fork](u)
+	if err != nil {
+		return false, fmt.Errorf("decoding fork %s: %w", forkName, err)
+	}
+	return r.now().Sub(forkLastActivity(live)) >= window, nil
+}
+
+// forkLastActivity returns the fork's last-activity annotation (bumped by the
+// api-server per relayed turn), falling back to CR creation when absent or
+// malformed. The fallback direction is deliberate: bad data at worst reclaims
+// pods early, and the busy probe still guards an in-flight turn.
+func forkLastActivity(fork *apiv1.Fork) time.Time {
+	if v := fork.Annotations[annLastActivity]; v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			return t
+		}
+	}
+	return fork.CreationTimestamp.Time
+}
+
+// deleteForkPods removes the fork's runnable surface — the agent Job (its
+// pods cascade via background propagation) and the paired gateway Pod —
+// leaving every identity resource (SA, leaf cert, policies, bootstrap CM,
+// gateway Service) in place for the next wake. Idempotent.
+func (r *ForkReconciler) deleteForkPods(ctx context.Context, forkName string) error {
+	bg := metav1.DeletePropagationBackground
+	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, forkName,
+		metav1.DeleteOptions{PropagationPolicy: &bg}); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("deleting fork job %s: %w", forkName, err)
+	}
+	if err := r.client.CoreV1().Pods(r.config.Namespace).Delete(ctx, GatewayName(forkName),
+		metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("deleting fork gateway pod %s: %w", GatewayName(forkName), err)
+	}
+	return nil
+}
+
+// podIsBusy probes the fork agent pod's runtime status endpoint by pod IP —
+// fork pods are Job pods with no per-pod DNS. Unreachable or missing pods
+// read as not busy (fail-open, matching the agent idle checker).
+func (r *ForkReconciler) podIsBusy(ctx context.Context, forkName string) bool {
+	pod, _ := findEphemeralPod(ctx, r.client, r.config.Namespace, ForkLabelForkID, forkName)
+	if pod == nil || pod.Status.PodIP == "" {
+		return false
+	}
+	return runtimeReportsBusy(ctx, fmt.Sprintf("http://%s:8080/api/status", pod.Status.PodIP))
+}
+
 func (r *ForkReconciler) Delete(ctx context.Context, name string) {
 	// Agent-namespace resources (ServiceAccount, gateway Pod, agent Job,
 	// gateway Service, agent-egress NetworkPolicy, Envoy bootstrap CM,
-	// leaf Cert) are owner-refed to the fork ConfigMap and reaped by K8s GC.
+	// leaf Cert) are owner-refed to the Fork CR and reaped by K8s GC.
 	//
 	// Release-namespace per-fork policies (harness-allow, ext-authz-allow)
 	// cannot use a cross-namespace ownerRef — same trap as the per-agent
 	// resources in AgentReconciler.Delete. Clean them up explicitly.
 	r.deleteReleaseNsForkResources(ctx, name)
-	slog.Info("fork configmap deleted", "fork", name)
+	slog.Info("fork deleted", "fork", name)
 }
 
 // ensureForkOwnerReference adds an OwnerReference from the Fork CR to its parent
@@ -265,11 +452,16 @@ func (r *ForkReconciler) ensureForkOwnerReference(ctx context.Context, fork *api
 	})
 }
 
-// deleteReleaseNsForkResources removes the per-fork harness + ext-authz
-// AuthorizationPolicies the fork reconciler renders in the release
-// namespace. Errors are logged but not returned — fork deletion is
+// deleteReleaseNsForkResources removes the per-fork release-namespace
+// resources — the harness + ext-authz AuthorizationPolicies and the
+// per-fork ext-authz Service — which cannot ride a cross-namespace
+// ownerRef. Errors are logged but not returned — fork deletion is
 // best-effort.
 func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkName string) {
+	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).
+		Delete(ctx, r.config.ExtAuthzServiceName(forkName), metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		slog.Warn("deleting per-fork ext-authz Service", "fork", forkName, "error", err)
+	}
 	if r.dynamic == nil {
 		return
 	}
@@ -284,7 +476,7 @@ func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkN
 // ensureForkServiceAccount renders the per-fork ServiceAccount and applies
 // it idempotently. Mirrors AgentReconciler.ensureServiceAccount (same
 // SA shape — `automountServiceAccountToken: false`, owner-refed to the
-// fork ConfigMap, label-drift heal).
+// Fork CR, label-drift heal).
 func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerRef metav1.OwnerReference) error {
 	sa := BuildServiceAccount(forkName, r.config, ownerRef)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -325,6 +517,13 @@ func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName 
 }
 
 func (r *ForkReconciler) setForkFailed(ctx context.Context, name, reason, detail string) error {
+	// A Failed CR may now linger until the api-server's next ensure or the
+	// expiry sweep — tear the pods down so it holds no compute and no
+	// crash-looping gateway meanwhile. Best-effort: the status write is the
+	// authoritative signal.
+	if err := r.deleteForkPods(ctx, name); err != nil {
+		slog.Warn("tearing down failed fork pods", "fork", name, "error", err)
+	}
 	if err := writeForkStatus(ctx, r.dynamic, r.config.Namespace, name, apiv1.ForkStatus{
 		Phase: apiv1.ForkPhaseFailed,
 		Error: &apiv1.ForkError{Reason: reason, Detail: detail},

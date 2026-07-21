@@ -1,9 +1,20 @@
-import type * as k8s from "@kubernetes/client-node";
+import * as k8s from "@kubernetes/client-node";
 import type { ForkStatus } from "../domain/fork.js";
 import { err, ok, type Result } from "../../../core/result.js";
 import type { ForkOrchestratorPort, OrchestratorCreateError } from "./ports.js";
-import { buildForkObject, parseForkStatus } from "./fork-mappers.js";
-import { FORKS_PLURAL, GROUP, VERSION } from "./labels.js";
+import {
+  buildForkObject,
+  parseForkSpec,
+  parseForkStatus,
+} from "./fork-mappers.js";
+import {
+  ANNOTATION_CREDENTIALS_REV,
+  ANNOTATION_LAST_ACTIVITY,
+  FORKS_PLURAL,
+  GROUP,
+  LABEL_AGENT_REF,
+  VERSION,
+} from "./labels.js";
 
 export interface K8sForkOrchestratorDeps {
   customObjects: k8s.CustomObjectsApi;
@@ -40,6 +51,78 @@ export function createK8sForkOrchestrator(
       }
     },
 
+    async getFork(forkId) {
+      let obj: unknown;
+      try {
+        obj = await deps.customObjects.getNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
+          namespace: deps.namespace,
+          plural: FORKS_PLURAL,
+          name: forkId,
+        });
+      } catch (cause) {
+        if (isNotFound(cause)) return null;
+        throw cause;
+      }
+      const spec = parseForkSpec(obj as { spec?: unknown });
+      if (!spec) return null;
+      return {
+        ...spec,
+        status: parseForkStatus(obj as { status?: unknown }),
+      };
+    },
+
+    async bumpActivity(forkId) {
+      try {
+        await deps.customObjects.patchNamespacedCustomObject(
+          {
+            group: GROUP,
+            version: VERSION,
+            namespace: deps.namespace,
+            plural: FORKS_PLURAL,
+            name: forkId,
+            body: {
+              metadata: {
+                annotations: {
+                  [ANNOTATION_LAST_ACTIVITY]: new Date().toISOString(),
+                },
+              },
+            },
+          },
+          k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.MergePatch),
+        );
+      } catch (cause) {
+        if (isNotFound(cause)) return;
+        throw cause;
+      }
+    },
+
+    async bumpCredentialsRev(forkId) {
+      try {
+        await deps.customObjects.patchNamespacedCustomObject(
+          {
+            group: GROUP,
+            version: VERSION,
+            namespace: deps.namespace,
+            plural: FORKS_PLURAL,
+            name: forkId,
+            body: {
+              metadata: {
+                annotations: {
+                  [ANNOTATION_CREDENTIALS_REV]: new Date().toISOString(),
+                },
+              },
+            },
+          },
+          k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.MergePatch),
+        );
+      } catch (cause) {
+        if (isNotFound(cause)) return;
+        throw cause;
+      }
+    },
+
     watchStatus(forkId) {
       return pollForkStatus({
         customObjects: deps.customObjects,
@@ -62,6 +145,37 @@ export function createK8sForkOrchestrator(
       } catch (cause) {
         if (!isNotFound(cause)) throw cause;
       }
+    },
+
+    async listForks(filter) {
+      const res = (await deps.customObjects.listNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace: deps.namespace,
+        plural: FORKS_PLURAL,
+        ...(filter?.agentId
+          ? { labelSelector: `${LABEL_AGENT_REF}=${filter.agentId}` }
+          : {}),
+      })) as { items?: unknown[] };
+      const out = [];
+      for (const item of res.items ?? []) {
+        const obj = item as {
+          metadata?: { name?: string; annotations?: Record<string, string> };
+          spec?: unknown;
+          status?: unknown;
+        };
+        const forkId = obj.metadata?.name;
+        const spec = parseForkSpec(obj);
+        if (!forkId || !spec) continue;
+        out.push({
+          forkId,
+          ...spec,
+          status: parseForkStatus(obj),
+          lastActivityAt:
+            obj.metadata?.annotations?.[ANNOTATION_LAST_ACTIVITY] ?? null,
+        });
+      }
+      return out;
     },
   };
 }
@@ -133,10 +247,4 @@ function describeError(cause: unknown): string {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function generateForkId(prefix = "fork"): string {
-  const random = Math.random().toString(16).slice(2, 10);
-  const ts = Date.now().toString(36);
-  return `${prefix}-${ts}-${random}`;
 }

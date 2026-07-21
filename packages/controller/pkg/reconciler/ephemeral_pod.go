@@ -99,16 +99,29 @@ func rewriteParentPVCs(volumes []corev1.Volume, parentPVCs map[string]string) {
 
 type ephemeralPodConfig struct {
 	name               string // fork/run name; pair key
-	parentAgentID      string // parent Agent: PVC owner + ext-authz/MCP identity
+	parentAgentID      string // parent Agent: PVC owner + egress-rule attribution
 	agentSpec          *types.AgentSpec
 	cfg                *config.Config
 	credentialSecrets  []corev1.Secret
 	gatewayClusterIP   string
-	serviceAccountName string          // SA the pod runs as ("" → namespace default)
-	leafSecretName     string          // Envoy leaf Secret to project ca.crt from
-	typeLabel          string          // value for ForkLabelType
-	idLabelKey         string          // ForkLabelForkID / RunLabelRunID
-	extraEnv           []corev1.EnvVar // kind-specific env (fork ids / exec-only)
+	serviceAccountName string // SA the pod runs as ("" → namespace default)
+	leafSecretName     string // Envoy leaf Secret to project ca.crt from
+	typeLabel          string // value for ForkLabelType
+	idLabelKey         string // ForkLabelForkID / RunLabelRunID
+	// mcpPrincipalID is the `:id` in PLATFORM_MCP_URL — the identity the
+	// harness presents on the platform tool surface. Forks pass their own id
+	// (#2843: the api-server resolves it into an acting context and applies
+	// fork tool policy); runs inherit the parent's, matching their egress
+	// identity. Empty falls back to parentAgentID.
+	mcpPrincipalID string
+	extraEnv       []corev1.EnvVar // kind-specific env (fork ids / exec-only)
+}
+
+func (c ephemeralPodConfig) mcpPrincipal() string {
+	if c.mcpPrincipalID != "" {
+		return c.mcpPrincipalID
+	}
+	return c.parentAgentID
 }
 
 // buildEphemeralAgentPod renders the object-level labels and the pod template
@@ -166,7 +179,7 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		{Name: "PLATFORM_AGENT_ID", Value: c.parentAgentID},
 		{Name: "API_SERVER_URL", Value: c.cfg.APIServerURL()},
 		{Name: "HOME", Value: agentHome},
-		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", c.cfg.HarnessServerURL, c.parentAgentID)},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", c.cfg.HarnessServerURL, c.mcpPrincipal())},
 	}
 	env = append(env, c.extraEnv...)
 	// Placeholder credential envs from the K8s Secrets — same purpose as the

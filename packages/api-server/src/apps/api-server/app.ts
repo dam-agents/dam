@@ -21,6 +21,7 @@ import {
   createK8sClient,
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
+import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import { getLogger } from "../../core/logger.js";
 import {
   composeAgentsModule,
@@ -32,6 +33,8 @@ import {
 } from "../../modules/agents/index.js";
 import { composeHarnessConfigModule } from "../../modules/harness-config/index.js";
 import { composeBudgetsModule } from "../../modules/budgets/index.js";
+import { composeForksUiForUser } from "../../modules/forks/index.js";
+import type { ForksService } from "../../modules/forks/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import {
   createDisabledMetricsService,
@@ -152,6 +155,8 @@ export interface ApiServerAppDeps {
   e2e: E2eService;
   /** Owner-agnostic; consumers owner-scope each read themselves. */
   artifacts: ArtifactService;
+  /** Boot-level forks service; the tRPC context owner-scopes it per request. */
+  forks: ForksService;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -797,6 +802,25 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       k8s: k8sClient,
       owner: user.sub,
       listAgents: () => agentsRepo.list(user.sub),
+      // Running forks acting as this user reserve at their parent's size
+      // (#2843) — folded into the meter so it matches enforcement.
+      listForkReservations: async () => {
+        const mine = await deps.forks.listByReplier(user.sub);
+        const running = mine.filter((f) => f.podRunning);
+        const parents = await Promise.all(
+          [...new Set(running.map((f) => f.parentAgentId))].map(async (id) => {
+            const obj = await k8sClient.getCustomObject(AGENTS_PLURAL, id);
+            const spec = obj?.spec as
+              | { resources?: { limits?: Record<string, string> } }
+              | undefined;
+            return [id, spec?.resources?.limits] as const;
+          }),
+        );
+        const limitsByParent = new Map(parents);
+        return running.map((f) => ({
+          limits: limitsByParent.get(f.parentAgentId),
+        }));
+      },
       defaultCeiling: {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
@@ -888,6 +912,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
+    const { forksUi } = composeForksUiForUser({
+      forks: deps.forks,
+      ownerSub: user.sub,
+      isAgentOwnedBy,
+    });
     const allowOnlySecrets = createK8sAllowOnlySecretsPort(k8sClient);
     const { service: egressRules } = composeEgressRulesModule({
       db,
@@ -963,6 +992,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         e2e,
         apiKeys,
         budgets,
+        forks: forksUi,
         user,
         e2eEnabled: config.e2eEnabled,
       }),

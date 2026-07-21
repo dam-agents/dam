@@ -7,12 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Per-fork harness policy admits the fork SA only to
-// `/api/agents/<parent>/mcp` — NOT the parent's full
-// `/api/agents/<parent>/*` surface. This is the credential boundary
-// for forks: a compromised fork cannot reach pod-files SSE,
-// `/internal/trigger`, or any future per-instance harness endpoint
-// scoped to the parent.
+// Per-fork harness policy admits the fork SA only to the fork's OWN
+// `/api/agents/<forkId>/mcp` — NOT the parent's MCP path and not the
+// parent's full `/api/agents/<parent>/*` surface (#2843). This is the
+// credential boundary for forks: a compromised fork cannot reach
+// pod-files SSE, `/internal/trigger`, or any per-instance harness
+// endpoint scoped to the parent, and cannot present itself as the
+// parent on the MCP surface.
 func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
 	p := BuildForkHarnessAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
@@ -33,15 +34,16 @@ func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
 	op, _ := to[0].(map[string]interface{})["operation"].(map[string]interface{})
 	paths, _ := op["paths"].([]interface{})
 	require.Len(t, paths, 1)
-	assert.Equal(t, "/api/agents/parent-instance/mcp", paths[0],
-		"fork must reach ONLY the parent's MCP endpoint — not pod-files, not /internal/trigger")
+	assert.Equal(t, "/api/agents/fork-abc/mcp", paths[0],
+		"fork must reach ONLY its own MCP endpoint — not the parent's paths")
 }
 
-// Per-fork ext-authz policy admits the fork SA to the
-// PARENT's per-instance ext-authz Service. The parent owner's HITL rules
-// stay the gate; the fork's gateway then injects the replier's
-// credential on the wire.
-func TestBuildForkExtAuthzAuthorizationPolicy_TargetsParentService(t *testing.T) {
+// Per-fork ext-authz policy admits the fork SA to the fork's OWN
+// per-fork ext-authz Service (#2843) — the Check's :authority then
+// carries the fork id, so the api-server can tell a replier's turn from
+// the parent's. The gate still resolves the parent's egress rules; a
+// would-hold request auto-declines instead of prompting the owner.
+func TestBuildForkExtAuthzAuthorizationPolicy_TargetsOwnService(t *testing.T) {
 	p := BuildForkExtAuthzAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "fork-abc-extauthz-allow", p.GetName())
@@ -51,8 +53,8 @@ func TestBuildForkExtAuthzAuthorizationPolicy_TargetsParentService(t *testing.T)
 	targetRefs, _ := spec["targetRefs"].([]interface{})
 	tr0, _ := targetRefs[0].(map[string]interface{})
 	assert.Equal(t, "Service", tr0["kind"])
-	assert.Equal(t, testConfig.ExtAuthzServiceName("parent-instance"), tr0["name"],
-		"fork-extauthz policy targets the PARENT's per-instance ext-authz Service")
+	assert.Equal(t, testConfig.ExtAuthzServiceName("fork-abc"), tr0["name"],
+		"fork-extauthz policy targets the fork's OWN per-fork ext-authz Service")
 
 	rules, _ := spec["rules"].([]interface{})
 	rule0, _ := rules[0].(map[string]interface{})

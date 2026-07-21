@@ -132,7 +132,6 @@ export function startAuditLogSaga(): Subscription {
         threadTs: e.threadTs,
         channelId: e.slackContext.channelId,
         userSlackId: e.slackContext.userSlackId,
-        ...(e.sessionId ? { sessionId: e.sessionId } : {}),
       },
     }),
   );

@@ -13,6 +13,7 @@ const SECTIONS: SectionEntry[] = [
   { section: "skills", title: "Skills" },
   { section: "schedules", title: "Schedules" },
   { section: "artifacts", title: "Artifacts" },
+  { section: "forks", title: "Forks" },
 ];
 
 /** Sections hidden while their feature flag is off. */

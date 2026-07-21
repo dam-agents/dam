@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -72,14 +73,14 @@ func BuildExtAuthzService(agentName string, cfg *config.Config) *corev1.Service 
 
 func stringPtr(s string) *string { return &s }
 
-// applyExtAuthzService creates or reconciles the per-agent ext-authz
-// Service. Spec.Selector and Ports are reconciled on drift; ClusterIP is
-// preserved (immutable on Update).
-func (r *AgentReconciler) applyExtAuthzService(ctx context.Context, desired *corev1.Service) error {
+// applyExtAuthzService creates or reconciles a per-instance ext-authz
+// Service (agent or fork). Spec.Selector and Ports are reconciled on drift;
+// ClusterIP is preserved (immutable on Update).
+func applyExtAuthzService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		existing, err := client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			_, err = r.client.CoreV1().Services(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			_, err = client.CoreV1().Services(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
@@ -88,7 +89,7 @@ func (r *AgentReconciler) applyExtAuthzService(ctx context.Context, desired *cor
 		// ClusterIP is immutable; carry it forward.
 		desired.Spec.ClusterIP = existing.Spec.ClusterIP
 		desired.ResourceVersion = existing.ResourceVersion
-		_, err = r.client.CoreV1().Services(desired.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
+		_, err = client.CoreV1().Services(desired.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

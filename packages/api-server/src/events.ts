@@ -84,7 +84,8 @@ export type ForkFailureReason =
   | "CredentialMintFailed"
   | "OrchestrationFailed"
   | "PodNotReady"
-  | "Timeout";
+  | "Timeout"
+  | "OverBudget";
 
 export type ForkReady = {
   type: EventType.ForkReady;
@@ -112,7 +113,6 @@ export type ForeignReplyReceived = {
   agentId: string;
   foreignSub: string;
   threadTs: string;
-  sessionId?: string;
   prompt: string | ContentBlock[];
   slackContext: {
     channelId: string;

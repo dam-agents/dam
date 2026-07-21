@@ -152,6 +152,13 @@ spec:
             # static EXT_AUTHZ_HOST is needed.
             - name: AGENT_PROBES_ENABLED
               value: {{ .Values.probes.enabled | quote }}
+            # Fork two-tier idle policy (#2843): pods torn down after
+            # hibernateAfter idle, the Fork itself deleted after expireAfter
+            # idle. Go duration strings; "0s" disables that tier.
+            - name: FORK_HIBERNATE_AFTER
+              value: {{ .Values.controller.forks.hibernateAfter | quote }}
+            - name: FORK_EXPIRE_AFTER
+              value: {{ .Values.controller.forks.expireAfter | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS

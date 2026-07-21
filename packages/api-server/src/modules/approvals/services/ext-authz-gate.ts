@@ -35,9 +35,19 @@ export interface ExtAuthzGate {
  * directly.
  */
 export interface AgentIdentityResolver {
-  resolve(
-    agentId: string,
-  ): Promise<{ ownerSub: string; agentId: string } | null>;
+  /**
+   * Resolve the `:authority`-derived instance id into the identity the
+   * rules are looked up under. A fork id resolves to its PARENT agent —
+   * the parent owner stays the egress-policy authority — plus a
+   * `foreignActor` context naming the replier whose turn is running;
+   * its presence switches the gate from hold-for-verdict to
+   * auto-decline (#2843).
+   */
+  resolve(agentId: string): Promise<{
+    ownerSub: string;
+    agentId: string;
+    foreignActor?: { forkId: string; actorSub: string };
+  } | null>;
 }
 
 export interface EgressRuleMatcher {
@@ -117,10 +127,41 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             agentId: identity.agentId,
             target: host,
             decision: matched.verdict,
-            detail: { method, path, basis: "rule" },
+            detail: {
+              method,
+              path,
+              basis: "rule",
+              ...(identity.foreignActor ? identity.foreignActor : {}),
+            },
           },
         );
         return matched.verdict;
+      }
+
+      // Foreign turns never reach the owner's inbox (#2843): a request
+      // that would hold for a human verdict auto-declines instead. The
+      // owner's pre-approved rules above are the whole surface a replier
+      // gets; an interactive prompt triggered by someone else's message
+      // would hang the replier's turn on the owner's phone — and is a
+      // social-engineering surface besides. The replier's recourse is
+      // asking the owner for a rule.
+      if (identity.foreignActor) {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.foreignActor.actorSub,
+          actorKind: "user",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "foreign-turn-auto-decline",
+          detail: {
+            method,
+            path,
+            forkId: identity.foreignActor.forkId,
+          },
+        });
+        return "deny";
       }
 
       // Dedupe retried holds: when the agent's CLI retries (Envoy timeout,

@@ -109,15 +109,29 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // Durable per-replier forks (#2843). Pure-API (mints its own JWTs, no
+      // storageState). Runs after the slack-binding dance of 08/09 settles
+      // (it rebinds the agent's single Slack binding itself) and relies on
+      // the foreign identity link 07 established.
+      name: "forks",
+      testMatch: /12-.*\.spec\.ts$/,
+      // After the whole Slack chain — forks rebinds the single Slack
+      // binding too, so it must serialize behind slack-ambient (the chain
+      // tail), not branch off slack-inchat in parallel with it.
+      dependencies: ["slack-ambient"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       // Rolls the shared agent's gateway (path rules force a MITM chain), so
       // it runs after every spec that drives the agent's chat/egress flows —
-      // "slack-ambient" is the tail of the Slack chain, so depending on it
-      // (not just "slack") keeps this and connection-regrant behind ALL
-      // agent-driving specs; scheduling by dependency depth alone ran the
-      // gateway-wedging regrant before the ambient spec.
+      // Runs after every spec that drives the agent's chat/egress flows —
+      // fork turns included. "forks" is the tail of the extended Slack
+      // chain (it depends on slack-ambient), so depending on it keeps this
+      // and connection-regrant behind ALL agent-driving specs; scheduling
+      // by dependency depth alone ran the gateway-wedging regrant early.
       name: "egress-path-rules",
       testMatch: /11-.*\.spec\.ts$/,
-      dependencies: ["slack-ambient"],
+      dependencies: ["forks"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {

@@ -14,8 +14,10 @@ const (
 	// Agent gen 4: runtimeClassName + nodeSelector added to AgentSpec for
 	// per-template scheduling (GPU-passthrough Kata workloads).
 	AgentSchemaGeneration = 4
-	ForkSchemaGeneration  = 1
-	RunSchemaGeneration   = 1
+	// Fork gen 2: Hibernated added to the status phase enum — forks became
+	// durable per-replier runtimes that hibernate instead of completing (#2843).
+	ForkSchemaGeneration = 2
+	RunSchemaGeneration  = 1
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

@@ -14,13 +14,10 @@ export function startOnForeignReplySaga(forks: ForksService): Subscription {
       ofType<ForeignReplyReceived>(EventType.ForeignReplyReceived),
       mergeMap(async (event) => {
         try {
-          await forks.openFork({
+          await forks.ensureFork({
             agentId: event.agentId,
             foreignSub: event.foreignSub,
             replyId: event.replyId,
-            ...(event.sessionId !== undefined
-              ? { sessionId: event.sessionId }
-              : {}),
           });
         } catch (err) {
           process.stderr.write(

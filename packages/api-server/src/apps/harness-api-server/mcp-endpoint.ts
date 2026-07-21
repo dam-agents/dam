@@ -52,8 +52,24 @@ function resolveWorkspacePath(input: string, agentHome: string): string {
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
-  agentId: string;
+  /** The URL `:id` the session was minted for — an agent id, or a fork id
+   *  on fork sessions. */
+  principalId: string;
   lastActivity: number;
+}
+
+/**
+ * The acting identity behind an MCP call, resolved from the mesh-verified
+ * URL `:id` (#2843). For an agent, principal and agent coincide. For a
+ * fork, the principal is the fork id, `agentId` is the PARENT (channel
+ * bindings, session listing), and `fork` carries the replier context — the
+ * owner-scoped services the mount composes for the session are then the
+ * REPLIER's, so a fork can never touch the parent owner's library.
+ */
+export interface McpActingIdentity {
+  principalId: string;
+  agentId: string;
+  fork?: { forkId: string; actorSub: string; podIP: string | null };
 }
 
 export interface ToolContent {
@@ -127,20 +143,34 @@ export interface McpSessionDeps {
 }
 
 export function createMcpSession(
-  agentId: string,
+  identity: McpActingIdentity,
   deps: McpSessionDeps,
 ): McpSession {
+  const { agentId, fork } = identity;
   const { agentHome, schedules } = deps;
   const candidateCap = formatByteCap(deps.maxArtifactBytes);
   const server = new McpServer({
-    name: `platform-${agentId}`,
+    name: `platform-${identity.principalId}`,
     version: "1.0.0",
   });
 
+  // Parent-scoped management tools (skills, schedules, experiments) are not
+  // registered on fork sessions — a replier's runtime must not manage the
+  // parent agent's records. Channel tools remain (posting into the bound
+  // thread IS the interaction surface) and artifact tools remain, composed
+  // against the replier's own library upstream.
+  const mgmt: Pick<McpServer, "tool"> = fork
+    ? ({ tool: () => undefined } as unknown as Pick<McpServer, "tool">)
+    : server;
+
+  // Fork agent pods are Job pods with no per-pod DNS — dial the pod IP the
+  // Fork CR advertises while Ready.
   const runtimeClient = createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(agentId, deps.k8s.namespace)}/api/trpc`,
+        url: fork?.podIP
+          ? `http://${fork.podIP}:8080/api/trpc`
+          : `http://${podBaseUrl(agentId, deps.k8s.namespace)}/api/trpc`,
       }),
     ],
   });
@@ -271,7 +301,8 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       // Autonomous egress to an external channel under the agent identity, no
-      // human in the loop. Never log the message text.
+      // human in the loop. Never log the message text. A fork's post carries
+      // the replier context so outbound traffic is attributable (#2843).
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         category: "channel",
         actor: agentId,
@@ -284,6 +315,7 @@ export function createMcpSession(
           hasAttachment: attachmentAudit !== undefined,
           ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
           textLength: text.length,
+          ...(fork ? { forkId: fork.forkId, actorSub: fork.actorSub } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
@@ -295,7 +327,7 @@ export function createMcpSession(
   // `agentId` is captured from the verified MCP session, so agents cannot
   // spoof it via tool input.
 
-  server.tool(
+  mgmt.tool(
     "list_skill_sources",
     "List the skill sources (public git repos) this agent can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
     {},
@@ -307,7 +339,7 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  mgmt.tool(
     "list_skills_in_source",
     "List the skills available inside a connected skill source. Returns each skill's name, description, and the last-touching commit SHA (pass this as `version` to install_skill).",
     { sourceId: z.string() },
@@ -319,7 +351,7 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  mgmt.tool(
     "install_skill",
     "Install a skill onto THIS running agent. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
     {
@@ -336,7 +368,7 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  mgmt.tool(
     "uninstall_skill",
     "Uninstall a skill from THIS agent. Removes the directory from the pod and drops the entry from the agent spec.",
     {
@@ -352,7 +384,7 @@ export function createMcpSession(
       ),
   );
 
-  server.tool(
+  mgmt.tool(
     "publish_skill",
     "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
@@ -374,7 +406,7 @@ export function createMcpSession(
   // Descriptions are deliberately assertive — Claude Code ships with an in-process
   // scheduled-tasks tool that would otherwise be preferred. These schedules are the
   // *persistent, platform-level* ones visible in the host UI.
-  server.tool(
+  mgmt.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
@@ -388,7 +420,7 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  mgmt.tool(
     "create_schedule",
     "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
     {
@@ -456,7 +488,7 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  mgmt.tool(
     "toggle_schedule",
     "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
     { id: z.string().min(1) },
@@ -497,7 +529,7 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  mgmt.tool(
     "delete_schedule",
     "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
     { id: z.string().min(1) },
@@ -520,7 +552,7 @@ export function createMcpSession(
   );
 
   // ---- Experiments tools ----------------------------------------------------
-  server.tool(
+  mgmt.tool(
     "request_candidate_upload",
     `Request a direct-upload link for a candidate artifact (up to ${candidateCap}). Returns an uploadUrl to HTTP PUT the file to and the candidateRef to pass to record_run afterwards. Upload with your environment's default proxy settings, e.g.: curl -sS -f -X PUT --upload-file <file> '<uploadUrl>'. The link is valid for one object and a short time; request a fresh one per candidate. Only works while this agent is an arm of a running experiment.`,
     {
@@ -559,7 +591,7 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  mgmt.tool(
     "record_run",
     `Append a Run to your Experiment's ledger — call this once per optimization-loop iteration that produced a result. Pass the iteration's \`score\` (a single number, higher is better) and exactly one of: \`candidateRef\` (from request_candidate_upload, after uploading the file — preferred, supports candidates up to ${candidateCap}) or \`candidate\`, the path to the artifact file the iteration produced (absolute under ${agentHome} or workspace-relative, e.g. candidate.json), which the platform reads and stores itself (${candidateCap} cap). The Run is attributed to your active experiment arm automatically. Only works while this agent is an arm of a running experiment.`,
     {
@@ -677,7 +709,7 @@ export function createMcpSession(
     },
   );
 
-  server.tool(
+  mgmt.tool(
     "finish_arm",
     "Declare your Experiment arm's optimization loop finished — call this ONCE, after your final iteration, when there are no more candidates to produce and every scored Run is already recorded with record_run. It marks your arm complete so the platform can wrap up the comparison; once every arm finishes, the Experiment is done. Only works while this agent is an arm of a running experiment, and only once: afterwards both record_run and finish_arm report no active arm. Do NOT call it if you intend to record more Runs — there is no failure form, a loop that gives up should simply stop.",
     {},
@@ -753,7 +785,7 @@ export function createMcpSession(
   const session: McpSession = {
     transport,
     server,
-    agentId,
+    principalId: identity.principalId,
     lastActivity: Date.now(),
   };
   return session;
@@ -771,23 +803,57 @@ export interface MountMcpDeps {
   artifacts: ArtifactService;
   maxArtifactBytes: number;
   agentHome: string;
+  /** Resolve a fork id into its acting context (#2843); null when `:id`
+   *  isn't a fork. Injected from the forks module at composition. */
+  resolveFork: (forkId: string) => Promise<{
+    forkId: string;
+    parentAgentId: string;
+    foreignSub: string;
+    podIP: string | null;
+  } | null>;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/agents/:id/mcp", async (c) => {
-    const agentId = c.req.param("id")!;
-    // Principal == URL :id is enforced at the waypoint; this
-    // resolve is just a label lookup for owner / agentId.
-    const verified = await resolveAgent(deps.k8s, agentId);
-    if (!verified) {
-      // Backstop for the waypoint guarantee: an agent id that resolves to no
-      // K8s agent means the mesh principal and cluster state diverged.
+    const principalId = c.req.param("id")!;
+    // Principal == URL :id is enforced at the waypoint; the resolves below
+    // are lookups for the acting context, not authentication. Agents are
+    // authoritative for their own ids ("agent-" is a reserved prefix, so a
+    // fork can never shadow one); a miss may be a fork's own MCP path
+    // (#2843), which acts as the REPLIER against the parent agent — the
+    // owner-scoped services below are then composed for the replier, so a
+    // fork can never touch the parent owner's library.
+    let identity: McpActingIdentity | null = null;
+    let actingOwner: string | null = null;
+    const verified = await resolveAgent(deps.k8s, principalId);
+    if (verified) {
+      identity = { principalId, agentId: verified.agentId };
+      actingOwner = verified.owner;
+    } else {
+      const fork = await deps.resolveFork(principalId);
+      if (fork) {
+        identity = {
+          principalId,
+          agentId: fork.parentAgentId,
+          fork: {
+            forkId: fork.forkId,
+            actorSub: fork.foreignSub,
+            podIP: fork.podIP,
+          },
+        };
+        actingOwner = fork.foreignSub;
+      }
+    }
+    if (!identity || !actingOwner) {
+      // Backstop for the waypoint guarantee: an id that resolves to neither
+      // an Agent nor a Fork means the mesh principal and cluster state
+      // diverged.
       securityLog("warn", "mcp.resolve_fail", {
         category: "authn",
-        actor: agentId,
+        actor: principalId,
         actorKind: "agent",
         surface: "mcp",
-        agentId,
+        agentId: principalId,
         decision: "deny",
         reason: "agent-unresolved",
       });
@@ -798,18 +864,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
-      if (session.agentId !== agentId) {
-        // A session id minted for one agent reused against another — a
+      if (session.principalId !== principalId) {
+        // A session id minted for one principal reused against another — a
         // session-hijack signal.
         securityLog("warn", "mcp.session_mismatch", {
           category: "authn",
-          actor: agentId,
+          actor: principalId,
           actorKind: "agent",
           surface: "mcp",
-          agentId,
+          agentId: identity.agentId,
           decision: "deny",
           reason: "session-agent-mismatch",
-          detail: { sessionAgentId: session.agentId },
+          detail: { sessionPrincipalId: session.principalId },
         });
         return c.json({ error: "not found" }, 404);
       }
@@ -821,15 +887,14 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       return c.json({ error: "session not found" }, 404);
     }
 
-    const skills = deps.composeSkills(verified.owner);
-    const schedules = deps.schedulesServiceFor(verified.owner);
-    const experiments = deps.experimentsServiceFor(verified.owner);
-    const artifactLibrary = deps.artifactLibraryFor(verified.owner);
-    const artifactsFeatureEnabled = await deps.isArtifactsFeatureEnabled(
-      verified.owner,
-    );
-    const invocations = deps.invocationsServiceFor(verified.owner);
-    const session = createMcpSession(agentId, {
+    const skills = deps.composeSkills(actingOwner);
+    const schedules = deps.schedulesServiceFor(actingOwner);
+    const experiments = deps.experimentsServiceFor(actingOwner);
+    const artifactLibrary = deps.artifactLibraryFor(actingOwner);
+    const artifactsFeatureEnabled =
+      await deps.isArtifactsFeatureEnabled(actingOwner);
+    const invocations = deps.invocationsServiceFor(actingOwner);
+    const session = createMcpSession(identity, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

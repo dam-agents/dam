@@ -144,15 +144,17 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
-// BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
-// **narrow** path under the parent agent — `/api/agents/<parent>/mcp`
-// only, not the parent's full `/api/agents/<parent>/*` surface. This
-// preserves the fork trust boundary: a compromised fork (i.e. a
-// compromised foreign replier) cannot reach pod-files SSE,
-// `/internal/trigger`, or any future per-agent harness endpoint scoped
-// to the parent. Lives in the release namespace alongside the parent's
-// harness-allow policy; Istio OR-s ALLOWs from multiple policies on the
-// same waypoint, so this is purely additive.
+// BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to
+// the fork's **own** MCP path — `/api/agents/<forkId>/mcp` — and nothing
+// else. This preserves the fork trust boundary twice over: a compromised
+// fork (i.e. a compromised foreign replier) cannot reach pod-files SSE,
+// `/internal/trigger`, or any per-agent harness endpoint scoped to the
+// parent — and since #2843 it cannot present itself as the parent on the
+// MCP surface either; the api-server resolves the fork id into an acting
+// context (parent agent + replier) and applies fork tool policy. Lives in
+// the release namespace alongside the parent's harness-allow policy;
+// Istio OR-s ALLOWs from multiple policies on the same waypoint, so this
+// is purely additive.
 func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
@@ -175,7 +177,12 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *co
 				"to": []interface{}{
 					map[string]interface{}{
 						"operation": map[string]interface{}{
-							"paths": []interface{}{fmt.Sprintf("/api/agents/%s/mcp", parentAgentID)},
+							// The fork's OWN MCP path (#2843) — never the parent's.
+							// The api-server resolves the fork id into an acting
+							// context (parent agent + replier), so fork tool calls
+							// are attributable and policy-scoped instead of
+							// impersonating the parent.
+							"paths": []interface{}{fmt.Sprintf("/api/agents/%s/mcp", forkName)},
 						},
 					},
 				},
@@ -192,19 +199,20 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *co
 }
 
 // BuildForkExtAuthzAuthorizationPolicy admits the fork's SA principal to
-// the **parent**'s per-agent ext-authz Service. Forks dial the
-// parent's ext-authz endpoint (the parent owner's HITL rules approve
-// the request; the fork's gateway then injects the replier's
-// credential on the wire). The parent's own ext-authz-allow continues
-// to admit the parent SA; Istio OR-s the principal lists across both
-// policies on the same Service.
+// the fork's **own** per-fork ext-authz Service (#2843). Dialling a
+// per-fork Service makes the Check's gRPC :authority carry the fork id,
+// so the api-server can tell a replier's turn from the parent's — the
+// gate still resolves the *parent's* egress rules (the parent owner
+// stays the policy authority; the fork's gateway injects the replier's
+// credential on the wire), but a request that would hold for a human
+// verdict auto-declines instead of landing in the owner's inbox.
 func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
 				"group": "",
 				"kind":  "Service",
-				"name":  cfg.ExtAuthzServiceName(parentAgentID),
+				"name":  cfg.ExtAuthzServiceName(forkName),
 			},
 		},
 		"action": "ALLOW",

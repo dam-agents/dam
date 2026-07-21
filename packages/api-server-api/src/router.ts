@@ -3,6 +3,7 @@ import { agentsRouter } from "./modules/agents/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
+import { forksRouter } from "./modules/forks/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
@@ -39,6 +40,7 @@ export const appRouter = t.router({
   apiKeys: apiKeysRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
+  forks: forksRouter,
 });
 
 export type AppRouter = typeof appRouter;

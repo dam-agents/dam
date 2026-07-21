@@ -132,13 +132,21 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-// podIsBusy probes the agent runtime's /api/status endpoint. The runtime is
-// authoritative about its own idleness — it reports a single idle flag and the
-// controller does not re-derive busy-ness from raw counters. A runtime too old
-// to report the flag parses as idle=false, i.e. busy, which fails safe.
-// Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
+// podIsBusy probes the agent runtime's /api/status endpoint via the agent's
+// per-pod StatefulSet DNS name. See runtimeReportsBusy for the probe
+// semantics.
 func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
-	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", agentName, agentName, c.config.Namespace)
+	return runtimeReportsBusy(ctx, fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", agentName, agentName, c.config.Namespace))
+}
+
+// runtimeReportsBusy dials an agent-runtime status URL and reports the
+// inverse of its idle flag. The runtime is authoritative about its own
+// idleness — it reports a single flag and the controller does not re-derive
+// busy-ness from raw counters. A runtime too old to report the flag parses
+// as idle=false, i.e. busy, which fails safe. Returns false (not busy) on
+// any error — an unreachable pod permits reclamation. Shared by the agent
+// idle checker (DNS-addressed) and the fork reconciler (pod-IP-addressed).
+func runtimeReportsBusy(ctx context.Context, url string) bool {
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

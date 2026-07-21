@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "1"
+    agent-platform.ai/crd-schema-generation: "2"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: forks.agent-platform.ai
@@ -30,7 +30,7 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: Fork is a per-turn impersonation run derived from an Agent.
+        description: Fork is a durable per-replier runtime derived from an Agent.
         properties:
           apiVersion:
             description: |-
@@ -51,20 +51,22 @@ spec:
             type: object
           spec:
             description: |-
-              ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
-              Forks survived the Instance/Agent collapse. The parent Agent's
-              egress surface scopes what the fork can reach. The api-server is the sole
-              writer.
+              ForkSpec is the durable per-replier runtime that derives from an Agent —
+              one Fork per (Agent, Foreign Replier), reused across turns and threads
+              (#2843). The parent Agent's egress surface scopes what the fork can
+              reach. The api-server is the sole writer.
             properties:
               agentName:
-                description: AgentName names the parent Agent this fork impersonates.
+                description: AgentName names the parent Agent this fork derives from.
                 type: string
               foreignSub:
                 description: ForeignSub is the foreign user identity the fork runs
                   as.
                 type: string
               sessionId:
-                description: SessionID is the optional originating session.
+                description: |-
+                  SessionID is retained for CRs written before forks became durable;
+                  no component reads it and the api-server no longer writes it.
                 type: string
             required:
             - agentName
@@ -89,10 +91,11 @@ spec:
               jobName:
                 type: string
               phase:
-                description: ForkPhase is the lifecycle phase of a fork run.
+                description: ForkPhase is the lifecycle phase of a fork.
                 enum:
                 - Pending
                 - Ready
+                - Hibernated
                 - Failed
                 - Completed
                 type: string

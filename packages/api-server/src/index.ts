@@ -72,6 +72,7 @@ import {
 } from "./modules/secret-store/index.js";
 import {
   composeForksModule,
+  startOnConnectionChangedSaga,
   startOnForeignReplySaga,
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
@@ -316,6 +317,7 @@ const { forks } = composeForksModule({
 
 const onForeignReplySub = startOnForeignReplySaga(forks);
 const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
+const onConnectionChangedSub = startOnConnectionChangedSaga(forks);
 const usage = composeUsageModule({
   db,
   subPseudonymizer,
@@ -512,9 +514,25 @@ const {
   db,
   bus: redisBus,
   identityResolver: {
-    resolve: async (agentId) => {
-      const r = await agentsRepo.resolveIdentity(agentId);
-      return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
+    resolve: async (id) => {
+      // Agents are authoritative for their own ids (and "agent-" is a
+      // reserved prefix, so a fork can never shadow one). A miss may be a
+      // fork's per-fork ext-authz Service (#2843): resolve it to the
+      // PARENT's identity — the parent owner stays the egress-policy
+      // authority — plus the replier context that flips the gate from
+      // hold to auto-decline.
+      const r = await agentsRepo.resolveIdentity(id);
+      if (r) return { ownerSub: r.owner, agentId: r.agentId };
+      const fork = await forks.resolveIdentity(id);
+      if (!fork) return null;
+      const parent = await agentsRepo.resolveIdentity(fork.parentAgentId);
+      return parent
+        ? {
+            ownerSub: parent.owner,
+            agentId: parent.agentId,
+            foreignActor: { forkId: fork.forkId, actorSub: fork.foreignSub },
+          }
+        : null;
     },
   },
   ruleMatcher: {
@@ -763,6 +781,7 @@ const { server: apiServer } = startApiServerApp({
   isTermsAccepted,
   e2e: e2eService,
   artifacts,
+  forks,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -778,6 +797,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   agentsServiceFor: harnessAgentsServiceFor,
   connectionsServiceFor,
   wakeAgent: wakeAgentFor,
+  resolveFork: (forkId) => forks.resolveIdentity(forkId),
 });
 
 // Instance identity for ext-authz now flows from the per-instance

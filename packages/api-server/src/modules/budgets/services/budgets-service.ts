@@ -11,9 +11,17 @@ export interface BudgetedAgent {
   overBudget: boolean;
 }
 
+/** A live fork acting as the caller, at its parent agent's size (#2843). */
+export interface ForkReservation {
+  limits?: Record<string, string> | undefined;
+}
+
 export interface BudgetsServiceDeps {
   /** The caller's agents (owner scoping happens in the wiring). */
   listAgents(): Promise<BudgetedAgent[]>;
+  /** The caller's running forks — they reserve like agents do. Optional so
+   *  composers that never surface fork reservations stay unchanged. */
+  listForkReservations?(): Promise<ForkReservation[]>;
   /** The caller's UserBudget ceiling, or null for the chart default. */
   readCeilingOverride(): Promise<{ cpu: string; memory: string } | null>;
   /** Chart-default ceiling (same Helm value the controller enforces with). */
@@ -83,8 +91,9 @@ export function createResizeGate(deps: BudgetsServiceDeps): ResizeGate {
 export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
   return {
     async reserved(): Promise<BudgetReserved> {
-      const [agents, override] = await Promise.all([
+      const [agents, forkReservations, override] = await Promise.all([
         deps.listAgents(),
+        deps.listForkReservations?.() ?? Promise.resolve([]),
         deps.readCeilingOverride(),
       ]);
       let cpuMilli = 0;
@@ -96,6 +105,13 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         if (a.hibernated || a.overBudget) continue;
         cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
         memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
+      }
+      // Forks acting as the caller reserve at their parent's size while
+      // their pods run (#2843) — the controller counts them, so the meter
+      // must too or it shows room the next start won't get.
+      for (const f of forkReservations) {
+        cpuMilli += parseCpuMilli(f.limits?.cpu);
+        memoryBytes += parseMemoryBytes(f.limits?.memory);
       }
       const ceiling = override ?? deps.defaultCeiling;
       return {

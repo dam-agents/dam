@@ -34,7 +34,7 @@ Inbound traffic and outbound traffic take different paths. Inbound is push from 
 
 Two cross-cutting concerns are owned elsewhere and only summarized here:
 
-- **Foreign replier fork** (person-scoped Slack bindings). Slack's two-tier access (channel membership + per-Agent allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn paired pod set — a fork agent Job and a fork gateway Pod, each with its own NetworkPolicy — whose gateway mounts the replier's K8s credential Secrets. The pair spec, the foreign-credential selection, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
+- **Foreign replier fork** (person-scoped Slack bindings). Slack's two-tier access (channel membership + per-Agent allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user run on that replier's **fork** — a durable per-(Agent, replier) runtime, created on first reply and reused across turns and threads, hibernating and expiring on idleness ([agent-lifecycle](agent-lifecycle.md#forks)) — whose gateway mounts the replier's K8s credential Secrets and whose compute reserves against the replier's [Budget](budgets.md). The pair spec, the foreign-credential selection, the fork's own identity, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
 - **Thread-session binding.** A thread maps to one resumable session, so the agent gets real conversational continuity. The binding is the session's own `_meta.platform.threadTs`, resolved by listing sessions over ACP and matching — there is no server-side session store.
 
 ## Topology
@@ -73,7 +73,7 @@ flowchart LR
   MCP --> CM
 ```
 
-Bot and App-Level Tokens come from Helm values and live in api-server env — no per-Agent Secret. Resolving the channel's binding yields the Agent, the binding owner, and the access mode. On person-scoped bindings the workspace-wide identity-link table backs the `/platform login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)); on shared bindings the relay is single-track to the main pod.
+Bot and App-Level Tokens come from Helm values and live in api-server env — no per-Agent Secret. Resolving the channel's binding yields the Agent, the binding owner, and the access mode. On person-scoped bindings the workspace-wide identity-link table backs the `/platform login` flow, and the relay path branches between the main pod and the replier's fork pod by replier identity ([security-and-credentials](security-and-credentials.md)); on shared bindings the relay is single-track to the main pod.
 
 ### Telegram — platform channel
 

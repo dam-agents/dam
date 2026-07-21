@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-07-14
+Last verified: 2026-07-20
 
 ## Overview
 
@@ -176,15 +176,20 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions are agent-owned files on the PVC and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
+The api-server deletes the Agent custom resource. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions are agent-owned files on the PVC and disappear with it. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). Forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them — running or hibernated, mid-turn included, without drain: a fork is a view of its parent and does not outlive it. The api-server owns none of this: it never touches PVCs, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades.
 
 ## Forks
 
-Forks are the third durable concept in the bounded context (alongside Template and Agent). An `agent-fork` ConfigMap runs a derivative of an existing Agent with credential and env overrides. Unlike Agents, forks reconcile to a **Kubernetes Job** rather than a StatefulSet — they run to completion and are not woken, hibernated, or kept warm. This already matches the run-to-completion shape the target lifetime model intends for Agents. The interesting machinery is which secrets the fork can see and how its identity propagates upstream; see [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
+Forks are the third durable concept in the bounded context (alongside Template and Agent). A Fork CR is a **durable per-replier runtime** derived from an Agent (#2843): one Fork per (Agent, Foreign Replier), named deterministically (a digest of agent id + replier sub), created on the replier's first Slack reply and **reused** across turns and threads. The api-server holds no fork state in memory — the CR is the state, so restarts forget nothing. The fork runs turns as the replier with the replier's credentials over the parent's shared workspace, and carries its own identity — ServiceAccount, MCP path, ext-authz Service — distinct from the parent's; which secrets it sees and how that identity propagates lives on [security-and-credentials](security-and-credentials.md). A fork's Job inherits the parent Agent's image-pull Secret, so the kubelet pulls a private parent image without the fork ever seeing the credential.
 
-Fork teardown mirrors the Run executor's two-layer model: the api-server deletes the Fork CR when the fork's turn completes **or fails**, and K8s GC cascades to everything owner-refed to it — including the paired gateway pod, which as a bare always-restarting Pod has no terminal state of its own and lives exactly as long as the CR. A controller hard-lifetime reaper backstops any fork the api-server never cleaned up (crash mid-fork, lost in-memory state), reaping over-age CRs regardless of phase.
+Pod-wise a fork is still Job-shaped (agent Job + bare gateway Pod), but its lifetime follows a **two-tier idle policy** driven by the same `last-activity` annotation agents use, bumped by the api-server on every ensure and relayed turn:
+
+- **Hibernate** (`controller.forks.hibernateAfter`, default 5m idle): the reconciler tears down the Job and gateway Pod while retaining the CR and its identity resources (SA, leaf cert, policies, gateway Service, bootstrap CM). Compute frees within minutes; the next reply's activity bump re-enters the ordinary provisioning path — a wake costs a pod boot, not a cert issuance. Both this and expiry are busy-probe guarded: the controller asks agent-runtime's `idle` flag (by pod IP — Job pods have no per-pod DNS) before reclaiming, so a turn still running past the window is never killed.
+- **Expire** (`controller.forks.expireAfter`, default 48h idle): the CR itself is deleted and K8s GC sweeps everything owner-refed to it — including the gateway Pod, which as a bare always-restarting Pod has no terminal state of its own. Expiry replaces the old per-turn teardown and its hard-lifetime reaper; it runs ahead of the terminal-phase short-circuit, so a Failed CR nobody rebuilt ages out too.
+
+A failed fork (pod start failure, ready timeout, budget refusal) has its pods torn down immediately and its CR left as the visible failure record; the next reply clears the defunct slot and rebuilds it, re-running every gate. Starting a fork's pods — first start and every wake — passes the replier's [budget gate](budgets.md): fork pods reserve against the **replier**, at the parent's Size.
 
 ## Run executors (`dam-run`)
 

@@ -705,19 +705,27 @@ export function createSlackWorker(
       })
       .with({ type: EventType.ForkFailed }, async (event) => {
         const detail = event.detail ? ` (${event.detail})` : "";
+        // OverBudget's detail is already human-readable copy from the
+        // controller (the figures + what to free) — surface it directly
+        // instead of the bare reason code (#2843).
+        const text =
+          event.reason === "OverBudget" && event.detail
+            ? `Could not run turn as you: ${event.detail}.`
+            : `Could not run turn as you: ${event.reason}${detail}.`;
         try {
           await gw.postEphemeral({
             channel: ctx.channel,
             user: ctx.slackUserId,
-            text: `Could not run turn as you: ${event.reason}${detail}.`,
+            text,
           });
         } catch (err) {
           process.stderr.write(
             `[slack/fork] failed to notify ${ctx.slackUserId} of fork failure "${event.reason}": ${formatError(err)}\n`,
           );
         }
-        // Emit with forkId so the on-channel-turn-relayed saga calls
-        // closeFork — without this the failed fork orphans its k8s state.
+        // Emit with forkId so the failed turn is attributable in usage and
+        // audit records (the fork itself stays for the next ensure to
+        // rebuild).
         emit({
           type: EventType.ChannelTurnRelayed,
           channel: "slack",

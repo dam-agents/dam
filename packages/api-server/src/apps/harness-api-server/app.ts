@@ -44,6 +44,13 @@ export interface HarnessApiServerAppDeps {
   connectionsServiceFor: (owner: string) => ConnectionsService;
   /** Scale a hibernated agent back up so it drains its outbox (prompt delivery). */
   wakeAgent: (agentId: string) => Promise<void>;
+  /** Fork acting-context resolution for the fork-scoped MCP path (#2843). */
+  resolveFork: (forkId: string) => Promise<{
+    forkId: string;
+    parentAgentId: string;
+    foreignSub: string;
+    podIP: string | null;
+  } | null>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -60,6 +67,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
+    resolveFork,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -114,6 +122,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     templates,
     artifacts,
     maxArtifactBytes: config.maxArtifactBytes,
+    resolveFork,
   });
 
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the

@@ -339,4 +339,70 @@ describe("ext-authz gate", () => {
 
     expect(verdict).toBe("deny");
   });
+
+  // --- Foreign turns (forks, #2843) -----------------------------------------
+
+  const forkIdentityResolver = {
+    resolve: async () => ({
+      ownerSub: "owner-1",
+      agentId: "agent-1",
+      foreignActor: { forkId: "fork-abc", actorSub: "kc|replier" },
+    }),
+  };
+
+  it("auto-declines a foreign turn that would hold — no inbox row, no synth frame", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      identityResolver: forkIdentityResolver,
+      ruleMatcher: noMatchRules,
+      holdSeconds: 30,
+      platformAllowedHosts: [],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "fork-abc",
+      host: "api.github.com",
+      method: "GET",
+      path: "/repos",
+    });
+
+    expect(verdict).toBe("deny");
+    expect(repo.inserts).toBe(0);
+    expect(bus.publishes).toHaveLength(0);
+  });
+
+  it("a foreign turn still passes hosts the owner pre-allowed by rule", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const ruleMatch = vi.fn(async () => ({ verdict: "allow" as const }));
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      identityResolver: forkIdentityResolver,
+      ruleMatcher: { match: ruleMatch },
+      holdSeconds: 30,
+      platformAllowedHosts: [],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "fork-abc",
+      host: "api.github.com",
+      method: "GET",
+      path: "/repos",
+    });
+
+    expect(verdict).toBe("allow");
+    // Rules are matched under the PARENT agent — the owner stays the
+    // policy authority for everything leaving their workspace.
+    expect(ruleMatch).toHaveBeenCalledWith(
+      "agent-1",
+      "api.github.com",
+      "GET",
+      "/repos",
+    );
+    expect(repo.inserts).toBe(0);
+  });
 });

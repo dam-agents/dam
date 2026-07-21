@@ -176,6 +176,16 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 			Namespace:       cfg.Namespace,
 			Labels:          labels,
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
+			Annotations: map[string]string{
+				// Roll trigger, mirroring the agent gateway StatefulSet: a
+				// durable fork's gateway outlives credential changes (#2843),
+				// and Envoy loads its bootstrap at pod start — a replier
+				// connecting a credential after the fork was created would
+				// otherwise never get it injected until a hibernate/wake
+				// cycle. The fork reconciler recreates this bare Pod when
+				// the rev drifts.
+				"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
+			},
 		},
 		Spec: corev1.PodSpec{
 			// Fork gateway pod runs as the per-fork SA (its own
@@ -183,8 +193,7 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 			// ambient (no SPIFFE on that pod), so this gateway SA is the
 			// SPIFFE principal both per-fork harness and per-fork
 			// ext-authz AuthorizationPolicies admit — narrowly scoped to
-			// the parent's surface (`/api/agents/<parent>/mcp` + the
-			// parent's per-agent ext-authz Service).
+			// the fork's own MCP path and its own ext-authz Service.
 			ServiceAccountName:            forkName,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &gracePeriod,

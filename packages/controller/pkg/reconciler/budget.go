@@ -12,8 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 // Budget enforcement (#1900). The reconciler is the single actuator of the
@@ -59,16 +62,16 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 		return allowedVerdict, nil // already running — only a real 0→1 spends budget
 	}
 
-	lock := r.ownerLock(owner)
+	lock := ownerBudgetLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
 
-	reservedCPU, reservedMem, err := r.reservedByOwner(ctx, owner, agent.Name)
+	reservedCPU, reservedMem, err := reservedByOwner(ctx, r.client, r.dynamic, r.config, owner, agent.Name)
 	if err != nil {
 		return budgetVerdict{}, err
 	}
 	candCPU, candMem := r.limitsOf(&agent.Spec)
-	ceilCPU, ceilMem, err := r.ceilingFor(ctx, owner)
+	ceilCPU, ceilMem, err := ceilingFor(ctx, r.dynamic, r.config, owner)
 	if err != nil {
 		return budgetVerdict{}, err
 	}
@@ -81,6 +84,50 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 		return budgetVerdict{
 			message: fmt.Sprintf(
 				"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — stop a running sandbox to free room",
+				totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()),
+		}, nil
+	}
+	return allowedVerdict, nil
+}
+
+// forkBudgetAllows decides whether starting a fork's pods fits the REPLIER's
+// Ceiling (#2843) — a fork reserves against the user driving it, at the
+// parent agent's Size (the fork pod runs the parent's limits). Callers hold
+// the replier's ownerBudgetLock across this check AND the Job create, so the
+// reservation write is inside the lock — fork-vs-fork admits for one replier
+// cannot interleave. (A fork admit racing an *agent* admit for the same
+// owner retains the narrow read-decide window the agent path accepts; a
+// slip is bounded by one Size and re-gated at every next 0→1.)
+func forkBudgetAllows(
+	ctx context.Context,
+	client kubernetes.Interface,
+	dyn dynamic.Interface,
+	cfg *config.Config,
+	foreignSub string,
+	parentSpec *apiv1.AgentSpec,
+) (budgetVerdict, error) {
+	if foreignSub == "" {
+		return allowedVerdict, nil
+	}
+	reservedCPU, reservedMem, err := reservedByOwner(ctx, client, dyn, cfg, foreignSub, "")
+	if err != nil {
+		return budgetVerdict{}, err
+	}
+	candCPU := parseQuantityOr(parentSpec.Resources.Limits["cpu"], cfg.LegacyAgentCPULimit)
+	candMem := parseQuantityOr(parentSpec.Resources.Limits["memory"], cfg.LegacyAgentMemoryLimit)
+	ceilCPU, ceilMem, err := ceilingFor(ctx, dyn, cfg, foreignSub)
+	if err != nil {
+		return budgetVerdict{}, err
+	}
+
+	totalCPU := reservedCPU.DeepCopy()
+	totalCPU.Add(candCPU)
+	totalMem := reservedMem.DeepCopy()
+	totalMem.Add(candMem)
+	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
+		return budgetVerdict{
+			message: fmt.Sprintf(
+				"running this turn would take your reserved compute to %s/%s CPU and %s/%s memory — stop a running sandbox (or let one of your forks hibernate) to free room",
 				totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()),
 		}, nil
 	}
@@ -137,15 +184,15 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		return allowedVerdict, false, nil
 	}
 
-	lock := r.ownerLock(owner)
+	lock := ownerBudgetLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
 
-	reservedCPU, reservedMem, err := r.reservedByOwner(ctx, owner, agent.Name)
+	reservedCPU, reservedMem, err := reservedByOwner(ctx, r.client, r.dynamic, r.config, owner, agent.Name)
 	if err != nil {
 		return budgetVerdict{}, true, err
 	}
-	ceilCPU, ceilMem, err := r.ceilingFor(ctx, owner)
+	ceilCPU, ceilMem, err := ceilingFor(ctx, r.dynamic, r.config, owner)
 	if err != nil {
 		return budgetVerdict{}, true, err
 	}
@@ -164,15 +211,19 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 }
 
 // reservedByOwner sums spec.resources.limits over the owner's scaled-up
-// agents, excluding `self`. Scaled-up = the agent StatefulSet (the one whose
+// agents, excluding `self`, plus the live fork pods acting as that owner
+// (#2843) — each at its parent agent's Size, which is what the fork pod
+// actually runs with. Scaled-up = the agent StatefulSet (the one whose
 // name equals its LabelAgent value; the paired gateway follows it) has desired
 // replicas ≥ 1 — desired, not observed, so agents still starting already
 // count and two near-simultaneous wakes cannot both slip under the ceiling.
-func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self string) (resource.Quantity, resource.Quantity, error) {
-	ns := r.config.Namespace
+// A fork counts while its Job exists — a hibernated fork's Job is deleted,
+// so hibernation credits the budget back like an agent's scale-down.
+func reservedByOwner(ctx context.Context, client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config, owner, self string) (resource.Quantity, resource.Quantity, error) {
+	ns := cfg.Namespace
 	var cpu, mem resource.Quantity
 
-	sss, err := r.client.AppsV1().StatefulSets(ns).List(ctx, metav1.ListOptions{LabelSelector: LabelAgent})
+	sss, err := client.AppsV1().StatefulSets(ns).List(ctx, metav1.ListOptions{LabelSelector: LabelAgent})
 	if err != nil {
 		return cpu, mem, fmt.Errorf("listing agent statefulsets: %w", err)
 	}
@@ -187,7 +238,7 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 		}
 	}
 
-	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(ns).List(ctx, metav1.ListOptions{
+	agents, err := dyn.Resource(AgentsGVR).Namespace(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: envoyOwnerLabel + "=" + owner,
 	})
 	if err != nil {
@@ -202,9 +253,78 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 		if err != nil {
 			return cpu, mem, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
-		c, m := r.limitsOf(&a.Spec)
+		c, m := limitsOfSpec(cfg, &a.Spec)
 		cpu.Add(c)
 		mem.Add(m)
+	}
+
+	fCPU, fMem, err := forkReservedByOwner(ctx, client, dyn, cfg, owner)
+	if err != nil {
+		return cpu, mem, err
+	}
+	cpu.Add(fCPU)
+	mem.Add(fMem)
+	return cpu, mem, nil
+}
+
+// forkReservedByOwner sums the Sizes of the owner's live forks — Fork CRs
+// whose spec.foreignSub matches (no label shortcut: subs like `kc|…` are not
+// label-legal values) and whose agent Job currently exists. Each counts at
+// its parent agent's Size; a fork whose parent is gone is moments from GC
+// and counts nothing.
+func forkReservedByOwner(ctx context.Context, client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config, owner string) (resource.Quantity, resource.Quantity, error) {
+	ns := cfg.Namespace
+	var cpu, mem resource.Quantity
+
+	forks, err := dyn.Resource(ForksGVR).Namespace(ns).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return cpu, mem, fmt.Errorf("listing forks: %w", err)
+	}
+	if len(forks.Items) == 0 {
+		return cpu, mem, nil
+	}
+
+	jobs, err := client.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{
+		LabelSelector: ForkLabelType + "=" + ForkJobLabelType,
+	})
+	if err != nil {
+		return cpu, mem, fmt.Errorf("listing fork jobs: %w", err)
+	}
+	live := make(map[string]bool, len(jobs.Items))
+	for i := range jobs.Items {
+		if jobs.Items[i].DeletionTimestamp == nil {
+			live[jobs.Items[i].Name] = true
+		}
+	}
+
+	parentSizes := map[string][2]resource.Quantity{}
+	for i := range forks.Items {
+		f, err := FromCacheObject[apiv1.Fork](&forks.Items[i])
+		if err != nil {
+			return cpu, mem, fmt.Errorf("decoding fork %s: %w", forks.Items[i].GetName(), err)
+		}
+		if f.Spec.ForeignSub != owner || !live[f.Name] {
+			continue
+		}
+		size, ok := parentSizes[f.Spec.AgentName]
+		if !ok {
+			parent, err := dyn.Resource(AgentsGVR).Namespace(ns).Get(ctx, f.Spec.AgentName, metav1.GetOptions{})
+			if errors.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return cpu, mem, fmt.Errorf("reading fork parent %s: %w", f.Spec.AgentName, err)
+			}
+			a, err := FromCacheObject[apiv1.Agent](parent)
+			if err != nil {
+				return cpu, mem, fmt.Errorf("decoding fork parent %s: %w", f.Spec.AgentName, err)
+			}
+			c, m := limitsOfSpec(cfg, &a.Spec)
+			size = [2]resource.Quantity{c, m}
+			parentSizes[f.Spec.AgentName] = size
+		}
+		cpu.Add(size[0])
+		mem.Add(size[1])
 	}
 	return cpu, mem, nil
 }
@@ -260,8 +380,12 @@ func (r *AgentReconciler) ensureConcreteSize(ctx context.Context, agent *apiv1.A
 // Fallback, never zero: an unreadable OR non-positive limit must not let
 // an agent slip under the ceiling.
 func (r *AgentReconciler) limitsOf(spec *apiv1.AgentSpec) (resource.Quantity, resource.Quantity) {
-	cpu := parseQuantityOr(spec.Resources.Limits["cpu"], r.config.LegacyAgentCPULimit)
-	mem := parseQuantityOr(spec.Resources.Limits["memory"], r.config.LegacyAgentMemoryLimit)
+	return limitsOfSpec(r.config, spec)
+}
+
+func limitsOfSpec(cfg *config.Config, spec *apiv1.AgentSpec) (resource.Quantity, resource.Quantity) {
+	cpu := parseQuantityOr(spec.Resources.Limits["cpu"], cfg.LegacyAgentCPULimit)
+	mem := parseQuantityOr(spec.Resources.Limits["memory"], cfg.LegacyAgentMemoryLimit)
 	return cpu, mem
 }
 
@@ -286,10 +410,10 @@ func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
 // rare and a live read keeps enforcement unlagged. (An owner string that is
 // label-legal but name-illegal can never have an override; Keycloak subs are
 // UUIDs, so this doesn't arise.)
-func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resource.Quantity, resource.Quantity, error) {
-	obj, err := r.dynamic.Resource(UserBudgetsGVR).Namespace(r.config.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
+func ceilingFor(ctx context.Context, dyn dynamic.Interface, cfg *config.Config, owner string) (resource.Quantity, resource.Quantity, error) {
+	obj, err := dyn.Resource(UserBudgetsGVR).Namespace(cfg.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
-		return r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget, nil
+		return cfg.DefaultUserCPUBudget, cfg.DefaultUserMemoryBudget, nil
 	}
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("reading userbudget: %w", err)
@@ -331,17 +455,24 @@ func (r *AgentReconciler) clearDeniedWake(name string) {
 	delete(r.deniedWakes, name)
 }
 
-// ownerLock returns the per-owner mutex, lazily created.
-func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {
-	r.budgetMu.Lock()
-	defer r.budgetMu.Unlock()
-	if r.ownerLocks == nil {
-		r.ownerLocks = make(map[string]*sync.Mutex)
-	}
-	l, ok := r.ownerLocks[owner]
+// Package-level per-owner budget locks: agent admits run on the single agent
+// worker, but fork admits run on the fork worker (#2843), so the lock — not
+// worker exclusivity — is what serializes budget read-decide-act sequences
+// for one owner across the two. Fork admits hold it through their Job
+// create; agent admits keep their original scope.
+var (
+	budgetLocksMu sync.Mutex
+	budgetLocks   = map[string]*sync.Mutex{}
+)
+
+// ownerBudgetLock returns the per-owner mutex, lazily created.
+func ownerBudgetLock(owner string) *sync.Mutex {
+	budgetLocksMu.Lock()
+	defer budgetLocksMu.Unlock()
+	l, ok := budgetLocks[owner]
 	if !ok {
 		l = &sync.Mutex{}
-		r.ownerLocks[owner] = l
+		budgetLocks[owner] = l
 	}
 	return l
 }

@@ -82,6 +82,14 @@ type Config struct {
 	EnvoyMitmCAIssuer        string        // cert-manager ClusterIssuer that mints per-instance leaf certs for the Envoy sidecar's TLS interception
 	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
+
+	// Fork two-tier idle policy (#2843). A fork idle past ForkHibernateAfter
+	// has its pods torn down (busy-probe guarded; CR and identity resources
+	// retained); idle past ForkExpireAfter the CR itself is deleted and K8s
+	// GC sweeps the rest. Idleness is measured from the fork's last-activity
+	// annotation, falling back to CR creation.
+	ForkHibernateAfter time.Duration
+	ForkExpireAfter    time.Duration
 	// OTelEnv is the OpenTelemetry environment the controller inherited — every
 	// `OTEL_*` variable in its own process env. The chart sets these under
 	// `clickstack.enabled` (pointing at the bundled collector, the same env the
@@ -359,6 +367,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
+	cfg.ForkHibernateAfter = envOrDefaultDuration("FORK_HIBERNATE_AFTER", 5*time.Minute)
+	cfg.ForkExpireAfter = envOrDefaultDuration("FORK_EXPIRE_AFTER", 48*time.Hour)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")

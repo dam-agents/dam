@@ -38,6 +38,7 @@ func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 	gvrToListKind := map[schema.GroupVersionResource]string{
 		authzPolicyListGVR: "AuthorizationPolicyList",
 		AgentsGVR:          "AgentList",
+		ForksGVR:           "ForkList",
 		RunsGVR:            "RunList",
 		UserBudgetsGVR:     "UserBudgetList",
 	}

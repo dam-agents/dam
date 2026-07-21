@@ -33,11 +33,10 @@ type AgentReconciler struct {
 	dynamic dynamic.Interface // required to apply cert-manager Certificates
 	config  *config.Config
 
-	// Per-owner serialization of the budget check (#1900). Correctness also
-	// leans on agent reconciles being drained by a single worker goroutine —
-	// see the race note on budgetAllows.
-	budgetMu   sync.Mutex
-	ownerLocks map[string]*sync.Mutex
+	// Guards deniedWakes. Per-owner budget serialization moved to the
+	// package-level ownerBudgetLock (#2843) — the fork worker gates against
+	// the same locks, so it can no longer live on this reconciler.
+	budgetMu sync.Mutex
 	// Denied wake attempts, keyed agent → last-activity value at denial;
 	// see wakeAlreadyDenied.
 	deniedWakes map[string]string
@@ -142,7 +141,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// approvals, and the per-agent AuthorizationPolicy below pins it
 	// to the matching SA principal.
 	extAuthzSvc := BuildExtAuthzService(name, r.config)
-	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
+	if err := applyExtAuthzService(ctx, r.client, extAuthzSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
 	timer.mark("extAuthzService")

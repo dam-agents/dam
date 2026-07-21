@@ -1,143 +1,252 @@
-import { randomUUID } from "node:crypto";
 import {
   EventType,
   emit as defaultEmit,
   type DomainEvent,
   type ForkFailureReason,
 } from "../../../events.js";
-import {
-  createFork,
-  markCompleted,
-  markFailed,
-  markReady,
-  toForeignSub,
-  type Fork,
-} from "../domain/fork.js";
+import { isDefunct, toForeignSub, type ForkPhase } from "../domain/fork.js";
 import type { ForkOrchestratorPort } from "../infrastructure/ports.js";
 
-export interface OpenForkInput {
+export interface EnsureForkInput {
   agentId: string;
   foreignSub: string;
   replyId: string;
-  sessionId?: string;
+}
+
+/** Acting context a fork id resolves to — consumed by the MCP endpoint and
+ *  the ext-authz gate to tell a replier's turn from the parent's (#2843). */
+export interface ForkIdentity {
+  forkId: string;
+  parentAgentId: string;
+  foreignSub: string;
+  /** The fork agent pod's IP while Ready; null when hibernated/starting. */
+  podIP: string | null;
 }
 
 export interface ForksService {
-  openFork(input: OpenForkInput): Promise<void>;
-  closeFork(forkId: string): Promise<void>;
+  /**
+   * Resolve the (agent, replier) fork — creating it on first contact, waking
+   * it from hibernation, or rebuilding a defunct one — and emit
+   * ForkReady/ForkFailed for this replyId once it settles. The Fork CR is
+   * the state; nothing is held in memory, so an api-server restart forgets
+   * nothing (#2843).
+   */
+  ensureFork(input: EnsureForkInput): Promise<void>;
+  /**
+   * Stamp fork activity (a turn was relayed). The idle tiers — hibernate in
+   * minutes, expire in days — measure from this.
+   */
+  recordActivity(forkId: string): Promise<void>;
+  /** Delete the fork outright ("end now"). The controller's GC sweeps the
+   *  rest via owner references. */
+  endFork(forkId: string): Promise<void>;
+  /**
+   * Resolve a fork id into its acting context. Null when no such fork
+   * exists — including ids that merely look fork-shaped.
+   */
+  resolveIdentity(forkId: string): Promise<ForkIdentity | null>;
+  /** The forks running against one parent agent (owner's visibility). */
+  listByAgent(agentId: string): Promise<ForkSummary[]>;
+  /** The forks acting as one user (their budget itemization). */
+  listByReplier(foreignSub: string): Promise<ForkSummary[]>;
+  /**
+   * The replier's credential set changed — poke their forks so the
+   * controller rolls each gateway now, not on the next turn (which would
+   * race the roll and egress with stale credentials).
+   */
+  pokeCredentials(foreignSub: string): Promise<void>;
+}
+
+/** Read-model row for the fork visibility surfaces (#2843). */
+export interface ForkSummary {
+  forkId: string;
+  parentAgentId: string;
+  foreignSub: string;
+  phase: ForkPhase | null;
+  /** Live pods (reserving budget) vs hibernated/starting. */
+  podRunning: boolean;
+  lastActivityAt: string | null;
 }
 
 export function createForksService(deps: {
   orchestrator: ForkOrchestratorPort;
+  forkIdFor: (agentId: string, foreignSub: string) => string;
   emit?: (event: DomainEvent) => void;
-  generateForkId?: () => string;
 }): ForksService {
   const emit = deps.emit ?? defaultEmit;
-  // Prefix UUIDs with `fork-` so derived K8s names (`<forkId>-gateway`
-  // Service, fork Pod, etc.) always start with an alphabetic character —
-  // DNS-1035 rejects labels that start with a digit, and randomUUID() can
-  // produce one (e.g. "041213f3-..." → "041213f3-...-gateway" fails apply).
-  const generateForkId = deps.generateForkId ?? (() => `fork-${randomUUID()}`);
-  const open = new Map<string, Fork>();
 
-  async function emitFailed(
-    fork: Fork,
+  function emitFailed(
+    forkId: string,
+    replyId: string,
     reason: ForkFailureReason,
     detail?: string,
-  ): Promise<void> {
-    const next = markFailed(fork, reason, detail);
-    if (!next.ok) return;
-    open.delete(fork.forkId);
-    // A failed fork never reaches closeFork (the saga's map lookup misses
-    // the entry deleted above, and markCompleted rejects Failed), so tear
-    // down the Fork CR here — K8s GC cascades to the paired gateway pod,
-    // which otherwise crash-loops forever.
-    try {
-      await deps.orchestrator.deleteFork(fork.forkId);
-    } catch (err) {
-      process.stderr.write(
-        `[forks] deleting failed fork ${fork.forkId}: ${err}\n`,
-      );
-    }
+  ): void {
     emit({
       type: EventType.ForkFailed,
-      forkId: fork.forkId,
-      replyId: fork.replyId,
+      forkId,
+      replyId,
       reason,
       ...(detail !== undefined ? { detail } : {}),
     });
   }
 
-  async function consumeStatus(initial: Fork): Promise<void> {
-    let current = initial;
-    for await (const status of deps.orchestrator.watchStatus(current.forkId)) {
+  // Follow the CR's status until it settles for this turn. Pending and
+  // Hibernated are transitional (the activity bump wakes a hibernated fork
+  // through the ordinary provisioning path); a stream that ends without a
+  // terminal phase means the CR vanished mid-watch (expired, or ended by the
+  // owner) and the turn cannot proceed.
+  async function settle(forkId: string, replyId: string): Promise<void> {
+    for await (const status of deps.orchestrator.watchStatus(forkId)) {
       if (status.phase === "Ready" && status.podIP) {
-        const next = markReady(current, status.podIP);
-        if (!next.ok) continue;
-        current = next.fork;
-        open.set(current.forkId, current);
         emit({
           type: EventType.ForkReady,
-          forkId: current.forkId,
-          replyId: current.replyId,
+          forkId,
+          replyId,
           podIP: status.podIP,
         });
-        continue;
+        return;
       }
       if (status.phase === "Failed") {
-        await emitFailed(
-          current,
+        emitFailed(
+          forkId,
+          replyId,
           status.error?.reason ?? "OrchestrationFailed",
           status.error?.detail,
         );
         return;
       }
     }
+    emitFailed(
+      forkId,
+      replyId,
+      "OrchestrationFailed",
+      "fork disappeared while starting",
+    );
+  }
+
+  // Slot preparation is single-flighted per fork id: two concurrent replies
+  // hitting a defunct slot must not interleave one ensure's delete with the
+  // other's fresh create — the unconditional delete would destroy the CR
+  // its peer just rebuilt, failing a reply that should have succeeded.
+  const preparing = new Map<
+    string,
+    Promise<{ ok: true } | { ok: false; detail?: string }>
+  >();
+
+  async function prepareSlot(
+    forkId: string,
+    agentId: string,
+    foreignSub: string,
+  ): Promise<{ ok: true } | { ok: false; detail?: string }> {
+    const existing = await deps.orchestrator.getFork(forkId);
+    // A defunct fork blocks its (agent, replier) slot — clear it and
+    // rebuild rather than resurfacing a stale failure. The controller
+    // already tore its pods down when it failed.
+    if (existing && isDefunct(existing.status)) {
+      await deps.orchestrator.deleteFork(forkId);
+    }
+    if (!existing || isDefunct(existing.status)) {
+      const created = await deps.orchestrator.createFork({
+        forkId,
+        spec: { agentId, foreignSub: toForeignSub(foreignSub) },
+      });
+      // AlreadyExists means a concurrent ensure won the create — the
+      // watch settles against the same CR either way.
+      if (!created.ok && created.error.kind !== "AlreadyExists") {
+        return { ok: false, detail: created.error.detail };
+      }
+    }
+    return { ok: true };
   }
 
   return {
-    async openFork(input) {
-      const forkId = generateForkId();
-
-      // The controller picks up the replier's K8s Secrets at render
-      // time via foreignSub-labelled selectors.
-      const fork = createFork({
-        forkId,
-        replyId: input.replyId,
-        spec: {
-          agentId: input.agentId,
-          foreignSub: toForeignSub(input.foreignSub),
-          ...(input.sessionId !== undefined
-            ? { sessionId: input.sessionId }
-            : {}),
-        },
-      });
-      open.set(forkId, fork);
-
-      const created = await deps.orchestrator.createFork({
-        forkId,
-        spec: fork.spec,
-      });
-      if (!created.ok) {
-        const detail =
-          created.error.kind === "WriteFailed"
-            ? created.error.detail
-            : created.error.kind;
-        await emitFailed(fork, "OrchestrationFailed", detail);
+    async ensureFork(input) {
+      const forkId = deps.forkIdFor(input.agentId, input.foreignSub);
+      try {
+        let prep = preparing.get(forkId);
+        if (!prep) {
+          prep = prepareSlot(forkId, input.agentId, input.foreignSub).finally(
+            () => preparing.delete(forkId),
+          );
+          preparing.set(forkId, prep);
+        }
+        const prepared = await prep;
+        if (!prepared.ok) {
+          emitFailed(
+            forkId,
+            input.replyId,
+            "OrchestrationFailed",
+            prepared.detail,
+          );
+          return;
+        }
+        // The bump is both the keep-warm stamp and the wake poke — fresh
+        // activity re-enters the controller's provisioning path.
+        await deps.orchestrator.bumpActivity(forkId);
+      } catch (err) {
+        emitFailed(forkId, input.replyId, "OrchestrationFailed", String(err));
         return;
       }
-
-      void consumeStatus(fork);
+      await settle(forkId, input.replyId);
     },
 
-    async closeFork(forkId) {
-      const fork = open.get(forkId);
-      if (!fork) return;
-      const next = markCompleted(fork);
-      open.delete(forkId);
-      if (!next.ok) return;
+    async recordActivity(forkId) {
+      await deps.orchestrator.bumpActivity(forkId);
+    },
+
+    async endFork(forkId) {
       await deps.orchestrator.deleteFork(forkId);
       emit({ type: EventType.ForkCompleted, forkId });
     },
+
+    async resolveIdentity(forkId) {
+      const fork = await deps.orchestrator.getFork(forkId);
+      if (!fork) return null;
+      return {
+        forkId,
+        parentAgentId: fork.agentId,
+        foreignSub: fork.foreignSub,
+        podIP: fork.status?.podIP ?? null,
+      };
+    },
+
+    async listByAgent(agentId) {
+      const forks = await deps.orchestrator.listForks({ agentId });
+      return forks.map(toSummary);
+    },
+
+    async listByReplier(foreignSub) {
+      const forks = await deps.orchestrator.listForks();
+      return forks.filter((f) => f.foreignSub === foreignSub).map(toSummary);
+    },
+
+    async pokeCredentials(foreignSub) {
+      const forks = await deps.orchestrator.listForks();
+      await Promise.all(
+        forks
+          .filter((f) => f.foreignSub === foreignSub)
+          .map((f) => deps.orchestrator.bumpCredentialsRev(f.forkId)),
+      );
+    },
+  };
+}
+
+function toSummary(f: {
+  forkId: string;
+  agentId: string;
+  foreignSub: string;
+  status: { phase: ForkPhase; podIP?: string } | null;
+  lastActivityAt: string | null;
+}) {
+  const phase = f.status?.phase ?? null;
+  return {
+    forkId: f.forkId,
+    parentAgentId: f.agentId,
+    foreignSub: f.foreignSub,
+    phase,
+    // Pending counts as running: its Job exists, so it is already
+    // reserving budget.
+    podRunning: phase === "Ready" || phase === "Pending",
+    lastActivityAt: f.lastActivityAt,
   };
 }

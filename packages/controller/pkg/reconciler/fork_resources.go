@@ -42,7 +42,7 @@ func BuildForkAgentJob(
 	// shape. NetworkPolicy at the kernel is the boundary; the fork gateway pod
 	// remains a mesh participant for SPIFFE-keyed harness + ext-authz admission
 	// via the per-fork AuthorizationPolicies, which admit the fork SA only to
-	// `/api/agents/<parent>/mcp`.
+	// the fork's own `/api/agents/<forkId>/mcp` and its own ext-authz Service.
 	labels, tmpl := buildEphemeralAgentPod(ephemeralPodConfig{
 		name:               forkName,
 		parentAgentID:      forkSpec.AgentName,
@@ -54,6 +54,10 @@ func BuildForkAgentJob(
 		leafSecretName:     forkName,
 		typeLabel:          ForkJobLabelType,
 		idLabelKey:         ForkLabelForkID,
+		// The fork presents its OWN id on the MCP surface — the api-server
+		// resolves it into (parent agent, replier) and applies fork tool
+		// policy instead of letting the fork impersonate the parent (#2843).
+		mcpPrincipalID: forkName,
 		extraEnv: []corev1.EnvVar{
 			{Name: "PLATFORM_FORK_ID", Value: forkName},
 			{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},

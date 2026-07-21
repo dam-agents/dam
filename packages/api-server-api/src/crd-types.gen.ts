@@ -121,14 +121,14 @@ export interface AgentSpecCR {
 }
 
 /**
- * ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
- * Forks survived the Instance/Agent collapse. The parent Agent's
- * egress surface scopes what the fork can reach. The api-server is the sole
- * writer.
+ * ForkSpec is the durable per-replier runtime that derives from an Agent —
+ * one Fork per (Agent, Foreign Replier), reused across turns and threads
+ * (#2843). The parent Agent's egress surface scopes what the fork can
+ * reach. The api-server is the sole writer.
  */
 export interface ForkSpecCR {
   /**
-   * AgentName names the parent Agent this fork impersonates.
+   * AgentName names the parent Agent this fork derives from.
    */
   agentName: string;
   /**
@@ -136,7 +136,8 @@ export interface ForkSpecCR {
    */
   foreignSub: string;
   /**
-   * SessionID is the optional originating session.
+   * SessionID is retained for CRs written before forks became durable;
+   * no component reads it and the api-server no longer writes it.
    */
   sessionId?: string;
 }

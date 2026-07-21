@@ -987,6 +987,17 @@ controller:
     defaultCpu: "4"
     defaultMemory: "8Gi"
 
+  # -- Fork two-tier idle policy (#2843). A fork (the per-replier runtime a
+  # Slack foreign reply runs on) is reused across turns: idle past
+  # hibernateAfter its pods are torn down (compute freed, identity kept) and
+  # the next reply wakes it; idle past expireAfter the fork is deleted
+  # entirely. Both are Go duration strings; "0s" disables that tier. A turn
+  # still running is never reclaimed — the controller probes the runtime
+  # before either transition.
+  forks:
+    hibernateAfter: "5m"
+    expireAfter: "48h"
+
   # -- How pod requests are derived from an agent's limits (#1900). Requests
   # are scheduling internals, never a user concept: the scheduler packs on
   # `limit × fraction` (a deterministic 1/fraction overcommit), the floors

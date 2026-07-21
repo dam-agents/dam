@@ -47,15 +47,15 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
 | Shared Access (system Agent) | The access mode where the binding is the authorization: the Agent owner consents to a conversation surface (Slack bind-time choice; structurally every Telegram binding), and anyone the messenger admits there may drive the Agent under the Agent's own credentials — no identity link, turns attributed by messenger-native sender id |
 | Person-Scoped Access | The default Slack access mode: users link their platform identity, the per-Agent `allowedUsers` gate admits repliers, and each turn runs under the driving user's own identity — owner turns on the main pod, Foreign Replier turns as Forks |
-| Foreign Replier | A linked Slack user in an Agent's `allowedUsers` list whose identity differs from the Agent owner; on a person-scoped binding, triggers a Fork for the turn |
+| Foreign Replier | A linked Slack user in an Agent's `allowedUsers` list whose identity differs from the Agent owner; on a person-scoped binding, their turns run on that Agent's Fork for their identity (created on first reply, reused while it lives) |
 
 ## Forks (bounded context)
 
 | Term | Definition |
 |------|-----------|
-| Fork | An ephemeral, per-turn execution environment derived from an Agent that impersonates a foreign user for the duration of one Slack turn. Job-shaped and run-to-completion — distinct from the Agent's StatefulSet shape |
+| Fork | A durable execution environment derived from an Agent — one per (Agent, Foreign Replier) — that runs turns as that replier, with the replier's credentials, over the parent Agent's shared workspace. Carries its own identity (ServiceAccount, MCP endpoint, ext-authz Service) distinct from the parent's. Pod-wise still Job-shaped, but hibernates after minutes of inactivity and expires (is deleted) after days of inactivity; reserves against the replier's Budget while its pods are live |
 | Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Agent owner |
-| Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
+| Fork Phase | The lifecycle state of a Fork: Pending, Ready, Hibernated (pods torn down, CR and identity resources retained), Failed, or Completed |
 
 ## Invocations (bounded context) — proposed, in-flight (PR #2816)
 
@@ -200,7 +200,7 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Us
 |------|-----------|
 | Budget | A per-user ceiling on concurrently Reserved compute (CPU and memory) across that user's Agents. Constrains *starting* an Agent, never *running* one — no eviction on ceiling changes |
 | Ceiling | The limit side of a Budget: the operator-set maximum Reserved compute for one user. Resolved as the user's UserBudget override, else the chart-wide default |
-| Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-turn Fork/Run pods |
+| Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents, plus the Sizes of live Fork pods acting as that user (a Fork reserves against its *replier's* Budget, at the parent Agent's Size). Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-command Run pods |
 | Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/1Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
 | UserBudget | The record of one user's Ceiling override: a namespaced CR (platform namespace, like Agent) named `budget-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub (name↔owner pinned by schema validation). Absence means the chart default applies |
 | Over Budget | The parked state of an Agent whose start would push its owner's Reserved past their Ceiling: pods stay at zero, `Ready=False/OverBudget`. Parked Agents never start by themselves — a new deliberate start (Start button, opening it, a Schedule fire) retries the gate; never-hibernate Agents are the exception and auto-start when room frees. The activity window lapsing reverts it to plain hibernation |

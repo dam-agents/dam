@@ -3,27 +3,37 @@ import { EventType, emit } from "../../events.js";
 import { startOnForeignReplySaga } from "../../modules/forks/sagas/on-foreign-reply.js";
 import { startOnChannelTurnRelayedSaga } from "../../modules/forks/sagas/on-channel-turn-relayed.js";
 import type {
+  EnsureForkInput,
   ForksService,
-  OpenForkInput,
 } from "../../modules/forks/services/forks-service.js";
 
 function makeService(): {
   service: ForksService;
-  openCalls: OpenForkInput[];
-  closeCalls: string[];
+  ensureCalls: EnsureForkInput[];
+  activityCalls: string[];
+  endCalls: string[];
 } {
-  const openCalls: OpenForkInput[] = [];
-  const closeCalls: string[] = [];
+  const ensureCalls: EnsureForkInput[] = [];
+  const activityCalls: string[] = [];
+  const endCalls: string[] = [];
   return {
-    openCalls,
-    closeCalls,
+    ensureCalls,
+    activityCalls,
+    endCalls,
     service: {
-      openFork: async (input) => {
-        openCalls.push(input);
+      ensureFork: async (input) => {
+        ensureCalls.push(input);
       },
-      closeFork: async (id) => {
-        closeCalls.push(id);
+      recordActivity: async (id) => {
+        activityCalls.push(id);
       },
+      endFork: async (id) => {
+        endCalls.push(id);
+      },
+      resolveIdentity: async () => null,
+      listByAgent: async () => [],
+      listByReplier: async () => [],
+      pokeCredentials: async () => {},
     },
   };
 }
@@ -41,43 +51,25 @@ describe("on-foreign-reply saga", () => {
     sub = startOnForeignReplySaga(harness.service);
   });
 
-  it("calls openFork with correlation+identity fields from the event", async () => {
+  it("ensures the (agent, replier) fork with correlation fields from the event", async () => {
     emit({
       type: EventType.ForeignReplyReceived,
       replyId: "reply-1",
       agentId: "inst-1",
       foreignSub: "kc|user-42",
       threadTs: "1700000000.000100",
-      sessionId: "sess-7",
       prompt: "hello",
       slackContext: { channelId: "C123", userSlackId: "U42" },
     });
     await drain();
 
-    expect(harness.openCalls).toEqual([
+    expect(harness.ensureCalls).toEqual([
       {
         agentId: "inst-1",
         foreignSub: "kc|user-42",
         replyId: "reply-1",
-        sessionId: "sess-7",
       },
     ]);
-    sub.unsubscribe();
-  });
-
-  it("omits sessionId when absent on the event", async () => {
-    emit({
-      type: EventType.ForeignReplyReceived,
-      replyId: "reply-2",
-      agentId: "inst-1",
-      foreignSub: "kc|user-42",
-      threadTs: "1700000000.000200",
-      prompt: "hi",
-      slackContext: { channelId: "C123", userSlackId: "U42" },
-    });
-    await drain();
-
-    expect(harness.openCalls[0]).not.toHaveProperty("sessionId");
     sub.unsubscribe();
   });
 
@@ -93,16 +85,21 @@ describe("on-foreign-reply saga", () => {
     });
     await drain();
 
-    expect(harness.openCalls).toEqual([]);
+    expect(harness.ensureCalls).toEqual([]);
     sub.unsubscribe();
   });
 
-  it("does not rethrow when openFork fails (swallowed + logged)", async () => {
+  it("does not rethrow when ensureFork fails (swallowed + logged)", async () => {
     const failing: ForksService = {
-      openFork: async () => {
+      ensureFork: async () => {
         throw new Error("boom");
       },
-      closeFork: async () => {},
+      recordActivity: async () => {},
+      endFork: async () => {},
+      resolveIdentity: async () => null,
+      listByAgent: async () => [],
+      listByReplier: async () => [],
+      pokeCredentials: async () => {},
     };
     const s = startOnForeignReplySaga(failing);
 
@@ -132,7 +129,7 @@ describe("on-channel-turn-relayed saga", () => {
     sub = startOnChannelTurnRelayedSaga(harness.service);
   });
 
-  it("calls closeFork when forkId is present", async () => {
+  it("stamps fork activity when forkId is present — turns no longer tear the fork down", async () => {
     emit({
       type: EventType.ChannelTurnRelayed,
       channel: "slack",
@@ -143,7 +140,8 @@ describe("on-channel-turn-relayed saga", () => {
     });
     await drain();
 
-    expect(harness.closeCalls).toEqual(["fork-1"]);
+    expect(harness.activityCalls).toEqual(["fork-1"]);
+    expect(harness.endCalls).toEqual([]);
     sub.unsubscribe();
   });
 
@@ -157,7 +155,7 @@ describe("on-channel-turn-relayed saga", () => {
     });
     await drain();
 
-    expect(harness.closeCalls).toEqual([]);
+    expect(harness.activityCalls).toEqual([]);
     sub.unsubscribe();
   });
 
@@ -173,7 +171,7 @@ describe("on-channel-turn-relayed saga", () => {
     });
     await drain();
 
-    expect(harness.closeCalls).toEqual([]);
+    expect(harness.activityCalls).toEqual([]);
     sub.unsubscribe();
   });
 });

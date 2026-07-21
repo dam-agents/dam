@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-17
+Last verified: 2026-07-20
 
 ## Overview
 
@@ -34,8 +34,10 @@ Three rules carry the security model:
    get their **own** per-fork SA — distinct from the parent's — so a
    compromised fork can't impersonate the parent on the harness path;
    per-fork policies layer narrowly on top, admitting the fork's
-   gateway SA only to `/api/agents/<parent>/mcp` and to the
-   parent's ext-authz Service.
+   gateway SA only to the fork's own `/api/agents/<forkId>/mcp` and
+   its own per-fork ext-authz Service (#2843) — the api-server
+   resolves the fork id into an acting context, so fork traffic is
+   attributable end to end.
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).
@@ -414,7 +416,7 @@ header are gone.
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
 
-## Per-turn fork pods (Slack foreign replier)
+## Fork pods (Slack foreign replier)
 
 This section covers person-scoped Slack bindings — the default access
 mode ([channels](channels.md)). Who may drive a thread at all is
@@ -423,16 +425,42 @@ users, and the per-Agent `allowedUsers` gate admits or rejects each
 replier.
 
 When a user other than the Agent owner replies in a Slack thread,
-the api-server creates a Fork CR that the controller materialises
-into a per-turn paired pod set: a fork agent Job and a fork gateway
-Pod. The fork's gateway pod mounts the **replier's** K8s credential
-Secrets — selected by `agent-platform.ai/owner=<replier-sub>`, not the Agent
-owner's `sub`. The credential boundary is preserved: the fork pair runs
-the replier's credentials, never the parent Agent owner's. The fork
+the api-server ensures the (Agent, replier) Fork CR — durable and
+reused across turns; lifecycle on
+[agent-lifecycle](agent-lifecycle.md#forks) — which the controller
+materialises into a paired pod set: a fork agent Job and a fork
+gateway Pod. The fork's gateway pod mounts the **replier's** K8s
+credential Secrets — selected by
+`agent-platform.ai/owner=<replier-sub>`, not the Agent owner's `sub`.
+The credential boundary is preserved: the fork pair runs the
+replier's credentials, never the parent Agent owner's. The fork
 agent's `agent-platform.ai/agent` label still points at the parent
-Agent so traffic resolves under the parent's egress rules; the fork's
-own pair key (`agent-platform.ai/pair`) isolates it from the parent
-Agent's pair.
+Agent so pod-keyed resolution finds the parent; the fork's own pair
+key (`agent-platform.ai/pair`) isolates it from the parent Agent's
+pair.
+
+Since #2843 the fork also carries its own *platform* identity, on two
+surfaces:
+
+- **MCP.** The fork presents `/api/agents/<forkId>/mcp`; the per-fork
+  waypoint policy admits its gateway SA to that path only. The
+  api-server resolves the fork id into an acting context — parent
+  agent plus replier — and composes the owner-scoped tools for the
+  **replier**: artifact tools operate on the replier's own library
+  (attributed to the parent agent), the parent owner's library is
+  unreachable, and parent-scoped management tools (skills, schedules,
+  experiments) are not registered at all. Channel tools remain — the
+  bound thread is the interaction surface — with the fork context in
+  the audit trail.
+- **Egress.** The fork gateway dials its own per-fork ext-authz
+  Service, so each Check carries the fork id. The gate still resolves
+  the **parent's** egress rules — the parent owner stays the policy
+  authority for everything leaving their workspace — but a request
+  that would hold for a human verdict **auto-declines** instead of
+  landing in the owner's inbox: a prompt triggered by someone else's
+  message would hang the replier's turn on the owner's decision and
+  is a social-engineering surface besides. The replier's recourse is
+  asking the owner for a rule.
 
 ## Shared-mode channel turns
 
@@ -507,16 +535,18 @@ differ:
   AuthorizationPolicy on the waypoint ALLOWs the gateway's SA
   principal to `/api/agents/<id>/*`; handlers can treat URL `:id`
   as authenticated. For forks, an additional per-fork policy admits
-  the fork *gateway*'s SA only to `/api/agents/<parent>/mcp` —
-  the runtime channel stays parent-only.
-- **Gateway → api-server ext-authz** routes through a per-Agent
+  the fork *gateway*'s SA only to the fork's own
+  `/api/agents/<forkId>/mcp` (#2843) — the runtime channel stays
+  parent-only, and the fork never presents the parent's id.
+- **Gateway → api-server ext-authz** routes through a per-instance
   Service `<rel>-extauthz-<id>` rendered by the controller alongside
-  each Agent. The AuthorizationPolicy on each Service ALLOWs only
-  the matching SA principal (plus per-fork ALLOWs that admit fork
-  SAs to the parent's Service so the parent owner's HITL rules stay
-  the gate). The destination Service is cryptographically pinned to
-  the calling Agent; the api-server derives Agent ID from the
-  gRPC `:authority`.
+  each Agent — and each Fork (#2843): a fork gateway dials its own
+  per-fork Service, so a Check's `:authority` carries the fork id and
+  the gate can tell a replier's turn from the parent's while still
+  resolving the parent owner's rules. The AuthorizationPolicy on each
+  Service ALLOWs only the matching SA principal. The destination
+  Service is cryptographically pinned to the calling instance; the
+  api-server derives the instance ID from the gRPC `:authority`.
 - **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects
   anything that isn't either the waypoint's SA (harness) or a
   per-Agent SA from the agent namespace (ext-authz), closing the

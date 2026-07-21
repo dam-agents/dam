@@ -80,6 +80,11 @@ func TestBuildForkAgentJob_ForkMetadataEnv(t *testing.T) {
 	assert.Equal(t, "fork-abc", env["PLATFORM_FORK_ID"])
 	assert.Equal(t, "kc|user-42", env["PLATFORM_FOREIGN_SUB"])
 	assert.Equal(t, "my-agent", env["PLATFORM_AGENT_ID"])
+	// The fork presents its OWN id on the MCP surface (#2843) — the
+	// api-server resolves it into (parent agent, replier) and applies
+	// fork tool policy; presenting the parent's id would be full
+	// impersonation on that surface.
+	assert.Contains(t, env["PLATFORM_MCP_URL"], "/api/agents/fork-abc/mcp")
 	// HTTPS_PROXY is IP-direct — the fork's OWN gateway ClusterIP, not
 	// the parent's. The fork reconciler passes its own gateway IP.
 	assert.Equal(t, "http://10.96.42.42:10000", env["HTTPS_PROXY"])

@@ -12,7 +12,6 @@ import { toForeignSub } from "../../modules/forks/domain/fork.js";
 const spec: ForkSpec = {
   agentId: "inst-abc",
   foreignSub: toForeignSub("kc-user-42"),
-  sessionId: "sess-1",
 };
 
 describe("buildForkObject", () => {
@@ -29,16 +28,9 @@ describe("buildForkObject", () => {
     expect(obj.spec).toEqual({
       agentName: "inst-abc",
       foreignSub: "kc-user-42",
-      sessionId: "sess-1",
     });
-  });
-
-  it("omits sessionId when not provided", () => {
-    const withoutSession: ForkSpec = {
-      agentId: "inst-abc",
-      foreignSub: toForeignSub("kc-user-42"),
-    };
-    const obj = buildForkObject({ forkId: "fork-1", spec: withoutSession });
+    // Durable forks serve many threads; a per-turn session id must never be
+    // baked into the CR.
     expect(obj.spec).not.toHaveProperty("sessionId");
   });
 });
@@ -75,6 +67,12 @@ describe("parseForkStatus", () => {
     expect(parseForkStatus(obj)).toEqual({ phase: "Failed" });
   });
 
+  it("parses the Hibernated phase", () => {
+    expect(parseForkStatus({ status: { phase: "Hibernated" } })).toEqual({
+      phase: "Hibernated",
+    });
+  });
+
   it("ignores an unknown phase", () => {
     expect(parseForkStatus({ status: { phase: "Weird" } })).toBeNull();
   });
@@ -83,22 +81,26 @@ describe("parseForkStatus", () => {
 interface FakeApi {
   created: unknown[];
   deleted: string[];
+  patched: Array<{ name: string; body: unknown }>;
   readSequence: Array<ForkObject | "not-found">;
   readCount: number;
   createError?: { code: number };
+  patchError?: { code: number };
   customObjects: k8s.CustomObjectsApi;
 }
 
 function makeFakeApi(
   initialReads: Array<ForkObject | "not-found">,
-  opts: { createError?: { code: number } } = {},
+  opts: { createError?: { code: number }; patchError?: { code: number } } = {},
 ): FakeApi {
   const state: FakeApi = {
     created: [],
     deleted: [],
+    patched: [],
     readSequence: initialReads,
     readCount: 0,
     createError: opts.createError,
+    patchError: opts.patchError,
     customObjects: undefined as unknown as k8s.CustomObjectsApi,
   };
   const customObjects = {
@@ -113,6 +115,11 @@ function makeFakeApi(
       const entry = state.readSequence[idx];
       if (entry === "not-found") throw { code: 404 };
       return entry;
+    },
+    async patchNamespacedCustomObject(req: { name: string; body: unknown }) {
+      if (state.patchError) throw state.patchError;
+      state.patched.push({ name: req.name, body: req.body });
+      return {};
     },
     async deleteNamespacedCustomObject(req: { name: string }) {
       state.deleted.push(req.name);
@@ -160,6 +167,58 @@ describe("createK8sForkOrchestrator", () => {
     const result = await orch.createFork({ forkId: "fork-1", spec });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("WriteFailed");
+  });
+
+  it("getFork returns the parsed spec identity and status for an existing CR", async () => {
+    const fake = makeFakeApi([forkObj({ phase: "Hibernated" })]);
+    const orch = createK8sForkOrchestrator({
+      customObjects: fake.customObjects,
+      namespace: "platform-agents",
+      sleep: async () => {},
+    });
+    expect(await orch.getFork("fork-1")).toEqual({
+      agentId: "inst-abc",
+      foreignSub: "kc-user-42",
+      status: { phase: "Hibernated" },
+    });
+  });
+
+  it("getFork returns null when the CR doesn't exist", async () => {
+    const fake = makeFakeApi(["not-found"]);
+    const orch = createK8sForkOrchestrator({
+      customObjects: fake.customObjects,
+      namespace: "platform-agents",
+      sleep: async () => {},
+    });
+    expect(await orch.getFork("fork-1")).toBeNull();
+  });
+
+  it("bumpActivity merge-patches the last-activity annotation", async () => {
+    const fake = makeFakeApi([]);
+    const orch = createK8sForkOrchestrator({
+      customObjects: fake.customObjects,
+      namespace: "platform-agents",
+      sleep: async () => {},
+    });
+    await orch.bumpActivity("fork-1");
+
+    expect(fake.patched).toHaveLength(1);
+    expect(fake.patched[0]!.name).toBe("fork-1");
+    const body = fake.patched[0]!.body as {
+      metadata: { annotations: Record<string, string> };
+    };
+    const stamp = body.metadata.annotations["agent-platform.ai/last-activity"]!;
+    expect(new Date(stamp).toISOString()).toBe(stamp);
+  });
+
+  it("bumpActivity swallows 404 — the fork may have expired underneath", async () => {
+    const fake = makeFakeApi([], { patchError: { code: 404 } });
+    const orch = createK8sForkOrchestrator({
+      customObjects: fake.customObjects,
+      namespace: "platform-agents",
+      sleep: async () => {},
+    });
+    await expect(orch.bumpActivity("fork-1")).resolves.toBeUndefined();
   });
 
   it("watchStatus yields Ready then terminates", async () => {

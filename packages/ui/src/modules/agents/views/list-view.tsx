@@ -8,6 +8,8 @@ import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
 import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { useMyForks } from "../../forks/api/queries.js";
+import { ForkReservations } from "../../forks/components/fork-reservations.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
@@ -38,6 +40,11 @@ export function ListView() {
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
   const agents = agentsData?.list ?? [];
+  // Forks reserve budget too (#2843), so the meter must show for a user who
+  // drives forks on others' sandboxes but owns no agent of their own. Shares
+  // ForkReservations' query key — TanStack dedupes to one fetch.
+  const myForks = useMyForks();
+  const hasForks = (myForks.data?.length ?? 0) > 0;
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
@@ -120,7 +127,9 @@ export function ListView() {
         )}
       </div>
 
-      {initialLoaded && agents.length > 0 && <BudgetMeter />}
+      {initialLoaded && (agents.length > 0 || hasForks) && <BudgetMeter />}
+
+      {initialLoaded && <ForkReservations />}
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 

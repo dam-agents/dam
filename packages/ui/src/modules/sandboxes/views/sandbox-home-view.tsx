@@ -8,6 +8,7 @@ import { useSyncPausingAgents } from "../../agents/hooks/use-suspend-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { SandboxForksSection } from "../../forks/components/sandbox-forks-section.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
 import { SandboxSchedulesSection } from "../components/sandbox-schedules-section.js";
@@ -99,6 +100,8 @@ export function SandboxHomeView() {
         <SandboxSchedulesSection agentId={agent.id} />
       ) : section === "artifacts" && artifactsEnabled ? (
         <SandboxArtifactsSection agentId={agent.id} />
+      ) : section === "forks" ? (
+        <SandboxForksSection agentId={agent.id} />
       ) : (
         <ConnectionsSection
           agentId={agent.id}

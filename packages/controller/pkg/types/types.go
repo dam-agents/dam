@@ -30,6 +30,9 @@ const (
 	ForkReasonOrchestrationFailed  = "OrchestrationFailed"
 	ForkReasonPodNotReady          = "PodNotReady"
 	ForkReasonTimeout              = "Timeout"
+	// ForkReasonOverBudget: starting the fork's pods would push the
+	// replier's Reserved past their Ceiling (#2843).
+	ForkReasonOverBudget = "OverBudget"
 )
 
 // ParseAgentSpec parses a ConfigMap spec.yaml into the api/v1 AgentSpec. Legacy
