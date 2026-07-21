@@ -152,7 +152,14 @@ export function McpCreatePane({
     if (authorizing) return "Redirecting…";
     if (pending) return "…";
     return needsOAuth ? "Create + Authorize" : "Create";
-  }, [showDetecting, verifying, awaitingPopup, authorizing, pending, needsOAuth]);
+  }, [
+    showDetecting,
+    verifying,
+    awaitingPopup,
+    authorizing,
+    pending,
+    needsOAuth,
+  ]);
 
   return (
     <>
