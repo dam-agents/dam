@@ -23,6 +23,9 @@ function fakeK8s(initial: KubeObject[] = []) {
   for (const o of initial) store.set(o.metadata?.name ?? "", o);
   const client: K8sClient = {
     namespace: "test-agents",
+    async readPodRestart() {
+      return null;
+    },
     async getCustomObject(_plural, name) {
       return store.get(name) ?? null;
     },

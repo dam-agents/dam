@@ -8,6 +8,8 @@ import type {
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
+  ANN_LIFETIME_MS,
+  ANN_SWEEPABLE,
   GROUP,
   KIND_AGENT,
   LABEL_OWNER,
@@ -33,6 +35,7 @@ interface AgentStatusObject {
     status?: string;
     reason?: string;
     message?: string;
+    lastTransitionTime?: string;
   }>;
 }
 
@@ -43,7 +46,20 @@ export interface InfraAgent {
   id: string;
   name: string;
   templateId?: string;
+  /** The agent's owner (LABEL_OWNER). Needed by owner-agnostic scans (the
+   *  Agent Sweep) that must resolve an owner-scoped service to delete. */
+  owner?: string;
   spec: AgentSpec;
+  /** Sweepable (#2816): the Agent Sweep deletes this agent once it hibernates
+   *  (after its Lifetime grace, if any). Ephemeral agents only. */
+  sweepable: boolean;
+  /** Agent Lifetime grace in ms (0 = delete as soon as it hibernates). Only
+   *  meaningful when `sweepable`. */
+  lifetimeMs: number;
+  /** When the agent transitioned into hibernation (Ready condition's
+   *  lastTransitionTime while hibernated), else undefined. The Sweep bases the
+   *  Lifetime grace on this. */
+  hibernatedSince?: Date;
   /** The authoritative Ready condition: Ready = AgentPodReady ∧
    *  GatewayPodReady. False until the controller publishes it. */
   ready: boolean;
@@ -141,14 +157,25 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   );
 
   const ready = readyCondition(obj);
+  const hibernated =
+    ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED;
+  const annotations = obj.metadata?.annotations ?? {};
+  const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
+  const hibernatedSince =
+    hibernated && ready?.lastTransitionTime
+      ? new Date(ready.lastTransitionTime)
+      : undefined;
   return {
     id,
     name: spec.name,
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
+    owner: agentOwner(obj),
     spec,
+    sweepable: annotations[ANN_SWEEPABLE] === "true",
+    lifetimeMs: Number.isFinite(lifetimeMs) && lifetimeMs > 0 ? lifetimeMs : 0,
+    ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
-    hibernated:
-      ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED,
+    hibernated,
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
     overBudgetMessage:
@@ -198,6 +225,7 @@ export function buildAgentObject(
   owner: string,
   name: string,
   templateId?: string,
+  annotations?: Record<string, string>,
 ): AgentObject {
   const labels: Record<string, string> = { [LABEL_OWNER]: owner };
   if (templateId) labels[LABEL_TEMPLATE_REF] = templateId;
@@ -208,7 +236,10 @@ export function buildAgentObject(
     metadata: {
       name,
       labels,
-      annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
+      annotations: {
+        [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+        ...annotations,
+      },
     },
     spec,
   };

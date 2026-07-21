@@ -32,7 +32,7 @@ TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.confi
 
 # platform-base's build context is the repo root but it only COPYs these paths;
 # keep in sync with packages/platform-base/Dockerfile.
-PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/dev-config scripts/install-pnpm.js package.json pnpm-workspace.yaml pnpm-lock.yaml"
+PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/dev-config scripts/install-pnpm.js package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix

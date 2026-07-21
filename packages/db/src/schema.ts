@@ -655,3 +655,46 @@ export const experimentRuns = pgTable(
     ),
   ],
 );
+
+// An Invocation (#2816) is a run-once, typed request from a driver Agent to a
+// target Agent: a `(driver, target, prompt, result schema) -> one validated
+// result` binding. The target reports via the fixed `report_result` MCP tool.
+// This is the platform-owned durable record of that request — the row both
+// stashes the result JSON Schema (so `report_result` can validate the target's
+// structural claim) and marks the target as an Invocation (a regular agent
+// calling `report_result` has no row). Lifecycle (autosweep) is NOT modeled
+// here — it lives on the Agent (Sweepable / Agent Lifetime / Agent Sweep); this
+// table owns only the result contract plus the per-result liveness deadline.
+// The common case pairs an Invocation with a freshly-spawned ephemeral Agent,
+// but that pairing is not part of the record. The candidate itself never lives
+// here — it crosses round boundaries as a git ref; only the opaque `result`
+// does.
+export const invocations = pgTable(
+  "invocations",
+  {
+    // Primary key is the target Agent's id — `report_result` runs on that
+    // agent's own /api/agents/<id>/mcp, so the id is the attribution key.
+    id: text("id").primaryKey(),
+    driverAgentId: text("driver_agent_id").notNull(),
+    owner: text("owner").notNull(),
+    // JSON Schema the result is validated against (structural only).
+    resultSchema: jsonb("result_schema").notNull(),
+    // The validated result; null until the target reports.
+    result: jsonb("result"),
+    status: text("status").notNull().default("running"),
+    errorReason: text("error_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Liveness deadline: a `running` Invocation past this is failed by the
+    // liveness sweep (bounds one result, not the target agent).
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("invocations_driver_idx").on(table.driverAgentId),
+    index("invocations_status_expiry_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.status} = 'running'`),
+  ],
+);

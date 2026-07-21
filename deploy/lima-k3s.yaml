@@ -15,7 +15,7 @@ cpus: 4
 # Bumping `memory:` here does not resize an existing VM. Devs upgrading
 # from a 4 GiB VM must reprovision:
 #   mise run cluster:delete && mise run cluster:install
-memory: 8GiB
+memory: 16GiB
 disk: 200GiB
 
 containerd:

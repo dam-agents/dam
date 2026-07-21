@@ -19,6 +19,7 @@ import {
   findSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  createAgentSweep,
 } from "./modules/agents/index.js";
 import {
   createAgentSkillsRepository,
@@ -86,6 +87,9 @@ import { configureLogger, getLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
+import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
+import { composeTemplatesModule } from "./modules/templates/compose.js";
+import { composeInvocationLivenessSweep } from "./modules/invocations/index.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import {
   composeApprovalsSystem,
@@ -658,6 +662,75 @@ try {
   );
 }
 
+// Owner-scoped agents factory for the harness surface (the spawn primitive):
+// a driver agent spawns an Invocation target = create an ephemeral Agent +
+// submit a prompt. Mirrors the main app's per-owner agents composition, incl.
+// the connections grantProvisioner so a target's connection subset
+// materializes on create.
+const harnessTemplatesRepo = createTemplatesRepository(
+  config.agentTemplatesPath,
+);
+const { readSpec: harnessReadTemplateSpec } =
+  composeTemplatesModule(harnessTemplatesRepo);
+const wakeAgentFor = async (agentId: string) => {
+  await agentsRepo.wakeIfHibernated(agentId);
+};
+const harnessAgentsServiceFor = (owner: string) => {
+  const connections = connectionsServiceFor(owner);
+  return composeAgentsModule({
+    api,
+    namespace: config.namespace,
+    agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    agentDefaultLimits: {
+      cpu: config.agentDefaultCpuLimit,
+      memory: config.agentDefaultMemoryLimit,
+    },
+    owner,
+    db,
+    userDirectory,
+    readTemplateSpec: harnessReadTemplateSpec,
+    presetSeeder,
+    cleanupHooks: agentCleanupHooks,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    contributionsSettled: contributionsSettledPort,
+    grantProvisioner: {
+      resolveSpecGrants(sel) {
+        return Promise.resolve({
+          grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
+        });
+      },
+      async applyAfterCreate(agentId, sel) {
+        if (sel.connectionIds.length)
+          await connections.setAgentConnections(agentId, sel.connectionIds);
+      },
+    },
+  }).agents;
+};
+
+// Invocation liveness sweep (owner-agnostic; started once): bounds one result
+// — fails a target that ran past its deadline or crashed mid-turn, reaps it,
+// and drops aged result rows. It does NOT own the target agent's lifecycle.
+const invocationLivenessSweep = composeInvocationLivenessSweep({
+  db,
+  agentsFor: harnessAgentsServiceFor,
+  k8s: k8sClient,
+  intervalMs: 60_000,
+  batchSize: 200,
+});
+invocationLivenessSweep.start();
+
+// Agent Sweep (#2816): generic GC that deletes any Sweepable agent once it
+// hibernates (after its Lifetime grace, if any). Keyed off Agent state, never
+// the Invocations table — the backstop for Invocation targets and the home for
+// future Sweepable agents (Forks, inherited channel agents). Owner-agnostic:
+// lists all agents, resolves an owner-scoped service per agent to delete.
+const agentSweep = createAgentSweep({
+  listAgents: () => agentsRepo.list(),
+  agentsFor: harnessAgentsServiceFor,
+  intervalMs: 60_000,
+});
+agentSweep.start();
+
 const { server: apiServer } = startApiServerApp({
   config,
   api,
@@ -702,6 +775,9 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   schedulesBoot,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   artifacts,
+  agentsServiceFor: harnessAgentsServiceFor,
+  connectionsServiceFor,
+  wakeAgent: wakeAgentFor,
 });
 
 // Instance identity for ext-authz now flows from the per-instance
@@ -738,6 +814,8 @@ async function shutdown() {
   audit.stop();
   await deliverySweeper.stop();
   await experimentArmSweeper.stop();
+  await invocationLivenessSweep.stop();
+  await agentSweep.stop();
   await periodicJobs.close();
   await channelManager.stopAll();
   await runtimeDelivery.sweep.stop();

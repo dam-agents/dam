@@ -30,6 +30,9 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Wake | Transitioning an Agent from hibernated to running |
 | Hard Stop | User-initiated scale-to-zero of a running Agent (the `stop-requested` annotation), freeing its Reserved compute. Sticky against background activity — background polls cannot resurrect it — and cleared only by an explicit Wake or a Schedule fire (the UI warns at stop time when schedules exist) |
 | Pause | User-initiated immediate hibernation: a Hard Stop whose stamp the api-server clears once the Agent settles Hibernated. Sticky only during the scale-down window (which is what prevents poll-resurrection mid-descent); afterwards the Agent wakes on any deliberate touch, back through the budget gate |
+| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Set on ephemeral agents (Invocation targets now; the intended home for Forks and inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
+| Agent Lifetime | *(proposed, PR #2816)* Optional grace period a Sweepable Agent may stay hibernated before the Agent Sweep deletes it. Default zero — deleted as soon as it hibernates. The knob that later lets an inherited channel agent linger warm (Radek's "2 days") while an Invocation target dies on hibernate. Distinct from the per-Invocation Liveness Deadline, which bounds one result, not the agent |
+| Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
 | Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
 | Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
@@ -53,6 +56,18 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Fork | An ephemeral, per-turn execution environment derived from an Agent that impersonates a foreign user for the duration of one Slack turn. Job-shaped and run-to-completion — distinct from the Agent's StatefulSet shape |
 | Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Agent owner |
 | Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
+
+## Invocations (bounded context) — proposed, in-flight (PR #2816)
+
+Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as a domain term here (it collides with the #892 user-facing rename of Agent); what the spawn primitive actually models is a run-once, typed request from one Agent to another. Lifecycle (autosweep) is **not** here — it lives on the Agent (Sweepable / Agent Lifetime / Agent Sweep). This context owns only the result contract.
+
+| Term | Definition |
+|------|-----------|
+| Invocation | A run-once request from a driver Agent to a target Agent: a `(driver, target, prompt, result schema) → one validated result` binding. Orthogonal to whether the target is ephemeral — pairing an Invocation with a freshly-spawned Sweepable Agent is the common case, not part of the definition |
+| Driver | The Agent that creates an Invocation and polls it for the result. Attenuation ceiling: an Invocation's connections must be a subset of the driver's own grants |
+| report_result | The fixed MCP tool the target Agent calls to report its result; the server validates it against the stashed Result Schema (structural only, never truth) and flips the Invocation terminal. Attribution is by the reporting agent's own id. *(renamed from the spawn/loop-era `node_done`)* |
+| Result Schema | The driver-supplied JSON Schema an Invocation's result must match; stored on the Invocation record, never on any Kubernetes resource, so the platform stays blind to content |
+| Liveness Deadline | The per-Invocation deadline (driver-set `ttlMs`, clamped ~1min..6h) after which a still-running Invocation is failed, so a target that exits silently can't wedge the driver's poll. Distinct from Agent Lifetime |
 
 ## Skills — api-server side (bounded context)
 

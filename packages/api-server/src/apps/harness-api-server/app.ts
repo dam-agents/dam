@@ -1,6 +1,10 @@
 import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
-import type { RuntimeDeliveryService } from "api-server-api";
+import type {
+  AgentsService,
+  ConnectionsService,
+  RuntimeDeliveryService,
+} from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
@@ -10,9 +14,11 @@ import {
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
 import { isFeatureEnabled } from "../../modules/features/index.js";
+import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
+import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
 import { createRunRelay } from "./harness-run-relay.js";
@@ -32,6 +38,12 @@ export interface HarnessApiServerAppDeps {
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
+  /** Owner-scoped agents service, for spawning Invocation target agents. */
+  agentsServiceFor: (owner: string) => AgentsService;
+  /** Owner-scoped connections service, for the driver's grants + attenuation. */
+  connectionsServiceFor: (owner: string) => ConnectionsService;
+  /** Scale a hibernated agent back up so it drains its outbox (prompt delivery). */
+  wakeAgent: (agentId: string) => Promise<void>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -45,11 +57,24 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     schedulesBoot,
     runtimeMutator,
     artifacts,
+    agentsServiceFor,
+    connectionsServiceFor,
+    wakeAgent,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const { templates } = composeTemplatesModule(templatesRepo);
+
+  const invocationsServiceFor = (owner: string) =>
+    composeInvocationsForOwner({
+      db,
+      owner,
+      agents: agentsServiceFor(owner),
+      runtimeMutator,
+      wakeAgent,
+    });
 
   const app = createHarnessRouter({
     channelManager,
@@ -84,6 +109,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }).artifactLibrary,
     isArtifactsFeatureEnabled: (owner) =>
       isFeatureEnabled(db, owner, "artifacts"),
+    invocationsServiceFor,
+    connectionsServiceFor,
+    templates,
     artifacts,
     maxArtifactBytes: config.maxArtifactBytes,
   });

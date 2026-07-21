@@ -236,6 +236,9 @@ importers:
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       api-server-api:
         specifier: workspace:*
         version: link:../api-server-api
@@ -461,6 +464,27 @@ importers:
       typescript-eslint:
         specifier: ^8.58.2
         version: 8.58.2(eslint@10.2.0(jiti@2.7.0))(typescript@6.0.2)
+
+  packages/driver-sdk:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.0
+      api-server-api:
+        specifier: workspace:*
+        version: link:../api-server-api
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.14)(tsx@4.21.0)(typescript@6.0.2)(yaml@2.9.0)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.3
+        version: 4.1.3(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(vite@6.4.3(@types/node@24.12.0)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/e2e/agents/mock:
     dependencies:
@@ -3966,9 +3990,6 @@ packages:
 
   ajv@6.14.0:
     resolution: {integrity: sha512-IWrosm/yrn43eiKqkfkHis7QioDleaXQHdDVPKg0FSwwd/DuvyX79TZnFOnYpB7dcsFAMmtFztZuXPDvSePkFw==}
-
-  ajv@8.18.0:
-    resolution: {integrity: sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A==}
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
@@ -9039,8 +9060,8 @@ snapshots:
   '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.28)
-      ajv: 8.18.0
-      ajv-formats: 3.0.1(ajv@8.18.0)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
       cors: 2.8.6
       cross-spawn: 7.0.6
@@ -10743,9 +10764,9 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ajv-formats@3.0.1(ajv@8.18.0):
+  ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
-      ajv: 8.18.0
+      ajv: 8.20.0
 
   ajv@6.14.0:
     dependencies:
@@ -10753,13 +10774,6 @@ snapshots:
       fast-json-stable-stringify: 2.1.0
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
-
-  ajv@8.18.0:
-    dependencies:
-      fast-deep-equal: 3.1.3
-      fast-uri: 3.1.3
-      json-schema-traverse: 1.0.0
-      require-from-string: 2.0.2
 
   ajv@8.20.0:
     dependencies:
