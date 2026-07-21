@@ -6,3 +6,12 @@
 validations:
   - name: description
     enforcement: None
+  # Adding enum values is not cluster-breaking here: enum validation rejects
+  # (never prunes) unknown values, so a new writer against an old live CRD
+  # fails loudly, and crdcheck.Assert stops a controller from running against
+  # a CRD older than the generation it was built for (bumps enforced per-PR
+  # by controller:check:crd-schema-generation). Removals stay errors.
+  - name: enum
+    enforcement: Error
+    configuration:
+      additionPolicy: Allow
