@@ -14,6 +14,7 @@ import { createVmRelay } from "../../apps/harness-api-server/harness-vm-relay.js
 const OP_INPUT = 0x00;
 const OP_OUTPUT = 0x01;
 const OP_EXIT = 0x03;
+const OP_EOF = 0x05; // dam-vm's raw (no-PTY) stdin-EOF signal
 
 // dam-vm is dam-run.mjs invoked under the vm name (a symlink in the image);
 // recreate that here — the script picks its mode from argv[1]'s basename.
@@ -26,7 +27,7 @@ symlinkSync(
 );
 
 // Stands in for dam-vm-server on the VM host: records the auth headers the
-// relay attached, echoes input frames back as output, and treats EOT (what
+// relay attached, echoes input frames back as output, and treats OP_EOF (what
 // dam-vm sends on piped-stdin end) as "command read to EOF", exiting 0.
 async function fakeVmHost(): Promise<{
   wss: WebSocketServer;
@@ -41,13 +42,11 @@ async function fakeVmHost(): Promise<{
   wss.on("connection", (ws, req) => {
     seen.push({ agent: req.headers["x-dam-vm-agent"] });
     ws.on("message", (raw: Buffer) => {
-      if (raw[0] !== OP_INPUT) return;
-      const data = raw.subarray(1);
-      if (data.includes(0x04)) {
+      if (raw[0] === OP_EOF) {
         ws.send(Buffer.from([OP_EXIT, 0]));
         ws.close(1000);
-      } else {
-        ws.send(Buffer.concat([Buffer.from([OP_OUTPUT]), data]));
+      } else if (raw[0] === OP_INPUT) {
+        ws.send(Buffer.concat([Buffer.from([OP_OUTPUT]), raw.subarray(1)]));
       }
     });
   });

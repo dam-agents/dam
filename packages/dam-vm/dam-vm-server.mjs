@@ -316,7 +316,9 @@ wss.on("connection", async (ws, req) => {
     child.stderr.on("data", (d) => send(OP_STDERR, d));
     child.stdin.on("error", () => {}); // swallow EPIPE if the command already exited
     child.on("error", () => exit(1));
-    child.on("exit", (code, signal) => exit(code ?? (signal ? 1 : 0)));
+    // "close" (not "exit"): fires after stdout/stderr have flushed to EOF, so
+    // the OP_EXIT close can't race past trailing output and truncate it.
+    child.on("close", (code, signal) => exit(code ?? (signal ? 1 : 0)));
     onInput = (payload) => child.stdin.write(payload);
     onEof = () => child.stdin.end();
     onResize = () => {}; // no tty to resize
