@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-light.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-dark.svg" />
-    <img src="docs/assets/dam-logo-custom.png" width="150" alt="DAM" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-logo-custom.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-logo-custom.png" />
+    <img src="docs/assets/dam-logo-custom.png" width="100%" alt="DAM" />
   </picture>
 </p>
 
