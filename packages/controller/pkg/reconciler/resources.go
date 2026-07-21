@@ -181,6 +181,11 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
+	// Keeps the dam-vm tool doc in the agent's instructions; the entrypoint
+	// strips it otherwise (no VM host configured for this deployment).
+	if cfg.VMEnabled {
+		env = append(env, corev1.EnvVar{Name: "DAM_VM_ENABLED", Value: "1"})
+	}
 
 	// Chart-level platform default env; user env arrives via the runtime channel.
 	for _, e := range specEnv {

@@ -53,16 +53,25 @@ EOF
 
 # ── high shims (shadow real binaries) ────────────────────────────────────────
 
-# docker: install the engine + build tooling from Fedora repos, run the daemon.
+# docker: install the engine + build tooling from Fedora repos, then start the
+# daemon. runc is explicit — moby-engine doesn't pull it in and dockerd's
+# buildkit init hard-fails without it. Install and daemon-start are separate so
+# a failure surfaces immediately instead of hanging then "cannot connect".
 cat > /opt/shims/high/docker << 'EOF'
 #!/bin/sh
 if ! command-real docker >/dev/null 2>&1; then
-  auto-install docker sh -c '
-    dnf install -yq moby-engine docker-compose docker-buildx &&
-    systemctl enable --now containerd docker'
+  auto-install docker dnf install -yq moby-engine docker-compose docker-buildx runc || exit 1
 fi
 _real=$(command-real docker)
-timeout 60 sh -c 'until "$0" info >/dev/null 2>&1; do sleep 0.5; done' "$_real" || true
+if ! "$_real" info >/dev/null 2>&1; then
+  auto-install dockerd systemctl enable --now containerd docker || exit 1
+  i=0
+  until "$_real" info >/dev/null 2>&1; do
+    i=$((i + 1))
+    [ "$i" -gt 40 ] && { echo "docker: daemon not ready — see journalctl -xeu docker.service" >&2; exit 1; }
+    sleep 0.5
+  done
+fi
 exec "$_real" "$@"
 EOF
 
