@@ -26,24 +26,19 @@ The platform for AI-powered research.
 
 IBM's teams have proven the efficacy of implementing AI tools for research, from building ["agent factories" for hardware optimization](https://arxiv.org/abs/2603.25719) to developing [evolutionary frameworks to find quantum error correction codes](https://research.ibm.com/blog/ai-for-qec). **DAM packages all the tools research teams need to access those benefits in minutes, avoiding the lift of building bespoke tooling**.
 
-### 🔬 Evolve code.
-Experiments are scaffolded nativley from a library of re-usable templates, patterns and techniques proven to deliver results.
+- **🔬 Evolve code.** Experiments are scaffolded nativley from a library of re-usable templates, patterns and techniques proven to deliver results.
 
-### ☁️ Runs in the cloud.
-Loops execute continuously, executing even when you're away. From self-updating documentation to 
+- **☁️ Runs in the cloud.** Loops execute continuously, executing even when you're away. From self-updating documentation to 
 
-### 🔐 Secure sandboxes.
-Each agent runs in an isolated container with all access routed through a policy-enforced gateway. Agents connect to tools without exposing credentials to the runtime.
+- **🔐 Secure sandboxes.** Each agent runs in an isolated container with all access routed through a policy-enforced gateway. Agents connect to tools without exposing credentials to the runtime.
 
-### 👥 Built for teams.
-Collaborate in Slack and run agents on schedules for recurring workflows.
+- **👥 Built for teams.** Collaborate in Slack and run agents on schedules for recurring workflows.
 
-### 🧠 Knowledgeable decisions.
-Memory sources such as LLM Wikis on-the-fly MCP servers ensure agents start smart and experiments can capture and learn from their findings.
-### ⏱️ Scheduled workflows.
-Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
-### 🔧 Constantly growing.
-DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know]().
+- **🧠 Knowledgeable decisions.** Memory sources such as LLM Wikis on-the-fly MCP servers ensure agents start smart and experiments can capture and learn from their findings.
+
+- **⏱️ Scheduled workflows.** Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
+
+- **🔧 Constantly growing.** DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know]().
 
 
 
