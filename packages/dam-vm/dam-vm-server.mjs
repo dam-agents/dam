@@ -30,7 +30,9 @@ import { createServer as createHttpsServer } from "node:https";
 const OP_INPUT = 0x00,
   OP_OUTPUT = 0x01,
   OP_RESIZE = 0x02,
-  OP_EXIT = 0x03;
+  OP_EXIT = 0x03,
+  OP_STDERR = 0x04, // raw (no-PTY) path only: stderr kept separate from stdout
+  OP_EOF = 0x05; // raw path only: close the command's stdin
 
 const LISTEN_HOST = process.env.DAM_VM_LISTEN_HOST || "0.0.0.0";
 const LISTEN_PORT = process.env.DAM_VM_PORT
@@ -249,6 +251,10 @@ wss.on("connection", async (ws, req) => {
   if (argv.length === 0) argv = ["bash", "-l"];
   const cols = Math.min(500, parseInt(url.searchParams.get("cols"), 10) || 80);
   const rows = Math.min(300, parseInt(url.searchParams.get("rows"), 10) || 24);
+  // Interactive (client stdin+stdout are TTYs) → PTY. Otherwise raw pipes, so
+  // binary stdout survives redirection (`dam-vm cat x > x`). Default to PTY for
+  // an older client that doesn't send the flag.
+  const wantTty = url.searchParams.get("tty") !== "0";
   // W3C trace context forwarded by dam-vm so the command joins the session's
   // trace (same contract as the dam-run exec server).
   const traceEnv = ["traceparent", "tracestate"].flatMap((k) => {
@@ -266,47 +272,71 @@ wss.on("connection", async (ws, req) => {
   active.set(name, (active.get(name) || 0) + 1);
 
   // argv goes to incus as an array — nothing is ever interpreted by a host shell
-  const term = ptySpawn(
-    "incus",
-    [
-      "exec",
-      name,
-      "--env",
-      "TERM=xterm-256color",
-      ...traceEnv,
-      "--cwd",
-      "/root",
-      "--",
-      ...argv,
-    ],
-    { name: "xterm-256color", cols, rows },
-  );
-
-  term.onData((data) => {
-    if (ws.readyState !== ws.OPEN) return;
-    const buf = Buffer.from(data);
-    ws.send(Buffer.concat([Buffer.from([OP_OUTPUT]), buf]));
-  });
-  term.onExit(({ exitCode }) => {
+  const execArgs = [
+    "exec",
+    name,
+    "--env",
+    "TERM=xterm-256color",
+    ...traceEnv,
+    "--cwd",
+    "/root",
+    "--",
+    ...argv,
+  ];
+  const send = (op, data) => {
+    if (ws.readyState === ws.OPEN)
+      ws.send(Buffer.concat([Buffer.from([op]), Buffer.from(data)]));
+  };
+  const exit = (code) => {
     if (ws.readyState === ws.OPEN) {
-      ws.send(Buffer.from([OP_EXIT, exitCode & 0xff]));
+      ws.send(Buffer.from([OP_EXIT, code & 0xff]));
       ws.close(1000);
     }
-  });
+  };
+
+  // Interactive → PTY (incus sees a tty on its stdio and allocates one in the
+  // container). Otherwise a plain child with pipes: incus runs non-interactive
+  // and streams raw bytes, so redirected binary output isn't CRLF-mangled.
+  let onInput, onEof, onResize, kill;
+  if (wantTty) {
+    const term = ptySpawn("incus", execArgs, {
+      name: "xterm-256color",
+      cols,
+      rows,
+    });
+    term.onData((d) => send(OP_OUTPUT, d));
+    term.onExit(({ exitCode }) => exit(exitCode));
+    onInput = (payload) => term.write(payload.toString("binary"));
+    onEof = () => {}; // a PTY has no EOF; interactive clients don't send OP_EOF
+    onResize = (c, r) => term.resize(c, r);
+    kill = () => term.kill();
+  } else {
+    const child = spawn("incus", execArgs); // stdio pipes → incus non-interactive
+    child.stdout.on("data", (d) => send(OP_OUTPUT, d));
+    child.stderr.on("data", (d) => send(OP_STDERR, d));
+    child.stdin.on("error", () => {}); // swallow EPIPE if the command already exited
+    child.on("error", () => exit(1));
+    child.on("exit", (code, signal) => exit(code ?? (signal ? 1 : 0)));
+    onInput = (payload) => child.stdin.write(payload);
+    onEof = () => child.stdin.end();
+    onResize = () => {}; // no tty to resize
+    kill = () => child.kill();
+  }
 
   ws.on("message", (data) => {
     const buf = Buffer.from(data);
     if (buf.length === 0) return;
-    if (buf[0] === OP_INPUT) term.write(buf.subarray(1).toString("binary"));
+    if (buf[0] === OP_INPUT) onInput(buf.subarray(1));
+    else if (buf[0] === OP_EOF) onEof();
     else if (buf[0] === OP_RESIZE && buf.length >= 5)
-      term.resize(
+      onResize(
         Math.min(500, (buf[1] << 8) | buf[2]) || 80,
         Math.min(300, (buf[3] << 8) | buf[4]) || 24,
       );
   });
   ws.on("close", () => {
     try {
-      term.kill();
+      kill();
     } catch {}
     const n = (active.get(name) || 1) - 1;
     n > 0 ? active.set(name, n) : active.delete(name);
