@@ -96,6 +96,46 @@ type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
 
+/** Live progress of a running turn, projected onto the narrow surface channel
+ *  workers consume. Tool updates carry the human-readable title only. */
+export type PromptUpdate =
+  | { kind: "text"; text: string }
+  | { kind: "thought" }
+  | { kind: "tool"; title: string | null };
+
+/** Projects a raw ACP `session/update` notification onto {@link PromptUpdate}.
+ *  Returns null for updates consumers don't care about (plans, mode changes,
+ *  user-message echoes, title-less tool patches). */
+export function toPromptUpdate(update: unknown): PromptUpdate | null {
+  const u = update as
+    | {
+        sessionUpdate?: string;
+        title?: unknown;
+        content?: { type?: string; text?: string };
+      }
+    | undefined;
+  switch (u?.sessionUpdate) {
+    case "agent_message_chunk":
+      return u.content?.type === "text" && typeof u.content.text === "string"
+        ? { kind: "text", text: u.content.text }
+        : null;
+    case "agent_thought_chunk":
+      return { kind: "thought" };
+    case "tool_call":
+      return {
+        kind: "tool",
+        title: typeof u.title === "string" ? u.title : null,
+      };
+    case "tool_call_update":
+      // Status-only patches would spam consumers; only a title change matters.
+      return typeof u.title === "string"
+        ? { kind: "tool", title: u.title }
+        : null;
+    default:
+      return null;
+  }
+}
+
 /** Resume an existing session, or start a new one stamping `_meta.platform`
  *  so the agent records it — no server-side persist needed. */
 export type SendPromptOpts = (
@@ -104,6 +144,9 @@ export type SendPromptOpts = (
 ) & {
   /** Called when image blocks are stripped because the agent lacks image support. */
   onImagesDropped?: () => Promise<void> | void;
+  /** Live per-notification progress for this turn only — resume replays of
+   *  prior history are withheld. Must not throw; failures are swallowed. */
+  onUpdate?: (update: PromptUpdate) => void;
 };
 
 export type TriggerSessionOpts = {
@@ -314,6 +357,9 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
       sendOpts: SendPromptOpts,
     ): Promise<string> {
       const responseChunks: string[] = [];
+      // loadSession replays prior history as ordinary notifications before the
+      // live turn starts; hold the caller's onUpdate until the prompt is sent.
+      let live = false;
 
       await withAcpConnection(
         url,
@@ -325,6 +371,19 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
               params.update.content?.type === "text"
             ) {
               responseChunks.push(params.update.content.text);
+            }
+            if (live && sendOpts.onUpdate) {
+              const update = toPromptUpdate(params.update);
+              if (update) {
+                try {
+                  sendOpts.onUpdate(update);
+                } catch (err) {
+                  getLogger().debug(
+                    { err },
+                    "acp onUpdate callback failed; ignoring",
+                  );
+                }
+              }
             }
           },
         },
@@ -370,6 +429,9 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
             await sendOpts.onImagesDropped?.();
           }
 
+          // Everything before this point is setup/replay; from here on the
+          // notifications belong to this turn, so start forwarding them.
+          live = true;
           await connection.prompt({ sessionId, prompt: finalBlocks });
         },
       );

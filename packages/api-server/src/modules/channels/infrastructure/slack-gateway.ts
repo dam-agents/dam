@@ -13,6 +13,9 @@ export interface SlackMentionEvent {
   threadTs?: string;
   text: string;
   files?: SlackImageFile[];
+  /** Workspace (team) id the event originated from. Slack requires it to
+   *  stream a reply into a channel; absent → the reply is posted whole. */
+  teamId?: string;
 }
 
 export interface SlackSlashCommand {
@@ -66,6 +69,36 @@ export interface SlackUpload {
   initialComment?: string;
 }
 
+export interface SlackStartStream {
+  channel: string;
+  threadTs: string;
+  /** Slack requires both recipient ids to stream into a channel (vs a DM). */
+  recipientTeamId: string;
+  recipientUserId: string;
+  markdownText?: string;
+}
+
+export interface SlackAppendStream {
+  channel: string;
+  ts: string;
+  markdownText: string;
+}
+
+export interface SlackStopStream {
+  channel: string;
+  ts: string;
+  markdownText?: string;
+  /** Appended after the streamed text when the message is finalized. */
+  blocks?: SlackBlock[];
+}
+
+export interface SlackSetStatus {
+  channel: string;
+  threadTs: string;
+  /** Rendered as "<App Name> <status>"; empty string clears the status. */
+  status: string;
+}
+
 export interface SlackChannelInfo {
   id: string;
   name: string;
@@ -76,6 +109,12 @@ export interface SlackGateway {
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<void>;
   postEphemeral(args: SlackPostEphemeral): Promise<void>;
+  /** Opens a streamed message in a thread; returns the message ts to append to. */
+  startStream(args: SlackStartStream): Promise<{ ts: string }>;
+  appendStream(args: SlackAppendStream): Promise<void>;
+  stopStream(args: SlackStopStream): Promise<void>;
+  /** Live "<App Name> is thinking…"-style status under the latest message. */
+  setStatus(args: SlackSetStatus): Promise<void>;
   addReaction(args: {
     channel: string;
     ts: string;

@@ -8,6 +8,7 @@ import {
   type AcpClient,
   type AcpClientFactory,
   type ForkAcpClientFactory,
+  type PromptUpdate,
 } from "../../../core/acp-client.js";
 import {
   EventType,
@@ -44,6 +45,11 @@ import type {
   SlackMentionEvent,
   SlackSlashCommand,
 } from "./slack-gateway.js";
+import {
+  createTurnPresenter,
+  renderAssistantBlocks,
+  type TurnPresenter,
+} from "./slack-turn-presenter.js";
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
 
@@ -360,6 +366,11 @@ export function createSlackWorker(
     buildFreshPrompt: () => Promise<string | ContentBlock[]>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
+    /** Live per-update stream for the turn (omitted → no live presentation). */
+    onUpdate?: (update: PromptUpdate) => void;
+    /** Called when resume fails and we fall back to a fresh session, so the
+     *  presenter can discard the abandoned attempt's partial stream. */
+    onResumeFallback?: () => Promise<void>;
   }): Promise<string> {
     await agents().ensureReady(args.instanceName, { onWaking: args.onWaking });
     const acp = makeAcpClient(args.instanceName);
@@ -373,17 +384,21 @@ export function createSlackWorker(
         return await acp.sendPrompt(args.resumePrompt, {
           resumeSessionId: existing.sessionId,
           onImagesDropped: args.onImagesDropped,
+          onUpdate: args.onUpdate,
         });
       } catch {
+        await args.onResumeFallback?.();
         return acp.sendPrompt(await args.buildFreshPrompt(), {
           platformMeta,
           onImagesDropped: args.onImagesDropped,
+          onUpdate: args.onUpdate,
         });
       }
     }
     return acp.sendPrompt(await args.buildFreshPrompt(), {
       platformMeta,
       onImagesDropped: args.onImagesDropped,
+      onUpdate: args.onUpdate,
     });
   }
 
@@ -398,6 +413,8 @@ export function createSlackWorker(
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
+    /** Workspace id from the event; required to stream the reply in-channel. */
+    teamId?: string;
     images: FetchedImage[];
   }) {
     if (!gateway) return;
@@ -409,6 +426,16 @@ export function createSlackWorker(
       ts: ctx.eventTs,
       name: "eyes",
     });
+
+    // Live presentation: a running status and the reply streamed in. Degrades
+    // to a single end-of-turn message when streaming is unavailable.
+    const presenter = createTurnPresenter(gw, {
+      channel: ctx.channel,
+      threadTs: ctx.threadTs,
+      instanceName,
+      recipient: { teamId: ctx.teamId, userId: ctx.slackUserId },
+    });
+    presenter.setThinking();
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -424,6 +451,7 @@ export function createSlackWorker(
     // pass so a second window doesn't re-announce the same wake.
     let coldNoticePosted = false;
     const onWaking = () => {
+      presenter.setWaking();
       if (coldNoticePosted) return;
       coldNoticePosted = true;
       ephemeral(
@@ -449,14 +477,11 @@ export function createSlackWorker(
         buildFreshPrompt: () => buildThreadPrompt(gw, ctx),
         onWaking,
         onImagesDropped,
+        onUpdate: presenter.onUpdate,
+        onResumeFallback: presenter.resetStream,
       });
 
-      await postAssistantMessage(
-        ctx.channel,
-        ctx.threadTs,
-        instanceName,
-        response,
-      );
+      await presenter.finish(response);
       outcome = "success";
     };
 
@@ -501,6 +526,9 @@ export function createSlackWorker(
         ) {
           throw err;
         }
+        // Nothing streamed yet (the wake failed before the prompt), but reset
+        // defensively so the retry can never continue a stale stream.
+        await presenter.resetStream();
         await gw.postMessage({
           channel: ctx.channel,
           threadTs: ctx.threadTs,
@@ -509,8 +537,10 @@ export function createSlackWorker(
         await runTurn();
       }
     } catch (err) {
+      await presenter.abortStream();
       await postFailure(err);
     } finally {
+      await presenter.clearStatus();
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -525,6 +555,9 @@ export function createSlackWorker(
     }
   }
 
+  // The single end-of-turn reply, used by ambient turns (which never stream);
+  // mention/fork turns stream and finalize through the turn presenter, which
+  // renders the same blocks.
   async function postAssistantMessage(
     channel: string,
     threadTs: string,
@@ -536,13 +569,7 @@ export function createSlackWorker(
       channel,
       threadTs,
       text: response || "(no response)",
-      blocks: [
-        { type: "markdown", text: response || "(no response)" },
-        {
-          type: "context",
-          elements: [{ type: "mrkdwn", text: `_${instanceName}_` }],
-        },
-      ],
+      blocks: renderAssistantBlocks(instanceName, response),
     });
   }
 
@@ -555,17 +582,29 @@ export function createSlackWorker(
     instanceName: string;
     text: string;
     hasThread: boolean;
+    teamId?: string;
     images: FetchedImage[];
   }) {
     if (!gateway) return;
+    const gw = gateway;
 
-    await gateway.addReaction({
+    await gw.addReaction({
       channel: args.channel,
       ts: args.eventTs,
       name: "eyes",
     });
 
-    const prompt = await buildThreadPrompt(gateway, {
+    // Live presentation while the fork provisions and runs. The status shows
+    // immediately; the stream (if any) opens once the fork answers.
+    const presenter = createTurnPresenter(gw, {
+      channel: args.channel,
+      threadTs: args.threadTs,
+      instanceName: args.instanceName,
+      recipient: { teamId: args.teamId, userId: args.slackUserId },
+    });
+    presenter.setThinking();
+
+    const prompt = await buildThreadPrompt(gw, {
       channel: args.channel,
       threadTs: args.threadTs,
       eventTs: args.eventTs,
@@ -596,6 +635,7 @@ export function createSlackWorker(
             actorSub: args.keycloakSub,
             prompt,
             images: args.images,
+            presenter,
           }).catch((err) => {
             process.stderr.write(
               `[slack/fork] outcome handler error: ${formatError(err)}\n`,
@@ -606,8 +646,7 @@ export function createSlackWorker(
           process.stderr.write(
             `[slack/fork] fork outcome timeout for reply ${replyId}: ${formatError(err)}\n`,
           );
-          const gw = gateway;
-          if (!gw) return;
+          void presenter.clearStatus();
           gw.postEphemeral({
             channel: args.channel,
             user: args.slackUserId,
@@ -645,6 +684,7 @@ export function createSlackWorker(
       actorSub: string;
       prompt: string | ContentBlock[];
       images: FetchedImage[];
+      presenter: TurnPresenter;
     },
   ) {
     if (!gateway) return;
@@ -667,6 +707,7 @@ export function createSlackWorker(
             ? await acp.sendPrompt(ctx.prompt, {
                 resumeSessionId: existing.sessionId,
                 onImagesDropped,
+                onUpdate: ctx.presenter.onUpdate,
               })
             : await acp.sendPrompt(ctx.prompt, {
                 platformMeta: {
@@ -674,24 +715,22 @@ export function createSlackWorker(
                   threadTs: ctx.threadTs,
                 },
                 onImagesDropped,
+                onUpdate: ctx.presenter.onUpdate,
               });
-          await postAssistantMessage(
-            ctx.channel,
-            ctx.threadTs,
-            ctx.instanceName,
-            response,
-          );
+          await ctx.presenter.finish(response);
           turnOutcome = "success";
         } catch (err) {
           process.stderr.write(
             `[slack/fork ${event.forkId}] ACP error: ${formatError(err)}\n`,
           );
+          await ctx.presenter.abortStream();
           await gw.postMessage({
             channel: ctx.channel,
             threadTs: ctx.threadTs,
             text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
           });
         } finally {
+          await ctx.presenter.clearStatus();
           emit({
             type: EventType.ChannelTurnRelayed,
             channel: "slack",
@@ -704,6 +743,7 @@ export function createSlackWorker(
         }
       })
       .with({ type: EventType.ForkFailed }, async (event) => {
+        await ctx.presenter.clearStatus();
         const detail = event.detail ? ` (${event.detail})` : "";
         try {
           await gw.postEphemeral({
@@ -1086,6 +1126,7 @@ export function createSlackWorker(
         slackUserId,
         instanceName: binding.instanceName,
         owner: binding.owner,
+        teamId: event.teamId,
         images,
       });
       return;
@@ -1123,6 +1164,7 @@ export function createSlackWorker(
       slackUserId,
       keycloakSub,
       instanceName: binding.instanceName,
+      teamId: event.teamId,
       images,
     });
   }
@@ -1138,6 +1180,7 @@ export function createSlackWorker(
     slackUserId: string;
     instanceName: string;
     owner: string;
+    teamId?: string;
     images: FetchedImage[];
   }) {
     if (!gateway) return;
@@ -1178,6 +1221,7 @@ export function createSlackWorker(
       actorSub: null,
       externalActorId: args.slackUserId,
       slackUserId: args.slackUserId,
+      teamId: args.teamId,
       images: args.images,
     });
   }
@@ -1434,6 +1478,7 @@ export function createSlackWorker(
     slackUserId: string;
     keycloakSub: string;
     instanceName: string;
+    teamId?: string;
     images: FetchedImage[];
   }) {
     if (!gateway) return;
@@ -1497,6 +1542,7 @@ export function createSlackWorker(
       hasThread: args.hasThread,
       actorSub: args.keycloakSub,
       slackUserId: args.slackUserId,
+      teamId: args.teamId,
       images: args.images,
     });
   }

@@ -29,6 +29,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
   let channels: FakeSlackChannel[] = [];
+  let nextStreamTs = 1;
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -65,6 +66,51 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         user: args.user,
         text: args.text,
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+      });
+    },
+
+    async startStream(args) {
+      const ts = `stream-${nextStreamTs++}`;
+      outbound.push({
+        kind: "stream_start",
+        channel: args.channel,
+        threadTs: args.threadTs,
+        ts,
+        text: args.markdownText ?? "",
+        ...(args.recipientTeamId !== undefined
+          ? { recipientTeamId: args.recipientTeamId }
+          : {}),
+        ...(args.recipientUserId !== undefined
+          ? { recipientUserId: args.recipientUserId }
+          : {}),
+      });
+      return { ts };
+    },
+
+    async appendStream(args) {
+      outbound.push({
+        kind: "stream_append",
+        channel: args.channel,
+        ts: args.ts,
+        text: args.markdownText,
+      });
+    },
+
+    async stopStream(args) {
+      outbound.push({
+        kind: "stream_stop",
+        channel: args.channel,
+        ts: args.ts,
+        ...(args.markdownText !== undefined ? { text: args.markdownText } : {}),
+      });
+    },
+
+    async setStatus(args) {
+      outbound.push({
+        kind: "status",
+        channel: args.channel,
+        threadTs: args.threadTs,
+        status: args.status,
       });
     },
 
