@@ -1,5 +1,5 @@
 import { ChevronDown } from "@carbon/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,11 @@ export function SearchableSelect({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
 
   const selected = options.find((o) => o.value === value);
 
@@ -54,15 +58,27 @@ export function SearchableSelect({
 
   useEffect(() => setHighlight(0), [query]);
 
+  useEffect(() => {
+    if (open)
+      listRef.current
+        ?.querySelector('[data-highlighted="true"]')
+        ?.scrollIntoView({ block: "nearest" });
+  }, [highlight, open]);
+
+  const close = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
   const commit = (opt: Option) => {
     onChange(opt.value);
-    setOpen(false);
+    close();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+      setHighlight((h) => Math.max(0, Math.min(h + 1, filtered.length - 1)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
@@ -72,15 +88,20 @@ export function SearchableSelect({
       if (opt) commit(opt);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      setOpen(false);
+      close();
     }
   };
 
   return (
     <div ref={containerRef} className="relative w-full">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
         className={cn(
           "flex h-[40px] w-full items-center justify-between rounded-md border border-input bg-background px-3 text-left text-[14px]",
           className,
@@ -100,19 +121,33 @@ export function SearchableSelect({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Search…"
+              role="combobox"
+              aria-expanded
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={
+                filtered[highlight] ? optionId(highlight) : undefined
+              }
               className="h-[32px] w-full rounded border border-input bg-background px-2 text-[14px] outline-hidden"
             />
           </div>
-          <ul className="max-h-[240px] overflow-y-auto p-1 pt-0">
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            className="max-h-[240px] overflow-y-auto p-1 pt-0"
+          >
             {filtered.length === 0 && (
               <li className="px-3 py-2 text-[13px] text-muted-foreground">
                 No matches
               </li>
             )}
             {filtered.map((o, i) => (
-              <li key={o.value}>
+              <li key={o.value} role="option" aria-selected={o.value === value}>
                 <button
+                  id={optionId(i)}
                   type="button"
+                  data-highlighted={i === highlight}
                   onClick={() => commit(o)}
                   onMouseEnter={() => setHighlight(i)}
                   className={cn(

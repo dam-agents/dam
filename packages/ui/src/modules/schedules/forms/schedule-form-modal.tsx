@@ -16,6 +16,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import type { Schedule } from "../../../types.js";
@@ -217,7 +218,12 @@ export function ScheduleFormModal({
                   <button
                     key={d.iso}
                     type="button"
-                    className={`text-[12px] font-medium rounded-full px-3 py-1 ${c.days.includes(d.iso) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[12px] font-medium",
+                      c.days.includes(d.iso)
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground",
+                    )}
                     onClick={() => c.toggleDay(d.iso)}
                   >
                     {d.label}
@@ -292,7 +298,12 @@ export function ScheduleFormModal({
                 <button
                   key={mode}
                   type="button"
-                  className={`text-[12px] font-medium capitalize rounded-full px-3 py-1 ${sessionMode === mode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-[12px] font-medium capitalize",
+                    sessionMode === mode
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
                   onClick={() => setSessionMode(mode)}
                 >
                   {mode}
