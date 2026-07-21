@@ -12,7 +12,6 @@ import { LabeledInput } from "../forms/labeled-input.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
-import { slugifyTemplateName } from "../lib/connection-name.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
 
@@ -38,14 +37,14 @@ const mcpFormSchema = z
         path: ["url"],
         message: urlError,
       });
-    // Both-or-neither: a half-filled pair would otherwise be silently dropped,
-    // creating an auth-less connection from credentials the user typed. Attach
-    // the error to the empty field so the missing input lights up.
-    if (filled(v.clientId) !== filled(v.clientSecret))
+    // A pre-registered public/PKCE client is id-only (buildOAuthDcr allows no
+    // secret), so only a secret without an id is invalid. The header pair below
+    // still needs both — an injected header is meaningless without a value.
+    if (filled(v.clientSecret) && !filled(v.clientId))
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: [filled(v.clientId) ? "clientSecret" : "clientId"],
-        message: "Provide both an OAuth ID and secret, or neither.",
+        path: ["clientId"],
+        message: "An OAuth secret needs an OAuth ID.",
       });
     if (filled(v.headerName) !== filled(v.headerValue))
       ctx.addIssue({
@@ -77,7 +76,7 @@ export function McpCreatePane({
     resolver: zodResolver(mcpFormSchema),
     mode: "onChange",
     defaultValues: {
-      name: slugifyTemplateName("MCP server"),
+      name: "",
       url: "",
       clientId: "",
       clientSecret: "",

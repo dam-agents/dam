@@ -501,7 +501,11 @@ function buildNone(
 
   if (input.url) {
     const url = new URL(input.url);
-    contributions.push({ kind: "egress-allow", host: url.host });
+    contributions.push({
+      kind: "egress-allow",
+      host: url.hostname,
+      ...(url.port ? { port: Number(url.port) } : {}),
+    });
     contributions.push({
       kind: "mcp-entry",
       name: template.id,
@@ -513,8 +517,6 @@ function buildNone(
     if (input.headerName && input.value) {
       const headerName = input.headerName;
       const valueFormat = "{value}";
-      // egress-inject takes hostname + numeric port separately, whereas the
-      // egress-allow above matches the combined host:port string.
       contributions.push({
         kind: "egress-inject",
         host: url.hostname,
