@@ -13,6 +13,7 @@ interface Props {
   onChange: (value: string) => void;
   options: Option[];
   placeholder?: string;
+  invalid?: boolean;
   className?: string;
 }
 
@@ -24,6 +25,7 @@ export function SearchableSelect({
   onChange,
   options,
   placeholder = "Select…",
+  invalid,
   className,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -102,8 +104,10 @@ export function SearchableSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        aria-invalid={invalid || undefined}
         className={cn(
-          "flex h-[40px] w-full items-center justify-between rounded-md border border-input bg-background px-3 text-left text-[14px]",
+          "flex h-[40px] w-full items-center justify-between rounded-md border bg-background px-3 text-left text-[14px]",
+          invalid ? "border-destructive" : "border-input",
           className,
         )}
       >

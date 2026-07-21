@@ -1,6 +1,6 @@
 import { Information } from "@carbon/icons-react";
-import { detectTimezone, hasVisibleOccurrence } from "api-server-api";
-import { useMemo, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -21,14 +21,19 @@ import { cn } from "@/lib/utils";
 import { FormError } from "../../../components/form-error.js";
 import type { Schedule } from "../../../types.js";
 import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
-import { useRruleBuilder } from "../hooks/use-rrule-builder.js";
 import {
   formatTime12,
   RUN_OPTIONS,
   TIME_OPTIONS,
   TIMEZONE_OPTIONS,
 } from "../lib/schedule-form-options.js";
-import { QuietHoursEditor, type QuietRow } from "./quiet-hours-editor.js";
+import { QuietHoursEditor } from "./quiet-hours-editor.js";
+import {
+  buildRRuleParts,
+  scheduleFormDefaults,
+  scheduleFormSchema,
+  type ScheduleFormValues,
+} from "./schedule-form-schema.js";
 
 const DAYS_ISO: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
@@ -62,69 +67,36 @@ export function ScheduleFormModal({
   const updateSchedule = useUpdateSchedule();
   const mutation = existing ? updateSchedule : createSchedule;
 
-  const c = useRruleBuilder(existing?.rrule);
+  const { control, register, handleSubmit, watch, formState } =
+    useForm<ScheduleFormValues>({
+      resolver: zodResolver(scheduleFormSchema),
+      defaultValues: scheduleFormDefaults(existing),
+    });
+  const { errors } = formState;
 
-  const [name, setName] = useState(existing?.name ?? "");
-  const [task, setTask] = useState(existing?.task ?? "");
-  const [sessionMode, setSessionMode] = useState<"fresh" | "continuous">(
-    existing?.sessionMode ?? "fresh",
-  );
-  const [timezone, setTimezone] = useState(
-    existing?.timezone ?? detectTimezone(),
-  );
-  const [quietHours, setQuietHours] = useState<QuietRow[]>(
-    existing?.quietHours ?? [],
-  );
-  // Surface required-field errors only after a submit attempt, so a
-  // freshly-opened form (auto-focused, then blurred) isn't pre-littered.
-  const [submitted, setSubmitted] = useState(false);
+  // Whole-form watch drives the conditional cadence controls and the live
+  // summary line — the modal re-renders per keystroke either way.
+  const values = watch();
+  const cadence = buildRRuleParts(values);
 
-  const nameError = name.trim().length === 0 ? "Required" : null;
-  const taskError = task.trim().length === 0 ? "Required" : null;
-  const tzError = timezone.trim().length === 0 ? "Required" : null;
-  const quietHoursError = quietHours.some((q) => q.startTime === q.endTime)
-    ? "Start and end must differ"
-    : null;
-
-  // Guard the footgun where every tick lands inside a quiet window — the
-  // schedule would never fire. Only checked once the rule itself is valid.
-  const unreachableError = useMemo(() => {
-    if (c.rruleError || c.rruleBody.length === 0 || quietHoursError)
-      return null;
-    return hasVisibleOccurrence(c.rruleBody, quietHours)
-      ? null
-      : "Quiet hours cover every scheduled occurrence — this schedule would never fire.";
-  }, [c.rruleBody, c.rruleError, quietHours, quietHoursError]);
-
-  const isValid =
-    !nameError &&
-    !taskError &&
-    !tzError &&
-    !c.rruleError &&
-    !quietHoursError &&
-    !c.daysError &&
-    !unreachableError &&
-    c.rruleBody.length > 0;
-
-  const currentTime = `${String(c.hour).padStart(2, "0")}:${String(c.minute).padStart(2, "0")}`;
-  const timeOptions = TIME_OPTIONS.some((o) => o.value === currentTime)
+  const timeOptions = TIME_OPTIONS.some((o) => o.value === values.time)
     ? TIME_OPTIONS
     : [
-        { value: currentTime, label: formatTime12(currentTime) },
+        { value: values.time, label: formatTime12(values.time) },
         ...TIME_OPTIONS,
       ];
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitted(true);
-    if (!isValid) return;
+  const quietHoursError =
+    errors.quietHours?.message ?? errors.quietHours?.root?.message;
+
+  const onSubmit = handleSubmit((v) => {
     const common = {
-      name: name.trim(),
-      rrule: c.rruleBody,
-      timezone: timezone.trim(),
-      quietHours,
-      task: task.trim(),
-      sessionMode,
+      name: v.name,
+      rrule: buildRRuleParts(v).body,
+      timezone: v.timezone,
+      quietHours: v.quietHours,
+      task: v.task,
+      sessionMode: v.sessionMode,
     };
     const onSuccess = () => {
       onSaved();
@@ -135,7 +107,7 @@ export function ScheduleFormModal({
     } else {
       createSchedule.mutate({ agentId, ...common }, { onSuccess });
     }
-  }
+  });
 
   return (
     <Modal>
@@ -147,26 +119,18 @@ export function ScheduleFormModal({
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-4">
-          <FormField
-            label="Name"
-            error={submitted ? (nameError ?? undefined) : undefined}
-            disableInset
-          >
+          <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
               className="h-[40px]"
+              variant={errors.name ? "invalid" : undefined}
               placeholder={`eg. "Daily brief"`}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              {...register("name")}
             />
           </FormField>
 
           <div className="flex flex-col gap-2">
             <SectionLabel>Run</SectionLabel>
-            <Select
-              className="h-[40px]"
-              value={c.kind}
-              onChange={(e) => c.setKind(e.target.value as typeof c.kind)}
-            >
+            <Select className="h-[40px]" {...register("kind")}>
               {RUN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -175,17 +139,10 @@ export function ScheduleFormModal({
             </Select>
           </div>
 
-          {c.kind === "daily" && (
+          {values.kind === "daily" && (
             <div className="flex flex-col gap-2">
               <SectionLabel>Time</SectionLabel>
-              <Select
-                className="h-[40px]"
-                value={currentTime}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(":").map(Number);
-                  c.setTime(h ?? 0, m ?? 0);
-                }}
-              >
+              <Select className="h-[40px]" {...register("time")}>
                 {timeOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -195,94 +152,114 @@ export function ScheduleFormModal({
             </div>
           )}
 
-          {(c.kind === "minutely" || c.kind === "hourly") && (
-            <div className="flex items-center gap-2 text-[13px] text-foreground">
-              <span>Every</span>
-              <Input
-                type="number"
-                min={1}
-                className="h-[40px] w-[80px]"
-                value={c.intervalText}
-                onChange={(e) => c.setIntervalText(e.target.value)}
-                onBlur={() => c.setIntervalText(String(c.interval))}
-              />
-              <span>{c.kind === "minutely" ? "minutes" : "hours"}</span>
+          {(values.kind === "minutely" || values.kind === "hourly") && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-[13px] text-foreground">
+                <span>Every</span>
+                <Input
+                  type="number"
+                  min={1}
+                  className="h-[40px] w-[80px]"
+                  variant={errors.interval ? "invalid" : undefined}
+                  {...register("interval")}
+                />
+                <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
+              </div>
+              <FormError message={errors.interval?.message} />
             </div>
           )}
 
-          {c.kind !== "custom" && (
+          {values.kind !== "custom" && (
             <div className="flex flex-col gap-2">
               <SectionLabel>On</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {DAYS_ISO.map((d) => (
-                  <button
-                    key={d.iso}
-                    type="button"
-                    className={cn(
-                      "rounded-full px-3 py-1 text-[12px] font-medium",
-                      c.days.includes(d.iso)
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                    onClick={() => c.toggleDay(d.iso)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              <FormError message={c.daysError ?? undefined} />
+              <Controller
+                control={control}
+                name="days"
+                render={({ field }) => (
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAYS_ISO.map((d) => (
+                      <button
+                        key={d.iso}
+                        type="button"
+                        className={cn(
+                          "rounded-full px-3 py-1 text-[12px] font-medium",
+                          field.value.includes(d.iso)
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                        onClick={() =>
+                          field.onChange(
+                            field.value.includes(d.iso)
+                              ? field.value.filter((v) => v !== d.iso)
+                              : [...field.value, d.iso].sort(),
+                          )
+                        }
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              />
+              <FormError message={errors.days?.message} />
             </div>
           )}
 
-          {c.kind === "custom" && (
+          {values.kind === "custom" && (
             <div className="flex flex-col gap-2">
               <SectionLabel>RRULE</SectionLabel>
               <Input
                 className="h-[40px] font-mono text-[12px]"
+                variant={cadence.error ? "invalid" : undefined}
                 placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
-                value={c.customRRule}
-                onChange={(e) => c.setCustomRRule(e.target.value)}
+                {...register("customRRule")}
               />
             </div>
           )}
 
-          {c.rruleError ? (
-            <FormError message={c.rruleError} />
+          {cadence.error ? (
+            <FormError message={cadence.error} />
           ) : (
-            c.rruleSummary && (
+            cadence.summary && (
               <p className="-mt-1 text-[13px] text-muted-foreground">
-                {c.rruleSummary}
+                {cadence.summary}
               </p>
             )
           )}
 
-          <FormField label="Timezone" error={tzError ?? undefined} disableInset>
-            <SearchableSelect
-              value={timezone}
-              onChange={setTimezone}
-              options={TIMEZONE_OPTIONS}
-              placeholder="Select a timezone"
+          <FormField
+            label="Timezone"
+            error={errors.timezone?.message}
+            disableInset
+          >
+            <Controller
+              control={control}
+              name="timezone"
+              render={({ field }) => (
+                <SearchableSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={TIMEZONE_OPTIONS}
+                  placeholder="Select a timezone"
+                  invalid={!!errors.timezone}
+                />
+              )}
             />
           </FormField>
 
           <QuietHoursEditor
-            value={quietHours}
-            onChange={setQuietHours}
-            error={quietHoursError ?? undefined}
-            unreachableError={unreachableError ?? undefined}
+            control={control}
+            register={register}
+            error={quietHoursError}
           />
 
-          <FormField
-            label="Prompt"
-            error={submitted ? (taskError ?? undefined) : undefined}
-            disableInset
-          >
+          <FormField label="Prompt" error={errors.task?.message} disableInset>
             <Textarea
               className="min-h-[80px] resize-y"
+              variant={errors.task ? "invalid" : undefined}
               placeholder="Enter a task prompt"
               rows={3}
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
+              {...register("task")}
             />
           </FormField>
 
@@ -293,23 +270,29 @@ export function ScheduleFormModal({
                 <Information size={14} className="text-muted-foreground" />
               </Tooltip>
             </div>
-            <div className="flex gap-1.5">
-              {(["fresh", "continuous"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={cn(
-                    "rounded-full px-3 py-1 text-[12px] font-medium capitalize",
-                    sessionMode === mode
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                  onClick={() => setSessionMode(mode)}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
+            <Controller
+              control={control}
+              name="sessionMode"
+              render={({ field }) => (
+                <div className="flex gap-1.5">
+                  {(["fresh", "continuous"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[12px] font-medium capitalize",
+                        field.value === mode
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                      onClick={() => field.onChange(mode)}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              )}
+            />
           </div>
         </DialogBody>
 

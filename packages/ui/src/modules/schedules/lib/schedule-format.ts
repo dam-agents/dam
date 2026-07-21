@@ -4,8 +4,8 @@ import type { Schedule } from "../../../types.js";
 
 /** Coarse "in N min / h / d" relative to now, for surfacing a schedule's next
  *  run at a glance. The absolute time stays available on hover/title. */
-export function relativeFromNow(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now();
+export function relativeFromNow(iso: string, now: Date = new Date()): string {
+  const diff = new Date(iso).getTime() - now.getTime();
   if (diff <= 0) return "due";
   const min = Math.round(diff / 60_000);
   if (min < 1) return "< 1 min";
