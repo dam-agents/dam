@@ -118,6 +118,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Egress Rule | A persistent allow/deny decision keyed on `(agent, host, method, path_pattern)`; matched on every ext_authz check before any user prompt |
 | Rule Verdict | `allow` or `deny` — the decision a rule encodes |
 | Rule Match | Lookup of the most-specific active rule for a given egress request; misses fall through to the ext_authz Gate's pending-approval flow |
+| L7 Promotion | Putting a rule's host onto the gateway's TLS-terminating (L7) chain so path/method/port narrowing is enforceable over HTTPS — the L4 catch-all sees only SNI. Per-agent intent on the Agent resource (`l7Hosts`), written by the api-server when such a rule exists; forks inherit the parent's promotions |
 
 ## Connections (bounded context) — proposed, in-flight design
 

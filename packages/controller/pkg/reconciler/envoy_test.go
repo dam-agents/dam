@@ -438,15 +438,15 @@ func TestEnvoyVolumes_TelemetryMountsLeafWithoutSecrets(t *testing.T) {
 	// still be present because the collector chain MITM-terminates with it.
 	// Without this the gateway would crash loading a non-existent tls.key.
 	cfg := telemetryTestCfg()
-	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume),
+	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil, nil), envoyLeafTLSVolume),
 		"leaf TLS volume must be present when telemetry is on even with no Secrets")
-	assert.True(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume),
+	assert.True(t, hasMountNamed(envoyContainer("inst-1", cfg, nil, nil).VolumeMounts, envoyLeafTLSVolume),
 		"leaf TLS mount must be present when telemetry is on even with no Secrets")
 }
 
 func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
-	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil), envoyLeafTLSVolume))
-	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil).VolumeMounts, envoyLeafTLSVolume))
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
 func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *testing.T) {
@@ -577,7 +577,7 @@ func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 3)
 
 	hosts := []string{chains[0].Host, chains[1].Host, chains[2].Host}
@@ -611,7 +611,7 @@ func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.
 	]`
 	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 3)
 
 	clusters := map[string]bool{}
@@ -642,7 +642,7 @@ func TestChainsFromSecrets_ConnectionMissingSDSKeyDegradesToAllowOnly(t *testing
 		"host-1a2b3c4d.sds.yaml": []byte("resources: []"),
 	}
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "api.github.com", chains[0].Host)
 	assert.False(t, chains[0].Credentialed(),
@@ -660,7 +660,7 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	]`
 	s = withHostSDS(s, "api.github.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 2)
 	byHost := map[string]envoyHostChain{}
 	for _, c := range chains {
@@ -677,7 +677,7 @@ func TestChainsFromSecrets_SingleHostSecretMissingSDSYamlDegradesToAllowOnly(t *
 	s.Annotations[envoyHeaderNameAnn] = "Authorization"
 	s.Data = map[string][]byte{"value": []byte("Bearer abc")}
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "api.example.com", chains[0].Host)
 	assert.False(t, chains[0].Credentialed())
@@ -787,7 +787,7 @@ func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
 	qry.Annotations[envoyHeaderNameAnn] = "X-Query-Cred"
 	qry.Annotations[envoyQueryParamAnn] = "key"
 
-	chains := chainsFromSecrets([]corev1.Secret{hdr, qry})
+	chains := chainsFromSecrets([]corev1.Secret{hdr, qry}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2)
 	assert.Equal(t, "bob.example.com", chains[0].Host)
@@ -810,7 +810,7 @@ func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) 
 	second.Annotations[envoyHostPatternAnn] = "api.example.com"
 	second.Annotations[envoyHeaderNameAnn] = "Authorization"
 
-	chains := chainsFromSecrets([]corev1.Secret{first, second})
+	chains := chainsFromSecrets([]corev1.Secret{first, second}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
@@ -822,7 +822,7 @@ func TestChainsFromSecrets_DistinctHostsEachGetTheirOwnChain(t *testing.T) {
 	b := ownerSecret("platform-cred-b", "generic", "")
 	b.Annotations[envoyHostPatternAnn] = "api.second.com"
 
-	chains := chainsFromSecrets([]corev1.Secret{a, b})
+	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
 	assert.Len(t, chains, 2)
 }
 
@@ -834,11 +834,47 @@ func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.
 	allowOnly := ownerSecret("platform-allow-only-npm", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "registry.npmjs.org"
 
-	chains := chainsFromSecrets([]corev1.Secret{allowOnly})
+	chains := chainsFromSecrets([]corev1.Secret{allowOnly}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "registry.npmjs.org", chains[0].Host)
 	assert.Empty(t, chains[0].Credentials)
 	assert.False(t, chains[0].Credentialed())
+}
+
+func TestChainsFromSecrets_L7HostsRenderUncredentialedChains(t *testing.T) {
+	// A spec.l7Hosts entry (#2865) renders exactly like an allow-only
+	// Secret: TLS-terminating chain, zero credentials, dynamic forward
+	// proxy route.
+	chains := chainsFromSecrets(nil, []string{"api.github.com"})
+	require.Len(t, chains, 1)
+	assert.Equal(t, "api.github.com", chains[0].Host)
+	assert.Empty(t, chains[0].Credentials)
+	assert.False(t, chains[0].Credentialed())
+}
+
+func TestChainsFromSecrets_L7HostDedupesAgainstCredentialedChain(t *testing.T) {
+	// A host that is both credentialed and promoted renders once, as the
+	// credentialed chain — promotion is a policy hint, not an instruction
+	// to skip injection.
+	cred := ownerSecret("platform-cred-a", "generic", "")
+	cred.Annotations[envoyHostPatternAnn] = "api.example.com"
+	cred.Annotations[envoyHeaderNameAnn] = "Authorization"
+
+	chains := chainsFromSecrets([]corev1.Secret{cred}, []string{"api.example.com", "api.other.com"})
+	require.Len(t, chains, 2)
+	assert.Equal(t, "api.example.com", chains[0].Host)
+	assert.True(t, chains[0].Credentialed())
+	assert.Equal(t, "api.other.com", chains[1].Host)
+	assert.False(t, chains[1].Credentialed())
+}
+
+func TestEnvoySecretsRev_L7HostsRollExistingPods(t *testing.T) {
+	// Promoting a host must change the rev so the gateway rolls — and the
+	// digest must be order-insensitive so a reordered spec doesn't roll.
+	assert.NotEqual(t, envoySecretsRev(nil, nil), envoySecretsRev(nil, []string{"api.github.com"}))
+	assert.Equal(t,
+		envoySecretsRev(nil, []string{"a.example.com", "b.example.com"}),
+		envoySecretsRev(nil, []string{"b.example.com", "a.example.com"}))
 }
 
 func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
@@ -853,7 +889,7 @@ func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
 	allowOnly := ownerSecret("platform-allow-only-b", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "api.example.com"
 
-	chains := chainsFromSecrets([]corev1.Secret{cred, allowOnly})
+	chains := chainsFromSecrets([]corev1.Secret{cred, allowOnly}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
 	assert.Equal(t, cred.Name, chains[0].Credentials[0].SecretName)
@@ -872,7 +908,7 @@ func TestEnvoySecretsRev_QueryParamAnnotationRollsExistingPods(t *testing.T) {
 	withParam.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
 	withParam.Annotations[envoyQueryParamAnn] = "key"
 
-	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}), envoySecretsRev([]corev1.Secret{withParam}))
+	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}, nil), envoySecretsRev([]corev1.Secret{withParam}, nil))
 }
 
 func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T) {
@@ -890,8 +926,8 @@ func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T)
 	]`
 
 	assert.NotEqual(t,
-		envoySecretsRev([]corev1.Secret{before}),
-		envoySecretsRev([]corev1.Secret{after}),
+		envoySecretsRev([]corev1.Secret{before}, nil),
+		envoySecretsRev([]corev1.Secret{after}, nil),
 		"host-list edits must change the rev so the StatefulSet rolls",
 	)
 }
@@ -910,8 +946,8 @@ func TestEnvoySecretsRev_SDSDataKeysRollExistingPods(t *testing.T) {
 	healed = withHostSDS(healed, "api.github.com")
 
 	assert.NotEqual(t,
-		envoySecretsRev([]corev1.Secret{missing}),
-		envoySecretsRev([]corev1.Secret{healed}),
+		envoySecretsRev([]corev1.Secret{missing}, nil),
+		envoySecretsRev([]corev1.Secret{healed}, nil),
 		"SDS data-key changes must change the rev so the StatefulSet rolls",
 	)
 }
@@ -921,14 +957,14 @@ func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	// template change rolls existing pods on chart upgrade. Without it, the
 	// rendered ConfigMap diverges but the pod template stays identical and
 	// kubelet keeps the old bootstrap mounted.
-	rev := envoySecretsRev(nil)
+	rev := envoySecretsRev(nil, nil)
 	assert.NotEqual(t, "empty", rev, "secrets-rev must not be a stable sentinel for empty Secret sets — bumping the template rev must change the hash")
 	assert.NotEmpty(t, rev)
 
 	// Different Secret sets produce different hashes (regression sanity check
 	// — the template marker shouldn't dominate the hash).
-	one := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")})
-	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")})
+	one := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}, nil)
+	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")}, nil)
 	assert.NotEqual(t, one, two)
 }
 
@@ -1019,13 +1055,13 @@ func TestChainsFromSecrets_HTTP2AnnotationMarksChain(t *testing.T) {
 	s.Annotations[envoyHeaderNameAnn] = "x-modal-token-id"
 	s.Annotations[envoyInjectionHTTP2Ann] = "true"
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.True(t, chains[0].HTTP2, "http2 annotation must mark the chain")
 
 	// Same secret without the annotation stays HTTP/1.1.
 	delete(s.Annotations, envoyInjectionHTTP2Ann)
-	chains = chainsFromSecrets([]corev1.Secret{s})
+	chains = chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.False(t, chains[0].HTTP2)
 }
@@ -1038,7 +1074,7 @@ func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.modal.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.True(t, chains[0].HTTP2, "injection-hosts http2:true must mark the chain")
 }
@@ -1261,7 +1297,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_HEADERS":  "Authorization=Bearer secret", // inert for Envoy; may carry a token
 	}
 	env := map[string]string{}
-	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+	for _, e := range envoyContainer("agent-7", &cfg, nil, nil).Env {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, "http://otel:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
@@ -1274,7 +1310,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 }
 
 func TestEnvoyContainer_NoOTelEnvWhenDisabled(t *testing.T) {
-	assert.Empty(t, envoyContainer("agent-7", bootstrapTestCfg, nil).Env)
+	assert.Empty(t, envoyContainer("agent-7", bootstrapTestCfg, nil, nil).Env)
 }
 
 func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
@@ -1321,8 +1357,8 @@ func TestEnvoyVolumes_NoLeafWhenOTelOnlyNoSecrets(t *testing.T) {
 	// terminates no TLS, so the leaf cert must NOT be required — a missing
 	// leaf Secret would otherwise block the pod on a volume that never fills.
 	cfg := otelCfg(testOTLPEndpoint)
-	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume))
-	assert.False(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume))
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", cfg, nil, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
 func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
@@ -1390,7 +1426,7 @@ func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testi
 	// The pod env states the effective exporter, not the controller's own —
 	// truthful, and the roll trigger when the override changes.
 	env := map[string]string{}
-	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+	for _, e := range envoyContainer("agent-7", &cfg, nil, nil).Env {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, "http://collector.platform.svc:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
@@ -1408,7 +1444,7 @@ func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
 	s = withHostSDS(s, "api.cluster.example")
 	s.Data["upstream-ca.crt"] = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 6443, chains[0].UpstreamPortValue())
 	assert.True(t, chains[0].Upgrades)
@@ -1428,7 +1464,7 @@ func TestChainsFromSecrets_MissingCADataKeyDegradesToSystemTrust(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.cluster.example") // SDS present, CA data key absent
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Empty(t, chains[0].UpstreamCAFile,
 		"missing CA data key must degrade to system trust, not reference an absent file")
@@ -1443,7 +1479,7 @@ func TestChainsFromSecrets_PortDefaultsTo443AndBareHostRewrite(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.github.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 443, chains[0].UpstreamPortValue())
 	assert.False(t, chains[0].Upgrades)
@@ -1465,7 +1501,7 @@ func TestChainsFromSecrets_ConflictingPortsKeepFirst(t *testing.T) {
 	]`
 	b = withHostSDS(b, "api.cluster.example")
 
-	chains := chainsFromSecrets([]corev1.Secret{a, b})
+	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 6443, chains[0].UpstreamPortValue(),
 		"name-sorted first secret's port must win on conflict")
@@ -1479,7 +1515,7 @@ func TestChainsFromSecrets_TraversalCAKeyIgnored(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.cluster.example")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Empty(t, chains[0].UpstreamCAFile,
 		"caKey with path separators must not escape the Secret mount")

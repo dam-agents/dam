@@ -360,6 +360,29 @@ Hosts the api-server has issued a credential for surface as L7 chains (SNI
 match, header injection); hosts with no credential surface as L4
 passthrough chains.
 
+**L7 promotion.** An egress rule that narrows a host by path, method, or
+port is invisible to the L4 catch-all (it sees only SNI), so the rule's
+host must be *promoted* onto a TLS-terminating chain to be enforceable
+over HTTPS. The promotion signal is the Agent resource's `l7Hosts` spec
+list (#2865). It is per-agent intent, exactly like connection grants:
+promoting a host on one agent re-renders and rolls only that agent's
+gateway, never a sibling's (#2867). Promoted hosts get an uncredentialed
+L7 chain (gate sees method/path; nothing is injected) and extend the leaf
+certificate's SAN list.
+
+`l7Hosts` is a pure projection of the agent's active rules: the api-server
+recomputes it from the rule set after every create, edit, and revoke and
+writes it wholesale, so a host is demoted (dropped from interception) as
+soon as its last narrowing rule is gone. Connection-derived rules are
+excluded — their host is already TLS-terminated by the connection's own
+credential chain. Because each entry is interpolated into the gateway's
+Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
+hostnames, so a rule host cannot inject config into the owner's gateway.
+A one-shot api-server startup migration projects promotions previously
+materialized as owner-scoped credential-less marker Secrets onto the
+Agent resources and retires the markers; the controller consumes both
+signals, so rules stay enforced mid-migration.
+
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against
 the Secret's data at render time and degrades that host to an allow-only
@@ -445,7 +468,11 @@ the replier's credentials, never the parent Agent owner's. The fork
 agent's `agent-platform.ai/agent` label still points at the parent
 Agent so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
-Agent's pair.
+Agent's pair. The fork gateway's chain shape follows the same
+authority: it inherits the **parent's** promoted `l7Hosts` alongside
+the replier's credential Secrets, so the parent's path/method/port
+narrowing binds foreign turns at the same granularity as the owner's
+own (#2866).
 
 ## Shared-mode channel turns
 

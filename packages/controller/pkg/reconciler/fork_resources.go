@@ -54,6 +54,10 @@ func BuildForkAgentJob(
 		leafSecretName:     forkName,
 		typeLabel:          ForkJobLabelType,
 		idLabelKey:         ForkLabelForkID,
+		// Parent promotions shape the fork gateway's chains (#2866), so
+		// the fork agent must trust the MITM CA even with no replier
+		// credential Secrets.
+		l7Hosts: agentSpec.L7Hosts,
 		extraEnv: []corev1.EnvVar{
 			{Name: "PLATFORM_FORK_ID", Value: forkName},
 			{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
