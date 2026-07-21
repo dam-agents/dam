@@ -82,6 +82,8 @@ export const slackFireMentionInputSchema = z
     ts: z.string().min(1),
     threadTs: z.string().optional(),
     text: z.string(),
+    /** Workspace id; present so the fake exercises the live-streaming path. */
+    teamId: z.string().optional(),
   })
   .strict();
 
@@ -132,6 +134,41 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
       kind: z.literal("upload"),
       channelId: z.string(),
       filename: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("stream_start"),
+      channel: z.string(),
+      threadTs: z.string(),
+      ts: z.string(),
+      text: z.string(),
+      recipientTeamId: z.string().optional(),
+      recipientUserId: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("stream_append"),
+      channel: z.string(),
+      ts: z.string(),
+      text: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("stream_stop"),
+      channel: z.string(),
+      ts: z.string(),
+      text: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("status"),
+      channel: z.string(),
+      threadTs: z.string(),
+      status: z.string(),
     })
     .strict(),
 ]);

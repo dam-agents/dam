@@ -12,6 +12,9 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type ChatStopStreamArgs = Parameters<
+  BoltApp["client"]["chat"]["stopStream"]
+>[0];
 
 export interface BoltSlackGatewayDeps {
   botToken: string;
@@ -35,7 +38,7 @@ export function createBoltSlackGateway(
         logLevel: LogLevel.DEBUG,
       });
 
-      bolt.event("app_mention", async ({ event }) => {
+      bolt.event("app_mention", async ({ event, context }) => {
         await handlers.onMention({
           user: event.user,
           channel: event.channel,
@@ -43,6 +46,7 @@ export function createBoltSlackGateway(
           threadTs: event.thread_ts,
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
+          teamId: event.team ?? context.teamId,
         });
       });
 
@@ -132,6 +136,53 @@ export function createBoltSlackGateway(
         user: args.user,
         thread_ts: args.threadTs,
         text: args.text,
+      });
+    },
+
+    async startStream(args): Promise<{ ts: string }> {
+      // Throw (not silent no-op) when the app isn't running or Slack rejects
+      // the stream — the worker relies on the throw to fall back to a plain post.
+      if (!app) throw new Error("slack app not started");
+      const res = await app.client.chat.startStream({
+        channel: args.channel,
+        thread_ts: args.threadTs,
+        recipient_team_id: args.recipientTeamId,
+        recipient_user_id: args.recipientUserId,
+        ...(args.markdownText !== undefined
+          ? { markdown_text: args.markdownText }
+          : {}),
+      });
+      if (!res.ts) throw new Error("chat.startStream returned no ts");
+      return { ts: res.ts };
+    },
+
+    async appendStream(args) {
+      if (!app) throw new Error("slack app not started");
+      await app.client.chat.appendStream({
+        channel: args.channel,
+        ts: args.ts,
+        markdown_text: args.markdownText,
+      });
+    },
+
+    async stopStream(args) {
+      if (!app) throw new Error("slack app not started");
+      await app.client.chat.stopStream({
+        channel: args.channel,
+        ts: args.ts,
+        ...(args.markdownText !== undefined
+          ? { markdown_text: args.markdownText }
+          : {}),
+        ...(args.blocks !== undefined ? { blocks: args.blocks } : {}),
+      } as ChatStopStreamArgs);
+    },
+
+    async setStatus(args) {
+      if (!app) throw new Error("slack app not started");
+      await app.client.assistant.threads.setStatus({
+        channel_id: args.channel,
+        thread_ts: args.threadTs,
+        status: args.status,
       });
     },
 

@@ -17,8 +17,30 @@ import {
 } from "../lib/fixtures.js";
 
 const slackChannelId = "C-E2E-TRACER";
+const foreignSlackTeamId = "T-E2E";
 const foreignSlackUserId = "U-E2E-FOREIGN";
 const mockDefaultReply = "Hello from the mock agent.";
+
+type SlackOutbound = Awaited<
+  ReturnType<
+    ReturnType<typeof createApiClient>["e2e"]["slackReadOutbound"]["query"]
+  >
+>["records"];
+
+/** The reply text of a turn, whether it streamed in (start/append/stop) or was
+ *  posted as a single message. Streaming is best-effort, so tests accept both. */
+function replyText(records: SlackOutbound): string {
+  const message = records.find((r) => r.kind === "message");
+  if (message && message.kind === "message") return message.text;
+  return records
+    .map((r) => {
+      if (r.kind === "stream_start" || r.kind === "stream_append")
+        return r.text;
+      if (r.kind === "stream_stop") return r.text ?? "";
+      return "";
+    })
+    .join("");
+}
 
 test("foreign user mention forks the agent and the reply lands back in the thread", async ({
   browser,
@@ -100,6 +122,7 @@ test("foreign user mention forks the agent and the reply lands back in the threa
       channel: slackChannelId,
       ts: "1700000001.000100",
       text: "hello from the foreign user",
+      teamId: foreignSlackTeamId,
     });
 
     await expect
@@ -118,13 +141,28 @@ test("foreign user mention forks the agent and the reply lands back in the threa
       )
       .toBe(true);
 
+    // A running status appears while the fork works (live-progress arc).
     await expect
       .poll(
         async () => {
           const { records } = await api.e2e.slackReadOutbound.query();
           return records.some(
-            (r) => r.kind === "message" && r.text.includes(mockDefaultReply),
+            (r) => r.kind === "status" && r.status.length > 0,
           );
+        },
+        {
+          timeout: 60_000,
+          intervals: [2_000],
+          message: "no working status was shown while the fork ran",
+        },
+      )
+      .toBe(true);
+
+    await expect
+      .poll(
+        async () => {
+          const { records } = await api.e2e.slackReadOutbound.query();
+          return replyText(records).includes(mockDefaultReply);
         },
         {
           timeout: 300_000,
@@ -141,6 +179,9 @@ test("foreign user mention forks the agent and the reply lands back in the threa
         (r.kind === "message" && r.text.startsWith("Error:")),
     );
     expect(failures).toEqual([]);
+    // The status is cleared once the turn is done.
+    const statuses = records.filter((r) => r.kind === "status");
+    expect(statuses.at(-1)).toMatchObject({ status: "" });
   });
 });
 
@@ -170,18 +211,16 @@ test("foreign-user fork injects the foreign user's credential on egress", async 
       channel: slackChannelId,
       ts: "1700000002.000100",
       text: `__FETCH__ ${echoUrl}`,
+      teamId: foreignSlackTeamId,
     });
 
-    let replyText = "";
+    let reply = "";
     await expect
       .poll(
         async () => {
           const { records } = await api.e2e.slackReadOutbound.query();
-          const reply = records.find(
-            (r) => r.kind === "message" && r.text.includes("[fetch "),
-          );
-          replyText = reply && reply.kind === "message" ? reply.text : "";
-          return replyText !== "";
+          reply = replyText(records);
+          return reply.includes("[fetch ");
         },
         {
           timeout: 300_000,
@@ -191,6 +230,6 @@ test("foreign-user fork injects the foreign user's credential on egress", async 
       )
       .toBe(true);
 
-    expect(replyText).toContain(foreignSentinel);
+    expect(reply).toContain(foreignSentinel);
   });
 });
