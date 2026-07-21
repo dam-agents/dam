@@ -1,5 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { type Control, Controller, useForm } from "react-hook-form";
+import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { emitToast } from "@/lib/toast";
@@ -15,6 +18,44 @@ import { CatalogPaneHeader } from "./catalog-pane-header.js";
 
 const MCP_OAUTH_TEMPLATE_ID = "custom-mcp-oauth";
 const MCP_NONE_TEMPLATE_ID = "custom-mcp-none";
+
+const filled = (s: string) => s.trim() !== "";
+
+const mcpFormSchema = z
+  .object({
+    name: z.string().min(1, "Required"),
+    url: z.string(),
+    clientId: z.string(),
+    clientSecret: z.string(),
+    headerName: z.string(),
+    headerValue: z.string(),
+  })
+  .superRefine((v, ctx) => {
+    const urlError = validateMcpUrl(v.url);
+    if (urlError)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["url"],
+        message: urlError,
+      });
+    // Both-or-neither: a half-filled pair would otherwise be silently dropped,
+    // creating an auth-less connection from credentials the user typed. Attach
+    // the error to the empty field so the missing input lights up.
+    if (filled(v.clientId) !== filled(v.clientSecret))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [filled(v.clientId) ? "clientSecret" : "clientId"],
+        message: "Provide both an OAuth ID and secret, or neither.",
+      });
+    if (filled(v.headerName) !== filled(v.headerValue))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [filled(v.headerName) ? "headerValue" : "headerName"],
+        message: "Provide both a header name and value, or neither.",
+      });
+  });
+
+type McpFormValues = z.infer<typeof mcpFormSchema>;
 
 interface Props {
   templateById: Map<string, ConnectionTemplateView>;
@@ -32,12 +73,21 @@ export function McpCreatePane({
   onBack,
   onCreated,
 }: Props) {
-  const [name, setName] = useState(() => slugifyTemplateName("MCP server"));
-  const [url, setUrl] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [headerName, setHeaderName] = useState("");
-  const [headerValue, setHeaderValue] = useState("");
+  const { control, handleSubmit, watch, formState } = useForm<McpFormValues>({
+    resolver: zodResolver(mcpFormSchema),
+    mode: "onChange",
+    defaultValues: {
+      name: slugifyTemplateName("MCP server"),
+      url: "",
+      clientId: "",
+      clientSecret: "",
+      headerName: "",
+      headerValue: "",
+    },
+  });
+  const url = watch("url");
+  const clientId = watch("clientId");
+  const headerValue = watch("headerValue");
 
   // Detection precedes submit so the button label is right and the OAuth
   // popup can open synchronously on click; the submit hook re-verifies.
@@ -45,10 +95,10 @@ export function McpCreatePane({
 
   // Explicit advanced input wins over detection: OAuth creds → OAuth flow,
   // a header credential → no-auth flow with gateway injection.
-  const overriding = clientId.trim() !== "" || headerValue.trim() !== "";
-  const wantsOAuth = clientId.trim()
+  const overriding = filled(clientId) || filled(headerValue);
+  const wantsOAuth = filled(clientId)
     ? true
-    : headerValue.trim()
+    : filled(headerValue)
       ? false
       : detected === "oauth";
   // The button's Create vs Create + Authorize is only settled once detection
@@ -73,41 +123,18 @@ export function McpCreatePane({
     onCreated,
   });
 
-  const onSubmit = () => {
+  const onSubmit = handleSubmit((values) => {
     if (!template) return;
-    const urlError = validateMcpUrl(url);
-    if (urlError) {
-      emitToast({ kind: "error", message: urlError });
-      return;
-    }
-    // Both-or-neither: a half-filled pair would otherwise be silently dropped,
-    // creating an auth-less connection from credentials the user typed.
-    const bothOrNeither = (a: string, b: string) =>
-      (a.trim() === "") === (b.trim() === "");
-    if (!bothOrNeither(clientId, clientSecret)) {
-      emitToast({
-        kind: "error",
-        message: "Provide both an OAuth ID and secret, or neither.",
-      });
-      return;
-    }
-    if (!bothOrNeither(headerName, headerValue)) {
-      emitToast({
-        kind: "error",
-        message: "Provide both a header name and value, or neither.",
-      });
-      return;
-    }
-    const fields: Record<string, string> = { url };
+    const fields: Record<string, string> = { url: values.url };
     if (wantsOAuth) {
-      fields.clientId = clientId;
-      fields.clientSecret = clientSecret;
+      fields.clientId = values.clientId;
+      fields.clientSecret = values.clientSecret;
     } else {
-      fields.headerName = headerName;
-      fields.value = headerValue;
+      fields.headerName = values.headerName;
+      fields.value = values.headerValue;
     }
     const payload = buildCreatePayload(template, {
-      name,
+      name: values.name,
       fields,
       overrideDefaults: true,
     });
@@ -116,7 +143,7 @@ export function McpCreatePane({
       return;
     }
     void submit(payload);
-  };
+  });
 
   const submitLabel = useMemo(() => {
     if (showDetecting) return "Checking URL…";
@@ -125,64 +152,51 @@ export function McpCreatePane({
     if (authorizing) return "Redirecting…";
     if (pending) return "…";
     return needsOAuth ? "Create + Authorize" : "Create";
-  }, [
-    showDetecting,
-    verifying,
-    awaitingPopup,
-    authorizing,
-    pending,
-    needsOAuth,
-  ]);
+  }, [showDetecting, verifying, awaitingPopup, authorizing, pending, needsOAuth]);
 
   return (
     <>
       <CatalogPaneHeader title="Add an MCP server" onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="flex flex-col gap-4">
-          <LabeledInput
+          <McpField
+            control={control}
+            name="name"
             label="Name"
-            testId="connection-field-name"
             placeholder="my-mcp-server"
-            value={name}
-            onChange={setName}
             help="Lowercase letters, digits, and single hyphens. Doubles as the MCP slug."
           />
-          <LabeledInput
+          <McpField
+            control={control}
+            name="url"
             label="Remote MCP server URL"
-            testId="connection-field-url"
             placeholder="https://mcp.example.com/sse"
-            value={url}
-            onChange={setUrl}
           />
           <DisclosureBox title="Advanced configuration">
             <div className="flex flex-col gap-4">
-              <LabeledInput
+              <McpField
+                control={control}
+                name="clientId"
                 label="OAuth ID (optional)"
-                testId="connection-field-clientId"
                 placeholder="Client ID"
-                value={clientId}
-                onChange={setClientId}
               />
-              <LabeledInput
+              <McpField
+                control={control}
+                name="clientSecret"
                 label="OAuth secret (optional)"
-                testId="connection-field-clientSecret"
                 type="password"
-                value={clientSecret}
-                onChange={setClientSecret}
               />
-              <LabeledInput
+              <McpField
+                control={control}
+                name="headerName"
                 label="Header name (optional)"
-                testId="connection-field-headerName"
                 placeholder="X-API-Key"
-                value={headerName}
-                onChange={setHeaderName}
               />
-              <LabeledInput
+              <McpField
+                control={control}
+                name="headerValue"
                 label="Header value (optional)"
-                testId="connection-field-value"
                 type="password"
-                value={headerValue}
-                onChange={setHeaderValue}
               />
             </div>
           </DisclosureBox>
@@ -194,7 +208,10 @@ export function McpCreatePane({
         </Button>
         <Button
           onClick={awaitingPopup ? refocusPopup : onSubmit}
-          disabled={(pending && !awaitingPopup) || !template || showDetecting}
+          disabled={
+            !awaitingPopup &&
+            (pending || !template || showDetecting || !formState.isValid)
+          }
           title={
             awaitingPopup
               ? "Bring the authorization window back to the front"
@@ -206,6 +223,42 @@ export function McpCreatePane({
         </Button>
       </div>
     </>
+  );
+}
+
+function McpField({
+  control,
+  name,
+  label,
+  placeholder,
+  type,
+  help,
+}: {
+  control: Control<McpFormValues>;
+  name: keyof McpFormValues;
+  label: string;
+  placeholder?: string;
+  type?: "text" | "password";
+  help?: string;
+}) {
+  return (
+    <Controller
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => (
+        <LabeledInput
+          label={label}
+          testId={`connection-field-${name}`}
+          placeholder={placeholder}
+          type={type}
+          value={field.value}
+          onChange={field.onChange}
+          onBlur={field.onBlur}
+          help={help}
+          error={fieldState.error?.message}
+        />
+      )}
+    />
   );
 }
 
