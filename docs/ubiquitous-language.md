@@ -192,9 +192,19 @@ An Experiment races several AI-driven R&D harnesses against one goal and compare
 | Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
 | Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
 
+## Metrics (bounded context)
+
+The user-facing usage read path behind Settings ▸ Usage. Reads token/cost telemetry live from the observability store, owner-scoped. Distinct from Usage Tracking (activity analytics in Postgres) and from Observability (which owns the export path). See [`docs/architecture/metrics.md`](architecture/metrics.md).
+
+| Term | Definition |
+|------|-----------|
+| Spend | The dollar cost and token consumption of a user's agents' LLM usage, read from the observability telemetry store. The tokens/cost accounting concept — **not** Usage Tracking, which is activity analytics. Agent-reported (an agent can misreport its own numbers) but agent-attributed by the unforgeable gateway-stamped identity, so it can only ever pollute its own figures |
+| Spend Breakdown | A grouping of Spend along one axis for display: per model, per session, or per individual call. The Usage tab's read shapes — a per-model roll-up, a per-session runtime roll-up, and the recent unaggregated per-call rows |
+| Agent Attribution | Tying each telemetry record to the agent that produced it via the gateway-stamped `platform.agent.id`. This is trusted and unforgeable (the agent cannot set or overwrite it), which is what makes owner-scoped Spend safe. The self-declared agent name is display-only and carries no authority — see [Trusted Attribution in Observability](architecture/observability.md#trusted-attribution) |
+
 ## Budgets (bounded context)
 
-Fair-sharing of the cluster's fixed compute pool between users. Distinct from Usage Tracking (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
+Fair-sharing of the cluster's fixed compute pool between users. Distinct from Spend (tokens/cost accounting, owned by Metrics) — a Budget bounds *concurrent compute reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
 
 | Term | Definition |
 |------|-----------|
