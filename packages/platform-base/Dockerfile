@@ -136,6 +136,13 @@ RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extr
 
 USER 65532
 
+# Python's TLS clients skip the system trust store the entrypoint installs the
+# platform CA into (httpx/certifi honor SSL_CERT_FILE, requests honors
+# REQUESTS_CA_BUNDLE) — point both at the merged system bundle. Never the bare
+# CA file: that would replace and drop the public CAs.
+ENV SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
+    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+
 ENV PORT=8080
 EXPOSE 8080
 

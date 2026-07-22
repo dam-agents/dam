@@ -153,14 +153,15 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
-	// Node gets the CA via NODE_EXTRA_CA_CERTS; SSL_CERT_FILE / GIT_SSL_CAINFO
-	// stay unset because the entrypoint installs the CA into the system trust
-	// store for the other tools. See resources.go.
+	// Node gets the CA via NODE_EXTRA_CA_CERTS. SSL_CERT_FILE / GIT_SSL_CAINFO
+	// stay unset at the pod level: the base image points Python at the merged
+	// system bundle, and a pod-level value aimed at the bare CA file would
+	// override it and drop the public CAs. See resources.go.
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
-	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the entrypoint")
+	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
-	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the entrypoint")
+	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the system trust store")
 	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
 	// User env (spec.env) is no longer projected — it rides the runtime channel.
 	_, hasACPPort := envMap["ACP_PORT"]

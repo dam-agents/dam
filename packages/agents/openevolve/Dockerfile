@@ -28,15 +28,6 @@ RUN uv python install 3.11 &&\
 # Put the venv (and thus `openevolve-run`, `python`) ahead of the base tools.
 ENV PATH="/opt/openevolve-venv/bin:${PATH}"
 
-# OpenEvolve's loop calls the model endpoint via the OpenAI SDK (httpx), which
-# defaults to certifi's bundle and so misses the egress-gateway CA the platform
-# injects into the system store at runtime (curl and the node driver trust it; a
-# bare Python httpx call wouldn't, failing TLS verification). Point Python's TLS
-# clients at the system bundle — httpx honors SSL_CERT_FILE, requests honors
-# REQUESTS_CA_BUNDLE.
-ENV SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
-    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
-
 # claude-code symlinks /etc/claude-code/CLAUDE.md -> /etc/AGENTS.md; the
 # behavioral policy (pre-launch gate, resume-on-wake, guardrails) lives here.
 COPY AGENTS.md /etc/AGENTS.md
