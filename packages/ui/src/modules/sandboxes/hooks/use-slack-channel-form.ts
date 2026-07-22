@@ -11,20 +11,23 @@ type SlackChannel = Extract<AgentView["channels"][number], { type: "slack" }>;
 
 export type SlackAccessMode = "person-scoped" | "shared";
 
-/** Local edit state plus the connect/disconnect/reconnect orchestration for
- *  one agent's Slack binding. Seeds from the current binding; the consumer
- *  remounts it (via key) when the binding changes out-of-band. */
-export function useSlackChannelForm(agent: AgentView | undefined) {
-  const slackChannel = agent?.channels.find(
-    (c): c is SlackChannel => c.type === "slack",
-  );
-  const bound = !!slackChannel;
+export function findSlackChannel(
+  agent: AgentView | undefined,
+): SlackChannel | undefined {
+  return agent?.channels.find((c): c is SlackChannel => c.type === "slack");
+}
+
+/** Form state for the connect/edit Slack modal, seeded from the current
+ *  binding. Saving orchestrates connect / rebind / ambient update plus the
+ *  allowed-users patch, then reports completion via `onSaved`. */
+export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
+  const slackChannel = findSlackChannel(agent);
+  const editing = !!slackChannel;
 
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
   const updateAgent = useUpdateAgent();
 
-  const [enabled, setEnabled] = useState(bound);
   const [channelId, setChannelId] = useState(
     slackChannel?.slackChannelId ?? "",
   );
@@ -32,28 +35,13 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
     slackChannel?.mode ?? "person-scoped",
   );
   const [ambient, setAmbient] = useState(slackChannel?.ambient ?? false);
-  const [users, setUsers] = useState<string[]>(agent?.allowedUserEmails ?? []);
+  const [users, setUsers] = useState<string[]>(agent.allowedUserEmails);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const channelIdError =
-    submitted && enabled && !channelId.trim()
-      ? "Enter the Slack channel ID."
-      : undefined;
-
-  // Dirty is derived against the server baseline, so reverting an edit (e.g.
-  // toggling on and back off) hides the save affordance again.
-  const baselineUsers = agent?.allowedUserEmails ?? [];
-  const usersChanged =
-    users.length !== baselineUsers.length ||
-    users.some((u, i) => u !== baselineUsers[i]);
-  const bindingEdited =
-    slackChannel !== undefined &&
-    enabled &&
-    (channelId.trim() !== slackChannel.slackChannelId ||
-      ambient !== (slackChannel.ambient ?? false));
-  const dirty = enabled !== bound || bindingEdited || usersChanged;
+    submitted && !channelId.trim() ? "Enter the Slack channel ID." : undefined;
 
   const addUser = () => {
     const v = userInput.trim();
@@ -67,9 +55,8 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
   };
 
   const save = async () => {
-    if (!agent) return;
     setSubmitted(true);
-    if (enabled && !channelId.trim()) return;
+    if (!channelId.trim()) return;
     setSaving(true);
     try {
       const id = channelId.trim();
@@ -79,46 +66,32 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
         ...(mode === "shared" ? { mode } : {}),
         ...(mode === "shared" && ambient ? { ambient: true } : {}),
       };
-      if (enabled && !slackChannel) {
+      if (!slackChannel) {
         await connectSlack.mutateAsync(connectPayload);
-      } else if (!enabled && slackChannel) {
-        await disconnectSlack.mutateAsync({ id: agent.id });
-      } else if (
-        enabled &&
-        slackChannel &&
-        id !== slackChannel.slackChannelId
-      ) {
+      } else if (id !== slackChannel.slackChannelId) {
+        // The mode is fixed per binding, so a channel change is a rebind.
         await disconnectSlack.mutateAsync({ id: agent.id });
         await connectSlack.mutateAsync(connectPayload);
       } else if (
-        enabled &&
-        slackChannel &&
         mode === "shared" &&
         ambient !== (slackChannel.ambient ?? false)
       ) {
         // Ambient is mutable (unlike mode): a same-mode re-connect updates
         // the existing binding in place.
-        await connectSlack.mutateAsync({
-          id: agent.id,
-          slackChannelId: slackChannel.slackChannelId,
-          mode: "shared",
-          ...(ambient ? { ambient: true } : {}),
-        });
+        await connectSlack.mutateAsync(connectPayload);
       }
       await updateAgent.mutateAsync({
         id: agent.id,
         allowedUserEmails: users,
       });
-      setSubmitted(false);
+      onSaved();
     } finally {
       setSaving(false);
     }
   };
 
   return {
-    bound,
-    enabled,
-    setEnabled,
+    editing,
     channelId,
     setChannelId,
     channelIdError,
@@ -132,7 +105,6 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
     addUser,
     removeUser,
     saving,
-    dirty,
     save,
   };
 }
