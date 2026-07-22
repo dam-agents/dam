@@ -22,6 +22,20 @@ if [ -s "$mitm_ca" ]; then
 		|| echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
 fi
 
+# $HOME is a shared RWX network volume; cache traffic (mise, uv, npm, ...)
+# would hammer it, so ~/.cache points at pod-local disk (/tmp is an emptyDir)
+# instead. Caches are disposable, so a pre-existing real directory (older
+# volumes, or anything a harness recreated) is discarded. `ln -sfn` keeps the
+# swap idempotent when the owner pod and a fork pod boot the volume together.
+# The symlink persists on the volume but /tmp is fresh every pod, so the
+# target is (re)created each boot to keep the link from dangling.
+home="${HOME:-/home/agent}"
+mkdir -p /tmp/agent-cache
+if [ ! -L "$home/.cache" ]; then
+	rm -rf "$home/.cache"
+	ln -sfn /tmp/agent-cache "$home/.cache"
+fi
+
 # `dam-vm` only works when the deployment has a VM host configured (the
 # controller sets DAM_VM_ENABLED then). Drop the whole dam-vm block from the
 # agent instructions otherwise, so we don't advertise a command that would just
