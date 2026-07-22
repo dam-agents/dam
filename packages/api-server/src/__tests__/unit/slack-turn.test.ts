@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
-import type { SlackOutboundRecord } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type {
@@ -20,16 +19,14 @@ import type { StoredChannelConfig } from "../../modules/channels/stored-channel.
 
 const OWNER = "kc|owner-1";
 
-/** A long chunk so the first flush crosses the presenter's default threshold
- *  and opens the stream deterministically. */
-const BIG = "x".repeat(400);
-
 type SendPromptFn = (
   prompt: string | Array<unknown>,
   opts: SendPromptOpts,
 ) => Promise<string>;
 
-/** Drives opts.onUpdate with `updates`, then resolves with `response`. */
+/** Drives opts.onUpdate with `updates`, then resolves with `response`. The
+ *  response is deliberately never posted — the agent replies via the `reply`
+ *  tool, which tests exercise directly on the worker. */
 function scripted(updates: PromptUpdate[], response: string): SendPromptFn {
   return async (_prompt, opts) => {
     for (const u of updates) opts.onUpdate?.(u);
@@ -77,6 +74,7 @@ function harness(opts: {
         instanceName: "agent-1",
         owner: OWNER,
       }),
+      resolveSlackChannelByInstance: async () => "C1",
     } as never,
     async () => {},
     async () => {},
@@ -90,6 +88,10 @@ function harness(opts: {
   return {
     gw,
     events,
+    worker,
+    async start() {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+    },
     async mention(over?: { user?: string; teamId?: string }) {
       await worker.start("agent-1", {} as StoredChannelConfig);
       await gw.fireMention({
@@ -108,47 +110,28 @@ function harness(opts: {
   };
 }
 
-/** Concatenate the text a single stream carried (start + appends + stop). */
-function streamedText(records: SlackOutboundRecord[]): string {
-  let out = "";
-  for (const r of records) {
-    if (r.kind === "stream_start" || r.kind === "stream_append") out += r.text;
-    else if (r.kind === "stream_stop" && r.text !== undefined) out += r.text;
-  }
-  return out;
-}
-
-describe("slack live streaming — owner turns", () => {
-  it("streams the reply and never posts a plain message", async () => {
+describe("slack turn presentation — owner turns", () => {
+  it("acks with 👀 and a status, and never auto-posts the response", async () => {
     const h = harness({
       sendPrompt: scripted(
-        [
-          { kind: "text", text: BIG },
-          { kind: "text", text: "! done" },
-        ],
-        BIG + "! done",
+        [{ kind: "text", text: "an answer the agent would normally post" }],
+        "an answer the agent would normally post",
       ),
     });
     await h.mention();
     await tick();
 
     const recs = h.records();
-    const starts = recs.filter((r) => r.kind === "stream_start");
-    expect(starts).toHaveLength(1);
-    expect(starts[0]).toMatchObject({
-      recipientTeamId: "T-e2e",
-      recipientUserId: "U1",
-    });
-    expect(recs.some((r) => r.kind === "stream_stop")).toBe(true);
+    // The only things the platform posts on the agent's behalf: the ack
+    // reaction and the working status. The reply text is NOT delivered.
+    expect(recs.some((r) => r.kind === "reaction")).toBe(true);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
-    expect(streamedText(recs)).toBe(BIG + "! done");
+    expect(recs.some((r) => r.kind === "stream_start")).toBe(false);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
   });
 
   it("sets a thinking status right after the 👀 and clears it at the end", async () => {
-    const h = harness({
-      sendPrompt: scripted([{ kind: "text", text: BIG }], BIG),
-    });
+    const h = harness({});
     await h.mention();
     await tick();
 
@@ -160,34 +143,9 @@ describe("slack live streaming — owner turns", () => {
     expect(statuses.at(-1)).toMatchObject({ status: "" });
   });
 
-  it("falls back to one message when the event has no team id", async () => {
+  it("posts failure copy and clears status when the turn errors", async () => {
     const h = harness({
-      sendPrompt: scripted([{ kind: "text", text: BIG }], "final answer"),
-    });
-    await h.mention({ teamId: undefined });
-    await tick();
-
-    const recs = h.records();
-    expect(recs.some((r) => r.kind === "stream_start")).toBe(false);
-    const msgs = recs.filter((r) => r.kind === "message");
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: "final answer" });
-  });
-
-  it("falls back to one message when the agent streams nothing", async () => {
-    const h = harness({ sendPrompt: scripted([], "quiet answer") });
-    await h.mention();
-    await tick();
-
-    const recs = h.records();
-    expect(recs.some((r) => r.kind === "stream_start")).toBe(false);
-    expect(recs.filter((r) => r.kind === "message")).toHaveLength(1);
-  });
-
-  it("closes the stream and posts failure copy when the turn errors mid-stream", async () => {
-    const h = harness({
-      sendPrompt: async (_p, o) => {
-        o.onUpdate?.({ kind: "text", text: BIG });
+      sendPrompt: async () => {
         throw new Error("boom");
       },
     });
@@ -195,7 +153,6 @@ describe("slack live streaming — owner turns", () => {
     await tick();
 
     const recs = h.records();
-    expect(recs.some((r) => r.kind === "stream_stop")).toBe(true);
     const msgs = recs.filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ text: expect.stringContaining("Error:") });
@@ -206,42 +163,7 @@ describe("slack live streaming — owner turns", () => {
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
   });
 
-  it("resume failure abandons the first stream, then streams the fresh reply", async () => {
-    const FRESH = "y".repeat(400);
-    let call = 0;
-    const h = harness({
-      listSessions: async () => [
-        { sessionId: "s-1", platform: { threadTs: "1.1" } },
-      ],
-      sendPrompt: async (_p, o) => {
-        call += 1;
-        if (call === 1) {
-          o.onUpdate?.({ kind: "text", text: BIG });
-          throw new Error("resume failed");
-        }
-        o.onUpdate?.({ kind: "text", text: FRESH });
-        return FRESH;
-      },
-    });
-    await h.mention();
-    await tick();
-
-    const recs = h.records();
-    const startIdxs = recs.flatMap((r, i) =>
-      r.kind === "stream_start" ? [i] : [],
-    );
-    const stopIdxs = recs.flatMap((r, i) =>
-      r.kind === "stream_stop" ? [i] : [],
-    );
-    // Two streams: the abandoned resume attempt, then the fresh one — with the
-    // first stopped before the second opens (no interleaving).
-    expect(startIdxs).toHaveLength(2);
-    expect(stopIdxs[0]!).toBeLessThan(startIdxs[1]!);
-    expect(recs.some((r) => r.kind === "message")).toBe(false);
-    expect(h.turnEvents()[0]!.outcome).toBe("success");
-  });
-
-  it("never double-streams across a transient wake retry", async () => {
+  it("posts a still-starting note across a transient wake retry", async () => {
     let ready = 0;
     const h = harness({
       ensureReady: async (_id, o) => {
@@ -256,28 +178,27 @@ describe("slack live streaming — owner turns", () => {
           });
         }
       },
-      sendPrompt: scripted([{ kind: "text", text: BIG }], BIG),
     });
     await h.mention();
     await tick();
 
     expect(ready).toBe(2);
     const recs = h.records();
-    expect(recs.filter((r) => r.kind === "stream_start")).toHaveLength(1);
     expect(
       recs.some(
         (r) => r.kind === "message" && r.text.includes("still starting"),
       ),
     ).toBe(true);
+    expect(h.turnEvents()[0]!.outcome).toBe("success");
   });
 });
 
-describe("slack live streaming — foreign fork turns", () => {
-  it("streams the fork reply and clears status", async () => {
+describe("slack turn presentation — foreign fork turns", () => {
+  it("acks and clears status, without auto-posting the fork reply", async () => {
     const h = harness({
       isAllowedUser: true,
       linkedSub: "kc|member-2",
-      forkSendPrompt: scripted([{ kind: "text", text: BIG }], BIG),
+      forkSendPrompt: scripted([], "fork answer"),
     });
     await h.mention({ user: "U-STRANGER" });
 
@@ -296,8 +217,7 @@ describe("slack live streaming — foreign fork turns", () => {
     await tick();
 
     const recs = h.records();
-    expect(recs.filter((r) => r.kind === "stream_start")).toHaveLength(1);
-    expect(recs.some((r) => r.kind === "stream_stop")).toBe(true);
+    expect(recs.some((r) => r.kind === "reaction")).toBe(true);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
     expect(recs.filter((r) => r.kind === "status").at(-1)).toMatchObject({
       status: "",
@@ -335,5 +255,78 @@ describe("slack live streaming — foreign fork turns", () => {
         (r) => r.kind === "ephemeral" && r.text.includes("PodNotReady"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("slack reply / react tools", () => {
+  it("reply posts into the current turn's thread with the agent footer", async () => {
+    const h = harness({});
+    await h.mention(); // sets the active turn (thread 1.1, message 1.1)
+    await tick();
+    h.gw.resetOutbound();
+
+    const result = await h.worker.reply("agent-1", { text: "here you go" });
+    expect(result).toEqual({ ok: true });
+
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({
+      channel: "C1",
+      threadTs: "1.1",
+      text: "here you go",
+    });
+  });
+
+  it("reply honours an explicit threadTs override", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    await h.worker.reply("agent-1", { text: "elsewhere", threadTs: "9.9" });
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs[0]).toMatchObject({ threadTs: "9.9" });
+  });
+
+  it("reply errors when there is no active thread and none is given", async () => {
+    const h = harness({});
+    await h.start();
+    const result = await h.worker.reply("agent-1", { text: "orphan" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("no active thread"),
+    });
+    expect(h.records().some((r) => r.kind === "message")).toBe(false);
+  });
+
+  it("react adds the emoji to the current turn's message", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    const result = await h.worker.react("agent-1", {
+      emoji: ":white_check_mark:",
+    });
+    expect(result).toEqual({ ok: true });
+
+    const reactions = h.records().filter((r) => r.kind === "reaction");
+    expect(reactions).toHaveLength(1);
+    // Colons are stripped; targets the triggering message.
+    expect(reactions[0]).toMatchObject({
+      channel: "C1",
+      ts: "1.1",
+      name: "white_check_mark",
+    });
+  });
+
+  it("react errors on an empty emoji", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    const result = await h.worker.react("agent-1", { emoji: "  " });
+    expect(result).toMatchObject({ error: expect.stringContaining("emoji") });
+    expect(h.records().some((r) => r.kind === "reaction")).toBe(false);
   });
 });
