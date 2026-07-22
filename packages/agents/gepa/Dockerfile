@@ -31,10 +31,6 @@ RUN uv python install 3.11 &&\
 
 ENV PATH="/opt/gepa-venv/bin:${PATH}"
 
-# httpx/requests default to certifi's bundle and would miss the gateway CA
-ENV SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
-    REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
-
 # behavioral policy; claude-code symlinks /etc/claude-code/CLAUDE.md here
 COPY AGENTS.md /etc/AGENTS.md
 

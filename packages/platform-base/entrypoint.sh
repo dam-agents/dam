@@ -3,10 +3,12 @@
 # the gateway intercepts the TLS connection and returns a certificate signed by
 # the cluster's own CA (the "platform MITM CA"), so the agent must trust that CA
 # on top of the normal public ones. We add it to the system trust store here
-# (update-ca-trust) instead of via SSL_CERT_FILE / GIT_SSL_CAINFO, because those
-# env vars replace the public CAs rather than add to them. Node is the exception:
-# it doesn't read the system store, so the controller hands it the CA through
-# NODE_EXTRA_CA_CERTS. Runs as the non-root agent user; the trust dirs are made
+# (update-ca-trust) rather than pointing SSL_CERT_FILE / GIT_SSL_CAINFO at the
+# bare CA file, which would replace the public CAs instead of adding to them.
+# Two clients skip the system store: Node gets the CA through NODE_EXTRA_CA_CERTS
+# (set by the controller), and Python's certifi-based libs get SSL_CERT_FILE /
+# REQUESTS_CA_BUNDLE aimed at the merged bundle this extraction rewrites (set in
+# the Dockerfile). Runs as the non-root agent user; the trust dirs are made
 # writable at build time (see Dockerfile).
 set -eu
 
