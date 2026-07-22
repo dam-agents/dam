@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-The platform for AI-powered research.
+The platform for AI-powered research.   <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>.
 </h3>
 
 <p align="center">
@@ -17,7 +17,8 @@ The platform for AI-powered research.
   ·
   <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
   ·
-  <a href="https://pages.github.ibm.com/dam-agents/docs/getting-started/quickstart/"><strong>Quick Start</strong></a>
+  <a href="https://pages.github.ibm.com/dam-agents/docs/getting-started/quickstart/"><strong>Quick Start</strong></a> ·
+  <a href="https://ibm.biz/dam-docs"><strong>Slack</strong></a>
 </p>
 
 ---
