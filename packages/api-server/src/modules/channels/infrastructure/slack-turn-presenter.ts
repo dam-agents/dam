@@ -1,6 +1,7 @@
 import type { PromptUpdate } from "../../../core/acp-client.js";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
+import { agentContextBlock, type AgentFooter } from "./agent-footer.js";
 import type { SlackBlock, SlackGateway } from "./slack-gateway.js";
 
 /** Status shown while the turn is getting underway / between tool activity. */
@@ -38,22 +39,15 @@ export interface TurnPresenter {
   clearStatus(): Promise<void>;
 }
 
-/** Footer crediting the responding agent, appended to a posted reply. */
-function contextBlock(instanceName: string): SlackBlock {
-  return {
-    type: "context",
-    elements: [{ type: "mrkdwn", text: `_${instanceName}_` }],
-  };
-}
-
-/** Blocks for a posted assistant reply (the `reply` tool's message). */
+/** Blocks for a posted assistant reply (the `reply` tool's message): the text
+ *  followed by the agent-attribution footer. */
 export function renderAssistantBlocks(
-  instanceName: string,
+  footer: AgentFooter,
   text: string,
 ): SlackBlock[] {
   return [
     { type: "markdown", text: text || "(no response)" },
-    contextBlock(instanceName),
+    agentContextBlock(footer),
   ];
 }
 

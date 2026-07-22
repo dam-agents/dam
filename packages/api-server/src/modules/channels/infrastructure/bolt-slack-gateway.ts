@@ -206,6 +206,7 @@ export function createBoltSlackGateway(
         ts: m.ts,
         user: m.user,
         text: m.text,
+        blocks: m.blocks as SlackMessage["blocks"],
       }));
     },
 
@@ -219,6 +220,7 @@ export function createBoltSlackGateway(
         ts: m.ts,
         user: m.user,
         text: m.text,
+        blocks: m.blocks as SlackMessage["blocks"],
       }));
     },
 
