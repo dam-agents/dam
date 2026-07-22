@@ -77,7 +77,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
         <StatusBadge state={display.state} />
         {agent.templateUpdate && (
           <Badge
-            variant="info"
+            variant="accent"
             className="shrink-0"
             title={`Template update available: ${agent.templateUpdate.toImage}`}
           >
