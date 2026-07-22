@@ -18,12 +18,12 @@ The platform for AI-powered research.   <a href="https://ibm.biz/dam-agents"><st
   <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
   ·
   <a href="https://pages.github.ibm.com/dam-agents/docs/getting-started/quickstart/"><strong>Quick Start</strong></a> ·
-  <a href="https://ibm.biz/dam-docs"><strong>Slack</strong></a>
+  <a href="https://ibm.enterprise.slack.com/archives/C0B3F03NB24"><strong>Slack</strong></a>
 </p>
 
 ---
 
-## DAM combines research tools with AI infrastructure to enable quicker, more impactful results. 
+## DAM combines research tools with AI infrastructure to enable immediate, impactful results. 
 
 IBM's teams have proven the efficacy of implementing AI tools for research, from building ["agent factories" for hardware optimization](https://arxiv.org/abs/2603.25719) to developing [evolutionary frameworks to find quantum error correction codes](https://research.ibm.com/blog/ai-for-qec). **DAM packages all the tools research teams need to access those benefits in minutes, avoiding the lift of building bespoke tooling**.
 
@@ -39,7 +39,7 @@ IBM's teams have proven the efficacy of implementing AI tools for research, from
 
 - **⏱️ Scheduled workflows.** Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
 
-- **🔧 Constantly growing.** DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know]().
+- **🔧 Constantly growing.** DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know](https://ibm.enterprise.slack.com/archives/C0B3F03NB24).
 
 ## Architecture
 ```mermaid
@@ -51,7 +51,7 @@ flowchart LR
   llm[LLM APIs]
   github[GitHub]
 
-  subgraph cluster[Platform install]
+  subgraph cluster[cluster boundary]
     ui[ui]
     api-server[api-server]
     controller[controller]
@@ -102,37 +102,5 @@ flowchart LR
   class envoy gateway
   class agent-runtime agent
 ```
-## Contribute
 
-<details>
-<summary><strong>Developing DAM locally</strong></summary>
-
-**For contributors working on the DAM platform itself.**
-
-### Prerequisites
-
-- [mise](https://mise.jdx.dev)
-- Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.)
-- macOS or Linux
-
-### Local Setup
-
-```sh
-git clone https://github.com/dam-agents/dam && cd dam
-
-mise install
-mise run cluster:install
-````
-
-Open [localhost:4444](http://localhost:4444) and log in with:
-
-```txt
-username: dev
-password: dev
-```
-
-Create an instance from a template and start chatting with your agent.
-
-See [work process](docs/guidelines/work-process.md) for the contributor workflow.
-
-</details>
+The cluster boundary is the trust boundary. Browsers, Slack users, and the CLI all reach the platform through the **[api-server](docs/architecture/platform-topology.md)**, which brokers sessions, relays the [ACP WebSocket protocol](docs/architecture/connections.md) to agent pods, and enforces identity via Keycloak. The **[controller](docs/architecture/agent-lifecycle.md)** watches Kubernetes and drives the agent [create → wake → trigger → hibernate → delete](docs/architecture/agent-lifecycle.md) lifecycle, including [compute budget enforcement](docs/architecture/budgets.md). Each agent pod is paired with a **[gateway pod](docs/architecture/security-and-credentials.md)** running Envoy: all outbound LLM and GitHub traffic is forced through it via `HTTPS_PROXY`, where credentials are injected from K8s Secrets — the agent pod carries no upstream tokens of its own. Agent [skills](docs/architecture/skills.md), [experiments](docs/architecture/experiments.md), [artifacts](docs/architecture/artifact-library.md), and [channels](docs/architecture/channels.md) (Slack, Telegram) are first-class subsystems built on this foundation. Full architecture detail lives in [`docs/architecture.md`](docs/architecture.md).
