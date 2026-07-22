@@ -17,8 +17,10 @@ RUN dnf install -y git tar gzip && dnf clean all &&\
     tar -xzf /tmp/mise.tar.gz -C /tmp; \
     mv /tmp/mise/bin/mise /usr/local/bin/mise; \
     rm -rf /tmp/mise /tmp/mise.tar.gz
+# mise installs to /usr/local/bin; put it on PATH explicitly rather than trust
+# the base image (a mutable tag) to carry it, so `mise` resolves in later steps.
 ENV MISE_DATA_DIR=/usr/local/share/mise \
-    PATH="/usr/local/share/mise/shims:$PATH"
+    PATH="/usr/local/share/mise/shims:/usr/local/bin:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
 RUN --mount=type=cache,target=/root/.cache/mise \
     --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
@@ -91,8 +93,10 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
 WORKDIR /app
+# /usr/local/bin holds the mise binary (and dam-run etc.); pin it on PATH so the
+# runtime doesn't depend on the base image providing it (see the base stage).
 ENV MISE_DATA_DIR=/usr/local/share/mise \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
+    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/bin:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
