@@ -3,5 +3,5 @@ lockfile = true
 minimum_release_age = "7d"
 
 [tools]
-"npm:@anthropic-ai/claude-code" = "2.1.173"
-"npm:@agentclientprotocol/claude-agent-acp" = "0.44.0"
+"npm:@anthropic-ai/claude-code" = "2.1.210"
+"npm:@agentclientprotocol/claude-agent-acp" = "0.59.0"

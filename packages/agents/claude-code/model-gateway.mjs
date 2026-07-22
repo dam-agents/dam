@@ -110,11 +110,12 @@ const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
 function envLines() {
   const models = [...knownModels.values()];
   if (!models.length) return "";
-  const [opus, sonnet, haiku] = ["opus", "sonnet", "haiku"].map((t) =>
-    latest(models, t),
+  const [fable, opus, sonnet, haiku] = ["fable", "opus", "sonnet", "haiku"].map(
+    (t) => latest(models, t),
   );
   const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
   return Object.entries({
+    ANTHROPIC_DEFAULT_FABLE_MODEL: publicName(fable ?? fallback),
     ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(fallback),
     ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
     ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? sonnet ?? fallback),
