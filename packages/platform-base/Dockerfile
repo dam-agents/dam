@@ -46,6 +46,7 @@ RUN dnf install \
     gzip \
     openssh-server \
     tar \
+    which \
     xz-libs \
     &&\
     rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
