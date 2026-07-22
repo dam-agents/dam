@@ -68,6 +68,15 @@ export type SkillsDomainError =
       path: string;
       status: number;
       body: GitHubErrorBody;
+    }
+  /** The request to GitHub never produced an HTTP response — the pod's only
+   *  route there is the paired gateway, so this means egress was denied or
+   *  the gateway is down, never a GitHub-side verdict. */
+  | {
+      kind: "UpstreamUnreachable";
+      method: string;
+      path: string;
+      detail: string;
     };
 
 export interface SkillsService {

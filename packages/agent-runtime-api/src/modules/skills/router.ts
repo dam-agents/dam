@@ -45,6 +45,21 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
         message: `github ${error.method} ${error.path} → ${error.status}: ${error.body.message ?? error.body.error ?? "upstream error"}`,
         cause: { upstream: { status: error.status, body: error.body } },
       });
+    // status 0 = no HTTP response ever arrived (XHR convention). Carried as a
+    // structured envelope so the api-server can tell "the pod couldn't reach
+    // GitHub" apart from its own transport failures without sniffing message
+    // strings.
+    case "UpstreamUnreachable":
+      return new TRPCError({
+        code: "BAD_GATEWAY",
+        message: `github ${error.method} ${error.path} unreachable: ${error.detail}`,
+        cause: {
+          upstream: {
+            status: 0,
+            body: { error: "upstream_unreachable", message: error.detail },
+          },
+        },
+      });
   }
 }
 
