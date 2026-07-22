@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
@@ -111,14 +112,14 @@ export function ListView() {
 
   return (
     <div className="mx-auto w-full max-w-[666px]">
-      <div className="mb-8 flex items-center justify-between gap-3">
-        <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-          Sandboxes
-        </h1>
-        {agents.length > 0 && (
-          <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Sandboxes"
+        actions={
+          agents.length > 0 ? (
+            <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+          ) : undefined
+        }
+      />
 
       {initialLoaded && agents.length > 0 && <BudgetMeter />}
 
