@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import type { AgentView } from "../../../types.js";
 import {
@@ -9,7 +11,15 @@ import {
 
 type SlackChannel = Extract<AgentView["channels"][number], { type: "slack" }>;
 
-export type SlackAccessMode = "person-scoped" | "shared";
+export const slackChannelFormSchema = z.object({
+  channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
+  mode: z.enum(["person-scoped", "shared"]),
+  ambient: z.boolean(),
+  users: z.array(z.object({ email: z.string() })),
+});
+
+export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+export type SlackAccessMode = SlackChannelFormValues["mode"];
 
 export function findSlackChannel(
   agent: AgentView | undefined,
@@ -17,9 +27,9 @@ export function findSlackChannel(
   return agent?.channels.find((c): c is SlackChannel => c.type === "slack");
 }
 
-/** Form state for the connect/edit Slack modal, seeded from the current
- *  binding. Saving orchestrates connect / rebind / ambient update plus the
- *  allowed-users patch, then reports completion via `onSaved`. */
+/** RHF form for the connect/edit Slack modal, seeded from the current
+ *  binding. Submitting orchestrates connect / rebind / ambient update plus
+ *  the allowed-users patch, then reports completion via `onSaved`. */
 export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
   const slackChannel = findSlackChannel(agent);
   const editing = !!slackChannel;
@@ -28,83 +38,44 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
   const disconnectSlack = useDisconnectSlack();
   const updateAgent = useUpdateAgent();
 
-  const [channelId, setChannelId] = useState(
-    slackChannel?.slackChannelId ?? "",
-  );
-  const [mode, setMode] = useState<SlackAccessMode>(
-    slackChannel?.mode ?? "person-scoped",
-  );
-  const [ambient, setAmbient] = useState(slackChannel?.ambient ?? false);
-  const [users, setUsers] = useState<string[]>(agent.allowedUserEmails);
-  const [userInput, setUserInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const form = useForm<SlackChannelFormValues>({
+    resolver: zodResolver(slackChannelFormSchema),
+    defaultValues: {
+      channelId: slackChannel?.slackChannelId ?? "",
+      mode: slackChannel?.mode ?? "person-scoped",
+      ambient: slackChannel?.ambient ?? false,
+      users: agent.allowedUserEmails.map((email) => ({ email })),
+    },
+  });
 
-  const channelIdError =
-    submitted && !channelId.trim() ? "Enter the Slack channel ID." : undefined;
-
-  const addUser = () => {
-    const v = userInput.trim();
-    if (!v || users.includes(v)) return;
-    setUsers((prev) => [...prev, v]);
-    setUserInput("");
-  };
-
-  const removeUser = (u: string) => {
-    setUsers((prev) => prev.filter((x) => x !== u));
-  };
-
-  const save = async () => {
-    setSubmitted(true);
-    if (!channelId.trim()) return;
-    setSaving(true);
-    try {
-      const id = channelId.trim();
-      const connectPayload = {
-        id: agent.id,
-        slackChannelId: id,
-        ...(mode === "shared" ? { mode } : {}),
-        ...(mode === "shared" && ambient ? { ambient: true } : {}),
-      };
-      if (!slackChannel) {
-        await connectSlack.mutateAsync(connectPayload);
-      } else if (id !== slackChannel.slackChannelId) {
-        // The mode is fixed per binding, so a channel change is a rebind.
-        await disconnectSlack.mutateAsync({ id: agent.id });
-        await connectSlack.mutateAsync(connectPayload);
-      } else if (
-        mode === "shared" &&
-        ambient !== (slackChannel.ambient ?? false)
-      ) {
-        // Ambient is mutable (unlike mode): a same-mode re-connect updates
-        // the existing binding in place.
-        await connectSlack.mutateAsync(connectPayload);
-      }
-      await updateAgent.mutateAsync({
-        id: agent.id,
-        allowedUserEmails: users,
-      });
-      onSaved();
-    } finally {
-      setSaving(false);
+  const onSubmit = form.handleSubmit(async (values) => {
+    const { channelId, mode, ambient } = values;
+    const connectPayload = {
+      id: agent.id,
+      slackChannelId: channelId,
+      ...(mode === "shared" ? { mode } : {}),
+      ...(mode === "shared" && ambient ? { ambient: true } : {}),
+    };
+    if (!slackChannel) {
+      await connectSlack.mutateAsync(connectPayload);
+    } else if (channelId !== slackChannel.slackChannelId) {
+      // The mode is fixed per binding, so a channel change is a rebind.
+      await disconnectSlack.mutateAsync({ id: agent.id });
+      await connectSlack.mutateAsync(connectPayload);
+    } else if (
+      mode === "shared" &&
+      ambient !== (slackChannel.ambient ?? false)
+    ) {
+      // Ambient is mutable (unlike mode): a same-mode re-connect updates
+      // the existing binding in place.
+      await connectSlack.mutateAsync(connectPayload);
     }
-  };
+    await updateAgent.mutateAsync({
+      id: agent.id,
+      allowedUserEmails: values.users.map((u) => u.email),
+    });
+    onSaved();
+  });
 
-  return {
-    editing,
-    channelId,
-    setChannelId,
-    channelIdError,
-    mode,
-    setMode,
-    ambient,
-    setAmbient,
-    users,
-    userInput,
-    setUserInput,
-    addUser,
-    removeUser,
-    saving,
-    save,
-  };
+  return { form, editing, onSubmit };
 }

@@ -1,4 +1,7 @@
 import { Add, Close } from "@carbon/icons-react";
+import { useState } from "react";
+import type { Control, UseFormRegister } from "react-hook-form";
+import { Controller, useFieldArray, useWatch } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -14,7 +17,10 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../../types.js";
-import type { SlackAccessMode } from "../../hooks/use-slack-channel-form.js";
+import type {
+  SlackAccessMode,
+  SlackChannelFormValues,
+} from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
 
 const MODE_OPTIONS: {
@@ -43,20 +49,20 @@ export function SlackChannelModal({
   agent: AgentView;
   onClose: () => void;
 }) {
-  const f = useSlackChannelForm(agent, onClose);
+  const { form, editing, onSubmit } = useSlackChannelForm(agent, onClose);
+  const {
+    register,
+    control,
+    formState: { errors, isSubmitting },
+  } = form;
+  const mode = useWatch({ control, name: "mode" });
 
   return (
     <Modal>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void f.save();
-        }}
-        className="flex min-h-0 flex-col"
-      >
+      <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
         <DialogHeader>
           <h2 className="text-[16px] font-semibold text-foreground">
-            {f.editing ? "Edit Slack channel" : "Connect a Slack channel"}
+            {editing ? "Edit Slack channel" : "Connect a Slack channel"}
           </h2>
         </DialogHeader>
 
@@ -64,39 +70,32 @@ export function SlackChannelModal({
           <FormField
             label="Channel ID"
             disableInset
-            error={f.channelIdError}
+            error={errors.channelId?.message}
             hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
           >
             <Input
               className="h-[40px]"
-              value={f.channelId}
-              variant={f.channelIdError ? "invalid" : undefined}
-              aria-invalid={!!f.channelIdError}
+              variant={errors.channelId ? "invalid" : undefined}
+              aria-invalid={!!errors.channelId}
               placeholder="C0…"
               data-testid="slack-channel-id"
-              onChange={(e) => f.setChannelId(e.target.value)}
+              {...register("channelId")}
             />
           </FormField>
 
-          <AccessModePicker
-            mode={f.mode}
-            locked={f.editing}
-            onChange={f.setMode}
-          />
+          <AccessModePicker register={register} locked={editing} />
 
-          {f.mode === "shared" && (
-            <AmbientRow checked={f.ambient} onChange={f.setAmbient} />
-          )}
-
-          {f.mode === "person-scoped" && (
-            <AllowedUsers
-              users={f.users}
-              userInput={f.userInput}
-              onUserInput={f.setUserInput}
-              onAdd={f.addUser}
-              onRemove={f.removeUser}
+          {mode === "shared" && (
+            <Controller
+              control={control}
+              name="ambient"
+              render={({ field }) => (
+                <AmbientRow checked={field.value} onChange={field.onChange} />
+              )}
             />
           )}
+
+          {mode === "person-scoped" && <AllowedUsers control={control} />}
         </DialogBody>
 
         <DialogFooter>
@@ -104,12 +103,16 @@ export function SlackChannelModal({
             type="button"
             variant="outline"
             onClick={onClose}
-            disabled={f.saving}
+            disabled={isSubmitting}
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={f.saving} data-testid="slack-save">
-            {f.saving ? "Saving…" : f.editing ? "Save" : "Connect"}
+          <Button
+            type="submit"
+            disabled={isSubmitting}
+            data-testid="slack-save"
+          >
+            {isSubmitting ? "Saving…" : editing ? "Save" : "Connect"}
           </Button>
         </DialogFooter>
       </form>
@@ -118,13 +121,11 @@ export function SlackChannelModal({
 }
 
 function AccessModePicker({
-  mode,
+  register,
   locked,
-  onChange,
 }: {
-  mode: SlackAccessMode;
+  register: UseFormRegister<SlackChannelFormValues>;
   locked: boolean;
-  onChange: (mode: SlackAccessMode) => void;
 }) {
   return (
     <div
@@ -143,13 +144,11 @@ function AccessModePicker({
         >
           <input
             type="radio"
-            name="slack-access-mode"
             value={opt.value}
-            checked={mode === opt.value}
             disabled={locked}
             aria-describedby={locked ? "slack-mode-locked" : undefined}
-            onChange={() => onChange(opt.value)}
             className="mt-1"
+            {...register("mode")}
           />
           <span className="flex flex-col gap-0.5">
             <span className="text-[14px] font-medium text-foreground">
@@ -201,41 +200,43 @@ function AmbientRow({
 }
 
 function AllowedUsers({
-  users,
-  userInput,
-  onUserInput,
-  onAdd,
-  onRemove,
+  control,
 }: {
-  users: string[];
-  userInput: string;
-  onUserInput: (v: string) => void;
-  onAdd: () => void;
-  onRemove: (u: string) => void;
+  control: Control<SlackChannelFormValues>;
 }) {
+  const { fields, append, remove } = useFieldArray({ control, name: "users" });
+  const [userInput, setUserInput] = useState("");
+
+  const addUser = () => {
+    const email = userInput.trim();
+    if (!email || fields.some((f) => f.email === email)) return;
+    append({ email });
+    setUserInput("");
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <SectionLabel>Allowed users</SectionLabel>
-      {users.length === 0 && (
+      {fields.length === 0 && (
         <p className="text-[13px] text-muted-foreground">
           Unrestricted — any linked Slack user can interact.
         </p>
       )}
-      {users.map((u) => (
+      {fields.map((field, index) => (
         <div
-          key={u}
+          key={field.id}
           className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5"
         >
           <span className="flex-1 truncate font-mono text-[13px] text-foreground">
-            {u}
+            {field.email}
           </span>
           <Button
             type="button"
             variant="ghost"
             tone="danger"
             size="icon-xs"
-            aria-label={`Remove ${u}`}
-            onClick={() => onRemove(u)}
+            aria-label={`Remove ${field.email}`}
+            onClick={() => remove(index)}
             className="shrink-0"
           >
             <Close size={14} />
@@ -248,14 +249,16 @@ function AllowedUsers({
           className="h-[32px] flex-1"
           value={userInput}
           placeholder="user@example.com"
-          onChange={(e) => onUserInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onAdd())}
+          onChange={(e) => setUserInput(e.target.value)}
+          onKeyDown={(e) =>
+            e.key === "Enter" && (e.preventDefault(), addUser())
+          }
         />
         <Button
           type="button"
           variant="outline"
           className="h-[32px] px-3 text-[14px] font-normal"
-          onClick={onAdd}
+          onClick={addUser}
           disabled={!userInput.trim()}
         >
           <Add size={16} />
