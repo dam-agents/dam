@@ -6,6 +6,7 @@ import {
   createOAuthRefreshLoop,
 } from "../../modules/connections/services/oauth-refresh.js";
 import { createOAuthEngine } from "../../modules/connections/infrastructure/oauth-engine.js";
+import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 
@@ -97,6 +98,7 @@ function makeLoop(opts?: {
   const loop = createOAuthRefreshLoop({
     db,
     engine: createOAuthEngine({ now: () => clock, fetchImpl }),
+    githubAppEngine: createGitHubAppEngine({ now: () => clock, fetchImpl }),
     templates: {
       get: () => undefined,
     } as unknown as ConnectionTemplateRegistry,

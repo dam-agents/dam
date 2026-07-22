@@ -1,11 +1,13 @@
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export function LabeledInput({
   label,
   testId,
   placeholder,
   type,
+  multiline,
   value,
   onChange,
   onBlur,
@@ -18,6 +20,8 @@ export function LabeledInput({
   testId?: string;
   placeholder?: string;
   type?: "text" | "password";
+  // Renders a monospace textarea instead of a single-line input (e.g. a PEM key).
+  multiline?: boolean;
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
@@ -34,15 +38,28 @@ export function LabeledInput({
       disableInset={!inset}
       labelInset={inset}
     >
-      <Input
-        type={type ?? "text"}
-        data-testid={testId}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
-        autoFocus={autoFocus}
-      />
+      {multiline ? (
+        <Textarea
+          variant="monospace"
+          rows={8}
+          data-testid={testId}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          autoFocus={autoFocus}
+        />
+      ) : (
+        <Input
+          type={type ?? "text"}
+          data-testid={testId}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          autoFocus={autoFocus}
+        />
+      )}
     </FormField>
   );
 }

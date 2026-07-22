@@ -241,6 +241,7 @@ const connectionsServiceFor = (ownerId: string) =>
     db,
     templates: connectionsBoot.templates,
     oauthEngine: connectionsBoot.oauthEngine,
+    githubAppEngine: connectionsBoot.githubAppEngine,
     secretStore: secretStores.default(),
     runtimeMutator: runtimeDelivery.runtimeMutator,
     agentsRepo,

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type {
   ConnectionAuthConfig,
   ConnectionCreateInput,
@@ -57,6 +58,12 @@ export async function buildConnection(
           ConnectionTemplate,
           { authKind: "client-credentials" }
         >,
+        input,
+        mintSecretRef,
+      );
+    case "github-app":
+      return buildGitHubApp(
+        template as Extract<ConnectionTemplate, { authKind: "github-app" }>,
         input,
         mintSecretRef,
       );
@@ -397,6 +404,65 @@ async function buildClientCredentials(
     secrets: new Map([
       [secretPath.path, { client_secret: input.clientSecret }],
     ]),
+  };
+}
+
+// Accepts the private key as raw PEM (real or `\n`-escaped newlines) or its
+// base64 encoding — so it survives a single-line paste or a JSON/env value —
+// and validates it up front for a clear error before the synchronous mint.
+function normalizePrivateKeyPem(raw: string): string {
+  const trimmed = raw.trim();
+  // Restore escaped newlines (a PEM pasted from a JSON/env value) or decode a
+  // base64-wrapped PEM; a final trim keeps the stored form canonical whichever
+  // way it arrived.
+  const pem = (
+    trimmed.includes("-----BEGIN ")
+      ? trimmed.replace(/\\n/g, "\n")
+      : Buffer.from(trimmed, "base64").toString("utf8")
+  ).trim();
+  try {
+    crypto.createPrivateKey(pem);
+  } catch {
+    throw new Error(
+      "Private key must be a PEM-encoded RSA private key (or its base64 encoding).",
+    );
+  }
+  return pem;
+}
+
+// GitHub App installation grant. Like client-credentials, the secret map carries
+// only the signing material (the private key); the installation token and its
+// SDS files are minted by the service before the secret write. The token reaches
+// only the gateway — the private key never leaves the api-server.
+function buildGitHubApp(
+  template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  if (!input.appId) throw new Error(`template ${template.id}: missing appId`);
+  if (!input.installationId) {
+    throw new Error(`template ${template.id}: missing installationId`);
+  }
+  if (!input.privateKey) {
+    throw new Error(`template ${template.id}: missing privateKey`);
+  }
+  const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const contributions: Contribution[] = [...template.contributions];
+
+  return {
+    auth: {
+      kind: "github-app",
+      appId: input.appId,
+      installationId: input.installationId,
+      privateKeyRef: { ...secretPath, field: "private_key" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      apiBaseUrl: template.apiBaseUrl ?? "https://api.github.com",
+      ...(template.host ? { host: template.host } : {}),
+    },
+    contributions,
+    secrets: new Map([[secretPath.path, { private_key: privateKeyPem }]]),
   };
 }
 

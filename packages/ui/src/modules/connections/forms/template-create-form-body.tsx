@@ -236,6 +236,7 @@ function TemplateFieldInput({
       testId={`connection-field-${input.name}`}
       placeholder={placeholderFor(input.name)}
       type={input.secret ? "password" : "text"}
+      multiline={input.multiline}
       value={value}
       onChange={onChange}
       help={hintFor(templateId, input.name) ?? input.hint}

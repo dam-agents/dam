@@ -37,6 +37,9 @@ interface ConnectOpts {
   scopes?: string;
   audience?: string;
   appSlug?: string;
+  appId?: string;
+  installationId?: string;
+  privateKey?: string;
   headerName?: string;
   valueFormat?: string;
   envName?: string;
@@ -86,6 +89,15 @@ export function buildConnectCommand(deps: {
       "input: OAuth audience (client credentials)",
     )
     .option("--app-slug <slug>", "input: GitHub App slug")
+    .option("--app-id <id>", "input: GitHub App ID (GitHub App installation)")
+    .option(
+      "--installation-id <id>",
+      "input: GitHub App installation ID (GitHub App installation)",
+    )
+    .option(
+      "--private-key <pem>",
+      'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
+    )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
     .option(
@@ -126,6 +138,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
         "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
+        "  dam connection connect github-app --app-id 123456 --installation-id 987654 \\\n" +
+        '      --private-key "$(cat app.pem)"\n' +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
@@ -427,8 +441,12 @@ async function collectInputs(
 
   for (const input of missing) {
     const prompt = input.secret ? password : text;
+    const label = input.label ?? labelFor(input.name);
+    // Surface the input's hint inline — the prompt is single-line, so a
+    // multi-line secret (e.g. a PEM key) needs the hint's base64 guidance to be
+    // enterable here rather than only via the flag.
     const answer = await prompt({
-      message: labelFor(input.name),
+      message: input.hint ? `${label} — ${input.hint}` : label,
       validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
     });
     if (isCancel(answer)) exitCancelled({ json });
@@ -472,6 +490,25 @@ function buildPayload(
         ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
         ...(v("envName") ? { envName: v("envName")! } : {}),
       };
+    case "github-app": {
+      const appId = v("appId");
+      const installationId = v("installationId");
+      const privateKey = v("privateKey");
+      if (!appId) return { error: "the App ID is required (--app-id)" };
+      if (!installationId) {
+        return { error: "the installation ID is required (--installation-id)" };
+      }
+      if (!privateKey) {
+        return { error: "the private key is required (--private-key)" };
+      }
+      return {
+        ...common,
+        authKind: "github-app",
+        appId,
+        installationId,
+        privateKey,
+      };
+    }
     case "header": {
       const value = v("value");
       if (!value) return { error: "the secret value is required (--value)" };
@@ -635,6 +672,9 @@ const FIELD_LABELS: Record<string, string> = {
   scopes: "Scopes (space-separated)",
   audience: "Audience",
   appSlug: "GitHub App slug",
+  appId: "GitHub App ID",
+  installationId: "GitHub App installation ID",
+  privateKey: "GitHub App private key (PEM)",
   envName: "Env var name",
   caData: "Cluster CA certificate",
 };
