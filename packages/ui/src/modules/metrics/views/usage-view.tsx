@@ -37,7 +37,8 @@ export function UsageView() {
             Usage
           </h2>
           <p className="text-[14px] text-foreground/80 mb-6">
-            LLM API spend across all supported agents (currently only Claude Code and derivatives).
+            LLM API spend across all supported agents (currently only Claude
+            Code and derivatives).
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
