@@ -25,7 +25,7 @@ import { mintClientCredentialsToken } from "./client-credentials.js";
 export interface OAuthRefreshLoop {
   start(): void;
   stop(): Promise<void>;
-  tickOnce(): Promise<{ refreshed: number; failed: number }>;
+  tickOnce(): Promise<{ refreshed: number; failed: number; skipped: number }>;
 }
 
 interface RefreshDeps {
@@ -35,26 +35,70 @@ interface RefreshDeps {
   secretStore: SecretStore;
   intervalMs?: number;
   refreshSkewSeconds?: number;
+  /** First-failure retry delay; doubles per consecutive failure. */
+  backoffBaseMs?: number;
+  /** Ceiling for the exponential retry backoff. */
+  backoffMaxMs?: number;
+  now?: () => number;
   log?: (msg: string) => void;
+}
+
+/**
+ * Exponential backoff: `base·2^(n-1)` for the n-th consecutive failure,
+ * capped at `max`. The exponent is clamped so a long-dead connection can't
+ * overflow the multiplication into `NaN`.
+ */
+export function backoffDelayMs(
+  failures: number,
+  baseMs: number,
+  maxMs: number,
+): number {
+  const exponent = Math.min(Math.max(failures - 1, 0), 30);
+  return Math.min(baseMs * 2 ** exponent, maxMs);
 }
 
 export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
   const intervalMs = deps.intervalMs ?? 60_000;
   const skewSec = deps.refreshSkewSeconds ?? 5 * 60;
+  const backoffBaseMs = deps.backoffBaseMs ?? 60_000;
+  const backoffMaxMs = deps.backoffMaxMs ?? 30 * 60_000;
+  const now = deps.now ?? (() => Date.now());
   const log =
     deps.log ?? ((m) => process.stderr.write(`[oauth-refresh] ${m}\n`));
   let timer: ReturnType<typeof setInterval> | null = null;
   let running = false;
 
-  async function tick(): Promise<{ refreshed: number; failed: number }> {
-    if (running) return { refreshed: 0, failed: 0 };
+  // Per-connection failure backoff. A connection whose token can't be
+  // refreshed (e.g. a revoked refresh token) stays in the due set on every
+  // tick; without this it would be retried every `intervalMs` forever. An
+  // entry is cleared on the first success and pruned once its connection
+  // leaves the due set. State is in-memory — a process restart re-attempts.
+  const backoff = new Map<string, { failures: number; nextAttempt: number }>();
+
+  async function tick(): Promise<{
+    refreshed: number;
+    failed: number;
+    skipped: number;
+  }> {
+    if (running) return { refreshed: 0, failed: 0, skipped: 0 };
     running = true;
     let refreshed = 0;
     let failed = 0;
+    let skipped = 0;
+    const startedAt = now();
     try {
       const due = await dueConnections(deps.db, skewSec);
+      const dueIds = new Set(due.map((c) => c.id));
+      for (const id of backoff.keys()) {
+        if (!dueIds.has(id)) backoff.delete(id);
+      }
       for (const conn of due) {
         if (conn.auth.kind === "oauth" && !conn.auth.refreshTokenRef) continue;
+        const state = backoff.get(conn.id);
+        if (state && startedAt < state.nextAttempt) {
+          skipped++;
+          continue;
+        }
         try {
           if (conn.auth.kind === "oauth") {
             await refreshOne(conn, conn.auth, deps);
@@ -63,18 +107,23 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           } else {
             continue;
           }
+          backoff.delete(conn.id);
           refreshed++;
         } catch (err) {
           failed++;
+          const failures = (state?.failures ?? 0) + 1;
+          const delay = backoffDelayMs(failures, backoffBaseMs, backoffMaxMs);
+          backoff.set(conn.id, { failures, nextAttempt: startedAt + delay });
           log(
-            `connection ${conn.id} refresh failed: ${(err as Error).message}`,
+            `connection ${conn.id} refresh failed (attempt ${failures}, ` +
+              `retry in ${Math.round(delay / 1000)}s): ${(err as Error).message}`,
           );
         }
       }
     } finally {
       running = false;
     }
-    return { refreshed, failed };
+    return { refreshed, failed, skipped };
   }
 
   return {
