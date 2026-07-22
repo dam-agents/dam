@@ -43,6 +43,10 @@ export interface SlackMessage {
   ts?: string;
   user?: string;
   text?: string;
+  /** Layout blocks, when present. Carries the agent-attribution footer so the
+   *  author of a bot post can be recovered from injected history (every agent
+   *  posts under the same install-wide bot user id). */
+  blocks?: SlackBlock[];
 }
 
 export type SlackBlock = Record<string, unknown>;

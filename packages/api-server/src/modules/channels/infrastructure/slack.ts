@@ -54,6 +54,14 @@ import {
   renderAssistantBlocks,
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
+import {
+  agentContextBlock,
+  agentFooterMrkdwn,
+  HISTORY_LEGEND,
+  labelHistoryMessage,
+  parseAgentFooter,
+  type AgentFooter,
+} from "./agent-footer.js";
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
 
@@ -111,12 +119,16 @@ function framePrompt(opts: {
   contract: string;
   guidance?: string;
   context?: string[];
+  /** Explains the history attribution prefixes; emitted right before the
+   *  `<context>` block when that history contains agent-authored lines. */
+  contextLegend?: string;
   text: string;
   images: FetchedImage[];
 }): string | ContentBlock[] {
   const parts: string[] = [opts.contract];
   if (opts.guidance) parts.push(opts.guidance);
   if (opts.context && opts.context.length > 0) {
+    if (opts.contextLegend) parts.push(opts.contextLegend);
     parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
   }
   parts.push(opts.text);
@@ -210,28 +222,33 @@ function renderTurnFiles(images: FetchedImage[]): string {
   return `\nTurn included: ${list}.`;
 }
 
+/** Injected history for a fresh session, with each line attributed. Because one
+ *  install-wide bot posts for every agent, a bot message's author is recovered
+ *  from its footer, not its Slack user id: the reading agent's own posts become
+ *  "you (this agent)", other agents are named, humans keep their id.
+ *  `hasAgentAuthored` tells the caller whether to inject the explaining legend. */
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
   ts: string,
+  readingAgentId: string,
   threadTs?: string,
-): Promise<string[]> {
-  if (threadTs) {
-    const messages = await gateway.getThreadReplies({
-      channel,
-      threadTs,
-      limit: 50,
-    });
-    return messages
-      .filter((m) => m.ts !== ts)
-      .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
-  }
+): Promise<{ lines: string[]; hasAgentAuthored: boolean }> {
+  const raw = threadTs
+    ? await gateway.getThreadReplies({ channel, threadTs, limit: 50 })
+    : (await gateway.getChannelHistory({ channel, limit: 10 }))
+        .slice()
+        .reverse();
 
-  const messages = await gateway.getChannelHistory({ channel, limit: 10 });
-  return messages
+  let hasAgentAuthored = false;
+  const lines = raw
     .filter((m) => m.ts !== ts)
-    .reverse()
-    .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
+    .map((m) => {
+      const footer = parseAgentFooter(m);
+      if (footer) hasAgentAuthored = true;
+      return labelHistoryMessage(m, footer, readingAgentId);
+    });
+  return { lines, hasAgentAuthored };
 }
 
 export interface ChannelRegistry {
@@ -375,6 +392,23 @@ export function createSlackWorker(
     string,
     { channel: string; threadTs: string; eventTs: string }
   >();
+
+  /** Attribution footer for a post by `instanceName`: the agent's name linked to
+   *  its UI page, with the id carried in the URL so the author can be recovered
+   *  from injected history. The name lookup is best-effort — a lookup failure or
+   *  a nameless agent degrades to the id as the (still clickable) link label. */
+  async function resolveAgentFooter(
+    instanceName: string,
+  ): Promise<AgentFooter> {
+    let agentName = instanceName;
+    try {
+      const agent = await agents().get(instanceName);
+      if (agent?.name) agentName = agent.name;
+    } catch {
+      // best-effort — fall back to the id as the link label
+    }
+    return { uiBaseUrl, agentId: instanceName, agentName };
+  }
 
   async function ephemeral(
     channel: string,
@@ -649,6 +683,7 @@ export function createSlackWorker(
     const prompt = await buildThreadPrompt(
       gw,
       {
+        instanceName: args.instanceName,
         channel: args.channel,
         threadTs: args.threadTs,
         eventTs: args.eventTs,
@@ -828,6 +863,7 @@ export function createSlackWorker(
   async function buildThreadPrompt(
     gw: SlackGateway,
     ctx: {
+      instanceName: string;
       channel: string;
       threadTs: string;
       eventTs: string;
@@ -838,16 +874,18 @@ export function createSlackWorker(
     contract: string,
     guidance?: string,
   ): Promise<string | ContentBlock[]> {
-    const contextMessages = await getContextMessages(
+    const { lines, hasAgentAuthored } = await getContextMessages(
       gw,
       ctx.channel,
       ctx.eventTs,
+      ctx.instanceName,
       ctx.hasThread ? ctx.threadTs : undefined,
     );
     return framePrompt({
       contract,
       guidance,
-      context: contextMessages,
+      context: lines,
+      contextLegend: hasAgentAuthored ? HISTORY_LEGEND : undefined,
       text: ctx.text,
       images: ctx.images,
     });
@@ -1335,6 +1373,7 @@ export function createSlackWorker(
           buildThreadPrompt(
             gw,
             {
+              instanceName: args.instanceName,
               channel: args.channel,
               threadTs: args.threadKey,
               eventTs: args.eventTs,
@@ -1747,10 +1786,8 @@ export function createSlackWorker(
         return target;
       }
 
-      const contextBlock = {
-        type: "context",
-        elements: [{ type: "mrkdwn", text: `_${instanceName}_` }],
-      };
+      const footer = await resolveAgentFooter(instanceName);
+      const contextBlock = agentContextBlock(footer);
 
       try {
         // Two-message pattern when there's both text and a file: post the
@@ -1773,7 +1810,7 @@ export function createSlackWorker(
               file: attachment.data,
               filename: attachment.filename,
               title: attachment.title,
-              initialComment: text ? undefined : `_${instanceName}_`,
+              initialComment: text ? undefined : agentFooterMrkdwn(footer),
             });
           } catch (err) {
             // The text message (if any) already landed — say so, or the
@@ -1814,12 +1851,13 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
+      const footer = await resolveAgentFooter(instanceName);
       try {
         await gw.postMessage({
           channel: target.id,
           threadTs,
           text: args.text,
-          blocks: renderAssistantBlocks(instanceName, args.text),
+          blocks: renderAssistantBlocks(footer, args.text),
         });
         return { ok: true as const };
       } catch (err) {

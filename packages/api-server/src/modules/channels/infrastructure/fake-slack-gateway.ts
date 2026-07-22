@@ -4,6 +4,7 @@ import type {
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
+  SlackMessage,
   SlackSlashCommand,
 } from "./slack-gateway.js";
 
@@ -23,12 +24,16 @@ export interface FakeSlackGateway extends SlackGateway {
   resetOutbound(): void;
   /** Workspace channel directory; unlisted ids resolve as not found. */
   setChannels(channels: FakeSlackChannel[]): void;
+  /** Seed the messages returned by getThreadReplies / getChannelHistory, so a
+   *  test can exercise history injection (e.g. attribution footers). */
+  setHistory(messages: SlackMessage[]): void;
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
   let channels: FakeSlackChannel[] = [];
+  let history: SlackMessage[] = [];
   let nextStreamTs = 1;
 
   function requireHandlers(): SlackGatewayHandlers {
@@ -124,11 +129,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies() {
-      return [];
+      return [...history];
     },
 
     async getChannelHistory() {
-      return [];
+      return [...history];
     },
 
     async uploadFile(args) {
@@ -184,6 +189,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setChannels(next) {
       channels = [...next];
+    },
+
+    setHistory(next) {
+      history = [...next];
     },
   };
 }
