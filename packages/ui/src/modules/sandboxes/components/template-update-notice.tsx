@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Inset } from "@/components/ui/inset";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -39,20 +40,27 @@ export function TemplateUpdateNotice({ agent }: Props) {
   };
 
   return (
-    <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-info/30 bg-info-light px-3 py-2">
-      <span className="min-w-0 text-[12px] text-info">
-        Update available — the template now ships{" "}
-        <span className="break-all font-mono">{update.toImage}</span>
-      </span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shrink-0"
-        disabled={upgrade.isPending}
-        onClick={() => void onUpgrade()}
-      >
-        {upgrade.isPending ? "Upgrading…" : "Upgrade"}
-      </Button>
-    </div>
+    <Inset className="mt-3">
+      <div className="flex flex-wrap items-center gap-x-10 gap-y-1.5 rounded-md border border-border bg-muted/40 px-3.5 py-2.5">
+        <p className="min-w-0 flex-1 basis-[280px] text-[13px] leading-relaxed text-muted-foreground">
+          <strong className="font-medium text-foreground/80">
+            Update available.
+          </strong>{" "}
+          The template now ships{" "}
+          <span className="break-all font-mono text-[12px] text-foreground">
+            {update.toImage}
+          </span>
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+          disabled={upgrade.isPending}
+          onClick={() => void onUpgrade()}
+        >
+          {upgrade.isPending ? "Upgrading…" : "Upgrade"}
+        </Button>
+      </div>
+    </Inset>
   );
 }
