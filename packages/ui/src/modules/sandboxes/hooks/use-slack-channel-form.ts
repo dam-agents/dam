@@ -35,7 +35,6 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
   const [users, setUsers] = useState<string[]>(agent?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const channelIdError =
@@ -43,24 +42,28 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
       ? "Enter the Slack channel ID."
       : undefined;
 
-  const touch = <T>(set: (v: T) => void) => {
-    return (v: T) => {
-      set(v);
-      setDirty(true);
-    };
-  };
+  // Dirty is derived against the server baseline, so reverting an edit (e.g.
+  // toggling on and back off) hides the save affordance again.
+  const baselineUsers = agent?.allowedUserEmails ?? [];
+  const usersChanged =
+    users.length !== baselineUsers.length ||
+    users.some((u, i) => u !== baselineUsers[i]);
+  const bindingEdited =
+    slackChannel !== undefined &&
+    enabled &&
+    (channelId.trim() !== slackChannel.slackChannelId ||
+      ambient !== (slackChannel.ambient ?? false));
+  const dirty = enabled !== bound || bindingEdited || usersChanged;
 
   const addUser = () => {
     const v = userInput.trim();
     if (!v || users.includes(v)) return;
     setUsers((prev) => [...prev, v]);
     setUserInput("");
-    setDirty(true);
   };
 
   const removeUser = (u: string) => {
     setUsers((prev) => prev.filter((x) => x !== u));
-    setDirty(true);
   };
 
   const save = async () => {
@@ -106,7 +109,6 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
         id: agent.id,
         allowedUserEmails: users,
       });
-      setDirty(false);
       setSubmitted(false);
     } finally {
       setSaving(false);
@@ -116,14 +118,14 @@ export function useSlackChannelForm(agent: AgentView | undefined) {
   return {
     bound,
     enabled,
-    setEnabled: touch(setEnabled),
+    setEnabled,
     channelId,
-    setChannelId: touch(setChannelId),
+    setChannelId,
     channelIdError,
     mode,
-    setMode: touch(setMode),
+    setMode,
     ambient,
-    setAmbient: touch(setAmbient),
+    setAmbient,
     users,
     userInput,
     setUserInput,

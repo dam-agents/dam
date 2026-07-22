@@ -1,3 +1,4 @@
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useAgents } from "../../agents/api/queries.js";
@@ -29,10 +30,10 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
           No channels are configured for this installation.
         </p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <Inset className="flex flex-col gap-4">
           {available.slack && <SlackChannelCard key={slackKey} agent={agent} />}
           {available.telegram && <TelegramChannelCard agentId={agentId} />}
-        </div>
+        </Inset>
       )}
     </section>
   );
