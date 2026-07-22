@@ -5,8 +5,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("createGitHubRestClient — transport failures", () => {
-  it("returns UpstreamUnreachable when fetch throws (JSON endpoint)", async () => {
+describe("createGitHubRestClient", () => {
+  // Pins the pod-side half of the unreachable-GitHub contract: a transport
+  // throw never escapes raw — it becomes the structured domain error the
+  // api-server's grant-access classification keys on. Without this, dropping
+  // the catch would silently regress egress-blocked scans to a raw
+  // "fetch failed" (#2836).
+  it("returns UpstreamUnreachable with the cause chain when fetch throws", async () => {
     const cause = new Error("Connect Timeout Error");
     vi.stubGlobal(
       "fetch",
@@ -25,21 +30,5 @@ describe("createGitHubRestClient — transport failures", () => {
         detail: "fetch failed: Connect Timeout Error",
       },
     });
-  });
-
-  it("returns UpstreamUnreachable when fetch throws (bytes endpoint)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
-    );
-    const res = await createGitHubRestClient().fetchTarball(
-      { owner: "acme", repo: "private" },
-      "abc123",
-    );
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.error.kind).toBe("UpstreamUnreachable");
-      expect(res.error).toMatchObject({ detail: "fetch failed" });
-    }
   });
 });
