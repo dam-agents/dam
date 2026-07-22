@@ -34,13 +34,18 @@ PATH=$(printf %s "$PATH" | tr : '\n' | grep -v -e '^/opt/shims/' -e '/mise/shims
   command -v "$1" 2>/dev/null || { [ -x "$_mise" ] && "$_mise" which "$1" 2>/dev/null; } || exit 1
 EOF
 
-# command-real-or-autoinstalled <bin>: like command-real but keeps low/ shims
-# reachable, so a tool that was just installed resolves on this call.
+# command-real-or-autoinstalled <bin>: like command-real, but tries the
+# mise-managed copy FIRST so a tool just auto-installed via mise resolves on
+# this call, then falls back to the real binary on PATH. Both shim dirs must be
+# stripped from that fallback (same as command-real) — leaving /opt/shims/low
+# in PATH makes a low shim for a tool mise can't resolve (e.g. kubectl, provided
+# by k3s rather than mise) resolve to itself, so the caller's `exec` recurses
+# forever.
 cat > /opt/shims/high/command-real-or-autoinstalled << 'EOF'
 #!/bin/sh
 _mise=/usr/local/bin/mise
 { [ -x "$_mise" ] && "$_mise" which "$1" 2>/dev/null; } \
-  || PATH=$(printf %s "${PATH#*/opt/shims/high:}" | tr : '\n' | grep -v '/mise/shims' | paste -sd:) command -v "$1" 2>/dev/null \
+  || PATH=$(printf %s "$PATH" | tr : '\n' | grep -v -e '^/opt/shims/' -e '/mise/shims' | paste -sd:) command -v "$1" 2>/dev/null \
   || exit 1
 EOF
 
