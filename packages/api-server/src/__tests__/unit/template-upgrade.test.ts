@@ -16,6 +16,8 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     name: "my-agent",
     templateId: "claude-code",
     spec: { name: "my-agent", image: "quay.io/dam-agents/claude-code:0.2.7" },
+    sweepable: false,
+    lifetimeMs: 0,
     ready: false,
     hibernated: true,
     overBudget: false,
