@@ -81,10 +81,16 @@ export function DialogHeader({ children, className }: DialogRegionProps) {
  *  load-bearing detail: without it a flex child won't shrink below its
  *  content, so the modal's max-height cap can't push the footer down —
  *  the body would push it off-screen. */
-export function DialogBody({ children, className }: DialogRegionProps) {
+export function DialogBody({
+  children,
+  className,
+  flush,
+}: DialogRegionProps & { flush?: boolean }) {
+  // `flush` drops the horizontal padding so full-bleed content (e.g. a list
+  // whose row dividers must span the modal width) can own its own gutter.
   return (
     <div
-      className={`flex-1 min-h-0 overflow-y-auto px-5 md:px-7 py-5 ${className ?? ""}`}
+      className={`flex-1 min-h-0 overflow-y-auto py-5 ${flush ? "" : "px-5 md:px-7"} ${className ?? ""}`}
     >
       {children}
     </div>

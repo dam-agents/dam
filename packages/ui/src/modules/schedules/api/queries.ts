@@ -48,6 +48,7 @@ export function useScheduleSessions(
     // Single-shot on expand; the list-level poll is authoritative for status.
     retry: 0,
     staleTime: 30_000,
-    meta: { errorToast: "Couldn't load past runs for this schedule" },
+    // No errorToast: a never-run schedule (or an asleep agent that can't be
+    // listed) is an expected state — the results modal surfaces it inline.
   });
 }
