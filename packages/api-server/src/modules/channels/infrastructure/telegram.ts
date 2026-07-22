@@ -388,6 +388,7 @@ export function createTelegramWorker(deps: {
       context,
       `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
+      "To deliberately stay silent — a group message that isn't for you, or one already handled — call `mcp__platform-outbound__no_reply_needed` instead of replying.",
       "",
       `Message: ${text}`,
     ].join("\n");

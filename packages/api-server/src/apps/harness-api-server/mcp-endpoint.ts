@@ -286,6 +286,107 @@ export function createMcpSession(
     },
   );
 
+  // ---- Slack turn tools -----------------------------------------------------
+  // `reply` and `react` are how a Slack agent answers the turn it is handling;
+  // plain text is not delivered, only these are. They target the turn's thread
+  // and triggering message by default, so the agent need not track ids. Always
+  // registered; they error when the agent has no Slack channel connected.
+  // (`no_reply_needed`, below, is the cross-channel silent-stop.)
+
+  server.tool(
+    "reply",
+    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Use send_channel_message instead for a new top-level or cross-channel post.",
+    {
+      text: z.string(),
+      threadTs: z
+        .string()
+        .optional()
+        .describe(
+          "Thread to reply into. Omit for the thread of the message you're answering.",
+        ),
+    },
+    async ({ text, threadTs }) => {
+      const result = await deps.channelManager.reply(
+        agentId,
+        ChannelType.Slack,
+        {
+          text,
+          ...(threadTs ? { threadTs } : {}),
+        },
+      );
+      const failed = "error" in result;
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: ChannelType.Slack,
+        agentId,
+        result: failed ? "failure" : "success",
+        detail: { action: "reply", textLength: text.length },
+      });
+      if ("error" in result) return errorResult(result.error);
+      return textResult("Reply posted");
+    },
+  );
+
+  server.tool(
+    "react",
+    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done). Omit messageTs to react to the message you're currently answering.",
+    {
+      emoji: z
+        .string()
+        .describe('Slack emoji short name, no colons (e.g. "eyes").'),
+      messageTs: z
+        .string()
+        .optional()
+        .describe(
+          "Message to react to. Omit for the message you're currently answering.",
+        ),
+    },
+    async ({ emoji, messageTs }) => {
+      const result = await deps.channelManager.react(
+        agentId,
+        ChannelType.Slack,
+        {
+          emoji,
+          ...(messageTs ? { messageTs } : {}),
+        },
+      );
+      const failed = "error" in result;
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: ChannelType.Slack,
+        agentId,
+        result: failed ? "failure" : "success",
+        detail: {
+          action: "react",
+          emoji: emoji.trim().replace(/^:+|:+$/g, ""),
+        },
+      });
+      if ("error" in result) return errorResult(result.error);
+      return textResult("Reaction added");
+    },
+  );
+
+  // Cross-channel (Slack or Telegram): a pure signal that posts nothing. It
+  // lets the agent end its turn having deliberately chosen to stay silent,
+  // rather than leaving plain text that would never be delivered.
+  server.tool(
+    "no_reply_needed",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
+    {
+      reason: z
+        .string()
+        .optional()
+        .describe(
+          "Optional short note on why no reply was needed (not posted).",
+        ),
+    },
+    async () => textResult("No reply sent."),
+  );
+
   // ---- Skills tools ---------------------------------------------------------
   // `agentId` is captured from the verified MCP session, so agents cannot
   // spoof it via tool input.

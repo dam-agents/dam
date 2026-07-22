@@ -2,7 +2,11 @@ import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
-import type { PostMessageOptions } from "../services/channel-manager.js";
+import type {
+  ChannelReaction,
+  ChannelReply,
+  PostMessageOptions,
+} from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
   type AcpClient,
@@ -53,43 +57,72 @@ import {
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
 
-/** The exact reply an ambient prompt instructs the agent to give when it has
- *  nothing to add; the worker swallows it instead of posting. */
-export const AMBIENT_DECLINE_TOKEN = "NO_RESPONSE";
-
-/** Wrap an ambient message so the agent knows how it appears in the channel
- *  and may decline. The bot identity comes from the install's brand config;
- *  the agent's own name is deliberately NOT injected — that identity belongs
- *  to the agent's workspace setup ("the name you know yourself by" is its
- *  hook). Applied per turn: ambient sessions interleave with mention-driven
- *  turns, so the contract can't live in the session alone. */
-function frameAmbientPrompt(
-  text: string,
-  brand: { name: string; short: string },
-): string {
+/** Per-turn contract prepended to every relayed Slack message. Plain assistant
+ *  text is never delivered — the agent reaches the channel only by calling a
+ *  tool. The concrete thread/message ids are injected so the agent can echo
+ *  them back; the tools also fall back to the turn's most-recent ids when they
+ *  are omitted. Re-stated every turn because mention, fork, and ambient turns
+ *  interleave in the same sessions — the contract can't live in a session
+ *  alone. The install's bot identity comes from the brand config; the agent's
+ *  own name belongs to its workspace setup and is deliberately not injected. */
+function slackTurnContract(ctx: {
+  replyThreadTs: string;
+  eventTs: string;
+  brand: { name: string; short: string };
+}): string {
   return [
-    "<ambient>",
-    "You are reading along in a shared Slack channel, where you appear as " +
-      `the bot "${brand.name}" (mentioned as @${brand.short}). The ` +
-      "following message(s) were not @-mentions. A message that calls you " +
-      `by name — "${brand.name}", or the name you know yourself by — is ` +
-      "addressed to you: answer it as you would a mention. Otherwise chime " +
-      "in only when you can clearly help — answer a question you know the " +
-      "answer to, pick up a task someone described, or flag a clear " +
-      "mistake. If in doubt, stay silent: reply with exactly " +
-      `${AMBIENT_DECLINE_TOKEN} and nothing else.`,
-    "</ambient>",
-    "",
-    text,
+    "<how-to-respond>",
+    `You appear in this Slack workspace as the bot "${ctx.brand.name}" ` +
+      `(mentioned as @${ctx.brand.short}). Nothing you write as plain text ` +
+      "is delivered to Slack — only tool calls reach the channel. To " +
+      "respond, call one of:",
+    `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}").`,
+    "• react — add an emoji reaction to the message you're answering: a quiet " +
+      "acknowledgement that notifies no one, e.g. eyes on a reported bug " +
+      `(messageTs="${ctx.eventTs}"). Pass the Slack emoji short name, no colons.`,
+    "• no_reply_needed — end your turn without posting anything, when the " +
+      "message doesn't call for a response.",
+    "If a tool is deferred, load it via ToolSearch first.",
+    "</how-to-respond>",
   ].join("\n");
 }
 
-function isAmbientDecline(response: string): boolean {
-  // Tolerate the token arriving wrapped in whitespace, quotes, or backticks.
-  // An empty turn (tool-only, silent stop) is a decline too — the mention
-  // path's "(no response)" fallback would be unsolicited noise here.
-  const stripped = response.trim().replace(/^[`"']+|[`"'.]+$/g, "");
-  return stripped === "" || stripped === AMBIENT_DECLINE_TOKEN;
+/** Extra framing for ambient (read-along) turns: nobody @-mentioned the agent,
+ *  so it chimes in only when it can clearly help and otherwise stays silent via
+ *  `no_reply_needed`. */
+function ambientGuidance(brand: { name: string }): string {
+  return [
+    "<reading-along>",
+    "You are reading along in a shared Slack channel; the following " +
+      "message(s) were not @-mentions. A message that calls you by name — " +
+      `"${brand.name}", or the name you know yourself by — is addressed to ` +
+      "you: answer it as you would a mention. Otherwise chime in only when " +
+      "you can clearly help — answer a question you know the answer to, pick " +
+      "up a task someone described, or flag a clear mistake. If in doubt, " +
+      "stay silent by calling no_reply_needed.",
+    "</reading-along>",
+  ].join("\n");
+}
+
+/** Assemble the framed prompt for a turn: the contract first, then optional
+ *  ambient guidance, then injected thread history (fresh sessions only), then
+ *  the user's message — carrying any images as content blocks. */
+function framePrompt(opts: {
+  contract: string;
+  guidance?: string;
+  context?: string[];
+  text: string;
+  images: FetchedImage[];
+}): string | ContentBlock[] {
+  const parts: string[] = [opts.contract];
+  if (opts.guidance) parts.push(opts.guidance);
+  if (opts.context && opts.context.length > 0) {
+    parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
+  }
+  parts.push(opts.text);
+  const text = parts.join("\n\n");
+  if (opts.images.length === 0) return text;
+  return [{ type: "text", text }, ...opts.images.map((i) => i.block)];
 }
 
 /** Session key for a channel's rolling ambient session: top-level channel
@@ -227,6 +260,14 @@ export interface SlackWorker {
     text: string,
     options?: PostMessageOptions,
   ): Promise<{ ok: true } | { error: string }>;
+  reply(
+    instanceName: string,
+    reply: ChannelReply,
+  ): Promise<{ ok: true } | { error: string }>;
+  react(
+    instanceName: string,
+    reaction: ChannelReaction,
+  ): Promise<{ ok: true } | { error: string }>;
 }
 
 export interface SlackOAuthPending {
@@ -324,6 +365,17 @@ export function createSlackWorker(
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
+  /** The most recent inbound turn per agent, so the `reply`/`react` tools can
+   *  target "this thread" / "the message I'm answering" without the agent
+   *  echoing ids back. Set at every relay entry point; never cleared (a later
+   *  proactive tool call still resolves to the last turn, mirroring Telegram's
+   *  last-active-thread fallback). The contract prompt also injects the ids so
+   *  a well-behaved agent passes them explicitly, which wins over this map. */
+  const activeTurn = new Map<
+    string,
+    { channel: string; threadTs: string; eventTs: string }
+  >();
+
   async function ephemeral(
     channel: string,
     user: string,
@@ -366,11 +418,8 @@ export function createSlackWorker(
     buildFreshPrompt: () => Promise<string | ContentBlock[]>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
-    /** Live per-update stream for the turn (omitted → no live presentation). */
+    /** Live per-update stream for the turn (omitted → no status presentation). */
     onUpdate?: (update: PromptUpdate) => void;
-    /** Called when resume fails and we fall back to a fresh session, so the
-     *  presenter can discard the abandoned attempt's partial stream. */
-    onResumeFallback?: () => Promise<void>;
   }): Promise<string> {
     await agents().ensureReady(args.instanceName, { onWaking: args.onWaking });
     const acp = makeAcpClient(args.instanceName);
@@ -387,7 +436,6 @@ export function createSlackWorker(
           onUpdate: args.onUpdate,
         });
       } catch {
-        await args.onResumeFallback?.();
         return acp.sendPrompt(await args.buildFreshPrompt(), {
           platformMeta,
           onImagesDropped: args.onImagesDropped,
@@ -413,7 +461,6 @@ export function createSlackWorker(
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
-    /** Workspace id from the event; required to stream the reply in-channel. */
     teamId?: string;
     images: FetchedImage[];
   }) {
@@ -421,21 +468,36 @@ export function createSlackWorker(
     const gw = gateway;
     const { instanceName } = ctx;
 
+    // "I've got it" — an ack the agent didn't have to ask for. The agent may
+    // add its own reactions later via the `react` tool.
     await gw.addReaction({
       channel: ctx.channel,
       ts: ctx.eventTs,
       name: "eyes",
     });
 
-    // Live presentation: a running status and the reply streamed in. Degrades
-    // to a single end-of-turn message when streaming is unavailable.
+    // Remember the turn so the reply/react tools can target this thread and the
+    // triggering message without the agent echoing ids back.
+    activeTurn.set(instanceName, {
+      channel: ctx.channel,
+      threadTs: ctx.threadTs,
+      eventTs: ctx.eventTs,
+    });
+
+    // A running "working…" status is all the platform presents on the agent's
+    // behalf — the reply itself only ever lands when the agent calls `reply`.
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
       threadTs: ctx.threadTs,
       instanceName,
-      recipient: { teamId: ctx.teamId, userId: ctx.slackUserId },
     });
     presenter.setThinking();
+
+    const contract = slackTurnContract({
+      replyThreadTs: ctx.threadTs,
+      eventTs: ctx.eventTs,
+      brand,
+    });
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -463,25 +525,22 @@ export function createSlackWorker(
     };
 
     const runTurn = async () => {
-      const resumePrompt: string | ContentBlock[] =
-        ctx.images.length === 0
-          ? ctx.text
-          : [
-              { type: "text", text: ctx.text },
-              ...ctx.images.map((i) => i.block),
-            ];
-      const response = await runSessionTurn({
+      const resumePrompt = framePrompt({
+        contract,
+        text: ctx.text,
+        images: ctx.images,
+      });
+      // The response is not posted — the agent replies via the `reply` tool
+      // during the turn. We only need to know the turn completed.
+      await runSessionTurn({
         instanceName,
         threadKey: ctx.threadTs,
         resumePrompt,
-        buildFreshPrompt: () => buildThreadPrompt(gw, ctx),
+        buildFreshPrompt: () => buildThreadPrompt(gw, ctx, contract),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
-        onResumeFallback: presenter.resetStream,
       });
-
-      await presenter.finish(response);
       outcome = "success";
     };
 
@@ -526,9 +585,6 @@ export function createSlackWorker(
         ) {
           throw err;
         }
-        // Nothing streamed yet (the wake failed before the prompt), but reset
-        // defensively so the retry can never continue a stale stream.
-        await presenter.resetStream();
         await gw.postMessage({
           channel: ctx.channel,
           threadTs: ctx.threadTs,
@@ -537,7 +593,6 @@ export function createSlackWorker(
         await runTurn();
       }
     } catch (err) {
-      await presenter.abortStream();
       await postFailure(err);
     } finally {
       await presenter.clearStatus();
@@ -553,24 +608,6 @@ export function createSlackWorker(
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
     }
-  }
-
-  // The single end-of-turn reply, used by ambient turns (which never stream);
-  // mention/fork turns stream and finalize through the turn presenter, which
-  // renders the same blocks.
-  async function postAssistantMessage(
-    channel: string,
-    threadTs: string,
-    instanceName: string,
-    response: string,
-  ) {
-    if (!gateway) return;
-    await gateway.postMessage({
-      channel,
-      threadTs,
-      text: response || "(no response)",
-      blocks: renderAssistantBlocks(instanceName, response),
-    });
   }
 
   async function beginForeignTurn(args: {
@@ -594,24 +631,37 @@ export function createSlackWorker(
       name: "eyes",
     });
 
-    // Live presentation while the fork provisions and runs. The status shows
-    // immediately; the stream (if any) opens once the fork answers.
+    activeTurn.set(args.instanceName, {
+      channel: args.channel,
+      threadTs: args.threadTs,
+      eventTs: args.eventTs,
+    });
+
+    // A running "working…" status while the fork provisions and runs; the fork
+    // posts its own reply through the `reply` tool once it answers.
     const presenter = createTurnPresenter(gw, {
       channel: args.channel,
       threadTs: args.threadTs,
       instanceName: args.instanceName,
-      recipient: { teamId: args.teamId, userId: args.slackUserId },
     });
     presenter.setThinking();
 
-    const prompt = await buildThreadPrompt(gw, {
-      channel: args.channel,
-      threadTs: args.threadTs,
-      eventTs: args.eventTs,
-      text: args.text,
-      hasThread: args.hasThread,
-      images: args.images,
-    });
+    const prompt = await buildThreadPrompt(
+      gw,
+      {
+        channel: args.channel,
+        threadTs: args.threadTs,
+        eventTs: args.eventTs,
+        text: args.text,
+        hasThread: args.hasThread,
+        images: args.images,
+      },
+      slackTurnContract({
+        replyThreadTs: args.threadTs,
+        eventTs: args.eventTs,
+        brand,
+      }),
+    );
     const replyId = args.eventTs;
 
     const ready$ = events$().pipe(
@@ -703,27 +753,29 @@ export function createSlackWorker(
         try {
           const acp = makeForkAcpClient(event.podIP);
           const existing = await findThreadSession(acp, ctx.threadTs);
-          const response = existing
-            ? await acp.sendPrompt(ctx.prompt, {
-                resumeSessionId: existing.sessionId,
-                onImagesDropped,
-                onUpdate: ctx.presenter.onUpdate,
-              })
-            : await acp.sendPrompt(ctx.prompt, {
-                platformMeta: {
-                  type: SessionType.ChannelSlack,
-                  threadTs: ctx.threadTs,
-                },
-                onImagesDropped,
-                onUpdate: ctx.presenter.onUpdate,
-              });
-          await ctx.presenter.finish(response);
+          // The fork replies via the `reply` tool during its turn; the response
+          // text is not posted here.
+          if (existing) {
+            await acp.sendPrompt(ctx.prompt, {
+              resumeSessionId: existing.sessionId,
+              onImagesDropped,
+              onUpdate: ctx.presenter.onUpdate,
+            });
+          } else {
+            await acp.sendPrompt(ctx.prompt, {
+              platformMeta: {
+                type: SessionType.ChannelSlack,
+                threadTs: ctx.threadTs,
+              },
+              onImagesDropped,
+              onUpdate: ctx.presenter.onUpdate,
+            });
+          }
           turnOutcome = "success";
         } catch (err) {
           process.stderr.write(
             `[slack/fork ${event.forkId}] ACP error: ${formatError(err)}\n`,
           );
-          await ctx.presenter.abortStream();
           await gw.postMessage({
             channel: ctx.channel,
             threadTs: ctx.threadTs,
@@ -771,6 +823,8 @@ export function createSlackWorker(
       .exhaustive();
   }
 
+  /** The fresh-session prompt: the per-turn contract, optional ambient
+   *  guidance, injected thread history, then the user's message. */
   async function buildThreadPrompt(
     gw: SlackGateway,
     ctx: {
@@ -781,6 +835,8 @@ export function createSlackWorker(
       hasThread: boolean;
       images: FetchedImage[];
     },
+    contract: string,
+    guidance?: string,
   ): Promise<string | ContentBlock[]> {
     const contextMessages = await getContextMessages(
       gw,
@@ -788,15 +844,13 @@ export function createSlackWorker(
       ctx.eventTs,
       ctx.hasThread ? ctx.threadTs : undefined,
     );
-    const parts: string[] = [];
-    if (contextMessages.length > 0) {
-      parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
-    }
-    parts.push(ctx.text);
-    const text = parts.join("\n\n");
-
-    if (ctx.images.length === 0) return text;
-    return [{ type: "text", text }, ...ctx.images.map((i) => i.block)];
+    return framePrompt({
+      contract,
+      guidance,
+      context: contextMessages,
+      text: ctx.text,
+      images: ctx.images,
+    });
   }
 
   async function handleCommand(command: SlackSlashCommand, ack: SlackAck) {
@@ -1248,13 +1302,29 @@ export function createSlackWorker(
     if (!gateway) return;
     const gw = gateway;
 
+    // A reply (if the agent chimes in) threads under the triggering message; a
+    // react targets that message. No 👀 ack and no status — ambient stays out
+    // of the channel's way until the agent decides to speak.
+    activeTurn.set(args.instanceName, {
+      channel: args.channel,
+      threadTs: args.replyThreadTs,
+      eventTs: args.eventTs,
+    });
+
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
-    const framed = frameAmbientPrompt(args.text, brand);
-    const resumePrompt: string | ContentBlock[] =
-      args.images.length === 0
-        ? framed
-        : [{ type: "text", text: framed }, ...args.images.map((i) => i.block)];
+    const contract = slackTurnContract({
+      replyThreadTs: args.replyThreadTs,
+      eventTs: args.eventTs,
+      brand,
+    });
+    const guidance = ambientGuidance(brand);
+    const resumePrompt = framePrompt({
+      contract,
+      guidance,
+      text: args.text,
+      images: args.images,
+    });
 
     const runTurn = () =>
       runSessionTurn({
@@ -1262,20 +1332,26 @@ export function createSlackWorker(
         threadKey: args.threadKey,
         resumePrompt,
         buildFreshPrompt: () =>
-          buildThreadPrompt(gw, {
-            channel: args.channel,
-            threadTs: args.threadKey,
-            eventTs: args.eventTs,
-            text: framed,
-            hasThread: args.hasThread,
-            images: args.images,
-          }),
+          buildThreadPrompt(
+            gw,
+            {
+              channel: args.channel,
+              threadTs: args.threadKey,
+              eventTs: args.eventTs,
+              text: args.text,
+              hasThread: args.hasThread,
+              images: args.images,
+            },
+            contract,
+            guidance,
+          ),
       });
 
     try {
-      let response: string;
+      // The response is not posted — the agent chimes in via the `reply`/`react`
+      // tools, or stays silent via `no_reply_needed`.
       try {
-        response = await runTurn();
+        await runTurn();
       } catch (err) {
         if (
           !isAgentWakeTimeoutError(err) ||
@@ -1284,15 +1360,7 @@ export function createSlackWorker(
           throw err;
         }
         // Transient wake overrun: retry silently — no still-starting note.
-        response = await runTurn();
-      }
-      if (!isAmbientDecline(response)) {
-        await postAssistantMessage(
-          args.channel,
-          args.replyThreadTs,
-          args.instanceName,
-          response,
-        );
+        await runTurn();
       }
       outcome = "success";
     } catch (err) {
@@ -1720,6 +1788,73 @@ export function createSlackWorker(
         }
         return { ok: true as const };
       } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async reply(instanceName: string, args: ChannelReply) {
+      const slackChannelId =
+        await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+      if (!args.text) return { error: "nothing to send — reply needs text" };
+
+      const threadTs = args.threadTs ?? activeTurn.get(instanceName)?.threadTs;
+      if (!threadTs) {
+        return {
+          error:
+            "no active thread to reply to — use send_channel_message for a top-level post",
+        };
+      }
+      const target = await resolveOutboundTarget(
+        gw,
+        slackChannelId,
+        args.conversationId,
+      );
+      if ("error" in target) return target;
+
+      try {
+        await gw.postMessage({
+          channel: target.id,
+          threadTs,
+          text: args.text,
+          blocks: renderAssistantBlocks(instanceName, args.text),
+        });
+        return { ok: true as const };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async react(instanceName: string, args: ChannelReaction) {
+      const slackChannelId =
+        await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const messageTs = args.messageTs ?? activeTurn.get(instanceName)?.eventTs;
+      if (!messageTs) return { error: "no message to react to" };
+      // Slack wants the bare short name; tolerate :colons: or an accidental
+      // leading/trailing space.
+      const name = args.emoji.trim().replace(/^:+|:+$/g, "");
+      if (!name) {
+        return { error: 'emoji is required (a Slack short name like "eyes")' };
+      }
+      const target = await resolveOutboundTarget(
+        gw,
+        slackChannelId,
+        args.conversationId,
+      );
+      if ("error" in target) return target;
+
+      try {
+        await gw.addReaction({ channel: target.id, ts: messageTs, name });
+        return { ok: true as const };
+      } catch (err) {
+        // Bad emoji name, already_reacted, or a missing scope surface to the
+        // agent as a tool error rather than aborting its turn.
         return { error: formatError(err) };
       }
     },

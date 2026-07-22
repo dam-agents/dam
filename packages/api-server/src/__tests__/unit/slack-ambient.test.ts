@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import {
-  createSlackWorker,
-  AMBIENT_DECLINE_TOKEN,
-} from "../../modules/channels/infrastructure/slack.js";
+import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
@@ -73,6 +70,7 @@ function harness(opts: {
     async () => OWNER,
     {
       resolveSlackBinding: opts.resolveBinding ?? (async () => opts.binding),
+      resolveSlackChannelByInstance: async () => "C1",
     } as never,
     async () => {},
     async (channelId, ambient) => {
@@ -93,6 +91,7 @@ function harness(opts: {
     prompts,
     sendOpts,
     ambientCalls,
+    worker,
     async message(
       user: string,
       text: string,
@@ -185,31 +184,45 @@ describe("slack ambient inbound", () => {
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
-  it("ambient on: relays with the ambient frame and posts the reply threaded under the message", async () => {
+  it("ambient on: relays with the read-along frame and the tool contract, posting nothing itself", async () => {
     const h = harness({ binding: ambient });
     await h.message(STRANGER, "what is our deploy process?", { ts: "7.7" });
     await h.settled(() => h.turnEvents().length === 1);
 
     expect(h.prompts).toHaveLength(1);
     const prompt = String(h.prompts[0]);
-    expect(prompt).toContain("<ambient>");
-    expect(prompt).toContain(AMBIENT_DECLINE_TOKEN);
+    expect(prompt).toContain("<reading-along>");
+    expect(prompt).toContain("<how-to-respond>");
+    // Staying silent is now an explicit tool, not a magic token.
+    expect(prompt).toContain("no_reply_needed");
     expect(prompt).toContain(`<@${STRANGER}>: what is our deploy process?`);
     // The frame announces the server-side bot identity (brand config) and
     // the answer-when-named contract; the agent's own name is deliberately
     // absent — that identity belongs to the agent's workspace setup.
-    expect(prompt).toContain('appear as the bot "DAM" (mentioned as @dam)');
+    expect(prompt).toContain('the bot "DAM"');
+    expect(prompt).toContain("@dam");
     expect(prompt).toContain("answer it as you would a mention");
     expect(prompt).not.toContain("agent-1");
 
-    expect(h.messages()).toHaveLength(1);
+    // Nothing is posted on the agent's behalf: no auto-reply, no ack reaction,
+    // no wake ephemerals. The agent chimes in only by calling reply/react.
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("ambient on: reply after the turn threads under the triggering message", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "what is our deploy process?", { ts: "7.7" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const result = await h.worker.reply("agent-1", {
+      text: "here's the runbook",
+    });
+    expect(result).toEqual({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
-      text: "the answer",
+      text: "here's the runbook",
     });
-    // No eyes reaction, no wake ephemerals — ambient stays out of the way.
-    expect(h.reactions()).toHaveLength(0);
   });
 
   it("ambient on: keys top-level flow to the channel's rolling ambient session", async () => {
@@ -229,17 +242,20 @@ describe("slack ambient inbound", () => {
       ts: "5.2",
       threadTs: "5.1",
     });
+    await h.settled(() => h.turnEvents().length === 1);
 
     expect(h.sendOpts).toHaveLength(1);
     const opts = h.sendOpts[0]!;
     expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe("5.1");
+    // A reply threads back into the same thread, not the triggering ts.
+    await h.worker.reply("agent-1", { text: "here" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "5.1" });
   });
 
-  it(`ambient on: swallows a ${AMBIENT_DECLINE_TOKEN} reply — the agent stays silent`, async () => {
+  it("ambient on: the turn response is never auto-posted — posting is the agent's tool call", async () => {
     const h = harness({
       binding: ambient,
-      respond: () => AMBIENT_DECLINE_TOKEN,
+      respond: () => "I could answer this, but I'll wait to be asked.",
     });
     await h.message(STRANGER, "lunch anyone?");
     await h.settled(() => h.turnEvents().length === 1);
@@ -249,18 +265,7 @@ describe("slack ambient inbound", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("success");
   });
 
-  it("ambient on: tolerates the decline token wrapped in backticks or punctuation", async () => {
-    const h = harness({
-      binding: ambient,
-      respond: () => `\`${AMBIENT_DECLINE_TOKEN}\`.`,
-    });
-    await h.message(STRANGER, "lunch anyone?");
-    await h.settled(() => h.turnEvents().length === 1);
-
-    expect(h.gw.readOutbound()).toHaveLength(0);
-  });
-
-  it("ambient on: an empty turn is a decline — never posts '(no response)'", async () => {
+  it("ambient on: an empty turn posts nothing and still counts as success", async () => {
     const h = harness({ binding: ambient, respond: () => "" });
     await h.message(STRANGER, "lunch anyone?");
     await h.settled(() => h.turnEvents().length === 1);
@@ -338,8 +343,8 @@ describe("slack ambient inbound", () => {
 
     expect(calls).toBe(2);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
-    expect(h.messages()).toHaveLength(1);
-    expect(h.messages()[0]!.text).toBe("the answer");
+    // Ambient never posts a still-starting note or the response itself.
+    expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
   it("coalesces messages that arrive while a turn is in flight into one prompt", async () => {
@@ -354,7 +359,7 @@ describe("slack ambient inbound", () => {
     await h.message("U-B", "two", { ts: "2.2" });
     await h.message("U-C", "three", { ts: "3.3" });
 
-    pending[0]!(AMBIENT_DECLINE_TOKEN);
+    pending[0]!("");
     await h.settled(() => pending.length === 2);
 
     // One serialized turn for both queued messages, speaker-labelled lines.
@@ -365,7 +370,9 @@ describe("slack ambient inbound", () => {
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);
-    // The reply threads under the newest message of the batch.
+    // The turn's reply target is the newest message of the batch, so a reply
+    // now threads under it.
+    await h.worker.reply("agent-1", { text: "on it" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "3.3", text: "on it" });
   });
 
@@ -384,7 +391,7 @@ describe("slack ambient inbound", () => {
     // The gate flips while U-B's message waits behind the in-flight turn
     // (in production: the binding rebound to an owner who never accepted).
     ownerAccepted = false;
-    pending[0]!(AMBIENT_DECLINE_TOKEN);
+    pending[0]!(""); // the first turn finishes (its response is not posted)
     await h.settled(() => h.turnEvents().length === 1);
 
     expect(h.prompts).toHaveLength(1);
@@ -430,9 +437,13 @@ describe("slack ambient inbound", () => {
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    expect(String(h.prompts[0])).not.toContain("<ambient>");
+    // A mention is addressed, so it gets the plain contract without the
+    // read-along framing, plus the 👀 ack.
+    expect(String(h.prompts[0])).not.toContain("<reading-along>");
+    expect(String(h.prompts[0])).toContain("<how-to-respond>");
     expect(h.reactions()).toHaveLength(1);
-    expect(h.texts()).toContain("the answer");
+    // The response is not auto-posted; only the ack reaction is present.
+    expect(h.messages()).toHaveLength(0);
   });
 });
 

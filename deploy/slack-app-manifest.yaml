@@ -26,11 +26,13 @@ oauth_config:
   scopes:
     bot:
       - commands
-      # Posting, plus the live-progress surfaces on mention/fork turns:
-      # streamed replies (chat.startStream/appendStream/stopStream) and the
-      # working status (assistant.threads.setStatus). All covered by chat:write;
-      # both degrade to a single end-of-turn post where the workspace can't stream.
+      # Posting replies, plus the working status shown on mention/fork turns
+      # (assistant.threads.setStatus) — both covered by chat:write. The status
+      # degrades to nothing where the workspace can't show it.
       - chat:write
+      # The turn-start 👀 ack and the agent-driven `react` tool
+      # (reactions.add).
+      - reactions:write
       # Cross-workspace outbound: list the channels the bot is in, check
       # membership before posting, and open direct messages.
       - channels:read

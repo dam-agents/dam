@@ -2,15 +2,20 @@ import { randomUUID } from "node:crypto";
 import { isRequest, parseFrame, type JsonRpcId } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
 import { recordPrompt, type ProxyFetch } from "./control-service.js";
-import type { AcpChannel, WorkspaceWriter } from "./ports.js";
+import type { AcpChannel, SlackReplyPoster, WorkspaceWriter } from "./ports.js";
 
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
+/** The Slack turn contract injects the thread id; its presence marks a turn
+ *  whose reply must go out through the `reply` tool, not plain ACP text. */
+const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
   state: MockState;
   workspace: WorkspaceWriter;
   proxyFetch: ProxyFetch;
+  /** Posts to Slack via the reply tool; omitted outside channel turns. */
+  slackReply?: SlackReplyPoster;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   newSessionId?: () => string;
@@ -88,9 +93,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
       prompt: promptPayload,
     });
 
-    const fetchUrl = FETCH_DIRECTIVE.exec(promptText(promptPayload))?.[1];
+    const promptStr = promptText(promptPayload);
+    // On a Slack turn the reply must go out via the `reply` tool — plain ACP
+    // text is not delivered to the channel. We still emit the ACP text so UI /
+    // transcript views keep working.
+    const slackThreadTs = SLACK_THREAD_DIRECTIVE.exec(promptStr)?.[1];
+
+    const fetchUrl = FETCH_DIRECTIVE.exec(promptStr)?.[1];
     if (fetchUrl) {
-      await replyWithFetch(sid, fetchUrl);
+      const text = await replyWithFetch(sid, fetchUrl);
+      await maybeSlackReply(text, slackThreadTs);
       respond(id, { stopReason: "end_turn" });
       return;
     }
@@ -107,10 +119,21 @@ export function startAcpService(deps: AcpServiceDeps): void {
       });
     }
 
+    await maybeSlackReply(scriptedReplyText(deps.state), slackThreadTs);
     respond(id, { stopReason: deps.state.scriptStopReason });
   }
 
-  async function replyWithFetch(sid: string, url: string): Promise<void> {
+  /** Post the turn's reply through the Slack `reply` tool, when this is a Slack
+   *  turn and there is something to say (empty → the mock stays silent). */
+  async function maybeSlackReply(
+    text: string,
+    threadTs: string | undefined,
+  ): Promise<void> {
+    if (!threadTs || !deps.slackReply || text.trim() === "") return;
+    await deps.slackReply({ text, threadTs });
+  }
+
+  async function replyWithFetch(sid: string, url: string): Promise<string> {
     let text: string;
     try {
       const { status, body } = await deps.proxyFetch({ url });
@@ -125,6 +148,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
         content: { type: "text", text },
       },
     });
+    return text;
   }
 
   function respondInitialize(id: JsonRpcId): void {
@@ -151,6 +175,27 @@ function extractSessionId(params: unknown): string | null {
   if (!params || typeof params !== "object") return null;
   const sid = (params as { sessionId?: unknown }).sessionId;
   return typeof sid === "string" ? sid : null;
+}
+
+/** The reply text a scripted turn would show: the concatenation of its
+ *  agent_message_chunk text. Empty when the script emits no assistant text
+ *  (the mock then stays silent on Slack, like calling no_reply_needed). */
+function scriptedReplyText(state: MockState): string {
+  let out = "";
+  for (const entry of state.scriptEntries) {
+    const update = entry.sessionUpdate as {
+      sessionUpdate?: unknown;
+      content?: { type?: unknown; text?: unknown };
+    };
+    if (
+      update.sessionUpdate === "agent_message_chunk" &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string"
+    ) {
+      out += update.content.text;
+    }
+  }
+  return out;
 }
 
 function promptText(payload: unknown): string {

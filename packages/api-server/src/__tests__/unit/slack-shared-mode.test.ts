@@ -105,7 +105,9 @@ describe("slack shared-mode access", () => {
     const h = harness({ binding: shared });
     await h.mention(STRANGER);
 
-    expect(h.texts()).toContain("the answer");
+    // The turn is relayed and succeeds — no login prompt, no allow-list block.
+    // (The reply itself only lands if the agent calls the `reply` tool.)
+    expect(h.turnEvents()[0]?.outcome).toBe("success");
     const joined = h.texts().join("\n");
     expect(joined).not.toContain("link your account");
     expect(joined).not.toContain("don't have access");
@@ -150,7 +152,7 @@ describe("slack shared-mode access", () => {
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    expect(String(h.prompts[0])).toMatch(/^<@U-STRANGER>: /);
+    expect(String(h.prompts[0])).toContain("<@U-STRANGER>: ");
   });
 
   it("mode absent: an unlinked stranger gets the login deny (person-scoped default)", async () => {
