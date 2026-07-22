@@ -24,7 +24,6 @@ export const settingsTabSchema = z.enum([
   "connections",
   "api-keys",
   "usage",
-  "channels",
   "features",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
@@ -32,6 +31,7 @@ export type SettingsTab = z.infer<typeof settingsTabSchema>;
 export const sandboxSectionSchema = z.enum([
   "setup",
   "connections",
+  "channels",
   "skills",
   "schedules",
   "artifacts",
@@ -96,7 +96,7 @@ export function pathToState(path: string): {
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(
-    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|skills|schedules|artifacts))?$/,
+    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|channels|skills|schedules|artifacts))?$/,
   );
   if (sandboxHomeMatch)
     return {

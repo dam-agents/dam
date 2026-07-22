@@ -22,7 +22,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "advanced-connections",
     label: "Advanced connections",
     description:
-      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials) and the Channels settings tab.",
+      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials) and the sandbox Channels section.",
   },
 ];
 

@@ -10,12 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
-import { useAgentsList } from "../../agents/api/queries.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -26,7 +24,6 @@ import {
 } from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
-import { ChannelsPanel } from "../../sessions/components/channels-panel.js";
 import { useAppVersion } from "../api/queries.js";
 import { ProvidersView } from "./providers-view.js";
 
@@ -62,26 +59,18 @@ const themeOptions = [
 
 export function SettingsView() {
   const { data: flags } = useFeatures();
-  // Channels rides the advanced-connections feature: messenger channel
-  // bindings are not a regular-user surface yet.
-  const showChannels = flags?.["advanced-connections"] ?? false;
   // The Features tab stays reachable once revealed here, and for anyone who
   // already has a flag on (so it can be found again on another browser).
   const showFeatures =
     isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
   const tabs = [
     ...baseTabs,
-    ...(showChannels ? [{ id: "channels" as const, label: "Channels" }] : []),
     ...(showFeatures
       ? [{ id: "features" as const, label: "Experimental features" }]
       : []),
   ];
   const rawTab = useStore((s) => s.settingsTab);
-  const activeTab =
-    (rawTab === "channels" && !showChannels) ||
-    (rawTab === "features" && !showFeatures)
-      ? "account"
-      : rawTab;
+  const activeTab = rawTab === "features" && !showFeatures ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -176,8 +165,6 @@ export function SettingsView() {
 
         {activeTab === "api-keys" && <ApiKeysList />}
 
-        {activeTab === "channels" && showChannels && <ChannelsSettings />}
-
         {activeTab === "account" && (
           <div className="anim-in">
             <PageHeader
@@ -249,35 +236,6 @@ export function SettingsView() {
 
         {activeTab === "features" && <FeaturesTab />}
       </div>
-    </div>
-  );
-}
-
-/** Internal-only tab: pick an agent, then manage its messenger channels.
- *  Rides the advanced-connections feature flag. */
-function ChannelsSettings() {
-  const agents = useAgentsList();
-  const [agentId, setAgentId] = useState<string>("");
-  const selected = agents.find((a) => a.id === agentId);
-
-  return (
-    <div className="anim-in">
-      <PageHeader
-        title="Channels"
-        description="Connect an agent to messenger surfaces (Slack channels, Telegram chats)."
-      />
-      <div className="mb-4 max-w-90">
-        <SectionLabel spaced>Agent</SectionLabel>
-        <Select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-          <option value="">Select an agent…</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-      {selected && <ChannelsPanel agentId={selected.id} />}
     </div>
   );
 }

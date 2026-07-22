@@ -97,6 +97,16 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return formatNameList([...standalone, ...installed]);
   }, [skillsState.data]);
 
+  const channelsSummary = useMemo(() => {
+    if (!agent) return undefined;
+    const kinds = [
+      ...new Set(
+        agent.channels.map((c) => (c.type === "slack" ? "Slack" : "Telegram")),
+      ),
+    ];
+    return kinds.length > 0 ? kinds.join(", ") : "No channels connected";
+  }, [agent]);
+
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;
     const running = schedules.filter((s) => s.enabled).length;
@@ -120,6 +130,7 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   return {
     setup,
     connections,
+    channels: channelsSummary,
     skills,
     schedules: schedulesSummary,
     artifacts: artifactsSummary,

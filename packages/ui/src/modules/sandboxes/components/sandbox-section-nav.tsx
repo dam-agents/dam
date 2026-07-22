@@ -10,6 +10,7 @@ interface SectionEntry {
 const SECTIONS: SectionEntry[] = [
   { section: "setup", title: "Sandbox Setup" },
   { section: "connections", title: "Connections" },
+  { section: "channels", title: "Channels" },
   { section: "skills", title: "Skills" },
   { section: "schedules", title: "Schedules" },
   { section: "artifacts", title: "Artifacts" },
@@ -20,15 +21,25 @@ interface Props {
   onNavigate: (section: SandboxSection) => void;
   // Live one-line summary per section, keyed by section id (slice 03).
   summaries?: Partial<Record<SandboxSection, string>>;
+  /** Channels rides the advanced-connections feature flag. */
+  showChannels?: boolean;
 }
 
-export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
+export function SandboxSectionNav({
+  active,
+  onNavigate,
+  summaries,
+  showChannels = false,
+}: Props) {
+  const sections = SECTIONS.filter(
+    (entry) => entry.section !== "channels" || showChannels,
+  );
   return (
     <nav
       aria-label="Sandbox sections"
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
-      {SECTIONS.map((entry) => (
+      {sections.map((entry) => (
         <SectionNavItem
           key={entry.section}
           title={entry.title}

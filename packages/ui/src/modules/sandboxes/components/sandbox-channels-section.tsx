@@ -1,0 +1,39 @@
+import { SectionLabel } from "@/components/ui/section-label";
+
+import { useAgents } from "../../agents/api/queries.js";
+import { SlackChannelCard } from "./channels/slack-channel-card.js";
+import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
+
+export function SandboxChannelsSection({ agentId }: { agentId: string }) {
+  const { data } = useAgents();
+  const agent = data?.list.find((a) => a.id === agentId);
+  const available = data?.availableChannels ?? {};
+  // Remount the Slack form when the binding changes out-of-band (in-chat
+  // ambient command, another tab) so its local state reseeds.
+  const slackChannel = agent?.channels.find((c) => c.type === "slack");
+  const slackKey = [
+    agent?.id ?? "none",
+    slackChannel?.type === "slack" ? slackChannel.slackChannelId : "",
+    slackChannel?.type === "slack" ? (slackChannel.ambient ?? false) : "",
+  ].join(":");
+
+  return (
+    <section className="mb-8">
+      <SectionLabel spaced>Channels</SectionLabel>
+      <p className="-mt-1 mb-4 text-[14px] text-muted-foreground">
+        Connect this sandbox to messenger surfaces (Slack channels, Telegram
+        chats).
+      </p>
+      {!available.slack && !available.telegram ? (
+        <p className="text-[13px] text-muted-foreground">
+          No channels are configured for this installation.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {available.slack && <SlackChannelCard key={slackKey} agent={agent} />}
+          {available.telegram && <TelegramChannelCard agentId={agentId} />}
+        </div>
+      )}
+    </section>
+  );
+}
