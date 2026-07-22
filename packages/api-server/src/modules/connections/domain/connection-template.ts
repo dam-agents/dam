@@ -9,6 +9,7 @@ import { applyCallbackAlias } from "./oauth-callback-url.js";
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
   | ClientCredentialsConnectionTemplate
+  | GitHubAppConnectionTemplate
   | HeaderConnectionTemplate
   | NoneConnectionTemplate;
 
@@ -51,6 +52,15 @@ export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
   headerName?: string;
   valueFormat?: string;
   tokenEndpointAcceptJson?: boolean;
+}
+
+// GitHub App installation grant: the platform signs a JWT with the app's
+// private key and mints installation tokens (ghs_…) at the GitHub REST base
+// (`apiBaseUrl`); the token endpoint is dialed server-side, never by the agent.
+export interface GitHubAppConnectionTemplate extends TemplateCommon {
+  authKind: "github-app";
+  host?: string;
+  apiBaseUrl?: string;
 }
 
 // An optional config input a header template ships; filling it emits an `env` contribution, leaving it blank emits nothing.
@@ -236,6 +246,29 @@ function inputsFor(
         required("headerName", { presetValue: t.headerName }),
         required("valueFormat", { presetValue: t.valueFormat }),
         optional("envName"),
+      ];
+    case "github-app":
+      return [
+        {
+          name: "appId",
+          state: "required",
+          label: "App ID",
+          hint: "Your GitHub App's numeric App ID (Settings → Developer settings → GitHub Apps → your app).",
+        },
+        {
+          name: "installationId",
+          state: "required",
+          label: "Installation ID",
+          hint: "The installation to mint tokens for — the number at the end of the installation's settings URL (…/installations/<id>).",
+        },
+        {
+          name: "privateKey",
+          state: "required",
+          secret: true,
+          multiline: true,
+          label: "Private key (PEM)",
+          hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
+        },
       ];
     case "header": {
       const out: ConnectionTemplateInput[] = [];

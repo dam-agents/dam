@@ -11,6 +11,7 @@ import {
 import type {
   ClientCredentialsConnectionTemplate,
   ConnectionTemplate,
+  GitHubAppConnectionTemplate,
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
@@ -718,6 +719,45 @@ const GITHUB_PAT: HeaderConnectionTemplate = {
   ],
 };
 
+// GitHub App installation tokens (ghs_…). The platform mints them from the
+// app's private key server-side and injects on the same three GitHub hosts as
+// github-pat: api.github.com (Bearer), github.com (Basic x-access-token, for
+// git-over-HTTPS), and raw.githubusercontent.com (Bearer).
+const GITHUB_APP: GitHubAppConnectionTemplate = {
+  id: "github-app",
+  name: "GitHub App (installation)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Act as a GitHub App installation. The platform mints short-lived installation tokens (ghs_…) from the app's private key.",
+  iconSlug: "github",
+  authKind: "github-app",
+  host: "github.com",
+  apiBaseUrl: "https://api.github.com",
+  contributions: [
+    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    {
+      kind: "egress-inject",
+      host: "api.github.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: "github.com",
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+    {
+      kind: "egress-inject",
+      host: "raw.githubusercontent.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+  ],
+};
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -782,6 +822,7 @@ export function buildCatalog(
     MODAL,
     github(creds.github),
     GITHUB_PAT,
+    GITHUB_APP,
     githubEnterprise(creds.githubEnterprise),
     KUBERNETES,
     spotify(creds.spotify),

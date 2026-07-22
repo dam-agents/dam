@@ -799,6 +799,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
+      githubAppEngine: connectionsBoot.githubAppEngine,
       secretStore: secretStores.default(),
       runtimeMutator,
       agentsRepo,

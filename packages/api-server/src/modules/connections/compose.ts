@@ -5,6 +5,10 @@ import {
   createOAuthEngine,
   type OAuthEngine,
 } from "./infrastructure/oauth-engine.js";
+import {
+  createGitHubAppEngine,
+  type GitHubAppEngine,
+} from "./infrastructure/github-app-engine.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import { createConnectionsService } from "./services/connections-service.js";
@@ -25,6 +29,7 @@ import type { ConnectionRulesSync } from "../egress-rules/services/connection-ru
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   refreshLoop: OAuthRefreshLoop;
 }
 
@@ -42,14 +47,16 @@ export function composeConnectionsAtBoot(
   );
 
   const oauthEngine = createOAuthEngine();
+  const githubAppEngine = createGitHubAppEngine();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
     engine: oauthEngine,
+    githubAppEngine,
     templates,
     secretStore: opts.secretStore,
   });
 
-  return { templates, oauthEngine, refreshLoop };
+  return { templates, oauthEngine, githubAppEngine, refreshLoop };
 }
 
 export function createConnectionGrantsCleanupHook(
@@ -68,6 +75,7 @@ export function composeConnectionsForOwner(opts: {
   db: Db;
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
@@ -112,6 +120,7 @@ export function composeConnectionsForOwner(opts: {
     fanOut,
     oauthFlow,
     oauthEngine: opts.oauthEngine,
+    githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
   });

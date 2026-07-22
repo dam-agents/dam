@@ -17,10 +17,12 @@ import type {
   OAuthEngine,
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
+import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
+import { mintGitHubAppToken } from "./github-app.js";
 
 export interface OAuthRefreshLoop {
   start(): void;
@@ -31,6 +33,7 @@ export interface OAuthRefreshLoop {
 interface RefreshDeps {
   db: Db;
   engine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
   intervalMs?: number;
@@ -104,6 +107,8 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
             await refreshOne(conn, conn.auth, deps);
           } else if (conn.auth.kind === "client-credentials") {
             await remintOne(conn, conn.auth, deps);
+          } else if (conn.auth.kind === "github-app") {
+            await remintGitHubAppOne(conn, conn.auth, deps);
           } else {
             continue;
           }
@@ -151,6 +156,7 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
         inArray(sql`${connectionsTable.auth} ->> 'kind'`, [
           "oauth",
           "client-credentials",
+          "github-app",
         ]),
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
@@ -280,6 +286,42 @@ export async function remintOne(
     connectionRef: `connection:${conn.id}:${conn.templateId}`,
     auth,
     clientSecret,
+  });
+
+  await deps.secretStore.putFields(auth.accessTokenRef, {
+    access_token: next.accessToken,
+    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+  });
+  const updatedAuth: ConnectionAuthConfig = {
+    ...auth,
+    expiresAt: next.expiresAt,
+  };
+  await deps.db
+    .update(connectionsTable)
+    .set({ auth: updatedAuth, updatedAt: new Date() })
+    .where(eq(connectionsTable.id, conn.id));
+}
+
+// GitHub App re-mint: no refresh token — every renewal signs a fresh JWT with
+// the stored private key and exchanges it for a new installation token.
+export async function remintGitHubAppOne(
+  conn: Connection,
+  auth: Extract<ConnectionAuthConfig, { kind: "github-app" }>,
+  deps: {
+    githubAppEngine: GitHubAppEngine;
+    secretStore: SecretStore;
+    db: Db;
+  },
+): Promise<void> {
+  const privateKeyPem = await deps.secretStore.getField(auth.privateKeyRef);
+  if (!privateKeyPem) {
+    throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
+  }
+
+  const next = await mintGitHubAppToken(deps.githubAppEngine, {
+    connectionRef: `connection:${conn.id}:${conn.templateId}`,
+    auth,
+    privateKeyPem,
   });
 
   await deps.secretStore.putFields(auth.accessTokenRef, {

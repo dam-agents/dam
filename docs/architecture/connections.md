@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-07-21
+Last verified: 2026-07-22
 
 ## Overview
 
@@ -83,11 +83,13 @@ Some templates (initially Spotify, Slack, YouTube, and all Google services) are 
 
 A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the raw user inputs (kept for re-render), the auth credential state, and the projected contributions.
 
-The `auth` field carries credential-acquisition state in one of four modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
+The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — the JWT-signed counterpart of client credentials, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
 A header connection's stored credential can be **updated in place** — the value-rotation counterpart to OAuth refresh. The update re-bakes the connection's SDS files from its existing contributions and the new value and rewrites them, together with the credential, onto the same per-Connection Secret. It touches only the secret store: the connection's identity, contributions, and all its agent grants are preserved, and because the live value is read gateway-side via Envoy SDS (the `env` contribution carries only a placeholder), no Agent-spec patch or pod roll is needed. OAuth connections rotate through their refresh flow instead, not this path.
 
 A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously — an undiscoverable issuer or invalid credentials fail the create before anything is persisted. The issuer URL is optional: when omitted, the authorization server is discovered from the API host itself (its protected-resource metadata naming the issuer, or the host serving issuer metadata directly). The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret. One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire. A connection whose re-mint keeps failing surfaces as **expired** once its token horizon passes.
+
+A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token (`ghs_…`) synchronously at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token, and past-expiry surfaces as **expired**.
 
 ### Contribution
 

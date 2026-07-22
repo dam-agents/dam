@@ -1,16 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import crypto from "node:crypto";
+import { describe, it, expect } from "vitest";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
-
-vi.mock(
-  "../../modules/connections/infrastructure/mcp-discovery.js",
-  async (importOriginal) => ({
-    ...(await importOriginal<Record<string, unknown>>()),
-    discoverIssuerMetadata: async () => ({
-      tokenEndpoint: "https://auth.example.com/realms/main/token",
-      grantTypesSupported: ["client_credentials"],
-    }),
-  }),
-);
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
@@ -23,6 +13,12 @@ import type { OAuthFlowService } from "../../modules/connections/services/oauth-
 
 const NOW_MS = 1_800_000_000_000;
 const OWNER = "owner-sub";
+
+const { privateKey: PRIVATE_KEY_PEM } = crypto.generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs1", format: "pem" },
+});
 
 function makeRepoFake() {
   const rows = new Map<string, Connection>();
@@ -84,26 +80,25 @@ function makeSecretStoreFake() {
 }
 
 function makeService(
-  respond: (body: URLSearchParams) => Response = () =>
-    new Response(JSON.stringify({ access_token: "tok-1", expires_in: 120 }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
+  respond: () => Response = () =>
+    new Response(
+      JSON.stringify({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }),
+      { status: 201, headers: { "content-type": "application/json" } },
+    ),
 ) {
   const { repo, rows } = makeRepoFake();
   const { store, stored, deleted } = makeSecretStoreFake();
-  const tokenCalls: URLSearchParams[] = [];
-  const engine = createOAuthEngine({
+  const tokenCalls: string[] = [];
+  const githubAppEngine = createGitHubAppEngine({
     now: () => NOW_MS,
-    fetchImpl: (async (_url: RequestInfo | URL, init?: RequestInit) => {
-      const body = new URLSearchParams(String(init?.body));
-      tokenCalls.push(body);
-      return respond(body);
+    fetchImpl: (async (url: RequestInfo | URL) => {
+      tokenCalls.push(String(url));
+      return respond();
     }) as typeof fetch,
   });
   const oauthFlow: OAuthFlowService = {
     startOAuth: async () => {
-      throw new Error("startOAuth must not be called for client-credentials");
+      throw new Error("startOAuth must not be called for github-app");
     },
     completeOAuth: async () => {
       throw new Error("completeOAuth must not be called");
@@ -116,8 +111,8 @@ function makeService(
     secretStore: store,
     fanOut: { apply: async () => {} },
     oauthFlow,
-    oauthEngine: engine,
-    githubAppEngine: createGitHubAppEngine(),
+    oauthEngine: createOAuthEngine({ now: () => NOW_MS }),
+    githubAppEngine,
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
   });
@@ -126,60 +121,76 @@ function makeService(
 
 function createInput(overrides: Record<string, string> = {}) {
   return {
-    templateId: "custom-client-credentials",
-    name: "my-api",
-    authKind: "client-credentials" as const,
-    host: "api.example.com",
-    issuerUrl: "https://auth.example.com/realms/main",
-    clientId: "cid",
-    clientSecret: "csecret",
+    templateId: "github-app",
+    name: "my-app",
+    authKind: "github-app" as const,
+    appId: "123456",
+    installationId: "987654",
+    privateKey: PRIVATE_KEY_PEM,
     ...overrides,
   };
 }
 
-const SECRET_PATH = "secret-connection:custom-client-credentials";
+const SECRET_PATH = "secret-connection:github-app";
 
-describe("client-credentials connection create", () => {
-  it("mints once and persists secret, token, SDS, and auth markers", async () => {
+describe("github-app connection create", () => {
+  it("mints once and persists private key, token, SDS, and auth markers", async () => {
     const { svc, rows, stored, tokenCalls } = makeService();
     const id = await svc.createFromTemplate(createInput());
 
-    expect(tokenCalls).toHaveLength(1);
-    expect(tokenCalls[0].get("grant_type")).toBe("client_credentials");
+    expect(tokenCalls).toEqual([
+      "https://api.github.com/app/installations/987654/access_tokens",
+    ]);
 
     const fields = stored.get(SECRET_PATH)!;
-    expect(fields.client_secret).toBe("csecret");
-    expect(fields.access_token).toBe("tok-1");
-    expect(fields[sdsFileKeyForHost("api.example.com")]).toContain(
-      "Bearer tok-1",
+    expect(fields.private_key).toBe(PRIVATE_KEY_PEM.trim());
+    expect(fields.access_token).toBe("ghs_1");
+    expect(fields[sdsFileKeyForHost("api.github.com")]).toContain(
+      "Bearer ghs_1",
+    );
+    // github.com carries the git-over-HTTPS credential: Basic base64("x-access-token:<token>").
+    expect(fields[sdsFileKeyForHost("github.com")]).toContain(
+      `Basic ${Buffer.from("x-access-token:ghs_1", "utf8").toString("base64")}`,
     );
 
     const conn = rows.get(id)!;
-    expect(conn.auth.kind).toBe("client-credentials");
-    if (conn.auth.kind !== "client-credentials") return;
-    expect(conn.auth.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 120);
+    expect(conn.auth.kind).toBe("github-app");
+    if (conn.auth.kind !== "github-app") return;
+    expect(conn.auth.expiresAt).toBe(
+      Math.floor(Date.parse("2027-01-15T13:00:00Z") / 1000),
+    );
     expect(conn.auth.connectedAt).toBeGreaterThan(0);
-    expect(JSON.stringify(conn.inputs)).not.toContain("csecret");
+    // The private key never lands in the re-render inputs.
+    expect(JSON.stringify(conn.inputs)).not.toContain("PRIVATE KEY");
 
     const view = await svc.getConnection(id);
     expect(view?.status).toBe("active");
-    expect(view?.authKind).toBe("client-credentials");
+    expect(view?.authKind).toBe("github-app");
   });
 
-  it("persists nothing when the token endpoint rejects the credentials", async () => {
+  it("persists nothing when the installation-token request fails", async () => {
     const { svc, rows, stored } = makeService(
-      () => new Response("unauthorized", { status: 401 }),
+      () => new Response("Bad credentials", { status: 401 }),
     );
     await expect(svc.createFromTemplate(createInput())).rejects.toThrow(/401/);
     expect(rows.size).toBe(0);
     expect(stored.size).toBe(0);
   });
 
-  it("falls back to a one-hour horizon when the provider returns no expiry", async () => {
+  it("fails before persisting when the private key is invalid", async () => {
+    const { svc, rows, stored } = makeService();
+    await expect(
+      svc.createFromTemplate(createInput({ privateKey: "not-a-key" })),
+    ).rejects.toThrow(/PEM-encoded/);
+    expect(rows.size).toBe(0);
+    expect(stored.size).toBe(0);
+  });
+
+  it("falls back to a one-hour horizon when GitHub returns no expiry", async () => {
     const { svc, rows } = makeService(
       () =>
-        new Response(JSON.stringify({ access_token: "tok-1" }), {
-          status: 200,
+        new Response(JSON.stringify({ token: "ghs_1" }), {
+          status: 201,
           headers: { "content-type": "application/json" },
         }),
     );
@@ -187,10 +198,11 @@ describe("client-credentials connection create", () => {
     const id = await svc.createFromTemplate(createInput());
     const after = Math.floor(Date.now() / 1000);
     const auth = rows.get(id)!.auth;
-    if (auth.kind !== "client-credentials") throw new Error("wrong kind");
-    // The fallback horizon is stamped from the wall clock, not the engine's.
-    expect(auth.expiresAt).toBeGreaterThanOrEqual(before + 3600);
-    expect(auth.expiresAt).toBeLessThanOrEqual(after + 3600);
+    if (auth.kind !== "github-app") throw new Error("wrong kind");
+    // The fallback is stamped from the engine's clock (NOW_MS), not the wall
+    // clock, so it sits an hour past NOW_MS regardless of when the test runs.
+    expect(auth.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 3600);
+    expect(after).toBeGreaterThanOrEqual(before);
   });
 
   it("delete removes the single shared secret exactly once", async () => {
@@ -205,10 +217,7 @@ describe("client-credentials connection create", () => {
     const id = await svc.createFromTemplate(createInput());
     const conn = rows.get(id)!;
     const auth: ConnectionAuthConfig = {
-      ...(conn.auth as Extract<
-        ConnectionAuthConfig,
-        { kind: "client-credentials" }
-      >),
+      ...(conn.auth as Extract<ConnectionAuthConfig, { kind: "github-app" }>),
       expiresAt: Math.floor(Date.now() / 1000) - 60,
     };
     rows.set(id, { ...conn, auth });
@@ -216,19 +225,15 @@ describe("client-credentials connection create", () => {
     expect(view?.status).toBe("expired");
   });
 
-  it("exposes the injected host on the view", async () => {
+  it("exposes the injected GitHub hosts on the view", async () => {
     const { svc } = makeService();
     const id = await svc.createFromTemplate(createInput());
     const view = await svc.getConnection(id);
-    expect(view?.host).toBe("api.example.com");
-    expect(view?.hosts).toEqual(["api.example.com"]);
-  });
-
-  it("rejects a value update — rotation stays header-only", async () => {
-    const { svc } = makeService();
-    const id = await svc.createFromTemplate(createInput());
-    await expect(svc.update(id, "new-secret")).rejects.toThrow(
-      /header-credential/,
-    );
+    expect(view?.host).toBe("github.com");
+    expect(view?.hosts).toEqual([
+      "api.github.com",
+      "github.com",
+      "raw.githubusercontent.com",
+    ]);
   });
 });
