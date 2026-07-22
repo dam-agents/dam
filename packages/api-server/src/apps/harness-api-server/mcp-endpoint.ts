@@ -287,11 +287,11 @@ export function createMcpSession(
   );
 
   // ---- Slack turn tools -----------------------------------------------------
-  // In a Slack conversation the agent's plain text is NOT delivered — it
-  // reaches the channel only by calling one of these. They target the turn the
-  // agent is answering (its thread and triggering message) by default, so the
-  // agent need not track ids. Always registered; they return an error when the
-  // agent has no Slack channel connected.
+  // `reply` and `react` are how a Slack agent answers the turn it is handling;
+  // plain text is not delivered, only these are. They target the turn's thread
+  // and triggering message by default, so the agent need not track ids. Always
+  // registered; they error when the agent has no Slack channel connected.
+  // (`no_reply_needed`, below, is the cross-channel silent-stop.)
 
   server.tool(
     "reply",
@@ -370,9 +370,12 @@ export function createMcpSession(
     },
   );
 
+  // Cross-channel (Slack or Telegram): a pure signal that posts nothing. It
+  // lets the agent end its turn having deliberately chosen to stay silent,
+  // rather than leaving plain text that would never be delivered.
   server.tool(
     "no_reply_needed",
-    "End your Slack turn without posting anything. Call this when the message doesn't need a response from you — routine channel chatter that isn't aimed at you, or a message another person already handled. Nothing is sent; it just records that you chose to stay silent.",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
     {
       reason: z
         .string()
