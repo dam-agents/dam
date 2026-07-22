@@ -3,7 +3,6 @@ import { Box } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useStore } from "../../../store.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { useArtifact } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 
@@ -26,8 +25,7 @@ export function ArtifactLinkChip({
   artifactId: string;
   children?: ReactNode;
 }) {
-  const artifactsEnabled = useFeatures().data?.artifacts ?? false;
-  const { data: artifact } = useArtifact(artifactsEnabled ? artifactId : null);
+  const { data: artifact } = useArtifact(artifactId);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
 
@@ -36,8 +34,6 @@ export function ArtifactLinkChip({
     (typeof children === "string" && children !== artifactId
       ? children
       : "artifact");
-
-  if (!artifactsEnabled) return <span>{label}</span>;
 
   return (
     <button

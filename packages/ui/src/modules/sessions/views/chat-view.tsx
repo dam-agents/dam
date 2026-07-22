@@ -48,7 +48,6 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -101,9 +100,7 @@ export function ChatView() {
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
-  const artifactsEnabled = useFeatures().data?.artifacts ?? false;
-  const rawOpenArtifactId = useStore((s) => s.openArtifactId);
-  const openArtifactId = artifactsEnabled ? rawOpenArtifactId : null;
+  const openArtifactId = useStore((s) => s.openArtifactId);
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
@@ -456,15 +453,13 @@ export function ChatView() {
             style={sectionFlex(filesSectionOpen)}
             onOpenFile={openFileHandler}
           />
-          {artifactsEnabled && (
-            <ChatArtifactsPanel
-              agentId={selectedAgent}
-              open={artifactsSectionOpen}
-              onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-              className={sectionTransition}
-              style={sectionFlex(artifactsSectionOpen)}
-            />
-          )}
+          <ChatArtifactsPanel
+            agentId={selectedAgent}
+            open={artifactsSectionOpen}
+            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
+            className={sectionTransition}
+            style={sectionFlex(artifactsSectionOpen)}
+          />
         </div>
         <ResizeHandle
           side="left"

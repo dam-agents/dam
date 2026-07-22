@@ -40,7 +40,6 @@ export function IconRail({
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
   const { data: features } = useFeatures();
   const showExperiments = features?.experiments ?? false;
-  const showArtifacts = features?.artifacts ?? false;
 
   const home: Destination = {
     label: "Home",
@@ -100,7 +99,7 @@ export function IconRail({
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...home} />
-          {showArtifacts && <RailItem {...artifacts} />}
+          <RailItem {...artifacts} />
           {showExperiments && <RailItem {...experiments} />}
         </div>
         <div className="flex-1" />
@@ -115,7 +114,7 @@ export function IconRail({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             home,
-            ...(showArtifacts ? [artifacts] : []),
+            artifacts,
             ...(showExperiments ? [experiments] : []),
             inbox,
             settings,

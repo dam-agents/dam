@@ -115,11 +115,6 @@ export interface McpSessionDeps {
   schedules: SchedulesService;
   experiments: ExperimentsService;
   artifactLibrary: ArtifactLibraryServiceImpl;
-  /** Per-user feature flag: when off the artifact tools are not registered
-   *  at all — the feature is invisible to the harness, not merely erroring.
-   *  Checked per session; a cached session keeps its tool set until it
-   *  expires (30 min TTL). */
-  artifactsFeatureEnabled: boolean;
   invocations: InvocationsService;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
@@ -707,13 +702,11 @@ export function createMcpSession(
 
   // ---- Artifact-library tools ----------------------------------------------
   // Publish/share/version artifacts; owner-scoped service, creations
-  // attributed to the network-verified caller. Feature-gated per user.
-  if (deps.artifactsFeatureEnabled) {
-    registerArtifactLibraryTools(server, {
-      artifactLibrary: deps.artifactLibrary,
-      agentId,
-    });
-  }
+  // attributed to the network-verified caller.
+  registerArtifactLibraryTools(server, {
+    artifactLibrary: deps.artifactLibrary,
+    agentId,
+  });
 
   server.tool(
     "report_result",
@@ -766,7 +759,6 @@ export interface MountMcpDeps {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  isArtifactsFeatureEnabled: (owner: string) => Promise<boolean>;
   invocationsServiceFor: (owner: string) => InvocationsService;
   artifacts: ArtifactService;
   maxArtifactBytes: number;
@@ -825,9 +817,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
-    const artifactsFeatureEnabled = await deps.isArtifactsFeatureEnabled(
-      verified.owner,
-    );
     const invocations = deps.invocationsServiceFor(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
@@ -836,7 +825,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       schedules,
       experiments,
       artifactLibrary,
-      artifactsFeatureEnabled,
       invocations,
       artifacts: deps.artifacts,
       maxArtifactBytes: deps.maxArtifactBytes,

@@ -7,7 +7,6 @@ import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js
 import { useSyncPausingAgents } from "../../agents/hooks/use-suspend-agent.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
 import { SandboxSchedulesSection } from "../components/sandbox-schedules-section.js";
@@ -37,7 +36,6 @@ export function SandboxHomeView() {
   );
 
   const summaries = useSectionSummaries(f.agent);
-  const artifactsEnabled = useFeatures().data?.artifacts ?? false;
 
   if (f.status !== "ready" || !f.agent) {
     return (
@@ -86,7 +84,6 @@ export function SandboxHomeView() {
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
-          showArtifacts={artifactsEnabled}
         />
       }
     >
@@ -97,7 +94,7 @@ export function SandboxHomeView() {
         <SandboxSkillsSection agent={agent} />
       ) : section === "schedules" ? (
         <SandboxSchedulesSection agentId={agent.id} />
-      ) : section === "artifacts" && artifactsEnabled ? (
+      ) : section === "artifacts" ? (
         <SandboxArtifactsSection agentId={agent.id} />
       ) : (
         <ConnectionsSection
