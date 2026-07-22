@@ -54,10 +54,21 @@ export type AgentState =
 // intent, so they belong in the spec.
 export type AgentSpec = AgentSpecCR & { name: string };
 
+/** The pending template upgrade (#1077): the template this agent came from
+ *  now ships a different image than the one captured at create time. v1
+ *  compares the image only — other template-derived fields stay frozen. */
+export interface TemplateUpdate {
+  fromImage: string;
+  toImage: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
   templateId?: string;
+  /** Present when the agent is behind its template; absent when current,
+   *  created from a raw image, or the template is no longer installed. */
+  templateUpdate?: TemplateUpdate;
   spec: AgentSpec;
   /** Observed lifecycle state, synthesized from the controller's status.yaml. */
   state: AgentState;
@@ -83,6 +94,19 @@ export interface Agent {
 
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema>;
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
+
+export type UpgradeAgentError =
+  | { type: "AgentNotFound" }
+  /** Created from a raw image, or the template is no longer installed —
+   *  deliberately one bucket: either way there is nothing to upgrade to. */
+  | { type: "TemplateNotFound" }
+  /** The template no longer ships the image the user consented to
+   *  (moved between showing the diff and confirming) — re-review. */
+  | { type: "TemplateMoved" };
+
+export type UpgradeAgentResult =
+  | { ok: true; value: Agent }
+  | { ok: false; error: UpgradeAgentError };
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
@@ -155,6 +179,15 @@ export interface AgentsService {
    *  the agent wakes on its next deliberate use (open chat, message,
    *  schedule), passing back through the budget gate. */
   pause: (id: string) => Promise<Agent | null>;
+  /** Re-apply the current template's image to this agent (#1077). A running
+   *  agent rolls onto the new image; a hibernated one picks it up on its
+   *  next wake. Idempotent — an already-current agent succeeds unchanged.
+   *  When `expectedToImage` is given, fails with TemplateMoved unless the
+   *  template still ships exactly that image (binding consent). */
+  upgrade: (
+    id: string,
+    expectedToImage?: string,
+  ) => Promise<UpgradeAgentResult>;
   /**
    * Ensure the agent's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps
