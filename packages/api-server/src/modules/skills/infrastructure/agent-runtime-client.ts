@@ -51,6 +51,17 @@ export class AgentRuntimeUpstreamError extends Error {
   }
 }
 
+/** The api-server → pod hop itself failed: no tRPC response ever arrived
+ *  (pod restarting, mesh outage). Distinct from errors the pod *returned* —
+ *  a transport failure inside the pod (e.g. GitHub egress blocked) comes
+ *  back as a structured `upstream_unreachable` envelope, never as this. */
+export class AgentRuntimeUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRuntimeUnreachableError";
+  }
+}
+
 // Auth on the api-server → agent-runtime hop is enforced at the kernel by
 // the agent pod's NetworkPolicy (ingress admitted only from the api-server
 // pod). No Bearer header is sent.
@@ -76,8 +87,10 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
 /**
  * Run a tRPC call and translate `data.upstream` (set by agent-runtime's
  * errorFormatter for upstream gateway errors) into an
- * AgentRuntimeUpstreamError so callers can extract the CTA URL. Other tRPC
- * errors propagate as plain Error.
+ * AgentRuntimeUpstreamError so callers can extract the CTA URL. A response
+ * with no `data` at all means the pod never answered — the error envelope is
+ * built server-side, so its absence is a transport failure on this hop, not
+ * something the pod threw. Other tRPC errors propagate as plain Error.
  */
 async function runWithUpstreamMapping<T>(
   label: string,
@@ -88,7 +101,10 @@ async function runWithUpstreamMapping<T>(
   } catch (e) {
     if (e instanceof TRPCClientError) {
       const data = (e.data as { upstream?: unknown } | null) ?? null;
-      const upstream = data?.upstream;
+      if (data === null) {
+        throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
+      }
+      const upstream = data.upstream;
       if (isUpstreamGatewayError(upstream)) {
         throw new AgentRuntimeUpstreamError(`${label}: ${e.message}`, upstream);
       }
