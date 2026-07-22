@@ -52,16 +52,10 @@ export interface LastRunStatus {
 }
 
 /** Maps a schedule's most-recent `status.lastResult` to a coloured label.
- *  `lastResult` is one of "success", "skipped: quiet hours", or an error
- *  message. */
+ *  `lastResult` is either "success" or an error message. */
 export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (!lastResult) return null;
   if (lastResult === "success")
     return { label: "Succeeded", className: "text-success" };
-  if (lastResult === "skipped: quiet hours")
-    return {
-      label: "Skipped (quiet hours)",
-      className: "text-muted-foreground",
-    };
   return { label: `Failed: ${lastResult}`, className: "text-destructive" };
 }
