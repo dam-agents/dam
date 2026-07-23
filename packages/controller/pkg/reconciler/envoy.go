@@ -35,11 +35,12 @@ const (
 	envoyManagedByLabel  = "agent-platform.ai/managed-by"
 	envoySecretTypeLabel = "agent-platform.ai/secret-type"
 	envoyConnectionLabel = "agent-platform.ai/connection"
-	// Non-connection Secrets: single injection target via these.
+	// Allow-only Secrets: the single host they promote to L7. The
+	// header/query annotations are read only by the `envoySecretsRev`
+	// digest these days.
 	envoyHostPatternAnn = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn  = "agent-platform.ai/injection-header-name"
 	envoyQueryParamAnn  = "agent-platform.ai/injection-query-param"
-	envoyAuthModeAnn    = "agent-platform.ai/auth-mode"
 	// Opt-in HTTP/2 chain so credential injection covers a gRPC stream (Modal).
 	envoyInjectionHTTP2Ann = "agent-platform.ai/injection-http2"
 	// Connection Secrets: N injection targets as JSON. Issue #219. (The
@@ -47,16 +48,14 @@ const (
 	// readability; the controller doesn't read it.)
 	envoyInjectionHostsAnn = "agent-platform.ai/injection-hosts"
 	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
-	// user-typed credential Secret. Authoritative source for the env vars
-	// the agent harness needs as placeholders. Connection-type
-	// Secrets do not write this annotation today and fall through to the
-	// hardcoded mapping in `credentialEnvVars` below.
+	// connection Secret. Authoritative source for the env vars the agent
+	// harness needs as placeholders.
 	envoyEnvMappingsAnn        = "agent-platform.ai/env-mappings"
 	credentialSecretNamePrefix = "platform-cred-"
 	envoyBootstrapVolume       = "envoy-bootstrap"
 	envoyBootstrapMount        = "/etc/envoy"
 	envoyCredentialsRoot       = "/etc/envoy/credentials"
-	envoyCredentialKeySDS      = "sds.yaml"   // SDS DiscoveryResponse file (expected by path_config_source)
+	envoyCredentialKeySDS      = "sds.yaml"   // legacy single-host SDS data key; only matched by sdsDataKeys for the envoySecretsRev digest
 	envoyCredentialSDSName     = "credential" // SDS resource name produced by api-server's K8sSecretsPort
 	envoyLeafTLSVolume         = "envoy-tls"
 	envoyLeafTLSMount          = "/etc/envoy/tls"
@@ -83,10 +82,9 @@ type envoyCredential struct {
 	// raw value in that case so the URL doesn't grow a `Bearer ` prefix.
 	QueryParamName string
 	VolumeName     string // pod-level volume name for this Secret
-	// SDS file key inside the Secret's volume. Single-host
-	// Secrets use `sds.yaml`; connection Secrets use the api-server's
-	// `sdsKey` (host-<base64url>.sds.yaml) so one Secret carries N
-	// chains' credentials (issue #219).
+	// SDS file key inside the Secret's volume — the api-server's `sdsKey`
+	// (host-<base64url>.sds.yaml) — so one Secret carries N chains'
+	// credentials (issue #219).
 	SDSFileKey string
 }
 
@@ -274,13 +272,11 @@ type envMapping struct {
 
 // credentialEnvVars synthesizes the env-var placeholders the agent harness
 // needs so SDKs will dispatch (Envoy overwrites the real header on the
-// wire). Source of truth: every Secret stamps `envoyEnvMappingsAnn` with
-// the env it contributes (api-server connections from
-// `flow.envMappings`; secrets module from `defaultEnvMappings`). The
-// anthropic auth-mode switch remains as a fallback for Secrets created
-// via raw `kubectl apply` without the annotation. Secrets are pre-sorted
-// by Name in `listOwnerCredentialSecrets`, so dedup is "first-granted
-// wins" on env-name collisions.
+// wire). Source of truth: every connection Secret stamps
+// `envoyEnvMappingsAnn` (from `flow.envMappings`) with the env it
+// contributes. Secrets are pre-sorted by Name in
+// `listOwnerCredentialSecrets`, so dedup is "first-granted wins" on
+// env-name collisions.
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	const fallbackPlaceholder = "dummy-placeholder"
 	seen := map[string]struct{}{}
@@ -299,26 +295,18 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	}
 	var envs []corev1.EnvVar
 	for _, s := range secrets {
-		if raw := s.Annotations[envoyEnvMappingsAnn]; raw != "" {
-			var mappings []envMapping
-			if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
-				slog.Warn("invalid env-mappings annotation; skipping",
-					"namespace", s.Namespace, "secret", s.Name, "error", err)
-			} else {
-				for _, m := range mappings {
-					envs = add(envs, m.EnvName, m.Placeholder)
-				}
-				continue
-			}
+		raw := s.Annotations[envoyEnvMappingsAnn]
+		if raw == "" {
+			continue
 		}
-		// Anthropic fallback for hand-crafted Secrets without the
-		// annotation. Every other Secret type relies on env-mappings.
-		if s.Labels[envoySecretTypeLabel] == "anthropic" {
-			if s.Annotations[envoyAuthModeAnn] == "api-key" {
-				envs = add(envs, "ANTHROPIC_API_KEY", fallbackPlaceholder)
-			} else {
-				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN", fallbackPlaceholder)
-			}
+		var mappings []envMapping
+		if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
+			slog.Warn("invalid env-mappings annotation; skipping",
+				"namespace", s.Namespace, "secret", s.Name, "error", err)
+			continue
+		}
+		for _, m := range mappings {
+			envs = add(envs, m.EnvName, m.Placeholder)
 		}
 	}
 	return envs
@@ -450,9 +438,11 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 
 // chainsFromSecrets groups (Secret, host) pairs into one filter chain
 // per host. Connection Secrets fan into N pairs via `injection-hosts`
-// JSON (issue #219); other types use the legacy `host-pattern`. Within a
-// chain, duplicate header names are dropped (credential_injector
-// overwrite: true would silently clobber) with a warning.
+// JSON (issue #219); allow-only Secrets contribute their single
+// `host-pattern` host with no credential; any other non-connection
+// Secret contributes nothing. Within a chain, duplicate header names are
+// dropped (credential_injector overwrite: true would silently clobber)
+// with a warning.
 //
 // Allow-only-only host → uncredentialed chain (MITM gate + dynamic_forward
 // _proxy). Mixed → credentialed chain; allow-only contributes nothing.
@@ -546,35 +536,12 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 				}
 				add(hc.host, s.Name, &cred, hc.opts)
 			}
-			continue
+		case envoySecretTypeAllowOnly:
+			// Registers the host (extends the leaf cert SAN list, forces
+			// L7 termination) but contributes no credential.
+			add(s.Annotations[envoyHostPatternAnn], s.Name, nil,
+				chainOpts{http2: s.Annotations[envoyInjectionHTTP2Ann] == "true"})
 		}
-		// Non-connection Secret: single host via the legacy host-pattern
-		// annotation. Allow-only Secrets register the host (extends the
-		// leaf cert SAN list, forces L7 termination) but contribute no
-		// credential.
-		host := s.Annotations[envoyHostPatternAnn]
-		if host == "" {
-			continue
-		}
-		opts := chainOpts{http2: s.Annotations[envoyInjectionHTTP2Ann] == "true"}
-		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
-			add(host, s.Name, nil, opts)
-			continue
-		}
-		if len(s.Data[envoyCredentialKeySDS]) == 0 {
-			slog.Warn("credential Secret missing sds.yaml data key; rendering host allow-only (no credential injection)",
-				"namespace", s.Namespace, "secret", s.Name, "host", host)
-			add(host, s.Name, nil, opts)
-			continue
-		}
-		cred := envoyCredential{
-			SecretName:     s.Name,
-			HeaderName:     s.Annotations[envoyHeaderNameAnn],
-			QueryParamName: s.Annotations[envoyQueryParamAnn],
-			VolumeName:     "cred-" + s.Name,
-			SDSFileKey:     envoyCredentialKeySDS,
-		}
-		add(host, s.Name, &cred, opts)
 	}
 
 	// Per-agent promoted hosts (spec.l7Hosts) — uncredentialed chains. The
