@@ -13,9 +13,11 @@ function spyReader(): {
   reader: MetricsReader;
   calls: string[][];
   windows: MetricsWindow[];
+  timeZones: string[];
 } {
   const calls: string[][] = [];
   const windows: MetricsWindow[] = [];
+  const timeZones: string[] = [];
   const record = async (agentIds: readonly string[], window: MetricsWindow) => {
     calls.push([...agentIds]);
     windows.push(window);
@@ -24,9 +26,14 @@ function spyReader(): {
   return {
     calls,
     windows,
+    timeZones,
     reader: {
       tokenSpendByModel: (ids, w) => record(ids, w),
       spendByAgent: (ids, w) => record(ids, w),
+      spendByDay: (ids, w, tz) => {
+        timeZones.push(tz);
+        return record(ids, w);
+      },
       runtimeBySession: (ids, w) => record(ids, w),
       contextPerCall: (ids, w) => record(ids, w),
       close: async () => {},
@@ -131,6 +138,40 @@ describe("metrics ownership gate", () => {
     expect(calls).toEqual([]);
   });
 
+  it("spendByDay scopes to all owned agents and passes the range + timezone through", async () => {
+    const { reader, calls, windows, timeZones } = spyReader();
+    const svc = createMetricsService({ reader, listOwnedAgentIds: owned });
+    await svc.spendByDay({
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-08-01T00:00:00.000Z",
+      timeZone: "America/New_York",
+    });
+    expect(calls).toEqual([["agent-a", "agent-b"]]);
+    expect(windows).toEqual([
+      {
+        fromIso: "2026-07-01T00:00:00.000Z",
+        toIso: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+    expect(timeZones).toEqual(["America/New_York"]);
+  });
+
+  it("spendByDay returns nothing when the caller owns no agents", async () => {
+    const { reader, calls } = spyReader();
+    const svc = createMetricsService({
+      reader,
+      listOwnedAgentIds: () => Promise.resolve([]),
+    });
+    expect(
+      await svc.spendByDay({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+        timeZone: "America/New_York",
+      }),
+    ).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
   it("spend returns nothing when the caller owns no agents", async () => {
     const { reader, calls } = spyReader();
     const svc = createMetricsService({
@@ -159,6 +200,13 @@ describe("metrics ownership gate", () => {
       svc.spendByAgent({
         from: "2026-07-01T00:00:00.000Z",
         to: "2026-08-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow(/not enabled/);
+    await expect(
+      svc.spendByDay({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+        timeZone: "America/New_York",
       }),
     ).rejects.toThrow(/not enabled/);
   });

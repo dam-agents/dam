@@ -20,3 +20,11 @@ export const metricsSpendInputSchema = z.object({
   from: z.string().datetime(),
   to: z.string().datetime(),
 });
+
+// Spend bucketed into local calendar days over [from, to). Same instant range
+// as `spend`, plus the IANA timezone the day boundaries are cut on — supplied
+// by the client (`Intl.DateTimeFormat().resolvedOptions().timeZone`) so buckets
+// line up with the user's wall-clock days. The grouping happens in ClickHouse.
+export const metricsSpendByDayInputSchema = metricsSpendInputSchema.extend({
+  timeZone: z.string().min(1),
+});

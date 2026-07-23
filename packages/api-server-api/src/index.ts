@@ -219,9 +219,11 @@ export type {
   MetricsService,
   MetricsQuery,
   MetricsSpendQuery,
+  MetricsSpendByDayQuery,
   MetricsOverview,
   TokenSpendByModel,
   SpendByAgent,
+  SpendByDay,
   SessionRuntime,
   CallContext,
 } from "./modules/metrics/types.js";

@@ -1,11 +1,15 @@
 import type { z } from "zod";
 import type {
   metricsOverviewInputSchema,
+  metricsSpendByDayInputSchema,
   metricsSpendInputSchema,
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
 export type MetricsSpendQuery = z.infer<typeof metricsSpendInputSchema>;
+export type MetricsSpendByDayQuery = z.infer<
+  typeof metricsSpendByDayInputSchema
+>;
 
 /** Token counts + cost rolled up per model, over the window. */
 export interface TokenSpendByModel {
@@ -25,6 +29,14 @@ export interface TokenSpendByModel {
 export interface SpendByAgent {
   agentId: string;
   agentName: string;
+  costUsd: number;
+}
+
+/** LLM spend for one local calendar day. Sparse: the reader emits a row only
+ *  for days that have Spend, so the caller (the client) zero-fills the missing
+ *  days itself. `day` is `YYYY-MM-DD` in the query's timezone. */
+export interface SpendByDay {
+  day: string;
   costUsd: number;
 }
 
@@ -80,4 +92,8 @@ export interface MetricsService {
    *  descending. Same range and ownership scoping as `spend` (deleted agents
    *  included); grouped on the trusted agent id with a telemetry-derived name. */
   spendByAgent(query: MetricsSpendQuery): Promise<SpendByAgent[]>;
+  /** Spend over [from, to) bucketed into local calendar days in the query's
+   *  timezone. Same ownership scoping as `spend`. Sparse — one row per day that
+   *  has Spend, days without it omitted; the client zero-fills the calendar. */
+  spendByDay(query: MetricsSpendByDayQuery): Promise<SpendByDay[]>;
 }

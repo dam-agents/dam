@@ -1,12 +1,16 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
-import type { SpendByAgent } from "api-server-api";
+import type { SpendByAgent, SpendByDay } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useModelSpend, useSpendByAgent } from "../api/queries.js";
+import {
+  useModelSpend,
+  useSpendByAgent,
+  useSpendByDay,
+} from "../api/queries.js";
 import { ModelSpendTable } from "../components/metrics-panel.js";
 import { formatUsd } from "../lib/format.js";
 
@@ -14,6 +18,35 @@ import { formatUsd } from "../lib/format.js";
 // resulting instants, so "calendar month" means the user's wall-clock month.
 const monthStart = (base: Date, offset: number) =>
   new Date(base.getFullYear(), base.getMonth() + offset, 1);
+
+// The IANA zone the browser is in — passed to the API so day buckets are cut
+// on the same wall-clock midnights the client renders the calendar in.
+const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const dayKey = (year: number, month0: number, day: number) =>
+  `${year}-${pad2(month0 + 1)}-${pad2(day)}`;
+
+// The server response is sparse (only days with Spend). The client owns the
+// calendar: emit every day of the selected month, zero-filling the gaps, and
+// for the current month stop at today so there are no empty future columns.
+function fillMonthDays(
+  month: Date,
+  isCurrentMonth: boolean,
+  rows: readonly SpendByDay[] | undefined,
+): SpendByDay[] {
+  const spendByDay = new Map((rows ?? []).map((r) => [r.day, r.costUsd]));
+  const year = month.getFullYear();
+  const month0 = month.getMonth();
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  const lastDay = isCurrentMonth ? new Date().getDate() : daysInMonth;
+  const out: SpendByDay[] = [];
+  for (let day = 1; day <= lastDay; day++) {
+    const key = dayKey(year, month0, day);
+    out.push({ day: key, costUsd: spendByDay.get(key) ?? 0 });
+  }
+  return out;
+}
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
@@ -28,7 +61,9 @@ export function UsageView() {
   const to = monthStart(month, 1).toISOString();
   const { data, isPending, isError } = useModelSpend(from, to);
   const byAgent = useSpendByAgent(from, to);
+  const byDay = useSpendByDay(from, to, timeZone);
   const total = data?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
+  const dailySpend = fillMonthDays(month, isCurrentMonth, byDay.data);
 
   return (
     <div>
@@ -90,6 +125,14 @@ export function UsageView() {
               <ModelSpendTable rows={data} />
             </Card>
           )}
+          {byDay.data && (
+            <>
+              <SectionLabel spaced>Spend by day</SectionLabel>
+              <Card className="p-4">
+                <SpendByDayColumns days={dailySpend} />
+              </Card>
+            </>
+          )}
           {byAgent.data && byAgent.data.length > 0 && (
             <>
               <SectionLabel spaced>Spend by agent</SectionLabel>
@@ -100,6 +143,46 @@ export function UsageView() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/** Hand-rolled column chart, one column per calendar day of the selected month
+ *  (already zero-filled and truncated at today by the caller). Column height is
+ *  relative to the biggest day; any nonzero day keeps a visible nub so light
+ *  days don't vanish. Hover a column for its exact date and USD amount. No chart
+ *  library — deliberately just Tailwind. */
+function SpendByDayColumns({ days }: { days: SpendByDay[] }) {
+  const max = days.reduce((m, day) => Math.max(m, day.costUsd), 0);
+  return (
+    <div
+      className="flex h-40 items-end gap-px"
+      role="img"
+      aria-label="LLM spend per day"
+    >
+      {days.map((day) => {
+        const [year, month1, date] = day.day.split("-").map(Number);
+        const label = new Date(year, month1 - 1, date).toLocaleDateString(
+          undefined,
+          { month: "short", day: "numeric" },
+        );
+        const pct =
+          day.costUsd > 0 && max > 0
+            ? Math.max((day.costUsd / max) * 100, 4)
+            : 0;
+        return (
+          <div
+            key={day.day}
+            className="flex h-full flex-1 items-end"
+            title={`${label} · ${formatUsd(day.costUsd)}`}
+          >
+            <div
+              className="w-full rounded-t-sm bg-accent"
+              style={{ height: `${pct}%` }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

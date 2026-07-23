@@ -23,8 +23,8 @@ lives here, over telemetry — not in usage-tracking.
 
 ## The contract
 
-The api-server exposes Metrics as two owner-scoped, read-only tRPC procedures.
-Both return only data for agents the caller owns; neither ever mutates.
+The api-server exposes Metrics as a set of owner-scoped, read-only tRPC
+procedures. Each returns only data for agents the caller owns; none ever mutate.
 
 - **Overview** — the whole Usage panel in one read: per-model token/cost
   totals, a per-session runtime roll-up (call count, summed latency, tokens,
@@ -44,6 +44,15 @@ Both return only data for agents the caller owns; neither ever mutates.
   `platform.agent.name` observed in range, so a deleted agent keeps a readable
   label. The name is display-only — the id stays the key. The Usage view renders
   it as a horizontal-bar breakdown driven by the same month-stepper.
+- **Spend by day** — the same instant range and ownership scoping as **Spend**,
+  bucketed into local calendar days. The client passes its IANA timezone
+  (`Intl.DateTimeFormat`) alongside the range; the grouping is done in ClickHouse
+  (`toDate(Timestamp, tz)`), so day boundaries are the user's wall-clock
+  midnights. The response is **sparse** — one `{ day, costUsd }` row per day that
+  has Spend, days without it omitted. The client owns calendar semantics: it
+  zero-fills the missing days and, for the current month, renders nothing after
+  today. The Usage view draws it as a hand-rolled column chart under the same
+  month-stepper.
 
 Field-level shapes live in the contract package
 ([`packages/api-server-api/src/modules/metrics/`](../../packages/api-server-api/src/modules/metrics/)) —
