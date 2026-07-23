@@ -143,6 +143,24 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 
 An Experiment races several AI-driven R&D harnesses against one goal and compares what each produced. Mirrors the Connections owner + grant-to-many-Agents pattern; the platform starts Arms and captures Runs — it never runs an optimization loop and never interprets a score. Terms are in active design (epic `dam-u1n`).
 
+> **Rebase proposed (loops-as-code direction, #2821):** the arms-racing model below is slated to retire, replaced behind the same feature flag. An **Experiment** becomes *one execution of a driver Agent's loop script* (the DBTL loop written as code over the Invocation primitive). Arms, Trials, Arm Variations, and the Run Ledger deprecate with the rebase; the owner-scoped resource, UI destination, and feature flag survive. Proposed terms:
+
+| Term *(proposed)* | Definition |
+|------|-----------|
+| Experiment *(rebased)* | One execution of a driver Agent's loop script: `draft` (plan registered) → `running` (executed) → `completed` / `failed` / `stopped`. Re-execution creates a *sibling* Experiment sharing the Script Artifact — an Experiment never owns multiple runs |
+| Skeleton | The stage/loop/fork structure the script declares upfront, registered before execution. Lenient: a span naming an undeclared stage grows the graph and is marked as drift, never an error |
+| Stage / Span | Stage = one declared skeleton node (produce, eval, select, …). Span = one execution of a stage, iteration-keyed, carrying status, timings, an optional numeric Score (captured, plotted, never normalized — the old bet survives), Artifact references, and an opaque `attrs` JSON bag |
+| Trace | The append-only stream of spans plus attached Invocations for one Experiment, held by the platform (SDK reports over the per-agent HTTP surface; the browser being closed never pauses a run) |
+| Trace Feed | The stable JSON projection of Skeleton + Trace the platform serves; the contract between the SDK, the stock and bespoke Dashboard Artifacts, and the UI. Polled while running (revisits decision D7 for live runs only) |
+| Experiment SDK | Python, stdlib-only, baked into platform-base (venv only if forced; pydantic duck-typed as optional sugar). Subsumes the driver surface — spawn/listImages/listConnections port — plus the skeleton/span API. `spawn()` inside `with stage.run():` auto-attaches to the active span via contextvar (`span=` override for fan-out). The JS driver-sdk stays for generic non-experiment loops |
+| Plan Registration | Running the script in plan mode: declarations execute, the loop body doesn't; the Skeleton posts to the platform, creating the `draft` Experiment visible in the UI with an Execute button |
+| Execute | UI action on a draft Experiment: runtime-channel event delivers a composed prompt; the harness runs the script as a background process (harness-mediated, Trial-launch style) |
+| Script Artifact | The script source in the Artifact Library ("experiment scripts" folder) — one artifact per experiment, a new version published whenever the executed source differs, each run recording the exact version it ran. Source is never stored in Postgres |
+| Dashboard Artifact | The HTML renderer of the Trace Feed, in the Artifact Library: a platform-shipped stock dashboard auto-attached at Plan Registration, replaceable by an agent-generated bespoke one. Renders in a sealed iframe inside native detail-view chrome; data arrives via the postMessage bridge (host page polls the feed and pushes JSON in — capability #1 of the Interactive Artifacts epic #2884), so generated HTML holds no credentials and the sandbox never gains network |
+| Candidate *(rebased)* | An artifact a span references, stored in the Artifact Library (published by the producing invocation target or the driver); the bespoke candidate-upload path retires with the Run Ledger |
+| Pin | A running Experiment vetoes hibernation of its driver Agent; released on terminal state. The inactivity sweep (no trace events or spawn activity within the window) fails a silent run and thereby releases the pin — the port of the old Inactivity Deadline |
+| Trace writers | Driver-only for MVP: targets speak through their schema-validated result and published artifacts. Multi-writer (target spans nesting under the spawning span) is the planned fast-follow that gives long-running framework nodes mid-flight visibility |
+
 | Term | Definition |
 |------|-----------|
 | Experiment | Owner-scoped resource holding a prompt (the common instruction every Arm receives), a status, and the Run Ledger. Peer to the Agent; references many Agents through Arms. The Connection analog at the experiment level |
