@@ -395,6 +395,17 @@ keycloak:
   extraRedirectUris: []
   extraWebOrigins: []
 
+  # -- Login page presentation. With `allowPassword: false` the page shows
+  # only the identity-provider CTA(s) — for deployments (e.g. w3id) where
+  # SSO is the expected sign-in path; it falls back to the password form
+  # when no identity provider is configured on the realm. The default keeps
+  # the username/password form, with any identity-provider buttons offered
+  # below it. `requestAccessUrl` renders a "Request access" link on the
+  # login page when set.
+  login:
+    allowPassword: true
+    requestAccessUrl: ""
+
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log
   # pipeline to whatever external log service is collecting pod logs.

@@ -104,6 +104,14 @@ spec:
             - name: KC_HTTP_ENABLED
               value: "true"
             {{- end }}
+            # Login-theme knobs — resolved by theme.properties `${env.…}`
+            # placeholders in the Keycloakify-built theme.
+            - name: PLATFORM_ALLOW_PASSWORD
+              value: {{ .Values.keycloak.login.allowPassword | quote }}
+            {{- with .Values.keycloak.login.requestAccessUrl }}
+            - name: PLATFORM_REQUEST_ACCESS_URL
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.keycloak.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-22
+Last verified: 2026-07-23
 
 ## Overview
 
@@ -114,8 +114,23 @@ sidecar to share a network or PID namespace with.
 ## Identity
 
 **Keycloak** is the only identity authority. It runs in-cluster as a Helm
-subchart and is the OIDC provider for every authenticated surface. The
-user agent flow:
+subchart and is the OIDC provider for every authenticated surface.
+
+Keycloak's branded login page ships two presentation variants selected
+per deployment: password-first (the default — username/password form,
+with any identity-provider buttons offered below it) and SSO-first
+(identity-provider CTAs only, for deployments where corporate SSO is the
+expected sign-in path; the page falls back to the password form when the
+realm has no identity provider configured). The chart's `keycloak.login`
+values ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml))
+select the variant and an optional "Request access" link; they reach the
+theme as container environment variables resolved through the theme's
+`theme.properties` placeholders, so switching variants is a values change
+and a pod roll — no theme rebuild, no realm change. Upstream identity
+providers themselves (e.g. w3id) are realm configuration managed outside
+the chart.
+
+The user agent flow:
 
 1. Browser authenticates against Keycloak and obtains a JWT with audience
    `platform-api`.
