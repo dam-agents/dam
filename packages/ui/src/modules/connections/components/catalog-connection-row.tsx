@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { GithubAppInstallHint } from "./github-app-install-hint.js";
+import { GithubAppInstallLink } from "./github-app-install-hint.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -45,7 +45,7 @@ export function CatalogConnectionRow({
       className="px-4 py-3"
     >
       <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[160px] flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[15px] text-foreground">
               {connection.name}
@@ -58,24 +58,27 @@ export function CatalogConnectionRow({
             {subtitle}
           </p>
         </div>
-        {grant &&
-          !grant.actionHidden &&
-          (grant.granted ? (
-            <span className="inline-flex h-[32px] shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 text-[14px] text-foreground">
-              <Checkmark size={16} className="text-success" />
-              In this sandbox
-            </span>
-          ) : (
-            <Button
-              variant="outline"
-              className="h-[32px] shrink-0 px-3 text-[14px] font-normal"
-              onClick={() => grant.onToggle(true)}
-              data-testid={`catalog-add-${connection.id}`}
-            >
-              <Add size={16} />
-              Add to sandbox
-            </Button>
-          ))}
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
+          <GithubAppInstallLink connection={connection} />
+          {grant &&
+            !grant.actionHidden &&
+            (grant.granted ? (
+              <span className="inline-flex h-[32px] shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 text-[14px] text-foreground">
+                <Checkmark size={16} className="text-success" />
+                In this sandbox
+              </span>
+            ) : (
+              <Button
+                variant="outline"
+                className="h-[32px] shrink-0 px-3 text-[14px] font-normal"
+                onClick={() => grant.onToggle(true)}
+                data-testid={`catalog-add-${connection.id}`}
+              >
+                <Add size={16} />
+                Add to sandbox
+              </Button>
+            ))}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -110,7 +113,6 @@ export function CatalogConnectionRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <GithubAppInstallHint connection={connection} />
     </div>
   );
 }

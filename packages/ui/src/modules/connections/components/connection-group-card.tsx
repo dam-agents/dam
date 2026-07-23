@@ -5,6 +5,7 @@ import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type { RowGrantControls } from "./catalog-connection-row.js";
 import { CatalogConnectionRow } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
+import { GithubAppInstallHint } from "./github-app-install-hint.js";
 
 interface Props {
   group: CatalogProviderGroup;
@@ -49,6 +50,7 @@ export function ConnectionGroupCard({
           </span>
         )}
       </header>
+      <GithubAppInstallHint connections={connections} />
       <div className="divide-y divide-border">
         {connections.map((c) => (
           <CatalogConnectionRow
