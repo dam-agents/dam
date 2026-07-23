@@ -19,6 +19,9 @@ export interface FakeSlackGateway extends SlackGateway {
   /** A plain (non-mention) channel message, as the real gateway would deliver
    *  it post-filtering: human-authored, no subtype, not a DM. */
   fireMessage(event: SlackChannelMessageEvent): Promise<void>;
+  /** A plain message in a 1:1 DM (`message.im`), as the real gateway delivers
+   *  it post-filtering: human-authored, no subtype, not a bot post. */
+  fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
@@ -169,6 +172,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     async fireMessage(event) {
       await requireHandlers().onMessage(event);
+    },
+
+    async fireDirectMessage(event) {
+      await requireHandlers().onDirectMessage(event);
     },
 
     async fireCommand(command) {

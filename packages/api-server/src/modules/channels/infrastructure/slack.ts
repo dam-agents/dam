@@ -145,6 +145,13 @@ function ambientThreadKey(channelId: string): string {
   return `ambient:${channelId}`;
 }
 
+/** A 1:1 DM conversation (Slack `im`) always has an id starting with "D". Used
+ *  to tailor DM-specific copy where the event's `channelType` isn't carried
+ *  (e.g. some `app_mention` payloads) and to label a DM-bound conversation. */
+function isDirectMessageId(channelId: string): boolean {
+  return channelId.startsWith("D");
+}
+
 export type FetchedImage = {
   block: ContentBlock;
   meta: { name: string; size: number };
@@ -953,7 +960,9 @@ export function createSlackWorker(
 
         const bindUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
         await ack({
-          text: `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.`,
+          text: isDirectMessageId(command.channelId)
+            ? `<${bindUrl}|Connect one of your agents to this DM>. You'll talk to it here privately, under the agent's own connected accounts and API tokens.`
+            : `<${bindUrl}|Connect an agent to this channel>. Everyone here will be able to drive it under the agent's own connected accounts and API tokens.`,
         });
       })
       .with("unbind", async () => {
@@ -1189,7 +1198,29 @@ export function createSlackWorker(
     return images;
   }
 
-  async function handleAppMention(event: SlackMentionEvent) {
+  /** Copy for an inbound message that hit an unbound conversation. Channels
+   *  keep the historical wording; DMs and group DMs instead point at the
+   *  in-chat bind command — the only way to connect those surfaces. */
+  function unboundConversationCopy(
+    event: SlackMentionEvent,
+    directMessage: boolean,
+  ): string {
+    if (directMessage || isDirectMessageId(event.channel)) {
+      return `This conversation isn't connected to an agent yet. Run \`/${brandShort} bind\` to connect one of your agents, then message it here.`;
+    }
+    if (event.channelType === "mpim") {
+      return `No agent is connected to this group yet. Run \`/${brandShort} bind\` to connect one of your agents, then @-mention it here.`;
+    }
+    return "No instance connected to this channel.";
+  }
+
+  /** Shared intake for an addressed turn: a channel/group-DM `@mention` or a
+   *  plain message in a bound 1:1 DM. The only differences are the unbound copy
+   *  and that a 1:1 DM's single-speaker prompt isn't speaker-labelled. */
+  async function handleInbound(
+    event: SlackMentionEvent,
+    opts: { directMessage: boolean },
+  ) {
     if (!gateway) return;
 
     const slackUserId = event.user;
@@ -1201,7 +1232,7 @@ export function createSlackWorker(
       await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
-        text: "No instance connected to this channel.",
+        text: unboundConversationCopy(event, opts.directMessage),
       });
       return;
     }
@@ -1220,6 +1251,9 @@ export function createSlackWorker(
         owner: binding.owner,
         teamId: event.teamId,
         images,
+        // A 1:1 DM has exactly one human speaker, so labelling the prompt with
+        // their Slack mention is redundant — keep the private DM prompt clean.
+        speakerLabel: !opts.directMessage,
       });
       return;
     }
@@ -1261,6 +1295,20 @@ export function createSlackWorker(
     });
   }
 
+  // A channel or group-DM `@mention` (`app_mention`). A 1:1 DM's messages
+  // arrive reliably via message.im (→ handleDirectMessage), so an app_mention
+  // for the same DM — if Slack fires one at all — is a duplicate; drop it so
+  // the turn isn't processed twice.
+  const handleAppMention = (event: SlackMentionEvent) =>
+    isDirectMessageId(event.channel)
+      ? Promise.resolve()
+      : handleInbound(event, { directMessage: false });
+
+  // A plain message in a 1:1 DM (`message.im`): every DM message is addressed
+  // to the bot, so a bound DM relays it without an @mention.
+  const handleDirectMessage = (event: SlackMentionEvent) =>
+    handleInbound(event, { directMessage: true });
+
   // Shared mode: the binding is the authorization — anyone Slack
   // admits to the channel drives the agent under the agent's credentials.
   async function relaySharedTurn(args: {
@@ -1274,6 +1322,9 @@ export function createSlackWorker(
     owner: string;
     teamId?: string;
     images: FetchedImage[];
+    /** Prefix the prompt with the speaker's Slack mention (multi-speaker
+     *  channels/group DMs). Defaults to true; a 1:1 DM passes false. */
+    speakerLabel?: boolean;
   }) {
     if (!gateway) return;
 
@@ -1307,8 +1358,12 @@ export function createSlackWorker(
       channel: args.channel,
       threadTs: args.threadTs,
       eventTs: args.eventTs,
-      // Shared sessions are multi-speaker: label who is talking.
-      text: `<@${args.slackUserId}>: ${args.text}`,
+      // Shared channels/group DMs are multi-speaker: label who is talking. A
+      // 1:1 DM has a single human, so its prompt goes through unlabelled.
+      text:
+        args.speakerLabel === false
+          ? args.text
+          : `<@${args.slackUserId}>: ${args.text}`,
       hasThread: args.hasThread,
       actorSub: null,
       externalActorId: args.slackUserId,
@@ -1674,6 +1729,7 @@ export function createSlackWorker(
         onMention: handleAppMention,
         onCommand: handleCommand,
         onMessage: handleChannelMessage,
+        onDirectMessage: handleDirectMessage,
       });
       if (!connected) {
         gatewayFailed = true;
@@ -1744,7 +1800,11 @@ export function createSlackWorker(
       return [
         {
           id: slackChannelId,
-          title: bound ? `#${bound.name}` : slackChannelId,
+          title: bound
+            ? `#${bound.name}`
+            : isDirectMessageId(slackChannelId)
+              ? "Direct message"
+              : slackChannelId,
         },
         ...others,
       ];
