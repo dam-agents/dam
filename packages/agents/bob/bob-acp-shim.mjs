@@ -322,6 +322,9 @@ function handleClientLine(line) {
   if (isClientRequest && f.method === "session/list") {
     const sessions = readBobChatFiles().map((chat) => ({
       sessionId: chat.sessionId,
+      // The last-seen prompt cwd (or process.cwd()), not necessarily the cwd
+      // each stored chat originally ran in — Bob's chat files don't record it.
+      // Fine for the sidebar; revisit if a consumer needs per-session cwd.
       cwd: sessionCwd,
       title: titleFromChat(chat),
       updatedAt: chat.lastUpdated ?? chat.startTime ?? null,
