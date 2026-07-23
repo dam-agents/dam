@@ -15,20 +15,6 @@ Decide the type first — it picks the template. Every issue is one of:
 
 Stories, tasks, and bugs can be attached to an epic. If the issue clearly serves an existing epic, suggest it. If nothing fits, leave it out.
 
-## What to exclude
-
-Strip all of these before presenting the draft:
-
-- File paths, line numbers, function/class names, module names.
-- Code snippets, schema definitions, type signatures.
-- Specific API endpoints, database tables, config keys, env var names.
-- Proposals about *how* to implement (which service handles what, what data structure to use, which library to add).
-- Naming of internal components unless they're already user-facing terms.
-
-Rule of thumb: if a reader would need to know the codebase to understand a sentence, rewrite or remove it. The issue should make sense to a PM, a designer, or a new contributor who's never opened the repo.
-
-Tasks and bugs get some slack: a task often *is* engineering work, and a bug may need a precise trigger. Name what's necessary to act on the issue, in the plainest terms available, and nothing more.
-
 ## Style
 
 - Prefer plain language over precise language. "Schedules" not "AgentSchedule ConfigMaps."
