@@ -1,3 +1,7 @@
+import type {
+  SpawnInvocationInput,
+  SpawnInvocationResult,
+} from "mock-agent-api";
 import type { JsonRpcFrame } from "../domain/frames.js";
 
 export interface AcpChannel {
@@ -14,4 +18,9 @@ export interface WorkspaceWriter {
  *  Slack. Best-effort: failures are logged, never thrown. */
 export interface SlackReplyPoster {
   (args: { text: string; threadTs?: string }): Promise<void>;
+}
+
+/** Spawns an Invocation via the harness surface, as this agent (the driver). */
+export interface HarnessSpawn {
+  (input: SpawnInvocationInput): Promise<SpawnInvocationResult>;
 }
