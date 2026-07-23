@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
-import { getAccessToken } from "../../lib/auth.js";
+import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 // Extended suite (see playwright.config.ts): not part of the main pipeline —
@@ -53,6 +53,9 @@ test("invocation egress follows the driver (#2930)", async () => {
 
   const token = await getAccessToken();
   const api = createApiClient(token);
+  // Fresh DB: the terms gate 412s every non-terms call until accepted (the
+  // main chain does this via the 01-auth UI login).
+  await acceptTerms(api);
 
   let driverId = "";
   await test.step("create a zero-egress driver", async () => {

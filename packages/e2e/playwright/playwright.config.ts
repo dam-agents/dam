@@ -8,9 +8,10 @@ const storageState = "./.auth/user.json";
 // are NOT part of the main pipeline (`mise run e2e` / e2e:loop). They only
 // enter the project list behind this env gate and run via
 // `mise run e2e:loop -- --extended`. Conventions: one "<area>-extended"
-// project per area, specs are self-contained (own agents, own token, no
-// storageState, no dependency on the main chain's fixtures), and each spec
-// references its motivating ticket in the test title.
+// project per area, specs are self-contained (own agents, own token via
+// getAccessToken + acceptTerms — the terms gate 412s everything else on a
+// fresh DB — no storageState, no dependency on the main chain's fixtures),
+// and each spec references its motivating ticket in the test title.
 const extended = process.env.E2E_EXTENDED === "1";
 
 export default defineConfig({
