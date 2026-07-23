@@ -4,6 +4,7 @@ import type { TemplateProps } from "keycloakify/login/TemplateProps";
 import { useSetClassName } from "keycloakify/tools/useSetClassName";
 import { useEffect } from "react";
 
+import { cn } from "../lib/cn.js";
 import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
@@ -63,11 +64,12 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
           {showMessage && (
             <div
               role="alert"
-              className={
+              className={cn(
+                "mt-6 max-w-[var(--width-login-col)] rounded-md border px-3 py-2 text-sm",
                 message.type === "error"
-                  ? "mt-6 max-w-[var(--width-login-col)] rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-                  : "mt-6 max-w-[var(--width-login-col)] rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800"
-              }
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-blue-200 bg-blue-50 text-blue-800",
+              )}
               dangerouslySetInnerHTML={{
                 __html: kcSanitize(message.summary),
               }}
