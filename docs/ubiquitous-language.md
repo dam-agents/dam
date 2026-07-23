@@ -68,6 +68,8 @@ Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as 
 | report_result | The fixed MCP tool the target Agent calls to report its result; the server validates it against the stashed Result Schema (structural only, never truth) and flips the Invocation terminal. Attribution is by the reporting agent's own id. *(renamed from the spawn/loop-era `node_done`)* |
 | Result Schema | The driver-supplied JSON Schema an Invocation's result must match; stored on the Invocation record, never on any Kubernetes resource, so the platform stays blind to content |
 | Liveness Deadline | The per-Invocation deadline (driver-set `ttlMs`, clamped ~1min..6h) after which a still-running Invocation is failed, so a target that exits silently can't wedge the driver's poll. Distinct from Agent Lifetime |
+| Egress Aliasing | *(proposed, #2930)* An Invocation target has no egress identity of its own: the ext_authz gate resolves the target to its Driver — recursively, up to the root non-target Agent — before rule match, HITL hold, and approval write. All egress policy lives on the Driver and applies live to its running targets; approvals raised by target traffic belong to the Driver, stamped with the originating target for audit. Reach without credentials: the target gains the Driver's network reach, but the gateway still injects credentials per-agent |
+| Driver Cascade | *(proposed, #2930)* Deleting a Driver fails its running Invocations and eagerly reaps their targets — transitively for chains — so no target keeps running or prompting against a deleted Driver's egress identity. Makes the dangling-driver state structurally unreachable; a target that slips through fails closed at the gate |
 
 ## Skills — api-server side (bounded context)
 

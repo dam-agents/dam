@@ -473,6 +473,22 @@ header are gone.
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
 
+**Egress Aliasing.** An Invocation target has no egress identity of its
+own: before any decision, the gate resolves the calling agent to its
+driver — recursively for chained Invocations, up to the root non-target
+agent — and runs rule match, hold, and approval against the driver. The
+link is live: rules are matched per request, so tightening or loosening
+the driver applies to its running targets immediately. Approval prompts
+raised by target traffic surface as the driver's, stamped with the
+originating target, and approving permanently updates the driver's
+rules. The aliasing is application-layer only — the target's gateway
+still mounts and injects credentials for the target's own (attenuated)
+connection grants, so the target gains the driver's network *reach*,
+never its credential set. Deleting a driver cascades: its running
+Invocations are failed and their targets eagerly reaped (transitively
+for chains), and a target that slips past the cascade fails closed at
+the gate because its driver no longer resolves.
+
 ## Per-turn fork pods (Slack foreign replier)
 
 This section covers person-scoped Slack bindings — the default access

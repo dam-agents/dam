@@ -21,6 +21,11 @@ export interface ExtAuthzPayload {
   host: string;
   method: string;
   path: string;
+  /** Set when the request came from an Invocation target aliased to its
+   *  driver (Egress Aliasing): the target agent id the request originated
+   *  from. The row's `agentId` is the driver — the agent whose rules gate
+   *  the request and receive the verdict. */
+  viaAgentId?: string;
 }
 
 /** ACP `PermissionOption.kind` values the harness emits. */

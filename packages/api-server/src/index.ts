@@ -89,7 +89,12 @@ import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "./modules/templates/compose.js";
-import { composeInvocationLivenessSweep } from "./modules/invocations/index.js";
+import {
+  composeInvocationLivenessSweep,
+  createDriverResolutionAdapter,
+  createInvocationsCleanupHook,
+  listInvocationAgentIds,
+} from "./modules/invocations/index.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import {
   composeApprovalsSystem,
@@ -499,6 +504,10 @@ const channelManager = createChannelManager({
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
+// Egress Aliasing resolution for the ext_authz gate: Invocation target →
+// root driver, consulted before every identity resolve on the egress path.
+const invocationDriverResolution = createDriverResolutionAdapter(db);
+
 const wrapperFrameSender = createWrapperFrameSender({
   resolveWrapperUrl: (agentId) =>
     `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
@@ -516,8 +525,14 @@ const {
   db,
   bus: redisBus,
   identityResolver: {
+    // Egress Aliasing: an Invocation target has no egress identity of its
+    // own — resolve the caller to its root driver first, so rule match,
+    // HITL hold, and approval writes all land on the driver. A target whose
+    // driver is gone resolves to nothing and the gate fails closed.
     resolve: async (agentId) => {
-      const r = await agentsRepo.resolveIdentity(agentId);
+      const rootId = await invocationDriverResolution.resolveRoot(agentId);
+      if (!rootId) return null;
+      const r = await agentsRepo.resolveIdentity(rootId);
       return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
     },
   },
@@ -553,12 +568,23 @@ const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
 const agentEnvCleanupHook = (agentId: string) =>
   agentEnvRepo.deleteForAgent(agentId);
 
+// Driver Cascade: deleting an agent fails its running Invocations and reaps
+// their targets, so no dangling target keeps running against a deleted
+// driver's egress identity. `agentsFor` binds lazily — the factory below is
+// declared later and composes these same hooks, which is what makes chained
+// Invocations unwind transitively.
+const invocationsCleanupHook = createInvocationsCleanupHook({
+  db,
+  agentsFor: (owner) => harnessAgentsServiceFor(owner),
+});
+
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
   (agentId: string) => registrySecretPort.delete(agentId),
   connectionGrantsCleanupHook,
   agentEnvCleanupHook,
+  invocationsCleanupHook,
 ];
 
 // Cross-store orphan reaper. Lists live agent CRs, finds DB rows keyed by
@@ -591,6 +617,11 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: agentEnvCleanupHook,
+    },
+    {
+      name: "invocations",
+      listAgentIds: () => listInvocationAgentIds(db),
+      cleanup: invocationsCleanupHook,
     },
   ],
   batchSize: 200,

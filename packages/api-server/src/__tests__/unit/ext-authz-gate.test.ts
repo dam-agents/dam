@@ -210,7 +210,9 @@ describe("ext-authz gate", () => {
 
     expect(repo.inserts).toBe(1);
     expect(bus.publishes).toHaveLength(1);
-    expect(bus.publishes[0].channel).toBe("inject:inst-1");
+    // The synth frame fans out on the policy-bearing agent's channel (the
+    // resolved identity), not the raw caller's.
+    expect(bus.publishes[0].channel).toBe("inject:agent-1");
 
     const id = repo.rows[0].id;
     repo.resolve(id, "allow");
