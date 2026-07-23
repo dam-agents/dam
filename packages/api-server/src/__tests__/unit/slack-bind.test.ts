@@ -17,12 +17,10 @@ function harness(opts?: {
   boundTo?: string | null;
   connectOk?: boolean;
   postError?: string;
-  channelId?: string;
 }) {
-  const channelId = opts?.channelId ?? "C-1";
   const store = createSlackBindFlowStore({ now: () => 1_000 });
   const flowId = store.create({
-    slackChannelId: channelId,
+    slackChannelId: "C-1",
     slackUserId: "U-7",
     keycloakSub: OWNER,
     channelTitle: "general",
@@ -58,29 +56,17 @@ function harness(opts?: {
 }
 
 describe("slack bind flow", () => {
-  it("binds a channel shared with ambient on by default, consumes the flow, confirms, returns the title", async () => {
+  it("binds shared (ambient off), consumes the flow, posts a plain confirmation, returns the title", async () => {
     const h = harness();
     const res = await h.run("agent-1", h.flowId);
     expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
-    // A channel bind defaults ambient on so the agent reads along without a
-    // second /ambient on command...
-    expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1", true);
+    // Ambient is off by default: the bind connects shared and passes no ambient
+    // flag, so read-along stays an explicit opt-in via the ambient command.
+    expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
     expect(h.store.peek(h.flowId)).toBe(null);
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
     expect(text).toContain("my-agent");
-    // ...but the confirmation stays a plain connect notice — ambient is never
-    // announced in the channel.
-    expect(text).not.toContain("without being mentioned");
-  });
-
-  it("binds a 1:1 DM with ambient OFF and does not advertise reading along", async () => {
-    // A DM already relays every message, so ambient is meaningless there.
-    const h = harness({ channelId: "D-9" });
-    const res = await h.run("agent-1", h.flowId);
-    expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
-    expect(h.connectShared).toHaveBeenCalledWith("agent-1", "D-9", false);
-    const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
-    expect(text).toContain("my-agent");
+    // The confirmation is a plain connect notice — no ambient copy.
     expect(text).not.toContain("without being mentioned");
   });
 

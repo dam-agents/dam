@@ -290,7 +290,6 @@ export function executeSlackBind(deps: {
   connectShared: (
     agentId: string,
     slackChannelId: string,
-    ambient: boolean,
   ) => Promise<ConnectSlackResult>;
   binding: SlackBindingPort;
 }) {
@@ -323,16 +322,11 @@ export function executeSlackBind(deps: {
     const existing = await deps.findChannelBinding(flow.slackChannelId);
     if (existing) return err({ type: "ChannelAlreadyBound" as const });
 
-    // A shared channel bind defaults to ambient mode so the agent reads along
-    // without a second command — the pain the /bind flow otherwise imposes. A
-    // 1:1 DM already relays every message, so ambient is meaningless there and
-    // stays off. Either way the ambient state is never announced in the channel.
-    const isDm = flow.slackChannelId.startsWith("D");
-    const connected = await deps.connectShared(
-      agentId,
-      flow.slackChannelId,
-      !isDm,
-    );
+    // A shared channel bind is ambient-off by default: the agent answers
+    // mentions only until the binder opts the channel into read-along with the
+    // ambient command. Ambient has the agent read every message in the channel,
+    // so keeping that broader exposure an explicit opt-in is the safe default.
+    const connected = await deps.connectShared(agentId, flow.slackChannelId);
     if (!connected.ok) {
       // Ownership was already proven by getAgent, so a non-ok here is a lost
       // race (the channel was bound between the check and the write).
@@ -357,8 +351,8 @@ export function executeSlackBind(deps: {
     });
 
     // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
-    // private DM doesn't read as a shared channel ("everyone here"). It stays a
-    // plain connect notice; the ambient default is never announced here.
+    // private DM doesn't read as a shared channel ("everyone here").
+    const isDm = flow.slackChannelId.startsWith("D");
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
@@ -1347,8 +1341,8 @@ export function createAgentsService(deps: {
           return infra ? { id: infra.id, name: infra.name } : null;
         },
         findChannelBinding: deps.findSlackChannelBinding,
-        connectShared: (id, slackChannelId, ambient) =>
-          connectSlackImpl(id, slackChannelId, "shared", ambient),
+        connectShared: (id, slackChannelId) =>
+          connectSlackImpl(id, slackChannelId, "shared"),
         binding,
       })(agentId, flowId);
     },
