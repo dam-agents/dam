@@ -202,6 +202,9 @@ describe("slack ambient inbound", () => {
     expect(prompt).toContain('the bot "DAM"');
     expect(prompt).toContain("@dam");
     expect(prompt).toContain("answer it as you would a mention");
+    // The read-along frame nudges an early, fitting reaction as a light-touch
+    // acknowledgement — the in-channel signal that replaced the automatic 👀.
+    expect(prompt).toContain("open with a fitting emoji reaction");
     expect(prompt).not.toContain("agent-1");
 
     // Nothing is posted on the agent's behalf: no auto-reply, no ack reaction,
@@ -438,11 +441,12 @@ describe("slack ambient inbound", () => {
 
     expect(h.prompts).toHaveLength(1);
     // A mention is addressed, so it gets the plain contract without the
-    // read-along framing, plus the 👀 ack.
+    // read-along framing.
     expect(String(h.prompts[0])).not.toContain("<reading-along>");
     expect(String(h.prompts[0])).toContain("<how-to-respond>");
-    expect(h.reactions()).toHaveLength(1);
-    // The response is not auto-posted; only the ack reaction is present.
+    // Nothing is posted on the agent's behalf: no auto-reply and no automatic
+    // ack reaction — the agent reaches the channel only via its own tools.
+    expect(h.reactions()).toHaveLength(0);
     expect(h.messages()).toHaveLength(0);
   });
 });

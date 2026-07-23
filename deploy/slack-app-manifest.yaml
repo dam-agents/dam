@@ -37,8 +37,8 @@ oauth_config:
       # (assistant.threads.setStatus) — both covered by chat:write. The status
       # degrades to nothing where the workspace can't show it.
       - chat:write
-      # The turn-start 👀 ack and the agent-driven `react` tool
-      # (reactions.add).
+      # The agent-driven `react` tool (reactions.add) — the agent's own emoji
+      # reactions, including the contextual ack it opens ambient turns with.
       - reactions:write
       # Cross-workspace outbound: list the channels the bot is in, check
       # membership before posting, and open direct messages.

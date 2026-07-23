@@ -71,7 +71,8 @@ test("an unmentioned channel message gets an ambient reply", async () => {
       )
       .toBe(true);
 
-    // Ambient turns stay out of the way: no eyes reaction, no ephemerals.
+    // Ambient stays out of the way: the platform posts no reaction or ephemeral
+    // on the agent's behalf (the agent reaches the channel only via its tools).
     const { records } = await api.e2e.slackReadOutbound.query();
     expect(records.filter((r) => r.kind === "reaction")).toEqual([]);
     expect(records.filter((r) => r.kind === "ephemeral")).toEqual([]);

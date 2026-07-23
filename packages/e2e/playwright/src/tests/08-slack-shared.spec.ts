@@ -39,21 +39,8 @@ test("any channel member drives the agent through a shared binding", async () =>
       text: helloText,
     });
 
-    await expect
-      .poll(
-        async () => {
-          const { records } = await api.e2e.slackReadOutbound.query();
-          return records.some(
-            (r) => r.kind === "reaction" && r.name === "eyes",
-          );
-        },
-        {
-          timeout: 30_000,
-          message: "the mention was not acknowledged with the eyes reaction",
-        },
-      )
-      .toBe(true);
-
+    // The mention relays and the agent's reply lands in-thread. The platform
+    // no longer auto-acks with a reaction, so the reply itself is the signal.
     await expect
       .poll(
         async () => {
