@@ -221,6 +221,7 @@ export type {
   MetricsSpendQuery,
   MetricsOverview,
   TokenSpendByModel,
+  SpendByAgent,
   SessionRuntime,
   CallContext,
 } from "./modules/metrics/types.js";

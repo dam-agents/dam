@@ -1,11 +1,12 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
+import type { SpendByAgent } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useModelSpend } from "../api/queries.js";
+import { useModelSpend, useSpendByAgent } from "../api/queries.js";
 import { ModelSpendTable } from "../components/metrics-panel.js";
 import { formatUsd } from "../lib/format.js";
 
@@ -23,10 +24,10 @@ export function UsageView() {
     month: "long",
     year: "numeric",
   });
-  const { data, isPending, isError } = useModelSpend(
-    month.toISOString(),
-    monthStart(month, 1).toISOString(),
-  );
+  const from = month.toISOString();
+  const to = monthStart(month, 1).toISOString();
+  const { data, isPending, isError } = useModelSpend(from, to);
+  const byAgent = useSpendByAgent(from, to);
   const total = data?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
 
   return (
@@ -89,8 +90,51 @@ export function UsageView() {
               <ModelSpendTable rows={data} />
             </Card>
           )}
+          {byAgent.data && byAgent.data.length > 0 && (
+            <>
+              <SectionLabel spaced>Spend by agent</SectionLabel>
+              <Card className="p-4">
+                <SpendByAgentBars rows={byAgent.data} />
+              </Card>
+            </>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+/** Hand-rolled horizontal bars, one per agent, sorted highest cost first (the
+ *  API already sorts them). Bar length is relative to the biggest spender, so
+ *  the top row is always full-width and the rest read proportionally. No chart
+ *  library — deliberately just Tailwind. */
+function SpendByAgentBars({ rows }: { rows: SpendByAgent[] }) {
+  const max = rows[0]?.costUsd ?? 0;
+  return (
+    <ul className="flex flex-col gap-3">
+      {rows.map((row) => (
+        <li key={row.agentId}>
+          <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
+            <span
+              className="truncate text-foreground"
+              title={row.agentName || row.agentId}
+            >
+              {row.agentName || row.agentId}
+            </span>
+            <span className="shrink-0 font-medium tabular-nums text-foreground">
+              {formatUsd(row.costUsd)}
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-accent"
+              style={{
+                width: `${max > 0 ? (row.costUsd / max) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

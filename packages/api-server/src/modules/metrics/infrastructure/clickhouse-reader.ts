@@ -2,6 +2,7 @@ import { type ClickHouseClient, createClient } from "@clickhouse/client";
 import type {
   CallContext,
   SessionRuntime,
+  SpendByAgent,
   TokenSpendByModel,
 } from "api-server-api";
 import type {
@@ -128,6 +129,29 @@ export function createClickhouseReader(
         cacheCreationTokens: n(x.cacheCreationTokens),
         costUsd: n(x.costUsd),
       })) satisfies TokenSpendByModel[];
+    },
+
+    async spendByAgent(agentIds, window) {
+      // Group on the gateway-stamped id (the trusted attribution key); the
+      // display name is the latest `platform.agent.name` observed in range
+      // (argMax over Timestamp), so a deleted agent keeps a readable label.
+      // The name is display-only — the id stays the key.
+      const r = await rows(
+        `SELECT
+           ResourceAttributes['platform.agent.id'] AS agentId,
+           argMax(ResourceAttributes['platform.agent.name'], Timestamp) AS agentName,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY agentId
+         ORDER BY costUsd DESC`,
+        windowParams(agentIds, window),
+      );
+      return r.map((x) => ({
+        agentId: String(x.agentId ?? ""),
+        agentName: String(x.agentName ?? ""),
+        costUsd: n(x.costUsd),
+      })) satisfies SpendByAgent[];
     },
 
     async runtimeBySession(agentIds, window) {

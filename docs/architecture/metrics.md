@@ -1,6 +1,6 @@
 # Metrics (the usage read path)
 
-Last verified: 2026-07-22
+Last verified: 2026-07-23
 
 ## Overview
 
@@ -37,6 +37,13 @@ Both return only data for agents the caller owns; neither ever mutates.
   *all* of the caller's agents. The range is passed as instants, not calendar
   fields, so the client decides what a "month" means in its own timezone; this
   is what the month-stepper in the Usage view drives.
+- **Spend by agent** — the same range and ownership scoping as **Spend**, but
+  rolled up per owning agent instead of per model, sorted by cost descending
+  with no top-N cap. Grouping is on the gateway-stamped `platform.agent.id`
+  (the trusted attribution key); the display name is the latest
+  `platform.agent.name` observed in range, so a deleted agent keeps a readable
+  label. The name is display-only — the id stays the key. The Usage view renders
+  it as a horizontal-bar breakdown driven by the same month-stepper.
 
 Field-level shapes live in the contract package
 ([`packages/api-server-api/src/modules/metrics/`](../../packages/api-server-api/src/modules/metrics/)) —
