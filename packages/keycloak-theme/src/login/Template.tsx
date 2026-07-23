@@ -9,9 +9,11 @@ import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
 
-// Brand shown on the auth screens comes from the realm `displayName` at
-// runtime (Helm `brand.name`). This is only the fallback for when it's
-// absent — e.g. the local mocked-kcContext dev preview.
+// Brand on the auth screens comes from the realm at runtime: `displayName`
+// (Helm `brand.name`) names the sign-in heading, `displayNameHtml` (Helm
+// `brand.title`, plain text) titles the browser tab like the web app. This
+// is only the fallback for when they're absent — e.g. the local
+// mocked-kcContext dev preview.
 const BRAND_FALLBACK = "Platform";
 
 export default function Template(props: TemplateProps<KcContext, I18n>) {
@@ -33,8 +35,9 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
   useEffect(() => {
     document.title =
       documentTitle ??
-      msgStr("loginTitle", realm.displayName || BRAND_FALLBACK);
-  }, [documentTitle, msgStr, realm.displayName]);
+      (realm.displayNameHtml ||
+        msgStr("loginTitle", realm.displayName || BRAND_FALLBACK));
+  }, [documentTitle, msgStr, realm.displayNameHtml, realm.displayName]);
 
   useSetClassName({ qualifiedName: "html", className: "" });
   useSetClassName({ qualifiedName: "body", className: "" });
