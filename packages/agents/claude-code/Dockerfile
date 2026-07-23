@@ -3,16 +3,19 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# harness tools from the workspace-seeded user-level mise config; install them
-# by name — a bare `mise install` would also preinstall every lazy tool from
-# the base image's /etc/mise/config.toml
-COPY workspace/.config/mise/ /app/working-dir/.config/mise/
+# harness tool pins ride the image as system-level mise config so they always
+# match the installs baked in below (a pin seeded into the persistent workspace
+# would go stale on template upgrade); install by name — a bare `mise install`
+# would also preinstall every lazy tool from the base image's /etc/mise/config.toml
+COPY harness-tools.toml /etc/mise/conf.d/harness-tools.toml
 # run postinstall manually: mise's npm backend skips it, claude needs its native binary
 RUN --mount=type=cache,target=/root/.npm \
-    export MISE_GLOBAL_CONFIG_FILE=/app/working-dir/.config/mise/config.toml &&\
     mise install "npm:@anthropic-ai/claude-code" "npm:@agentclientprotocol/claude-agent-acp" &&\
     node "$(mise where npm:@anthropic-ai/claude-code)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" &&\
-    chown -R 65532:0 /app
+    chown -R 65532 /etc/mise \
+      "$(dirname "$(mise where npm:@anthropic-ai/claude-code)")" \
+      "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
+    find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
