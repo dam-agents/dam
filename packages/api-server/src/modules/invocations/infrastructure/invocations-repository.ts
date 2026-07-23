@@ -40,6 +40,12 @@ export interface InvocationsRepository {
   listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
   /** All `running` rows — the restart sweep checks each one's pod for a crash. */
   listRunning(limit: number): Promise<InvocationRow[]>;
+  /** `running` rows spawned by this driver — the Driver Cascade fails and
+   *  reaps these when the driver agent is deleted. */
+  listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
+  /** Every agent id a `running` row references (targets and drivers) — the
+   *  orphan sweeper checks these against live agents and cascades the rest. */
+  listRunningAgentIds(): Promise<string[]>;
   /** Terminal rows whose result is old enough to drop (retention elapsed). */
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
   delete(id: string): Promise<void>;
@@ -128,6 +134,35 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .where(eq(invocationsTable.status, "running"))
         .limit(limit);
       return rows.map(toRow);
+    },
+
+    async listRunningByDriver(driverAgentId) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.status, "running"),
+            eq(invocationsTable.driverAgentId, driverAgentId),
+          ),
+        );
+      return rows.map(toRow);
+    },
+
+    async listRunningAgentIds() {
+      const rows = await db
+        .select({
+          id: invocationsTable.id,
+          driverAgentId: invocationsTable.driverAgentId,
+        })
+        .from(invocationsTable)
+        .where(eq(invocationsTable.status, "running"));
+      const ids = new Set<string>();
+      for (const r of rows) {
+        ids.add(r.id);
+        ids.add(r.driverAgentId);
+      }
+      return Array.from(ids);
     },
 
     async listAgedTerminal(before, limit) {

@@ -137,10 +137,14 @@ export function createInvocationsService(deps: {
       // The target is a fresh ephemeral Agent, marked Sweepable so the Agent
       // Sweep reaps it once it hibernates — the backstop for the eager reap on
       // this Invocation reaching terminal. No Lifetime grace: an Invocation
-      // target dies on hibernate.
+      // target dies on hibernate. Preset `none`: under Egress Aliasing the
+      // target has no egress identity of its own — the ext_authz gate resolves
+      // every request to the driver's rules, so seeded target rules would be
+      // dead rows.
       const agent = await deps.agents.create({
         name: `invocation-${randomBytes(6).toString("hex")}`,
         sweepable: true,
+        egressPreset: "none",
         ...(input.templateId ? { templateId: input.templateId } : {}),
         ...(input.image ? { image: input.image } : {}),
         ...(input.connections.length

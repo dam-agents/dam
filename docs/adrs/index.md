@@ -74,6 +74,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 075 | [Periodic work on BullMQ](075-periodic-jobs-bullmq.md) |  | api-server | Recurring reconciliation ticks run as BullMQ job schedulers on per-job queues instead of per-replica setInterval loops. |
 | 076 | [Per-channel access modes — shared and person-scoped](076-channel-access-modes.md) |  | channels | Each channel binding picks its access mode at bind time — shared (place-scoped, Agent credentials, open speaker set) or person-scoped (identity linking, allow-list, per-turn forks). |
 | 077 | [The spawn primitive is an ephemeral Agent; lifecycle and result contract are separate concerns](077-sandbox-as-ephemeral-agent.md) |  | agent-lifecycle | A spawnable node is a normal ephemeral Agent a driver creates, prompts once, and polls; its autosweep lifecycle lives on the Agent (Sweepable + Agent Sweep) and its run-once result contract lives in a separate Invocations context. |
+| 078 | [Invocation egress follows the driver (Egress Aliasing)](078-invocation-egress-aliasing.md) |  | security-and-credentials | The ext_authz gate resolves an Invocation target to its driver before every egress decision; the target has no egress identity of its own, and deleting a driver cascades to its targets. |
 
 ## Superseded
 
