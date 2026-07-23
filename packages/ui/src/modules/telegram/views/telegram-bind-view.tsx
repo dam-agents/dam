@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
+import { CreateAgentInline } from "../../agents/components/create-agent-inline.js";
 import { useBindTelegramChat } from "../api/mutations.js";
 import { useTelegramBot } from "../api/queries.js";
 import {
@@ -28,6 +30,32 @@ export function TelegramBindView() {
     agentName: string;
     chatTitle: string | null;
   } | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [justCreated, setJustCreated] = useState<AgentView | null>(null);
+
+  // Bridge the create→refetch gap: show a freshly created agent in the picker
+  // immediately, before the invalidated list query has refetched. The server
+  // list is authoritative once it includes the agent.
+  const displayedAgents = useMemo(() => {
+    if (!justCreated || list.some((a) => a.id === justCreated.id)) return list;
+    return [...list, justCreated];
+  }, [list, justCreated]);
+
+  const handleCreated = (agent: AgentView) => {
+    setJustCreated(agent);
+    setCreating(false);
+    setError(null);
+  };
+
+  // With no agents to pick, open the create form by default — and keep it open
+  // through an out-of-band list change (another tab/CLI, the 5s poll) so
+  // in-progress input is never discarded. Seeded once, after the first load.
+  const seededCreate = useRef(false);
+  useEffect(() => {
+    if (seededCreate.current || agents.isLoading) return;
+    seededCreate.current = true;
+    if (list.length === 0) setCreating(true);
+  }, [agents.isLoading, list.length]);
 
   if (callbackError) {
     return <TerminalError copy={callbackErrorCopy(callbackError)} />;
@@ -58,18 +86,6 @@ export function TelegramBindView() {
       </Page>
     );
   }
-  if (list.length === 0) {
-    return (
-      <Page title="Connect this chat to an agent">
-        <p className="text-sm text-muted-foreground">
-          You don&apos;t own any agents yet. Create an agent first, then send
-          /login in the chat again.
-        </p>
-        <DashboardButton label="Go to dashboard" />
-      </Page>
-    );
-  }
-
   const pick = (agent: AgentView) => {
     setError(null);
     bind.mutate(
@@ -85,39 +101,58 @@ export function TelegramBindView() {
     );
   };
 
+  const hasAgents = displayedAgents.length > 0;
+
   return (
     <Page title="Connect this chat to an agent">
       <p className="text-sm text-muted-foreground">
-        Everyone in the chat will be able to talk to the agent you pick, using
-        the agent&apos;s own credentials.
+        {hasAgents
+          ? "Everyone in the chat will be able to talk to the agent you pick, using the agent's own credentials."
+          : "You don't own any agents yet. Create one to connect it — everyone in the chat will then be able to talk to it, using its own credentials."}
       </p>
       {error && (
         <p className="text-sm text-red-600">
           {error.title} — {error.hint}
         </p>
       )}
-      <div className="flex flex-col gap-2">
-        {list.map((agent) => (
-          <BindAgentRow
-            key={agent.id}
-            agent={agent}
-            disabled={bind.isPending}
-            pending={bind.isPending && bind.variables?.agentId === agent.id}
-            onPick={() => pick(agent)}
-          />
-        ))}
-      </div>
+      {hasAgents && (
+        <div className="flex flex-col gap-2">
+          {displayedAgents.map((agent) => (
+            <BindAgentRow
+              key={agent.id}
+              agent={agent}
+              highlighted={justCreated?.id === agent.id}
+              disabled={bind.isPending}
+              pending={bind.isPending && bind.variables?.agentId === agent.id}
+              onPick={() => pick(agent)}
+            />
+          ))}
+        </div>
+      )}
+      {creating ? (
+        <CreateAgentInline onCreated={handleCreated} />
+      ) : hasAgents ? (
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="self-start text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          + Create a new agent
+        </button>
+      ) : null}
     </Page>
   );
 }
 
 function BindAgentRow({
   agent,
+  highlighted,
   disabled,
   pending,
   onPick,
 }: {
   agent: AgentView;
+  highlighted: boolean;
   disabled: boolean;
   pending: boolean;
   onPick: () => void;
@@ -127,7 +162,10 @@ function BindAgentRow({
       type="button"
       disabled={disabled}
       onClick={onPick}
-      className="flex flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-4 py-3 text-left hover:border-foreground/40 disabled:opacity-60"
+      className={cn(
+        "flex flex-col items-start gap-0.5 rounded-lg border bg-background px-4 py-3 text-left hover:border-foreground/40 disabled:opacity-60",
+        highlighted ? "border-foreground" : "border-border",
+      )}
     >
       <span className="text-[14px] font-semibold text-foreground">
         {pending ? `Connecting ${agent.name}…` : agent.name}
