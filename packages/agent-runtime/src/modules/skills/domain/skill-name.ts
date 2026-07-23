@@ -23,3 +23,30 @@ export function makeSkillName(
   }
   return ok(value as SkillName);
 }
+
+/**
+ * Derive the on-disk directory name for an uploaded skill from its confirmed
+ * display name: lowercase, whitespace/underscores to `-`, everything outside
+ * `[a-z0-9-]` dropped, runs of `-` collapsed and trimmed. A name that reduces
+ * to nothing (e.g. all punctuation) is an InvalidSkillName. `makeSkillName`
+ * is the final guard so the slug can never smuggle a traversal sequence.
+ */
+export function makeSkillSlug(
+  displayName: string,
+): Result<SkillName, SkillsDomainError> {
+  const slug = displayName
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!slug) {
+    return err({
+      kind: "InvalidSkillName",
+      name: displayName,
+      reason: "name has no slug-safe characters",
+    });
+  }
+  return makeSkillName(slug);
+}

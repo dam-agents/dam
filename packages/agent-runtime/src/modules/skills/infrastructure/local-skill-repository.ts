@@ -15,8 +15,8 @@ import type { SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
 
 const FRONTMATTER_READ_BYTES = 8 * 1024;
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
-const MAX_SKILL_BYTES = 5 * 1024 * 1024;
+export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_SKILL_BYTES = 5 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 60_000;
 
 export interface LocalSkillRepository {
@@ -38,6 +38,19 @@ export interface LocalSkillRepository {
     skillPaths: SkillPath[],
     srcDir: string,
   ) => Promise<{ contentHash: string }>;
+  /** Materialize a single-file skill: write `content` as `SKILL.md` into a
+   *  temp dir and mirror it into `<skillPath>/<name>/` for every path. */
+  writeLocalSkill: (
+    name: SkillName,
+    skillPaths: SkillPath[],
+    content: string,
+  ) => Promise<void>;
+  /** True if `<skillPath>/<name>` exists in any path (as any entry, with or
+   *  without a SKILL.md) — the collision guard for writeLocal. */
+  existsInAnyPath: (
+    name: SkillName,
+    skillPaths: SkillPath[],
+  ) => Promise<boolean>;
   /** Remove `<skillPath>/<name>/` from every path. */
   remove: (name: SkillName, skillPaths: SkillPath[]) => Promise<void>;
   /** Allocate a tmpdir, run `fn` against it, then unconditionally clean up. */
@@ -83,6 +96,8 @@ export function createLocalSkillRepository(): LocalSkillRepository {
     listLocal: list,
     readLocal: read,
     writeFromDir: write,
+    writeLocalSkill,
+    existsInAnyPath,
     remove,
     withTempDir,
     extractTarball,
@@ -203,6 +218,30 @@ async function write(
   const firstTarget = path.join(skillPaths[0], name);
   const contentHash = await hashSkillDir(firstTarget);
   return { contentHash };
+}
+
+async function writeLocalSkill(
+  name: SkillName,
+  skillPaths: SkillPath[],
+  content: string,
+): Promise<void> {
+  await withTempDir("platform-skill-upload-", async (tmp) => {
+    await fs.writeFile(path.join(tmp, "SKILL.md"), content, "utf8");
+    await write(name, skillPaths, tmp);
+  });
+}
+
+async function existsInAnyPath(
+  name: SkillName,
+  skillPaths: SkillPath[],
+): Promise<boolean> {
+  for (const base of skillPaths) {
+    try {
+      await fs.access(path.join(base, name));
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 async function remove(name: SkillName, skillPaths: SkillPath[]): Promise<void> {

@@ -97,6 +97,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Install | Materializing a Skill from a Source at a Version into one or more Skill Paths |
 | Publish | Lifting a Local Skill to a GitHub repository as a new branch + PR via the REST API |
 | Scan | Enumerating Scanned Skills in a Source |
+| Write Local | Materializing user-supplied Markdown as a standalone Local Skill (one skill per file); rejects name collisions with existing Local Skills |
 
 ## Approvals (bounded context)
 

@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-07-17
+Last verified: 2026-07-23
 
 ## Overview
 
@@ -122,13 +122,14 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 
 ### agent-runtime skills service
 
-Lives in [`packages/agent-runtime/src/modules/skills/`](../../packages/agent-runtime/src/modules/skills/). Exposes a Bearer-authenticated tRPC surface (`install`, `uninstall`, `publish`, `scan`, `listLocal`) over the harness port; the api-server is the only caller.
+Lives in [`packages/agent-runtime/src/modules/skills/`](../../packages/agent-runtime/src/modules/skills/). Exposes a Bearer-authenticated tRPC surface (`install`, `uninstall`, `publish`, `scan`, `listLocal`, `readLocal`, `writeLocal`) over the harness port; the api-server is the only caller.
 
-Three responsibilities:
+Four responsibilities:
 
 - **Install** — fetches the source at the requested `version`. For GitHub URLs, uses the REST tarball endpoint (anonymous first, retry authenticated on 404 to distinguish "not found" from "private"); for everything else, shallow-clones via `git`. The paired gateway pod injects the owner's GitHub token on the wire when the request hits `api.github.com`. Resolves the named skill's directory from the source's `path/<name>/` when a [path](#skill-source) is set, else by walking the [Source Roots](#source-roots) in order (then top-level); copies it into every configured Skill Path, and returns the deterministic `contentHash`.
 - **Scan** — same fetch path; enumerates skills from the source's `path` exclusively when set, else across the [Source Roots](#source-roots) (union, deduped by name, top-level fallback); parses frontmatter, and returns `(name, description, version, contentHash)` for each.
 - **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Platform <platform-publish@users.noreply.github.com>`. Files land under the source's [`path`](#skill-source) subdir when set (so the same source's subdir-exclusive scan finds the published skill), else under `skills/`. Branch naming: `platform/publish-<name>-<timestamp>`. There is no `git push`.
+- **Write Local** — validates and materializes user-uploaded Markdown as standalone Local Skills (one skill per file). Each file lands as `<slug>/SKILL.md` in every configured Skill Path, with frontmatter `name:` forced to the confirmed display name (synthesized when absent). Enforces the same size caps as the read side and rejects the whole batch (before writing anything) on any collision — a slug/directory clash or a display-name clash with an existing Local Skill — so an upload never clobbers an installed or in-place-edited skill.
 
 When env credentials arrive over the runtime channel, the agent-runtime reacts by running `gh auth setup-git`, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
 
