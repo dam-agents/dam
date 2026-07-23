@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { GithubAppInstallHint } from "./github-app-install-hint.js";
+import { GithubAppInstallLink } from "./github-app-install-hint.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -58,6 +58,7 @@ export function CatalogConnectionRow({
             {subtitle}
           </p>
         </div>
+        <GithubAppInstallLink connection={connection} />
         {grant &&
           !grant.actionHidden &&
           (grant.granted ? (
@@ -110,7 +111,6 @@ export function CatalogConnectionRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <GithubAppInstallHint connection={connection} />
     </div>
   );
 }
