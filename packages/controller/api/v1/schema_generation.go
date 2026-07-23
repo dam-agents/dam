@@ -13,7 +13,9 @@ const (
 	// Agent gen 3: hibernationTimeout (per-agent idle-timeout override, duration) added to AgentSpec.
 	// Agent gen 4: runtimeClassName + nodeSelector added to AgentSpec for
 	// per-template scheduling (GPU-passthrough Kata workloads).
-	AgentSchemaGeneration = 4
+	// Agent gen 5: l7Hosts added to AgentSpec — per-agent L7 promotion
+	// replaces the owner-scoped allow-only marker Secrets (#2865).
+	AgentSchemaGeneration = 5
 	ForkSchemaGeneration  = 1
 	RunSchemaGeneration   = 1
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).

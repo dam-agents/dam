@@ -41,34 +41,21 @@ export interface StateBuilder {
   ): Promise<StatePayload>;
 }
 
-/** `env` contributions for an agent's granted standalone secrets (secrets module). */
-export interface SecretEnvSource {
-  forAgent(agentId: string): Promise<Contribution[]>;
-}
-
 export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
-  secretEnv: SecretEnvSource;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [userEnv, granted, skills, secretEnv] = await Promise.all([
+      const [userEnv, granted, skills] = await Promise.all([
         readUserEnvContributions(deps.db, agentId),
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
-        deps.secretEnv.forAgent(agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      // User env first: the env driver is first-occurrence-wins, so it shadows connection/secret env.
-      const rawContribs = [
-        ...userEnv,
-        ...builtin,
-        ...granted,
-        ...skills,
-        ...secretEnv,
-      ];
+      // User env first: the env driver is first-occurrence-wins, so it shadows connection env.
+      const rawContribs = [...userEnv, ...builtin, ...granted, ...skills];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);

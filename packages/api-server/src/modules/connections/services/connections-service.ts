@@ -29,9 +29,11 @@ import {
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
+import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
+import { mintGitHubAppToken } from "./github-app.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -44,6 +46,7 @@ export function createConnectionsService(deps: {
   fanOut: ContributionFanOut;
   oauthFlow: OAuthFlowService;
   oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   oauthCallbackUrl: string;
   brandName: string;
 }): ConnectionsService {
@@ -60,7 +63,9 @@ export function createConnectionsService(deps: {
       )
       .map((c) => c.host);
     const oauthExtras =
-      conn.auth.kind === "oauth" || conn.auth.kind === "client-credentials"
+      conn.auth.kind === "oauth" ||
+      conn.auth.kind === "client-credentials" ||
+      conn.auth.kind === "github-app"
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
             ...(conn.auth.kind === "oauth" && conn.auth.appSlug
@@ -215,6 +220,10 @@ export function createConnectionsService(deps: {
         case "client-credentials":
           paths.add(conn.auth.accessTokenRef.path);
           paths.add(conn.auth.clientSecretRef.path);
+          break;
+        case "github-app":
+          paths.add(conn.auth.accessTokenRef.path);
+          paths.add(conn.auth.privateKeyRef.path);
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
@@ -411,6 +420,42 @@ export function createConnectionsService(deps: {
         });
       }
 
+      // GitHub App mints its first installation token here, synchronously:
+      // a bad key/app/installation fails the create before anything is
+      // persisted, mirroring the client-credentials path above.
+      if (auth.kind === "github-app" && secretPath) {
+        const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
+        if (!privateKeyPem) {
+          throw new Error(`template ${template.id}: missing privateKey`);
+        }
+        const minted = await mintGitHubAppToken(deps.githubAppEngine, {
+          connectionRef: `connection:${id}:${template.id}`,
+          auth,
+          privateKeyPem,
+        });
+        auth = {
+          ...auth,
+          connectedAt: Math.floor(Date.now() / 1000),
+          expiresAt: minted.expiresAt,
+        };
+        built.secrets.set(secretPath, {
+          ...(built.secrets.get(secretPath) ?? {}),
+          access_token: minted.accessToken,
+          ...buildConnectionSdsFields(contributions, minted.accessToken),
+        });
+        securityLog("info", "oauth.token_mint", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: id,
+          result: "success",
+          detail: {
+            templateId: template.id,
+            grant: "github_app_installation",
+          },
+        });
+      }
+
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
@@ -484,7 +529,7 @@ function stripSecretsFromInputs(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = ["value", "clientSecret"];
+  const SECRET_KEYS = ["value", "clientSecret", "privateKey"];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (SECRET_KEYS.includes(k)) continue;
@@ -510,6 +555,13 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
         conn.auth.expiresAt < Math.floor(Date.now() / 1000)
         ? "expired"
         : "active";
+    case "github-app":
+      // Same horizon logic as client-credentials: past-expiry means the
+      // refresh loop has been failing to re-mint the installation token.
+      return conn.auth.expiresAt &&
+        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
+        ? "expired"
+        : "active";
     case "header":
       return "active";
     case "none":
@@ -525,6 +577,7 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
   switch (auth.kind) {
     case "oauth":
     case "client-credentials":
+    case "github-app":
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;

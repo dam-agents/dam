@@ -44,6 +44,7 @@ export function SkillsSurface({
 }) {
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const [addOpen, setAddOpen] = useState(false);
   const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
   const [renderFor, setRenderFor] = useState<{
@@ -171,6 +172,11 @@ export function SkillsSurface({
                     onRemove={() => void removeWithConfirm(src)}
                     onOpenSkill={(skill) =>
                       setRenderFor({ source: src, skill })
+                    }
+                    onManageConnections={
+                      agentId
+                        ? () => navigateToSandboxHome(agentId, "connections")
+                        : undefined
                     }
                   />
                 ))}

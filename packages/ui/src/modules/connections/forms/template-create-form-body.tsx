@@ -1,21 +1,24 @@
-import type {
-  ConnectionTemplateInput,
-  ConnectionTemplateView,
-} from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { ConnectionTemplateView } from "api-server-api";
+import { type ReactNode, useMemo } from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { emitToast } from "@/lib/toast";
 
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
-import { slugifyTemplateName } from "../lib/connection-name.js";
+import {
+  buildTemplateFormSchema,
+  templateFormDefaults,
+  type TemplateFormValues,
+} from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
-import { hintFor, labelFor, placeholderFor } from "./field-copy.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
 import { TemplateExplainer } from "./template-explainer.js";
+import { TemplateFieldInput } from "./template-field-input.js";
 
 export interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
@@ -45,16 +48,12 @@ export function TemplateCreateFormBody({
 }: TemplateCreateFormProps & {
   layout?: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }) {
-  const [name, setName] = useState(() => slugifyTemplateName(template.name));
-  const [fields, setFields] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const i of template.inputs) {
-      if (i.presetValue !== undefined && !i.secret)
-        init[i.name] = i.presetValue;
-    }
-    return init;
+  const schema = useMemo(() => buildTemplateFormSchema(template), [template]);
+  const { control, handleSubmit } = useForm<TemplateFormValues>({
+    resolver: zodResolver(schema),
+    mode: "onChange",
+    defaultValues: templateFormDefaults(template),
   });
-  const [overrideDefaults, setOverrideDefaults] = useState(false);
 
   const {
     submit,
@@ -84,21 +83,14 @@ export function TemplateCreateFormBody({
   // from a sibling connection in the same credential family — the copy differs.
   const credentialsFromFamily = template.extras?.credentialsFromFamily === true;
 
-  const setF = (k: string, v: string) =>
-    setFields((prev) => ({ ...prev, [k]: v }));
-
-  const onSubmit = () => {
-    const payload = buildCreatePayload(template, {
-      name,
-      fields,
-      overrideDefaults,
-    });
+  const onSubmit = handleSubmit((values) => {
+    const payload = buildCreatePayload(template, values);
     if ("error" in payload) {
       emitToast({ kind: "error", message: payload.error });
       return;
     }
     void submit(payload);
-  };
+  });
 
   const required = template.inputs.filter((i) => i.state === "required");
   const optional = template.inputs.filter((i) => i.state === "optional");
@@ -109,13 +101,22 @@ export function TemplateCreateFormBody({
 
   const fieldsRegion = (
     <div className="flex flex-col gap-4">
-      <LabeledInput
-        label="Name"
-        testId="connection-field-name"
-        placeholder="my-connection"
-        value={name}
-        onChange={setName}
-        help="Lowercase letters, digits, and single hyphens (e.g. my-mcp-server). Doubles as the MCP slug."
+      <Controller
+        control={control}
+        name="name"
+        render={({ field, fieldState }) => (
+          <LabeledInput
+            label="Name"
+            testId="connection-field-name"
+            placeholder="my-connection"
+            autoFocus
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            error={fieldState.error?.message}
+            inset
+          />
+        )}
       />
 
       {bringYourOwnApp && (
@@ -128,10 +129,9 @@ export function TemplateCreateFormBody({
       {required.map((input) => (
         <TemplateFieldInput
           key={input.name}
+          control={control}
           templateId={template.id}
           input={input}
-          value={fields[input.name] ?? ""}
-          onChange={(v) => setF(input.name, v)}
         />
       ))}
 
@@ -139,10 +139,9 @@ export function TemplateCreateFormBody({
         optional.map((input) => (
           <TemplateFieldInput
             key={input.name}
+            control={control}
             templateId={template.id}
             input={input}
-            value={fields[input.name] ?? ""}
-            onChange={(v) => setF(input.name, v)}
           />
         ))}
 
@@ -152,10 +151,9 @@ export function TemplateCreateFormBody({
             {optional.map((input) => (
               <TemplateFieldInput
                 key={input.name}
+                control={control}
                 templateId={template.id}
                 input={input}
-                value={fields[input.name] ?? ""}
-                onChange={(v) => setF(input.name, v)}
               />
             ))}
           </div>
@@ -165,11 +163,9 @@ export function TemplateCreateFormBody({
       {overridable.length > 0 && (
         <OverridableSection
           inputs={overridable}
-          fields={fields}
-          overriding={overrideDefaults}
+          control={control}
+          templateId={template.id}
           fromFamily={credentialsFromFamily}
-          setF={setF}
-          setOverriding={setOverrideDefaults}
         />
       )}
 
@@ -214,31 +210,4 @@ export function TemplateCreateFormBody({
   );
 
   return <>{layout(fieldsRegion, footerRegion)}</>;
-}
-
-function TemplateFieldInput({
-  templateId,
-  input,
-  value,
-  onChange,
-}: {
-  templateId: string;
-  input: ConnectionTemplateInput;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <LabeledInput
-      label={
-        (input.label ?? labelFor(input.name)) +
-        (input.state === "optional" ? " (optional)" : "")
-      }
-      testId={`connection-field-${input.name}`}
-      placeholder={placeholderFor(input.name)}
-      type={input.secret ? "password" : "text"}
-      value={value}
-      onChange={onChange}
-      help={hintFor(templateId, input.name) ?? input.hint}
-    />
-  );
 }

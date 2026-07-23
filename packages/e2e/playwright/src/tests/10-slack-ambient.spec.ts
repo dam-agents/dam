@@ -33,21 +33,14 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     });
   });
 
-  await test.step("the channel is notified that the agent reads along", async () => {
-    await expect
-      .poll(
-        async () => {
-          const { records } = await api.e2e.slackReadOutbound.query();
-          return records.some(
-            (r) => r.kind === "message" && r.text.includes("ambient mode"),
-          );
-        },
-        {
-          timeout: 30_000,
-          message: "no channel-visible ambient notice was posted",
-        },
-      )
-      .toBe(true);
+  await test.step("connecting with ambient posts no announcement to the channel", async () => {
+    // Ambient state is never announced channel-visibly — not on connect, not on
+    // a toggle. Give any stray post time to surface, then require silence.
+    await new Promise((r) => setTimeout(r, 10_000));
+    const { records } = await api.e2e.slackReadOutbound.query();
+    expect(
+      records.filter((r) => r.kind === "message" && r.text.includes("ambient")),
+    ).toEqual([]);
   });
 
   await test.step("a plain message is answered in its own thread", async () => {
@@ -87,10 +80,12 @@ test("an unmentioned channel message gets an ambient reply", async () => {
   await test.step("the prompt is ambient-framed and speaker-labelled", async () => {
     const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
     const serialized = JSON.stringify(prompts);
-    expect(serialized).toContain("<ambient>");
+    // The read-along frame plus the explicit-reply tool contract.
+    expect(serialized).toContain("<reading-along>");
+    expect(serialized).toContain("<how-to-respond>");
     // Brand-independent phrase: the frame announces the install's bot
     // identity so name-addressed messages are answered like mentions.
-    expect(serialized).toContain("appear as the bot");
+    expect(serialized).toContain("answer it as you would a mention");
     expect(serialized).toContain(`<@${strangerSlackUserId}>: ${questionText}`);
   });
 });

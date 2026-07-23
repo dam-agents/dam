@@ -15,6 +15,7 @@ import { createConnectionsService } from "../../modules/connections/services/con
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createOAuthEngine } from "../../modules/connections/infrastructure/oauth-engine.js";
+import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-sds.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
@@ -116,6 +117,7 @@ function makeService(
     fanOut: { apply: async () => {} },
     oauthFlow,
     oauthEngine: engine,
+    githubAppEngine: createGitHubAppEngine(),
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
   });

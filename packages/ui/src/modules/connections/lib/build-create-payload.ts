@@ -61,6 +61,21 @@ export function buildCreatePayload(
         valueFormat: submitted("valueFormat"),
         envName: submitted("envName"),
       });
+    case "github-app": {
+      const appId = submitted("appId");
+      const installationId = submitted("installationId");
+      const privateKey = submitted("privateKey");
+      if (!appId) return { error: "App ID is required" };
+      if (!installationId) return { error: "Installation ID is required" };
+      if (!privateKey) return { error: "Private key is required" };
+      return compact({
+        ...common,
+        authKind: "github-app" as const,
+        appId,
+        installationId,
+        privateKey,
+      });
+    }
     case "header": {
       const value = submitted("value");
       if (!value) return { error: "Secret value is required" };

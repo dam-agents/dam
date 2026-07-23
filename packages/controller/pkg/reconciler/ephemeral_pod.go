@@ -109,6 +109,10 @@ type ephemeralPodConfig struct {
 	typeLabel          string          // value for ForkLabelType
 	idLabelKey         string          // ForkLabelForkID / RunLabelRunID
 	extraEnv           []corev1.EnvVar // kind-specific env (fork ids / exec-only)
+	// l7Hosts is the parent Agent's spec.l7Hosts (#2865). Promoted hosts
+	// put MITM chains on the pod's gateway even with zero credential
+	// Secrets, so the agent container must trust the MITM CA then too.
+	l7Hosts []string
 }
 
 // buildEphemeralAgentPod renders the object-level labels and the pod template
@@ -216,8 +220,9 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 
 	// CA cert volume — projected from the per-instance cert-manager-issued leaf
 	// Secret (single-key projection). The leaf private key (tls.key) lives only
-	// on the paired gateway pod.
-	if len(c.credentialSecrets) > 0 {
+	// on the paired gateway pod. Promoted hosts (l7Hosts) put MITM chains on
+	// the gateway even without credential Secrets, so they need the CA too.
+	if len(c.credentialSecrets) > 0 || len(c.l7Hosts) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
 			VolumeSource: corev1.VolumeSource{

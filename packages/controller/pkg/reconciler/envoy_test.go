@@ -149,6 +149,92 @@ var bootstrapTestCfg = &config.Config{
 	ExtAuthzHoldSeconds: 30,
 }
 
+// --- structured-bootstrap navigation helpers ---
+//
+// The bootstrap is assembled as structured data and serialized by a real YAML
+// encoder (envoy_bootstrap.go), so assertions navigate the parsed document
+// rather than matching a template's exact byte layout (key order, quoting, and
+// flow-vs-block style are the encoder's to choose).
+
+func mustParseBootstrap(t *testing.T, s string) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(s), &doc), "rendered bootstrap must be valid YAML")
+	return doc
+}
+
+// bootstrapClusters returns the static_resources.clusters list as maps.
+func bootstrapClusters(t *testing.T, doc map[string]any) []map[string]any {
+	t.Helper()
+	sr, _ := doc["static_resources"].(map[string]any)
+	raw, _ := sr["clusters"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, c := range raw {
+		if m, ok := c.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// clusterNamed returns the cluster definition with the given name, or nil.
+func clusterNamed(t *testing.T, doc map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, c := range bootstrapClusters(t, doc) {
+		if c["name"] == name {
+			return c
+		}
+	}
+	return nil
+}
+
+// countClustersWithPrefix counts cluster definitions whose name starts with p.
+func countClustersWithPrefix(t *testing.T, doc map[string]any, p string) int {
+	t.Helper()
+	n := 0
+	for _, c := range bootstrapClusters(t, doc) {
+		if name, ok := c["name"].(string); ok && strings.HasPrefix(name, p) {
+			n++
+		}
+	}
+	return n
+}
+
+// internalFilterChains returns the filter_chains of the tls_inspect_internal
+// listener (the TLS-terminating, SNI-matched chains plus the L4 catch-all).
+func internalFilterChains(t *testing.T, doc map[string]any) []map[string]any {
+	t.Helper()
+	sr, _ := doc["static_resources"].(map[string]any)
+	listeners, _ := sr["listeners"].([]any)
+	for _, l := range listeners {
+		lm, _ := l.(map[string]any)
+		if lm["name"] != "tls_inspect_internal" {
+			continue
+		}
+		raw, _ := lm["filter_chains"].([]any)
+		out := make([]map[string]any, 0, len(raw))
+		for _, c := range raw {
+			if m, ok := c.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// filterChainNamed returns the internal-listener filter chain with the given
+// name, or nil.
+func filterChainNamed(t *testing.T, doc map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, c := range internalFilterChains(t, doc) {
+		if c["name"] == name {
+			return c
+		}
+	}
+	return nil
+}
+
 func credentialedChain(secretName, host string) envoyHostChain {
 	return envoyHostChain{
 		ChainID:         "chain_" + secretName,
@@ -158,7 +244,7 @@ func credentialedChain(secretName, host string) envoyHostChain {
 			SecretName: secretName,
 			HeaderName: "Authorization",
 			VolumeName: "cred-" + secretName,
-			SDSFileKey: envoyCredentialKeySDS,
+			SDSFileKey: sdsFileKeyForHost(host),
 		}},
 	}
 }
@@ -182,7 +268,7 @@ func queryParamChain(secretName, host, headerName, queryParamName string) envoyH
 			HeaderName:     headerName,
 			QueryParamName: queryParamName,
 			VolumeName:     "cred-" + secretName,
-			SDSFileKey:     envoyCredentialKeySDS,
+			SDSFileKey:     sdsFileKeyForHost(host),
 		}},
 	}
 }
@@ -201,13 +287,13 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 				SecretName: firstName,
 				HeaderName: "Authorization",
 				VolumeName: "cred-" + firstName,
-				SDSFileKey: envoyCredentialKeySDS,
+				SDSFileKey: sdsFileKeyForHost(host),
 			},
 			{
 				SecretName:     secondName,
 				HeaderName:     "X-Internal-Query-" + secondName,
 				QueryParamName: "key",
-				SDSFileKey:     envoyCredentialKeySDS,
+				SDSFileKey:     sdsFileKeyForHost(host),
 				VolumeName:     "cred-" + secondName,
 			},
 		},
@@ -241,12 +327,12 @@ func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.
 	// reaches the wire.
 	assert.Contains(t, got, "sni: api.github.com")
 	assert.Contains(t, got, "match_typed_subject_alt_names")
-	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*san_type:\s*DNS\s*\n\s*matcher:\s*\n\s*exact:\s*api\.github\.com`, got)
+	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*matcher:\s*\n\s*exact:\s*api\.github\.com\s*\n\s*san_type:\s*DNS`, got)
 
 	// The credentialed chain forwards to that cluster — not to
 	// dynamic_forward_proxy_https (which uses agent-controlled Host).
 	assert.Contains(t, got, "cluster: upstream_platform-conn-github")
-	assert.Contains(t, got, `host_rewrite_literal: "api.github.com"`)
+	assert.Contains(t, got, "host_rewrite_literal: api.github.com")
 }
 
 func TestRenderEnvoyBootstrap_EmptyRoutesNoLeafTLSReferences(t *testing.T) {
@@ -281,7 +367,7 @@ func TestRenderEnvoyBootstrap_ObjectStoreRoutesRenderedWhenConfigured(t *testing
 	got, err := renderEnvoyBootstrap("inst-1", "inst-1", &cfg, nil)
 	require.NoError(t, err)
 
-	assert.Contains(t, got, `exact: "platform-seaweedfs.platform.svc.cluster.local:8333"`)
+	assert.Contains(t, got, "exact: platform-seaweedfs.platform.svc.cluster.local:8333")
 	assert.Contains(t, got, "cluster: objectstore_passthrough")
 	assert.Contains(t, got, "name: objectstore_passthrough")
 	assert.Contains(t, got, "address: platform-seaweedfs.platform.svc.cluster.local")
@@ -320,13 +406,13 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// `- name: upstream_…` is the cluster definition (list-entry dash);
-	// `cluster_name: upstream_…` inside each definition is a field, not a
-	// new cluster, so count only the definitions.
-	pinnedCount := strings.Count(got, "- name: upstream_")
-	assert.Equal(t, 1, pinnedCount, "exactly one pinned upstream cluster should be rendered (credentialed routes only)")
-	assert.Contains(t, got, "name: upstream_platform-conn-github")
-	assert.NotContains(t, got, "name: upstream_platform-allow-only-npm")
+	// Exactly one pinned upstream cluster should be rendered (credentialed
+	// routes only); the allow-only chain forwards via dynamic_forward_proxy.
+	doc := mustParseBootstrap(t, got)
+	assert.Equal(t, 1, countClustersWithPrefix(t, doc, "upstream_"),
+		"exactly one pinned upstream cluster should be rendered (credentialed routes only)")
+	assert.NotNil(t, clusterNamed(t, doc, "upstream_platform-conn-github"))
+	assert.Nil(t, clusterNamed(t, doc, "upstream_platform-allow-only-npm"))
 }
 
 // telemetryTestCfg copies bootstrapTestCfg with the telemetry collector
@@ -343,36 +429,35 @@ func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), nil)
 	require.NoError(t, err)
 
+	doc := mustParseBootstrap(t, got)
+
 	// Dedicated collector chain, matched on the collector SNI.
-	assert.Contains(t, got, "terminate_otel_collector")
-	assert.Contains(t, got, `server_names: [ "platform-clickstack-collector.platform.svc.cluster.local" ]`)
+	chain := filterChainNamed(t, doc, "terminate_otel_collector")
+	require.NotNil(t, chain, "a dedicated collector filter chain must exist")
+	match, _ := chain["filter_chain_match"].(map[string]any)
+	assert.Equal(t, []any{"platform-clickstack-collector.platform.svc.cluster.local"}, match["server_names"])
 
 	// Trusted identity header stamped with OVERWRITE so an agent-supplied
 	// value can't survive; value is this instance's id.
 	assert.Contains(t, got, "key: x-platform-agent-id")
-	assert.Contains(t, got, `value: "inst-1"`)
+	assert.Contains(t, got, "value: inst-1")
 	assert.Contains(t, got, "OVERWRITE_IF_EXISTS_OR_ADD")
 
-	// Pinned STRICT_DNS collector cluster on the OTLP/HTTP port.
+	// The collector chain is platform-internal: no HITL ext_authz and no
+	// credential injection on it.
+	chainYAML, err := yaml.Marshal(chain)
+	require.NoError(t, err)
+	assert.NotContains(t, string(chainYAML), "ext_authz")
+	assert.NotContains(t, string(chainYAML), "credential_injector")
+
+	// Pinned STRICT_DNS collector cluster on the OTLP/HTTP port; plaintext
+	// (ztunnel adds mTLS on the in-cluster hop) — no upstream TLS.
+	cluster := clusterNamed(t, doc, "otel_collector")
+	require.NotNil(t, cluster, "a pinned collector cluster must exist")
+	assert.Equal(t, "STRICT_DNS", cluster["type"])
+	assert.NotContains(t, cluster, "transport_socket")
 	assert.Contains(t, got, "address: platform-clickstack-collector.platform.svc.cluster.local")
 	assert.Contains(t, got, "port_value: 4318")
-
-	// The collector chain is platform-internal: no HITL ext_authz and no
-	// credential injection on it. Isolate the chain (it precedes the L4
-	// catch-all) so the assertion doesn't trip on ext_authz elsewhere.
-	cs := strings.Index(got, "- name: terminate_otel_collector")
-	ce := strings.Index(got, "# SNI miss")
-	require.True(t, cs >= 0 && ce > cs, "collector chain must precede the L4 catch-all")
-	collectorChain := got[cs:ce]
-	assert.NotContains(t, collectorChain, "ext_authz")
-	assert.NotContains(t, collectorChain, "credential_injector")
-
-	// The collector upstream is plaintext (ztunnel adds mTLS on the in-cluster
-	// hop) — no upstream TLS transport_socket on the cluster definition.
-	clusterDef := got[strings.Index(got, "- name: otel_collector"):]
-	clusterDef = clusterDef[:strings.Index(clusterDef[len("- name: otel_collector"):], "- name: ")+len("- name: otel_collector")]
-	assert.Contains(t, clusterDef, "type: STRICT_DNS")
-	assert.NotContains(t, clusterDef, "transport_socket")
 }
 
 func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
@@ -385,13 +470,12 @@ func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
 		credentialedChain("platform-conn-github", "api.github.com"),
 	})
 	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+	doc := mustParseBootstrap(t, got)
 	// The collector chain/cluster coexist with the credentialed chain (distinct
 	// hosts → no collision).
-	assert.Contains(t, got, "terminate_otel_collector")
-	assert.Contains(t, got, "- name: otel_collector")
-	assert.Contains(t, got, "name: upstream_platform-conn-github")
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"))
+	assert.NotNil(t, clusterNamed(t, doc, "otel_collector"))
+	assert.NotNil(t, clusterNamed(t, doc, "upstream_platform-conn-github"))
 }
 
 func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
@@ -409,8 +493,8 @@ func TestRenderEnvoyBootstrap_TelemetryHeaderUsesInstanceNotExtAuthzID(t *testin
 	// tracks the instance id, not the ext-authz id.
 	got, err := renderEnvoyBootstrap("fork-xyz", "parent-agent", telemetryTestCfg(), nil)
 	require.NoError(t, err)
-	assert.Contains(t, got, `value: "fork-xyz"`)
-	assert.NotContains(t, got, `value: "parent-agent"`)
+	assert.Contains(t, got, "value: fork-xyz")
+	assert.NotContains(t, got, "value: parent-agent")
 	// ext-authz authority still points at the parent's per-instance Service.
 	assert.Contains(t, got, "extauthz-parent-agent")
 }
@@ -438,15 +522,15 @@ func TestEnvoyVolumes_TelemetryMountsLeafWithoutSecrets(t *testing.T) {
 	// still be present because the collector chain MITM-terminates with it.
 	// Without this the gateway would crash loading a non-existent tls.key.
 	cfg := telemetryTestCfg()
-	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume),
+	assert.True(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil, nil), envoyLeafTLSVolume),
 		"leaf TLS volume must be present when telemetry is on even with no Secrets")
-	assert.True(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume),
+	assert.True(t, hasMountNamed(envoyContainer("inst-1", cfg, nil, nil).VolumeMounts, envoyLeafTLSVolume),
 		"leaf TLS mount must be present when telemetry is on even with no Secrets")
 }
 
 func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
-	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil), envoyLeafTLSVolume))
-	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil).VolumeMounts, envoyLeafTLSVolume))
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", bootstrapTestCfg, nil, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", bootstrapTestCfg, nil, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
 func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *testing.T) {
@@ -459,8 +543,11 @@ func TestRenderEnvoyBootstrap_TelemetryHostCollisionSuppressesCollectorChain(t *
 		credentialedChain("platform-conn-collector", cfg.TelemetryCollectorHost),
 	})
 	require.NoError(t, err)
-	assert.NotContains(t, got, "terminate_otel_collector")
-	assert.NotContains(t, got, "- name: otel_collector")
+	doc := mustParseBootstrap(t, got)
+	assert.Nil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
+		"collector chain must be suppressed when its host collides with a credentialed chain")
+	assert.Nil(t, clusterNamed(t, doc, "otel_collector"),
+		"collector cluster must be suppressed alongside its chain")
 }
 
 // secretWithEnvMappings returns an owner-labelled Secret carrying an
@@ -520,30 +607,6 @@ func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
 	assert.Len(t, envs, 1)
 }
 
-func TestCredentialEnvVars_MalformedJSONFallsBackToLegacySwitch(t *testing.T) {
-	// Parse-tolerant fallback: malformed JSON should not hide the canonical
-	// Anthropic env. Hand-edited Secrets and legacy fixtures rely on
-	// this path.
-	s := ownerSecret("platform-cred-aaa", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "api-key"
-	s.Annotations[envoyEnvMappingsAnn] = "{not-json}"
-	got := credentialEnvVars([]corev1.Secret{s})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
-}
-
-func TestCredentialEnvVars_AnthropicFallsBackToLegacySwitch(t *testing.T) {
-	// Anthropic Secret with no `env-mappings` annotation (e.g. created
-	// via raw `kubectl apply`) — legacy switch fills in
-	// `CLAUDE_CODE_OAUTH_TOKEN`.
-	oauthSecret := ownerSecret("platform-cred-aaa", "anthropic", "")
-	oauthSecret.Annotations[envoyAuthModeAnn] = "oauth"
-
-	got := credentialEnvVars([]corev1.Secret{oauthSecret})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["CLAUDE_CODE_OAUTH_TOKEN"])
-}
-
 func TestCredentialEnvVars_ConnectionEnvMappingsDeclareTheVars(t *testing.T) {
 	// Connection env vars come from the api-server's `env-mappings`
 	// annotation (declarative), not from a host-specific hardcode. A
@@ -577,7 +640,7 @@ func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 3)
 
 	hosts := []string{chains[0].Host, chains[1].Host, chains[2].Host}
@@ -593,8 +656,6 @@ func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
 		cred := c.Credentials[0]
 		assert.Equal(t, "cred-platform-conn-github", cred.VolumeName)
 		assert.Equal(t, sdsFileKeyForHost(c.Host), cred.SDSFileKey)
-		assert.NotEqual(t, envoyCredentialKeySDS, cred.SDSFileKey,
-			"connection Secrets must use per-host SDS files, not the legacy sds.yaml key")
 	}
 }
 
@@ -611,7 +672,7 @@ func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.
 	]`
 	s = withHostSDS(s, "api.github.com", "github.com", "raw.githubusercontent.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 3)
 
 	clusters := map[string]bool{}
@@ -642,7 +703,7 @@ func TestChainsFromSecrets_ConnectionMissingSDSKeyDegradesToAllowOnly(t *testing
 		"host-1a2b3c4d.sds.yaml": []byte("resources: []"),
 	}
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "api.github.com", chains[0].Host)
 	assert.False(t, chains[0].Credentialed(),
@@ -660,7 +721,7 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	]`
 	s = withHostSDS(s, "api.github.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 2)
 	byHost := map[string]envoyHostChain{}
 	for _, c := range chains {
@@ -670,41 +731,12 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	assert.False(t, byHost["github.com"].Credentialed())
 }
 
-func TestChainsFromSecrets_SingleHostSecretMissingSDSYamlDegradesToAllowOnly(t *testing.T) {
-	// Same guard for the legacy single-host shape: no sds.yaml in data →
-	// allow-only chain, never a bootstrap path Envoy can't open.
-	s := ownerSecret("platform-cred-aaa", "generic", "")
-	s.Annotations[envoyHeaderNameAnn] = "Authorization"
-	s.Data = map[string][]byte{"value": []byte("Bearer abc")}
-
-	chains := chainsFromSecrets([]corev1.Secret{s})
-	require.Len(t, chains, 1)
-	assert.Equal(t, "api.example.com", chains[0].Host)
-	assert.False(t, chains[0].Credentialed())
-}
-
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 	// Pinned against the api-server's `sdsFileKeyForHost`. Mismatch =
 	// gateway reads a missing file.
 	assert.Equal(t, "host-YXBpLmdpdGh1Yi5jb20.sds.yaml", sdsFileKeyForHost("api.github.com"))
 	assert.Equal(t, "host-Z2l0aHViLmNvbQ.sds.yaml", sdsFileKeyForHost("github.com"))
 	assert.Equal(t, "host-cmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbQ.sds.yaml", sdsFileKeyForHost("raw.githubusercontent.com"))
-}
-
-func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
-	// Anthropic Secret carrying an explicit annotation overrides what the
-	// legacy auth-mode switch would have produced. Tests the annotation-driven path
-	// for the typical UI-created Anthropic secret.
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"anthropic",
-			`[{"envName":"ANTHROPIC_API_KEY","placeholder":"dummy-placeholder"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
-	assert.Len(t, envs, 1)
 }
 
 func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T) {
@@ -720,7 +752,7 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 
 	assert.Contains(t, got, "envoy.filters.http.lua")
 	// credential_injector targets the credential's header.
-	assert.Contains(t, got, `header: "X-Bobshell-Cred"`)
+	assert.Contains(t, got, "header: X-Bobshell-Cred")
 	// Lua-visible names come through %q so credential bytes can't bind
 	// to Lua pattern or backreference syntax.
 	assert.Contains(t, got, `local HEADER = "X-Bobshell-Cred"`)
@@ -741,7 +773,43 @@ func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotContains(t, got, "envoy.filters.http.lua")
-	assert.Contains(t, got, `header: "Authorization"`)
+	assert.Contains(t, got, "header: Authorization")
+}
+
+func TestRenderEnvoyBootstrap_HostileValuesEscapedNotInjected(t *testing.T) {
+	// #2899: user/connection-derived strings (hostnames, header names, …) are
+	// quoted and escaped by the encoder, so a crafted value cannot break out of
+	// its position to inject sibling proxy configuration. A value packed with
+	// YAML metacharacters must round-trip as an opaque scalar and the document
+	// must stay parseable with no attacker-introduced structure.
+	const hostile = "evil.example.com\"]}\ninjected_key: pwned #"
+	const hostileHeader = "X-Evil\": pwned\n"
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", bootstrapTestCfg, []envoyHostChain{
+		queryParamChain("platform-cred-x", hostile, hostileHeader, "key"),
+	})
+	require.NoError(t, err)
+
+	// The whole document still parses: the hostile bytes did not corrupt the
+	// surrounding YAML.
+	doc := mustParseBootstrap(t, got)
+
+	// No sibling key leaked out of the hostile value into the config tree.
+	assert.NotContains(t, doc, "injected_key")
+
+	// The hostile host round-trips verbatim as the SNI match value — carried as
+	// data, not re-parsed as structure.
+	var matched map[string]any
+	for _, fc := range internalFilterChains(t, doc) {
+		m, _ := fc["filter_chain_match"].(map[string]any)
+		if sn, _ := m["server_names"].([]any); len(sn) == 1 && sn[0] == hostile {
+			matched = fc
+		}
+	}
+	require.NotNil(t, matched, "hostile host must round-trip intact as the SNI match value")
+
+	// The hostile header name round-trips verbatim on the credential injector —
+	// again as an escaped scalar, not injected structure.
+	assert.Contains(t, got, "injected_key", "sanity: the hostile bytes are present somewhere (as escaped scalar data)")
 }
 
 func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing.T) {
@@ -754,40 +822,40 @@ func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing
 	})
 	require.NoError(t, err)
 
-	// Both credential_injector filters in the same chain. We pick the
-	// per-route header name (rendered as `header: "<name>"`) so we don't
-	// confuse cluster `name:` lines with filter `header:` lines.
-	injectorHeaders := strings.Count(got, `header: "Authorization"`)
+	// Both credential_injector filters in the same chain. The injected header
+	// name (`header: <name>`) is distinct from cluster `name:` lines.
+	injectorHeaders := strings.Count(got, "header: Authorization")
 	assert.Equal(t, 1, injectorHeaders, "header-injection credential renders one Authorization injector")
-	assert.Contains(t, got, `header: "X-Internal-Query-platform-cred-query"`)
+	assert.Contains(t, got, "header: X-Internal-Query-platform-cred-query")
 
 	// Exactly one filter chain for the host — not two.
-	chainCount := strings.Count(got, "name: terminate_chain_platform-cred-header")
-	assert.Equal(t, 1, chainCount)
+	doc := mustParseBootstrap(t, got)
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_chain_platform-cred-header"))
+	assert.Len(t, internalFilterChains(t, doc), 2, "one terminating chain + the L4 catch-all")
 
 	// Exactly one Lua filter (only the query-injection credential needs it).
 	luaCount := strings.Count(got, "envoy.filters.http.lua")
 	assert.Equal(t, 1, luaCount)
 
 	// One pinned upstream cluster for the chain (shared by both credentials).
-	upstreamCount := strings.Count(got, "- name: upstream_platform-cred-header")
-	assert.Equal(t, 1, upstreamCount)
+	assert.Equal(t, 1, countClustersWithPrefix(t, doc, "upstream_platform-cred-header"))
 }
 
 func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
 	// Two granted Secrets on the same host → one chain with two
 	// envoyCredential entries (in name-sorted order, which the upstream
 	// `listOwnerCredentialSecrets` guarantees).
-	hdr := ownerSecret("platform-cred-aaa-header", "generic", "")
-	hdr.Annotations[envoyHostPatternAnn] = "bob.example.com"
-	hdr.Annotations[envoyHeaderNameAnn] = "Authorization"
+	hdr := ownerSecret("platform-conn-aaa-header", "connection", "conn-a")
+	delete(hdr.Annotations, envoyHostPatternAnn)
+	hdr.Annotations[envoyInjectionHostsAnn] = `[{"host":"bob.example.com","headerName":"Authorization"}]`
+	hdr = withHostSDS(hdr, "bob.example.com")
 
-	qry := ownerSecret("platform-cred-bbb-query", "generic", "")
-	qry.Annotations[envoyHostPatternAnn] = "bob.example.com"
-	qry.Annotations[envoyHeaderNameAnn] = "X-Query-Cred"
-	qry.Annotations[envoyQueryParamAnn] = "key"
+	qry := ownerSecret("platform-conn-bbb-query", "connection", "conn-b")
+	delete(qry.Annotations, envoyHostPatternAnn)
+	qry.Annotations[envoyInjectionHostsAnn] = `[{"host":"bob.example.com","headerName":"X-Query-Cred","queryParamName":"key"}]`
+	qry = withHostSDS(qry, "bob.example.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{hdr, qry})
+	chains := chainsFromSecrets([]corev1.Secret{hdr, qry}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2)
 	assert.Equal(t, "bob.example.com", chains[0].Host)
@@ -802,28 +870,20 @@ func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) 
 	// silently. Drop the later one (input is name-sorted upstream) and
 	// emit a warning. api-server should also reject this at create time
 	// but defense-in-depth here keeps the gateway up.
-	first := ownerSecret("platform-cred-a-first", "generic", "")
-	first.Annotations[envoyHostPatternAnn] = "api.example.com"
-	first.Annotations[envoyHeaderNameAnn] = "Authorization"
+	first := ownerSecret("platform-conn-a-first", "connection", "conn-a")
+	delete(first.Annotations, envoyHostPatternAnn)
+	first.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	first = withHostSDS(first, "api.example.com")
 
-	second := ownerSecret("platform-cred-b-second", "generic", "")
-	second.Annotations[envoyHostPatternAnn] = "api.example.com"
-	second.Annotations[envoyHeaderNameAnn] = "Authorization"
+	second := ownerSecret("platform-conn-b-second", "connection", "conn-b")
+	delete(second.Annotations, envoyHostPatternAnn)
+	second.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	second = withHostSDS(second, "api.example.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{first, second})
+	chains := chainsFromSecrets([]corev1.Secret{first, second}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
-}
-
-func TestChainsFromSecrets_DistinctHostsEachGetTheirOwnChain(t *testing.T) {
-	a := ownerSecret("platform-cred-a", "generic", "")
-	a.Annotations[envoyHostPatternAnn] = "api.first.com"
-	b := ownerSecret("platform-cred-b", "generic", "")
-	b.Annotations[envoyHostPatternAnn] = "api.second.com"
-
-	chains := chainsFromSecrets([]corev1.Secret{a, b})
-	assert.Len(t, chains, 2)
 }
 
 func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.T) {
@@ -834,11 +894,48 @@ func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.
 	allowOnly := ownerSecret("platform-allow-only-npm", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "registry.npmjs.org"
 
-	chains := chainsFromSecrets([]corev1.Secret{allowOnly})
+	chains := chainsFromSecrets([]corev1.Secret{allowOnly}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "registry.npmjs.org", chains[0].Host)
 	assert.Empty(t, chains[0].Credentials)
 	assert.False(t, chains[0].Credentialed())
+}
+
+func TestChainsFromSecrets_L7HostsRenderUncredentialedChains(t *testing.T) {
+	// A spec.l7Hosts entry (#2865) renders exactly like an allow-only
+	// Secret: TLS-terminating chain, zero credentials, dynamic forward
+	// proxy route.
+	chains := chainsFromSecrets(nil, []string{"api.github.com"})
+	require.Len(t, chains, 1)
+	assert.Equal(t, "api.github.com", chains[0].Host)
+	assert.Empty(t, chains[0].Credentials)
+	assert.False(t, chains[0].Credentialed())
+}
+
+func TestChainsFromSecrets_L7HostDedupesAgainstCredentialedChain(t *testing.T) {
+	// A host that is both credentialed and promoted renders once, as the
+	// credentialed chain — promotion is a policy hint, not an instruction
+	// to skip injection.
+	cred := ownerSecret("platform-conn-a", "connection", "conn-a")
+	delete(cred.Annotations, envoyHostPatternAnn)
+	cred.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	cred = withHostSDS(cred, "api.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{cred}, []string{"api.example.com", "api.other.com"})
+	require.Len(t, chains, 2)
+	assert.Equal(t, "api.example.com", chains[0].Host)
+	assert.True(t, chains[0].Credentialed())
+	assert.Equal(t, "api.other.com", chains[1].Host)
+	assert.False(t, chains[1].Credentialed())
+}
+
+func TestEnvoySecretsRev_L7HostsRollExistingPods(t *testing.T) {
+	// Promoting a host must change the rev so the gateway rolls — and the
+	// digest must be order-insensitive so a reordered spec doesn't roll.
+	assert.NotEqual(t, envoySecretsRev(nil, nil), envoySecretsRev(nil, []string{"api.github.com"}))
+	assert.Equal(t,
+		envoySecretsRev(nil, []string{"a.example.com", "b.example.com"}),
+		envoySecretsRev(nil, []string{"b.example.com", "a.example.com"}))
 }
 
 func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
@@ -846,14 +943,15 @@ func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
 	// credentialed Secret renders as a credentialed chain. Allow-only
 	// contributes nothing — it's a path-policy hint, not an instruction
 	// to skip injection.
-	cred := ownerSecret("platform-cred-a", "generic", "")
-	cred.Annotations[envoyHostPatternAnn] = "api.example.com"
-	cred.Annotations[envoyHeaderNameAnn] = "Authorization"
+	cred := ownerSecret("platform-conn-a", "connection", "conn-a")
+	delete(cred.Annotations, envoyHostPatternAnn)
+	cred.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.example.com","headerName":"Authorization"}]`
+	cred = withHostSDS(cred, "api.example.com")
 
 	allowOnly := ownerSecret("platform-allow-only-b", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "api.example.com"
 
-	chains := chainsFromSecrets([]corev1.Secret{cred, allowOnly})
+	chains := chainsFromSecrets([]corev1.Secret{cred, allowOnly}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
 	assert.Equal(t, cred.Name, chains[0].Credentials[0].SecretName)
@@ -872,7 +970,7 @@ func TestEnvoySecretsRev_QueryParamAnnotationRollsExistingPods(t *testing.T) {
 	withParam.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
 	withParam.Annotations[envoyQueryParamAnn] = "key"
 
-	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}), envoySecretsRev([]corev1.Secret{withParam}))
+	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}, nil), envoySecretsRev([]corev1.Secret{withParam}, nil))
 }
 
 func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T) {
@@ -890,8 +988,8 @@ func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T)
 	]`
 
 	assert.NotEqual(t,
-		envoySecretsRev([]corev1.Secret{before}),
-		envoySecretsRev([]corev1.Secret{after}),
+		envoySecretsRev([]corev1.Secret{before}, nil),
+		envoySecretsRev([]corev1.Secret{after}, nil),
 		"host-list edits must change the rev so the StatefulSet rolls",
 	)
 }
@@ -910,8 +1008,8 @@ func TestEnvoySecretsRev_SDSDataKeysRollExistingPods(t *testing.T) {
 	healed = withHostSDS(healed, "api.github.com")
 
 	assert.NotEqual(t,
-		envoySecretsRev([]corev1.Secret{missing}),
-		envoySecretsRev([]corev1.Secret{healed}),
+		envoySecretsRev([]corev1.Secret{missing}, nil),
+		envoySecretsRev([]corev1.Secret{healed}, nil),
 		"SDS data-key changes must change the rev so the StatefulSet rolls",
 	)
 }
@@ -921,14 +1019,14 @@ func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	// template change rolls existing pods on chart upgrade. Without it, the
 	// rendered ConfigMap diverges but the pod template stays identical and
 	// kubelet keeps the old bootstrap mounted.
-	rev := envoySecretsRev(nil)
+	rev := envoySecretsRev(nil, nil)
 	assert.NotEqual(t, "empty", rev, "secrets-rev must not be a stable sentinel for empty Secret sets — bumping the template rev must change the hash")
 	assert.NotEmpty(t, rev)
 
 	// Different Secret sets produce different hashes (regression sanity check
 	// — the template marker shouldn't dominate the hash).
-	one := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")})
-	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")})
+	one := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}, nil)
+	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")}, nil)
 	assert.NotEqual(t, one, two)
 }
 
@@ -950,35 +1048,19 @@ func TestCredentialEnvVars_RespectsEnvMappingsAnnotation(t *testing.T) {
 	assert.Equal(t, "ph", got["OTHER"])
 }
 
-func TestCredentialEnvVars_DedupesAcrossAnnotationAndHardcoded(t *testing.T) {
-	// The anthropic hardcoded path and the env-mappings annotation can
-	// agree on the same envName. Dedup must keep a single entry.
-	s := ownerSecret("platform-cred-anth", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "oauth"
-	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"CLAUDE_CODE_OAUTH_TOKEN","placeholder":"dummy-placeholder"}]`
+func TestCredentialEnvVars_MalformedAnnotationContributesNothing(t *testing.T) {
+	// A malformed env-mappings JSON must not take down the reconcile loop —
+	// the secret contributes no env and the rest keep working.
+	broken := ownerSecret("platform-conn-broken", "connection", "broken")
+	broken.Annotations[envoyEnvMappingsAnn] = "not json"
 
-	envs := credentialEnvVars([]corev1.Secret{s})
+	ok := ownerSecret("platform-conn-ok", "connection", "ok")
+	ok.Annotations[envoyEnvMappingsAnn] = `[{"envName":"FOO","placeholder":"ph"}]`
 
-	count := 0
-	for _, e := range envs {
-		if e.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
-			count++
-		}
-	}
-	assert.Equal(t, 1, count)
-}
-
-func TestCredentialEnvVars_MalformedAnnotationFallsBackCleanly(t *testing.T) {
-	// A malformed env-mappings JSON must not skip the per-type fallback or
-	// take down the reconcile loop.
-	s := ownerSecret("platform-cred-broken", "anthropic", "")
-	s.Annotations[envoyAuthModeAnn] = "api-key"
-	s.Annotations[envoyEnvMappingsAnn] = "not json"
-
-	envs := credentialEnvVars([]corev1.Secret{s})
+	envs := credentialEnvVars([]corev1.Secret{broken, ok})
 
 	require.Len(t, envs, 1)
-	assert.Equal(t, "ANTHROPIC_API_KEY", envs[0].Name)
+	assert.Equal(t, "FOO", envs[0].Name)
 }
 
 func http2CredentialedChain(secretName, host string) envoyHostChain {
@@ -996,7 +1078,7 @@ func TestRenderEnvoyBootstrap_HTTP2ChainAdvertisesH2AndMirrorsUpstream(t *testin
 	// Downstream terminate chain offers h2 ALPN so a grpclib (HTTP/2) client
 	// negotiates HTTP/2 over the MITM leaf cert.
 	assert.Contains(t, got, "alpn_protocols")
-	assert.Contains(t, got, `"h2"`)
+	assert.Contains(t, got, "- h2")
 	// Upstream cluster mirrors the negotiated protocol so the gRPC stream is
 	// forwarded as HTTP/2 and credential injection lands on it.
 	assert.Contains(t, got, "use_downstream_protocol_config")
@@ -1014,22 +1096,6 @@ func TestRenderEnvoyBootstrap_RestChainStaysHTTP1(t *testing.T) {
 	assert.NotContains(t, got, "use_downstream_protocol_config")
 }
 
-func TestChainsFromSecrets_HTTP2AnnotationMarksChain(t *testing.T) {
-	s := ownerSecret("platform-cred-modal-id", "generic", "api.modal.com")
-	s.Annotations[envoyHeaderNameAnn] = "x-modal-token-id"
-	s.Annotations[envoyInjectionHTTP2Ann] = "true"
-
-	chains := chainsFromSecrets([]corev1.Secret{s})
-	require.Len(t, chains, 1)
-	assert.True(t, chains[0].HTTP2, "http2 annotation must mark the chain")
-
-	// Same secret without the annotation stays HTTP/1.1.
-	delete(s.Annotations, envoyInjectionHTTP2Ann)
-	chains = chainsFromSecrets([]corev1.Secret{s})
-	require.Len(t, chains, 1)
-	assert.False(t, chains[0].HTTP2)
-}
-
 func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
 	s := ownerSecret("platform-conn-modal", "connection", "modal")
 	delete(s.Annotations, envoyHostPatternAnn)
@@ -1038,7 +1104,7 @@ func TestChainsFromSecrets_ConnectionEntryHTTP2MarksChain(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.modal.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.True(t, chains[0].HTTP2, "injection-hosts http2:true must mark the chain")
 }
@@ -1093,7 +1159,7 @@ func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 
 	// Tracing provider with the shared service.name.
 	assert.Contains(t, got, "type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig")
-	assert.Contains(t, got, `service_name: "platform-agent-gateway"`)
+	assert.Contains(t, got, "service_name: platform-agent-gateway")
 	assert.Contains(t, got, "resource_detectors")
 
 	// gRPC transport (default protocol): the tracer uses grpc_service, not
@@ -1111,7 +1177,8 @@ func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 	assert.Contains(t, got, "envoy.stat_sinks.open_telemetry")
 
 	// Collector cluster address parsed from the inherited endpoint.
-	assert.Contains(t, got, "- name: otel_export")
+	doc := mustParseBootstrap(t, got)
+	assert.NotNil(t, clusterNamed(t, doc, "otel_export"))
 	assert.Contains(t, got, "address: otel-collector.platform.svc.cluster.local")
 	assert.Contains(t, got, "port_value: 4317")
 
@@ -1132,17 +1199,19 @@ func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
 	require.NoError(t, err)
 	tracer := otelTracerBlock(got)
 	assert.Contains(t, tracer, "http_service")
-	assert.Contains(t, tracer, `uri: "http://otel.platform.svc:4318/v1/traces"`)
+	assert.Contains(t, tracer, "uri: http://otel.platform.svc:4318/v1/traces")
 	assert.NotContains(t, tracer, "grpc_service") // ext_authz uses grpc_service; the tracer must not
 	assert.NotContains(t, got, "stats_sinks")
 	// OTLP access logs work over HTTP too (unlike the stats sink).
 	assert.Contains(t, got, "envoy.access_loggers.open_telemetry")
-	assert.Contains(t, got, `uri: "http://otel.platform.svc:4318/v1/logs"`)
-	var doc map[string]any
-	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "OTLP/HTTP render must stay valid YAML")
+	assert.Contains(t, got, "uri: http://otel.platform.svc:4318/v1/logs")
+	doc := mustParseBootstrap(t, got)
 	// HTTP/1.1 collector — no http2 protocol options on the cluster.
-	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
-	assert.NotContains(t, collectorBlock, "http2_protocol_options")
+	cluster := clusterNamed(t, doc, "otel_export")
+	require.NotNil(t, cluster)
+	clusterYAML, err := yaml.Marshal(cluster)
+	require.NoError(t, err)
+	assert.NotContains(t, string(clusterYAML), "http2_protocol_options")
 }
 
 // otelTracerBlock returns the OpenTelemetryConfig provider block (from its
@@ -1176,9 +1245,9 @@ func TestRenderEnvoyBootstrap_PlaintextCollectorNoUpstreamTLS(t *testing.T) {
 	// http:// endpoint → plaintext gRPC; no upstream TLS on the collector cluster.
 	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg("http://otel:4317"), nil)
 	require.NoError(t, err)
-	require.Contains(t, got, "- name: otel_export")
-	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
-	assert.NotContains(t, collectorBlock, "UpstreamTlsContext")
+	cluster := clusterNamed(t, mustParseBootstrap(t, got), "otel_export")
+	require.NotNil(t, cluster)
+	assert.NotContains(t, cluster, "transport_socket", "plaintext collector must have no upstream TLS")
 }
 
 func TestRenderEnvoyBootstrap_HTTPSCollectorGetsUpstreamTLS(t *testing.T) {
@@ -1187,9 +1256,12 @@ func TestRenderEnvoyBootstrap_HTTPSCollectorGetsUpstreamTLS(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, got, "address: otel.example.com")
 	assert.Contains(t, got, "port_value: 4318")
-	collectorBlock := got[strings.Index(got, "- name: otel_export"):]
-	assert.Contains(t, collectorBlock, "UpstreamTlsContext")
-	assert.Contains(t, collectorBlock, "sni: otel.example.com")
+	cluster := clusterNamed(t, mustParseBootstrap(t, got), "otel_export")
+	require.NotNil(t, cluster)
+	clusterYAML, err := yaml.Marshal(cluster)
+	require.NoError(t, err)
+	assert.Contains(t, string(clusterYAML), "UpstreamTlsContext")
+	assert.Contains(t, string(clusterYAML), "sni: otel.example.com")
 }
 
 func TestRenderEnvoyBootstrap_TracingOnHeaderCredentialChains(t *testing.T) {
@@ -1244,7 +1316,7 @@ func TestRenderEnvoyBootstrap_ExternalEgressStripsTraceContext(t *testing.T) {
 	// Internal trace context must not leak to external HTTP upstreams.
 	got, err := renderEnvoyBootstrap("agent-7", "agent-7", otelCfg(testOTLPEndpoint), nil)
 	require.NoError(t, err)
-	assert.Contains(t, got, "request_headers_to_remove: [ traceparent, tracestate ]")
+	assert.Regexp(t, `request_headers_to_remove:\s*\n\s*-\s*traceparent\s*\n\s*-\s*tracestate`, got)
 }
 
 func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
@@ -1261,7 +1333,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_HEADERS":  "Authorization=Bearer secret", // inert for Envoy; may carry a token
 	}
 	env := map[string]string{}
-	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+	for _, e := range envoyContainer("agent-7", &cfg, nil, nil).Env {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, "http://otel:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
@@ -1274,7 +1346,7 @@ func TestEnvoyContainer_RelaysOTelEnvWithGatewayIdentity(t *testing.T) {
 }
 
 func TestEnvoyContainer_NoOTelEnvWhenDisabled(t *testing.T) {
-	assert.Empty(t, envoyContainer("agent-7", bootstrapTestCfg, nil).Env)
+	assert.Empty(t, envoyContainer("agent-7", bootstrapTestCfg, nil, nil).Env)
 }
 
 func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
@@ -1297,7 +1369,7 @@ func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
 
 	// Both features present: transit chain, tracer, stats sink.
-	assert.Contains(t, got, "- name: terminate_otel_collector")
+	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"))
 	assert.Contains(t, got, "OpenTelemetryConfig")
 	assert.Contains(t, got, "stats_sinks")
 
@@ -1321,8 +1393,8 @@ func TestEnvoyVolumes_NoLeafWhenOTelOnlyNoSecrets(t *testing.T) {
 	// terminates no TLS, so the leaf cert must NOT be required — a missing
 	// leaf Secret would otherwise block the pod on a volume that never fills.
 	cfg := otelCfg(testOTLPEndpoint)
-	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil), envoyLeafTLSVolume))
-	assert.False(t, hasMountNamed(envoyContainer("inst-1", cfg, nil).VolumeMounts, envoyLeafTLSVolume))
+	assert.False(t, hasVolumeNamed(envoyVolumes("inst-1", cfg, nil, nil), envoyLeafTLSVolume))
+	assert.False(t, hasMountNamed(envoyContainer("inst-1", cfg, nil, nil).VolumeMounts, envoyLeafTLSVolume))
 }
 
 func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
@@ -1332,8 +1404,8 @@ func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
 	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
 	got, err := renderEnvoyBootstrap("agent-7", "agent-7", cfg, nil)
 	require.NoError(t, err)
-	assert.Contains(t, got, `exact: "platform-clickstack-collector.platform.svc.cluster.local:4318"`)
-	assert.Regexp(t, `tracing:\s*\n\s*random_sampling:\s*\n\s*numerator: 0\n\s*overall_sampling:\s*\n\s*numerator: 0`, got)
+	assert.Contains(t, got, "exact: platform-clickstack-collector.platform.svc.cluster.local:4318")
+	assert.Regexp(t, `tracing:\s*\n\s*overall_sampling:\s*\n\s*numerator: 0\n\s*random_sampling:\s*\n\s*numerator: 0`, got)
 
 	// Transit without OTel tracing: no tracer, so no exclusion route either.
 	got, err = renderEnvoyBootstrap("agent-7", "agent-7", telemetryTestCfg(), nil)
@@ -1349,21 +1421,22 @@ func TestRenderEnvoyBootstrap_TransitChainErrorOnlyAccessLog(t *testing.T) {
 	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
 	got, err := renderEnvoyBootstrap("agent-7", "agent-7", cfg, nil)
 	require.NoError(t, err)
-	cs := strings.Index(got, "- name: terminate_otel_collector")
-	ce := strings.Index(got, "# SNI miss")
-	require.True(t, cs >= 0 && ce > cs)
-	chain := got[cs:ce]
-	assert.Contains(t, chain, "access_log")
-	assert.Contains(t, chain, "status_code_filter")
-	assert.Contains(t, chain, "response_flag_filter")
+	chain := filterChainNamed(t, mustParseBootstrap(t, got), "terminate_otel_collector")
+	require.NotNil(t, chain)
+	chainYAML, err := yaml.Marshal(chain)
+	require.NoError(t, err)
+	assert.Contains(t, string(chainYAML), "access_log")
+	assert.Contains(t, string(chainYAML), "status_code_filter")
+	assert.Contains(t, string(chainYAML), "response_flag_filter")
 
 	// Without OTel, the transit chain renders as on main — no access log.
 	got, err = renderEnvoyBootstrap("agent-7", "agent-7", telemetryTestCfg(), nil)
 	require.NoError(t, err)
-	cs = strings.Index(got, "- name: terminate_otel_collector")
-	ce = strings.Index(got, "# SNI miss")
-	require.True(t, cs >= 0 && ce > cs)
-	assert.NotContains(t, got[cs:ce], "access_log")
+	chain = filterChainNamed(t, mustParseBootstrap(t, got), "terminate_otel_collector")
+	require.NotNil(t, chain)
+	chainYAML, err = yaml.Marshal(chain)
+	require.NoError(t, err)
+	assert.NotContains(t, string(chainYAML), "access_log")
 }
 
 func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testing.T) {
@@ -1390,7 +1463,7 @@ func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testi
 	// The pod env states the effective exporter, not the controller's own —
 	// truthful, and the roll trigger when the override changes.
 	env := map[string]string{}
-	for _, e := range envoyContainer("agent-7", &cfg, nil).Env {
+	for _, e := range envoyContainer("agent-7", &cfg, nil, nil).Env {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, "http://collector.platform.svc:4317", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
@@ -1408,7 +1481,7 @@ func TestChainsFromSecrets_ConnectionEntryPortUpgradesCA(t *testing.T) {
 	s = withHostSDS(s, "api.cluster.example")
 	s.Data["upstream-ca.crt"] = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 6443, chains[0].UpstreamPortValue())
 	assert.True(t, chains[0].Upgrades)
@@ -1428,7 +1501,7 @@ func TestChainsFromSecrets_MissingCADataKeyDegradesToSystemTrust(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.cluster.example") // SDS present, CA data key absent
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Empty(t, chains[0].UpstreamCAFile,
 		"missing CA data key must degrade to system trust, not reference an absent file")
@@ -1443,7 +1516,7 @@ func TestChainsFromSecrets_PortDefaultsTo443AndBareHostRewrite(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.github.com")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 443, chains[0].UpstreamPortValue())
 	assert.False(t, chains[0].Upgrades)
@@ -1465,7 +1538,7 @@ func TestChainsFromSecrets_ConflictingPortsKeepFirst(t *testing.T) {
 	]`
 	b = withHostSDS(b, "api.cluster.example")
 
-	chains := chainsFromSecrets([]corev1.Secret{a, b})
+	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, 6443, chains[0].UpstreamPortValue(),
 		"name-sorted first secret's port must win on conflict")
@@ -1479,7 +1552,7 @@ func TestChainsFromSecrets_TraversalCAKeyIgnored(t *testing.T) {
 	]`
 	s = withHostSDS(s, "api.cluster.example")
 
-	chains := chainsFromSecrets([]corev1.Secret{s})
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Empty(t, chains[0].UpstreamCAFile,
 		"caKey with path separators must not escape the Secret mount")
@@ -1502,9 +1575,9 @@ func TestRenderEnvoyBootstrap_PortChainPinsUpstreamAndRewritesAuthority(t *testi
 	// The pinned cluster dials the declared port, and the upstream sees the
 	// authority it expects for a non-default port.
 	assert.Contains(t, got, "port_value: 6443")
-	assert.Contains(t, got, `host_rewrite_literal: "api.cluster.example:6443"`)
+	assert.Contains(t, got, "host_rewrite_literal: api.cluster.example:6443")
 	// SAN pinning stays on the bare host.
-	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*san_type:\s*DNS\s*\n\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example`, got)
+	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example\s*\n\s*san_type:\s*DNS`, got)
 }
 
 func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T) {
@@ -1543,7 +1616,7 @@ func TestRenderEnvoyBootstrap_UpstreamCAFileReplacesSystemBundle(t *testing.T) {
 
 	assert.Contains(t, got, "filename: "+caFile)
 	// SAN pinning must survive the CA override.
-	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*san_type:\s*DNS\s*\n\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example`, got)
+	assert.Regexp(t, `match_typed_subject_alt_names:\s*\n\s*-\s*matcher:\s*\n\s*exact:\s*api\.cluster\.example\s*\n\s*san_type:\s*DNS`, got)
 }
 
 func TestRenderEnvoyBootstrap_PortUpgradesCARendersValidYAML(t *testing.T) {

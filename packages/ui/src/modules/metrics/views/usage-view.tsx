@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useModelSpend } from "../api/queries.js";
@@ -31,38 +32,34 @@ export function UsageView() {
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-            Usage
-          </h2>
-          <p className="text-[14px] text-foreground/80 mb-6">
-            LLM API spend across all your agents.
-          </p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Previous month"
-            onClick={() => setMonth(monthStart(month, -1))}
-          >
-            <ChevronLeft size={16} />
-          </Button>
-          <span className="min-w-[120px] text-center text-[14px] font-medium">
-            {monthLabel}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Next month"
-            disabled={isCurrentMonth}
-            onClick={() => setMonth(monthStart(month, 1))}
-          >
-            <ChevronRight size={16} />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Usage"
+        description="LLM API spend across all supported agents (currently only Claude Code and derivatives)."
+        actions={
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Previous month"
+              onClick={() => setMonth(monthStart(month, -1))}
+            >
+              <ChevronLeft size={16} />
+            </Button>
+            <span className="min-w-[120px] text-center text-[14px] font-medium">
+              {monthLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Next month"
+              disabled={isCurrentMonth}
+              onClick={() => setMonth(monthStart(month, 1))}
+            >
+              <ChevronRight size={16} />
+            </Button>
+          </div>
+        }
+      />
 
       {isError && (
         <p className="text-[14px] text-muted-foreground">

@@ -1,5 +1,6 @@
 import type { FeatureId } from "api-server-api";
 
+import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 
 import { useFeatures, useSetFeature } from "../api/queries.js";
@@ -34,12 +35,10 @@ export function FeaturesTab() {
 
   return (
     <div className="anim-in">
-      <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-        Experimental features
-      </h2>
-      <p className="mb-6 text-[14px] text-foreground/80">
-        Experimental features, toggled per user.
-      </p>
+      <PageHeader
+        title="Experimental features"
+        description="Experimental features, toggled per user."
+      />
 
       <div className="flex flex-col gap-3">
         {FEATURE_ROWS.map((row) => (

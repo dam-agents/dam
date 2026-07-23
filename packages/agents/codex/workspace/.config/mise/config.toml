@@ -1,7 +1,0 @@
-[settings]
-lockfile = true
-minimum_release_age = "7d"
-
-[tools]
-"npm:@openai/codex" = "0.133.0"
-"npm:@zed-industries/codex-acp" = "0.14.0"

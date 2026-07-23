@@ -4,6 +4,7 @@ import type {
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
+  SlackMessage,
   SlackSlashCommand,
 } from "./slack-gateway.js";
 
@@ -18,17 +19,24 @@ export interface FakeSlackGateway extends SlackGateway {
   /** A plain (non-mention) channel message, as the real gateway would deliver
    *  it post-filtering: human-authored, no subtype, not a DM. */
   fireMessage(event: SlackChannelMessageEvent): Promise<void>;
+  /** A plain message in a 1:1 DM (`message.im`), as the real gateway delivers
+   *  it post-filtering: human-authored, no subtype, not a bot post. */
+  fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   /** Workspace channel directory; unlisted ids resolve as not found. */
   setChannels(channels: FakeSlackChannel[]): void;
+  /** Seed the messages returned by getThreadReplies / getChannelHistory, so a
+   *  test can exercise history injection (e.g. attribution footers). */
+  setHistory(messages: SlackMessage[]): void;
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
   let channels: FakeSlackChannel[] = [];
+  let history: SlackMessage[] = [];
   let nextStreamTs = 1;
 
   function requireHandlers(): SlackGatewayHandlers {
@@ -124,11 +132,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies() {
-      return [];
+      return [...history];
     },
 
     async getChannelHistory() {
-      return [];
+      return [...history];
     },
 
     async uploadFile(args) {
@@ -166,6 +174,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       await requireHandlers().onMessage(event);
     },
 
+    async fireDirectMessage(event) {
+      await requireHandlers().onDirectMessage(event);
+    },
+
     async fireCommand(command) {
       let ackText = "";
       await requireHandlers().onCommand(command, async ({ text }) => {
@@ -184,6 +196,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setChannels(next) {
       channels = [...next];
+    },
+
+    setHistory(next) {
+      history = [...next];
     },
   };
 }

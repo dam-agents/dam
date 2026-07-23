@@ -36,7 +36,7 @@ func GatewayName(pairKey string) string {
 //
 // `agentName` is both the pair key and the parent agent reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -49,19 +49,20 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 		LabelRole:  RoleGateway,
 	}
 
-	volumes := envoyVolumes(agentName, cfg, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(agentName, cfg, credentialSecrets)}
+	volumes := envoyVolumes(agentName, cfg, credentialSecrets, l7Hosts)
+	containers := []corev1.Container{envoyContainer(agentName, cfg, credentialSecrets, l7Hosts)}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod
 
 	annotations := map[string]string{
-		// Roll trigger: hash of the Secret set driving the Envoy
-		// bootstrap. When the api-server adds an allow-only Secret to promote
-		// a host onto L7, the hash changes, the pod template diverges, and
-		// the gateway StatefulSet rolls so Envoy picks up the new chain set
-		// + leaf cert.
-		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
+		// Roll trigger: hash of the inputs driving the Envoy bootstrap.
+		// When the api-server promotes a host onto L7 (spec.l7Hosts,
+		// #2865), the hash changes, the pod template diverges, and the
+		// gateway StatefulSet rolls so Envoy picks up the new chain set
+		// + leaf cert. Per-agent grain: a sibling agent's rule never
+		// changes this agent's hash.
+		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets, l7Hosts),
 	}
 
 	podSpec := corev1.PodSpec{
@@ -155,7 +156,12 @@ func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.O
 // ext_authz Check calls from this gateway resolve under the parent
 // agent's egress rules. The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent agent's pair.
-func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *corev1.Pod {
+//
+// `parentL7Hosts` is the PARENT agent's spec.l7Hosts: the gate evaluates
+// the parent owner's egress rules for fork traffic, so the fork gateway
+// must carry the same L7 interception chains or the parent's path/method/
+// port narrowing is invisible on foreign turns (#2866).
+func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, parentL7Hosts []string) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
 		LabelAgent:    parentAgentID,
@@ -164,8 +170,8 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 		ForkLabelType: ForkJobLabelType,
 	}
 
-	volumes := envoyVolumes(forkName, cfg, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(forkName, cfg, credentialSecrets)}
+	volumes := envoyVolumes(forkName, cfg, credentialSecrets, parentL7Hosts)
+	containers := []corev1.Container{envoyContainer(forkName, cfg, credentialSecrets, parentL7Hosts)}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod

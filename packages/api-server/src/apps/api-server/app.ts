@@ -105,9 +105,9 @@ import {
 import { injectChannelOf } from "./../../modules/approvals/infrastructure/acp-frames.js";
 import {
   composeEgressRulesModule,
+  createAgentL7HostsPort,
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
-  createK8sAllowOnlySecretsPort,
 } from "./../../modules/egress-rules/compose.js";
 import type {
   AgentCleanupHook,
@@ -799,6 +799,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
+      githubAppEngine: connectionsBoot.githubAppEngine,
       secretStore: secretStores.default(),
       runtimeMutator,
       agentsRepo,
@@ -904,12 +905,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
-    const allowOnlySecrets = createK8sAllowOnlySecretsPort(k8sClient);
+    const l7Hosts = createAgentL7HostsPort(k8sClient);
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
       isAgentOwnedBy,
-      allowOnlySecrets,
+      l7Hosts,
       presetSeeder,
       trustedHosts,
     });
@@ -919,7 +920,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
-      egressRuleWriter: createEgressRuleWriterAdapter(db, allowOnlySecrets),
+      egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       bus: redisBus,
       wrapperFrameSender,
     });

@@ -42,6 +42,24 @@ export const clientCredentialsAuth = z.object({
   host: z.string().min(1).optional(),
 });
 
+// GitHub App installation grant: the platform signs a short-lived JWT with the
+// app's private key and exchanges it at GitHub for an installation access token
+// (ghs_…) — at create and again before each expiry. Only the minted
+// installation token ever reaches the gateway's injection path; the private key
+// stays at rest in the per-Connection Secret. `apiBaseUrl` is the GitHub REST
+// base the installation-token endpoint hangs off (api.github.com for github.com).
+export const githubAppAuth = z.object({
+  kind: z.literal("github-app"),
+  appId: z.string().min(1),
+  installationId: z.string().min(1),
+  privateKeyRef: secretRef,
+  accessTokenRef: secretRef,
+  apiBaseUrl: z.string().url(),
+  expiresAt: z.number().int().optional(),
+  connectedAt: z.number().int().optional(),
+  host: z.string().min(1).optional(),
+});
+
 export const headerAuth = z.object({
   kind: z.literal("header"),
   valueRef: secretRef,
@@ -56,6 +74,7 @@ export const noneAuth = z.object({
 export const authConfig = z.discriminatedUnion("kind", [
   oauthAuth,
   clientCredentialsAuth,
+  githubAppAuth,
   headerAuth,
   noneAuth,
 ]);
@@ -84,6 +103,7 @@ export type ConnectionStatus = z.infer<typeof connectionStatus>;
 export const authKind = z.enum([
   "oauth",
   "client-credentials",
+  "github-app",
   "header",
   "none",
 ]);
@@ -117,6 +137,8 @@ export const templateInput = z.object({
   state: templateInputState,
   presetValue: z.string().optional(),
   secret: z.boolean().optional(),
+  // Renders as a multi-line textarea rather than a single-line input (e.g. a PEM private key).
+  multiline: z.boolean().optional(),
   // Marks a config input the form packs into `configInputs` rather than the typed auth fields.
   configInput: z.boolean().optional(),
   label: z.string().optional(),

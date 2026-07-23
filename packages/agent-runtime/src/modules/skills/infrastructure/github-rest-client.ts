@@ -222,22 +222,26 @@ async function ghJson<T>(
   opts: GithubFetchOpts = {},
 ): Promise<Result<T, SkillsDomainError>> {
   const withAuth = opts.withAuth ?? true;
-  const res = await fetch(`${GITHUB_API}${endpoint}`, {
-    method,
-    headers: ghHeaders(withAuth, body !== undefined),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let parsed: unknown = null;
   try {
-    parsed = text ? JSON.parse(text) : null;
-  } catch {
-    parsed = text;
+    const res = await fetch(`${GITHUB_API}${endpoint}`, {
+      method,
+      headers: ghHeaders(withAuth, body !== undefined),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = text;
+    }
+    if (!res.ok) {
+      return err(toUpstreamError(method, endpoint, res.status, parsed));
+    }
+    return ok(parsed as T);
+  } catch (e) {
+    return err(toUnreachableError(method, endpoint, e));
   }
-  if (!res.ok) {
-    return err(toUpstreamError(method, endpoint, res.status, parsed));
-  }
-  return ok(parsed as T);
 }
 
 async function ghBytes(
@@ -246,21 +250,43 @@ async function ghBytes(
   opts: GithubFetchOpts = {},
 ): Promise<Result<Uint8Array, SkillsDomainError>> {
   const withAuth = opts.withAuth ?? true;
-  const res = await fetch(`${GITHUB_API}${endpoint}`, {
-    method,
-    headers: ghHeaders(withAuth, false),
-  });
-  if (!res.ok) {
-    let parsed: unknown = null;
-    const text = await res.text().catch(() => "");
-    try {
-      parsed = text ? JSON.parse(text) : text;
-    } catch {
-      parsed = text;
+  try {
+    const res = await fetch(`${GITHUB_API}${endpoint}`, {
+      method,
+      headers: ghHeaders(withAuth, false),
+    });
+    if (!res.ok) {
+      let parsed: unknown = null;
+      const text = await res.text().catch(() => "");
+      try {
+        parsed = text ? JSON.parse(text) : text;
+      } catch {
+        parsed = text;
+      }
+      return err(toUpstreamError(method, endpoint, res.status, parsed));
     }
-    return err(toUpstreamError(method, endpoint, res.status, parsed));
+    return ok(new Uint8Array(await res.arrayBuffer()));
+  } catch (e) {
+    return err(toUnreachableError(method, endpoint, e));
   }
-  return ok(new Uint8Array(await res.arrayBuffer()));
+}
+
+/** A throw from fetch (or a mid-body read) means the request died in
+ *  transit — undici reports it as `TypeError: fetch failed` with the real
+ *  reason (connect/headers timeout, reset) on `cause`. Both hops of that
+ *  cause chain go into `detail` for diagnosability. */
+function toUnreachableError(
+  method: string,
+  path: string,
+  e: unknown,
+): SkillsDomainError {
+  const detail =
+    e instanceof Error
+      ? e.cause instanceof Error
+        ? `${e.message}: ${e.cause.message}`
+        : e.message
+      : String(e);
+  return { kind: "UpstreamUnreachable", method, path, detail };
 }
 
 function toUpstreamError(

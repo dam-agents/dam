@@ -47,15 +47,16 @@ export function createBoltSlackGateway(
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
           teamId: event.team ?? context.teamId,
+          channelType: (event as { channel_type?: string }).channel_type,
         });
       });
 
       bolt.event("message", async ({ event, context }) => {
-        // Ambient reading: deliver only plain human channel messages. Bot
-        // posts (including the agent's own replies) are skipped to prevent
-        // loops; edits/joins/etc. carry a subtype (file_share excepted —
-        // that's a plain message with an upload); DMs are out of scope; and
-        // a message that mentions the bot already arrives via app_mention.
+        // Deliver only plain human messages. Bot posts (including the agent's
+        // own replies) are skipped to prevent loops; edits/joins/etc. carry a
+        // subtype (file_share excepted — that's a plain message with an
+        // upload); and a message that mentions the bot already arrives via
+        // app_mention.
         const msg = event as {
           channel: string;
           channel_type?: string;
@@ -67,20 +68,36 @@ export function createBoltSlackGateway(
           text?: string;
           files?: SlackImageFile[];
         };
-        if (msg.channel_type !== "channel" && msg.channel_type !== "group")
-          return;
         if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
         if (msg.bot_id || !msg.user) return;
-        const botUserId = context.botUserId;
-        if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
-        await handlers.onMessage({
+        const payload = {
           user: msg.user,
           channel: msg.channel,
           ts: msg.ts,
           threadTs: msg.thread_ts,
           text: msg.text ?? "",
           files: msg.files,
-        });
+          channelType: msg.channel_type,
+        };
+        // A 1:1 DM (im) is always addressed to the bot, so every message
+        // relays — including one that @mentions the bot. Route it before the
+        // bot-mention drop below: that drop only dedups the channel/group case
+        // against app_mention, and the worker ignores the duplicate
+        // app_mention for DMs.
+        if (msg.channel_type === "im") {
+          await handlers.onDirectMessage(payload);
+          return;
+        }
+        // channel/group: a message that @mentions the bot already arrives via
+        // app_mention — skip it here to avoid processing the turn twice.
+        const botUserId = context.botUserId;
+        if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
+        // Plain channel/group messages feed ambient read-along; mpim (group
+        // DM) is mention-driven (arrives via app_mention), so its plain
+        // messages are ignored here.
+        if (msg.channel_type === "channel" || msg.channel_type === "group") {
+          await handlers.onMessage(payload);
+        }
       });
 
       bolt.command(deps.commandName, async ({ command, ack }) => {
@@ -206,6 +223,7 @@ export function createBoltSlackGateway(
         ts: m.ts,
         user: m.user,
         text: m.text,
+        blocks: m.blocks as SlackMessage["blocks"],
       }));
     },
 
@@ -219,6 +237,7 @@ export function createBoltSlackGateway(
         ts: m.ts,
         user: m.user,
         text: m.text,
+        blocks: m.blocks as SlackMessage["blocks"],
       }));
     },
 

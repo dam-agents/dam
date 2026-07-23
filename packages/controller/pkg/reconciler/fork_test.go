@@ -109,6 +109,27 @@ func TestForkReconcile_CreatesJob(t *testing.T) {
 	assert.Equal(t, apiv1.ForkPhasePending, status.Phase)
 }
 
+func TestForkReconcile_ParentL7HostsShapeForkBootstrap(t *testing.T) {
+	// The gate evaluates the PARENT owner's rules for fork traffic, so the
+	// fork gateway must intercept the parent's promoted hosts at L7 or
+	// path/method/port narrowing is invisible on foreign turns (#2866).
+	// This pins the reconciler-level wiring: the promotion source must be
+	// the parent Agent's spec, not the replier's anything.
+	fork := forkCR("fork-1", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	parent := agentCR()
+	parentSpec := *testAgent
+	parentSpec.L7Hosts = []string{"api.github.com"}
+	parent.Spec = parentSpec
+	r, client := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": parent}, fork)
+
+	require.NoError(t, r.Reconcile(context.Background(), fork))
+
+	cm, err := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), EnvoyBootstrapName("fork-1"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, cm.Data["envoy.yaml"], "api.github.com",
+		"parent's promoted host must appear in the fork gateway's chain set")
+}
+
 func TestForkReconcile_OwnedByParentAgent(t *testing.T) {
 	fork := forkCR("fork-own", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)

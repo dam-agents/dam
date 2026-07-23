@@ -75,8 +75,9 @@ var testOwnerCM = &corev1.ConfigMap{
 
 func credSecret(name, host string) corev1.Secret {
 	ann := map[string]string{
-		"agent-platform.ai/host-pattern":          host,
-		"agent-platform.ai/injection-header-name": "Authorization",
+		"agent-platform.ai/injection-hosts": `[{"host":"` + host +
+			`","headerName":"Authorization","valueFormat":"Bearer {value}","sdsKey":"` +
+			sdsFileKeyForHost(host) + `"}]`,
 	}
 	// Fixtures targeting github hosts also declare GH_TOKEN in their
 	// env-mappings — mirrors what the api-server's github descriptor
@@ -88,15 +89,17 @@ func credSecret(name, host string) corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: ann,
-			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
+			Labels: map[string]string{
+				"agent-platform.ai/owner":       "owner-1",
+				"agent-platform.ai/managed-by":  "api-server",
+				"agent-platform.ai/secret-type": "connection",
+				"agent-platform.ai/connection":  name,
+			},
 		},
 		// Real api-server-written Secrets always carry the SDS file the
 		// bootstrap references; chain rendering degrades to allow-only
 		// without it.
-		Data: map[string][]byte{
-			"value":               []byte("Bearer abc"),
-			envoyCredentialKeySDS: []byte("resources: []"),
-		},
+		Data: map[string][]byte{sdsFileKeyForHost(host): []byte("resources: []")},
 	}
 }
 
@@ -153,14 +156,15 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
-	// Node gets the CA via NODE_EXTRA_CA_CERTS; SSL_CERT_FILE / GIT_SSL_CAINFO
-	// stay unset because the entrypoint installs the CA into the system trust
-	// store for the other tools. See resources.go.
+	// Node gets the CA via NODE_EXTRA_CA_CERTS. SSL_CERT_FILE / GIT_SSL_CAINFO
+	// stay unset at the pod level: the base image points Python at the merged
+	// system bundle, and a pod-level value aimed at the bare CA file would
+	// override it and drop the public CAs. See resources.go.
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
-	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the entrypoint")
+	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
-	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the entrypoint")
+	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the system trust store")
 	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
 	// User env (spec.env) is no longer projected — it rides the runtime channel.
 	_, hasACPPort := envMap["ACP_PORT"]
@@ -437,7 +441,7 @@ func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
@@ -446,7 +450,7 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Contains(t, yaml, "0.0.0.0")
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
-	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
+	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/"+sdsFileKeyForHost("api.example.com"))
 	// path_config_source must declare `watched_directory` pointing at the
 	// Secret-volume mount root — otherwise Envoy never observes the kubelet
 	// symlink swap that delivers a rotated token. Regression for the

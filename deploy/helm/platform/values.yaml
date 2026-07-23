@@ -7,15 +7,16 @@
 brand:
   # Display name shown in the PWA manifest, OAuth dynamic client_name,
   # skill-publish git author, and the Keycloak realm display name (sign-in
-  # heading + tab title).
+  # heading).
   name: DAM
   # Lowercase identifier (DNS/URL-safe). Used for the Slack slash command
   # (`/<short> login`), GitHub publish branch prefix, and git-author email
   # local-part.
   short: dam
-  # Marketing tagline shown as the browser tab title in the web app (the
-  # `name` expansion). Empty string falls back to `name`.
-  tagline: "Deploy Agents Massively"
+  # Browser tab title of the web app and the Keycloak sign-in pages. Set a
+  # per-environment variant here (e.g. "IBM Research DAM - Staging"). Empty
+  # string falls back to `name`.
+  title: "IBM Research DAM"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:
@@ -1075,6 +1076,11 @@ controller:
 # per entry; set an entry to `null` to drop it. Fields named identically to
 # `controller.agent.templateDefaults.*` override the chart-wide default for
 # agents created from this template.
+# The rendered image ref (`repository:tag`, tag defaulting to the chart
+# appVersion) is the template's version identity: existing agents are offered
+# an upgrade when it differs from what they captured at create. Pinning `tag`
+# across releases therefore opts that template out of upgrade detection, and
+# non-image drift (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 # `category` groups the entry in the creation wizard's Step 1: "harness"

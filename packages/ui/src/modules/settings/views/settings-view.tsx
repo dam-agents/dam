@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -126,12 +127,10 @@ export function SettingsView() {
       <div className="flex-1 min-w-0">
         {activeTab === "appearance" && (
           <div className="anim-in">
-            <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-              Appearance
-            </h2>
-            <p className="text-[14px] text-foreground/80 mb-6">
-              Customize the look and feel of the interface.
-            </p>
+            <PageHeader
+              title="Appearance"
+              description="Customize the look and feel of the interface."
+            />
 
             {/* Theme selector */}
             <div className="mb-8">
@@ -181,12 +180,10 @@ export function SettingsView() {
 
         {activeTab === "account" && (
           <div className="anim-in">
-            <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-              Account
-            </h2>
-            <p className="text-[14px] text-foreground/80 mb-6">
-              Manage your account and session.
-            </p>
+            <PageHeader
+              title="Account"
+              description="Manage your account and session."
+            />
 
             <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
@@ -265,12 +262,10 @@ function ChannelsSettings() {
 
   return (
     <div className="anim-in">
-      <h2 className="mb-1 text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-        Channels
-      </h2>
-      <p className="text-[14px] text-foreground/80 mb-6">
-        Connect an agent to messenger surfaces (Slack channels, Telegram chats).
-      </p>
+      <PageHeader
+        title="Channels"
+        description="Connect an agent to messenger surfaces (Slack channels, Telegram chats)."
+      />
       <div className="mb-4 max-w-90">
         <SectionLabel spaced>Agent</SectionLabel>
         <Select value={agentId} onChange={(e) => setAgentId(e.target.value)}>

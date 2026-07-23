@@ -81,6 +81,26 @@ type AgentSpec struct {
 	// GrantedConnectionIDs are the connection IDs granted to this agent.
 	// +optional
 	GrantedConnectionIDs []string `json:"grantedConnectionIds,omitempty"`
+
+	// L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
+	// interception chain without a credential, so path/method/port egress
+	// rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
+	// Written by the api-server when such a rule exists for this agent;
+	// per-agent grain so a rule on one agent never reshapes a sibling's
+	// gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+	// stays the egress policy authority for foreign turns).
+	//
+	// The item pattern is a hard boundary: each entry is interpolated into
+	// the gateway's Envoy bootstrap (an unescaped `text/template` field)
+	// and into cert-manager SANs, so admission rejects anything that isn't
+	// a DNS hostname (optionally a `*.` wildcard) — no quotes, whitespace,
+	// or YAML metacharacters can reach the rendered config. maxItems caps
+	// the leaf SAN list a single agent can demand.
+	// +optional
+	// +kubebuilder:validation:MaxItems=256
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^(\*\.)?([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$`
+	L7Hosts []string `json:"l7Hosts,omitempty"`
 }
 
 // Condition types on an Agent's status. Conditions are the source of truth for
@@ -162,7 +182,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=4
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=5
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

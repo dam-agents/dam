@@ -166,9 +166,11 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		{Name: "http_proxy", Value: proxyAddr},
 		// Node doesn't read the system trust store, so it gets the cluster CA
 		// through NODE_EXTRA_CA_CERTS (which adds to its built-in CAs). Other
-		// tools (git, curl, Go, Python) read the system store, where the agent
-		// entrypoint installs the CA — so we don't set SSL_CERT_FILE /
-		// GIT_SSL_CAINFO, which would replace and drop the public CAs.
+		// tools (git, curl, Go) read the system store, where the agent
+		// entrypoint installs the CA. Python's certifi-based clients read
+		// neither, so the base image points SSL_CERT_FILE / REQUESTS_CA_BUNDLE
+		// at the merged system bundle — never set those here to the bare CA
+		// file, which would override the image and drop the public CAs.
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},

@@ -1,26 +1,25 @@
 import type { ConnectionTemplateInput } from "api-server-api";
+import { type Control, Controller, useWatch } from "react-hook-form";
 
 import { Switch } from "@/components/ui/switch";
 
+import type { TemplateFormValues } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
-import { labelFor, placeholderFor } from "./field-copy.js";
-import { LabeledInput } from "./labeled-input.js";
+import { labelFor } from "./field-copy.js";
+import { TemplateFieldInput } from "./template-field-input.js";
 
 export function OverridableSection({
   inputs,
-  fields,
-  overriding,
+  control,
+  templateId,
   fromFamily,
-  setF,
-  setOverriding,
 }: {
   inputs: ConnectionTemplateInput[];
-  fields: Record<string, string>;
-  overriding: boolean;
+  control: Control<TemplateFormValues>;
+  templateId: string;
   fromFamily?: boolean;
-  setF: (k: string, v: string) => void;
-  setOverriding: (v: boolean) => void;
 }) {
+  const overriding = useWatch({ control, name: "overrideDefaults" });
   // A single toggle flips the whole overridable group: the fields only make
   // sense overridden together (your own app means all of its credentials, not
   // a mix of presets and custom values), so we don't expose them per-field.
@@ -33,23 +32,27 @@ export function OverridableSection({
               ? "Reused from another connection you've already set up. Leave off to share the same app, or turn on to use your own."
               : "These values are pre-configured by your administrator. Leave off to use the defaults, or turn on to supply your own."}
           </p>
-          <Switch
-            checked={overriding}
-            onCheckedChange={setOverriding}
-            testId="override-defaults-toggle"
-            label="Customize defaults"
+          <Controller
+            control={control}
+            name="overrideDefaults"
+            render={({ field }) => (
+              <Switch
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                testId="override-defaults-toggle"
+                label="Customize defaults"
+              />
+            )}
           />
         </div>
         {overriding ? (
           <div className="flex flex-col gap-3">
             {inputs.map((input) => (
-              <LabeledInput
+              <TemplateFieldInput
                 key={input.name}
-                label={input.label ?? labelFor(input.name)}
-                placeholder={placeholderFor(input.name)}
-                type={input.secret ? "password" : "text"}
-                value={fields[input.name] ?? ""}
-                onChange={(v) => setF(input.name, v)}
+                control={control}
+                templateId={templateId}
+                input={input}
               />
             ))}
           </div>

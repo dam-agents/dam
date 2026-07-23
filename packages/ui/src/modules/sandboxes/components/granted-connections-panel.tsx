@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -28,22 +29,12 @@ export function GrantedConnectionsPanel({
     return (
       <>
         <SectionLabel spaced>My connections</SectionLabel>
-        <Inset className="rounded-lg border border-border bg-card">
-          <div className="flex flex-col items-center gap-4 py-10">
-            <p className="text-[14px] text-foreground/80">
-              You have not added any Connections to this Sandbox yet
-            </p>
-            <Button
-              variant="outline"
-              className="h-[40px] text-[14px]"
-              onClick={onOpenCatalog}
-              data-testid="open-connection-catalog"
-            >
-              <Add size={16} />
-              Add Connection
-            </Button>
-          </div>
-        </Inset>
+        <EmptyStateCard
+          message="You have not added any Connections to this Sandbox yet"
+          actionLabel="Add Connection"
+          onAction={onOpenCatalog}
+          actionTestId="open-connection-catalog"
+        />
       </>
     );
 

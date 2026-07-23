@@ -25,16 +25,13 @@ import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
-import {
-  AgentRuntimeUpstreamError,
-  type AgentRuntimeSkillsClient,
-} from "../infrastructure/agent-runtime-client.js";
+import type { AgentRuntimeSkillsClient } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
-import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
+import { privateScanErrorToTrpc } from "../infrastructure/upstream-to-trpc.js";
 
 /** Stable, deterministic id for a template-derived source row. The hash
  *  prefix keeps the id compact while avoiding collisions when a template
@@ -354,8 +351,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           deps.runtimeClient.scan(agentId, gitUrl, src.path),
         );
       } catch (err) {
-        if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
-        throw err;
+        throw privateScanErrorToTrpc(err) ?? err;
       }
     },
 

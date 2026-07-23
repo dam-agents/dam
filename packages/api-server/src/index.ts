@@ -100,6 +100,7 @@ import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wra
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
+  createL7PromotionBackfill,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
@@ -109,14 +110,12 @@ import {
   createConnectionGrantsCleanupHook,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
-import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
-import { migrateSecretsToConnections } from "./modules/connections/migration/secrets-to-connections.js";
-import { createLegacySecretEnvSource } from "./modules/connections/migration/legacy-secret-env-source.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
 import { composeArtifactExpirySweeper } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { sweepLegacyCredentialSecrets } from "./modules/connections/sweep/legacy-secret-sweep.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -194,6 +193,18 @@ async function runUserEnvBackfill(): Promise<void> {
 }
 await runUserEnvBackfill();
 
+// One-time sweep of the drained legacy credential Secrets the
+// secrets→connections migration left in place (#2198). Fire-and-forget:
+// nothing at runtime reads these Secrets, a failed pass retries on the
+// next boot, and the summary line doubles as the drain-gate confirmation.
+void sweepLegacyCredentialSecrets({
+  k8sClient,
+  log: (m) => getLogger().info(`[legacy-secret-sweep] ${m}`),
+  logError: (m) => getLogger().error(`[legacy-secret-sweep] ${m}`),
+}).catch((err) =>
+  getLogger().error(`[legacy-secret-sweep] pass failed: ${String(err)}`),
+);
+
 // Concrete spec.resources.limits on legacy agents (#1900) are the
 // controller's job: it materializes `legacyAgentSize` into any spec
 // missing a dimension on reconcile (fill-if-absent) — watch-driven, so it
@@ -210,11 +221,6 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
-  // Inert safety (#1273): supplies credential env for any agent still on a
-  // legacy secret until the migration flips it to a Connection (which then
-  // carries its own env). Returns [] in the steady state. The controller's
-  // kept host-pattern branch covers gateway injection but not this env half.
-  secretEnv: createLegacySecretEnvSource({ k8sClient }),
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {
@@ -226,11 +232,6 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
-// Drain legacy provider/PAT secrets into Connections (#1273). Same shape as
-// the user-env backfill: first pass awaited before serving, non-blocking
-// (agents keep working on legacy secrets until each is flipped), timer-retry
-// on partial failure, self-disarming once no legacy secrets remain. Runs with
-// the api-server's cross-owner K8s reach — no owner-scoped surface needed.
 const connectionsBoot = composeConnectionsAtBoot({
   db,
   secretStore: secretStores.default(),
@@ -241,6 +242,7 @@ const connectionsServiceFor = (ownerId: string) =>
     db,
     templates: connectionsBoot.templates,
     oauthEngine: connectionsBoot.oauthEngine,
+    githubAppEngine: connectionsBoot.githubAppEngine,
     secretStore: secretStores.default(),
     runtimeMutator: runtimeDelivery.runtimeMutator,
     agentsRepo,
@@ -248,38 +250,40 @@ const connectionsServiceFor = (ownerId: string) =>
     oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
     brandName: config.brand.name,
   });
-let secretsMigrationRetry: ReturnType<typeof setTimeout> | undefined;
-// Cap the retry chain so a credential that fails every pass (e.g. a genuinely
-// unreadable Secret that surfaces as a transient error) can't re-arm a 60s
-// timer forever. Past the cap we stop and log loud — an operator runs the
-// dry-run entrypoint to inspect what's stuck.
-const SECRETS_MIGRATION_MAX_RETRIES = 10;
-let secretsMigrationRetries = 0;
-async function runSecretsToConnectionsMigration(): Promise<void> {
-  const { failed } = await migrateSecretsToConnections({
-    k8sClient,
-    repo: createConnectionsRepository(db),
-    secretStore: secretStores.default(),
-    connectionsServiceFor,
-    connectionRulesSync: createConnectionRulesSyncAdapter(db),
-    log: (m) => getLogger().info(`[secrets-migration] ${m}`),
-  });
+// L7-promotion backfill (#2865): project active narrow rules onto each
+// Agent CR's spec.l7Hosts and retire the legacy owner-scoped allow-only
+// marker Secrets. Same capped-retry shape as the secrets migration; while
+// it hasn't fully succeeded the markers stay and rules remain enforced.
+let l7BackfillRetry: ReturnType<typeof setTimeout> | undefined;
+let l7BackfillRetries = 0;
+const L7_BACKFILL_MAX_RETRIES = 10;
+const l7PromotionBackfill = createL7PromotionBackfill(db, k8sClient, (m) =>
+  getLogger().info(`[l7-backfill] ${m}`),
+);
+async function runL7PromotionBackfill(): Promise<void> {
+  let failed: number;
+  try {
+    ({ failed } = await l7PromotionBackfill());
+  } catch (err) {
+    // A pass can throw outside its per-agent handling (e.g. listing the
+    // legacy markers while K8s is flaky) — treat it as a failed pass so
+    // the timer retry never becomes an unhandled rejection.
+    getLogger().error(`[l7-backfill] pass failed: ${String(err)}`);
+    failed = 1;
+  }
   if (failed === 0) return;
-  if (secretsMigrationRetries >= SECRETS_MIGRATION_MAX_RETRIES) {
+  if (l7BackfillRetries >= L7_BACKFILL_MAX_RETRIES) {
     getLogger().error(
-      `[secrets-migration] still ${failed} failing after ` +
-        `${SECRETS_MIGRATION_MAX_RETRIES} retries; giving up — agents keep ` +
-        `working on legacy secrets, run the dry-run entrypoint to inspect`,
+      `[l7-backfill] still ${failed} failing after ` +
+        `${L7_BACKFILL_MAX_RETRIES} retries; giving up — legacy allow-only ` +
+        `markers stay in place and rules remain enforced`,
     );
     return;
   }
-  secretsMigrationRetries++;
-  secretsMigrationRetry = setTimeout(
-    () => void runSecretsToConnectionsMigration(),
-    60_000,
-  );
+  l7BackfillRetries++;
+  l7BackfillRetry = setTimeout(() => void runL7PromotionBackfill(), 60_000);
 }
-await runSecretsToConnectionsMigration();
+await runL7PromotionBackfill();
 
 const { service: termsService, isAcceptedPort: isTermsAccepted } =
   composeTermsModule({
@@ -805,7 +809,7 @@ listChannelsByOwner(db, "")()
 async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
-  if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
+  if (l7BackfillRetry) clearTimeout(l7BackfillRetry);
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

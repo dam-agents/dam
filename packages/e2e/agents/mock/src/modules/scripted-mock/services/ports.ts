@@ -8,3 +8,10 @@ export interface AcpChannel {
 export interface WorkspaceWriter {
   writeFile(relPath: string, content: string): Promise<void>;
 }
+
+/** Posts the mock's reply through the platform-outbound `reply` MCP tool, the
+ *  way a real harness must now that plain assistant text is not delivered to
+ *  Slack. Best-effort: failures are logged, never thrown. */
+export interface SlackReplyPoster {
+  (args: { text: string; threadTs?: string }): Promise<void>;
+}

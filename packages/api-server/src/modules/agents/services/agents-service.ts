@@ -13,6 +13,8 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
+  type TemplateUpdate,
+  type UpgradeAgentError,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
@@ -47,6 +49,7 @@ import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
+import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
@@ -287,6 +290,7 @@ export function executeSlackBind(deps: {
   connectShared: (
     agentId: string,
     slackChannelId: string,
+    ambient: boolean,
   ) => Promise<ConnectSlackResult>;
   binding: SlackBindingPort;
 }) {
@@ -319,7 +323,16 @@ export function executeSlackBind(deps: {
     const existing = await deps.findChannelBinding(flow.slackChannelId);
     if (existing) return err({ type: "ChannelAlreadyBound" as const });
 
-    const connected = await deps.connectShared(agentId, flow.slackChannelId);
+    // A shared channel bind defaults to ambient mode so the agent reads along
+    // without a second command — the pain the /bind flow otherwise imposes. A
+    // 1:1 DM already relays every message, so ambient is meaningless there and
+    // stays off. Either way the ambient state is never announced in the channel.
+    const isDm = flow.slackChannelId.startsWith("D");
+    const connected = await deps.connectShared(
+      agentId,
+      flow.slackChannelId,
+      !isDm,
+    );
     if (!connected.ok) {
       // Ownership was already proven by getAgent, so a non-ok here is a lost
       // race (the channel was bound between the check and the write).
@@ -343,10 +356,15 @@ export function executeSlackBind(deps: {
       },
     });
 
+    // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
+    // private DM doesn't read as a shared channel ("everyone here"). It stays a
+    // plain connect notice; the ambient default is never announced here.
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
-      `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+      isDm
+        ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
+        : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
     );
     if ("error" in post) {
       // Best-effort: the binding is committed; the confirmation is courtesy.
@@ -363,6 +381,60 @@ export function executeSlackBind(deps: {
     }
 
     return ok({ channelTitle: flow.channelTitle ?? null });
+  };
+}
+
+/**
+ * The template-upgrade flow (#1077), extracted like the bind flows so tests
+ * can drive it with narrow deps. v1 re-applies the template's image only —
+ * template env/mounts stay frozen at create time by design (re-flowing them
+ * risks clobbering user edits / immutable volumeClaimTemplates).
+ */
+export function executeTemplateUpgrade(deps: {
+  owner: string | undefined;
+  getAgent: (id: string) => Promise<InfraAgent | null>;
+  readTemplateSpec: (
+    id: string,
+  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  patchImage: (id: string, image: string) => Promise<InfraAgent | null>;
+}) {
+  return async (
+    id: string,
+    expectedToImage?: string,
+  ): Promise<
+    { ok: true; value: InfraAgent } | { ok: false; error: UpgradeAgentError }
+  > => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return err({ type: "AgentNotFound" as const });
+    if (!infra.templateId) return err({ type: "TemplateNotFound" as const });
+    const tmpl = await deps.readTemplateSpec(infra.templateId);
+    if (!tmpl) return err({ type: "TemplateNotFound" as const });
+
+    // Binding consent: the confirmed image must still be what the template
+    // ships, or the user would apply a movement they never reviewed.
+    if (expectedToImage !== undefined && expectedToImage !== tmpl.spec.image)
+      return err({ type: "TemplateMoved" as const });
+
+    const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    // Already current — idempotent success, no patch, no pod roll.
+    if (!update) return ok(infra);
+
+    const patched = await deps.patchImage(id, update.toImage);
+    if (!patched) return err({ type: "AgentNotFound" as const });
+    // Swaps what code the pod runs — record the exact image movement.
+    securityLog("info", "agent.upgrade", {
+      category: "resource",
+      actor: deps.owner ?? null,
+      actorKind: "user",
+      agentId: id,
+      result: "success",
+      detail: {
+        templateId: infra.templateId,
+        fromImage: update.fromImage,
+        toImage: update.toImage,
+      },
+    });
+    return ok(patched);
   };
 }
 
@@ -524,15 +596,28 @@ export function createAgentsService(deps: {
     }
   }
 
+  // Behind-the-template check (#1077): compares the create-time image capture
+  // against the boot-loaded template. Memory-backed, so fine on every read.
+  async function templateUpdateFor(
+    infra: InfraAgent,
+  ): Promise<TemplateUpdate | undefined> {
+    if (!infra.templateId) return undefined;
+    const tmpl = await deps.readTemplateSpec(infra.templateId);
+    if (!tmpl) return undefined;
+    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+  }
+
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, allowedSubs, status, userEnv] = await Promise.all([
-      deps.listChannelsByAgent(infra.id),
-      deps.listAllowedUsersByAgent(infra.id),
-      safeStatus(infra.id),
-      deps.agentEnvRepo.list(infra.id),
-    ]);
+    const [channels, allowedSubs, status, userEnv, templateUpdate] =
+      await Promise.all([
+        deps.listChannelsByAgent(infra.id),
+        deps.listAllowedUsersByAgent(infra.id),
+        safeStatus(infra.id),
+        deps.agentEnvRepo.list(infra.id),
+        templateUpdateFor(infra),
+      ]);
     const emails = await subsToEmails(allowedSubs);
     return assembleAgent(
       withUserEnv(infra, userEnv),
@@ -541,6 +626,7 @@ export function createAgentsService(deps: {
       status.failures,
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
+      templateUpdate,
     );
   }
 
@@ -603,10 +689,10 @@ export function createAgentsService(deps: {
       ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
     });
 
-    // An ambient flip changes what the channel's members should expect — the
-    // agent now reads (or stops reading) every message — so it is audited and
-    // announced in the channel itself. The post is best-effort, like the
-    // in-chat bind confirmation.
+    // An ambient change is audited so the flip stays diagnosable after the
+    // fact, but it is deliberately not announced in the channel — whoever made
+    // the change confirms it on their own surface (the UI, the CLI, or the
+    // ephemeral slash-command reply), never a channel-visible post.
     const wasAmbient = existing?.ambient === true;
     if (wasAmbient !== requestedAmbient) {
       securityLog("info", "channel.ambient_toggled", {
@@ -618,27 +704,6 @@ export function createAgentsService(deps: {
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
       });
-      if (deps.slackBinding) {
-        const text = requestedAmbient
-          ? `${infra.name} is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run the ambient off command to make it mentions-only again.`
-          : `${infra.name} left ambient mode — it now only responds when mentioned.`;
-        const post = await deps.slackBinding.postMessage(
-          id,
-          slackChannelId,
-          text,
-        );
-        if ("error" in post) {
-          securityLog("warn", "channel.ambient_toggled.notify_failed", {
-            category: "channel",
-            actor: deps.owner ?? null,
-            actorKind: "user",
-            surface: "slack",
-            agentId: id,
-            result: "failure",
-            detail: { slackChannelId, error: post.error },
-          });
-        }
-      }
     }
 
     const allowedSubs = await deps.listAllowedUsersByAgent(id);
@@ -652,6 +717,7 @@ export function createAgentsService(deps: {
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
+        await templateUpdateFor(infra),
       ),
     );
   };
@@ -701,10 +767,26 @@ export function createAgentsService(deps: {
         deps.agentEnvRepo.listMany([...infraIds]),
       ]);
 
+      // One template lookup per distinct id; agents from the same template
+      // share the resolved image for the behind-the-template check (#1077).
+      const templateIds = [
+        ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
+      ];
+      const templateImages = new Map<string, string>();
+      await Promise.all(
+        templateIds.map(async (tid) => {
+          const tmpl = await deps.readTemplateSpec(tid);
+          if (tmpl) templateImages.set(tid, tmpl.spec.image);
+        }),
+      );
+
       return infraAgents.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
         const status = failuresMap.get(infra.id);
+        const templateImage = infra.templateId
+          ? templateImages.get(infra.templateId)
+          : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
           channelMap.get(infra.id) ?? [],
@@ -712,6 +794,9 @@ export function createAgentsService(deps: {
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
+          templateImage
+            ? templateImageUpdate(infra.spec.image, templateImage)
+            : undefined,
         );
       });
     },
@@ -1181,6 +1266,19 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
+    async upgrade(id, expectedToImage) {
+      const result = await executeTemplateUpgrade({
+        owner: deps.owner,
+        getAgent: (agentId) => deps.repo.get(agentId, deps.owner),
+        readTemplateSpec: deps.readTemplateSpec,
+        patchImage: (agentId, image) =>
+          deps.repo.updateSpec(agentId, deps.owner, { image }),
+      })(id, expectedToImage);
+      if (!result.ok) return result;
+      emit({ type: EventType.AgentUpdated, agentId: id });
+      return ok(await project(result.value));
+    },
+
     async ensureReady(id, opts) {
       if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
         throw new Error(`agent ${id}: not found or not owned`);
@@ -1249,8 +1347,8 @@ export function createAgentsService(deps: {
           return infra ? { id: infra.id, name: infra.name } : null;
         },
         findChannelBinding: deps.findSlackChannelBinding,
-        connectShared: (id, slackChannelId) =>
-          connectSlackImpl(id, slackChannelId, "shared"),
+        connectShared: (id, slackChannelId, ambient) =>
+          connectSlackImpl(id, slackChannelId, "shared", ambient),
         binding,
       })(agentId, flowId);
     },

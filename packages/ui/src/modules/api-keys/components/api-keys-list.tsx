@@ -3,6 +3,7 @@ import { KeyRound } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 
 import { useRevokeApiKey } from "../api/mutations.js";
 import { useApiKeys } from "../api/queries.js";
@@ -28,16 +29,13 @@ export function ApiKeysList() {
 
   return (
     <div className="anim-in">
-      <h2 className="text-[18px] font-bold mb-1">API Keys</h2>
-      <p className="text-[14px] text-muted-foreground mb-4">
-        Long-lived tokens for headless / CI use. Pass the value as a bearer
-        credential when calling the API. Plaintext is shown once on creation and
-        never recoverable.
-      </p>
-
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setCreateOpen(true)}>Create key</Button>
-      </div>
+      <PageHeader
+        title="API Keys"
+        description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
+        actions={
+          <Button onClick={() => setCreateOpen(true)}>Create key</Button>
+        }
+      />
 
       {isLoading && (
         <p className="text-[13px] text-muted-foreground">Loading…</p>

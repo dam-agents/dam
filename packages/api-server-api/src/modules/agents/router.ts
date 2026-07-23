@@ -19,6 +19,7 @@ import {
   agentUpdateInputSchema,
   agentPauseInputSchema,
   agentStopInputSchema,
+  agentUpgradeInputSchema,
   agentWakeInputSchema,
 } from "./schemas.js";
 import type { Agent } from "./types.js";
@@ -28,6 +29,7 @@ function toView(agent: Agent) {
     id: agent.id,
     name: agent.name,
     templateId: agent.templateId ?? null,
+    templateUpdate: agent.templateUpdate ?? null,
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
@@ -119,6 +121,28 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.pause(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(agent);
+    }),
+
+  upgrade: manageAgentsProcedure
+    .input(agentUpgradeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.upgrade(input.id, input.expectedToImage);
+      if (res.ok) return toView(res.value);
+      switch (res.error.type) {
+        case "AgentNotFound":
+          throw new TRPCError({ code: "NOT_FOUND" });
+        case "TemplateNotFound":
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "No template to upgrade from",
+          });
+        case "TemplateMoved":
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "The template changed since you reviewed the upgrade — check the new version and retry",
+          });
+      }
     }),
 
   connectSlack: manageAgentsProcedure

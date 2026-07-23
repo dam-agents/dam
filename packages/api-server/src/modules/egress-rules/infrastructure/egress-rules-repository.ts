@@ -85,6 +85,21 @@ export interface EgressRulesRepository {
    *  enough at the row counts we expect; the sweeper compares this set
    *  against the live K8s agent CM list. */
   listDistinctAgentIds(): Promise<string[]>;
+  /** Every ACTIVE rule's promotion-relevant fields, across all agents.
+   *  Consumed once at startup by the L7-promotion backfill (#2865); the
+   *  promoted-host predicate stays in the domain, not in SQL. `source` lets
+   *  the domain exclude connection-derived rows (already TLS-terminated by
+   *  their own credential chain). */
+  listActiveForPromotionScan(): Promise<
+    Array<{
+      agentId: string;
+      host: string;
+      method: string;
+      pathPattern: string;
+      port?: number;
+      source: string;
+    }>
+  >;
 }
 
 export interface NewEgressRule {
@@ -347,6 +362,28 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         )
         .orderBy(desc(egressRules.decidedAt));
       return rows.map((r) => toRow(r as RawRule));
+    },
+
+    async listActiveForPromotionScan() {
+      const rows = await db
+        .select({
+          agentId: egressRules.agentId,
+          host: egressRules.host,
+          method: egressRules.method,
+          pathPattern: egressRules.pathPattern,
+          port: egressRules.port,
+          source: egressRules.source,
+        })
+        .from(egressRules)
+        .where(eq(egressRules.status, "active"));
+      return rows.map((r) => ({
+        agentId: r.agentId,
+        host: r.host,
+        method: r.method,
+        pathPattern: r.pathPattern,
+        source: r.source,
+        ...(r.port != null ? { port: r.port } : {}),
+      }));
     },
 
     async reassignActiveSource(agentId, fromSources, toSource) {

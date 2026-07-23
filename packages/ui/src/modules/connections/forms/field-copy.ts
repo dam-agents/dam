@@ -10,8 +10,11 @@ const FIELD_LABELS: Record<string, string> = {
   scopes: "Scopes (space-separated)",
   audience: "Audience",
   appSlug: "GitHub App slug",
+  appId: "App ID",
+  installationId: "Installation ID",
+  privateKey: "Private key (PEM)",
   envName: "Environment variable",
-  caData: "Server CA certificate (optional)",
+  caData: "Server CA certificate",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -26,6 +29,9 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   scopes: "read write",
   audience: "https://api.example.com",
   appSlug: "my-platform-app",
+  appId: "123456",
+  installationId: "987654",
+  privateKey: "-----BEGIN RSA PRIVATE KEY-----\n…",
   envName: "MY_API_KEY",
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };

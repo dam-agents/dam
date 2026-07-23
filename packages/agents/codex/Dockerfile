@@ -3,14 +3,17 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# harness tools from the workspace-seeded user-level mise config; install them
-# by name — a bare `mise install` would also preinstall every lazy tool from
-# the base image's /etc/mise/config.toml
-COPY workspace/.config/mise/ /app/working-dir/.config/mise/
+# harness tool pins ride the image as system-level mise config so they always
+# match the installs baked in below (a pin seeded into the persistent workspace
+# would go stale on template upgrade); install by name — a bare `mise install`
+# would also preinstall every lazy tool from the base image's /etc/mise/config.toml
+COPY harness-tools.toml /etc/mise/conf.d/harness-tools.toml
 RUN --mount=type=cache,target=/root/.npm \
-    MISE_GLOBAL_CONFIG_FILE=/app/working-dir/.config/mise/config.toml \
     mise install "npm:@openai/codex" "npm:@zed-industries/codex-acp" &&\
-    chown -R 65532:0 /app
+    chown -R 65532 /etc/mise \
+      "$(dirname "$(mise where npm:@openai/codex)")" \
+      "$(dirname "$(mise where npm:@zed-industries/codex-acp)")" &&\
+    find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal

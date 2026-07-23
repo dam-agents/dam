@@ -115,6 +115,17 @@ const clientCredentialsCreateInput = z.object({
     .optional(),
 });
 
+// GitHub App installation credential: the app's numeric identity plus a private
+// key. The key is accepted as raw PEM or its base64 encoding (see the build
+// step); the platform mints installation tokens from it server-side.
+const githubAppCreateInput = z.object({
+  ...commonFields,
+  authKind: z.literal("github-app"),
+  appId: z.string().min(1),
+  installationId: z.string().min(1),
+  privateKey: z.string().min(1),
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
@@ -128,6 +139,7 @@ const noneCreateInput = z.object({
 export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   oauthCreateInput,
   clientCredentialsCreateInput,
+  githubAppCreateInput,
   headerCreateInput,
   noneCreateInput,
 ]);

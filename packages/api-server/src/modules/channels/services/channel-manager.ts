@@ -23,8 +23,28 @@ export interface PostMessageOptions {
   attachment?: ChannelAttachment;
 }
 
+/** A reply threaded under the turn the agent is answering. */
+export interface ChannelReply {
+  text: string;
+  /** Thread to post into; defaults to the agent's most recent turn thread. */
+  threadTs?: string;
+  /** Conversation override; defaults to the bound channel. */
+  conversationId?: string;
+}
+
+/** An emoji reaction on a specific message. */
+export interface ChannelReaction {
+  /** Emoji short name, no surrounding colons (e.g. `eyes`, `white_check_mark`). */
+  emoji: string;
+  /** Message to react to; defaults to the agent's most recent turn message. */
+  messageTs?: string;
+  /** Conversation override; defaults to the bound channel. */
+  conversationId?: string;
+}
+
 /** The dispatch surface both adapters share; per-agent lifecycle is
- *  Slack-only (Telegram is a single platform bot with data-only bindings). */
+ *  Slack-only (Telegram is a single platform bot with data-only bindings).
+ *  `reply`/`react` are turn-scoped affordances only Slack implements today. */
 interface Worker {
   type: ChannelType;
   stopAll(): Promise<void>;
@@ -35,6 +55,14 @@ interface Worker {
     instanceName: string,
     text: string,
     options?: PostMessageOptions,
+  ): Promise<{ ok: true } | { error: string }>;
+  reply?(
+    instanceName: string,
+    reply: ChannelReply,
+  ): Promise<{ ok: true } | { error: string }>;
+  react?(
+    instanceName: string,
+    reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
 }
 
@@ -53,6 +81,16 @@ export interface ChannelManager {
     channelType: ChannelType,
     text: string,
     options?: PostMessageOptions,
+  ): Promise<{ ok: true } | { error: string }>;
+  reply(
+    instanceName: string,
+    channelType: ChannelType,
+    reply: ChannelReply,
+  ): Promise<{ ok: true } | { error: string }>;
+  react(
+    instanceName: string,
+    channelType: ChannelType,
+    reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
 }
 
@@ -142,6 +180,20 @@ export function createChannelManager(deps: {
       if (!worker)
         return { error: `channel type ${channelType} not available` };
       return worker.postMessage(instanceName, text, options);
+    },
+
+    async reply(instanceName, channelType, replyArgs) {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.reply)
+        return { error: `reply not supported on ${channelType}` };
+      return worker.reply(instanceName, replyArgs);
+    },
+
+    async react(instanceName, channelType, reaction) {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.react)
+        return { error: `reactions not supported on ${channelType}` };
+      return worker.react(instanceName, reaction);
     },
   };
 }

@@ -9,21 +9,15 @@ import type { SlackGateway } from "../../modules/channels/infrastructure/slack-g
 
 configureLogger({ level: "error", write: () => {} });
 
-/** A spy gateway capturing the exact stream/status/post calls the presenter
- *  makes. Only the methods the presenter uses are implemented. */
+/** A spy gateway capturing the status calls the presenter makes. The presenter
+ *  never posts messages — the agent does that via the `reply` tool — so a
+ *  postMessage spy is kept only to assert it is *not* called. */
 function spyGateway(overrides?: Partial<SlackGateway>) {
-  let n = 0;
   const gw = {
-    startStream: vi.fn(async () => ({ ts: `S${++n}` })),
-    appendStream: vi.fn(async () => {}),
-    stopStream: vi.fn(async () => {}),
     setStatus: vi.fn(async () => {}),
     postMessage: vi.fn(async () => {}),
     ...overrides,
   } as unknown as SlackGateway & {
-    startStream: ReturnType<typeof vi.fn>;
-    appendStream: ReturnType<typeof vi.fn>;
-    stopStream: ReturnType<typeof vi.fn>;
     setStatus: ReturnType<typeof vi.fn>;
     postMessage: ReturnType<typeof vi.fn>;
   };
@@ -34,16 +28,9 @@ const baseOpts: TurnPresenterOpts = {
   channel: "C1",
   threadTs: "100.1",
   instanceName: "agent-1",
-  recipient: { teamId: "T1", userId: "U1" },
-  flushMaxChars: 10,
-  flushIntervalMs: 800,
   statusMinIntervalMs: 2_000,
   statusRefreshMs: 0,
 };
-
-/** Drain all pending microtasks (the presenter's serialized stream calls run
- *  on the microtask queue). A macrotask boundary flushes them deterministically. */
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("toPromptUpdate mapper", () => {
   it("maps assistant text chunks", () => {
@@ -98,135 +85,20 @@ describe("toPromptUpdate mapper", () => {
   });
 });
 
-describe("turn presenter — streaming", () => {
-  it("opens a stream, appends, and closes with the remainder + footer", async () => {
+describe("turn presenter — assistant text is not delivered", () => {
+  it("never posts or streams on a text update — that's the reply tool's job", async () => {
     const gw = spyGateway();
     const p = createTurnPresenter(gw, baseOpts);
 
-    p.onUpdate({ kind: "text", text: "0123456789AB" }); // ≥10 → flush now
-    await tick();
-    p.onUpdate({ kind: "text", text: "cdefghijklmn" }); // ≥10 → append
-    await tick();
-    p.onUpdate({ kind: "text", text: " tail" }); // under threshold → buffered
-    await p.finish("ignored-when-streaming");
-
-    expect(gw.startStream).toHaveBeenCalledTimes(1);
-    expect(gw.startStream.mock.calls[0][0]).toMatchObject({
-      channel: "C1",
-      threadTs: "100.1",
-      recipientTeamId: "T1",
-      recipientUserId: "U1",
-      markdownText: "0123456789AB",
+    p.onUpdate({
+      kind: "text",
+      text: "a long assistant answer that used to stream",
     });
-    expect(gw.appendStream).toHaveBeenCalledTimes(1);
-    expect(gw.appendStream.mock.calls[0][0].markdownText).toBe("cdefghijklmn");
-    expect(gw.stopStream).toHaveBeenCalledTimes(1);
-    expect(gw.stopStream.mock.calls[0][0].markdownText).toBe(" tail");
-    // Footer context block is attached at stop.
-    expect(gw.stopStream.mock.calls[0][0].blocks).toEqual([
-      { type: "context", elements: [{ type: "mrkdwn", text: "_agent-1_" }] },
-    ]);
+    await p.clearStatus();
+
     expect(gw.postMessage).not.toHaveBeenCalled();
-  });
-
-  it("flushes a sub-threshold chunk after the interval elapses", async () => {
-    vi.useFakeTimers();
-    try {
-      const gw = spyGateway();
-      const p = createTurnPresenter(gw, { ...baseOpts, flushMaxChars: 1000 });
-      p.onUpdate({ kind: "text", text: "hi" });
-      expect(gw.startStream).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(800);
-      expect(gw.startStream).toHaveBeenCalledTimes(1);
-      expect(gw.startStream.mock.calls[0][0].markdownText).toBe("hi");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("turn presenter — fallback to a single message", () => {
-  it("posts the whole reply when there is no recipient (can't stream)", async () => {
-    const gw = spyGateway();
-    const p = createTurnPresenter(gw, { ...baseOpts, recipient: undefined });
-    p.onUpdate({ kind: "text", text: "some long streamed answer" });
-    await p.finish("the full answer");
-
-    expect(gw.startStream).not.toHaveBeenCalled();
-    expect(gw.postMessage).toHaveBeenCalledTimes(1);
-    expect(gw.postMessage.mock.calls[0][0].text).toBe("the full answer");
-  });
-
-  it("posts the whole reply when no chunk ever streamed", async () => {
-    const gw = spyGateway();
-    const p = createTurnPresenter(gw, baseOpts);
-    await p.finish("no-stream answer");
-    expect(gw.startStream).not.toHaveBeenCalled();
-    expect(gw.postMessage).toHaveBeenCalledTimes(1);
-    expect(gw.postMessage.mock.calls[0][0].text).toBe("no-stream answer");
-  });
-
-  it("falls back to a message when startStream throws", async () => {
-    const gw = spyGateway({
-      startStream: vi.fn(async () => {
-        throw new Error("missing_scope");
-      }),
-    });
-    const p = createTurnPresenter(gw, baseOpts);
-    p.onUpdate({ kind: "text", text: "0123456789AB" });
-    await tick();
-    await p.finish("full text");
-
-    expect(gw.appendStream).not.toHaveBeenCalled();
-    expect(gw.postMessage).toHaveBeenCalledTimes(1);
-    expect(gw.postMessage.mock.calls[0][0].text).toBe("full text");
-  });
-
-  it("stops the dangling stream and reposts when append throws", async () => {
-    const gw = spyGateway({
-      appendStream: vi.fn(async () => {
-        throw new Error("network");
-      }),
-    });
-    const p = createTurnPresenter(gw, baseOpts);
-    p.onUpdate({ kind: "text", text: "0123456789AB" }); // opens stream
-    await tick();
-    p.onUpdate({ kind: "text", text: "cdefghijklmn" }); // append throws
-    await tick();
-    await p.finish("full text");
-
-    expect(gw.startStream).toHaveBeenCalledTimes(1);
-    expect(gw.stopStream).toHaveBeenCalled(); // dangling close
-    expect(gw.postMessage).toHaveBeenCalledTimes(1);
-    expect(gw.postMessage.mock.calls[0][0].text).toBe("full text");
-  });
-});
-
-describe("turn presenter — terminal control", () => {
-  it("abortStream finalizes an open stream without reposting", async () => {
-    const gw = spyGateway();
-    const p = createTurnPresenter(gw, baseOpts);
-    p.onUpdate({ kind: "text", text: "0123456789AB" });
-    await tick();
-    await p.abortStream();
-
-    expect(gw.stopStream).toHaveBeenCalledTimes(1);
-    expect(gw.postMessage).not.toHaveBeenCalled();
-  });
-
-  it("resetStream abandons the first stream so a retry streams fresh", async () => {
-    const gw = spyGateway();
-    const p = createTurnPresenter(gw, baseOpts);
-    p.onUpdate({ kind: "text", text: "0123456789AB" });
-    await tick();
-    await p.resetStream();
-    expect(gw.stopStream).toHaveBeenCalledTimes(1);
-
-    p.onUpdate({ kind: "text", text: "freshfreshfresh" });
-    await tick();
-    await p.finish("done");
-    expect(gw.startStream).toHaveBeenCalledTimes(2);
-    expect(gw.postMessage).not.toHaveBeenCalled();
+    // A pure-text turn drives no status either (only thought/tool do).
+    expect(gw.setStatus).not.toHaveBeenCalled();
   });
 });
 
@@ -257,6 +129,18 @@ describe("turn presenter — status arc", () => {
     await p.clearStatus();
     const last = gw.setStatus.mock.calls.at(-1)![0];
     expect(last.status).toBe("");
+  });
+
+  it("does not treat assistant text as status activity", async () => {
+    const gw = spyGateway();
+    const p = createTurnPresenter(gw, baseOpts);
+    p.setThinking();
+    expect(gw.setStatus).toHaveBeenCalledTimes(1);
+    // Text chunks stream nowhere and don't perturb the status line.
+    p.onUpdate({ kind: "text", text: "hello" });
+    p.onUpdate({ kind: "text", text: " world" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(gw.setStatus).toHaveBeenCalledTimes(1);
   });
 
   it("stops calling setStatus after the first failure", async () => {

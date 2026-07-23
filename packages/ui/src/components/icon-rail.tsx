@@ -41,8 +41,8 @@ export function IconRail({
   const { data: features } = useFeatures();
   const showExperiments = features?.experiments ?? false;
 
-  const home: Destination = {
-    label: "Home",
+  const sandboxes: Destination = {
+    label: "Sandboxes",
     icon: Home,
     active: view === "list",
     badge: 0,
@@ -89,7 +89,7 @@ export function IconRail({
         <div className="flex items-center justify-center pt-2">
           <button
             type="button"
-            onClick={home.navigate}
+            onClick={sandboxes.navigate}
             title={getBrand().name}
             aria-label={getBrand().name}
             className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
@@ -98,9 +98,11 @@ export function IconRail({
           </button>
         </div>
         <div className="flex flex-col items-center gap-1">
-          <RailItem {...home} />
-          <RailItem {...artifacts} />
+          <RailItem {...sandboxes} />
           {showExperiments && <RailItem {...experiments} />}
+          {/* Knowledge Bases nav item slots in here (issue #2915) once the
+              feature ships — under construction. */}
+          <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
         {/* Inbox is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
@@ -113,9 +115,11 @@ export function IconRail({
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
-            home,
-            artifacts,
+            sandboxes,
             ...(showExperiments ? [experiments] : []),
+            // Knowledge Bases nav item slots in here (issue #2915) once the
+            // feature ships.
+            artifacts,
             inbox,
             settings,
           ].map((destination) => (
