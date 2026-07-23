@@ -239,6 +239,20 @@ function userFacingText(content) {
   return text.replace(META_COMPLETE, "").trim();
 }
 
+// The user-facing answer of a stored bob-shell message. Bob puts the final
+// answer in an `attempt_completion` toolCall's `args.result`; `content` often
+// holds only the <thinking> reasoning (or a "[using tool …]" hint, or nothing),
+// so prefer the toolCall result and fall back to the thinking-stripped content.
+function assistantAnswer(message) {
+  const calls = Array.isArray(message?.toolCalls) ? message.toolCalls : [];
+  const results = calls
+    .filter((t) => t?.name === "attempt_completion" && typeof t?.args?.result === "string")
+    .map((t) => t.args.result.trim())
+    .filter(Boolean);
+  if (results.length > 0) return results.join("\n\n");
+  return userFacingText(message?.content);
+}
+
 function buildTranscript(chat) {
   const msgs = (chat.messages ?? []).slice(-RESUME_MAX_MESSAGES);
   const lines = [];
@@ -246,7 +260,7 @@ function buildTranscript(chat) {
     if (m?.type === "user" && typeof m.content === "string") {
       lines.push(`User: ${m.content.trim()}`);
     } else if (m?.type === "bob-shell") {
-      const t = userFacingText(m.content);
+      const t = assistantAnswer(m);
       if (t) lines.push(`Assistant: ${t}`);
     }
   }
@@ -408,7 +422,7 @@ function handleSessionLoad(f) {
         content: { type: "text", text: m.content },
       });
     } else if (m?.type === "bob-shell") {
-      const text = userFacingText(m.content);
+      const text = assistantAnswer(m);
       if (text) emitAgentMessage(sid, text);
     }
   }
