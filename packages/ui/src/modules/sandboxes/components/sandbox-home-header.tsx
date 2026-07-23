@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PageHeader } from "@/components/ui/page-header";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
@@ -69,64 +70,66 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   };
 
   return (
-    <div className="mb-8 flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <h1 className="truncate text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-          {agent.name}
-        </h1>
-        <StatusBadge state={display.state} />
-        {agent.templateUpdate && (
-          <Badge
-            variant="accent"
-            className="shrink-0"
-            title={`Template update available: ${agent.templateUpdate.toImage}`}
-          >
-            Update available
-          </Badge>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <OpenInMenu agent={agent} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" title="Sandbox actions">
-              <OverflowMenuVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {display.powerAction === "start" ? (
-              <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
-                Wake
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                disabled={display.powerAction === null}
-                onSelect={() => restart(agent.id)}
-              >
-                Restart
-              </DropdownMenuItem>
-            )}
-            {display.state === "running" && (
-              <>
-                <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
-                  Pause — wakes on next use
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void onStop()}>
-                  Stop — until started again
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deleteAgent.isPending}
-              onSelect={() => void onDelete()}
+    <PageHeader
+      title={agent.name}
+      adornment={
+        <>
+          <StatusBadge state={display.state} />
+          {agent.templateUpdate && (
+            <Badge
+              variant="accent"
+              className="shrink-0"
+              title={`Template update available: ${agent.templateUpdate.toImage}`}
             >
-              Delete Sandbox
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+              Update available
+            </Badge>
+          )}
+        </>
+      }
+      actions={
+        <>
+          <OpenInMenu agent={agent} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" title="Sandbox actions">
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {display.powerAction === "start" ? (
+                <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
+                  Wake
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  disabled={display.powerAction === null}
+                  onSelect={() => restart(agent.id)}
+                >
+                  Restart
+                </DropdownMenuItem>
+              )}
+              {display.state === "running" && (
+                <>
+                  <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
+                    Pause — wakes on next use
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void onStop()}>
+                    Stop — until started again
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                disabled={deleteAgent.isPending}
+                onSelect={() => void onDelete()}
+              >
+                Delete Sandbox
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      }
+    />
   );
 }

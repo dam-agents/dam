@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 
 import { api } from "../../../api.js";
 import { useDeleteArtifact, useDeleteFolder } from "../api/mutations.js";
@@ -85,31 +86,26 @@ export function ArtifactsView() {
 
   return (
     <div className="anim-in">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-[280px] flex-1">
-          <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
-            Artifacts
-          </h1>
-          <p className="mt-1 max-w-[520px] text-[14px] text-muted-foreground">
-            Pages and files created by you and your agents. Share with a link,
-            set an expiry.
-          </p>
-        </div>
-        <div className="mt-1 flex shrink-0 gap-2.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFolderDialog({ folder: null })}
-          >
-            <FolderPlus size={16} />
-            New folder
-          </Button>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <Upload size={16} />
-            Upload artifact
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Artifacts"
+        description="Pages and files created by you and your agents. Share with a link, set an expiry."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFolderDialog({ folder: null })}
+            >
+              <FolderPlus size={16} />
+              New folder
+            </Button>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Upload size={16} />
+              Upload artifact
+            </Button>
+          </>
+        }
+      />
 
       <div className="relative mt-7">
         <Search
