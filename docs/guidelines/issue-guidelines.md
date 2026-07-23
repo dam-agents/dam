@@ -4,28 +4,16 @@ Shared content guidelines for writing GitHub issues.
 
 A GitHub issue should read like a product ticket, not an engineering plan. The reader should understand **what problem exists** and **what the user-visible outcome of fixing it looks like** — nothing more.
 
-## What to include
+## Issue types
 
-- **Title** — short, declarative, no jargon. Names the change, not the component.
-- **Problem** — what's wrong or missing today, from the user's point of view. Include a concrete scenario if it sharpens the problem. Explain *why it matters* — what does the user currently have to do, or fail to do, because of this gap.
-- **Proposed solution** — the high-level shape of the fix, described as user-visible behavior ("the agent can do X", "the UI shows Y"). Not the mechanism.
-- **Optional subsections**, only when they add signal:
-  - **Scope** — boundaries of the change (what it does and does *not* cover).
-  - **Transparency / safety** — anything the user needs to see or control for trust.
-  - **Dependencies** — blocked on / blocks other issues (reference by `#NNN`).
-  - **Out of scope** — things a reader will reasonably wonder about, deferred with a brief reason.
+Decide the type first — it picks the template. Every issue is one of:
 
-## What to exclude
+- **Epic** — a meaningful chunk of value we want to deliver. Epics are owned by the Product Owner.
+- **Story** — a user-facing improvement: new behavior, or a change the user can see.
+- **Task** — work that needs to happen but isn't user-facing: chores, tooling, upgrades, refactors.
+- **Bug** — something that should work but doesn't.
 
-Strip all of these before presenting the draft:
-
-- File paths, line numbers, function/class names, module names.
-- Code snippets, schema definitions, type signatures.
-- Specific API endpoints, database tables, config keys, env var names.
-- Proposals about *how* to implement (which service handles what, what data structure to use, which library to add).
-- Naming of internal components unless they're already user-facing terms.
-
-Rule of thumb: if a reader would need to know the codebase to understand a sentence, rewrite or remove it. The issue should make sense to a PM, a designer, or a new contributor who's never opened the repo.
+Stories, tasks, and bugs can be attached to an epic. If the issue clearly serves an existing epic, suggest it. If nothing fits, leave it out.
 
 ## Style
 
@@ -35,10 +23,33 @@ Rule of thumb: if a reader would need to know the codebase to understand a sente
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
 
-## Template
+## Templates
+
+Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Stories, tasks, and bugs may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
+
+### Epic
+
+An epic body defines the value, not a single fix, and gives enough shape that issues can be attached to it with confidence. It should make sense to anyone on the team. The **Problem** is the most important part — spend the effort there.
+
+```markdown
+**Title:** <the value delivered, short and declarative>
+
+## Problem
+
+<The pain or opportunity this epic addresses. Who is affected and why it matters. This is the most important part.>
+
+## Goal
+
+<The chunk of value this epic delivers. Who benefits and how.>
+```
+
+### Story
+
+The **Problem** describes what's wrong or missing today, from the user's point of view — include a concrete scenario if it sharpens it, and explain *why it matters*. The **Proposed solution** is the high-level shape of the fix as user-visible behavior ("the agent can do X", "the UI shows Y"), not the mechanism.
 
 ```markdown
 **Title:** <short, declarative>
+**Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Problem
 
@@ -49,11 +60,53 @@ Rule of thumb: if a reader would need to know the codebase to understand a sente
 <The user-visible shape of the fix. High-level, no mechanism.>
 
 ### Scope
-<optional — boundaries>
+<optional — boundaries: what it does and does not cover>
 
 ### Dependencies
 <optional — Blocked on #NNN, blocks #NNN>
 
 ### Out of scope
 <optional — deferred things, with a one-line reason each>
+```
+
+### Task
+
+A task states the work and what it unblocks. It's the one type where naming engineering work is expected — keep it as plain as the work allows.
+
+```markdown
+**Title:** <short, declarative>
+**Epic:** <#NNN — epic title, if one clearly fits>
+
+## What
+
+<The work to be done, in plain language.>
+
+## Why
+
+<What it unblocks or improves. Why it's worth doing now.>
+
+## Done when
+
+<The observable end state — how we know it's finished.>
+```
+
+### Bug
+
+Lead with observed vs expected behavior. Reproduction steps should be minimal and numbered.
+
+```markdown
+**Title:** <short, declarative — the misbehavior, not the suspected cause>
+**Epic:** <#NNN — epic title, if one clearly fits>
+
+## What happens
+
+<The observed behavior. A concrete scenario.>
+
+## What should happen
+
+<The expected behavior.>
+
+## Steps to reproduce
+
+1. <minimal, numbered steps>
 ```
