@@ -22,6 +22,7 @@ const SVG_BY_SLUG = new Set([
   "kubernetes",
   "slack",
   "spotify",
+  "telegram",
   "youtube",
 ]);
 

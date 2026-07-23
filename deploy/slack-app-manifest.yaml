@@ -48,6 +48,11 @@ oauth_config:
       - users:read
       - users:read.email
       - app_mentions:read
+      # The mention ack is an emoji reaction.
+      - reactions:write
+      # Attachments: url_private downloads inbound, files.uploadV2 outbound.
+      - files:read
+      - files:write
       # Channel history backs context injection on new sessions, and the
       # message.* event subscriptions below (ambient mode) require it too.
       - channels:history
