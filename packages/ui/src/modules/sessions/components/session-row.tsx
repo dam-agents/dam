@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-import { formatSessionTimestamp } from "../lib/format-session-date.js";
+import { formatSessionTimestamp } from "../lib/format-session-timestamp.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
