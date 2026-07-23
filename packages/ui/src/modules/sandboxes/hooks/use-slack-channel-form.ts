@@ -27,9 +27,6 @@ export function findSlackChannel(
   return agent?.channels.find((c): c is SlackChannel => c.type === "slack");
 }
 
-/** RHF form for the connect/edit Slack modal, seeded from the current
- *  binding. Submitting orchestrates connect / rebind / ambient update plus
- *  the allowed-users patch, then reports completion via `onSaved`. */
 export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
   const slackChannel = findSlackChannel(agent);
   const editing = !!slackChannel;
@@ -50,6 +47,16 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
 
   const onSubmit = form.handleSubmit(async (values) => {
     const { channelId, mode, ambient } = values;
+    const emails = values.users.map((u) => u.email);
+    const usersChanged =
+      emails.length !== agent.allowedUserEmails.length ||
+      emails.some((email, i) => email !== agent.allowedUserEmails[i]);
+    if (mode === "person-scoped" && usersChanged) {
+      await updateAgent.mutateAsync({
+        id: agent.id,
+        allowedUserEmails: emails,
+      });
+    }
     const connectPayload = {
       id: agent.id,
       slackChannelId: channelId,
@@ -70,10 +77,6 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
       // the existing binding in place.
       await connectSlack.mutateAsync(connectPayload);
     }
-    await updateAgent.mutateAsync({
-      id: agent.id,
-      allowedUserEmails: values.users.map((u) => u.email),
-    });
     onSaved();
   });
 
