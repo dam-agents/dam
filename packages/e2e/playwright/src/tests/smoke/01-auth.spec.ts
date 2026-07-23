@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl, testUser } from "../config.js";
+import { baseUrl, testUser } from "../../config.js";
 
 const storageStatePath = "./.auth/user.json";
 

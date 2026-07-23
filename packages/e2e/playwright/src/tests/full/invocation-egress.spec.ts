@@ -4,8 +4,8 @@ import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// Extended suite (see playwright.config.ts): not part of the main pipeline —
-// run manually with `mise run e2e:loop -- --extended`.
+// Full-suite-only spec (see playwright.config.ts): not part of the smoke
+// pipeline — run on demand with `mise run e2e:loop -- --full`.
 //
 // Egress Aliasing (#2930): an Invocation target has no egress identity of its
 // own — every request it makes is decided by the driver's live rules. Before

@@ -4,15 +4,18 @@ const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
 
-// Extended suites: slow, scenario-heavy specs under src/tests/extended/ that
-// are NOT part of the main pipeline (`mise run e2e` / e2e:loop). They only
-// enter the project list behind this env gate and run via
-// `mise run e2e:loop -- --extended`. Conventions: one "<area>-extended"
-// project per area, specs are self-contained (own agents, own token via
-// getAccessToken + acceptTerms — the terms gate 412s everything else on a
-// fresh DB — no storageState, no dependency on the main chain's fixtures),
-// and each spec references its motivating ticket in the test title.
-const extended = process.env.E2E_EXTENDED === "1";
+// Two suite tiers:
+// - smoke (src/tests/smoke/): the always-on pipeline — CI and plain
+//   `mise run e2e` / e2e:loop run exactly these.
+// - full (= smoke + src/tests/full/): on demand via
+//   `mise run e2e:loop -- --full`. src/tests/full/ holds the slow,
+//   scenario-heavy specs only the full suite runs; their projects enter the
+//   list behind this env gate. Conventions: one "<area>-full" project per
+//   area, specs self-contained (own agents, own token via getAccessToken +
+//   acceptTerms — the terms gate 412s everything else on a fresh DB — no
+//   storageState, no dependency on the smoke chain's fixtures), and each
+//   spec references its motivating ticket in the test title.
+const full = process.env.E2E_FULL === "1";
 
 export default defineConfig({
   testDir: "./src/tests",
@@ -142,13 +145,13 @@ export default defineConfig({
       dependencies: ["egress-path-rules"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
-    ...(extended
+    ...(full
       ? [
           {
             // Invocation lifecycles: spawn + gateway-level egress assertions,
-            // several agent boots per spec — minutes each, hence extended.
-            name: "invocations-extended",
-            testMatch: /extended\/invocation-.*\.spec\.ts$/,
+            // several agent boots per spec — minutes each, hence full-only.
+            name: "invocations-full",
+            testMatch: /full\/invocation-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
         ]

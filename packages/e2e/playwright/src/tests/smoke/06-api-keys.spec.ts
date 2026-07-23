@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter, Scope } from "api-server-api";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient, type ApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient, type ApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
 
 /**
  * End-to-end authorization for API keys, against the real api-server + Keycloak

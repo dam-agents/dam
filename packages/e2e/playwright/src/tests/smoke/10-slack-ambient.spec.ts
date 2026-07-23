@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName } from "../lib/fixtures.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName } from "../../lib/fixtures.js";
 
 // 09 leaves the channel unbound; this spec establishes its own binding
 // (rebinding would replace the agent's single Slack binding either way).

@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName, echoUrl, sentinel } from "../lib/fixtures.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName, echoUrl, sentinel } from "../../lib/fixtures.js";
 
 // Mode is fixed per binding, so shared coverage gets its own
 // channel; rebinding replaces the agent's single Slack binding from 07.
