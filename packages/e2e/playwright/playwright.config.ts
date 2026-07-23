@@ -4,6 +4,19 @@ const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
 
+// Two suite tiers:
+// - smoke (src/tests/smoke/): the always-on pipeline — CI and plain
+//   `mise run e2e` / e2e:loop run exactly these.
+// - full (= smoke + src/tests/full/): on demand via
+//   `mise run e2e:loop -- --full`. src/tests/full/ holds the slow,
+//   scenario-heavy specs only the full suite runs; their projects enter the
+//   list behind this env gate. Conventions: one "<area>-full" project per
+//   area, specs self-contained (own agents, own token via getAccessToken +
+//   acceptTerms — the terms gate 412s everything else on a fresh DB — no
+//   storageState, no dependency on the smoke chain's fixtures), and each
+//   spec references its motivating ticket in the test title.
+const full = process.env.E2E_FULL === "1";
+
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
@@ -132,5 +145,16 @@ export default defineConfig({
       dependencies: ["egress-path-rules"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    ...(full
+      ? [
+          {
+            // Invocation lifecycles: spawn + gateway-level egress assertions,
+            // several agent boots per spec — minutes each, hence full-only.
+            name: "invocations-full",
+            testMatch: /full\/invocation-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+        ]
+      : []),
   ],
 });

@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient, type ApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName, envName, placeholder } from "../lib/fixtures.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient, type ApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName, envName, placeholder } from "../../lib/fixtures.js";
 
 const userEnvName = "E2E_USER_ENV";
 const userEnvValue = "user-value-9d2f";

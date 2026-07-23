@@ -1,14 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl } from "../config.js";
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
+import { baseUrl } from "../../config.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
 import {
   ensureCustomHeaderConnection,
   getConnectionId,
-} from "../lib/connections.js";
-import { agentName, valueFormat } from "../lib/fixtures.js";
+} from "../../lib/connections.js";
+import { agentName, valueFormat } from "../../lib/fixtures.js";
 
 const originalName = "e2e-regrant-original";
 const recreatedName = "e2e-regrant-recreated";

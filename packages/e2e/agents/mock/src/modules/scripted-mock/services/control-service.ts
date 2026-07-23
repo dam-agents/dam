@@ -7,8 +7,10 @@ import type {
   ReceivedPrompt,
   ScriptedMockService,
   SetScriptInput,
+  SpawnInvocationInput,
 } from "mock-agent-api";
 import type { MockState } from "../domain/state.js";
+import type { HarnessSpawn } from "./ports.js";
 
 export type ProxyFetch = (
   input: PerformFetchInput,
@@ -17,12 +19,13 @@ export type ProxyFetch = (
 export interface ScriptedMockDeps {
   state: MockState;
   proxyFetch: ProxyFetch;
+  harnessSpawn: HarnessSpawn;
 }
 
 export function createScriptedMockService(
   deps: ScriptedMockDeps,
 ): ScriptedMockService {
-  const { state, proxyFetch } = deps;
+  const { state, proxyFetch, harnessSpawn } = deps;
   return {
     setScript(input: SetScriptInput) {
       state.scriptEntries = input.entries;
@@ -45,6 +48,9 @@ export function createScriptedMockService(
     },
     performFetch(input: PerformFetchInput): Promise<PerformFetchResult> {
       return proxyFetch(input);
+    },
+    spawnInvocation(input: SpawnInvocationInput) {
+      return harnessSpawn(input);
     },
   };
 }

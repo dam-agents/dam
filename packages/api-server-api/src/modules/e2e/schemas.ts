@@ -75,6 +75,22 @@ export const e2ePerformFetchInputSchema = z
   })
   .strict();
 
+export const e2eSpawnInvocationInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    prompt: z.string().min(1),
+    schema: z.record(z.string(), z.unknown()),
+    templateId: z.string().min(1).optional(),
+    image: z.string().min(1).optional(),
+    connections: z.array(z.string()).optional(),
+    ttlMs: z.number().int().positive().optional(),
+  })
+  .strict();
+
+export const spawnInvocationResultSchema = z
+  .object({ id: z.string().min(1) })
+  .strict();
+
 export const slackFireMentionInputSchema = z
   .object({
     user: z.string().min(1),

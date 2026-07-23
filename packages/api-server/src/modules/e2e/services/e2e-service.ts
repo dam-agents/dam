@@ -62,6 +62,8 @@ export function createE2eService(deps: {
       withClient(agentId, (c) => c.scriptedMock.getEnv.query({ name })),
     performFetch: (agentId, input) =>
       withClient(agentId, (c) => c.scriptedMock.performFetch.mutate(input)),
+    spawnInvocation: (agentId, input) =>
+      withClient(agentId, (c) => c.scriptedMock.spawnInvocation.mutate(input)),
     slackFireMention: async (input) => {
       await requireSlack().fireMention(input);
       return { ok: true };

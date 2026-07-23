@@ -4,6 +4,7 @@ import { createScriptedMockService } from "./services/control-service.js";
 import { startAcpService } from "./services/acp-service.js";
 import { createTrpcDispatch } from "./services/trpc-dispatch.js";
 import type { AcpChannel } from "./services/ports.js";
+import { createHarnessSpawn } from "./infrastructure/harness-spawn.js";
 import { createProxyFetch } from "./infrastructure/proxy-fetch.js";
 import { createSlackReplyPoster } from "./infrastructure/slack-reply.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
@@ -19,6 +20,7 @@ export function composeScriptedMock(): ScriptedMockComposition {
   const scriptedMock = createScriptedMockService({
     state,
     proxyFetch,
+    harnessSpawn: createHarnessSpawn(),
   });
   const stdio = createStdioChannel();
 

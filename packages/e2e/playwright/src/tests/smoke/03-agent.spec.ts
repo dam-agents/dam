@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl } from "../config.js";
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { getConnectionId } from "../lib/connections.js";
-import { agentName, connectionName, harnessName } from "../lib/fixtures.js";
+import { baseUrl } from "../../config.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { getConnectionId } from "../../lib/connections.js";
+import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
 
 test("create a mock agent with the connection attached", async ({ page }) => {
   test.setTimeout(60_000);

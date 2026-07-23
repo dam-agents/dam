@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl, testUser2 } from "../config.js";
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { ensureCustomHeaderConnection } from "../lib/connections.js";
+import { baseUrl, testUser2 } from "../../config.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { ensureCustomHeaderConnection } from "../../lib/connections.js";
 import {
   agentName,
   connectionHost,
@@ -14,7 +14,7 @@ import {
   foreignSentinel,
   headerName,
   valueFormat,
-} from "../lib/fixtures.js";
+} from "../../lib/fixtures.js";
 
 const slackChannelId = "C-E2E-TRACER";
 const foreignSlackTeamId = "T-E2E";

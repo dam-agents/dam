@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl } from "../config.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { createCustomHeaderConnection } from "../lib/connections.js";
+import { baseUrl } from "../../config.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { createCustomHeaderConnection } from "../../lib/connections.js";
 import {
   connectionHost,
   connectionName,
@@ -11,7 +11,7 @@ import {
   headerName,
   sentinel,
   valueFormat,
-} from "../lib/fixtures.js";
+} from "../../lib/fixtures.js";
 
 test("create a custom-header connection", async ({ page }) => {
   const token = await getAccessToken();
