@@ -17,6 +17,12 @@ dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
 run = "pnpm exec playwright test"
 
+["e2e-playwright:run-extended"]
+description = "Run ONLY the extended suites (slow, manually-triggered specs under src/tests/extended/)"
+dir = "{{config_root}}/packages/e2e/playwright"
+depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
+run = "E2E_EXTENDED=1 pnpm exec playwright test --project '*-extended'"
+
 ["e2e-playwright:run-headed"]
 description = "Run Playwright with a visible browser window"
 dir = "{{config_root}}/packages/e2e/playwright"

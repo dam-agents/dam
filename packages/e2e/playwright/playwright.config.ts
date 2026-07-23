@@ -4,6 +4,15 @@ const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
 
+// Extended suites: slow, scenario-heavy specs under src/tests/extended/ that
+// are NOT part of the main pipeline (`mise run e2e` / e2e:loop). They only
+// enter the project list behind this env gate and run via
+// `mise run e2e:loop -- --extended`. Conventions: one "<area>-extended"
+// project per area, specs are self-contained (own agents, own token, no
+// storageState, no dependency on the main chain's fixtures), and each spec
+// references its motivating ticket in the test title.
+const extended = process.env.E2E_EXTENDED === "1";
+
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
@@ -132,5 +141,16 @@ export default defineConfig({
       dependencies: ["egress-path-rules"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    ...(extended
+      ? [
+          {
+            // Invocation lifecycles: spawn + gateway-level egress assertions,
+            // several agent boots per spec — minutes each, hence extended.
+            name: "invocations-extended",
+            testMatch: /extended\/invocation-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+        ]
+      : []),
   ],
 });

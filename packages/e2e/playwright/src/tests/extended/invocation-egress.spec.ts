@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { createApiClient, type ApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { harnessName } from "../lib/fixtures.js";
+import { createApiClient, type ApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { harnessName } from "../../lib/fixtures.js";
 
+// Extended suite (see playwright.config.ts): not part of the main pipeline —
+// run manually with `mise run e2e:loop -- --extended`.
+//
 // Egress Aliasing (#2930): an Invocation target has no egress identity of its
 // own — every request it makes is decided by the driver's live rules. Before
 // the fix a target always started on the default trusted preset, so a
@@ -45,7 +48,7 @@ async function waitRunning(api: ApiClient, agentId: string): Promise<void> {
     .toBe("running");
 }
 
-test("invocation egress follows the driver", async () => {
+test("invocation egress follows the driver (#2930)", async () => {
   test.setTimeout(600_000);
 
   const token = await getAccessToken();

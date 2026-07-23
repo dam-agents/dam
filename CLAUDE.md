@@ -58,6 +58,8 @@ mise run e2e:reset    # data wipe only: drop+recreate platform DB, delete agents
 
 `e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.
 
+**Extended suites** (`src/tests/extended/`): slow, scenario-heavy specs excluded from the main pipeline (`e2e` and plain `e2e:loop` never run them). Trigger manually with `mise run e2e:loop -- --extended` (runs ONLY the extended projects). Conventions: one `<area>-extended` Playwright project per area, specs self-contained (own agents/token, no main-chain fixtures), each spec references its motivating ticket in the test title.
+
 ### Cluster debugging (pre-approved in .claude/settings.json)
 
 Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` instead of raw `kubectl` or `export KUBECONFIG=...`. These are auto-approved.

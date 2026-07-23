@@ -221,7 +221,7 @@ echo "e2e data reset complete."
 '''
 
 ["e2e:loop"]
-description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run specs. Options: --headed --rebuild=apiserver,ui,controller,keycloak,mock-agent"
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run specs. Options: --headed --extended --rebuild=apiserver,ui,controller,keycloak,mock-agent"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -242,6 +242,9 @@ REBUILD_SET=false
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    # Extended suites only (src/tests/extended/) — slow specs kept out of the
+    # main pipeline; this flag is the manual trigger.
+    --extended) PLAYWRIGHT_TASK="e2e-playwright:run-extended" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
   esac
 done
