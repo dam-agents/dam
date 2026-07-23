@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import type { AgentView } from "../../../types.js";
-import { useAgents, useAgentsList } from "../../agents/api/queries.js";
+import { BindAgentRow } from "../../agents/components/bind-agent-row.js";
 import { CreateAgentInline } from "../../agents/components/create-agent-inline.js";
+import { useInlineAgentCreate } from "../../agents/hooks/use-inline-agent-create.js";
 import { useBindTelegramChat } from "../api/mutations.js";
 import { useTelegramBot } from "../api/queries.js";
 import {
@@ -22,40 +22,25 @@ const flowId = readFlowIdFromSearch(window.location.search);
 const callbackError = readCallbackErrorFromSearch(window.location.search);
 
 export function TelegramBindView() {
-  const agents = useAgents();
-  const list = useAgentsList();
   const bind = useBindTelegramChat();
+  const {
+    isLoading,
+    displayedAgents,
+    justCreatedId,
+    creating,
+    openCreateForm,
+    markCreated,
+  } = useInlineAgentCreate();
   const [error, setError] = useState<BindErrorCopy | null>(null);
   const [bound, setBound] = useState<{
     agentName: string;
     chatTitle: string | null;
   } | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [justCreated, setJustCreated] = useState<AgentView | null>(null);
-
-  // Bridge the create→refetch gap: show a freshly created agent in the picker
-  // immediately, before the invalidated list query has refetched. The server
-  // list is authoritative once it includes the agent.
-  const displayedAgents = useMemo(() => {
-    if (!justCreated || list.some((a) => a.id === justCreated.id)) return list;
-    return [...list, justCreated];
-  }, [list, justCreated]);
 
   const handleCreated = (agent: AgentView) => {
-    setJustCreated(agent);
-    setCreating(false);
+    markCreated(agent);
     setError(null);
   };
-
-  // With no agents to pick, open the create form by default — and keep it open
-  // through an out-of-band list change (another tab/CLI, the 5s poll) so
-  // in-progress input is never discarded. Seeded once, after the first load.
-  const seededCreate = useRef(false);
-  useEffect(() => {
-    if (seededCreate.current || agents.isLoading) return;
-    seededCreate.current = true;
-    if (list.length === 0) setCreating(true);
-  }, [agents.isLoading, list.length]);
 
   if (callbackError) {
     return <TerminalError copy={callbackErrorCopy(callbackError)} />;
@@ -79,13 +64,14 @@ export function TelegramBindView() {
   if (error?.terminal) {
     return <TerminalError copy={error} />;
   }
-  if (agents.isLoading) {
+  if (isLoading) {
     return (
       <Page title="Connect this chat to an agent">
         <ListSkeleton rows={3} />
       </Page>
     );
   }
+
   const pick = (agent: AgentView) => {
     setError(null);
     bind.mutate(
@@ -121,7 +107,7 @@ export function TelegramBindView() {
             <BindAgentRow
               key={agent.id}
               agent={agent}
-              highlighted={justCreated?.id === agent.id}
+              highlighted={agent.id === justCreatedId}
               disabled={bind.isPending}
               pending={bind.isPending && bind.variables?.agentId === agent.id}
               onPick={() => pick(agent)}
@@ -134,53 +120,13 @@ export function TelegramBindView() {
       ) : hasAgents ? (
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={openCreateForm}
           className="self-start text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           + Create a new agent
         </button>
       ) : null}
     </Page>
-  );
-}
-
-function BindAgentRow({
-  agent,
-  highlighted,
-  disabled,
-  pending,
-  onPick,
-}: {
-  agent: AgentView;
-  highlighted: boolean;
-  disabled: boolean;
-  pending: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onPick}
-      className={cn(
-        "flex flex-col items-start gap-0.5 rounded-lg border bg-background px-4 py-3 text-left hover:border-foreground/40 disabled:opacity-60",
-        highlighted ? "border-foreground" : "border-border",
-      )}
-    >
-      <span className="text-[14px] font-semibold text-foreground">
-        {pending ? `Connecting ${agent.name}…` : agent.name}
-      </span>
-      {agent.description && (
-        <span className="text-[12px] text-muted-foreground">
-          {agent.description}
-        </span>
-      )}
-      {agent.templateId && (
-        <span className="text-[11px] font-mono text-muted-foreground">
-          {agent.templateId}
-        </span>
-      )}
-    </button>
   );
 }
 

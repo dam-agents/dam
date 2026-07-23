@@ -33,13 +33,20 @@ interface Props {
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
   const createAgent = useCreateAgent();
+  // Controlled state rather than the house RHF+Zod default for a 3-field form:
+  // the provider is a bespoke imperative picker (not an RHF-registerable input),
+  // and validation + mutation-input assembly already live in the tested pure
+  // `create-agent-input` module.
   const [name, setName] = useState(generateSandboxName);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
 
-  // Default to the first stable template (the catalogue is sorted
-  // experimental-last) until the user picks one explicitly.
-  const selectedTemplateId = templateId ?? templates[0]?.id ?? null;
+  // Default to the first non-experimental template until the user picks one,
+  // computed here rather than leaning on the catalogue's sort order.
+  const selectedTemplateId =
+    templateId ??
+    (templates.find((t) => !t.experimental) ?? templates[0])?.id ??
+    null;
 
   const draft: CreateAgentDraft = {
     name,
