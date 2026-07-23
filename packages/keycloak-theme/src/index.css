@@ -84,3 +84,11 @@ body {
   color: var(--foreground);
   margin: 0;
 }
+
+/* Tailwind v4 preflight defaults buttons to `cursor: default`; restore the
+   pointer like packages/ui does. */
+button,
+[role="button"],
+a {
+  cursor: pointer;
+}
