@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type {
   localSkillSchema,
+  skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
@@ -21,6 +22,8 @@ export type LocalSkill = z.infer<typeof localSkillSchema>;
 export type SkillCreateSourceInput = z.infer<
   typeof skillCreateSourceInputSchema
 >;
+
+export type SkillCreateLocalInput = z.infer<typeof skillCreateLocalInputSchema>;
 
 export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 
@@ -47,6 +50,7 @@ export interface SkillsService {
   ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
+  createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;
   getState: (agentId: string) => Promise<SkillsState>;
   publish: (input: SkillPublishInput) => Promise<SkillPublishResult>;
