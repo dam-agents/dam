@@ -7,8 +7,8 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 | Component | Source | Purpose |
 |---|---|---|
 | Harness | `bobshell` (installed from `bob.ibm.com/download/bobshell.sh`) | Bob CLI in `--experimental-acp` mode + native TUI |
-| ACP bridge | `bob-acp-shim.mjs` | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob's ACP doesn't actually issue per-tool HITL requests for built-in tools — see autonomy posture below); stages chat attachments into the workspace so Bob can read them (it can't consume `resource_link` blocks in ACP mode) |
-| Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; survives pod restarts |
+| ACP bridge | `bob-acp-shim.mjs` | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob's ACP doesn't actually issue per-tool HITL requests for built-in tools — see autonomy posture below); stages chat attachments into the workspace so Bob can read them (it can't consume `resource_link` blocks in ACP mode); emulates `session/list` + `session/load` from Bob's on-disk chats so the sidebar and chat resume work (see below) |
+| Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; chat history under `~/.bob/tmp/<projectHash>/chats/`; survives pod restarts |
 
 ## Authentication
 
@@ -61,6 +61,7 @@ Less common toggles, not surfaced on the provider card.
 | `BOB_SHELL_PRE_CHECK_AUTO_APPROVED` | Set to `1` to make Bob run a safety pre-check before executing auto-approved commands. Recommended on top of `--yolo`. |
 | `BOB_SHELL_SYSTEM_MD` | Path to a markdown file appended to Bob's system prompt. Lives on the workspace PVC. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
+| `BOB_RESUME_MAX_MESSAGES` | Cap on how many trailing messages of a resumed chat the shim prepends as context to the first prompt (default `40`). Higher = better continuity, more tokens/coins. |
 
 Settings that **cannot** be configured this way without changes to the shim:
 
@@ -72,9 +73,19 @@ Settings that **cannot** be configured this way without changes to the shim:
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | Translates the `BOB_*` env vars and `exec`s `node /app/bob-acp-shim.mjs`. Bob advertises `agentCapabilities.loadSession: false` over ACP, so every `session/new` from agent-runtime spawns a fresh Bob session — chat resume is not possible at the ACP layer. |
+| `harness-chat.sh` | Translates the `BOB_*` env vars and `exec`s `node /app/bob-acp-shim.mjs`. Bob's ACP advertises `loadSession: false` and has no session listing, so the shim emulates both from Bob's on-disk chats (see [Session history](#session-history)). |
 | `harness-terminal.sh` | Same flag translation, then `exec bob --approval-mode=auto_edit --auth-method api-key`. TUI mode is interactive — `auto_edit` lets Bob prompt the user in the terminal for risky tools; `--yolo` (which the ACP shim must use) would auto-approve everything. Each terminal open starts a **fresh** Bob TUI session — Bob persists sessions in a project-scoped numeric index, not per-UUID files (the way pi-agent and claude-code do), so `$HARNESS_SESSION_ID` can't be mapped one-to-one. Users can browse prior sessions from inside the TUI with `--list-sessions` if needed. |
+
+## Session history
+
+Bob's ACP has no session listing and its `loadSession` is disabled (`agentCapabilities.loadSession: false`, and the agent object has no `loadSession` method), so the platform sidebar would be empty and past chats unreachable. Bob does, however, persist every chat to `~/.bob/tmp/<projectHash>/chats/session-*.json`, and the shim uses that as the source of truth:
+
+- **`session/list`** — the shim scans the `chats/` dir and returns one entry per file (title from the first user message, `_meta.platform.mode: chat`).
+- **`session/load`** — the shim replays the file's messages as `user_message_chunk` / `agent_message_chunk` updates (agent text run through the same `<thinking>` filter as the live stream), and patches the `initialize` response to advertise `loadSession: true`.
+- **Resume (prompt into a loaded chat)** — Bob can't continue a session it didn't create in the current process, so the shim lazily issues its own `session/new`, maps the old↔new `sessionId` (rewriting ids both ways from then on), and prepends a transcript of the prior conversation to the first prompt so Bob resumes with context. The transcript is capped at `BOB_RESUME_MAX_MESSAGES` (default 40) trailing messages; it costs tokens/coins.
+
+This is a shim emulation, not a native capability — if a future Bob release implements ACP `listSessions` / `loadSession`, drop the emulation and let the frames pass through.
 
 ## Persistence
 
-The `/home/agent` PVC keeps Bob's session index under `~/.bob/`, plus whatever Bob writes during a session (workspace files, MCP server configs). Survives pod restarts and image rebuilds.
+The `/home/agent` PVC keeps Bob's session index and chat history under `~/.bob/` (chats at `~/.bob/tmp/<projectHash>/chats/`), plus whatever Bob writes during a session (workspace files, MCP server configs). Survives pod restarts and image rebuilds.

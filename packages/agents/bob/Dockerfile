@@ -16,10 +16,15 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
+# context.fileName is a search *name* (hierarchical lookup: ~/.bob/<name>,
+# project root, parents), not a path — an absolute path there matches nothing.
+# The platform instructions ride in as the global context via the
+# ~/.bob/AGENTS.md symlink (seeded from working-dir; mirrors pi-agent).
 RUN chmod 755 /usr/local/bin/harness-chat /usr/local/bin/harness-terminal &&\
     mkdir -p /etc/bobshell &&\
-    printf '{"context":{"fileName":["/etc/AGENTS.md"]}}\n' >/etc/bobshell/system-defaults.json &&\
+    printf '{"context":{"fileName":["AGENTS.md"]}}\n' >/etc/bobshell/system-defaults.json &&\
     mkdir -p /app/working-dir/.bob &&\
+    ln -s /etc/AGENTS.md /app/working-dir/.bob/AGENTS.md &&\
     ln -s ../.agents/skills /app/working-dir/.bob/skills
 
 COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
