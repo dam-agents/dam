@@ -43,25 +43,18 @@ Every template starts with a **Title** — short, declarative, no jargon; names 
 
 ### Epic
 
-An epic body defines the value, not a single fix, and gives enough shape that issues can be attached to it with confidence. It should make sense to anyone on the team.
+An epic body defines the value, not a single fix, and gives enough shape that issues can be attached to it with confidence. It should make sense to anyone on the team. The **Problem** is the most important part — spend the effort there.
 
 ```markdown
 **Title:** <the value delivered, short and declarative>
 
+## Problem
+
+<The pain or opportunity this epic addresses. Who is affected and why it matters. This is the most important part.>
+
 ## Goal
 
 <The chunk of value this epic delivers. Who benefits and how.>
-
-## Why now
-
-<The pain or opportunity that makes this worth prioritizing.>
-
-## What done looks like
-
-<Observable outcomes when this epic is complete. User-visible, not a task list.>
-
-### Out of scope
-<optional — adjacent things deliberately not covered>
 ```
 
 ### Story
