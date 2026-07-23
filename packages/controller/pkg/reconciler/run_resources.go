@@ -43,6 +43,7 @@ func BuildRunExecutorPod(
 		serviceAccountName: "",
 		// Trust the parent gateway's MITM leaf (ca.crt only).
 		leafSecretName: parentAgentID,
+		l7Hosts:        agentSpec.L7Hosts,
 		typeLabel:      RunPodLabelType,
 		idLabelKey:     RunLabelRunID,
 		extraEnv: []corev1.EnvVar{

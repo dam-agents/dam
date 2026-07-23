@@ -458,7 +458,12 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 //
 // Allow-only-only host → uncredentialed chain (MITM gate + dynamic_forward
 // _proxy). Mixed → credentialed chain; allow-only contributes nothing.
-func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
+//
+// `l7Hosts` is the Agent spec's per-agent L7 promotion list (#2865):
+// each entry gets an uncredentialed chain exactly like an allow-only
+// Secret. The Secret-shaped allow-only flavor remains consumed for
+// migration (pre-gen-5 markers) and as the missing-SDS degrade target.
+func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
 	type bucket struct {
 		host        string
 		seenHeader  map[string]string
@@ -572,6 +577,14 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 			SDSFileKey:     envoyCredentialKeySDS,
 		}
 		add(host, s.Name, &cred, opts)
+	}
+
+	// Per-agent promoted hosts (spec.l7Hosts) — uncredentialed chains. The
+	// synthetic "l7" name only seeds ChainID/UpstreamCluster naming for
+	// hosts no Secret already claimed; `add` dedupes against credentialed
+	// and allow-only chains by host.
+	for _, host := range l7Hosts {
+		add(host, "l7", nil, chainOpts{})
 	}
 
 	chains := make([]envoyHostChain, 0, len(order))
@@ -2013,8 +2026,8 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
 // the gateway dials. Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
-func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
-	chains := chainsFromSecrets(secrets)
+func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
+	chains := chainsFromSecrets(secrets, l7Hosts)
 	yaml, err := renderEnvoyBootstrap(instanceName, extAuthzInstanceID, cfg, chains)
 	if err != nil {
 		return nil, err
@@ -2035,7 +2048,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *
 // TLS leaf used to terminate the agent's intercepted TLS. None of these are
 // referenced from the agent pod — the credential boundary lives at the pod
 // boundary.
-func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secret) []corev1.Volume {
+func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secret, l7Hosts []string) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name: envoyBootstrapVolume,
 		VolumeSource: corev1.VolumeSource{
@@ -2059,10 +2072,10 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 		})
 	}
 	// Leaf cert is required whenever ANY TLS-terminating chain exists:
-	// allow-only or credentialed chains (both gate the request), or the
-	// telemetry collector chain (it MITM-terminates the collector SNI even
-	// when the instance has no credential Secrets).
-	if len(secrets) > 0 || cfg.TelemetryEnabled() {
+	// allow-only / promoted / credentialed chains (all gate the request),
+	// or the telemetry collector chain (it MITM-terminates the collector
+	// SNI even when the instance has no credential Secrets).
+	if len(secrets) > 0 || len(l7Hosts) > 0 || cfg.TelemetryEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: envoyLeafTLSVolume,
 			VolumeSource: corev1.VolumeSource{
@@ -2096,8 +2109,14 @@ const envoyBootstrapTemplateRev = "v14-upstream-port-upgrades"
 // shape goes stale. The SDS data-key set is included too: chain rendering
 // degrades a host to allow-only when its SDS key is missing, so a Secret
 // gaining (or losing) an SDS key changes the chain shape and must roll.
-func envoySecretsRev(secrets []corev1.Secret) string {
+// `l7Hosts` (the Agent spec's per-agent promotion list, #2865) shapes
+// chains the same way, so it is digested too — order-insensitively,
+// like the Secret parts.
+func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
+	for _, h := range l7Hosts {
+		parts = append(parts, "l7|"+h)
+	}
 	for _, s := range secrets {
 		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
 			s.Name,
@@ -2132,7 +2151,7 @@ func sdsDataKeys(s corev1.Secret) []string {
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
 // credential Secrets. Used as the sole non-init container of the paired
 // gateway pod.
-func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Secret) corev1.Container {
+func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Secret, l7Hosts []string) corev1.Container {
 	mounts := []corev1.VolumeMount{{
 		Name:      envoyBootstrapVolume,
 		MountPath: envoyBootstrapMount,
@@ -2148,7 +2167,7 @@ func envoyContainer(instanceName string, cfg *config.Config, secrets []corev1.Se
 			ReadOnly:  true,
 		})
 	}
-	if len(secrets) > 0 || cfg.TelemetryEnabled() {
+	if len(secrets) > 0 || len(l7Hosts) > 0 || cfg.TelemetryEnabled() {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      envoyLeafTLSVolume,
 			MountPath: envoyLeafTLSMount,

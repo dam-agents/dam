@@ -32,7 +32,7 @@ function extAuthzRow(
 
 function makeService(seed: PendingApprovalRow) {
   const rows = [seed];
-  const inserts: { verdict: string; ownerSub: string }[] = [];
+  const inserts: { verdict: string; agentId: string }[] = [];
   const repo: ApprovalsRepository = {
     insertPending: async () => {},
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
@@ -68,7 +68,7 @@ function makeService(seed: PendingApprovalRow) {
     repo,
     egressRuleWriter: {
       insert: async (input) => {
-        inserts.push({ verdict: input.verdict, ownerSub: input.ownerSub });
+        inserts.push({ verdict: input.verdict, agentId: input.agentId });
       },
     },
     notifier: { notifyResolved: async () => {} },
@@ -85,9 +85,9 @@ describe("approvals verdicts on expired requests (#2125)", () => {
     const { rows, service, inserts } = makeService(extAuthzRow());
     const outcome = await service.approvePermanent("appr-1");
     expect(inserts).toHaveLength(1);
-    // The row's owner sub (the agent owner) labels the allow-only Secret
-    // when the written rule needs L7 promotion (#2322).
-    expect(inserts[0].ownerSub).toBe("owner-1");
+    // The row's agent keys the per-agent L7 promotion when the written
+    // rule needs it (#2322, #2865).
+    expect(inserts[0].agentId).toBe("agent-1");
     expect(outcome.outcome).toBe("rule_written_expired");
     expect(rows[0].status).toBe("resolved");
     expect(rows[0].deliveredAt).not.toBeNull();

@@ -104,7 +104,11 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
+	// The PARENT's l7Hosts shape the fork's chains: the gate evaluates the
+	// parent owner's rules for fork traffic, so the fork gateway must
+	// intercept the same hosts at L7 or the parent's path/method/port
+	// narrowing is invisible on foreign turns (#2866).
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -112,7 +116,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
 	// Forks keep the credential-gated leaf (ephemeral; out of no-roll scope).
-	if cert := BuildEnvoyLeafCertificate(forkName, r.config, ownerRef, credentialSecrets, false); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(forkName, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, false); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -156,7 +160,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// agent Job's pod starts dialing it. Pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
-	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, ownerRef)
 
 	if err := createPodIfMissing(ctx, r.client, gatewayPod); err != nil {

@@ -55,6 +55,7 @@ export interface KubeObject {
   metadata?: {
     name?: string;
     uid?: string;
+    resourceVersion?: string;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
   };

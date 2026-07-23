@@ -5,6 +5,7 @@ import { createConnectionRulesSync } from "../../modules/egress-rules/services/c
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
+import type { AgentL7HostsPort } from "../../modules/egress-rules/infrastructure/k8s-agent-l7-hosts-port.js";
 
 function rowFrom(r: NewEgressRule): EgressRuleRow {
   return {
@@ -22,26 +23,37 @@ function rowFrom(r: NewEgressRule): EgressRuleRow {
   };
 }
 
-/** Repository fake capturing inserted rows. */
-function fakeRepo(overrides: Partial<EgressRulesRepository> = {}) {
-  const inserted: NewEgressRule[] = [];
+/** Stateful repository fake: `listForAgent` reflects inserts and revokes, so
+ *  the reconverge path (which recomputes promoted hosts from active rules)
+ *  can be exercised end-to-end. */
+function fakeRepo(
+  seed: EgressRuleRow[] = [],
+  overrides: Partial<EgressRulesRepository> = {},
+) {
+  const rows = [...seed];
   const base: EgressRulesRepository = {
     insert: async (row) => {
-      inserted.push(row);
-      return rowFrom(row);
+      const r = rowFrom(row);
+      rows.push(r);
+      return r;
     },
     insertOrPromoteFromPreset: async (row) => {
-      inserted.push(row);
-      return rowFrom(row);
+      const r = rowFrom(row);
+      rows.push(r);
+      return r;
     },
     listConnectionDerivedForAgent: async () => [],
     hasUserOwnedRuleForHost: async () => false,
     findMatch: async () => null,
     getActiveByTuple: async () => null,
-    getById: async () => null,
-    revoke: async () => {},
+    getById: async (id) => rows.find((r) => r.id === id) ?? null,
+    revoke: async (id) => {
+      const r = rows.find((x) => x.id === id);
+      if (r) r.status = "revoked";
+    },
     updatePromoteToManual: async () => null,
-    listForAgent: async () => [],
+    listForAgent: async (agentId) =>
+      rows.filter((r) => r.agentId === agentId && r.status === "active"),
     reassignActiveSource: async () => {},
     revokePresetRowsForAgent: async () => {},
     getPresetForAgent: async () => "none",
@@ -49,20 +61,27 @@ function fakeRepo(overrides: Partial<EgressRulesRepository> = {}) {
     deleteAllForAgent: async () => {},
     ...overrides,
   } as EgressRulesRepository;
-  return { repo: base, inserted };
+  return { repo: base, rows };
 }
 
-describe("egress-rules-service: port promotes a manual rule onto the L7 chain", () => {
-  it("calls allowOnlySecrets.ensure for a port-carrying wildcard rule", async () => {
+/** Captures the last host set written per agent. */
+function fakeL7Hosts() {
+  const sets: Array<{ agentId: string; hosts: readonly string[] }> = [];
+  const port: AgentL7HostsPort = {
+    set: async (agentId, hosts) => {
+      sets.push({ agentId, hosts });
+    },
+  };
+  return { port, sets, last: () => sets[sets.length - 1] };
+}
+
+describe("egress-rules-service: reconverge projects the rule table onto spec.l7Hosts", () => {
+  it("promotes a narrow rule's host on create", async () => {
     const { repo } = fakeRepo();
-    const ensured: Array<{ owner: string; host: string }> = [];
+    const l7 = fakeL7Hosts();
     const svc = createEgressRulesService({
       repo,
-      allowOnlySecrets: {
-        ensure: async (owner, host) => {
-          ensured.push({ owner, host });
-        },
-      },
+      l7Hosts: l7.port,
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
@@ -77,21 +96,20 @@ describe("egress-rules-service: port promotes a manual rule onto the L7 chain", 
       verdict: "allow",
     });
 
-    // Without promotion the rule falls to the L4 catch-all, which always
-    // dials 443 — the port would silently never take effect.
-    expect(ensured).toEqual([{ owner: "sub-1", host: "api.cluster.example" }]);
+    // Port-scoped rule → the L4 catch-all always dials 443, so the host
+    // must be promoted or the port silently never takes effect.
+    expect(l7.last()).toEqual({
+      agentId: "a1",
+      hosts: ["api.cluster.example"],
+    });
   });
 
   it("does NOT promote a plain host-only 443 rule (stays on the L4 path)", async () => {
     const { repo } = fakeRepo();
-    let ensureCalls = 0;
+    const l7 = fakeL7Hosts();
     const svc = createEgressRulesService({
       repo,
-      allowOnlySecrets: {
-        ensure: async () => {
-          ensureCalls++;
-        },
-      },
+      l7Hosts: l7.port,
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
@@ -105,30 +123,87 @@ describe("egress-rules-service: port promotes a manual rule onto the L7 chain", 
       verdict: "allow",
     });
 
-    expect(ensureCalls).toBe(0);
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
+  });
+
+  it("demotes the host when the last narrowing on it is revoked", async () => {
+    const seed = [
+      rowFrom({
+        id: "r1",
+        agentId: "a1",
+        host: "api.example.com",
+        method: "GET",
+        pathPattern: "/status/*",
+        verdict: "allow",
+        decidedBy: "sub-1",
+        source: "manual",
+      }),
+    ];
+    const { repo } = fakeRepo(seed);
+    const l7 = fakeL7Hosts();
+    const svc = createEgressRulesService({
+      repo,
+      l7Hosts: l7.port,
+      trustedHosts: [],
+      isAgentOwnedBy: async () => true,
+      ownerSub: "sub-1",
+    });
+
+    await svc.revoke("r1");
+
+    // The only rule that pinned the host to L7 is gone — reconverge clears
+    // it so the gateway stops MITM-terminating a host no rule needs (#2865).
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
+  });
+
+  it("keeps the host promoted while another narrowing on it survives", async () => {
+    const seed = [
+      rowFrom({
+        id: "r1",
+        agentId: "a1",
+        host: "api.example.com",
+        method: "GET",
+        pathPattern: "/a/*",
+        verdict: "allow",
+        decidedBy: "sub-1",
+        source: "manual",
+      }),
+      rowFrom({
+        id: "r2",
+        agentId: "a1",
+        host: "api.example.com",
+        method: "POST",
+        pathPattern: "/b/*",
+        verdict: "allow",
+        decidedBy: "sub-1",
+        source: "manual",
+      }),
+    ];
+    const { repo } = fakeRepo(seed);
+    const l7 = fakeL7Hosts();
+    const svc = createEgressRulesService({
+      repo,
+      l7Hosts: l7.port,
+      trustedHosts: [],
+      isAgentOwnedBy: async () => true,
+      ownerSub: "sub-1",
+    });
+
+    await svc.revoke("r1");
+
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: ["api.example.com"] });
   });
 });
 
-describe("egress-rule-writer: inbox verdicts get the same L7 promotion (#2322)", () => {
-  it("promotes a narrow rule, labeling the Secret with the agent owner's sub", async () => {
-    const { repo, inserted } = fakeRepo();
-    const ensured: Array<{ owner: string; host: string }> = [];
-    const writer = createEgressRuleWriter({
-      repo,
-      allowOnlySecrets: {
-        ensure: async (owner, host) => {
-          ensured.push({ owner, host });
-        },
-      },
-    });
+describe("egress-rule-writer: inbox verdicts reconverge the same way (#2322)", () => {
+  it("promotes a narrow rule's host, projected from the agent's active rules", async () => {
+    const { repo, rows } = fakeRepo();
+    const l7 = fakeL7Hosts();
+    const writer = createEgressRuleWriter({ repo, l7Hosts: l7.port });
 
-    // A narrow rule can be born from an inbox verdict when the held request
-    // was plain HTTP (method/path visible without MITM). Without promotion
-    // its HTTPS half is silently unenforced.
     await writer.insert({
       id: "r1",
       agentId: "a1",
-      ownerSub: "agent-owner",
       host: "api.example.com",
       method: "GET",
       pathPattern: "/status/*",
@@ -137,28 +212,18 @@ describe("egress-rule-writer: inbox verdicts get the same L7 promotion (#2322)",
       source: "inbox",
     });
 
-    expect(inserted).toHaveLength(1);
-    expect(ensured).toEqual([
-      { owner: "agent-owner", host: "api.example.com" },
-    ]);
+    expect(rows).toHaveLength(1);
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: ["api.example.com"] });
   });
 
   it("does NOT promote a host-wide rule (stays on the L4 path)", async () => {
-    const { repo, inserted } = fakeRepo();
-    let ensureCalls = 0;
-    const writer = createEgressRuleWriter({
-      repo,
-      allowOnlySecrets: {
-        ensure: async () => {
-          ensureCalls++;
-        },
-      },
-    });
+    const { repo } = fakeRepo();
+    const l7 = fakeL7Hosts();
+    const writer = createEgressRuleWriter({ repo, l7Hosts: l7.port });
 
     await writer.insert({
       id: "r1",
       agentId: "a1",
-      ownerSub: "agent-owner",
       host: "api.example.com",
       method: "*",
       pathPattern: "*",
@@ -167,14 +232,71 @@ describe("egress-rule-writer: inbox verdicts get the same L7 promotion (#2322)",
       source: "inbox",
     });
 
-    expect(inserted).toHaveLength(1);
-    expect(ensureCalls).toBe(0);
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
+  });
+
+  it("never promotes the bare * host, even for a narrowing rule", async () => {
+    // The front door allows host "*" with a narrow method/path, but no
+    // single SNI chain terminates every host and the CRD rejects "*" in
+    // spec.l7Hosts — projecting it would make every reconverge (and the
+    // startup backfill) fail permanently. Such a rule stays enforced at
+    // host granularity on the L4 path, as it always has.
+    const { repo } = fakeRepo();
+    const l7 = fakeL7Hosts();
+    const writer = createEgressRuleWriter({ repo, l7Hosts: l7.port });
+
+    await writer.insert({
+      id: "r1",
+      agentId: "a1",
+      host: "*",
+      method: "GET",
+      pathPattern: "/x",
+      verdict: "allow",
+      decidedBy: "sub-1",
+      source: "inbox",
+    });
+
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
+  });
+
+  it("excludes connection-derived rules (already TLS-terminated by their credential)", async () => {
+    const seed = [
+      rowFrom({
+        id: "c1",
+        agentId: "a1",
+        host: "api.cluster.example",
+        port: 6443,
+        method: "*",
+        pathPattern: "*",
+        verdict: "allow",
+        decidedBy: "sub-1",
+        source: "connection:conn-1",
+      }),
+    ];
+    const { repo } = fakeRepo(seed);
+    const l7 = fakeL7Hosts();
+    const writer = createEgressRuleWriter({ repo, l7Hosts: l7.port });
+
+    await writer.insert({
+      id: "m1",
+      agentId: "a1",
+      host: "api.example.com",
+      method: "GET",
+      pathPattern: "/x",
+      verdict: "allow",
+      decidedBy: "sub-1",
+      source: "manual",
+    });
+
+    // The connection host is covered by its own credential chain, so only
+    // the manual narrow rule's host is promoted.
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: ["api.example.com"] });
   });
 });
 
 describe("connection-rules-sync: threads port into the inserted rule", () => {
   it("passes the connection host's port through to the repository", async () => {
-    const { repo, inserted } = fakeRepo();
+    const { repo, rows } = fakeRepo();
     const sync = createConnectionRulesSync({ repo });
 
     await sync.syncForAgent({
@@ -186,8 +308,8 @@ describe("connection-rules-sync: threads port into the inserted rule", () => {
       ownedSourceIds: new Set(["conn-1"]),
     });
 
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0]).toMatchObject({
+    const inserted = rows.find((r) => r.host === "api.cluster.example");
+    expect(inserted).toMatchObject({
       host: "api.cluster.example",
       port: 6443,
       source: "connection:conn-1",

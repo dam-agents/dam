@@ -189,3 +189,25 @@ func TestBuildForkAgentJob_NoFetchCACertInit(t *testing.T) {
 	assert.Equal(t, "ca.crt", caVol.Secret.Items[0].Key,
 		"fork agent must only see ca.crt — never tls.key")
 }
+
+func TestBuildForkAgentJob_ParentL7HostsProjectCACert(t *testing.T) {
+	// A parent path rule promotes a host onto the fork gateway's TLS-
+	// terminating chain (#2866), so the fork agent must trust the MITM CA
+	// even when the replier has no credential Secrets — otherwise TLS to
+	// the promoted host fails inside the fork.
+	spec := *testAgent
+	spec.L7Hosts = []string{"api.github.com"}
+	job := BuildForkAgentJob("fork-abc", testForkSpec, &spec, testConfig, configMapOwnerRef(testForkOwnerCM), nil, "")
+
+	var caVol *corev1.Volume
+	for i := range job.Spec.Template.Spec.Volumes {
+		if job.Spec.Template.Spec.Volumes[i].Name == "ca-cert" {
+			caVol = &job.Spec.Template.Spec.Volumes[i]
+			break
+		}
+	}
+	require.NotNil(t, caVol)
+	require.NotNil(t, caVol.Secret,
+		"ca.crt must project from the leaf Secret when parent l7Hosts exist")
+	assert.Equal(t, EnvoyLeafSecretName("fork-abc"), caVol.Secret.SecretName)
+}

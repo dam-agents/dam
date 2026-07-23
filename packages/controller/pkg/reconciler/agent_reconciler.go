@@ -103,7 +103,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -112,7 +112,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("envoyBootstrap")
 	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, true); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, true); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -248,7 +248,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// (UI restart button, grant changes) without a spec/status write.
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets)
+	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	stampRollRev(gatewaySS, rollRev)
 	gatewaySvc := BuildGatewayService(name, r.config, ownerRef)
 

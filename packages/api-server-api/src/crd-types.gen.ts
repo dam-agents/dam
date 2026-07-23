@@ -65,6 +65,25 @@ export interface AgentSpecCR {
    */
   init?: string;
   /**
+   * L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
+   * interception chain without a credential, so path/method/port egress
+   * rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
+   * Written by the api-server when such a rule exists for this agent;
+   * per-agent grain so a rule on one agent never reshapes a sibling's
+   * gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+   * stays the egress policy authority for foreign turns).
+   *
+   * The item pattern is a hard boundary: each entry is interpolated into
+   * the gateway's Envoy bootstrap (an unescaped `text/template` field)
+   * and into cert-manager SANs, so admission rejects anything that isn't
+   * a DNS hostname (optionally a `*.` wildcard) — no quotes, whitespace,
+   * or YAML metacharacters can reach the rendered config. maxItems caps
+   * the leaf SAN list a single agent can demand.
+   *
+   * @maxItems 256
+   */
+  l7Hosts?: string[];
+  /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
    */
   mounts?: {

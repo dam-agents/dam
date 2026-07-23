@@ -100,6 +100,7 @@ import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wra
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
+  createL7PromotionBackfill,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
@@ -281,6 +282,41 @@ async function runSecretsToConnectionsMigration(): Promise<void> {
   );
 }
 await runSecretsToConnectionsMigration();
+
+// L7-promotion backfill (#2865): project active narrow rules onto each
+// Agent CR's spec.l7Hosts and retire the legacy owner-scoped allow-only
+// marker Secrets. Same capped-retry shape as the secrets migration; while
+// it hasn't fully succeeded the markers stay and rules remain enforced.
+let l7BackfillRetry: ReturnType<typeof setTimeout> | undefined;
+let l7BackfillRetries = 0;
+const L7_BACKFILL_MAX_RETRIES = 10;
+const l7PromotionBackfill = createL7PromotionBackfill(db, k8sClient, (m) =>
+  getLogger().info(`[l7-backfill] ${m}`),
+);
+async function runL7PromotionBackfill(): Promise<void> {
+  let failed: number;
+  try {
+    ({ failed } = await l7PromotionBackfill());
+  } catch (err) {
+    // A pass can throw outside its per-agent handling (e.g. listing the
+    // legacy markers while K8s is flaky) — treat it as a failed pass so
+    // the timer retry never becomes an unhandled rejection.
+    getLogger().error(`[l7-backfill] pass failed: ${String(err)}`);
+    failed = 1;
+  }
+  if (failed === 0) return;
+  if (l7BackfillRetries >= L7_BACKFILL_MAX_RETRIES) {
+    getLogger().error(
+      `[l7-backfill] still ${failed} failing after ` +
+        `${L7_BACKFILL_MAX_RETRIES} retries; giving up — legacy allow-only ` +
+        `markers stay in place and rules remain enforced`,
+    );
+    return;
+  }
+  l7BackfillRetries++;
+  l7BackfillRetry = setTimeout(() => void runL7PromotionBackfill(), 60_000);
+}
+await runL7PromotionBackfill();
 
 const { service: termsService, isAcceptedPort: isTermsAccepted } =
   composeTermsModule({
@@ -807,6 +843,7 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   if (backfillRetry) clearTimeout(backfillRetry);
   if (secretsMigrationRetry) clearTimeout(secretsMigrationRetry);
+  if (l7BackfillRetry) clearTimeout(l7BackfillRetry);
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

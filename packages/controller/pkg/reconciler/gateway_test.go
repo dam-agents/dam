@@ -12,7 +12,7 @@ import (
 
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), secrets)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance-gateway", ss.Name)
@@ -42,12 +42,12 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_Hibernated(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", true, testConfig, configMapOwnerRef(testOwnerCM), nil)
+	ss := BuildGatewayStatefulSet("my-instance", true, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas, "gateway scales with the agent")
 }
 
 func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken,
 		"gateway pod must have no SA token — Secret-read RBAC would bypass volume-mount scoping")
@@ -60,7 +60,7 @@ func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
 	// that path. Without it, the rev-1 → rev-2 transition that happens
 	// when grants land after agent creation would strand the pod in
 	// CrashLoopBackOff indefinitely.
-	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be set explicitly")
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
 	assert.Equal(t, "1", ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String(),
@@ -71,7 +71,7 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 	// Workspace PVCs and CA-only mounts belong to the agent pod, not the
 	// gateway. The gateway only mounts the bootstrap CM, the leaf TLS
 	// Secret, and per-credential Secrets.
-	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "home-agent",
 			"gateway must not mount the workspace PVC")
@@ -104,7 +104,7 @@ func TestBuildGatewayService(t *testing.T) {
 // --- Fork gateway ---
 
 func TestBuildForkGatewayPod_Labels(t *testing.T) {
-	pod := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, configMapOwnerRef(testForkOwnerCM), nil)
+	pod := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, configMapOwnerRef(testForkOwnerCM), nil, nil)
 	assert.Equal(t, "fork-abc-gateway", pod.Name)
 	// Instance label points at the PARENT instance — ext_authz identity
 	// flows through this label, and forks inherit the parent's egress
@@ -120,6 +120,25 @@ func TestBuildForkGatewayPod_Labels(t *testing.T) {
 
 	require.NotNil(t, pod.Spec.AutomountServiceAccountToken)
 	assert.False(t, *pod.Spec.AutomountServiceAccountToken)
+}
+
+func TestBuildForkGatewayPod_ParentL7HostsMountLeafTLS(t *testing.T) {
+	// The parent's spec.l7Hosts flow into the fork gateway (#2866): the
+	// leaf TLS volume must mount even with zero replier credential
+	// Secrets, because the promoted chain terminates TLS. Fork pods are
+	// created per turn, so a new parent rule is picked up on the next
+	// turn without any roll trigger.
+	promoted := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, configMapOwnerRef(testForkOwnerCM), nil, []string{"api.github.com"})
+
+	hasLeaf := func(pod *corev1.Pod) bool {
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == envoyLeafTLSVolume {
+				return true
+			}
+		}
+		return false
+	}
+	assert.True(t, hasLeaf(promoted))
 }
 
 func TestBuildForkGatewayService(t *testing.T) {
