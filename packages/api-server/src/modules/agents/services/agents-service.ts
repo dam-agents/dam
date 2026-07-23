@@ -290,6 +290,7 @@ export function executeSlackBind(deps: {
   connectShared: (
     agentId: string,
     slackChannelId: string,
+    ambient: boolean,
   ) => Promise<ConnectSlackResult>;
   binding: SlackBindingPort;
 }) {
@@ -322,7 +323,16 @@ export function executeSlackBind(deps: {
     const existing = await deps.findChannelBinding(flow.slackChannelId);
     if (existing) return err({ type: "ChannelAlreadyBound" as const });
 
-    const connected = await deps.connectShared(agentId, flow.slackChannelId);
+    // A shared channel bind defaults to ambient mode so the agent reads along
+    // without a second command — the pain the /bind flow otherwise imposes. A
+    // 1:1 DM already relays every message, so ambient is meaningless there:
+    // keep it off and don't advertise it.
+    const isDm = flow.slackChannelId.startsWith("D");
+    const connected = await deps.connectShared(
+      agentId,
+      flow.slackChannelId,
+      !isDm,
+    );
     if (!connected.ok) {
       // Ownership was already proven by getAgent, so a non-ok here is a lost
       // race (the channel was bound between the check and the write).
@@ -346,15 +356,15 @@ export function executeSlackBind(deps: {
       },
     });
 
-    // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
-    // private DM doesn't read as a shared channel ("everyone here").
-    const isDm = flow.slackChannelId.startsWith("D");
+    // The confirmation is tailored per surface: a 1:1 DM doesn't read as a
+    // shared channel ("everyone here"), and only a channel bind advertises the
+    // ambient default it just received.
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
       isDm
         ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
-        : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+        : `This channel is now connected to ${agent.name}. Everyone here can use it, and it reads along and may chime in without being mentioned when it can clearly help — run the ambient off command to make it mentions-only, or the unbind command to disconnect.`,
     );
     if ("error" in post) {
       // Best-effort: the binding is committed; the confirmation is courtesy.
@@ -627,6 +637,10 @@ export function createAgentsService(deps: {
     slackChannelId: string,
     mode?: "shared" | "person-scoped",
     ambient?: boolean,
+    // The in-chat bind posts its own combined connect+ambient confirmation, so
+    // it suppresses the standalone ambient announcement to avoid a double post
+    // in the channel; the audit record still fires either way.
+    opts?: { announceAmbientInChannel?: boolean },
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
@@ -694,7 +708,7 @@ export function createAgentsService(deps: {
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
       });
-      if (deps.slackBinding) {
+      if ((opts?.announceAmbientInChannel ?? true) && deps.slackBinding) {
         const text = requestedAmbient
           ? `${infra.name} is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run the ambient off command to make it mentions-only again.`
           : `${infra.name} left ambient mode — it now only responds when mentioned.`;
@@ -1358,8 +1372,10 @@ export function createAgentsService(deps: {
           return infra ? { id: infra.id, name: infra.name } : null;
         },
         findChannelBinding: deps.findSlackChannelBinding,
-        connectShared: (id, slackChannelId) =>
-          connectSlackImpl(id, slackChannelId, "shared"),
+        connectShared: (id, slackChannelId, ambient) =>
+          connectSlackImpl(id, slackChannelId, "shared", ambient, {
+            announceAmbientInChannel: false,
+          }),
         binding,
       })(agentId, flowId);
     },
