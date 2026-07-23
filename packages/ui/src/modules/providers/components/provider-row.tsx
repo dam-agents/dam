@@ -19,6 +19,9 @@ interface Props {
   connected: boolean;
   selected: boolean;
   selectable?: boolean;
+  /** Show the per-row key-management menu (Edit key / Remove key). Off on
+   *  surfaces that only pick a provider and have no confirm-dialog host. */
+  manageKeys?: boolean;
   onConnect: () => void;
   onSelect: () => void;
   onEditKey: () => void;
@@ -32,6 +35,7 @@ export function ProviderRow({
   connected,
   selected,
   selectable = true,
+  manageKeys = true,
   onConnect,
   onSelect,
   onEditKey,
@@ -87,19 +91,21 @@ export function ProviderRow({
           {info}
         </div>
       )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" title="Provider actions">
-            <MoreVertical size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
-          <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
-            Remove key
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {manageKeys && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" title="Provider actions">
+              <MoreVertical size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
+            <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
+              Remove key
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

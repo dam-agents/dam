@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { getBrand } from "../../../brand.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import type { AgentView } from "../../../types.js";
-import { useAgents, useAgentsList } from "../../agents/api/queries.js";
+import { BindAgentRow } from "../../agents/components/bind-agent-row.js";
+import { CreateAgentInline } from "../../agents/components/create-agent-inline.js";
+import { useInlineAgentCreate } from "../../agents/hooks/use-inline-agent-create.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import {
   type BindErrorCopy,
@@ -21,14 +23,25 @@ const callbackError = readCallbackErrorFromSearch(window.location.search);
 
 export function SlackBindView() {
   const brandShort = getBrand().short;
-  const agents = useAgents();
-  const list = useAgentsList();
   const bind = useBindSlackChannel();
+  const {
+    isLoading,
+    displayedAgents,
+    justCreatedId,
+    creating,
+    openCreateForm,
+    markCreated,
+  } = useInlineAgentCreate();
   const [error, setError] = useState<BindErrorCopy | null>(null);
   const [bound, setBound] = useState<{
     agentName: string;
     channelTitle: string | null;
   } | null>(null);
+
+  const handleCreated = (agent: AgentView) => {
+    markCreated(agent);
+    setError(null);
+  };
 
   if (callbackError) {
     return (
@@ -58,21 +71,10 @@ export function SlackBindView() {
   if (error?.terminal) {
     return <TerminalError copy={error} />;
   }
-  if (agents.isLoading) {
+  if (isLoading) {
     return (
       <Page title="Connect this channel to an agent">
         <ListSkeleton rows={3} />
-      </Page>
-    );
-  }
-  if (list.length === 0) {
-    return (
-      <Page title="Connect this channel to an agent">
-        <p className="text-sm text-muted-foreground">
-          You don&apos;t own any agents yet. Create an agent first, then run{" "}
-          <code>/{brandShort} bind</code> in the channel again.
-        </p>
-        <DashboardButton label="Go to dashboard" />
       </Page>
     );
   }
@@ -92,65 +94,46 @@ export function SlackBindView() {
     );
   };
 
+  const hasAgents = displayedAgents.length > 0;
+
   return (
     <Page title="Connect this channel to an agent">
       <p className="text-sm text-muted-foreground">
-        Everyone in this Slack channel will be able to use the agent you pick.
-        Turns run under the agent&apos;s own connected accounts and API tokens,
-        and your acceptance of the Terms of Use covers every turn.
+        {hasAgents
+          ? "Everyone in this Slack channel will be able to use the agent you pick. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn."
+          : "You don't own any agents yet. Create one to connect it — everyone in this Slack channel will then be able to use it, running under its own connected accounts and your acceptance of the Terms of Use."}
       </p>
       {error && (
         <p className="text-sm text-red-600">
           {error.title} — {error.hint}
         </p>
       )}
-      <div className="flex flex-col gap-2">
-        {list.map((agent) => (
-          <BindAgentRow
-            key={agent.id}
-            agent={agent}
-            disabled={bind.isPending}
-            pending={bind.isPending && bind.variables?.agentId === agent.id}
-            onPick={() => pick(agent)}
-          />
-        ))}
-      </div>
+      {hasAgents && (
+        <div className="flex flex-col gap-2">
+          {displayedAgents.map((agent) => (
+            <BindAgentRow
+              key={agent.id}
+              agent={agent}
+              highlighted={agent.id === justCreatedId}
+              disabled={bind.isPending}
+              pending={bind.isPending && bind.variables?.agentId === agent.id}
+              onPick={() => pick(agent)}
+            />
+          ))}
+        </div>
+      )}
+      {creating ? (
+        <CreateAgentInline onCreated={handleCreated} />
+      ) : hasAgents ? (
+        <button
+          type="button"
+          onClick={openCreateForm}
+          className="self-start text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          + Create a new agent
+        </button>
+      ) : null}
     </Page>
-  );
-}
-
-function BindAgentRow({
-  agent,
-  disabled,
-  pending,
-  onPick,
-}: {
-  agent: AgentView;
-  disabled: boolean;
-  pending: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onPick}
-      className="flex flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-4 py-3 text-left hover:border-foreground/40 disabled:opacity-60"
-    >
-      <span className="text-[14px] font-semibold text-foreground">
-        {pending ? `Connecting ${agent.name}…` : agent.name}
-      </span>
-      {agent.description && (
-        <span className="text-[12px] text-muted-foreground">
-          {agent.description}
-        </span>
-      )}
-      {agent.templateId && (
-        <span className="text-[11px] font-mono text-muted-foreground">
-          {agent.templateId}
-        </span>
-      )}
-    </button>
   );
 }
 

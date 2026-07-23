@@ -74,6 +74,9 @@ interface Props {
   autoSelectFirst?: boolean;
   variant?: "stacked" | "collapsible";
   manage?: boolean;
+  /** Show the per-row key-management menu (Edit key / Remove key). Off on
+   *  surfaces that only pick a provider and have no confirm-dialog host. */
+  manageKeys?: boolean;
   listClassName?: string;
 }
 
@@ -84,6 +87,7 @@ export function ProviderSection({
   autoSelectFirst = false,
   variant = "stacked",
   manage = false,
+  manageKeys = true,
   listClassName,
 }: Props) {
   const { data: connections = [], isPending } = useAppConnections();
@@ -129,6 +133,7 @@ export function ProviderSection({
         subtitle={item ? itemSubtitle(row.type, item) : undefined}
         connected={!!item}
         selectable={!manage}
+        manageKeys={manageKeys}
         selected={!!ref && !!selected && sameProviderRef(ref, selected)}
         onConnect={() => setDialog({ provider: row.type })}
         onSelect={() => ref && onSelect?.(ref)}
