@@ -39,7 +39,7 @@ IBM's teams have proven the efficacy of implementing AI tools for research, from
 
 - **⏱️ Scheduled workflows.** Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
 
-- **🔧 Constantly growing.** DAM is continusily growing alongside our researchers. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know](https://ibm.enterprise.slack.com/archives/C0B3F03NB24).
+- **🔧 Constantly growing.** DAM is always updating to meet our researchers' needs. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know](https://ibm.enterprise.slack.com/archives/C0B3F03NB24).
 
 ## Architecture
 ```mermaid
