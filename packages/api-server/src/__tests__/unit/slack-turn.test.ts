@@ -111,7 +111,7 @@ function harness(opts: {
 }
 
 describe("slack turn presentation — owner turns", () => {
-  it("acks with 👀 and a status, and never auto-posts the response", async () => {
+  it("drives a status and never auto-posts a reply or an ack reaction", async () => {
     const h = harness({
       sendPrompt: scripted(
         [{ kind: "text", text: "an answer the agent would normally post" }],
@@ -122,22 +122,22 @@ describe("slack turn presentation — owner turns", () => {
     await tick();
 
     const recs = h.records();
-    // The only things the platform posts on the agent's behalf: the ack
-    // reaction and the working status. The reply text is NOT delivered.
-    expect(recs.some((r) => r.kind === "reaction")).toBe(true);
+    // The platform presents only the working status on the agent's behalf. The
+    // reply text is NOT delivered, and there is no automatic ack reaction — any
+    // reaction is the agent's own doing via the `react` tool.
+    expect(recs.some((r) => r.kind === "status")).toBe(true);
+    expect(recs.some((r) => r.kind === "reaction")).toBe(false);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
     expect(recs.some((r) => r.kind === "stream_start")).toBe(false);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
   });
 
-  it("sets a thinking status right after the 👀 and clears it at the end", async () => {
+  it("sets a thinking status at the start and clears it at the end", async () => {
     const h = harness({});
     await h.mention();
     await tick();
 
     const recs = h.records();
-    const kinds = recs.map((r) => r.kind);
-    expect(kinds.indexOf("reaction")).toBeLessThan(kinds.indexOf("status"));
     const statuses = recs.filter((r) => r.kind === "status");
     expect(statuses[0]).toMatchObject({ status: "is thinking…" });
     expect(statuses.at(-1)).toMatchObject({ status: "" });
@@ -194,7 +194,7 @@ describe("slack turn presentation — owner turns", () => {
 });
 
 describe("slack turn presentation — foreign fork turns", () => {
-  it("acks and clears status, without auto-posting the fork reply", async () => {
+  it("shows and clears a status, without auto-posting the fork reply", async () => {
     const h = harness({
       isAllowedUser: true,
       linkedSub: "kc|member-2",
@@ -217,7 +217,10 @@ describe("slack turn presentation — foreign fork turns", () => {
     await tick();
 
     const recs = h.records();
-    expect(recs.some((r) => r.kind === "reaction")).toBe(true);
+    // No automatic ack reaction; the working status is the only thing the
+    // platform posts on the fork's behalf, and it clears at the end.
+    expect(recs.some((r) => r.kind === "reaction")).toBe(false);
+    expect(recs.some((r) => r.kind === "status")).toBe(true);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
     expect(recs.filter((r) => r.kind === "status").at(-1)).toMatchObject({
       status: "",

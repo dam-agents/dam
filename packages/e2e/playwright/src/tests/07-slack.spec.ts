@@ -125,23 +125,8 @@ test("foreign user mention forks the agent and the reply lands back in the threa
       teamId: foreignSlackTeamId,
     });
 
-    await expect
-      .poll(
-        async () => {
-          const { records } = await api.e2e.slackReadOutbound.query();
-          return records.some(
-            (r) => r.kind === "reaction" && r.name === "eyes",
-          );
-        },
-        {
-          timeout: 30_000,
-          message:
-            "foreign mention was not acknowledged with the eyes reaction",
-        },
-      )
-      .toBe(true);
-
-    // A running status appears while the fork works (live-progress arc).
+    // A running status appears while the fork works (live-progress arc). The
+    // platform no longer auto-acks with a reaction; the status is the signal.
     await expect
       .poll(
         async () => {

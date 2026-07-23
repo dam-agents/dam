@@ -85,8 +85,9 @@ function slackTurnContract(ctx: {
       "is delivered to Slack — only tool calls reach the channel. To " +
       "respond, call one of:",
     `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}").`,
-    "• react — add an emoji reaction to the message you're answering: a quiet " +
-      "acknowledgement that notifies no one, e.g. eyes on a reported bug " +
+    "• react — add a fitting emoji reaction to the message you're answering: a " +
+      "quiet acknowledgement that notifies no one — pick an emoji that suits " +
+      "the message (e.g. eyes on a bug report, tada on good news) " +
       `(messageTs="${ctx.eventTs}"). Pass the Slack emoji short name, no colons.`,
     "• no_reply_needed — end your turn without posting anything, when the " +
       "message doesn't call for a response.",
@@ -97,7 +98,8 @@ function slackTurnContract(ctx: {
 
 /** Extra framing for ambient (read-along) turns: nobody @-mentioned the agent,
  *  so it chimes in only when it can clearly help and otherwise stays silent via
- *  `no_reply_needed`. */
+ *  `no_reply_needed`. When it does engage, it opens with a fitting reaction —
+ *  the light-touch, in-channel signal that replaces the old automatic ack. */
 function ambientGuidance(brand: { name: string }): string {
   return [
     "<reading-along>",
@@ -108,6 +110,12 @@ function ambientGuidance(brand: { name: string }): string {
       "you can clearly help — answer a question you know the answer to, pick " +
       "up a task someone described, or flag a clear mistake. If in doubt, " +
       "stay silent by calling no_reply_needed.",
+    "When a message is worth engaging with, open with a fitting emoji " +
+      "reaction before you do anything else — it notifies no one and is a " +
+      "quiet signal that you have picked it up. Choose an emoji that suits " +
+      "the message rather than a rote one, and let the reaction stand alone " +
+      "as your whole response when a full reply isn't warranted. Don't react " +
+      "to messages you would otherwise stay silent on.",
     "</reading-along>",
   ].join("\n");
 }
@@ -509,14 +517,6 @@ export function createSlackWorker(
     const gw = gateway;
     const { instanceName } = ctx;
 
-    // "I've got it" — an ack the agent didn't have to ask for. The agent may
-    // add its own reactions later via the `react` tool.
-    await gw.addReaction({
-      channel: ctx.channel,
-      ts: ctx.eventTs,
-      name: "eyes",
-    });
-
     // Remember the turn so the reply/react tools can target this thread and the
     // triggering message without the agent echoing ids back.
     activeTurn.set(instanceName, {
@@ -665,12 +665,6 @@ export function createSlackWorker(
   }) {
     if (!gateway) return;
     const gw = gateway;
-
-    await gw.addReaction({
-      channel: args.channel,
-      ts: args.eventTs,
-      name: "eyes",
-    });
 
     activeTurn.set(args.instanceName, {
       channel: args.channel,
