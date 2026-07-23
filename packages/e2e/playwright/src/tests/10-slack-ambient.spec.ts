@@ -33,21 +33,14 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     });
   });
 
-  await test.step("the channel is notified that the agent reads along", async () => {
-    await expect
-      .poll(
-        async () => {
-          const { records } = await api.e2e.slackReadOutbound.query();
-          return records.some(
-            (r) => r.kind === "message" && r.text.includes("ambient mode"),
-          );
-        },
-        {
-          timeout: 30_000,
-          message: "no channel-visible ambient notice was posted",
-        },
-      )
-      .toBe(true);
+  await test.step("connecting with ambient posts no announcement to the channel", async () => {
+    // Ambient state is never announced channel-visibly — not on connect, not on
+    // a toggle. Give any stray post time to surface, then require silence.
+    await new Promise((r) => setTimeout(r, 10_000));
+    const { records } = await api.e2e.slackReadOutbound.query();
+    expect(
+      records.filter((r) => r.kind === "message" && r.text.includes("ambient")),
+    ).toEqual([]);
   });
 
   await test.step("a plain message is answered in its own thread", async () => {

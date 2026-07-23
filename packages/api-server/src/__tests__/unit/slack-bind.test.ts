@@ -63,13 +63,14 @@ describe("slack bind flow", () => {
     const res = await h.run("agent-1", h.flowId);
     expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
     // A channel bind defaults ambient on so the agent reads along without a
-    // second /ambient on command.
+    // second /ambient on command...
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1", true);
     expect(h.store.peek(h.flowId)).toBe(null);
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
     expect(text).toContain("my-agent");
-    // The single confirmation advertises the ambient default it just received.
-    expect(text).toContain("without being mentioned");
+    // ...but the confirmation stays a plain connect notice — ambient is never
+    // announced in the channel.
+    expect(text).not.toContain("without being mentioned");
   });
 
   it("binds a 1:1 DM with ambient OFF and does not advertise reading along", async () => {
