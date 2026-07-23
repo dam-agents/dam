@@ -1,6 +1,10 @@
 export {
   composeInvocationsForOwner,
   composeInvocationLivenessSweep,
+  createDriverResolutionAdapter,
+  createInvocationsCleanupHook,
+  listInvocationAgentIds,
+  type DriverResolution,
 } from "./compose.js";
 export {
   AttenuationError,

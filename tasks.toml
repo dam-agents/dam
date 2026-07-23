@@ -16,7 +16,7 @@ depends = ["*:scan"]
 depends = ["*:test"]
 
 ["e2e"]
-description = "Run Playwright e2e: spin up fresh test cluster, run specs, tear down. Options: --headed"
+description = "Run Playwright e2e: spin up fresh test cluster, run the smoke suite, tear down. Options: --headed --full"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -27,6 +27,7 @@ PLAYWRIGHT_TASK="e2e-playwright:run"
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
   esac
 done
 
@@ -221,7 +222,7 @@ echo "e2e data reset complete."
 '''
 
 ["e2e:loop"]
-description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run specs. Options: --headed --rebuild=apiserver,ui,controller,keycloak,mock-agent"
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -242,6 +243,9 @@ REBUILD_SET=false
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    # Full suite: smoke plus the slow on-demand specs under src/tests/full/.
+    # The pipeline default is smoke only; this flag is the manual trigger.
+    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
   esac
 done

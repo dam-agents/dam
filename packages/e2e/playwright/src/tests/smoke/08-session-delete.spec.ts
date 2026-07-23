@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { baseUrl } from "../config.js";
+import { baseUrl } from "../../config.js";
 import {
   agentCardStatus,
   chatInput,
@@ -8,10 +8,10 @@ import {
   sendMessageToAgent,
   setMockAgentReply,
   waitForAgentRunning,
-} from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName } from "../lib/fixtures.js";
+} from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName } from "../../lib/fixtures.js";
 
 const scriptedReply = "scripted-reply-for-delete-spec";
 const firstPrompt = "hello-before-delete";

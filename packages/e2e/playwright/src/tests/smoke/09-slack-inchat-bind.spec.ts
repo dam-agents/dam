@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName } from "../lib/fixtures.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName } from "../../lib/fixtures.js";
 
 // This spec exercises the in-chat bind/unbind slash commands at the command
 // level (deterministic, no OAuth round-trip). It replaces the agent's single

@@ -5,6 +5,8 @@ import {
   e2eGetEnvInputSchema,
   e2ePerformFetchInputSchema,
   e2eSetScriptInputSchema,
+  e2eSpawnInvocationInputSchema,
+  spawnInvocationResultSchema,
   getEnvResultSchema,
   getReceivedPromptsResultSchema,
   performFetchResultSchema,
@@ -51,6 +53,15 @@ export const e2eRouter = t.router({
     .query(({ ctx, input }) => {
       gate(ctx);
       return ctx.e2e.getEnv(input.agentId, input.name);
+    }),
+
+  spawnInvocation: t.procedure
+    .input(e2eSpawnInvocationInputSchema)
+    .output(spawnInvocationResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      const { agentId, ...rest } = input;
+      return ctx.e2e.spawnInvocation(agentId, rest);
     }),
 
   performFetch: t.procedure

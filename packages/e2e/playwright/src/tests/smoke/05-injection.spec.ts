@@ -1,15 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
 import {
   agentName,
   echoUrl,
   envName,
   placeholder,
   sentinel,
-} from "../lib/fixtures.js";
+} from "../../lib/fixtures.js";
 
 test("connection injects the credential (env placeholder + egress after Envoy)", async () => {
   test.setTimeout(420_000);

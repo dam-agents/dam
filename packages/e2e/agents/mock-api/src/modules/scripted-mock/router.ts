@@ -7,6 +7,8 @@ import {
   performFetchResultSchema,
   resetResultSchema,
   setScriptInputSchema,
+  spawnInvocationInputSchema,
+  spawnInvocationResultSchema,
 } from "./schemas.js";
 
 export const scriptedMockRouter = t.router({
@@ -32,4 +34,9 @@ export const scriptedMockRouter = t.router({
     .input(performFetchInputSchema)
     .output(performFetchResultSchema)
     .mutation(({ ctx, input }) => ctx.scriptedMock.performFetch(input)),
+
+  spawnInvocation: t.procedure
+    .input(spawnInvocationInputSchema)
+    .output(spawnInvocationResultSchema)
+    .mutation(({ ctx, input }) => ctx.scriptedMock.spawnInvocation(input)),
 });

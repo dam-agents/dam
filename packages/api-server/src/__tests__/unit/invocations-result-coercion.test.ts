@@ -21,6 +21,8 @@ function makeService(row: InvocationRow) {
     fail: async () => {},
     listExpiredRunning: async () => [],
     listRunning: async () => [],
+    listRunningByDriver: async () => [],
+    listRunningAgentIds: async () => [],
     listAgedTerminal: async () => [],
     delete: async () => {},
   };

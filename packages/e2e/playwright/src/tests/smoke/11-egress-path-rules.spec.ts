@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../lib/agents.js";
-import { createApiClient } from "../lib/api-client.js";
-import { getAccessToken } from "../lib/auth.js";
-import { agentName } from "../lib/fixtures.js";
+import { waitForAgentRunning } from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
+import { getAccessToken } from "../../lib/auth.js";
+import { agentName } from "../../lib/fixtures.js";
 
 // Path-scoped egress rules over HTTPS on a host the platform holds no
 // credential for (#2322). The rule must promote the host onto the gateway's

@@ -10,6 +10,11 @@ import {
   createInvocationLivenessSweep,
   type InvocationLivenessSweep,
 } from "./services/invocation-liveness.js";
+import {
+  createDriverResolution,
+  type DriverResolution,
+} from "./services/driver-resolution.js";
+import { createDriverCascade } from "./services/driver-cascade.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 /** Compose the owner-scoped Invocations service. Owner is bound here so the
@@ -49,3 +54,41 @@ export function composeInvocationLivenessSweep(opts: {
     batchSize: opts.batchSize,
   });
 }
+
+/**
+ * System-level read adapter consumed by the approvals module's ext_authz gate
+ * on the egress hot path (Egress Aliasing): resolves an Invocation target to
+ * the root driver whose egress policy applies. Not owner-scoped — identity
+ * flows from the per-Agent ext-authz Service, and the driver's owner is
+ * resolved by the gate's identity resolver afterwards.
+ */
+export function createDriverResolutionAdapter(db: Db): DriverResolution {
+  return createDriverResolution({ repo: createInvocationsRepository(db) });
+}
+
+/**
+ * Per-agent cleanup hook registered with `composeAgentsModule` (Driver
+ * Cascade): fails the deleted agent's running Invocations — driven and own —
+ * and eagerly reaps the driven targets, unwinding chains transitively via
+ * each target's own delete hooks.
+ */
+export function createInvocationsCleanupHook(opts: {
+  db: Db;
+  agentsFor: (owner: string) => AgentsService;
+}): (agentId: string) => Promise<void> {
+  return createDriverCascade({
+    repo: createInvocationsRepository(opts.db),
+    agentsFor: opts.agentsFor,
+  });
+}
+
+/**
+ * Read primitive used by the orphan sweeper saga: every agent id a running
+ * Invocation references (targets and drivers), so a cascade missed here
+ * (replica died mid-delete) is replayed once the saga sees the agent gone.
+ */
+export function listInvocationAgentIds(db: Db): Promise<string[]> {
+  return createInvocationsRepository(db).listRunningAgentIds();
+}
+
+export type { DriverResolution } from "./services/driver-resolution.js";
