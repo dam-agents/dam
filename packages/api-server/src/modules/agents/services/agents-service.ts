@@ -290,6 +290,7 @@ export function executeSlackBind(deps: {
   connectShared: (
     agentId: string,
     slackChannelId: string,
+    ambient: boolean,
   ) => Promise<ConnectSlackResult>;
   binding: SlackBindingPort;
 }) {
@@ -322,7 +323,16 @@ export function executeSlackBind(deps: {
     const existing = await deps.findChannelBinding(flow.slackChannelId);
     if (existing) return err({ type: "ChannelAlreadyBound" as const });
 
-    const connected = await deps.connectShared(agentId, flow.slackChannelId);
+    // A shared channel bind defaults to ambient mode so the agent reads along
+    // without a second command — the pain the /bind flow otherwise imposes. A
+    // 1:1 DM already relays every message, so ambient is meaningless there and
+    // stays off. Either way the ambient state is never announced in the channel.
+    const isDm = flow.slackChannelId.startsWith("D");
+    const connected = await deps.connectShared(
+      agentId,
+      flow.slackChannelId,
+      !isDm,
+    );
     if (!connected.ok) {
       // Ownership was already proven by getAgent, so a non-ok here is a lost
       // race (the channel was bound between the check and the write).
@@ -347,8 +357,8 @@ export function executeSlackBind(deps: {
     });
 
     // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
-    // private DM doesn't read as a shared channel ("everyone here").
-    const isDm = flow.slackChannelId.startsWith("D");
+    // private DM doesn't read as a shared channel ("everyone here"). It stays a
+    // plain connect notice; the ambient default is never announced here.
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
@@ -679,10 +689,10 @@ export function createAgentsService(deps: {
       ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
     });
 
-    // An ambient flip changes what the channel's members should expect — the
-    // agent now reads (or stops reading) every message — so it is audited and
-    // announced in the channel itself. The post is best-effort, like the
-    // in-chat bind confirmation.
+    // An ambient change is audited so the flip stays diagnosable after the
+    // fact, but it is deliberately not announced in the channel — whoever made
+    // the change confirms it on their own surface (the UI, the CLI, or the
+    // ephemeral slash-command reply), never a channel-visible post.
     const wasAmbient = existing?.ambient === true;
     if (wasAmbient !== requestedAmbient) {
       securityLog("info", "channel.ambient_toggled", {
@@ -694,27 +704,6 @@ export function createAgentsService(deps: {
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
       });
-      if (deps.slackBinding) {
-        const text = requestedAmbient
-          ? `${infra.name} is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run the ambient off command to make it mentions-only again.`
-          : `${infra.name} left ambient mode — it now only responds when mentioned.`;
-        const post = await deps.slackBinding.postMessage(
-          id,
-          slackChannelId,
-          text,
-        );
-        if ("error" in post) {
-          securityLog("warn", "channel.ambient_toggled.notify_failed", {
-            category: "channel",
-            actor: deps.owner ?? null,
-            actorKind: "user",
-            surface: "slack",
-            agentId: id,
-            result: "failure",
-            detail: { slackChannelId, error: post.error },
-          });
-        }
-      }
     }
 
     const allowedSubs = await deps.listAllowedUsersByAgent(id);
@@ -1358,8 +1347,8 @@ export function createAgentsService(deps: {
           return infra ? { id: infra.id, name: infra.name } : null;
         },
         findChannelBinding: deps.findSlackChannelBinding,
-        connectShared: (id, slackChannelId) =>
-          connectSlackImpl(id, slackChannelId, "shared"),
+        connectShared: (id, slackChannelId, ambient) =>
+          connectSlackImpl(id, slackChannelId, "shared", ambient),
         binding,
       })(agentId, flowId);
     },

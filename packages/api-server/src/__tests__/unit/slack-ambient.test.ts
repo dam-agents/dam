@@ -486,15 +486,17 @@ describe("slack ambient command", () => {
     expect(h.ambientCalls).toHaveLength(0);
   });
 
-  it("lets the binder turn ambient on: persists, announces channel-visibly, audits", async () => {
+  it("lets the binder turn ambient on: persists, confirms to the invoker only, audits", async () => {
     const h = harness({ binding: sharedOnly, linkedSub: OWNER });
     const ack = await h.command("ambient on");
 
+    // The full description now rides the invoker's ephemeral reply...
     expect(ack).toContain("turned on");
+    expect(ack).toContain("reads along");
+    expect(ack).toContain("/dam ambient off");
     expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: true }]);
-    expect(h.messages()).toHaveLength(1);
-    expect(h.messages()[0]!.text).toContain("reads along");
-    expect(h.messages()[0]!.text).toContain("/dam ambient off");
+    // ...and nothing is announced into the channel.
+    expect(h.messages()).toHaveLength(0);
 
     const toggles = h
       .securityRecords()
@@ -503,13 +505,14 @@ describe("slack ambient command", () => {
     expect(toggles[0]!.detail).toMatchObject({ ambient: true });
   });
 
-  it("lets the binder turn ambient off and announces it", async () => {
+  it("lets the binder turn ambient off, confirming to the invoker only", async () => {
     const h = harness({ binding: ambient, linkedSub: OWNER });
     const ack = await h.command("ambient off");
 
     expect(ack).toContain("turned off");
+    expect(ack).toContain("only responds when mentioned");
     expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: false }]);
-    expect(h.messages()[0]!.text).toContain("only responds when mentioned");
+    expect(h.messages()).toHaveLength(0);
   });
 
   it("is a no-op when the state already matches", async () => {
