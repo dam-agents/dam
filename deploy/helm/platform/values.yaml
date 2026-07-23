@@ -13,9 +13,9 @@ brand:
   # (`/<short> login`), GitHub publish branch prefix, and git-author email
   # local-part.
   short: dam
-  # Marketing tagline shown as the browser tab title in the web app (the
-  # `name` expansion). Empty string falls back to `name`.
-  tagline: "Deploy Agents Massively"
+  # Browser tab title of the web app. Set a per-environment variant here
+  # (e.g. "IBM Research DAM - Staging"). Empty string falls back to `name`.
+  title: "IBM Research DAM"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:

@@ -390,8 +390,8 @@ spec:
               value: {{ .Values.brand.name | quote }}
             - name: BRAND_SHORT
               value: {{ .Values.brand.short | quote }}
-            - name: BRAND_TAGLINE
-              value: {{ .Values.brand.tagline | quote }}
+            - name: BRAND_TITLE
+              value: {{ .Values.brand.title | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
