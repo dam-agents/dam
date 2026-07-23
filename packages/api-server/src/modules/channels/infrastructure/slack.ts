@@ -1048,9 +1048,9 @@ export function createSlackWorker(
 
   // The in-chat dial for ambient mode: `ambient` reports the state, `ambient
   // on|off` flips it — allowed for the binder or the agent's owner, same
-  // authorization as unbind. The flip is announced channel-visibly: it
-  // changes what everyone here should expect, so it is not whispered to the
-  // invoker alone.
+  // authorization as unbind. The flip is confirmed to the invoker alone via
+  // the ephemeral slash-command reply; it is audited but deliberately not
+  // announced into the channel.
   async function handleAmbientCommand(
     subcommand: "ambient" | "ambient on" | "ambient off",
     command: SlackSlashCommand,
@@ -1145,27 +1145,16 @@ export function createSlackWorker(
       },
     });
 
-    if (gateway) {
-      try {
-        await gateway.postMessage({
-          channel: command.channelId,
-          text: enable
-            ? `\`${binding.instanceName}\` is now in ambient mode: it reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient off\` to make it mentions-only again.`
-            : `\`${binding.instanceName}\` left ambient mode — it now only responds when mentioned.`,
-        });
-      } catch (err) {
-        process.stderr.write(
-          `[slack] ambient announcement failed: ${formatError(err)}\n`,
-        );
-      }
-    }
-
+    // Confirm to the invoker only — no channel-visible announcement. The
+    // ephemeral reply carries the full description the channel post used to.
     const termsPending =
       enable && !(await isTermsAccepted(binding.owner))
         ? ` Heads-up: the person who connected this channel hasn't accepted the Terms of Use at ${uiBaseUrl} yet, so the agent stays silent until they do.`
         : "";
     await ack({
-      text: `Ambient mode turned ${enable ? "on" : "off"}.${termsPending}`,
+      text: enable
+        ? `Ambient mode turned on — \`${binding.instanceName}\` now reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient off\` to make it mentions-only again.${termsPending}`
+        : `Ambient mode turned off — \`${binding.instanceName}\` now only responds when mentioned.`,
     });
   }
 
