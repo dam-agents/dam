@@ -196,15 +196,6 @@ const BOB: HeaderConnectionTemplate = {
       valueFormat: "{value}",
       queryParamName: "key",
     },
-    // Bob's metrics forwarder (POST /metrics-forwarder/v1/…) authenticates via
-    // a bare X-API-KEY header, not Authorization — without this injection every
-    // metrics event 401s ("Failed to authenticate with Bob Admin API").
-    {
-      kind: "egress-inject",
-      host: BOB_HOST,
-      headerName: "X-API-KEY",
-      valueFormat: "{value}",
-    },
   ],
   configInputs: [
     {

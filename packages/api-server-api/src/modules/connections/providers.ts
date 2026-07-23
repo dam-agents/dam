@@ -197,8 +197,6 @@ export const PROVIDERS = {
         },
         extraInjections: [
           { headerName: "X-Bobshell-Internal", queryParamName: "key" },
-          // Bob's metrics forwarder authenticates via a bare X-API-KEY header.
-          { headerName: "X-API-KEY" },
         ],
       },
     ],
