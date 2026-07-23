@@ -37,9 +37,9 @@ IBM's teams have proven the efficacy of implementing AI tools for research, from
 
 - **🧠 Knowledgeable decisions.** Memory sources such as LLM Wikis on-the-fly MCP servers ensure agents start smart and experiments can capture and learn from their findings.
 
-- **⏱️ Scheduled workflows.** Outside loops, agents can run on a recurring timer for tasks such as daily code reviews, nightly audits, codebase health monitoring.
+- **⏱️ Scheduled workflows.** Beyond agentic loops, workflows can run on a deterministic timers for tasks such as daily code reviews, nightly audits, codebase health monitoring.
 
-- **🔧 Constantly growing.** DAM is always updating to meet our researchers' needs. If there's a feature, framework, or workflow you'd like to see included in DAM, [let us know](https://ibm.enterprise.slack.com/archives/C0B3F03NB24).
+- **🔧 Constantly growing.** DAM is always updating to meet our researchers' needs. If there's a feature, framework, or workflow you'd like to see included, [let us know](https://ibm.enterprise.slack.com/archives/C0B3F03NB24).
 
 ## Architecture
 ```mermaid
