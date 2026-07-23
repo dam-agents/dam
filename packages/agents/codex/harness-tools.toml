@@ -1,0 +1,8 @@
+# Harness tool pins, shipped as system-level mise config (/etc/mise/conf.d/) so
+# the pinned versions always match the installs baked into the image — a pin
+# persisted in the workspace would go stale on template upgrade.
+# Format contract: [tools] entries only, one `"key" = "version"` per line —
+# agent-entrypoint parses this file to strip legacy workspace-seeded pins.
+[tools]
+"npm:@openai/codex" = "0.133.0"
+"npm:@zed-industries/codex-acp" = "0.14.0"

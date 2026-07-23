@@ -36,6 +36,35 @@ if [ ! -L "$home/.cache" ]; then
 	ln -sfn /tmp/agent-cache "$home/.cache"
 fi
 
+# Harness tool pins ship in the image's system-level mise config
+# (/etc/mise/conf.d/harness-tools.toml) so they always match the installs
+# baked into the image. Images predating this seeded the pins into
+# ~/.config/mise/ instead; that copy persists across template upgrades,
+# outranks the system config, and after an upgrade demands a version the new
+# image no longer ships — every shim call then fails trying to install it at
+# runtime. Strip exactly the image-owned tools from the persisted config and
+# lockfile; user-added tools stay untouched. Never let a heal failure block
+# boot, hence the `|| true`s.
+user_mise_cfg="$home/.config/mise/config.toml"
+user_mise_lock="$home/.config/mise/mise.lock"
+if [ -f "$user_mise_cfg" ]; then
+	for conf in /etc/mise/conf.d/*.toml; do
+		[ -e "$conf" ] || continue
+		# keys of the [tools] entries, quoted or bare (see the format
+		# contract in harness-tools.toml)
+		sed -n \
+			-e 's/^"\([^"]\{1,\}\)"[[:space:]]*=.*/\1/p' \
+			-e 's/^\([^"#[:space:]][^=[:space:]]*\)[[:space:]]*=.*/\1/p' \
+			"$conf"
+	done | while IFS= read -r tool; do
+		esc=$(printf '%s' "$tool" | sed 's/\./\\./g')
+		sed -i "\%^\"\{0,1\}${esc}\"\{0,1\}[[:space:]]*=%d" "$user_mise_cfg" || true
+		if [ -f "$user_mise_lock" ]; then
+			sed -i "\%^\[\[tools\.\"\{0,1\}${esc}\"\{0,1\}\]\]%,/^[[:space:]]*\$/d" "$user_mise_lock" || true
+		fi
+	done
+fi
+
 # `dam-vm` only works when the deployment has a VM host configured (the
 # controller sets DAM_VM_ENABLED then). Drop the whole dam-vm block from the
 # agent instructions otherwise, so we don't advertise a command that would just
