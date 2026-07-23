@@ -133,7 +133,4 @@ Lead with observed vs expected behavior. Reproduction steps should be minimal an
 ## Steps to reproduce
 
 1. <minimal, numbered steps>
-
-### Impact
-<optional — who is affected, how badly, any workaround>
 ```
