@@ -24,7 +24,7 @@ export function SocialProviderButton({ provider }: Props) {
     <a
       id={`social-${provider.alias}`}
       href={provider.loginUrl}
-      className="border-accent bg-background text-accent hover:bg-muted focus-visible:ring-ring inline-flex h-[60px] w-[360px] max-w-full items-center justify-start gap-3 rounded-md border px-8 text-[20px] font-semibold whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+      className="border-accent bg-background text-accent hover:bg-muted focus-visible:ring-ring inline-flex h-[60px] w-[var(--width-login-col)] max-w-full items-center justify-start gap-3 rounded-md border px-8 text-[20px] font-semibold whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
     >
       {isIbm && (
         <img

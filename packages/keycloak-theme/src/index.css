@@ -48,6 +48,9 @@
   --radius-lg: var(--radius);
   --font-sans:
     "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Width shared by the login form, provider CTAs, and message alert. */
+  --width-login-col: 360px;
 }
 
 :root {

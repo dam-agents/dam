@@ -65,8 +65,8 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
               role="alert"
               className={
                 message.type === "error"
-                  ? "mt-6 max-w-[360px] rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-                  : "mt-6 max-w-[360px] rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800"
+                  ? "mt-6 max-w-[var(--width-login-col)] rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  : "mt-6 max-w-[var(--width-login-col)] rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800"
               }
               dangerouslySetInnerHTML={{
                 __html: kcSanitize(message.summary),

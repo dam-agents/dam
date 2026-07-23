@@ -63,7 +63,7 @@ export default function Login(
       {!isSsoOnly && realm.password && (
         <form
           id="kc-form-login"
-          className="mt-12 max-w-[360px] space-y-4"
+          className="mt-12 max-w-[var(--width-login-col)] space-y-4"
           onSubmit={() => {
             setIsSubmitting(true);
             return true;
@@ -132,14 +132,14 @@ export default function Login(
       )}
 
       {isSsoOnly ? (
-        <div className="mt-14 max-w-[360px] space-y-2">
+        <div className="mt-14 max-w-[var(--width-login-col)] space-y-2">
           {providers.map((p) => (
             <SocialProviderButton key={p.alias} provider={p} />
           ))}
         </div>
       ) : (
         providers.length > 0 && (
-          <div className="mt-4 max-w-[360px]">
+          <div className="mt-4 max-w-[var(--width-login-col)]">
             {realm.password && (
               <div className="relative mb-4">
                 <div className="absolute inset-0 flex items-center">
