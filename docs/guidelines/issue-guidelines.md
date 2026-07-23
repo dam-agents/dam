@@ -62,9 +62,6 @@ The **Problem** describes what's wrong or missing today, from the user's point o
 ### Scope
 <optional — boundaries: what it does and does not cover>
 
-### Transparency / safety
-<optional — anything the user needs to see or control for trust>
-
 ### Dependencies
 <optional — Blocked on #NNN, blocks #NNN>
 
