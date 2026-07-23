@@ -44,8 +44,8 @@ export function CatalogConnectionRow({
       data-testid={`catalog-connection-${connection.id}`}
       className="px-4 py-3"
     >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <div className="min-w-0 flex-1 basis-[180px]">
+      <div className="flex items-center gap-2">
+        <div className="min-w-[160px] flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[15px] text-foreground">
               {connection.name}
@@ -58,7 +58,7 @@ export function CatalogConnectionRow({
             {subtitle}
           </p>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
           <GithubAppInstallLink connection={connection} />
           {grant &&
             !grant.actionHidden &&
@@ -78,40 +78,40 @@ export function CatalogConnectionRow({
                 Add to sandbox
               </Button>
             ))}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Actions for ${connection.name}`}
-                data-testid={`catalog-menu-${connection.id}`}
-              >
-                <OverflowMenuHorizontal size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {grant?.granted && (
-                <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
-                  Remove from this sandbox
-                </DropdownMenuItem>
-              )}
-              {onManage && (
-                <DropdownMenuItem onSelect={onManage}>
-                  Manage connections
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <DropdownMenuItem
-                  tone="danger"
-                  disabled={deleting}
-                  onSelect={onDelete}
-                >
-                  Delete this connection
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Actions for ${connection.name}`}
+              data-testid={`catalog-menu-${connection.id}`}
+            >
+              <OverflowMenuHorizontal size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {grant?.granted && (
+              <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
+                Remove from this sandbox
+              </DropdownMenuItem>
+            )}
+            {onManage && (
+              <DropdownMenuItem onSelect={onManage}>
+                Manage connections
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem
+                tone="danger"
+                disabled={deleting}
+                onSelect={onDelete}
+              >
+                Delete this connection
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
