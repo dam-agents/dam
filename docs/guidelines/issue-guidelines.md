@@ -8,12 +8,12 @@ A GitHub issue should read like a product ticket, not an engineering plan. The r
 
 Decide the type first — it picks the template. Every issue is one of:
 
-- **Epic** — a meaningful chunk of value we want to deliver. Epics are owned by the Product Owner and live on the [project board](https://github.com/orgs/dam-agents/projects/1) in the `Epics` status column, each with a **Focus** (Now / Next / Later) that sets its priority.
+- **Epic** — a meaningful chunk of value we want to deliver. Epics are owned by the Product Owner.
 - **Story** — a user-facing improvement: new behavior, or a change the user can see.
 - **Task** — work that needs to happen but isn't user-facing: chores, tooling, upgrades, refactors.
 - **Bug** — something that should work but doesn't.
 
-Stories, tasks, and bugs can be attached to an epic through GitHub's **parent** relationship (the epic is the parent issue). If the issue clearly serves an existing epic, suggest it. If nothing fits, leave it out — placement can be decided later in triage.
+Stories, tasks, and bugs can be attached to an epic. If the issue clearly serves an existing epic, suggest it. If nothing fits, leave it out.
 
 ## What to exclude
 
@@ -39,7 +39,7 @@ Tasks and bugs get some slack: a task often *is* engineering work, and a bug may
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Stories, tasks, and bugs may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied as the parent relationship when the issue is filed.
+Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Stories, tasks, and bugs may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
 
 ### Epic
 
