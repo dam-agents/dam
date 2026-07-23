@@ -346,10 +346,15 @@ export function executeSlackBind(deps: {
       },
     });
 
+    // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
+    // private DM doesn't read as a shared channel ("everyone here").
+    const isDm = flow.slackChannelId.startsWith("D");
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
-      `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+      isDm
+        ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
+        : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
     );
     if ("error" in post) {
       // Best-effort: the binding is committed; the confirmation is courtesy.

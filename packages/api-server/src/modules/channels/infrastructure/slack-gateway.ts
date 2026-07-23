@@ -16,6 +16,10 @@ export interface SlackMentionEvent {
   /** Workspace (team) id the event originated from. Slack requires it to
    *  stream a reply into a channel; absent → the reply is posted whole. */
   teamId?: string;
+  /** Slack conversation type: `channel`/`group` (public/private channel),
+   *  `mpim` (group DM), `im` (1:1 DM). Absent when Slack omits it (some
+   *  `app_mention` payloads). Lets the worker tailor DM/group-DM copy. */
+  channelType?: string;
 }
 
 export interface SlackSlashCommand {
@@ -37,6 +41,11 @@ export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
+  /** A plain message in a 1:1 DM (`message.im`). Every DM message is addressed
+   *  to the bot, so a bound DM relays it like a mention — no @mention needed.
+   *  Same gateway filtering as `onMessage` (bot posts, subtypes, and messages
+   *  that @mention the bot — those arrive via `onMention` — are dropped). */
+  onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
 }
 
 export interface SlackMessage {
