@@ -51,6 +51,14 @@ export interface SkillsSurface {
     gitUrl: string;
     path?: string;
   }) => Promise<SkillSource | null>;
+  /** Create standalone skills from uploaded Markdown (one per file). On a name
+   *  collision returns the offending names so the modal can mark rows inline;
+   *  other failures are toasted and returned with empty `conflictNames`. */
+  createLocalSkills: (
+    skills: { name: string; content: string }[],
+  ) => Promise<
+    { ok: true } | { ok: false; conflictNames: string[]; message: string }
+  >;
   /** Delete a Skill Source; returns whether it was removed. */
   removeSource: (id: string) => Promise<boolean>;
   /** Re-scan a source: refresh its scan cache, then re-list. The card shows a
@@ -256,6 +264,57 @@ export function useSkillsSurface(
     [],
   );
 
+  const createLocalSkills = useCallback(
+    async (skills: { name: string; content: string }[]) => {
+      if (!agentId) {
+        return {
+          ok: false as const,
+          conflictNames: [],
+          message: "No sandbox selected",
+        };
+      }
+      try {
+        const created = await api.skills.createLocal.mutate({
+          agentId,
+          skills,
+        });
+        // Merge ahead of the 5s poll so the new skills show immediately;
+        // dedupe by name (a created skill replaces any same-named entry).
+        setStandalone((prev) => {
+          const byName = new Map(prev.map((s) => [s.name, s]));
+          for (const s of created) byName.set(s.name, s);
+          return [...byName.values()];
+        });
+        emitToast({
+          kind: "success",
+          message: `Added ${created.length} skill${created.length === 1 ? "" : "s"}`,
+        });
+        return { ok: true as const };
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to add skills";
+        // CONFLICT message shape from slice 01: `skill(s) already exist: A, B`.
+        // Intersect the parsed tail with the submitted names so a name that is a
+        // substring of another can't mis-mark the wrong row. A name containing a
+        // comma won't match any token and simply falls back to the top-level
+        // error (the modal still shows the message), which is acceptable.
+        const isConflict = /already exist/i.test(message);
+        const submitted = new Set(skills.map((s) => s.name));
+        const conflictNames = isConflict
+          ? message
+              .slice(message.indexOf(":") + 1)
+              .split(",")
+              .map((n) => n.trim())
+              .filter((n) => submitted.has(n))
+          : [];
+        // Conflicts render inline on the offending rows; everything else toasts.
+        if (!isConflict) emitToast({ kind: "error", message });
+        return { ok: false as const, conflictNames, message };
+      }
+    },
+    [agentId],
+  );
+
   const removeSource = useCallback(async (id: string) => {
     const result = await runAction(
       () => api.skills.sources.delete.mutate({ id }),
@@ -364,6 +423,7 @@ export function useSkillsSurface(
     toggle,
     update,
     createSource,
+    createLocalSkills,
     removeSource,
     refreshSource,
     publish,
