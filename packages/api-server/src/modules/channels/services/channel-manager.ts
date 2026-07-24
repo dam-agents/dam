@@ -151,9 +151,10 @@ export function createChannelManager(deps: {
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
       // Both platform bots connect unconditionally at startup — inbound
-      // commands (/login), mentions and DMs must reach the bot in chats that
-      // have no binding yet. Slack opens its socket-mode connection here rather
-      // than lazily on the first bind/post, so it never misses those events.
+      // commands (the bind command), mentions and DMs must reach the bot in
+      // chats that have no binding yet. Slack opens its socket-mode connection
+      // here rather than lazily on the first bind/post, so it never misses
+      // those events.
       if (telegramWorker) await telegramWorker.start();
       if (slackWorker) await slackWorker.connect();
 

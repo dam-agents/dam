@@ -590,8 +590,8 @@ apiServer:
   slackAppToken: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
-  # by sending /login in the chat and picking the agent in the web UI, or
-  # via a one-time connect link created in the UI.
+  # by sending the bind command in the chat and picking the agent in the web
+  # UI, or via a one-time connect link created in the UI.
   telegramBotToken: ""
   # -- The bot's @handle without the @ (e.g. "dam_ibm_bot"). Used to build
   # t.me connect links and for mention detection; when empty the api-server

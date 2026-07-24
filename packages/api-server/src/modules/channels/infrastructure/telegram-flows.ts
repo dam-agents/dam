@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-/** A /login begun in a Telegram chat, waiting for the Keycloak callback.
+/** A bind begun in a Telegram chat, waiting for the Keycloak callback.
  *  Carries no agent — the owner picks one in the UI after authenticating. */
 export interface TelegramOAuthPending {
   telegramUserId: string;
-  /** SDK-encoded conversation id the /login was sent in. */
+  /** SDK-encoded conversation id the bind was started in. */
   threadId: string;
   codeVerifier: string;
   /** Best-effort human title of the chat, shown on the bind page. */

@@ -8,6 +8,8 @@ import {
   readFlowIdFromSearch,
 } from "../../modules/telegram/lib/bind-flow.js";
 
+const BRAND = "dam";
+
 describe("telegram bind flow helpers", () => {
   it("reads the flow id from the search string", () => {
     expect(readFlowIdFromSearch("?flow=abc-123")).toBe("abc-123");
@@ -23,16 +25,16 @@ describe("telegram bind flow helpers", () => {
   });
 
   it("maps bind mutation error codes to copy", () => {
-    expect(bindErrorCopy("BAD_REQUEST").terminal).toBe(true);
-    expect(bindErrorCopy("CONFLICT").terminal).toBe(true);
-    expect(bindErrorCopy("CONFLICT").hint).toContain("/logout");
-    expect(bindErrorCopy("NOT_FOUND").terminal).toBe(false);
-    expect(bindErrorCopy(undefined).terminal).toBe(false);
+    expect(bindErrorCopy("BAD_REQUEST", BRAND).terminal).toBe(true);
+    expect(bindErrorCopy("CONFLICT", BRAND).terminal).toBe(true);
+    expect(bindErrorCopy("CONFLICT", BRAND).hint).toContain(`/${BRAND} unbind`);
+    expect(bindErrorCopy("NOT_FOUND", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy(undefined, BRAND).terminal).toBe(false);
   });
 
   it("maps callback error codes to terminal copy", () => {
     for (const code of ["denied", "expired", "exchange_failed"]) {
-      expect(callbackErrorCopy(code).terminal).toBe(true);
+      expect(callbackErrorCopy(code, BRAND).terminal).toBe(true);
     }
   });
 });

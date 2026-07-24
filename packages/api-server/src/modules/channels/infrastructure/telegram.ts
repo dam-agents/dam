@@ -53,8 +53,8 @@ export interface ChannelConversation {
 }
 
 /** One platform-wide bot: `start()` runs once at boot (the bot must poll
- *  even with zero bindings so `/login` works in brand-new chats); per-agent
- *  lifecycle does not exist. */
+ *  even with zero bindings so the bind command works in brand-new chats);
+ *  per-agent lifecycle does not exist. */
 export interface TelegramWorker {
   type: ChannelType.Telegram;
   start(): Promise<void>;
@@ -170,6 +170,9 @@ export function createTelegramMessageHandler(deps: {
   pendingOAuthFlows: Map<string, TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
+  /** The install's lowercase slash-command name (e.g. "dam" → `/dam bind`),
+   *  from the brand config — the same command surface Slack uses. */
+  brandShort: string;
   relay: (
     agentId: string,
     thread: ThreadLike,
@@ -177,10 +180,17 @@ export function createTelegramMessageHandler(deps: {
     author: TelegramInboundMessage["author"],
   ) => Promise<void>;
 }) {
+  // The unified connect/disconnect surface: `/dam bind` and `/dam unbind`,
+  // mirroring Slack's subcommand style. The legacy top-level `/login` and
+  // `/logout` (and Telegram's mandatory `/start`) stay as aliases. The brand
+  // command is matched before those aliases, so brandShort is assumed not to
+  // collide with `start`/`login`/`logout` (it never does in practice).
+  const brandCmd = `/${deps.brandShort}`;
+
   async function denyNonAdmin(
     thread: ThreadLike,
     telegramUserId: string,
-    command: "login" | "logout",
+    action: "bind" | "unbind",
   ): Promise<boolean> {
     if (thread.isDM) return false;
     const isAdmin = await deps.isChatAdmin(
@@ -195,19 +205,19 @@ export function createTelegramMessageHandler(deps: {
       surface: "telegram",
       decision: "deny",
       reason: "not-group-admin",
-      detail: { telegramUserId, threadId: thread.id, command },
+      detail: { telegramUserId, threadId: thread.id, command: action },
     });
-    await thread.post(`Only group admins can /${command}.`);
+    await thread.post(`Only group admins can \`${brandCmd} ${action}\`.`);
     return true;
   }
 
-  async function handleLogin(thread: ThreadLike, telegramUserId: string) {
-    if (await denyNonAdmin(thread, telegramUserId, "login")) return;
+  async function handleBind(thread: ThreadLike, telegramUserId: string) {
+    if (await denyNonAdmin(thread, telegramUserId, "bind")) return;
 
     const binding = await deps.conversations.findAgentByConversation(thread.id);
     if (binding) {
       await thread.post(
-        "This chat is already connected to an agent. Send /logout first to reconnect.",
+        `This chat is already connected to an agent. Send \`${brandCmd} unbind\` first to reconnect.`,
       );
       return;
     }
@@ -241,8 +251,8 @@ export function createTelegramMessageHandler(deps: {
     }
   }
 
-  async function handleLogout(thread: ThreadLike, telegramUserId: string) {
-    if (await denyNonAdmin(thread, telegramUserId, "logout")) return;
+  async function handleUnbind(thread: ThreadLike, telegramUserId: string) {
+    if (await denyNonAdmin(thread, telegramUserId, "unbind")) return;
 
     const binding = await deps.conversations.findAgentByConversation(thread.id);
     if (!binding) {
@@ -259,7 +269,9 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: thread.id, byTelegramUserId: telegramUserId },
     });
-    await thread.post("Chat disconnected. Send /login to connect it again.");
+    await thread.post(
+      `Chat disconnected. Send \`${brandCmd} bind\` to connect it again.`,
+    );
   }
 
   return async function handleMessage(
@@ -270,19 +282,41 @@ export function createTelegramMessageHandler(deps: {
     if (message.author.isMe) return;
     const text = message.text.trim();
 
-    if (isCommand(text, "/start")) {
-      // /start is how deep links and the Start button deliver intent; any
-      // payload reads as login intent — the group-admin gate still applies.
-      await handleLogin(thread, message.author.userId);
+    // Unified brand command: `/dam bind`, `/dam unbind`, or bare/unknown → help.
+    if (isCommand(text, brandCmd)) {
+      const sub =
+        text
+          .slice(brandCmd.length)
+          .replace(/^@\S+/, "")
+          .trim()
+          .toLowerCase()
+          .split(/\s+/)[0] ?? "";
+      if (sub === "bind") {
+        await handleBind(thread, message.author.userId);
+      } else if (sub === "unbind") {
+        await handleUnbind(thread, message.author.userId);
+      } else {
+        await thread.post(
+          `Send \`${brandCmd} bind\` to connect an agent, or \`${brandCmd} unbind\` to disconnect.`,
+        );
+      }
       return;
     }
 
+    if (isCommand(text, "/start")) {
+      // /start is how deep links and the Start button deliver intent; any
+      // payload reads as bind intent — the group-admin gate still applies.
+      await handleBind(thread, message.author.userId);
+      return;
+    }
+
+    // Legacy aliases, kept working but no longer advertised (see brandCmd).
     if (isCommand(text, "/login")) {
-      await handleLogin(thread, message.author.userId);
+      await handleBind(thread, message.author.userId);
       return;
     }
     if (isCommand(text, "/logout")) {
-      await handleLogout(thread, message.author.userId);
+      await handleUnbind(thread, message.author.userId);
       return;
     }
 
@@ -303,11 +337,11 @@ export function createTelegramMessageHandler(deps: {
           isDM: thread.isDM,
         },
       });
-      // Only prompt for /login in DMs. Staying silent in groups avoids
-      // spamming unbound group chats the bot happens to be in.
+      // Only prompt in DMs. Staying silent in groups avoids spamming unbound
+      // group chats the bot happens to be in.
       if (thread.isDM) {
         await thread.post(
-          "This chat isn't connected to an agent. An admin needs to send /login.",
+          `This chat isn't connected to an agent. An admin needs to send \`${brandCmd} bind\`.`,
         );
       }
       return;
@@ -341,6 +375,9 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: Map<string, TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
+  /** Lowercase slash-command name for the unified `/dam bind` / `/dam unbind`
+   *  surface; from the brand config, matching the Slack worker. */
+  brandShort: string;
   emit?: (event: DomainEvent) => void;
   /** Test seam; defaults to the Bot API getChatMember check. */
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
@@ -483,6 +520,7 @@ export function createTelegramWorker(deps: {
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
           uiBaseUrl: deps.uiBaseUrl,
+          brandShort: deps.brandShort,
           relay: relayToInstance,
         });
 
