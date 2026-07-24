@@ -379,6 +379,68 @@ describe("slack ambient inbound", () => {
     expect(h.messages()[0]).toMatchObject({ threadTs: "3.3", text: "on it" });
   });
 
+  it("coalesces thread read-along messages that arrive while a turn is in flight into one prompt", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+
+    // A burst of replies in the same thread while the first turn is in flight.
+    await h.message("U-A", "one", { ts: "1.1", threadTs: "T.0" });
+    await h.settled(() => pending.length === 1);
+    await h.message("U-B", "two", { ts: "2.2", threadTs: "T.0" });
+    await h.message("U-C", "three", { ts: "3.3", threadTs: "T.0" });
+
+    pending[0]!("");
+    await h.settled(() => pending.length === 2);
+
+    // The two that arrived during the in-flight turn coalesce into a single
+    // serialized turn instead of racing concurrent prompts into the thread's
+    // session — the race the runtime resolves by silently dropping the losers.
+    expect(h.prompts).toHaveLength(2);
+    const batched = String(h.prompts[1]);
+    expect(batched).toContain("<@U-B>: two");
+    expect(batched).toContain("<@U-C>: three");
+
+    // Every turn resumes the thread's own session, never the channel's rolling
+    // ambient one.
+    for (const o of h.sendOpts) {
+      expect("platformMeta" in o && o.platformMeta?.threadTs).toBe("T.0");
+    }
+
+    pending[1]!("on it");
+    await h.settled(() => h.turnEvents().length === 2);
+    // A reply threads back into the thread the batch belongs to.
+    await h.worker.reply("agent-1", { text: "on it" });
+    expect(h.messages()[0]).toMatchObject({ threadTs: "T.0", text: "on it" });
+  });
+
+  it("drains separate threads on independent queues — one busy thread never blocks another", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+
+    // One message in each of two different threads; neither turn resolves yet.
+    await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
+    await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
+
+    // Both turns are in flight at once: distinct threads drain on distinct
+    // queues, so a busy thread never serializes another behind it. Keying the
+    // queue by channel alone — the tempting simplification — would wrongly
+    // block the second turn behind the first.
+    await h.settled(() => pending.length === 2);
+    expect(h.prompts).toHaveLength(2);
+    expect(
+      h.sendOpts.map((o) => "platformMeta" in o && o.platformMeta?.threadTs),
+    ).toEqual(["T.1", "T.2"]);
+
+    pending.forEach((r) => r(""));
+    await h.settled(() => h.turnEvents().length === 2);
+  });
+
   it("re-checks the owner's ToU at drain time — a queued batch never relays past a stale gate", async () => {
     let ownerAccepted = true;
     const pending: Array<(v: string) => void> = [];

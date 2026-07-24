@@ -1542,30 +1542,50 @@ export function createSlackWorker(
     images: FetchedImage[];
   };
 
-  // Top-level ambient traffic is serialized per channel and coalesced:
-  // messages arriving while a turn is in flight flush as one multi-message
-  // prompt, so a busy channel never races concurrent prompts into the shared
-  // ambient session (thread sessions keep the mention path's no-guard
-  // semantics — ambient thread replies are comparatively rare).
-  const ambientQueues = new Map<
-    string,
-    { pending: AmbientPendingMessage[]; draining: boolean }
-  >();
+  // Ambient traffic is serialized per session and coalesced: messages that
+  // arrive while a turn is in flight flush as one multi-message prompt, so a
+  // burst never races concurrent prompts into the same read-along session. The
+  // queue key is per-channel for top-level flow (the channel's synthetic
+  // ambient session) and per-thread for a thread's read-along (its own
+  // session); `threadTs === null` selects which. Both must coalesce — several
+  // concurrent turns on one thread session let the runtime's per-session prompt
+  // queue silently drop the losers when their short-lived connections tear
+  // down, so read-along messages vanished with no trace.
+  type AmbientQueue = {
+    channelId: string;
+    /** The thread's real `thread_ts` for a thread's read-along session, or
+     *  `null` for the channel's synthetic top-level ambient session. */
+    threadTs: string | null;
+    pending: AmbientPendingMessage[];
+    draining: boolean;
+  };
+  const ambientQueues = new Map<string, AmbientQueue>();
 
-  function enqueueAmbient(channelId: string, msg: AmbientPendingMessage) {
-    let queue = ambientQueues.get(channelId);
-    if (!queue) {
-      queue = { pending: [], draining: false };
-      ambientQueues.set(channelId, queue);
-    }
-    queue.pending.push(msg);
-    if (!queue.draining) void drainAmbientQueue(channelId, queue);
+  /** One queue per ambient session: the channel's top-level flow and each of
+   *  its threads drain independently (different sessions run concurrently), but
+   *  every message within a session is serialized and coalesced. */
+  function ambientQueueKey(channelId: string, threadTs: string | null): string {
+    return threadTs === null
+      ? `top:${channelId}`
+      : `thread:${channelId}:${threadTs}`;
   }
 
-  async function drainAmbientQueue(
+  function enqueueAmbient(
     channelId: string,
-    queue: { pending: AmbientPendingMessage[]; draining: boolean },
+    threadTs: string | null,
+    msg: AmbientPendingMessage,
   ) {
+    const key = ambientQueueKey(channelId, threadTs);
+    let queue = ambientQueues.get(key);
+    if (!queue) {
+      queue = { channelId, threadTs, pending: [], draining: false };
+      ambientQueues.set(key, queue);
+    }
+    queue.pending.push(msg);
+    if (!queue.draining) void drainAmbientQueue(key, queue);
+  }
+
+  async function drainAmbientQueue(key: string, queue: AmbientQueue) {
     queue.draining = true;
     try {
       while (queue.pending.length > 0) {
@@ -1576,24 +1596,33 @@ export function createSlackWorker(
         // mentions-only, or rebound to a different owner while the batch
         // waited — the ToU gate must hold against the owner whose
         // credentials actually run the turn, so it is re-checked here too.
-        const binding = await channelRegistry.resolveSlackBinding(channelId);
+        const binding = await channelRegistry.resolveSlackBinding(
+          queue.channelId,
+        );
         if (!binding || binding.mode !== "shared" || !binding.ambient) {
           continue;
         }
         if (!(await isTermsAccepted(binding.owner))) {
           getLogger().debug(
-            { agentId: binding.instanceName, channelId },
+            { agentId: binding.instanceName, channelId: queue.channelId },
             "slack.ambient_turn.skipped_terms",
           );
           continue;
         }
+        // A thread's read-along resumes the thread's own session (the same key
+        // a mention there resumes) and threads its reply back into the thread;
+        // top-level flow uses the channel's rolling ambient session and opens a
+        // reply thread under the batch's newest message.
+        const inThread = queue.threadTs !== null;
         await relayAmbientTurn({
           instanceName: binding.instanceName,
-          channel: channelId,
-          threadKey: ambientThreadKey(channelId),
-          replyThreadTs: last.eventTs,
+          channel: queue.channelId,
+          threadKey: inThread
+            ? queue.threadTs!
+            : ambientThreadKey(queue.channelId),
+          replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
           eventTs: last.eventTs,
-          hasThread: false,
+          hasThread: inThread,
           text: batch.map((m) => m.text).join("\n"),
           images: batch.flatMap((m) => m.images),
           externalActorId: last.slackUserId,
@@ -1605,13 +1634,17 @@ export function createSlackWorker(
       // unhandled rejection. The dropped batch stays dropped (ambient turns
       // fail silently); the next message re-kicks the drain.
       getLogger().warn(
-        { channelId, error: formatError(err) },
+        { channelId: queue.channelId, error: formatError(err) },
         "slack.ambient_drain.failed",
       );
     } finally {
       // No await between the empty check and this reset, so a message can't
       // slip past both; any later enqueue sees draining=false and re-kicks.
       queue.draining = false;
+      // Drop a fully-drained queue so per-thread entries don't accumulate for
+      // the channel's lifetime; a later message recreates it. Guarded on empty
+      // so a batch the catch above left pending is not discarded.
+      if (queue.pending.length === 0) ambientQueues.delete(key);
     }
   }
 
@@ -1656,24 +1689,13 @@ export function createSlackWorker(
       },
     });
 
+    // Both thread and top-level read-along traffic coalesce through the queue,
+    // keyed per-session so a burst is serialized into one turn rather than
+    // racing concurrent prompts into the shared session. A thread reply keys on
+    // its own thread_ts (the same session a mention there resumes); top-level
+    // flow keys on the channel's rolling ambient session.
     const text = `<@${slackUserId}>: ${event.text}`;
-    if (event.threadTs) {
-      // Thread replies keep their per-thread session — the same key a
-      // mention in that thread would resume.
-      await relayAmbientTurn({
-        instanceName: binding.instanceName,
-        channel: event.channel,
-        threadKey: event.threadTs,
-        replyThreadTs: event.threadTs,
-        eventTs: event.ts,
-        hasThread: true,
-        text,
-        images,
-        externalActorId: slackUserId,
-      });
-      return;
-    }
-    enqueueAmbient(event.channel, {
+    enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
       eventTs: event.ts,
       slackUserId,
