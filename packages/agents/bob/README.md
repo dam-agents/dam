@@ -7,7 +7,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 | Component | Source | Purpose |
 |---|---|---|
 | Harness | `bobshell` (installed from `bob.ibm.com/download/bobshell.sh`) | Bob CLI in `--experimental-acp` mode + native TUI |
-| ACP bridge | `bob-acp-shim.mjs` | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob's ACP doesn't actually issue per-tool HITL requests for built-in tools — see autonomy posture below); stages chat attachments into the workspace so Bob can read them (it can't consume `resource_link` blocks in ACP mode); emulates `session/list` + `session/load` from Bob's on-disk chats so the sidebar and chat resume work (see below) |
+| ACP bridge | `bob-acp-shim.mjs` | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob emits it only for file edits in yolo — see autonomy posture below); stages chat attachments into the workspace so Bob can read them (it can't consume `resource_link` blocks in ACP mode); emulates `session/list` + `session/load` from Bob's on-disk chats so the sidebar and chat resume work (see below) |
 | Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; chat history under `~/.bob/tmp/<projectHash>/chats/`; survives pod restarts |
 
 ## Authentication
@@ -26,9 +26,17 @@ Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query
 
 ## Autonomy posture
 
-Bob runs with `bob --experimental-acp --yolo --auth-method api-key` (in [`bob-acp-shim.mjs`](bob-acp-shim.mjs)) and the shim auto-approves any `session/request_permission` Bob does emit, so the platform UI never shows a per-tool confirmation chip for Bob.
+Bob runs with `bob --experimental-acp --yolo --auth-method api-key` (in [`bob-acp-shim.mjs`](bob-acp-shim.mjs)) and the shim auto-approves any `session/request_permission` Bob emits, so the platform UI never shows a per-tool confirmation chip for Bob.
 
-This is **forced by Bob upstream**, not a platform choice: every Bob built-in tool's `shouldConfirmExecute()` returns `false` when `!isInteractive()`, so even in `default`/`auto_edit` mode Bob never calls `client.requestPermission()` via ACP for shell exec or file writes — those modes just refuse the tool outright with a "not allowed in non-interactive mode" error. `--yolo` is the only setting under which Bob's ACP mode actually runs tools.
+What each approval mode actually does over ACP (verified empirically against 1.0.6):
+
+| mode | file edits | shell exec |
+|---|---|---|
+| `default` | tool not in the model's tool list | tool not in the list |
+| `auto_edit` | run auto-approved, no permission request | tool not in the list |
+| `yolo` | emit `session/request_permission` (kind=edit) — the shim auto-approves | run directly, never asks |
+
+`--yolo` is the only mode with shell exec, and non-yolo modes hide (rather than gate) the missing tools — so yolo is the only generally useful setting for a coding agent, and per-tool HITL is upstream-limited to edits. The trust boundary is the platform's, not Bob's (below).
 
 The trust boundary is the per-instance Envoy egress sidecar (ADR-033/038): every outbound HTTP request goes through the credential gateway with `ext_authz` / egress-rules enforcement, the agent container has no SA token, no Secret volume mounts, and no Envoy config it can rewrite.
 
@@ -65,7 +73,7 @@ Less common toggles, not surfaced on the provider card.
 
 Settings that **cannot** be configured this way without changes to the shim:
 
-- **Per-tool HITL** — Bob's experimental ACP mode has no working `client.requestPermission()` path for built-in tools (every `shouldConfirmExecute` short-circuits in non-interactive mode). The platform UI inbox is not used for Bob.
+- **Per-tool HITL** — Bob's ACP emits `client.requestPermission()` only for file edits in yolo (see the approval-mode table above); shell exec never asks, and non-yolo modes hide the tools instead of gating them. Forwarding the edit requests to the UI inbox instead of auto-approving would be a shim change; a full claude-code-style approval toggle is upstream-limited.
 - **Auth method** — the shim spawns Bob with `--auth-method api-key`. OAuth / Vertex paths would need a different shim invocation.
 - **Sandbox** — Bob's `--sandbox` runs commands inside a separate sandbox subprocess. Overlaps with the platform's K8s-level sandboxing model (ADR-033); leave off.
 
