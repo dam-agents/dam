@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import type { TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
@@ -25,6 +25,7 @@ import { sizeToQuantities } from "../../sandboxes/lib/quantity.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { useKnowledgeBaseDraft } from "../hooks/use-knowledge-base-draft.js";
+import { KB_TEMPLATES, type KbTemplate } from "../lib/kb-templates.js";
 
 /** Knowledge bases are pinned to the Claude Code harness (#2946): the install
  *  command and KB skills are exercised against it. Other harnesses stay hidden
@@ -61,7 +62,10 @@ export function KnowledgeBaseCreateView() {
       ];
       const agent = await createKnowledgeBase.mutateAsync({
         name: draft.name.trim(),
+        // Harness image is pinned and hidden; the KB template is the picked
+        // installation procedure.
         templateId: template.id,
+        kbTemplateId: draft.kbTemplateId,
         egressPreset: draft.egressPreset,
         ...(size ? { size } : {}),
         ...(connectionIds.length ? { connectionIds } : {}),
@@ -79,6 +83,27 @@ export function KnowledgeBaseCreateView() {
         description="A knowledge base is an agent that sets itself up and maintains knowledge for you. Create it, then feed it sources and ask questions in chat."
       />
 
+      {templateMissing && (
+        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-[13px] text-warning">
+          The knowledge-base agent image is not installed on this platform, so
+          knowledge bases cannot be created. Ask your operator to enable it.
+        </p>
+      )}
+
+      <section className="mb-8">
+        <SectionLabel spaced>Template</SectionLabel>
+        <Inset className="flex flex-col gap-3">
+          {KB_TEMPLATES.map((tpl) => (
+            <TemplateOption
+              key={tpl.id}
+              template={tpl}
+              selected={draft.kbTemplateId === tpl.id}
+              onSelect={() => update({ kbTemplateId: tpl.id })}
+            />
+          ))}
+        </Inset>
+      </section>
+
       <section className="mb-8">
         <FormField label="Name">
           <Input
@@ -87,19 +112,6 @@ export function KnowledgeBaseCreateView() {
             onChange={(event) => update({ name: event.target.value })}
             placeholder="e.g. spyre-codebase-knowledge"
           />
-        </FormField>
-      </section>
-
-      <section className="mb-8">
-        <FormField
-          label="Image"
-          hint={
-            template ? (
-              <span className="truncate font-mono">{template.image}</span>
-            ) : undefined
-          }
-        >
-          <PinnedImage template={template} missing={templateMissing} />
         </FormField>
       </section>
 
@@ -160,29 +172,34 @@ export function KnowledgeBaseCreateView() {
   );
 }
 
-const READ_ONLY_FIELD =
-  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm";
-
-function PinnedImage({
+function TemplateOption({
   template,
-  missing,
+  selected,
+  onSelect,
 }: {
-  template: TemplateView | undefined;
-  missing: boolean;
+  template: KbTemplate;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  if (missing)
-    return (
-      <p className="text-[13px] text-warning">
-        The {KB_TEMPLATE_ID} template is not installed on this platform, so
-        knowledge bases cannot be created. Ask your operator to enable it.
-      </p>
-    );
   return (
-    <div className={READ_ONLY_FIELD}>
-      <span className="truncate text-muted-foreground">
-        {template?.name ?? "…"}
-      </span>
-    </div>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        "w-full rounded-lg border px-4 py-3 text-left transition-colors",
+        selected
+          ? "border-foreground bg-card"
+          : "border-border bg-card hover:bg-muted/30",
+      )}
+    >
+      <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+        {template.name}
+      </p>
+      <p className="text-[14px] text-muted-foreground">
+        {template.description}
+      </p>
+    </button>
   );
 }
 

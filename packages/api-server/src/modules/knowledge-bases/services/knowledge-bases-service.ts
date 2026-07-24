@@ -37,7 +37,7 @@ export function createKnowledgeBasesService(deps: {
       // (survives the pod not being up yet), delivered once Ready, run once
       // in-pod (sentinel-guarded). No agent turn: the command bootstraps the
       // knowledge tooling in the workspace, then the user chats with the KB.
-      const command = buildKnowledgeBaseInstallCommand();
+      const command = buildKnowledgeBaseInstallCommand(input.kbTemplateId);
       await deps.runtimeMutator.bump(agent.id, [
         {
           id: `kb-install:${agent.id}:${now().getTime()}`,

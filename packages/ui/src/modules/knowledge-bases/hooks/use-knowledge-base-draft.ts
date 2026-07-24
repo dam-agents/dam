@@ -1,9 +1,12 @@
+import type { KnowledgeBaseTemplateId } from "api-server-api";
 import { useState } from "react";
 
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import type { EgressPreset } from "../../sandboxes/lib/wizard-snapshot.js";
+import { DEFAULT_KB_TEMPLATE_ID } from "../lib/kb-templates.js";
 
 export interface KnowledgeBaseDraft {
+  kbTemplateId: KnowledgeBaseTemplateId;
   name: string;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
@@ -13,6 +16,7 @@ export interface KnowledgeBaseDraft {
 }
 
 const INITIAL_DRAFT: KnowledgeBaseDraft = {
+  kbTemplateId: DEFAULT_KB_TEMPLATE_ID,
   name: "",
   providerRef: null,
   egressPreset: "trusted",

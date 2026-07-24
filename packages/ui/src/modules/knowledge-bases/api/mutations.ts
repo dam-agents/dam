@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import type { KnowledgeBaseTemplateId } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
@@ -7,7 +8,10 @@ import { agentsKeys } from "../../agents/api/queries.js";
 
 export interface CreateKnowledgeBaseInput {
   name: string;
+  /** The pinned harness image template (claude-code); hidden in the UI. */
   templateId: string;
+  /** The picked installation procedure (surfaced as "Template"). */
+  kbTemplateId: KnowledgeBaseTemplateId;
   connectionIds?: string[];
   egressPreset?: EgressPreset;
   size?: { cpu?: string; memory?: string };

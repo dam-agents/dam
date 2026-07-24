@@ -144,9 +144,13 @@ export {
 } from "./modules/experiments/schemas.js";
 export type {
   KnowledgeBaseCreateInput,
+  KnowledgeBaseTemplateId,
   KnowledgeBasesService,
 } from "./modules/knowledge-bases/types.js";
-export { knowledgeBaseCreateInputSchema } from "./modules/knowledge-bases/schemas.js";
+export {
+  knowledgeBaseCreateInputSchema,
+  knowledgeBaseTemplateIdSchema,
+} from "./modules/knowledge-bases/schemas.js";
 export type {
   ArtifactKind,
   ArtifactVisibility,

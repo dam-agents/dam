@@ -2,6 +2,13 @@ import { z } from "zod";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { agentSizeSchema } from "../agents/schemas.js";
 
+/** The KB template selected at create — the installation procedure the fresh
+ *  agent bootstraps itself with (surfaced to the user as "Template"). Distinct
+ *  from the agent's harness image, which v1 pins. Currently one: LLM Wiki. The
+ *  server maps the id to the install command; new procedures extend this enum
+ *  and add a mapping. */
+export const knowledgeBaseTemplateIdSchema = z.enum(["llm-wiki"]);
+
 /** Create a Knowledge Base: an Agent carrying the `knowledge-base` Kind whose
  *  first session is opened by a platform-composed install instruction (the
  *  agent bootstraps its own knowledge tooling, then interviews the user).
@@ -23,6 +30,9 @@ export const knowledgeBaseCreateInputSchema = z
     connectionIds: z.array(z.string()).optional(),
     egressPreset: egressPresetSchema.optional(),
     size: agentSizeSchema.optional(),
+    // Which installation procedure to bootstrap the agent with. Defaults to
+    // the sole current template so older callers keep working.
+    kbTemplateId: knowledgeBaseTemplateIdSchema.default("llm-wiki"),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

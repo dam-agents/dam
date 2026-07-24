@@ -57,6 +57,7 @@ describe("knowledge-bases service", () => {
     await service.create({
       name: "my-kb",
       templateId: "claude-code",
+      kbTemplateId: "llm-wiki",
       egressPreset: "trusted",
       connectionIds: ["conn-1"],
     });
@@ -75,6 +76,7 @@ describe("knowledge-bases service", () => {
     const agent = await service.create({
       name: "my-kb",
       templateId: "claude-code",
+      kbTemplateId: "llm-wiki",
     });
     expect(agent.id).toBe("agent-kb1");
 
