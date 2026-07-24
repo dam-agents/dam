@@ -132,12 +132,13 @@ export function createEgressRulesService(
       // user explicitly asked for.
       if (row.source !== "manual" && row.source !== "inbox") {
         row =
-          (await deps.repo.updatePromoteToManual({
+          (await deps.repo.updateTakeOwnership({
             id: row.id,
             method: row.method,
             pathPattern: row.pathPattern,
             verdict: row.verdict,
             decidedBy: deps.ownerSub,
+            source: "manual",
           })) ?? row;
       }
       securityLog("info", "egress_rule.create", {
@@ -190,12 +191,13 @@ export function createEgressRulesService(
       const method = input.method ?? rule.method;
       const pathPattern = input.pathPattern ?? rule.pathPattern;
       const verdict = input.verdict ?? rule.verdict;
-      const updated = await deps.repo.updatePromoteToManual({
+      const updated = await deps.repo.updateTakeOwnership({
         id: input.id,
         method,
         pathPattern,
         verdict,
         decidedBy: deps.ownerSub,
+        source: "manual",
       });
       if (!updated) {
         throw new TRPCError({
