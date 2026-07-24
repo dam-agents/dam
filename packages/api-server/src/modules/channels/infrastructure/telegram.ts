@@ -180,11 +180,10 @@ export function createTelegramMessageHandler(deps: {
     author: TelegramInboundMessage["author"],
   ) => Promise<void>;
 }) {
-  // The unified connect/disconnect surface: `/dam bind` and `/dam unbind`,
-  // mirroring Slack's subcommand style. The legacy top-level `/login` and
-  // `/logout` (and Telegram's mandatory `/start`) stay as aliases. The brand
-  // command is matched before those aliases, so brandShort is assumed not to
-  // collide with `start`/`login`/`logout` (it never does in practice).
+  // The connect/disconnect surface: `/dam bind` and `/dam unbind`, mirroring
+  // Slack's subcommand style. `/start` (Telegram's mandatory deep-link and
+  // Start-button command) also triggers a bind; brandShort is assumed not to
+  // collide with `start`.
   const brandCmd = `/${deps.brandShort}`;
 
   async function denyNonAdmin(
@@ -307,16 +306,6 @@ export function createTelegramMessageHandler(deps: {
       // /start is how deep links and the Start button deliver intent; any
       // payload reads as bind intent — the group-admin gate still applies.
       await handleBind(thread, message.author.userId);
-      return;
-    }
-
-    // Legacy aliases, kept working but no longer advertised (see brandCmd).
-    if (isCommand(text, "/login")) {
-      await handleBind(thread, message.author.userId);
-      return;
-    }
-    if (isCommand(text, "/logout")) {
-      await handleUnbind(thread, message.author.userId);
       return;
     }
 

@@ -142,19 +142,21 @@ describe("telegram message handler", () => {
     expect(h.unbind).not.toHaveBeenCalled();
   });
 
-  it("keeps legacy `/login` and `/logout` working as unadvertised aliases", async () => {
+  it("no longer treats `/login` or `/logout` as commands", async () => {
+    // `/login` is now ordinary text: no bind flow starts, and an unbound DM
+    // just gets the not-connected prompt.
     const loginH = harness();
     const dm = makeThread({ isDM: true });
     await loginH.handle(dm, { text: "/login", author: author() }, true);
-    expect(loginH.pendingOAuthFlows.size).toBe(1);
-    expect(dm.posts.join("\n")).toContain(
-      "Connect this chat to one of your agents",
-    );
+    expect(loginH.pendingOAuthFlows.size).toBe(0);
+    expect(dm.posts.join("\n")).toContain("isn't connected to an agent");
 
+    // `/logout` in a bound chat no longer unbinds — it relays as a message.
     const logoutH = harness({ boundTo: "agent-1" });
     const bound = makeThread();
     await logoutH.handle(bound, { text: "/logout", author: author() }, true);
-    expect(logoutH.unbind).toHaveBeenCalledWith("chat-42");
+    expect(logoutH.unbind).not.toHaveBeenCalled();
+    expect(logoutH.relay).toHaveBeenCalled();
   });
 
   it("stays silent in unbound groups, prompts in unbound DMs", async () => {
