@@ -195,9 +195,19 @@ An Experiment races several AI-driven R&D harnesses against one goal and compare
 | Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
 | Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
 
+## Metrics (bounded context)
+
+The user-facing spend read path over agent telemetry — owner-scoped reads that back the Settings Usage tab. Distinct from Usage Tracking, which is activity analytics (who did what, when): tokens and cost are Spend, and live here. See [`docs/architecture/metrics.md`](architecture/metrics.md).
+
+| Term | Definition |
+|------|-----------|
+| Spend | An agent's LLM token and cost consumption, read live from the telemetry store as token counters and a per-call cost. Agent-reported and so not content-trusted (an agent can misreport its own numbers); the read path reports what was exported. The tokens/cost concept — as opposed to Usage Tracking's activity analytics or a Budget's concurrent reservation |
+| Spend Breakdown | Spend sliced along a dimension for the Usage tab — per model, per session, per call, or per agent over a time window. The same underlying Spend rolled up different ways; a window may narrow to one owned agent or an exact (trace-aware) session, else covers all of the caller's agents |
+| Agent Attribution | The binding of a telemetry record to the agent that produced it, carried by the gateway-stamped `platform.agent.id` resource attribute — trusted and unforgeable because the agent's paired gateway overwrites it and the collector drops any value not stamped there. The sole authority for whose Spend a record is; the agent-exported `platform.agent.name` is display-only and never used for scoping |
+
 ## Budgets (bounded context)
 
-Fair-sharing of the cluster's fixed compute pool between users. Distinct from Usage Tracking (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
+Fair-sharing of the cluster's fixed compute pool between users. Distinct from Spend under Metrics (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
 
 | Term | Definition |
 |------|-----------|
