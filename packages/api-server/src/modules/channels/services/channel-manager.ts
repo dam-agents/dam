@@ -146,10 +146,15 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
-      // The platform bot polls unconditionally — /login must work in chats
-      // that have no binding yet.
+      // Both platform bots connect unconditionally at startup — inbound
+      // commands (/login), mentions and DMs must reach the bot in chats that
+      // have no binding yet. Slack opens its socket-mode connection here rather
+      // than lazily on the first bind/post, so it never misses those events.
       if (telegramWorker) await telegramWorker.start();
+      if (slackWorker) await slackWorker.connect();
 
+      // The socket is already up; walking the bindings only restores the
+      // per-Agent registration the SlackConnected event installs at runtime.
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
           if (channel.type === ChannelType.Slack && slackWorker) {
