@@ -88,10 +88,10 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
 2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
-3. Connect a chat: add the bot to a chat (or message it directly) and send `/login` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
+3. Connect a chat: add the bot to a chat (or message it directly) and send `/platform bind` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
 
-**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/logout` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
+**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/platform unbind` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
 
 ## Development mode
 

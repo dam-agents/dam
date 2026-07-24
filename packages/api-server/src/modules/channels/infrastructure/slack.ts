@@ -1096,8 +1096,10 @@ export function createSlackWorker(
         await handleAmbientCommand(cmd, command, ack);
       })
       .with(P.string, async () => {
+        // `login`/`logout` (identity linking) stay working but aren't
+        // advertised here — bind/unbind are the primary command surface.
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, \`/${brandShort} ambient on|off\`, \`/${brandShort} login\`, or \`/${brandShort} logout\``,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, or \`/${brandShort} ambient on|off\``,
         });
       })
       .exhaustive();

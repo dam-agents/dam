@@ -63,6 +63,7 @@ function harness(opts?: {
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
+    brandShort: "dam",
     relay,
   });
 
@@ -77,26 +78,28 @@ const author = (userId = "tg-7") => ({
 });
 
 describe("telegram message handler", () => {
-  it("denies /login from a non-admin in a group", async () => {
+  it("denies `/dam bind` from a non-admin in a group", async () => {
     const h = harness({ isAdmin: false });
     const thread = makeThread();
-    await h.handle(thread, { text: "/login", author: author() }, true);
-    expect(thread.posts.join("\n")).toContain("Only group admins can /login.");
+    await h.handle(thread, { text: "/dam bind", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain(
+      "Only group admins can `/dam bind`.",
+    );
     expect(h.pendingOAuthFlows.size).toBe(0);
   });
 
-  it("tells an already-bound chat to /logout first", async () => {
+  it("tells an already-bound chat to unbind first", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
-    await h.handle(thread, { text: "/login", author: author() }, true);
-    expect(thread.posts.join("\n")).toContain("Send /logout first");
+    await h.handle(thread, { text: "/dam bind", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("`/dam unbind` first");
     expect(h.pendingOAuthFlows.size).toBe(0);
   });
 
   it("mints a pending OAuth flow (no agent, with chat title) and posts the link", async () => {
     const h = harness();
     const thread = makeThread({ isDM: true });
-    await h.handle(thread, { text: "/login", author: author() }, true);
+    await h.handle(thread, { text: "/dam bind", author: author() }, true);
 
     expect(h.pendingOAuthFlows.size).toBe(1);
     const pending = [...h.pendingOAuthFlows.values()][0]!;
@@ -105,7 +108,7 @@ describe("telegram message handler", () => {
       threadId: "chat-42",
       chatTitle: "Team chat",
     });
-    // The login link posts as a card: text + an inline URL button, so the
+    // The bind link posts as a card: text + an inline URL button, so the
     // raw OAuth URL never shows in the chat.
     const posted = thread.posts.join("\n");
     expect(posted).toContain("Connect this chat to one of your agents");
@@ -113,12 +116,47 @@ describe("telegram message handler", () => {
     expect(posted).toContain("https://kc.example");
   });
 
-  it("unbinds on /logout from a bound chat", async () => {
+  it("unbinds on `/dam unbind` from a bound chat", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
-    await h.handle(thread, { text: "/logout", author: author() }, true);
+    await h.handle(thread, { text: "/dam unbind", author: author() }, true);
     expect(h.unbind).toHaveBeenCalledWith("chat-42");
     expect(thread.posts.join("\n")).toContain("Chat disconnected");
+  });
+
+  it("shows usage for a bare `/dam` (or `/dam@bot`) with no subcommand", async () => {
+    const h = harness();
+    // Explicitly invoking the command answers on any surface — a DM, and (like
+    // a bind/unbind deny) an unbound group; a non-admin still gets the help.
+    for (const isDM of [true, false]) {
+      for (const text of ["/dam", "/dam@dam_bot", "/dam help"]) {
+        const thread = makeThread({ isDM });
+        await h.handle(thread, { text, author: author() }, true);
+        const posted = thread.posts.join("\n");
+        expect(posted).toContain("/dam bind");
+        expect(posted).toContain("/dam unbind");
+      }
+    }
+    // Usage is help only — it neither starts a bind flow nor unbinds.
+    expect(h.pendingOAuthFlows.size).toBe(0);
+    expect(h.unbind).not.toHaveBeenCalled();
+  });
+
+  it("no longer treats `/login` or `/logout` as commands", async () => {
+    // `/login` is now ordinary text: no bind flow starts, and an unbound DM
+    // just gets the not-connected prompt.
+    const loginH = harness();
+    const dm = makeThread({ isDM: true });
+    await loginH.handle(dm, { text: "/login", author: author() }, true);
+    expect(loginH.pendingOAuthFlows.size).toBe(0);
+    expect(dm.posts.join("\n")).toContain("isn't connected to an agent");
+
+    // `/logout` in a bound chat no longer unbinds — it relays as a message.
+    const logoutH = harness({ boundTo: "agent-1" });
+    const bound = makeThread();
+    await logoutH.handle(bound, { text: "/logout", author: author() }, true);
+    expect(logoutH.unbind).not.toHaveBeenCalled();
+    expect(logoutH.relay).toHaveBeenCalled();
   });
 
   it("stays silent in unbound groups, prompts in unbound DMs", async () => {
@@ -155,7 +193,7 @@ describe("telegram message handler", () => {
     );
   });
 
-  it("treats /start (bare or deep-linked) as login intent", async () => {
+  it("treats /start (bare or deep-linked) as bind intent", async () => {
     const h = harness();
     for (const text of ["/start", "/start login", "/start@dam_bot login"]) {
       const dm = makeThread({ isDM: true });

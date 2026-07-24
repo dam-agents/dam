@@ -219,7 +219,7 @@ export interface AgentsService {
   /** The Telegram conversations bound to the caller's agent, with titles. */
   listTelegramChats: (agentId: string) => Promise<ListTelegramChatsResult>;
   /** Owner-side disconnect of a bound conversation (the UI counterpart of
-   *  the in-chat /logout). */
+   *  the in-chat unbind). */
   unbindTelegramChat: (
     agentId: string,
     conversationId: string,

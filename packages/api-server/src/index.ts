@@ -491,6 +491,7 @@ const telegramWorker =
         pendingOAuthFlows: pendingTelegramOAuthFlows,
         isTermsAccepted,
         uiBaseUrl: config.uiBaseUrl,
+        brandShort: config.brand.short,
       })
     : undefined;
 

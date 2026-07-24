@@ -25,8 +25,8 @@ features:
     always_online: true
   slash_commands:
     - command: /dam
-      description: Connect an agent to this conversation, or log in / out
-      usage_hint: "bind | unbind | login | logout"
+      description: Connect or disconnect an agent for this conversation
+      usage_hint: "bind | unbind"
       should_escape: false
 
 oauth_config:

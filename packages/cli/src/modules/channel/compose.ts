@@ -49,7 +49,7 @@ export function composeChannelModule(
   };
 
   const parent = new Command("channel").description(
-    "Manage messenger channel bindings (Telegram chats bind in-chat via /login)",
+    "Manage messenger channel bindings (Telegram chats bind in-chat via the bind command)",
   );
   parent.addCommand(
     buildAvailableCommand({

@@ -1,4 +1,6 @@
-/** Pure helpers for the /telegram/bind page — node-testable, no DOM. */
+/** Pure helpers for the /telegram/bind page — node-testable, no DOM. The brand
+ *  short is threaded in (rather than read from getBrand) so these stay pure and
+ *  never hardcode the brand. */
 
 export function readFlowIdFromSearch(search: string): string | null {
   const flow = new URLSearchParams(search).get("flow");
@@ -13,46 +15,52 @@ export function readCallbackErrorFromSearch(search: string): string | null {
 export interface BindErrorCopy {
   title: string;
   hint: string;
-  /** Terminal errors hide the picker — only a fresh /login recovers. */
+  /** Terminal errors hide the picker — only a fresh bind command recovers. */
   terminal: boolean;
 }
 
-export function callbackErrorCopy(code: string): BindErrorCopy {
+export function callbackErrorCopy(
+  code: string,
+  brandShort: string,
+): BindErrorCopy {
   switch (code) {
     case "denied":
       return {
         title: "Login was cancelled",
-        hint: "Send /login in the Telegram chat to try again.",
+        hint: `Send \`/${brandShort} bind\` in the Telegram chat to try again.`,
         terminal: true,
       };
     case "expired":
       return {
         title: "This login link has expired",
-        hint: "Send /login in the Telegram chat to get a fresh link.",
+        hint: `Send \`/${brandShort} bind\` in the Telegram chat to get a fresh link.`,
         terminal: true,
       };
     default:
       return {
         title: "Login failed",
-        hint: "Send /login in the Telegram chat to try again.",
+        hint: `Send \`/${brandShort} bind\` in the Telegram chat to try again.`,
         terminal: true,
       };
   }
 }
 
 /** Maps a failed bind mutation's tRPC error code to page copy. */
-export function bindErrorCopy(code: string | undefined): BindErrorCopy {
+export function bindErrorCopy(
+  code: string | undefined,
+  brandShort: string,
+): BindErrorCopy {
   switch (code) {
     case "BAD_REQUEST":
       return {
         title: "This link is invalid or has expired",
-        hint: "Send /login in the Telegram chat to get a fresh link.",
+        hint: `Send \`/${brandShort} bind\` in the Telegram chat to get a fresh link.`,
         terminal: true,
       };
     case "CONFLICT":
       return {
         title: "This chat is already connected to another agent",
-        hint: "Send /logout in the chat first, then /login again.",
+        hint: `Send \`/${brandShort} unbind\` in the chat first, then \`/${brandShort} bind\` again.`,
         terminal: true,
       };
     case "NOT_FOUND":
@@ -64,7 +72,7 @@ export function bindErrorCopy(code: string | undefined): BindErrorCopy {
     default:
       return {
         title: "Something went wrong",
-        hint: "Try again — or send /login in the chat for a fresh link.",
+        hint: `Try again — or send \`/${brandShort} bind\` in the chat for a fresh link.`,
         terminal: false,
       };
   }

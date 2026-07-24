@@ -141,8 +141,8 @@ export function executeTelegramBind(deps: {
       flow.conversationId,
     );
     if (existing && existing.agentId !== agentId) {
-      // Flow stays alive — the user may pick the right agent, or /logout
-      // in the chat and retry.
+      // Flow stays alive — the user may pick the right agent, or run the
+      // unbind command in the chat and retry.
       return err({ type: "ChatAlreadyBound" as const });
     }
     if (!existing) {
@@ -182,7 +182,7 @@ export function executeTelegramBind(deps: {
     const post = await deps.binding.postMessage(
       agentId,
       flow.conversationId,
-      `This chat is now connected to ${agent.name}. Send /logout to disconnect.`,
+      `This chat is now connected to ${agent.name}. Run the unbind command to disconnect.`,
     );
     if ("error" in post) {
       // Best-effort: the binding is committed; the confirmation is courtesy.
@@ -224,7 +224,7 @@ export function executeTelegramUnbind(deps: {
     const post = await deps.binding.postMessage(
       agentId,
       conversationId,
-      `This chat was disconnected from ${agent.name} by its owner. Send /login to connect it again.`,
+      `This chat was disconnected from ${agent.name} by its owner. Run the bind command to connect it again.`,
     );
     if ("error" in post) {
       securityLog("warn", "channel.chat_unbound.notify_failed", {

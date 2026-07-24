@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 
+import { getBrand } from "../../../../brand.js";
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
 import {
   useTelegramBot,
@@ -7,8 +8,10 @@ import {
 } from "../../../telegram/api/queries.js";
 import { ChannelCard } from "./channel-card.js";
 
-/** Telegram is a platform-wide bot; chats bind via /login in the chat. */
+/** Telegram is a platform-wide bot; chats bind via the bind command in the
+ *  chat — the same `/dam bind` / `/dam unbind` surface Slack uses. */
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
+  const brandShort = getBrand().short;
   const bot = useTelegramBot();
   const handle = bot.data?.username;
 
@@ -30,8 +33,9 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
           ) : (
             "this installation's Telegram bot"
           )}{" "}
-          to a chat (or message it directly) and send /login to pick the agent
-          in the browser. Send /logout in the chat to disconnect.
+          to a chat (or message it directly) and send{" "}
+          <code>/{brandShort} bind</code> to pick the agent in the browser. Send{" "}
+          <code>/{brandShort} unbind</code> in the chat to disconnect.
         </p>
       </div>
     </ChannelCard>

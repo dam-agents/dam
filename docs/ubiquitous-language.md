@@ -42,7 +42,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Term | Definition |
 |------|-----------|
 | Channel | An external communication pathway connecting users to an Agent (e.g., Slack) |
-| Channel Binding | The 1:1 linkage between a conversation surface (Slack channel, Telegram chat) and an Agent; a surface may be bound to at most one Agent globally; a Slack binding carries an access mode fixed at bind time (switching = disconnect + reconnect); Agent delete, Slack disconnect, or Telegram `/logout` / owner disconnect in the UI releases it |
+| Channel Binding | The 1:1 linkage between a conversation surface (Slack channel, Telegram chat) and an Agent; a surface may be bound to at most one Agent globally; a Slack binding carries an access mode fixed at bind time (switching = disconnect + reconnect); Agent delete, Slack disconnect, or Telegram `/platform unbind` / owner disconnect in the UI releases it |
 | Channel Worker | A long-running process that bridges an external service to an Agent |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
 | Shared Access (system Agent) | The access mode where the binding is the authorization: the Agent owner consents to a conversation surface (Slack bind-time choice; structurally every Telegram binding), and anyone the messenger admits there may drive the Agent under the Agent's own credentials — no identity link, turns attributed by messenger-native sender id |
