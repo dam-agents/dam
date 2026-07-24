@@ -26,7 +26,9 @@ export interface PostMessageOptions {
 /** A reply threaded under the turn the agent is answering. */
 export interface ChannelReply {
   text: string;
-  /** Thread to post into; defaults to the agent's most recent turn thread. */
+  /** Thread to post into. Omitted, it resolves to the sole in-flight turn's
+   *  thread; with several turns in flight at once the reply is refused rather
+   *  than guessed, so the agent must pass this (the prompt injects it). */
   threadTs?: string;
   /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
@@ -36,7 +38,9 @@ export interface ChannelReply {
 export interface ChannelReaction {
   /** Emoji short name, no surrounding colons (e.g. `eyes`, `white_check_mark`). */
   emoji: string;
-  /** Message to react to; defaults to the agent's most recent turn message. */
+  /** Message to react to. Omitted, it resolves to the sole in-flight turn's
+   *  message; with several turns in flight at once the react is refused rather
+   *  than guessed, so the agent must pass this (the prompt injects it). */
   messageTs?: string;
   /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
