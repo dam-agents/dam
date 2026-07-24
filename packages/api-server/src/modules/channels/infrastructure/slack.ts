@@ -1,6 +1,11 @@
 import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
-import { ChannelType, SessionType, type AgentsService } from "api-server-api";
+import {
+  ambientThreadKey,
+  ChannelType,
+  SessionType,
+  type AgentsService,
+} from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
 import type {
   ChannelReaction,
@@ -143,14 +148,6 @@ function framePrompt(opts: {
   const text = parts.join("\n\n");
   if (opts.images.length === 0) return text;
   return [{ type: "text", text }, ...opts.images.map((i) => i.block)];
-}
-
-/** Session key for a channel's rolling ambient session: top-level channel
- *  messages share one session (the agent "reads along"), while thread replies
- *  keep their per-thread sessions. Slack thread_ts values are numeric, so the
- *  prefix cannot collide with a real thread key. */
-function ambientThreadKey(channelId: string): string {
-  return `ambient:${channelId}`;
 }
 
 /** A 1:1 DM conversation (Slack `im`) always has an id starting with "D". Used

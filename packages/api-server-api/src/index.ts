@@ -273,6 +273,9 @@ export {
   SessionType,
   SessionMode,
   sessionModeSchema,
+  AMBIENT_THREAD_KEY_PREFIX,
+  ambientThreadKey,
+  isAmbientThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 
