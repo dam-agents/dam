@@ -1,9 +1,9 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Inset } from "@/components/ui/inset";
+import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -27,10 +27,14 @@ import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { useKnowledgeBaseDraft } from "../hooks/use-knowledge-base-draft.js";
 
 /** Knowledge bases are pinned to the Claude Code harness (#2946): the install
- *  instruction and KB skills are exercised against it. Other harnesses stay
- *  hidden until KB templates carry their own harness choice. */
+ *  command and KB skills are exercised against it. Other harnesses stay hidden
+ *  until KB templates carry their own harness choice. */
 const KB_TEMPLATE_ID = "claude-code";
 
+/** Create form. Same page structure and field pattern as the sandbox settings
+ *  form ([sandbox-setup-section]): a gutter container (`md:px-8`) into which
+ *  the standard field outdent (`FIELD_INSET` / `Inset`) resolves, so labels
+ *  and controls align exactly as they do across the rest of the app. */
 export function KnowledgeBaseCreateView() {
   const { draft, update, toggleConnection } = useKnowledgeBaseDraft();
   const { data: templates, isLoading: templatesLoading } = useTemplates();
@@ -69,24 +73,35 @@ export function KnowledgeBaseCreateView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[666px]">
+    <div className="mx-auto w-full max-w-[720px] px-4 pt-10 pb-16 md:px-8">
       <PageHeader
         title="New knowledge base"
         description="A knowledge base is an agent that sets itself up and maintains knowledge for you. Create it, then feed it sources and ask questions in chat."
       />
 
-      <Field label="Name">
-        <Input
-          autoFocus
-          value={draft.name}
-          onChange={(event) => update({ name: event.target.value })}
-          placeholder="e.g. spyre-codebase-knowledge"
-        />
-      </Field>
+      <section className="mb-8">
+        <FormField label="Name">
+          <Input
+            autoFocus
+            value={draft.name}
+            onChange={(event) => update({ name: event.target.value })}
+            placeholder="e.g. spyre-codebase-knowledge"
+          />
+        </FormField>
+      </section>
 
-      <Field label="Image">
-        <PinnedImageCard template={template} missing={templateMissing} />
-      </Field>
+      <section className="mb-8">
+        <FormField
+          label="Image"
+          hint={
+            template ? (
+              <span className="truncate font-mono">{template.image}</span>
+            ) : undefined
+          }
+        >
+          <PinnedImage template={template} missing={templateMissing} />
+        </FormField>
+      </section>
 
       <SandboxSizeSection
         templateSize={template?.size}
@@ -95,7 +110,8 @@ export function KnowledgeBaseCreateView() {
         onChange={update}
       />
 
-      <Field label="Provider">
+      <section className="mb-8">
+        <SectionLabel spaced>Provider</SectionLabel>
         <ProviderSection
           selected={draft.providerRef}
           onSelect={(ref) => update({ providerRef: ref })}
@@ -104,11 +120,13 @@ export function KnowledgeBaseCreateView() {
               update({ providerRef: null });
           }}
           autoSelectFirst
+          listClassName={FIELD_INSET}
         />
-      </Field>
+      </section>
 
-      <Field label="Network access">
-        <div className="flex flex-col gap-3">
+      <section className="mb-8">
+        <SectionLabel spaced>Network access</SectionLabel>
+        <Inset className="flex flex-col gap-3">
           {NETWORK_PRESETS.map((preset) => (
             <NetworkPresetRow
               key={preset.value}
@@ -118,15 +136,17 @@ export function KnowledgeBaseCreateView() {
               onSelect={() => update({ egressPreset: preset.value })}
             />
           ))}
-        </div>
-      </Field>
+        </Inset>
+      </section>
 
-      <KnowledgeBaseConnectionsSection
-        connectionIds={draft.connectionIds}
-        onToggle={toggleConnection}
-      />
+      <section className="mb-8">
+        <KnowledgeBaseConnections
+          connectionIds={draft.connectionIds}
+          onToggle={toggleConnection}
+        />
+      </section>
 
-      <div className="mb-10 flex gap-2">
+      <div className="flex gap-2">
         <Button onClick={() => void create()} disabled={!canCreate}>
           {createKnowledgeBase.isPending
             ? "Creating…"
@@ -140,19 +160,10 @@ export function KnowledgeBaseCreateView() {
   );
 }
 
-/** One form group: label flush with the page gutter, control outdented via
- *  Inset — the same container for every field on this page so the vertical
- *  rhythm (mb-8 / mb-3) and horizontal alignment never drift per section. */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <section className="mb-8">
-      <SectionLabel spaced>{label}</SectionLabel>
-      <Inset>{children}</Inset>
-    </section>
-  );
-}
+const READ_ONLY_FIELD =
+  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm";
 
-function PinnedImageCard({
+function PinnedImage({
   template,
   missing,
 }: {
@@ -161,24 +172,21 @@ function PinnedImageCard({
 }) {
   if (missing)
     return (
-      <Card className="border border-destructive/40 px-4 py-3 text-[14px] text-muted-foreground">
+      <p className="text-[13px] text-warning">
         The {KB_TEMPLATE_ID} template is not installed on this platform, so
         knowledge bases cannot be created. Ask your operator to enable it.
-      </Card>
+      </p>
     );
   return (
-    <Card className="flex items-center justify-between border border-border px-4 py-3">
-      <span className="text-[14px] font-medium text-foreground">
+    <div className={READ_ONLY_FIELD}>
+      <span className="truncate text-muted-foreground">
         {template?.name ?? "…"}
       </span>
-      <span className="text-[13px] text-muted-foreground font-mono">
-        {template?.image ?? ""}
-      </span>
-    </Card>
+    </div>
   );
 }
 
-function KnowledgeBaseConnectionsSection({
+function KnowledgeBaseConnections({
   connectionIds,
   onToggle,
 }: {
@@ -199,7 +207,7 @@ function KnowledgeBaseConnectionsSection({
   const { populated: groups, templateById } = useCatalogGroups(staged);
 
   return (
-    <section className="mb-8">
+    <>
       <GrantedConnectionsPanel
         groups={groups}
         templateById={templateById}
@@ -213,6 +221,6 @@ function KnowledgeBaseConnectionsSection({
           oauthReturnView="/knowledge-bases/new"
         />
       )}
-    </section>
+    </>
   );
 }

@@ -1,4 +1,3 @@
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Slider } from "@/components/ui/slider";
 
@@ -85,9 +84,7 @@ export function SandboxSizeSection({
         How much compute this sandbox can use while running. It counts against
         your budget only while the sandbox is up.
       </p>
-      {/* Controls carry the standard field outdent so the sliders align with
-          every other control on migrated forms (label stays flush). */}
-      <Inset className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <SizeSlider
           label="CPU"
           valueLabel={`${formatCores(cpu)} cores`}
@@ -110,7 +107,7 @@ export function SandboxSizeSection({
           disabled={disabled}
           onChange={(v) => onChange({ sizeMemoryMi: v })}
         />
-      </Inset>
+      </div>
       {restartNote && (
         <p className="mt-3 text-[13px] text-muted-foreground">{restartNote}</p>
       )}
