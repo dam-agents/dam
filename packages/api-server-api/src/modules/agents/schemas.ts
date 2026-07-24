@@ -104,9 +104,11 @@ export const agentCreateInputSchema = z
     // hibernated before the Sweep deletes it. Default zero — deleted as soon
     // as it hibernates. Ignored unless `sweepable`.
     lifetimeMs: z.number().int().min(0).optional(),
-    // Agent Kind: omit for a plain sandbox. Set by the owning module's create
-    // path (knowledge-bases), never collected from the sandbox wizard.
-    kind: agentKindSchema.optional(),
+    // Agent Kind is deliberately NOT part of this schema: it is a
+    // service-level field (see AgentCreateInput) set only by the owning
+    // module's create path (knowledge-bases). A `kind` passed to the public
+    // agents.create is stripped, so a caller cannot mint a marked agent that
+    // skipped the owning module's setup (e.g. a KB without its install run).
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

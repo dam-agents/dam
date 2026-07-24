@@ -97,7 +97,12 @@ export interface Agent {
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
-export type AgentCreateInput = z.infer<typeof agentCreateInputSchema>;
+/** The service-level create input. `kind` rides here but not in the wire
+ *  schema: only an owning module's create path (knowledge-bases) may mark an
+ *  agent, so the public agents.create strips it (Zod drops unknown keys). */
+export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
+  kind?: AgentKind;
+};
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
 export type UpgradeAgentError =

@@ -9,6 +9,7 @@ import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
+import { isKnowledgeBase } from "../utils/agent-kind.js";
 
 export function ListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
@@ -16,7 +17,7 @@ export function ListView() {
   // Knowledge Bases are agents too, but they live on their own surface — the
   // Sandboxes list shows only unmarked agents.
   const agents = (agentsData?.list ?? []).filter(
-    (agent) => agent.kind !== "knowledge-base",
+    (agent) => !isKnowledgeBase(agent),
   );
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);

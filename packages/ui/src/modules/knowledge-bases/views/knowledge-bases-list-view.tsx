@@ -7,15 +7,14 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
+import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 
 /** The Knowledge Bases surface: the owner's agents carrying the
  *  `knowledge-base` kind. Rows open the standalone knowledge-base page — the
  *  knowledge base is worked with conversationally, not configured first. */
 export function KnowledgeBasesListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
-  const knowledgeBases = (agentsData?.list ?? []).filter(
-    (agent) => agent.kind === "knowledge-base",
-  );
+  const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToCreateKnowledgeBase = useStore(
