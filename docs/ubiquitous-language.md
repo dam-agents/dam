@@ -167,9 +167,10 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 
 | Term | Definition |
 |------|-----------|
-| Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, created with an Install Instruction as its first session. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
+| Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, bootstrapped by an Install Command at create. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
 | Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface owns it — currently only `knowledge-base`. Absent on plain sandboxes. Each list surface filters on it, so an agent appears on exactly one surface |
-| Install Instruction | The one-shot prompt delivered over the trigger rail as a Knowledge Base's first session: bootstrap the knowledge tooling from an external repository, then interview the user. v1 pins one instruction (the LLM Wiki bootstrap) platform-wide; intended to become a Template concern once KB templates exist |
+| Install Command | The one-shot shell command run in a Knowledge Base's workspace at create, delivered over the `workspace-command` rail: bootstrap the knowledge tooling from an external installer. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds. v1 pins one command (the LLM Wiki bootstrap) platform-wide; intended to become a Template concern once KB templates exist |
+| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 
 ## Secrets (bounded context)
 

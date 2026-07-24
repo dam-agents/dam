@@ -5,14 +5,14 @@ import type {
   KnowledgeBasesService,
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
-import { buildKnowledgeBaseInstallPrompt } from "../domain/install-prompt.js";
+import { buildKnowledgeBaseInstallCommand } from "../domain/install-command.js";
 import { securityLog } from "../../../core/security-log.js";
 
-/** How long the install instruction may wait for the fresh agent to come up.
+/** How long the install command may wait for the fresh agent to come up.
  *  Generous (matching the workspace-seed clone TTL) because a fresh agent can
  *  legitimately wait far beyond boot time — parked over budget (#1900) until
- *  the owner frees room. Redelivery within the window is deduped by the
- *  synthetic schedule id's last-fire stamp. */
+ *  the owner frees room. Redelivery before the command has succeeded is
+ *  deduped in-pod by the workspace-command plugin's sentinel. */
 const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createKnowledgeBasesService(deps: {
@@ -33,23 +33,16 @@ export function createKnowledgeBasesService(deps: {
         kind: "knowledge-base",
       });
 
-      // Deliver the install instruction as the KB's first session over the
-      // trigger rail — durable (survives the pod not being up yet), delivered
-      // once Ready, deduped by the synthetic schedule id on redelivery. The
-      // session is typed "regular": the install run continues into an
-      // onboarding interview, so it must land in the user's Chats where they
-      // can answer, not under Scheduled.
-      const task = buildKnowledgeBaseInstallPrompt();
+      // Deliver the install command over the workspace-command rail — durable
+      // (survives the pod not being up yet), delivered once Ready, run once
+      // in-pod (sentinel-guarded). No agent turn: the command bootstraps the
+      // knowledge tooling in the workspace, then the user chats with the KB.
+      const command = buildKnowledgeBaseInstallCommand();
       await deps.runtimeMutator.bump(agent.id, [
         {
           id: `kb-install:${agent.id}:${now().getTime()}`,
-          kind: "trigger",
-          payload: {
-            scheduleId: `kb-install:${agent.id}`,
-            task,
-            sessionMode: "fresh",
-            sessionType: "regular",
-          },
+          kind: "workspace-command",
+          payload: { command },
           expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
         },
       ]);

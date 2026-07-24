@@ -20,6 +20,7 @@ import { createStateStore } from "./state-store.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
+import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createExperimentTriggerPlugin } from "./drivers/experiment-trigger-plugin.js";
 import { createDispatcher, type ContextEnv } from "./dispatcher.js";
 import { createEventDispatcher } from "./event-dispatcher.js";
@@ -84,6 +85,9 @@ export async function composeRuntimeChannel(
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
+  registry.register(
+    createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
+  );
   registry.register(
     createExperimentTriggerPlugin({ driver: opts.triggerDriver }),
   );

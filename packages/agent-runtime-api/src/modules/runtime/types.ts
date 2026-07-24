@@ -14,6 +14,7 @@ export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
   "workspace-seed",
+  "workspace-command",
   "experiment-trigger",
   "harness-config",
 ]);
@@ -109,11 +110,6 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   mcpServers: z.array(z.unknown()).optional(),
-  // How the opened session is typed for the UI. Default "schedule_cron"
-  // (a schedule fire, listed under Scheduled). "regular" makes it an ordinary
-  // chat the user is expected to join — e.g. a Knowledge Base's install
-  // interview. Older runtimes strip the key and fall back to the default.
-  sessionType: z.enum(["regular", "schedule_cron"]).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
 
@@ -160,6 +156,27 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
+// One-shot shell command run in the work dir. Like workspace-seed: fire once
+// on create, run, forget — never re-asserted; the command's effects are the
+// user's mutable workspace. The command is composed server-side (e.g. a
+// Knowledge Base's bootstrap installer), never user-supplied free text.
+// Run-to-success at-most-once is enforced in-pod by a sentinel; a failed run
+// stays pending and retries until it succeeds or the event's TTL lapses.
+export const workspaceCommandEventPayload = z.object({
+  command: z.string().min(1),
+});
+export type WorkspaceCommandEventPayload = z.infer<
+  typeof workspaceCommandEventPayload
+>;
+
+export const workspaceCommandEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("workspace-command"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: workspaceCommandEventPayload,
+});
+
 export const experimentTriggerEventPayload = z.object({
   experimentId: z.string().min(1),
   task: z.string().min(1),
@@ -203,6 +220,7 @@ export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
+  workspaceCommandEvent,
   experimentTriggerEvent,
   harnessConfigEvent,
 ]);

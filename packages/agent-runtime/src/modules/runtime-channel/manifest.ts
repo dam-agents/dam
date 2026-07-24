@@ -127,6 +127,10 @@ const BUILTIN_DRIVERS: Record<
     defaultOn: true,
   },
   "workspace-seed": { binding: { impl: "workspace-seed" }, defaultOn: true },
+  "workspace-command": {
+    binding: { impl: "workspace-command" },
+    defaultOn: true,
+  },
   "harness-config": { binding: { impl: "harness-config" }, defaultOn: false },
 };
 

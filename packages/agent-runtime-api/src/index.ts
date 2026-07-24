@@ -102,6 +102,7 @@ export type {
   ExperimentTriggerEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
+  WorkspaceCommandEventPayload,
   HarnessConfigEventPayload,
   StateSlice,
   ApplyStateInput,

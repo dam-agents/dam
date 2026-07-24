@@ -52,7 +52,6 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { useAutoOpenKnowledgeBaseSession } from "../../knowledge-bases/hooks/use-auto-open-knowledge-base-session.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -217,16 +216,6 @@ export function ChatView() {
       setShowJump(false);
     }
   }, [messages.length]);
-
-  // The standalone knowledge-base page auto-opens the platform-opened install
-  // session (the onboarding interview) rather than starting blank.
-  const view = useStore((s) => s.view);
-  useAutoOpenKnowledgeBaseSession({
-    agentId: selectedAgent,
-    active: view === "knowledge-base-chat",
-    idle: !sessionId && messages.length === 0,
-    resumeSession,
-  });
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(

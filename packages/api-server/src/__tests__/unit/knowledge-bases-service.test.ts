@@ -70,7 +70,7 @@ describe("knowledge-bases service", () => {
     });
   });
 
-  it("delivers the install instruction as a one-shot trigger and wakes the agent", async () => {
+  it("delivers the install command as a one-shot workspace-command and wakes the agent", async () => {
     const { service, calls } = makeHarness();
     const agent = await service.create({
       name: "my-kb",
@@ -82,19 +82,11 @@ describe("knowledge-bases service", () => {
     const { agentId, events } = calls.bumped[0]!;
     expect(agentId).toBe("agent-kb1");
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      kind: "trigger",
-      payload: {
-        scheduleId: "kb-install:agent-kb1",
-        sessionMode: "fresh",
-        // The install run continues into the onboarding interview, so the
-        // session must land under Chats where the user can answer.
-        sessionType: "regular",
-      },
-    });
-    const task = (events[0] as { payload: { task: string } }).payload.task;
-    expect(task).toContain("INSTALLATION.md");
-    expect(task).toContain("llm-wiki");
+    expect(events[0]).toMatchObject({ kind: "workspace-command" });
+    const command = (events[0] as { payload: { command: string } }).payload
+      .command;
+    expect(command).toContain("bootstrap.sh");
+    expect(command).toContain("llm-wiki");
 
     expect(calls.enqueued).toEqual(["agent-kb1"]);
     expect(calls.woken).toEqual(["agent-kb1"]);
