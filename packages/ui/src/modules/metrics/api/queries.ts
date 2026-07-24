@@ -21,6 +21,17 @@ export function useAgentSpend(from: string, to: string) {
   });
 }
 
+/** Per-day spend across all of the user's agents over [from, to), bucketed
+ *  into the browser's local calendar days. Response is sparse — the caller
+ *  zero-fills the month. */
+export function useDailySpend(from: string, to: string, timeZone: string) {
+  return useQuery({
+    ...trpc.metrics.spendByDay.queryOptions({ from, to, timeZone }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 /** Metrics overview for one agent. Disabled while no agent is selected. */
 export function useMetricsOverview(
   agentId: string | null,

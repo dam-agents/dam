@@ -3,6 +3,7 @@ import type {
   CallContext,
   SessionRuntime,
   SpendByAgent,
+  SpendByDay,
   TokenSpendByModel,
 } from "api-server-api";
 import type {
@@ -152,6 +153,29 @@ export function createClickhouseReader(
         agentName: String(x.agentName ?? ""),
         costUsd: n(x.costUsd),
       })) satisfies SpendByAgent[];
+    },
+
+    async spendByDay(agentIds, window, timeZone) {
+      // Bucket each call into a wall-clock day in the caller's timezone:
+      // toTimeZone shifts the UTC Timestamp into `tz`, toDate truncates to that
+      // local calendar day. The [from, to) instants already bound the window;
+      // grouping by local day may pull in a call whose UTC day differs, which
+      // is exactly what "the user's calendar" means. Output is sparse — only
+      // days that actually had calls — and the client zero-fills the month.
+      const r = await rows(
+        `SELECT
+           toDate(toTimeZone(Timestamp, {timeZone:String})) AS day,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY day
+         ORDER BY day`,
+        { ...windowParams(agentIds, window), timeZone },
+      );
+      return r.map((x) => ({
+        day: String(x.day ?? ""),
+        costUsd: n(x.costUsd),
+      })) satisfies SpendByDay[];
     },
 
     async runtimeBySession(agentIds, window) {

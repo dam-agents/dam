@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
+import type { SpendByDay } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -6,10 +7,15 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useAgentSpend, useModelSpend } from "../api/queries.js";
+import {
+  useAgentSpend,
+  useDailySpend,
+  useModelSpend,
+} from "../api/queries.js";
 import {
   AgentSpendBars,
   ModelSpendTable,
+  SpendByDayChart,
 } from "../components/metrics-panel.js";
 import { formatUsd } from "../lib/format.js";
 
@@ -17,6 +23,29 @@ import { formatUsd } from "../lib/format.js";
 // resulting instants, so "calendar month" means the user's wall-clock month.
 const monthStart = (base: Date, offset: number) =>
   new Date(base.getFullYear(), base.getMonth() + offset, 1);
+
+// The browser owns calendar semantics: from the sparse per-day rows the server
+// returns, build the full day list for the selected month, zero-filling days
+// with no spend. For the current month we stop at today so there are no empty
+// future columns. Keys are local `YYYY-MM-DD`, matching the server's buckets.
+const pad = (n: number) => String(n).padStart(2, "0");
+function fillMonthDays(
+  month: Date,
+  isCurrentMonth: boolean,
+  rows: SpendByDay[] | undefined,
+): SpendByDay[] {
+  const byDay = new Map((rows ?? []).map((r) => [r.day, r.costUsd]));
+  const year = month.getFullYear();
+  const m = month.getMonth();
+  const daysInMonth = new Date(year, m + 1, 0).getDate();
+  const lastDay = isCurrentMonth ? new Date().getDate() : daysInMonth;
+  const days: SpendByDay[] = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const day = `${year}-${pad(m + 1)}-${pad(d)}`;
+    days.push({ day, costUsd: byDay.get(day) ?? 0 });
+  }
+  return days;
+}
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
@@ -27,11 +56,14 @@ export function UsageView() {
     month: "long",
     year: "numeric",
   });
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const from = month.toISOString();
   const to = monthStart(month, 1).toISOString();
   const { data, isPending, isError } = useModelSpend(from, to);
   const { data: agentData } = useAgentSpend(from, to);
+  const { data: dailyData } = useDailySpend(from, to, timeZone);
   const total = data?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
+  const dailyDays = fillMonthDays(month, isCurrentMonth, dailyData);
 
   return (
     <div>
@@ -78,15 +110,24 @@ export function UsageView() {
           <div className="mb-8 text-[32px] font-semibold tabular-nums text-foreground">
             {formatUsd(total)}
           </div>
-          <SectionLabel spaced>Spend by model</SectionLabel>
           {data.length === 0 ? (
-            <p className="text-[14px] text-muted-foreground">
-              No LLM calls in {monthLabel}.
-            </p>
+            <>
+              <SectionLabel spaced>Spend by model</SectionLabel>
+              <p className="text-[14px] text-muted-foreground">
+                No LLM calls in {monthLabel}.
+              </p>
+            </>
           ) : (
-            <Card className="p-4 text-[12px]">
-              <ModelSpendTable rows={data} />
-            </Card>
+            <>
+              <SectionLabel spaced>Spend by day</SectionLabel>
+              <Card className="mb-2 p-4">
+                <SpendByDayChart days={dailyDays} />
+              </Card>
+              <SectionLabel spaced>Spend by model</SectionLabel>
+              <Card className="p-4 text-[12px]">
+                <ModelSpendTable rows={data} />
+              </Card>
+            </>
           )}
           {agentData && agentData.length > 0 && (
             <>

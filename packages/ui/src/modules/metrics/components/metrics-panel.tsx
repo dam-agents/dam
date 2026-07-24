@@ -2,6 +2,7 @@ import type {
   CallContext,
   SessionRuntime,
   SpendByAgent,
+  SpendByDay,
   TokenSpendByModel,
 } from "api-server-api";
 import { useState } from "react";
@@ -217,6 +218,59 @@ export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Hand-rolled column chart — one column per calendar day of the selected
+ *  month. The caller owns calendar semantics: it passes the full, already
+ *  zero-filled day list (and, for the current month, stops at today), so this
+ *  only maps cost → height. The tallest column sets the scale; hovering a
+ *  column reveals its exact USD. Deliberately no chart library. */
+export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
+  const max = days.reduce((m, d) => Math.max(m, d.costUsd), 0);
+  return (
+    <div className="flex gap-2">
+      <div className="flex h-40 w-12 flex-col justify-between py-px text-right text-[10px] tabular-nums text-text-secondary">
+        <span>{formatUsd(max)}</span>
+        <span>$0</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex h-40 items-end gap-px">
+          {days.map((d) => {
+            const dayNum = Number(d.day.slice(8, 10));
+            return (
+              <div
+                key={d.day}
+                title={`${d.day}: ${formatUsd(d.costUsd)}`}
+                className="group flex h-full min-w-0 flex-1 items-end"
+              >
+                <div
+                  className="w-full rounded-t-sm bg-accent group-hover:bg-accent-hover"
+                  style={{
+                    height: `${d.costUsd > 0 && max > 0 ? Math.max((d.costUsd / max) * 100, 1) : 0}%`,
+                  }}
+                />
+                {/* Hover shows the exact amount via title; this backs it for
+                    screen readers. */}
+                <span className="sr-only">
+                  Day {dayNum}: {formatUsd(d.costUsd)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-1 flex gap-px text-[10px] tabular-nums text-text-secondary">
+          {days.map((d) => {
+            const dayNum = Number(d.day.slice(8, 10));
+            return (
+              <span key={d.day} className="min-w-0 flex-1 text-center">
+                {dayNum % 2 === 1 ? dayNum : ""}
+              </span>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

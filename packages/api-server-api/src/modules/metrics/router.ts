@@ -5,6 +5,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   metricsOverviewInputSchema,
+  metricsSpendByDayInputSchema,
   metricsSpendInputSchema,
 } from "./schemas.js";
 
@@ -24,4 +25,7 @@ export const metricsRouter = t.router({
   spendByAgent: readAgentProcedure
     .input(metricsSpendInputSchema)
     .query(({ ctx, input }) => ctx.metrics.spendByAgent(input)),
+  spendByDay: readAgentProcedure
+    .input(metricsSpendByDayInputSchema)
+    .query(({ ctx, input }) => ctx.metrics.spendByDay(input)),
 });

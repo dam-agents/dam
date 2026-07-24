@@ -1,11 +1,15 @@
 import type { z } from "zod";
 import type {
   metricsOverviewInputSchema,
+  metricsSpendByDayInputSchema,
   metricsSpendInputSchema,
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
 export type MetricsSpendQuery = z.infer<typeof metricsSpendInputSchema>;
+export type MetricsSpendByDayQuery = z.infer<
+  typeof metricsSpendByDayInputSchema
+>;
 
 /** Token counts + cost rolled up per model, over the window. */
 export interface TokenSpendByModel {
@@ -25,6 +29,14 @@ export interface TokenSpendByModel {
 export interface SpendByAgent {
   agentId: string;
   agentName: string;
+  costUsd: number;
+}
+
+/** Spend for one local calendar day. The response is sparse — only days that
+ *  carried spend appear, `day` is a `YYYY-MM-DD` wall-clock date in the
+ *  client's timezone. Zero-filling the rest of the month is the client's job. */
+export interface SpendByDay {
+  day: string;
   costUsd: number;
 }
 
@@ -79,4 +91,7 @@ export interface MetricsService {
   /** Per-agent spend over [from, to), across all of the caller's agents
    *  (deleted included), sorted highest cost first. */
   spendByAgent(query: MetricsSpendQuery): Promise<SpendByAgent[]>;
+  /** Per-day spend over [from, to), bucketed into the client's local calendar
+   *  days. Sparse: only days with spend are returned. */
+  spendByDay(query: MetricsSpendByDayQuery): Promise<SpendByDay[]>;
 }
