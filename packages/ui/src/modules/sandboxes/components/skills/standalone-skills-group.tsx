@@ -103,8 +103,13 @@ export function StandaloneSkillsGroup({
                 <p className="truncate text-[15px] font-medium text-foreground">
                   {skill.name}
                 </p>
-                <p className="truncate text-[13px] text-muted-foreground">
-                  only in this sandbox
+                <p
+                  className={cn(
+                    "truncate text-[13px] text-muted-foreground",
+                    !skill.description && "italic",
+                  )}
+                >
+                  {skill.description || "No description"}
                 </p>
               </div>
 
