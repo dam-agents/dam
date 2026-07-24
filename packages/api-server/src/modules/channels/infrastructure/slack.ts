@@ -397,16 +397,63 @@ export function createSlackWorker(
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
-  /** The most recent inbound turn per agent, so the `reply`/`react` tools can
-   *  target "this thread" / "the message I'm answering" without the agent
-   *  echoing ids back. Set at every relay entry point; never cleared (a later
-   *  proactive tool call still resolves to the last turn, mirroring Telegram's
-   *  last-active-thread fallback). The contract prompt also injects the ids so
-   *  a well-behaved agent passes them explicitly, which wins over this map. */
-  const activeTurn = new Map<
-    string,
-    { channel: string; threadTs: string; eventTs: string }
-  >();
+  /** A turn the `reply`/`react` tools can target when the agent doesn't echo
+   *  ids: the thread to reply into and the message to react to. */
+  type TurnRef = { channel: string; threadTs: string; eventTs: string };
+
+  /** Turns currently driving the harness per agent. A single agent pod
+   *  multiplexes every thread over one harness process and one MCP identity,
+   *  so the outbound `reply`/`react` call carries no turn id — only the
+   *  prompt-injected `threadTs` argument distinguishes them. This set is the
+   *  fallback for when the agent omits it: with exactly one live turn the
+   *  target is unambiguous; with several, guessing would post one thread's
+   *  reply into another (#2952), so the tools refuse and ask for the id the
+   *  prompt already gave. A turn joins when it starts driving the harness and
+   *  leaves when its prompt settles; a wedged turn lingers until the ACP turn
+   *  ceiling, which only forces id-less calls onto the injected id — never a
+   *  mis-route. */
+  const inFlightTurns = new Map<string, Set<TurnRef>>();
+
+  /** The most recent turn per agent, never cleared — the last-active-thread
+   *  fallback for a proactive `reply`/`react` made outside any live turn (e.g.
+   *  from a scheduled session), mirroring Telegram. Consulted only when no turn
+   *  is in flight. */
+  const lastTurn = new Map<string, TurnRef>();
+
+  function beginTurn(instanceName: string, ref: TurnRef) {
+    lastTurn.set(instanceName, ref);
+    let live = inFlightTurns.get(instanceName);
+    if (!live) {
+      live = new Set();
+      inFlightTurns.set(instanceName, live);
+    }
+    live.add(ref);
+  }
+
+  function endTurn(instanceName: string, ref: TurnRef) {
+    const live = inFlightTurns.get(instanceName);
+    if (!live) return;
+    live.delete(ref);
+    if (live.size === 0) inFlightTurns.delete(instanceName);
+  }
+
+  /** Resolve the turn a reply/react targets when the agent passed no ids:
+   *  the sole live turn, else the last-active-thread fallback, else `ambiguous`
+   *  when several turns are live at once (the agent must name the thread). */
+  function resolveTurn(
+    instanceName: string,
+  ): { ref: TurnRef } | { ambiguous: true } | { none: true } {
+    const live = inFlightTurns.get(instanceName);
+    if (live && live.size === 1) return { ref: [...live][0]! };
+    if (live && live.size > 1) return { ambiguous: true };
+    const last = lastTurn.get(instanceName);
+    return last ? { ref: last } : { none: true };
+  }
+
+  const AMBIGUOUS_THREAD_ERROR =
+    "This agent is handling more than one Slack thread right now — pass the " +
+    'threadTs shown in your turn instructions (reply threadTs="…", react ' +
+    'messageTs="…") so this lands in the thread you are answering.';
 
   /** Attribution footer for a post by `instanceName`: the agent's name linked to
    *  its UI page, with the id carried in the URL so the author can be recovered
@@ -517,13 +564,14 @@ export function createSlackWorker(
     const gw = gateway;
     const { instanceName } = ctx;
 
-    // Remember the turn so the reply/react tools can target this thread and the
-    // triggering message without the agent echoing ids back.
-    activeTurn.set(instanceName, {
+    // The thread/message the reply/react tools target when the agent doesn't
+    // echo ids back. Registered inside the turn's `try` below (not here) so a
+    // throw during turn setup can never leak an in-flight entry.
+    const turnRef: TurnRef = {
       channel: ctx.channel,
       threadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
-    });
+    };
 
     // A running "working…" status is all the platform presents on the agent's
     // behalf — the reply itself only ever lands when the agent calls `reply`.
@@ -614,6 +662,7 @@ export function createSlackWorker(
     };
 
     try {
+      beginTurn(instanceName, turnRef);
       try {
         await runTurn();
       } catch (err) {
@@ -636,6 +685,7 @@ export function createSlackWorker(
     } catch (err) {
       await postFailure(err);
     } finally {
+      endTurn(instanceName, turnRef);
       await presenter.clearStatus();
       emit({
         type: EventType.ChannelTurnRelayed,
@@ -666,11 +716,10 @@ export function createSlackWorker(
     if (!gateway) return;
     const gw = gateway;
 
-    activeTurn.set(args.instanceName, {
-      channel: args.channel,
-      threadTs: args.threadTs,
-      eventTs: args.eventTs,
-    });
+    // The fork's turn is registered in `handleForkOutcome`, once the fork pod is
+    // ready and actually driving the harness — that is when its `reply`/`react`
+    // calls arrive. Registering here would make this thread a spurious reply
+    // target while the fork is still provisioning.
 
     // A running "working…" status while the fork provisions and runs; the fork
     // posts its own reply through the `reply` tool once it answers.
@@ -715,6 +764,7 @@ export function createSlackWorker(
           handleForkOutcome(outcome, {
             channel: args.channel,
             threadTs: args.threadTs,
+            eventTs: args.eventTs,
             hasThread: args.hasThread,
             instanceName: args.instanceName,
             slackUserId: args.slackUserId,
@@ -764,6 +814,7 @@ export function createSlackWorker(
     ctx: {
       channel: string;
       threadTs: string;
+      eventTs: string;
       hasThread: boolean;
       instanceName: string;
       slackUserId: string;
@@ -779,6 +830,15 @@ export function createSlackWorker(
     await match(outcome)
       .with({ type: EventType.ForkReady }, async (event) => {
         let turnOutcome: TurnOutcome = "failure";
+        // The fork drives the harness from here; register its turn so its
+        // `reply`/`react` calls resolve to this thread (and stay distinct from
+        // any concurrent turn on the same agent).
+        const turnRef: TurnRef = {
+          channel: ctx.channel,
+          threadTs: ctx.threadTs,
+          eventTs: ctx.eventTs,
+        };
+        beginTurn(ctx.instanceName, turnRef);
         const onImagesDropped = () =>
           ephemeral(
             ctx.channel,
@@ -818,6 +878,7 @@ export function createSlackWorker(
             text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
           });
         } finally {
+          endTurn(ctx.instanceName, turnRef);
           await ctx.presenter.clearStatus();
           emit({
             type: EventType.ChannelTurnRelayed,
@@ -1381,11 +1442,12 @@ export function createSlackWorker(
     // A reply (if the agent chimes in) threads under the triggering message; a
     // react targets that message. No 👀 ack and no status — ambient stays out
     // of the channel's way until the agent decides to speak.
-    activeTurn.set(args.instanceName, {
+    const turnRef: TurnRef = {
       channel: args.channel,
       threadTs: args.replyThreadTs,
       eventTs: args.eventTs,
-    });
+    };
+    beginTurn(args.instanceName, turnRef);
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -1455,6 +1517,7 @@ export function createSlackWorker(
         "slack.ambient_turn.failed",
       );
     } finally {
+      endTurn(args.instanceName, turnRef);
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -1880,12 +1943,17 @@ export function createSlackWorker(
       if (!gw) return { error: "slack bot not running" };
       if (!args.text) return { error: "nothing to send — reply needs text" };
 
-      const threadTs = args.threadTs ?? activeTurn.get(instanceName)?.threadTs;
+      let threadTs = args.threadTs;
       if (!threadTs) {
-        return {
-          error:
-            "no active thread to reply to — use send_channel_message for a top-level post",
-        };
+        const turn = resolveTurn(instanceName);
+        if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("none" in turn) {
+          return {
+            error:
+              "no active thread to reply to — use send_channel_message for a top-level post",
+          };
+        }
+        threadTs = turn.ref.threadTs;
       }
       const target = await resolveOutboundTarget(
         gw,
@@ -1915,8 +1983,13 @@ export function createSlackWorker(
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      const messageTs = args.messageTs ?? activeTurn.get(instanceName)?.eventTs;
-      if (!messageTs) return { error: "no message to react to" };
+      let messageTs = args.messageTs;
+      if (!messageTs) {
+        const turn = resolveTurn(instanceName);
+        if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("none" in turn) return { error: "no message to react to" };
+        messageTs = turn.ref.eventTs;
+      }
       // Slack wants the bare short name; tolerate :colons: or an accidental
       // leading/trailing space.
       const name = args.emoji.trim().replace(/^:+|:+$/g, "");

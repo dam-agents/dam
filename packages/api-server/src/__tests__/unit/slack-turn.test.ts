@@ -333,3 +333,110 @@ describe("slack reply / react tools", () => {
     expect(h.records().some((r) => r.kind === "reaction")).toBe(false);
   });
 });
+
+describe("slack reply / react tools — concurrent turns (#2952)", () => {
+  /** A harness whose turns park in `sendPrompt` until released, so a test can
+   *  hold several turns in flight for one agent at once — the situation that
+   *  used to cross-route a reply into the wrong thread. Each turn records the
+   *  thread it drives (its fresh-session `platformMeta.threadTs`). */
+  function gatedHarness() {
+    const started = new Set<string>();
+    const gates: Array<() => void> = [];
+    const sendPrompt: SendPromptFn = async (_prompt, opts) => {
+      const meta = opts as { platformMeta?: { threadTs?: string } };
+      started.add(meta.platformMeta?.threadTs ?? "unknown");
+      await new Promise<void>((resolve) => gates.push(resolve));
+      return "answer";
+    };
+    const h = harness({ sendPrompt });
+    return {
+      ...h,
+      started,
+      /** Fire a mention without awaiting — its turn parks in flight. */
+      fire(ts: string) {
+        void h.gw.fireMention({
+          user: "U1",
+          channel: "C1",
+          ts,
+          text: `msg ${ts}`,
+          teamId: "T-e2e",
+        });
+      },
+      async waitInFlight(...threads: string[]) {
+        for (let i = 0; i < 200 && !threads.every((t) => started.has(t)); i++) {
+          await tick();
+        }
+        expect(threads.every((t) => started.has(t))).toBe(true);
+      },
+      release() {
+        for (const g of gates) g();
+      },
+    };
+  }
+
+  it("refuses an id-less reply while two threads are in flight, and honours an explicit threadTs", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    h.fire("200.2");
+    await h.waitInFlight("100.1", "200.2");
+
+    // The reply carries no turn id, so which thread it belongs to is ambiguous
+    // — refuse rather than guess (guessing is exactly the #2952 cross-route).
+    const ambiguous = await h.worker.reply("agent-1", {
+      text: "which thread?",
+    });
+    expect(ambiguous).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    expect(h.records().some((r) => r.kind === "message")).toBe(false);
+
+    // The prompt-injected threadTs resolves it deterministically.
+    h.gw.resetOutbound();
+    const ok = await h.worker.reply("agent-1", {
+      text: "for thread A",
+      threadTs: "100.1",
+    });
+    expect(ok).toEqual({ ok: true });
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ threadTs: "100.1", text: "for thread A" });
+
+    h.release();
+    await tick();
+  });
+
+  it("refuses an id-less react while two threads are in flight", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    h.fire("200.2");
+    await h.waitInFlight("100.1", "200.2");
+
+    const ambiguous = await h.worker.react("agent-1", { emoji: "eyes" });
+    expect(ambiguous).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    expect(h.records().some((r) => r.kind === "reaction")).toBe(false);
+
+    h.release();
+    await tick();
+  });
+
+  it("resolves an id-less reply to the sole in-flight turn's thread", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.gw.resetOutbound();
+
+    const ok = await h.worker.reply("agent-1", { text: "sole turn" });
+    expect(ok).toEqual({ ok: true });
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
+
+    h.release();
+    await tick();
+  });
+});
