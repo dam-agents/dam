@@ -52,6 +52,7 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -163,6 +164,16 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+
+  // On a freshly-created knowledge base, greet the user by running the wiki
+  // onboarding on their behalf instead of opening to an empty chat.
+  const view = useStore((s) => s.view);
+  useKnowledgeBaseGreeting({
+    agentId: selectedAgent,
+    active: view === "knowledge-base-chat",
+    idle: !sessionId && messages.length === 0,
+    sendPrompt,
+  });
 
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
