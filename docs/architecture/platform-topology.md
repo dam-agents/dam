@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-07-17
+Last verified: 2026-07-24
 
 ## Overview
 
@@ -99,7 +99,7 @@ ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 The controller-reconciled domain resources are CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
 
 - `spec` — user intent. Owned exclusively by the api-server; validated by the K8s API server at admission.
-- `status` — observed state. Owned exclusively by the controller, written through the status subresource. Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` alone and never inspects pods itself.
+- `status` — observed state. Owned exclusively by the controller, written through the status subresource. Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` alone and never inspects pods itself. The user-facing state projection additionally reads the pod-level conditions so a gateway-only roll (a credential or L7-chain change) is not presented as an agent restart.
 
 | Kind | Purpose |
 |---|---|

@@ -83,6 +83,8 @@ export interface InfraAgent {
   /** AgentPodReady condition reason token when False (PodNotReady, or a
    *  termination token like ImagePullFailure / OutOfMemory). */
   agentPodNotReadyReason?: string;
+  /** AgentPodReady condition is True. Undefined until published. */
+  agentPodReady?: boolean;
   /** GatewayPodReady condition is True. Undefined until published. */
   gatewayPodReady?: boolean;
 }
@@ -101,6 +103,12 @@ export function computeAgentState(
   // Parked (#1900) before the "starting" fallthrough: a parked agent is not
   // coming up — presenting it as perpetually starting would mislead pollers.
   if (infra.overBudget) return "over_budget";
+  // Gateway-only unreadiness (#2903): the agent pod is up and serving — a
+  // gateway roll (credential / L7-chain change) must not present as an agent
+  // restart. Presentation only: routing (ensureReady) still waits on the
+  // aggregate Ready.
+  if (infra.agentPodReady === true && infra.gatewayPodReady === false)
+    return preparingWorkspace ? "preparing_workspace" : "running";
   return "starting";
 }
 
@@ -189,6 +197,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     podTerminationReason: agentPodTerminationMessage(obj),
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
+    agentPodReady: agentPod ? agentPod.status === "True" : undefined,
     gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
   };
 }
