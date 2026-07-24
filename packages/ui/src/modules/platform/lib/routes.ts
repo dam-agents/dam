@@ -13,6 +13,8 @@ export const viewSchema = z.enum([
   "experiments",
   "experiment-new",
   "experiment-detail",
+  "knowledge-bases",
+  "knowledge-base-new",
   "artifacts",
 ]);
 export type View = z.infer<typeof viewSchema>;
@@ -66,6 +68,8 @@ export function viewToPath(
   if (view === "experiment-new") return "/experiments/new";
   if (view === "experiment-detail" && experimentId)
     return `/experiments/${encodeURIComponent(experimentId)}`;
+  if (view === "knowledge-bases") return "/knowledge-bases";
+  if (view === "knowledge-base-new") return "/knowledge-bases/new";
   if (view === "artifacts") return "/artifacts";
   return "/";
 }
@@ -106,6 +110,8 @@ export function pathToState(path: string): {
     };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/experiments/new") return { view: "experiment-new" };
+  if (path === "/knowledge-bases") return { view: "knowledge-bases" };
+  if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
   const experimentDetailMatch = path.match(/^\/experiments\/([^/]+)$/);
   if (experimentDetailMatch)
     return {

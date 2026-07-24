@@ -50,6 +50,7 @@ export {
 
 export type {
   Agent,
+  AgentKind,
   AgentSpec,
   AgentState,
   AgentsService,
@@ -80,6 +81,7 @@ export {
   agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
   agentCreateInputSchema,
+  agentKindSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
   agentGetInputSchema,
@@ -140,6 +142,11 @@ export {
   experimentCreateInputSchema,
   experimentIdInputSchema,
 } from "./modules/experiments/schemas.js";
+export type {
+  KnowledgeBaseCreateInput,
+  KnowledgeBasesService,
+} from "./modules/knowledge-bases/types.js";
+export { knowledgeBaseCreateInputSchema } from "./modules/knowledge-bases/schemas.js";
 export type {
   ArtifactKind,
   ArtifactVisibility,

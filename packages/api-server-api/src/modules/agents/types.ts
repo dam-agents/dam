@@ -3,6 +3,7 @@ import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type {
   agentCreateInputSchema,
+  agentKindSchema,
   agentUpdateInputSchema,
 } from "./schemas.js";
 
@@ -90,8 +91,12 @@ export interface Agent {
   /** Emails of users (other than the owner) allowed to message this agent
    *  from a connected channel. */
   allowedUserEmails: string[];
+  /** Agent Kind: which first-class surface owns this agent (a Knowledge Base
+   *  is an Agent + this marker). Absent on plain sandboxes. */
+  kind?: AgentKind;
 }
 
+export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema>;
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

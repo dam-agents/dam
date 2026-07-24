@@ -45,6 +45,7 @@ import {
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
+import { composeKnowledgeBasesForOwner } from "../../modules/knowledge-bases/index.js";
 import { createCandidateRoutes } from "../../modules/experiments/candidate-route.js";
 import {
   composeArtifactLibraryForOwner,
@@ -886,6 +887,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
+    const { knowledgeBases } = composeKnowledgeBasesForOwner({
+      owner: user.sub,
+      agents,
+      runtimeMutator,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
+    });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
       db,
       artifacts,
@@ -971,6 +980,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         approvals,
         egressRules,
         experiments,
+        knowledgeBases,
         artifactLibrary,
         features,
         files,

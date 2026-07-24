@@ -22,6 +22,8 @@ export interface NavigationSlice {
   navigateToExperiments: () => void;
   navigateToCreateExperiment: () => void;
   navigateToExperiment: (experimentId: string) => void;
+  navigateToKnowledgeBases: () => void;
+  navigateToCreateKnowledgeBase: () => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -115,6 +117,14 @@ export const createNavigationSlice: StateCreator<
       viewToPath("experiment-detail", null, null, null, experimentId),
     );
     set({ view: "experiment-detail", agentId: null, experimentId });
+  },
+  navigateToKnowledgeBases: () => {
+    history.pushState(null, "", viewToPath("knowledge-bases"));
+    set({ view: "knowledge-bases", agentId: null, experimentId: null });
+  },
+  navigateToCreateKnowledgeBase: () => {
+    history.pushState(null, "", viewToPath("knowledge-base-new"));
+    set({ view: "knowledge-base-new", agentId: null, experimentId: null });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

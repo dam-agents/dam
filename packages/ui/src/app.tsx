@@ -12,6 +12,8 @@ import { ExperimentDetailView } from "./modules/experiments/views/experiment-det
 import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
+import { KnowledgeBaseCreateView } from "./modules/knowledge-bases/views/knowledge-base-create-view.js";
+import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -65,6 +67,11 @@ function MainApp() {
       view === "experiment-new" ||
       view === "experiment-detail";
     if (experimentsView && !features.experiments) {
+      setView("list");
+    }
+    const knowledgeBasesView =
+      view === "knowledge-bases" || view === "knowledge-base-new";
+    if (knowledgeBasesView && !features["knowledge-bases"]) {
       setView("list");
     }
   }, [features, view, setView]);
@@ -158,6 +165,10 @@ function MainApp() {
                 <ExperimentsListView />
               ) : view === "experiment-detail" ? (
                 <ExperimentDetailView />
+              ) : view === "knowledge-bases" ? (
+                <KnowledgeBasesListView />
+              ) : view === "knowledge-base-new" ? (
+                <KnowledgeBaseCreateView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

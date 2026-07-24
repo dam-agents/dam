@@ -7,41 +7,38 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
-import { BudgetMeter } from "../../budgets/components/budget-meter.js";
-import { useAppConnections } from "../../connections/api/queries.js";
-import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
-import { useDeleteAgent } from "../api/mutations.js";
-import { useAgents } from "../api/queries.js";
-import { AgentRow } from "../components/agent-row.js";
+import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { useAgents } from "../../agents/api/queries.js";
+import { AgentRow } from "../../agents/components/agent-row.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
-} from "../hooks/use-restart-agent.js";
+} from "../../agents/hooks/use-restart-agent.js";
 import {
   useSuspendAgent,
   useSyncPausingAgents,
-} from "../hooks/use-suspend-agent.js";
-import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import { resolveAgentDisplay } from "../utils/agent-resolver.js";
+} from "../../agents/hooks/use-suspend-agent.js";
+import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
+import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import {
   sandboxSubtitle,
   type SandboxSubtitleLookup,
-} from "../utils/sandbox-subtitle.js";
+} from "../../agents/utils/sandbox-subtitle.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useTemplates } from "../../templates/api/queries.js";
 
-// Stable fallback so `subtitleLookup`'s memo isn't defeated while the
-// templates query has no data yet.
 const NO_TEMPLATES: TemplateView[] = [];
 
-export function ListView() {
+/** The Knowledge Bases surface: the owner's agents carrying the
+ *  `knowledge-base` kind. Rows open straight into chat — the knowledge base
+ *  is worked with conversationally, not configured first. */
+export function KnowledgeBasesListView() {
   const { data: templatesData } = useTemplates();
   const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
-  // Knowledge Bases are agents too, but they live on their own surface — the
-  // Sandboxes list shows only unmarked agents.
-  const agents = (agentsData?.list ?? []).filter(
-    (agent) => agent.kind !== "knowledge-base",
+  const knowledgeBases = (agentsData?.list ?? []).filter(
+    (agent) => agent.kind === "knowledge-base",
   );
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
@@ -53,12 +50,12 @@ export function ListView() {
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
 
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToCreateKnowledgeBase = useStore(
+    (s) => s.navigateToCreateKnowledgeBase,
+  );
   const showConfirm = useStore((s) => s.showConfirm);
 
-  // Gate on data presence, not query success: a transient poll failure keeps
-  // the cached list rendered instead of flashing skeletons over it.
   const initialLoaded = agentsData !== undefined;
 
   const restartingIds = useMemo(
@@ -80,36 +77,20 @@ export function ListView() {
     [templates, connections.data],
   );
 
-  const stopSandbox = async (agent: AgentView) => {
-    // Schedules override a stop by design (#1900) — say so before it lands.
-    const schedules = await fetchSchedulesForAgent(agent.id);
-    const scheduleNote =
-      schedules.length > 0 ? (
-        <>
-          {" "}
-          This sandbox has <strong>{schedules.length} schedule(s)</strong> — the
-          next fire will start it again.
-        </>
-      ) : null;
+  const deleteKnowledgeBase = async (agent: AgentView) => {
     const msg = (
       <>
-        Stop sandbox <strong className="text-foreground">"{agent.name}"</strong>
-        ? It stays stopped until you start it.{scheduleNote}
-      </>
-    );
-    if (!(await showConfirm(msg, "Stop Sandbox"))) return;
-    suspend.stop(agent.id);
-  };
-
-  const deleteSandbox = async (agent: AgentView) => {
-    const msg = (
-      <>
-        Delete sandbox{" "}
+        Delete knowledge base{" "}
         <strong className="text-foreground">"{agent.name}"</strong>? This will
-        also delete <strong>all persistent data</strong> and cannot be undone.
+        also delete <strong>all of its knowledge and data</strong> and cannot be
+        undone.
       </>
     );
-    if (!(await showConfirm(msg, "Delete Sandbox", { kind: "destructive" })))
+    if (
+      !(await showConfirm(msg, "Delete Knowledge Base", {
+        kind: "destructive",
+      }))
+    )
       return;
     deleteAgent.mutate({ id: agent.id });
   };
@@ -117,35 +98,36 @@ export function ListView() {
   return (
     <div className="mx-auto w-full max-w-[666px]">
       <PageHeader
-        title="Sandboxes"
+        title="Knowledge bases"
         actions={
-          agents.length > 0 ? (
-            <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+          knowledgeBases.length > 0 ? (
+            <Button onClick={navigateToCreateKnowledgeBase}>
+              New knowledge base
+            </Button>
           ) : undefined
         }
       />
 
-      {initialLoaded && agents.length > 0 && <BudgetMeter />}
-
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-      {initialLoaded && agents.length === 0 && (
+      {initialLoaded && knowledgeBases.length === 0 && (
         <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
           <h2 className="text-[16px] font-semibold text-foreground">
-            No sandboxes yet
+            No knowledge bases yet
           </h2>
           <p className="text-[14px] text-muted-foreground">
-            Create your first sandbox to get started.
+            A knowledge base is an agent that builds and maintains a body of
+            knowledge for you. Create one and it sets itself up.
           </p>
-          <Button className="mt-1" onClick={navigateToCreateSandbox}>
-            Create sandbox
+          <Button className="mt-1" onClick={navigateToCreateKnowledgeBase}>
+            New knowledge base
           </Button>
         </Card>
       )}
 
       <div className="flex flex-col gap-3">
         {initialLoaded &&
-          agents.map((agent) => (
+          knowledgeBases.map((agent) => (
             <AgentRow
               key={agent.id}
               agent={agent}
@@ -154,12 +136,12 @@ export function ListView() {
               deletePending={
                 deleteAgent.isPending && deleteAgent.variables?.id === agent.id
               }
-              onSelect={() => navigateToSandboxHome(agent.id)}
+              onSelect={() => selectAgent(agent.id)}
               onWake={() => wakeAgent.wake(agent.id)}
               onRestart={() => restartAgent(agent.id)}
               onPause={() => suspend.pause(agent.id)}
-              onStop={() => void stopSandbox(agent)}
-              onDelete={() => void deleteSandbox(agent)}
+              onStop={() => suspend.stop(agent.id)}
+              onDelete={() => void deleteKnowledgeBase(agent)}
             />
           ))}
       </div>

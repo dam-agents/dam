@@ -1,4 +1,5 @@
 import {
+  Book,
   type CarbonIconType,
   Chemistry,
   Email as Inbox,
@@ -35,11 +36,13 @@ export function IconRail({
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
+  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
 
   const { data: approvals = EMPTY } = useApprovalsForOwner();
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
   const { data: features } = useFeatures();
   const showExperiments = features?.experiments ?? false;
+  const showKnowledgeBases = features?.["knowledge-bases"] ?? false;
 
   const sandboxes: Destination = {
     label: "Sandboxes",
@@ -57,6 +60,13 @@ export function IconRail({
       view === "experiment-detail",
     badge: 0,
     navigate: navigateToExperiments,
+  };
+  const knowledgeBases: Destination = {
+    label: "Knowledge bases",
+    icon: Book,
+    active: view === "knowledge-bases" || view === "knowledge-base-new",
+    badge: 0,
+    navigate: navigateToKnowledgeBases,
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -100,8 +110,7 @@ export function IconRail({
         <div className="flex flex-col items-center gap-1">
           <RailItem {...sandboxes} />
           {showExperiments && <RailItem {...experiments} />}
-          {/* Knowledge Bases nav item slots in here (issue #2915) once the
-              feature ships — under construction. */}
+          {showKnowledgeBases && <RailItem {...knowledgeBases} />}
           <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
@@ -117,8 +126,7 @@ export function IconRail({
           {[
             sandboxes,
             ...(showExperiments ? [experiments] : []),
-            // Knowledge Bases nav item slots in here (issue #2915) once the
-            // feature ships.
+            ...(showKnowledgeBases ? [knowledgeBases] : []),
             artifacts,
             inbox,
             settings,

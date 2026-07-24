@@ -161,6 +161,16 @@ An Experiment races several AI-driven R&D harnesses against one goal and compare
 | Experiment completion | An Experiment becomes `completed` when *every* Arm has reached a terminal state, regardless of the mix of `completed`/`failed`/`stopped` Arms — the platform reports the comparison, it never judges the whole Experiment failed (no Experiment-level `failed`). `stopped` is the distinct user-driven terminal state written by Stop, which also moves any still-`running` Arm to `stopped` |
 | Inactivity Deadline | The liveness guarantee behind completion: a background sweep marks a `running` Arm `failed` if it records no Run and never calls `finish_arm` within a configured window; the clock resets on each `record_run`. Ensures every started Experiment eventually reaches a terminal state even when a harness crashes, forgets `finish_arm`, or hibernates mid-loop (the one-shot Trial prompt is never re-issued, so a hibernated mid-loop Arm would otherwise stay `running` forever) |
 
+## Knowledge Bases (bounded context)
+
+A Knowledge Base is an Agent that builds and maintains a body of knowledge the user works with through chat. The platform owns the pairing, not the knowledge: no ingestion pipeline, no query API, no schema — the agent bootstraps its own tooling. Phase 1 of epic #2796.
+
+| Term | Definition |
+|------|-----------|
+| Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, created with an Install Instruction as its first session. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
+| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface owns it — currently only `knowledge-base`. Absent on plain sandboxes. Each list surface filters on it, so an agent appears on exactly one surface |
+| Install Instruction | The one-shot prompt delivered over the trigger rail as a Knowledge Base's first session: bootstrap the knowledge tooling from an external repository, then interview the user. v1 pins one instruction (the LLM Wiki bootstrap) platform-wide; intended to become a Template concern once KB templates exist |
+
 ## Secrets (bounded context)
 
 | Term | Definition |

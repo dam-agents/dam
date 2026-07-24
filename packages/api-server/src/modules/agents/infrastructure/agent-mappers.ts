@@ -1,5 +1,7 @@
+import { agentKindSchema } from "api-server-api";
 import type {
   Agent,
+  AgentKind,
   AgentSpec,
   AgentSpecCR,
   AgentState,
@@ -9,6 +11,7 @@ import type {
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
+  ANN_AGENT_KIND,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   GROUP,
@@ -57,6 +60,9 @@ export interface InfraAgent {
   /** Agent Lifetime grace in ms (0 = delete as soon as it hibernates). Only
    *  meaningful when `sweepable`. */
   lifetimeMs: number;
+  /** Agent Kind (#2946): which first-class surface owns this agent
+   *  (knowledge-base). Absent on plain sandboxes. */
+  kind?: AgentKind;
   /** When the agent transitioned into hibernation (Ready condition's
    *  lastTransitionTime while hibernated), else undefined. The Sweep bases the
    *  Lifetime grace on this. */
@@ -162,6 +168,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready?.status === "False" && ready.reason === READY_REASON_HIBERNATED;
   const annotations = obj.metadata?.annotations ?? {};
   const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
+  // Unknown kind values (a newer writer) degrade to a plain sandbox rather
+  // than failing the whole list read.
+  const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
   const hibernatedSince =
     hibernated && ready?.lastTransitionTime
       ? new Date(ready.lastTransitionTime)
@@ -174,6 +183,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     spec,
     sweepable: annotations[ANN_SWEEPABLE] === "true",
     lifetimeMs: Number.isFinite(lifetimeMs) && lifetimeMs > 0 ? lifetimeMs : 0,
+    ...(kindParse.success ? { kind: kindParse.data } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
@@ -220,6 +230,7 @@ export function assembleAgent(
     contributionFailures,
     channels,
     allowedUserEmails,
+    kind: infra.kind,
   };
 }
 

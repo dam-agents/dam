@@ -19,6 +19,12 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Race several agents against one goal and compare their scored candidates. Adds the Experiments destination.",
   },
   {
+    id: "knowledge-bases",
+    label: "Knowledge bases",
+    description:
+      "Agents that build and maintain a body of knowledge you chat with. Adds the Knowledge bases destination.",
+  },
+  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:

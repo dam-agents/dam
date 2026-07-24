@@ -57,6 +57,11 @@ export const ANN_SWEEPABLE = "agent-platform.ai/sweepable";
 // it hibernates. Distinct from an Invocation's per-result liveness deadline.
 export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";
 
+// Agent Kind (#2946): which first-class surface owns this agent — currently
+// only "knowledge-base". Absent on plain sandboxes. Stamped at create,
+// immutable afterwards. api-server-only — the controller ignores it.
+export const ANN_AGENT_KIND = "agent-platform.ai/agent-kind";
+
 // Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status

@@ -44,7 +44,11 @@ import {
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
 } from "../domain/spec-assembly.js";
-import { ANN_LIFETIME_MS, ANN_SWEEPABLE } from "../infrastructure/labels.js";
+import {
+  ANN_AGENT_KIND,
+  ANN_LIFETIME_MS,
+  ANN_SWEEPABLE,
+} from "../infrastructure/labels.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -875,12 +879,15 @@ export function createAgentsService(deps: {
       // Sweepable (#2816): stamp the Agent Sweep annotations at create so an
       // ephemeral agent is marked from birth (no window where a spawned target
       // could hibernate before it is flagged). Durable agents omit them.
-      const sweepAnnotations: Record<string, string> = {};
+      // Agent Kind (#2946) rides the same create-time stamp: an agent either
+      // belongs to its owning surface from birth or never.
+      const createAnnotations: Record<string, string> = {};
       if (input.sweepable) {
-        sweepAnnotations[ANN_SWEEPABLE] = "true";
+        createAnnotations[ANN_SWEEPABLE] = "true";
         if (input.lifetimeMs && input.lifetimeMs > 0)
-          sweepAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
+          createAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
       }
+      if (input.kind) createAnnotations[ANN_AGENT_KIND] = input.kind;
 
       // No desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
@@ -891,7 +898,7 @@ export function createAgentsService(deps: {
           owner,
           agentId,
           templateId,
-          Object.keys(sweepAnnotations).length ? sweepAnnotations : undefined,
+          Object.keys(createAnnotations).length ? createAnnotations : undefined,
         );
       } catch (e) {
         if (input.registryCredential) {

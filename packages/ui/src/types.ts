@@ -154,6 +154,10 @@ export interface AgentView {
     | { type: "telegram" }
   )[];
   allowedUserEmails: string[];
+  /** Which first-class surface owns this agent (a Knowledge Base is an agent
+   *  with this marker). Absent on plain sandboxes; each list view filters on
+   *  it so an agent appears on exactly one surface. */
+  kind?: "knowledge-base";
 }
 
 export interface QuietWindowView {

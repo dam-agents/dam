@@ -47,6 +47,13 @@ export const agentUpgradeInputSchema = idSchema.extend({
 });
 export const agentDisconnectSlackInputSchema = idSchema;
 
+/** Agent Kind: a durable category marker distinguishing special first-class
+ *  resources built on Agents (a Knowledge Base is an Agent + marker) from
+ *  plain sandboxes (no marker). Stamped as an annotation at create,
+ *  immutable afterwards, and surfaced on the Agent view so each list surface
+ *  shows only its own kind. */
+export const agentKindSchema = z.enum(["knowledge-base"]);
+
 export const agentCreateInputSchema = z
   .object({
     name: z
@@ -97,6 +104,9 @@ export const agentCreateInputSchema = z
     // hibernated before the Sweep deletes it. Default zero — deleted as soon
     // as it hibernates. Ignored unless `sweepable`.
     lifetimeMs: z.number().int().min(0).optional(),
+    // Agent Kind: omit for a plain sandbox. Set by the owning module's create
+    // path (knowledge-bases), never collected from the sandbox wizard.
+    kind: agentKindSchema.optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",
