@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { formatSessionTimestamp } from "../lib/format-session-timestamp.js";
+import { slackSessionKind } from "../lib/session-category.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
@@ -98,6 +99,9 @@ export function SessionRow({
   const channel =
     s.type === SessionType.ChannelSlack ||
     s.type === SessionType.ChannelTelegram;
+  // Slack channel sessions split into the channel's rolling ambient reader and
+  // the threads it spins off; the ambient one wears an extra "A" marker.
+  const slackKind = slackSessionKind(s);
 
   return (
     <div
@@ -126,11 +130,15 @@ export function SessionRow({
             scheduled={scheduled}
             terminal={terminal}
             channel={channel}
+            ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
           />
         </div>
         <span className="text-[11px] text-muted-foreground">
+          {slackKind
+            ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
+            : ""}
           {formatSessionTimestamp(s.updatedAt ?? s.createdAt)}
         </span>
       </div>
@@ -187,12 +195,14 @@ function SessionIndicators({
   scheduled,
   terminal,
   channel,
+  ambient,
   needsApproval,
   working,
 }: {
   scheduled: boolean;
   terminal: boolean;
   channel: boolean;
+  ambient: boolean;
   needsApproval: boolean;
   working: boolean;
 }) {
@@ -203,9 +213,29 @@ function SessionIndicators({
       {terminal && (
         <Code size={16} className="text-text" aria-label="Terminal" />
       )}
-      {channel && (
-        <Hashtag size={16} className="text-text" aria-label="Channel session" />
-      )}
+      {channel &&
+        (ambient ? (
+          // Rolling channel reader: keep the # channel glyph, brand it with a
+          // superscript "A" so it stands apart from the threads it spins off.
+          <span
+            className="inline-flex items-start text-text"
+            aria-label="Ambient channel session"
+          >
+            <Hashtag size={16} />
+            <span
+              className="text-[9px] font-semibold leading-none text-accent"
+              aria-hidden
+            >
+              A
+            </span>
+          </span>
+        ) : (
+          <Hashtag
+            size={16}
+            className="text-text"
+            aria-label="Channel session"
+          />
+        ))}
       {scheduled && (
         <Time size={16} className="text-text" aria-label="Scheduled" />
       )}
