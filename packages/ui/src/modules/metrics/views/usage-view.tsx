@@ -6,8 +6,11 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useModelSpend } from "../api/queries.js";
-import { ModelSpendTable } from "../components/metrics-panel.js";
+import { useAgentSpend, useModelSpend } from "../api/queries.js";
+import {
+  AgentSpendBars,
+  ModelSpendTable,
+} from "../components/metrics-panel.js";
 import { formatUsd } from "../lib/format.js";
 
 // Month boundaries are computed in the browser's timezone; the API takes the
@@ -24,10 +27,10 @@ export function UsageView() {
     month: "long",
     year: "numeric",
   });
-  const { data, isPending, isError } = useModelSpend(
-    month.toISOString(),
-    monthStart(month, 1).toISOString(),
-  );
+  const from = month.toISOString();
+  const to = monthStart(month, 1).toISOString();
+  const { data, isPending, isError } = useModelSpend(from, to);
+  const { data: agentData } = useAgentSpend(from, to);
   const total = data?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
 
   return (
@@ -84,6 +87,14 @@ export function UsageView() {
             <Card className="p-4 text-[12px]">
               <ModelSpendTable rows={data} />
             </Card>
+          )}
+          {agentData && agentData.length > 0 && (
+            <>
+              <SectionLabel spaced>Spend by agent</SectionLabel>
+              <Card className="p-4">
+                <AgentSpendBars rows={agentData} />
+              </Card>
+            </>
           )}
         </>
       )}

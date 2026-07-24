@@ -26,6 +26,7 @@ function spyReader(): {
     windows,
     reader: {
       tokenSpendByModel: (ids, w) => record(ids, w),
+      spendByAgent: (ids, w) => record(ids, w),
       runtimeBySession: (ids, w) => record(ids, w),
       contextPerCall: (ids, w) => record(ids, w),
       close: async () => {},
@@ -99,6 +100,37 @@ describe("metrics ownership gate", () => {
     ]);
   });
 
+  it("spendByAgent scopes to all owned agents and passes the range through", async () => {
+    const { reader, calls, windows } = spyReader();
+    const svc = createMetricsService({ reader, listOwnedAgentIds: owned });
+    await svc.spendByAgent({
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-08-01T00:00:00.000Z",
+    });
+    expect(calls).toEqual([["agent-a", "agent-b"]]);
+    expect(windows).toEqual([
+      {
+        fromIso: "2026-07-01T00:00:00.000Z",
+        toIso: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("spendByAgent returns nothing when the caller owns no agents", async () => {
+    const { reader, calls } = spyReader();
+    const svc = createMetricsService({
+      reader,
+      listOwnedAgentIds: () => Promise.resolve([]),
+    });
+    expect(
+      await svc.spendByAgent({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+      }),
+    ).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
   it("spend returns nothing when the caller owns no agents", async () => {
     const { reader, calls } = spyReader();
     const svc = createMetricsService({
@@ -119,6 +151,12 @@ describe("metrics ownership gate", () => {
     await expect(svc.overview(query)).rejects.toThrow(/not enabled/);
     await expect(
       svc.spend({
+        from: "2026-07-01T00:00:00.000Z",
+        to: "2026-08-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow(/not enabled/);
+    await expect(
+      svc.spendByAgent({
         from: "2026-07-01T00:00:00.000Z",
         to: "2026-08-01T00:00:00.000Z",
       }),

@@ -4,6 +4,7 @@ import type {
   SessionRuntime,
   MetricsQuery,
   MetricsService,
+  SpendByAgent,
   TokenSpendByModel,
 } from "api-server-api";
 
@@ -24,6 +25,10 @@ export interface MetricsReader {
     agentIds: readonly string[],
     window: MetricsWindow,
   ): Promise<TokenSpendByModel[]>;
+  spendByAgent(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+  ): Promise<SpendByAgent[]>;
   runtimeBySession(
     agentIds: readonly string[],
     window: MetricsWindow,
@@ -81,6 +86,15 @@ export function createMetricsService(deps: {
         toIso: query.to,
       });
     },
+
+    async spendByAgent(query) {
+      const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
+      if (ids.length === 0) return [];
+      return deps.reader.spendByAgent(ids, {
+        fromIso: query.from,
+        toIso: query.to,
+      });
+    },
   };
 }
 
@@ -93,5 +107,5 @@ export function createDisabledMetricsService(): MetricsService {
       message: "Agent metrics backend is not enabled on this deployment.",
     });
   };
-  return { overview: fail, spend: fail };
+  return { overview: fail, spend: fail, spendByAgent: fail };
 }

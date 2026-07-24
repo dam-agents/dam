@@ -18,6 +18,16 @@ export interface TokenSpendByModel {
   costUsd: number;
 }
 
+/** Spend rolled up per agent over the window. Grouped on the trusted,
+ *  gateway-stamped agent id; `agentName` is the latest `platform.agent.name`
+ *  the telemetry carried in range, so a since-deleted agent keeps a readable
+ *  name. The name is display-only — the id stays the key. */
+export interface SpendByAgent {
+  agentId: string;
+  agentName: string;
+  costUsd: number;
+}
+
 /** One row per Claude Code session: API-call count, summed request latency,
  *  and token/cost totals. The sessionId is the ACP session id — Claude Code
  *  reuses it as its OTel `session.id`, so it joins with the UI's session list. */
@@ -66,4 +76,7 @@ export interface MetricsService {
   /** Per-model spend over [from, to), across all of the caller's agents —
    *  deleted ones included, so history doesn't shrink retroactively. */
   spend(query: MetricsSpendQuery): Promise<TokenSpendByModel[]>;
+  /** Per-agent spend over [from, to), across all of the caller's agents
+   *  (deleted included), sorted highest cost first. */
+  spendByAgent(query: MetricsSpendQuery): Promise<SpendByAgent[]>;
 }

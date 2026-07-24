@@ -1,6 +1,7 @@
 import type {
   CallContext,
   SessionRuntime,
+  SpendByAgent,
   TokenSpendByModel,
 } from "api-server-api";
 import { useState } from "react";
@@ -183,6 +184,40 @@ export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Hand-rolled horizontal bars — one per agent, widest is the top spender.
+ *  Rows arrive sorted highest cost first, so the first row sets the scale.
+ *  Deliberately no chart library. */
+export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
+  const max = rows[0]?.costUsd ?? 0;
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((row) => {
+        const label = row.agentName || row.agentId;
+        return (
+          <div key={row.agentId}>
+            <div className="mb-1 flex justify-between gap-2 text-[12px]">
+              <span className="truncate text-text-secondary" title={label}>
+                {label}
+              </span>
+              <span className="font-mono font-medium tabular-nums">
+                {formatUsd(row.costUsd)}
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-accent-light">
+              <div
+                className="h-full rounded-full bg-accent"
+                style={{
+                  width: `${max > 0 ? Math.max((row.costUsd / max) * 100, 2) : 0}%`,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -11,6 +11,16 @@ export function useModelSpend(from: string, to: string) {
   });
 }
 
+/** Per-agent spend across all of the user's agents over [from, to), sorted
+ *  highest cost first. */
+export function useAgentSpend(from: string, to: string) {
+  return useQuery({
+    ...trpc.metrics.spendByAgent.queryOptions({ from, to }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 /** Metrics overview for one agent. Disabled while no agent is selected. */
 export function useMetricsOverview(
   agentId: string | null,

@@ -21,4 +21,7 @@ export const metricsRouter = t.router({
   spend: readAgentProcedure
     .input(metricsSpendInputSchema)
     .query(({ ctx, input }) => ctx.metrics.spend(input)),
+  spendByAgent: readAgentProcedure
+    .input(metricsSpendInputSchema)
+    .query(({ ctx, input }) => ctx.metrics.spendByAgent(input)),
 });
