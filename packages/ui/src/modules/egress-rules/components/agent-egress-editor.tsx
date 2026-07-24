@@ -119,14 +119,14 @@ export function AgentEgressEditor({
   const stagedMode = staged !== undefined;
 
   // Path-specific and port-carrying rules need MITM, which means the
-  // controller has to re-issue the leaf cert and roll the agent pod. The
-  // L4 (host-only, 443) path is a pure DB write — no roll. Warn the user
-  // so they own the timing.
+  // controller has to re-issue the leaf cert and roll the gateway pod
+  // (the agent pod stays up, #2903). The L4 (host-only, 443) path is a
+  // pure DB write — no roll. Warn the user so they own the timing.
   const draftNeedsMitm =
     draft.method !== "*" ||
     draft.pathPattern.trim() !== "*" ||
     splitHostPort(draft.host.trim()).port != null;
-  const draftRequiresRestart =
+  const draftRequiresGatewayRestart =
     draft.host.trim().length > 0 &&
     draftNeedsMitm &&
     !serverRules.some(
@@ -157,9 +157,9 @@ export function AgentEgressEditor({
       return;
     }
     if (
-      draftRequiresRestart &&
+      draftRequiresGatewayRestart &&
       !window.confirm(
-        `Saving this rule will restart the agent (~5–15s) so Envoy can MITM "${next.host}" for path-level enforcement. Continue?`,
+        `This rule needs a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted. Continue?`,
       )
     )
       return;
@@ -350,11 +350,11 @@ export function AgentEgressEditor({
           >
             <Plus size={11} /> Add rule
           </Button>
-          {draftRequiresRestart && (
+          {draftRequiresGatewayRestart && (
             <p className="basis-full text-[11px] text-warning">
-              {stagedMode
-                ? "Saving will restart the agent (~5–15s) — path-level rules need MITM on this host."
-                : "Saving will restart the agent (~5–15s) — path-level rules need MITM on this host."}
+              Saving will restart the network gateway (~5–15s) — this rule
+              requires inspecting requests to this host. The agent keeps
+              running.
             </p>
           )}
         </div>
