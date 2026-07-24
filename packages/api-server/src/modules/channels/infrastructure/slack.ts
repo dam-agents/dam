@@ -281,6 +281,11 @@ export interface ChannelRegistry {
 
 export interface SlackWorker {
   type: ChannelType.Slack;
+  /** Open the workspace socket-mode connection at startup, before any binding
+   *  exists — inbound slash commands (`/<brand> login`), mentions and DMs must
+   *  reach the bot in chats that have no binding yet, mirroring the Telegram
+   *  bot. Idempotent and single-flight with the other gateway starters. */
+  connect(): Promise<void>;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
@@ -1793,6 +1798,10 @@ export function createSlackWorker(
 
   return {
     type: ChannelType.Slack,
+
+    async connect() {
+      await ensureGateway();
+    },
 
     async start(instanceName: string, _channel: StoredChannelConfig) {
       const started = await ensureGateway();
