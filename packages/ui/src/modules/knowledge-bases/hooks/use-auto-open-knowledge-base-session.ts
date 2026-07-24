@@ -1,6 +1,7 @@
 import { SessionMode } from "api-server-api";
 import { useEffect, useRef } from "react";
 
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 
 /** On the standalone knowledge-base page, open the newest chat session once
@@ -18,8 +19,17 @@ export function useAutoOpenKnowledgeBaseSession(opts: {
 }) {
   const { agentId, active, idle, resumeSession } = opts;
   const openedForAgentRef = useRef<string | null>(null);
+  // Gate on the agent actually running (like the sessions sidebar): a
+  // session/list against a still-booting pod fails and surfaces an error
+  // toast. Right after create the agent takes a while to come up — the hook
+  // simply starts polling once it is.
+  const runState = useAgentRunState(agentId);
   const armed =
-    active && idle && agentId !== null && openedForAgentRef.current !== agentId;
+    active &&
+    idle &&
+    agentId !== null &&
+    runState === "running" &&
+    openedForAgentRef.current !== agentId;
 
   const { data: sessions } = useAcpSessions(
     agentId,

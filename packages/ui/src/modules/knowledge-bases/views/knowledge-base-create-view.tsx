@@ -1,10 +1,9 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET } from "@/components/ui/inset";
+import { Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -76,18 +75,18 @@ export function KnowledgeBaseCreateView() {
         description="A knowledge base is an agent that sets itself up and maintains knowledge for you. Create it, then feed it sources and ask questions in chat."
       />
 
-      <section className="mb-8">
-        <FormField label="Name">
-          <Input
-            autoFocus
-            value={draft.name}
-            onChange={(event) => update({ name: event.target.value })}
-            placeholder="e.g. spyre-codebase-knowledge"
-          />
-        </FormField>
-      </section>
+      <Field label="Name">
+        <Input
+          autoFocus
+          value={draft.name}
+          onChange={(event) => update({ name: event.target.value })}
+          placeholder="e.g. spyre-codebase-knowledge"
+        />
+      </Field>
 
-      <PinnedImageSection template={template} missing={templateMissing} />
+      <Field label="Image">
+        <PinnedImageCard template={template} missing={templateMissing} />
+      </Field>
 
       <SandboxSizeSection
         templateSize={template?.size}
@@ -96,8 +95,7 @@ export function KnowledgeBaseCreateView() {
         onChange={update}
       />
 
-      <section className="mb-8">
-        <SectionLabel spaced>Provider</SectionLabel>
+      <Field label="Provider">
         <ProviderSection
           selected={draft.providerRef}
           onSelect={(ref) => update({ providerRef: ref })}
@@ -106,13 +104,11 @@ export function KnowledgeBaseCreateView() {
               update({ providerRef: null });
           }}
           autoSelectFirst
-          listClassName={FIELD_INSET}
         />
-      </section>
+      </Field>
 
-      <section className="mb-8">
-        <SectionLabel spaced>Network access</SectionLabel>
-        <div className="flex flex-col gap-2">
+      <Field label="Network access">
+        <div className="flex flex-col gap-3">
           {NETWORK_PRESETS.map((preset) => (
             <NetworkPresetRow
               key={preset.value}
@@ -123,7 +119,7 @@ export function KnowledgeBaseCreateView() {
             />
           ))}
         </div>
-      </section>
+      </Field>
 
       <KnowledgeBaseConnectionsSection
         connectionIds={draft.connectionIds}
@@ -144,32 +140,41 @@ export function KnowledgeBaseCreateView() {
   );
 }
 
-function PinnedImageSection({
+/** One form group: label flush with the page gutter, control outdented via
+ *  Inset — the same container for every field on this page so the vertical
+ *  rhythm (mb-8 / mb-3) and horizontal alignment never drift per section. */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="mb-8">
+      <SectionLabel spaced>{label}</SectionLabel>
+      <Inset>{children}</Inset>
+    </section>
+  );
+}
+
+function PinnedImageCard({
   template,
   missing,
 }: {
   template: TemplateView | undefined;
   missing: boolean;
 }) {
+  if (missing)
+    return (
+      <Card className="border border-destructive/40 px-4 py-3 text-[14px] text-muted-foreground">
+        The {KB_TEMPLATE_ID} template is not installed on this platform, so
+        knowledge bases cannot be created. Ask your operator to enable it.
+      </Card>
+    );
   return (
-    <section className="mb-8">
-      <SectionLabel spaced>Image</SectionLabel>
-      {missing ? (
-        <Card className="border border-destructive/40 px-4 py-3 text-[14px] text-muted-foreground">
-          The {KB_TEMPLATE_ID} template is not installed on this platform, so
-          knowledge bases cannot be created. Ask your operator to enable it.
-        </Card>
-      ) : (
-        <Card className="flex items-center justify-between border border-border px-4 py-3">
-          <span className="text-[14px] font-medium text-foreground">
-            {template?.name ?? "…"}
-          </span>
-          <span className="text-[13px] text-muted-foreground font-mono">
-            {template?.image ?? ""}
-          </span>
-        </Card>
-      )}
-    </section>
+    <Card className="flex items-center justify-between border border-border px-4 py-3">
+      <span className="text-[14px] font-medium text-foreground">
+        {template?.name ?? "…"}
+      </span>
+      <span className="text-[13px] text-muted-foreground font-mono">
+        {template?.image ?? ""}
+      </span>
+    </Card>
   );
 }
 
