@@ -70,7 +70,9 @@ function MainApp() {
       setView("list");
     }
     const knowledgeBasesView =
-      view === "knowledge-bases" || view === "knowledge-base-new";
+      view === "knowledge-bases" ||
+      view === "knowledge-base-new" ||
+      view === "knowledge-base-chat";
     if (knowledgeBasesView && !features["knowledge-bases"]) {
       setView("list");
     }
@@ -113,6 +115,14 @@ function MainApp() {
     const onPopState = () => {
       const state = pathToState(window.location.pathname);
       if (state.view === "chat") return enterChat(state.agent!);
+      if (state.view === "knowledge-base-chat") {
+        useStore.getState().resetChatContext();
+        useStore.setState({
+          selectedAgent: state.agent!,
+          view: "knowledge-base-chat",
+        });
+        return;
+      }
       // Unknown paths resolve to "list"; leaveChat also tears down chat context.
       if (state.view === "list") return leaveChat();
       useStore.setState({
@@ -128,8 +138,10 @@ function MainApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar here.
-  if (view === "chat")
+  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar
+  // here. A knowledge base's standalone page is the same chat surface under
+  // its own route, so it shares the shell.
+  if (view === "chat" || view === "knowledge-base-chat")
     return (
       <>
         <div className="flex h-dvh bg-background overflow-hidden">

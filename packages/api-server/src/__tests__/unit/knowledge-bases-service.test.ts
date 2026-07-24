@@ -87,6 +87,9 @@ describe("knowledge-bases service", () => {
       payload: {
         scheduleId: "kb-install:agent-kb1",
         sessionMode: "fresh",
+        // The install run continues into the onboarding interview, so the
+        // session must land under Chats where the user can answer.
+        sessionType: "regular",
       },
     });
     const task = (events[0] as { payload: { task: string } }).payload.task;

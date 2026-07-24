@@ -64,7 +64,10 @@ export function IconRail({
   const knowledgeBases: Destination = {
     label: "Knowledge bases",
     icon: Book,
-    active: view === "knowledge-bases" || view === "knowledge-base-new",
+    active:
+      view === "knowledge-bases" ||
+      view === "knowledge-base-new" ||
+      view === "knowledge-base-chat",
     badge: 0,
     navigate: navigateToKnowledgeBases,
   };

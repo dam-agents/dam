@@ -36,7 +36,7 @@ export function KnowledgeBaseCreateView() {
   const { draft, update, toggleConnection } = useKnowledgeBaseDraft();
   const { data: templates, isLoading: templatesLoading } = useTemplates();
   const createKnowledgeBase = useCreateKnowledgeBase();
-  const selectAgent = useStore((s) => s.selectAgent);
+  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
 
   const template = (templates ?? []).find((t) => t.id === KB_TEMPLATE_ID);
@@ -63,7 +63,7 @@ export function KnowledgeBaseCreateView() {
         ...(size ? { size } : {}),
         ...(connectionIds.length ? { connectionIds } : {}),
       });
-      selectAgent(agent.id);
+      openKnowledgeBase(agent.id);
     } catch {
       // The mutation surfaces its own error toast; stay here to retry.
     }

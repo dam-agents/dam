@@ -1,81 +1,27 @@
-import { useMemo } from "react";
-
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import type { AgentView, TemplateView } from "../../../types.js";
-import { useDeleteAgent } from "../../agents/api/mutations.js";
-import { useAgents } from "../../agents/api/queries.js";
+import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
-import {
-  useRestartAgent,
-  useSyncRestartingAgents,
-} from "../../agents/hooks/use-restart-agent.js";
-import {
-  useSuspendAgent,
-  useSyncPausingAgents,
-} from "../../agents/hooks/use-suspend-agent.js";
-import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
-import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-} from "../../agents/utils/sandbox-subtitle.js";
-import { useAppConnections } from "../../connections/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
-
-const NO_TEMPLATES: TemplateView[] = [];
+import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 
 /** The Knowledge Bases surface: the owner's agents carrying the
- *  `knowledge-base` kind. Rows open straight into chat — the knowledge base
- *  is worked with conversationally, not configured first. */
+ *  `knowledge-base` kind. Rows open the standalone knowledge-base page — the
+ *  knowledge base is worked with conversationally, not configured first. */
 export function KnowledgeBasesListView() {
-  const { data: templatesData } = useTemplates();
-  const templates = templatesData ?? NO_TEMPLATES;
-  const { data: agentsData } = useAgents();
-  const connections = useAppConnections();
+  const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const knowledgeBases = (agentsData?.list ?? []).filter(
     (agent) => agent.kind === "knowledge-base",
   );
-  const restartingAgents = useStore((s) => s.restartingAgents);
-  useSyncRestartingAgents();
-  const pausingAgents = useStore((s) => s.pausingAgents);
-  useSyncPausingAgents();
 
-  const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
-  const { restart: restartAgent } = useRestartAgent();
-  const wakeAgent = useWakeAgent();
-
-  const selectAgent = useStore((s) => s.selectAgent);
+  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToCreateKnowledgeBase = useStore(
     (s) => s.navigateToCreateKnowledgeBase,
   );
   const showConfirm = useStore((s) => s.showConfirm);
-
-  const initialLoaded = agentsData !== undefined;
-
-  const restartingIds = useMemo(
-    () => new Set(restartingAgents.keys()),
-    [restartingAgents],
-  );
-  const pausingIds = useMemo(
-    () => new Set(pausingAgents.keys()),
-    [pausingAgents],
-  );
-
-  const subtitleLookup = useMemo<SandboxSubtitleLookup>(
-    () => ({
-      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
-      connectionTemplateIdById: new Map(
-        (connections.data ?? []).map((c) => [c.id, c.templateId]),
-      ),
-    }),
-    [templates, connections.data],
-  );
 
   const deleteKnowledgeBase = async (agent: AgentView) => {
     const msg = (
@@ -130,17 +76,8 @@ export function KnowledgeBasesListView() {
           knowledgeBases.map((agent) => (
             <AgentRow
               key={agent.id}
-              agent={agent}
-              display={resolveAgentDisplay(agent, restartingIds, pausingIds)}
-              subtitle={sandboxSubtitle(agent, subtitleLookup)}
-              deletePending={
-                deleteAgent.isPending && deleteAgent.variables?.id === agent.id
-              }
-              onSelect={() => selectAgent(agent.id)}
-              onWake={() => wakeAgent.wake(agent.id)}
-              onRestart={() => restartAgent(agent.id)}
-              onPause={() => suspend.pause(agent.id)}
-              onStop={() => suspend.stop(agent.id)}
+              {...rowProps(agent)}
+              onSelect={() => openKnowledgeBase(agent.id)}
               onDelete={() => void deleteKnowledgeBase(agent)}
             />
           ))}

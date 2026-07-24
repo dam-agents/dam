@@ -877,23 +877,22 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
+    const wakeAgent = async (agentId: string) => {
+      await agentsRepo.wakeIfHibernated(agentId);
+    };
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
       maxArtifactBytes: config.maxArtifactBytes,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
       runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
+      wakeAgent,
     });
     const { knowledgeBases } = composeKnowledgeBasesForOwner({
       owner: user.sub,
       agents,
       runtimeMutator,
-      wakeAgent: async (agentId) => {
-        await agentsRepo.wakeIfHibernated(agentId);
-      },
+      wakeAgent,
     });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
       db,

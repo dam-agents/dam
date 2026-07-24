@@ -9,10 +9,11 @@ import { buildKnowledgeBaseInstallPrompt } from "../domain/install-prompt.js";
 import { securityLog } from "../../../core/security-log.js";
 
 /** How long the install instruction may wait for the fresh agent to come up.
- *  A created agent starts immediately (create stamps recent activity), so the
- *  TTL only guards the pathological boot — after it, the KB is an empty agent
- *  the user can still drive by hand. */
-const INSTALL_EVENT_TTL_MS = 60 * 60 * 1000;
+ *  Generous (matching the workspace-seed clone TTL) because a fresh agent can
+ *  legitimately wait far beyond boot time — parked over budget (#1900) until
+ *  the owner frees room. Redelivery within the window is deduped by the
+ *  synthetic schedule id's last-fire stamp. */
+const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createKnowledgeBasesService(deps: {
   owner: string;
@@ -34,7 +35,10 @@ export function createKnowledgeBasesService(deps: {
 
       // Deliver the install instruction as the KB's first session over the
       // trigger rail — durable (survives the pod not being up yet), delivered
-      // once Ready, deduped by the synthetic schedule id on redelivery.
+      // once Ready, deduped by the synthetic schedule id on redelivery. The
+      // session is typed "regular": the install run continues into an
+      // onboarding interview, so it must land in the user's Chats where they
+      // can answer, not under Scheduled.
       const task = buildKnowledgeBaseInstallPrompt();
       await deps.runtimeMutator.bump(agent.id, [
         {
@@ -44,6 +48,7 @@ export function createKnowledgeBasesService(deps: {
             scheduleId: `kb-install:${agent.id}`,
             task,
             sessionMode: "fresh",
+            sessionType: "regular",
           },
           expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
         },

@@ -19,11 +19,17 @@ export function createTriggerPlugin(deps: {
   stateStore: TriggerStateStore;
 }): Plugin {
   const fire = async (payload: TriggerEventPayload): Promise<void> => {
-    const platformMeta = {
-      type: SessionType.ScheduleCron,
-      mode: SessionMode.Chat,
-      scheduleId: payload.scheduleId,
-    };
+    // A "regular"-typed trigger opens an ordinary chat (no scheduleId on the
+    // session meta, so the UI lists it under Chats without a scheduled badge);
+    // the payload scheduleId still keys continuous binding and fire dedupe.
+    const platformMeta =
+      payload.sessionType === "regular"
+        ? { type: SessionType.Regular, mode: SessionMode.Chat }
+        : {
+            type: SessionType.ScheduleCron,
+            mode: SessionMode.Chat,
+            scheduleId: payload.scheduleId,
+          };
     if ((payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
       if (prior) {

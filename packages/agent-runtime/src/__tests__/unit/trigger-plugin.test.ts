@@ -49,6 +49,28 @@ describe("trigger plugin", () => {
     expect(calls[0]?.resumeSessionId).toBeUndefined();
   });
 
+  it("types a regular-session trigger as an ordinary chat with no scheduleId", async () => {
+    const { driver, calls } = fakeDriver();
+    const stateStore: TriggerStateStore = {
+      getSessionForSchedule: () => undefined,
+      setSessionForSchedule: vi.fn(),
+      clearSessionForSchedule: vi.fn(),
+    };
+    await handlerFor({ driver, stateStore }, "trigger")(
+      {
+        scheduleId: "kb-install:agent-1",
+        task: "install",
+        sessionMode: "fresh",
+        sessionType: "regular",
+      },
+      ctx,
+    );
+    expect(calls[0]?.platformMeta).toEqual({
+      type: SessionType.Regular,
+      mode: SessionMode.Chat,
+    });
+  });
+
   it("stamps metadata and records the session when continuous mode first fires", async () => {
     const { driver, calls } = fakeDriver();
     const setSessionForSchedule = vi.fn();

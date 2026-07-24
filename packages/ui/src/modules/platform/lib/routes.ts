@@ -15,6 +15,7 @@ export const viewSchema = z.enum([
   "experiment-detail",
   "knowledge-bases",
   "knowledge-base-new",
+  "knowledge-base-chat",
   "artifacts",
 ]);
 export type View = z.infer<typeof viewSchema>;
@@ -70,6 +71,8 @@ export function viewToPath(
     return `/experiments/${encodeURIComponent(experimentId)}`;
   if (view === "knowledge-bases") return "/knowledge-bases";
   if (view === "knowledge-base-new") return "/knowledge-bases/new";
+  if (view === "knowledge-base-chat" && agent)
+    return `/knowledge-bases/${encodeURIComponent(agent)}`;
   if (view === "artifacts") return "/artifacts";
   return "/";
 }
@@ -112,6 +115,12 @@ export function pathToState(path: string): {
   if (path === "/experiments/new") return { view: "experiment-new" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
+  const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
+  if (knowledgeBaseChatMatch)
+    return {
+      view: "knowledge-base-chat",
+      agent: decodeURIComponent(knowledgeBaseChatMatch[1]!),
+    };
   const experimentDetailMatch = path.match(/^\/experiments\/([^/]+)$/);
   if (experimentDetailMatch)
     return {

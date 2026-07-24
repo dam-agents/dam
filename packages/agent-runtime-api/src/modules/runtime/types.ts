@@ -109,6 +109,11 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   mcpServers: z.array(z.unknown()).optional(),
+  // How the opened session is typed for the UI. Default "schedule_cron"
+  // (a schedule fire, listed under Scheduled). "regular" makes it an ordinary
+  // chat the user is expected to join — e.g. a Knowledge Base's install
+  // interview. Older runtimes strip the key and fall back to the default.
+  sessionType: z.enum(["regular", "schedule_cron"]).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
 
