@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { useAgentRunState } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
+import type { SendPromptOptions } from "../../sessions/hooks/use-acp-prompt.js";
 
 /** The onboarding command the LLM Wiki toolkit installs; running it makes the
  *  agent greet the user and propose next steps. */
@@ -19,7 +20,11 @@ export function useKnowledgeBaseGreeting(opts: {
   active: boolean;
   /** True while nothing is open — no selected session, no drafted messages. */
   idle: boolean;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (
+    text: string,
+    attachments?: undefined,
+    sendOpts?: SendPromptOptions,
+  ) => Promise<void>;
 }) {
   const { agentId, active, idle, sendPrompt } = opts;
   const greetedForAgentRef = useRef<string | null>(null);
@@ -43,6 +48,8 @@ export function useKnowledgeBaseGreeting(opts: {
     greetedForAgentRef.current = agentId;
     // A KB with prior conversations greets no one — only a truly fresh one.
     if (sessions.length > 0) return;
-    void sendPrompt(ONBOARD_COMMAND);
+    // Hidden: the onboarding command drives the turn but shows no user bubble,
+    // so the user sees the agent greet them, not a command they didn't type.
+    void sendPrompt(ONBOARD_COMMAND, undefined, { hidden: true });
   }, [armed, agentId, sessions, sendPrompt]);
 }

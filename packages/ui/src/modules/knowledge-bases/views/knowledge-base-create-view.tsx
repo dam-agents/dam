@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -92,7 +90,7 @@ export function KnowledgeBaseCreateView() {
 
       <section className="mb-8">
         <SectionLabel spaced>Template</SectionLabel>
-        <Inset className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {KB_TEMPLATES.map((tpl) => (
             <TemplateOption
               key={tpl.id}
@@ -101,18 +99,17 @@ export function KnowledgeBaseCreateView() {
               onSelect={() => update({ kbTemplateId: tpl.id })}
             />
           ))}
-        </Inset>
+        </div>
       </section>
 
       <section className="mb-8">
-        <FormField label="Name">
-          <Input
-            autoFocus
-            value={draft.name}
-            onChange={(event) => update({ name: event.target.value })}
-            placeholder="e.g. spyre-codebase-knowledge"
-          />
-        </FormField>
+        <SectionLabel spaced>Name</SectionLabel>
+        <Input
+          autoFocus
+          value={draft.name}
+          onChange={(event) => update({ name: event.target.value })}
+          placeholder="e.g. spyre-codebase-knowledge"
+        />
       </section>
 
       <SandboxSizeSection
@@ -132,13 +129,12 @@ export function KnowledgeBaseCreateView() {
               update({ providerRef: null });
           }}
           autoSelectFirst
-          listClassName={FIELD_INSET}
         />
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>
-        <Inset className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {NETWORK_PRESETS.map((preset) => (
             <NetworkPresetRow
               key={preset.value}
@@ -148,7 +144,7 @@ export function KnowledgeBaseCreateView() {
               onSelect={() => update({ egressPreset: preset.value })}
             />
           ))}
-        </Inset>
+        </div>
       </section>
 
       <section className="mb-8">
@@ -230,6 +226,7 @@ function KnowledgeBaseConnections({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={() => setCatalogOpen(true)}
+        inset={false}
       />
       {catalogOpen && (
         <ConnectionCatalogModal
