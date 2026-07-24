@@ -62,32 +62,16 @@
 // ──────────────────────────────────────────────────────────────────────────
 // Session history (list / load / resume)
 //
-// Bob's ACP exposes NO session listing and a disabled `loadSession` (its
-// `agentCapabilities.loadSession` is false and the agent object has no
-// `loadSession` method), so out of the box the platform sidebar is empty and
-// past chats can't be reopened. But Bob *does* persist every chat to disk under
-// `$HOME/.bob/tmp/<projectHash>/chats/session-*.json` (user + bob-shell
-// messages), and that store survives pod restarts on the PVC. The shim uses it
-// as the source of truth:
-//
-//   initialize          → response patched to advertise loadSession:true, so
-//                          clients know they may call session/load.
-//   session/list        → answered locally by scanning the chats/ dir; each
-//                          file becomes a listed session (title from the first
-//                          user message) tagged _meta.platform.mode=chat.
-//   session/load        → answered locally by replaying the file's messages as
-//                          user_message_chunk / agent_message_chunk updates
-//                          (agent text run through the same <thinking> filter),
-//                          so the UI shows the past conversation.
-//   session/prompt (into a loaded, not-live session)
-//                       → Bob can't continue a session it didn't create this
-//                          process, so the shim lazily spawns a fresh Bob
-//                          session/new, maps old↔new sessionId (rewriting ids
-//                          both ways thereafter), and prepends a transcript of
-//                          the prior conversation to the first prompt so Bob
-//                          resumes with full context. Costs tokens/coins; the
-//                          transcript is capped at the most recent
-//                          BOB_RESUME_MAX_MESSAGES (default 40) messages.
+// Bob's ACP has no session listing and a disabled `loadSession`, but it does
+// persist every chat to `$HOME/.bob/tmp/<projectHash>/chats/session-*.json`
+// (survives restarts on the PVC). The shim serves history from that store:
+//   initialize   → advertise loadSession + sessionCapabilities.list.
+//   session/list → scan chats/, one session per file.
+//   session/load → replay the file's messages as user/agent chunks.
+//   session/prompt into a loaded session → Bob can't continue a session it
+//     didn't create this process, so spawn a fresh session/new, map old↔new
+//     sessionId, and prepend the prior transcript (capped at
+//     BOB_RESUME_MAX_MESSAGES, default 40) to the first prompt.
 //
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
@@ -228,9 +212,8 @@ function titleFromChat(chat) {
   return raw.length > 120 ? raw.slice(0, 119) + "…" : raw;
 }
 
-// Strip Bob's <thinking>…</thinking> block and "[using tool …]" hints from a
-// stored bob-shell message, leaving only the user-facing answer. Mirrors the
-// live stream's filtering but operates on a complete string.
+// Strip a stored bob-shell message's <thinking> block and "[using tool …]"
+// hints, leaving the user-facing answer.
 function userFacingText(content) {
   if (typeof content !== "string") return "";
   let text = content;
@@ -239,10 +222,8 @@ function userFacingText(content) {
   return text.replace(META_COMPLETE, "").trim();
 }
 
-// The user-facing answer of a stored bob-shell message. Bob puts the final
-// answer in an `attempt_completion` toolCall's `args.result`; `content` often
-// holds only the <thinking> reasoning (or a "[using tool …]" hint, or nothing),
-// so prefer the toolCall result and fall back to the thinking-stripped content.
+// Bob puts the final answer in an `attempt_completion` toolCall; `content` is
+// often just the <thinking> block. Prefer the toolCall, fall back to content.
 function assistantAnswer(message) {
   const calls = Array.isArray(message?.toolCalls) ? message.toolCalls : [];
   const results = calls
@@ -294,14 +275,10 @@ function handleClientLine(line) {
   const isClientRequest = f.id !== undefined && typeof f.method === "string";
 
   if (isClientRequest && f.method === "initialize") {
-    // Track so the response can advertise loadSession:true (Bob reports false).
+    // Track so the response can advertise loadSession (Bob reports false).
     pendingInitIds.add(f.id);
-    // Bob's ACP rejects initialize without clientCapabilities.fs ("Invalid
-    // params: clientCapabilities.fs: Required"), and some platform clients
-    // (the session-list connection, `platform-ui-sessions`) send empty
-    // capabilities. The shim implements fs/read_text_file + fs/write_text_file
-    // locally, so it can always advertise fs to Bob — the client's own fs
-    // support is irrelevant because the shim answers those calls itself.
+    // Bob rejects initialize without clientCapabilities.fs; some clients send
+    // none. The shim answers fs/* itself, so it can always advertise fs.
     if (isNonNullObject(f.params)) {
       const cc = isNonNullObject(f.params.clientCapabilities) ? f.params.clientCapabilities : {};
       f.params.clientCapabilities = {
@@ -322,9 +299,8 @@ function handleClientLine(line) {
   if (isClientRequest && f.method === "session/list") {
     const sessions = readBobChatFiles().map((chat) => ({
       sessionId: chat.sessionId,
-      // The last-seen prompt cwd (or process.cwd()), not necessarily the cwd
-      // each stored chat originally ran in — Bob's chat files don't record it.
-      // Fine for the sidebar; revisit if a consumer needs per-session cwd.
+      // Last-seen prompt cwd, not the chat's original cwd (Bob doesn't store
+      // it). Fine for the sidebar; revisit if a consumer needs per-session cwd.
       cwd: sessionCwd,
       title: titleFromChat(chat),
       updatedAt: chat.lastUpdated ?? chat.startTime ?? null,
@@ -377,9 +353,8 @@ function handleClientLine(line) {
         pendingModeSwitch = null;
       }
     }
-    // Resume path: a prompt into a loaded session Bob never created this
-    // process. Route it onto a fresh Bob session (spawning one lazily) and
-    // prepend the prior transcript to the first prompt.
+    // Resume: a prompt into a loaded session Bob never created this process —
+    // route it onto a lazily-spawned fresh Bob session.
     const sid = f.params?.sessionId;
     if (typeof sid === "string" && loadedSessions.has(sid) && !oldToNew.has(sid)) {
       queueResumePrompt(sid, f);
@@ -444,7 +419,7 @@ function handleSessionLoad(f) {
 }
 
 // Queue a resume prompt and ensure a fresh Bob session is being created for the
-// loaded session. When session/new returns, flushResumePrompts fires.
+// loaded session (coalesced per session via resumeNewSessionIds).
 function queueResumePrompt(oldSid, frame) {
   const queue = pendingResumePrompts.get(oldSid) ?? [];
   queue.push(frame);
@@ -761,23 +736,20 @@ function handleLine(line) {
   try {
     f = JSON.parse(line);
   } catch {
-    // Bob prints diagnostics to stdout (e.g. "Migrated MCP settings from …" at
-    // startup); a non-JSON line is never an ACP frame, so keep it out of the
-    // client stream and surface it on stderr instead.
+    // Non-JSON line (e.g. Bob's "Migrated MCP settings …" startup print) is
+    // never an ACP frame — keep it off the client stream, log to stderr.
     process.stderr.write(`[bob] ${line}\n`);
     return;
   }
 
-  // Resume: Bob's reply to a shim-initiated session/new. Wire the old↔new
-  // mapping and flush queued prompts; never forward this to the client (the
-  // client already has its loaded session).
+  // Resume: Bob's reply to a shim-initiated session/new — wire the mapping,
+  // don't forward (the client already holds its loaded session).
   if (f.id !== undefined && resumeNewSessionIds.has(f.id)) {
     if (f.result?.sessionId) onResumeSessionCreated(f.id, f.result.sessionId);
     return;
   }
 
-  // Rewrite Bob's live session id back to the loaded id the client knows, for
-  // every frame that carries one (updates, permission requests, notifications).
+  // Rewrite Bob's live session id back to the loaded id the client knows.
   if (typeof f.params?.sessionId === "string" && newToOld.has(f.params.sessionId)) {
     f = { ...f, params: { ...f.params, sessionId: newToOld.get(f.params.sessionId) } };
     line = JSON.stringify(f);
@@ -789,10 +761,9 @@ function handleLine(line) {
   if (f.id !== undefined && pendingInitIds.has(f.id)) {
     pendingInitIds.delete(f.id);
     if (isNonNullObject(f.result) && isNonNullObject(f.result.agentCapabilities)) {
-      // Advertise the capabilities the shim emulates even though Bob's own
-      // ACP reports neither: `loadSession` gates session/load, and
-      // `sessionCapabilities.list` ({} = supported) gates session/list — the
-      // client won't call a method the agent didn't advertise.
+      // Advertise the capabilities the shim emulates (Bob reports neither):
+      // loadSession gates session/load, sessionCapabilities.list gates
+      // session/list — clients skip un-advertised methods.
       const caps = f.result.agentCapabilities;
       caps.loadSession = true;
       caps.sessionCapabilities = {

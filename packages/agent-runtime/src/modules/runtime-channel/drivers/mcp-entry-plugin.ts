@@ -11,11 +11,9 @@ import { expandHome } from "../../../core/expand-home.js";
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 
-// MCP config is always a JSON object merged under `keyPath` — format and merge
-// strategy are intrinsic to the kind, not per-binding knobs. `urlKey` covers
-// harness config dialects: by default an entry is `{type:"http",url}`, but some
-// harnesses key the transport off the property name instead — Bob treats `url`
-// as SSE and expects streamable-HTTP endpoints under `httpUrl` (exact casing).
+// MCP config is a JSON object merged under `keyPath`. `urlKey` covers harness
+// dialects: default entry is `{type:"http",url}`, but some harnesses key the
+// transport off the property name (Bob puts streamable-HTTP under `httpUrl`).
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),
   path: z.string().min(1),
