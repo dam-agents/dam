@@ -13,10 +13,16 @@ import type { KnowledgeBaseTemplateId } from "api-server-api";
 export function buildKnowledgeBaseInstallCommand(
   templateId: KnowledgeBaseTemplateId,
 ): string {
+  // `set -o pipefail` is load-bearing: without it, `curl … | bash` exits with
+  // bash's status (0 on empty input), so a failed fetch (bad URL, network)
+  // would look like a successful install — the workspace-command plugin would
+  // write its done-sentinel and never retry, leaving the KB silently
+  // un-bootstrapped. With pipefail the curl failure propagates and the event
+  // stays pending for the next wake.
   switch (templateId) {
     case "llm-wiki":
-      return "curl -fsSL https://raw.githubusercontent.com/dam-agents/llm-wiki-v2/main/bootstrap.sh | bash";
+      return "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/llm-wiki-v2/main/bootstrap.sh | bash";
     case "plain-wiki":
-      return "curl -fsSL https://raw.githubusercontent.com/dam-agents/plain-wiki/main/bootstrap.sh | bash";
+      return "set -o pipefail; curl -fsSL https://raw.githubusercontent.com/dam-agents/plain-wiki/main/bootstrap.sh | bash";
   }
 }
