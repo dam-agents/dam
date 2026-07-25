@@ -8,13 +8,19 @@ export interface KbTemplate {
 
 /** The installation procedures a knowledge base can start from. The id set is
  *  the contract's `knowledgeBaseTemplateIdSchema`; this adds the researcher-
- *  facing copy. One today — the server maps the id to the bootstrap command. */
+ *  facing copy. The server maps each id to its bootstrap command. */
 export const KB_TEMPLATES: readonly KbTemplate[] = [
   {
     id: "llm-wiki",
     name: "LLM Wiki",
     description:
       "Installs the LLM Wiki toolkit and keeps an interlinked, self-maintaining knowledge wiki as you feed it sources.",
+  },
+  {
+    id: "plain-wiki",
+    name: "Plain Wiki",
+    description:
+      "No toolkit — the agent reads your files as knowledge and keeps what it learns as plain markdown notes. Works offline.",
   },
 ];
 

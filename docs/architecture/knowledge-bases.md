@@ -9,7 +9,7 @@ A **Knowledge Base** is an Agent that builds and maintains a body of knowledge t
 Two pieces make an Agent a Knowledge Base:
 
 - **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. Each list surface filters on it, so an agent appears on exactly one surface: the Sandboxes list shows unmarked agents, the Knowledge Bases list shows marked ones. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent.
-- **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). One template exists today, LLM Wiki; the server maps the template id to its command, and a new procedure is a new id plus a new mapping. The platform ships the pointer, never the tooling.
+- **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). Two exist today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline); the server maps the template id to its command, and a new procedure is a new id plus a new mapping. Each template's bootstrap installs a `/wiki-onboard` command, so the greeting (below) stays template-agnostic. The platform ships the pointer, never the tooling.
 
 ## Create flow
 
@@ -23,7 +23,7 @@ The module has no persistence of its own: a Knowledge Base is exactly the owner'
 
 ## UI
 
-Knowledge Bases is a feature-gated destination ([features](features.md)) with a list, a single-page create form, and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Lifecycle actions (wake, restart, pause, stop, delete) are the standard agent actions.
+Knowledge Bases is a feature-gated destination ([features](features.md)) with a list, a single-page create form, and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, fails silently), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. Lifecycle actions (wake, restart, pause, stop, delete) are the standard agent actions.
 
 ## Where the code lives
 

@@ -4,10 +4,11 @@ import { agentSizeSchema } from "../agents/schemas.js";
 
 /** The KB template selected at create — the installation procedure the fresh
  *  agent bootstraps itself with (surfaced to the user as "Template"). Distinct
- *  from the agent's harness image, which v1 pins. Currently one: LLM Wiki. The
- *  server maps the id to the install command; new procedures extend this enum
- *  and add a mapping. */
-export const knowledgeBaseTemplateIdSchema = z.enum(["llm-wiki"]);
+ *  from the agent's harness image, which v1 pins. The server maps the id to the
+ *  install command; new procedures extend this enum and add a mapping. Every
+ *  template's bootstrap installs a `/wiki-onboard` command — the greeting the
+ *  platform runs as a fresh KB's opening turn depends on it. */
+export const knowledgeBaseTemplateIdSchema = z.enum(["llm-wiki", "plain-wiki"]);
 
 /** Create a Knowledge Base: an Agent carrying the `knowledge-base` Kind whose
  *  first session is opened by a platform-composed install instruction (the
