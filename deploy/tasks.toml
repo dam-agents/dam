@@ -811,12 +811,19 @@ KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.co
 echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
-# virtiofs for the workspace PVCs; emulation only when the VM lacks /dev/kvm.
-PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["ExperimentalVirtiofsSupport"]'
+# EnableVirtioFsPVC: virtiofs for the workspace PVCs (the pre-1.7
+# ExperimentalVirtiofsSupport gate is discontinued — a silent no-op).
+# Emulation only when the VM lacks /dev/kvm.
+# Without KVM the node-labeller init container must also be forced to qemu:
+# it picks virttype from /proc/misc (kvm may be listed yet unusable, e.g. in
+# nested/containerized nodes) and crash-loops virt-handler otherwise. Only a
+# json-type customizeComponents patch works here — strategicMerge is mangled
+# by the operator's customizer and wedges reconciliation.
 if [ -z "${HAS_KVM:-}" ]; then
-  PATCH="$PATCH"',"useEmulation":true'
+  PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsPVC"],"useEmulation":true}},"customizeComponents":{"patches":[{"resourceType":"DaemonSet","resourceName":"virt-handler","type":"json","patch":"[{\"op\":\"replace\",\"path\":\"/spec/template/spec/initContainers/0/env\",\"value\":[{\"name\":\"PREFERRED_VIRTTYPE\",\"value\":\"qemu\"},{\"name\":\"HYPERVISOR_DEVICE\",\"value\":\"kvm\"}]}]"}]}}}'
+else
+  PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsPVC"]}}}}'
 fi
-PATCH="$PATCH"'}}}}'
 kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$PATCH"
 echo "Waiting for KubeVirt to become Available (this pulls several images)..."
 kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
