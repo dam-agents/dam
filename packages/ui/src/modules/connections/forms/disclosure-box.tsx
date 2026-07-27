@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
+import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +32,7 @@ export function DisclosureBox({
 
   if (variant === "section") {
     return (
-      <div className="rounded-lg border border-border p-4">
+      <Callout>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -48,7 +49,7 @@ export function DisclosureBox({
           </div>
         )}
         {open && <div className={cn("mt-4", bodyClassName)}>{children}</div>}
-      </div>
+      </Callout>
     );
   }
 

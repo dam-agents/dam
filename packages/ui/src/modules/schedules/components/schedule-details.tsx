@@ -1,5 +1,7 @@
 import { Time } from "@carbon/icons-react";
 
+import { Callout } from "@/components/ui/callout";
+
 import type { Schedule } from "../../../types.js";
 import {
   formatRunTime,
@@ -15,12 +17,12 @@ function DetailCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border p-3">
+    <Callout size="sm">
       <p className="text-[12px] text-muted-foreground">{label}</p>
       <div className="mt-1 text-[13px] font-medium text-foreground">
         {children}
       </div>
-    </div>
+    </Callout>
   );
 }
 

@@ -1,13 +1,13 @@
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
+import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -187,10 +187,10 @@ export function ModelSettingsPanel({
           <SectionLabel>Model settings</SectionLabel>
           {headerAction ?? (saving ? <SavingHint /> : null)}
         </div>
-        <Inset className="rounded-lg border border-border p-4">
+        <Callout inset>
           {groups}
           {note}
-        </Inset>
+        </Callout>
       </section>
     );
   }
