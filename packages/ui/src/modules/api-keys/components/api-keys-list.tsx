@@ -55,13 +55,15 @@ export function ApiKeysList() {
       )}
 
       {!isLoading && !isError && keys && keys.length === 0 && (
-        <div className="flex flex-col items-center gap-3 p-8 rounded-xl border border-dashed border-border bg-card">
-          <KeyRound size={32} className="text-muted-foreground" />
-          <p className="text-[13px] text-muted-foreground">
-            No API keys yet. Create one to authenticate the CLI without a
-            browser.
-          </p>
-        </div>
+        <Callout variant="dashed" className="bg-card">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <KeyRound size={32} className="text-muted-foreground" />
+            <p className="text-[13px] text-muted-foreground">
+              No API keys yet. Create one to authenticate the CLI without a
+              browser.
+            </p>
+          </div>
+        </Callout>
       )}
 
       {!isLoading && !isError && keys && keys.length > 0 && (
