@@ -10,6 +10,7 @@ import type { StoredChannelConfig } from "../stored-channel.js";
 import type {
   ChannelReaction,
   ChannelReply,
+  ChannelUser,
   PostMessageOptions,
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -53,6 +54,7 @@ import type {
   SlackImageFile,
   SlackMentionEvent,
   SlackSlashCommand,
+  SlackUserInfo,
 } from "./slack-gateway.js";
 import {
   createTurnPresenter,
@@ -62,7 +64,7 @@ import {
 import {
   agentContextBlock,
   agentFooterMrkdwn,
-  HISTORY_LEGEND,
+  historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
@@ -82,6 +84,10 @@ function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
   brand: { name: string; short: string };
+  /** Whether describe_channel_users is registered on this Agent's MCP
+   *  session — omit its mention when it isn't, so the contract never points
+   *  at a tool the agent won't find. */
+  canLookupUsers: boolean;
 }): string {
   return [
     "<how-to-respond>",
@@ -98,6 +104,14 @@ function slackTurnContract(ctx: {
       `(messageTs="${ctx.eventTs}"). Pass the Slack emoji short name, no colons.`,
     "• no_reply_needed — end your turn without posting anything, when the " +
       "message doesn't call for a response.",
+    ...(ctx.canLookupUsers
+      ? [
+          "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
+            'and inside message text — call describe_channel_users with channel="slack" ' +
+            "to learn who they are before naming someone, attributing work, or " +
+            "reasoning about their local time.",
+        ]
+      : []),
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
   ].join("\n");
@@ -304,6 +318,18 @@ export interface SlackWorker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  /** Resolve Slack user ids to the people behind them. The agent meets people
+   *  as bare `U…` ids — in speaker labels, injected history, and mentions
+   *  inside message text — and has no other way to learn who they are. */
+  describeUsers(
+    instanceName: string,
+    userIds: string[],
+  ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** Whether a lookup could plausibly succeed right now — false only when the
+   *  app's granted scopes are confirmed to lack `users:read`. An unreachable
+   *  bot or an unprobed gateway reports true: an unknown state should never
+   *  hide a tool that might in fact work. */
+  supportsUserLookup(): Promise<boolean>;
 }
 
 export interface SlackOAuthPending {
@@ -366,6 +392,31 @@ async function resolveOutboundTarget(
     };
   }
   return { id: conversationId };
+}
+
+/** How long a looked-up profile (or a confirmed miss) stays good. Names,
+ *  titles and time zones change rarely, and an agent reading a busy channel
+ *  asks about the same handful of people turn after turn. */
+const USER_CACHE_TTL_MS = 10 * 60_000;
+
+/** Concurrent `users.info` calls across all agents: the one install-wide bot
+ *  shares a single Slack rate limit, and a lookup is already batched. */
+const userLookupSemaphore = createSemaphore(5);
+
+/** Reduce what the agent actually sees — `<@U123>`, `<@U123|tom>` or a bare
+ *  id — to the id Slack takes. Anything else (a handle, a channel id) returns
+ *  null, so a typo costs a per-id error rather than a Slack round trip. */
+function normalizeSlackUserId(input: string): string | null {
+  const bare = input.trim().replace(/^<@/, "").replace(/>$/, "").split("|")[0]!;
+  return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
+}
+
+/** Whether the running gateway's granted scopes are confirmed to include
+ *  `users:read`. An unprobed or unreachable gateway reports true — an
+ *  unknown state fails open rather than hiding a tool that might work. */
+async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
+  const scopes = await gw.getGrantedScopes();
+  return !scopes || scopes.has("users:read");
 }
 
 export function createSlackWorker(
@@ -452,6 +503,26 @@ export function createSlackWorker(
     if (live && live.size > 1) return { ambiguous: true };
     const last = lastTurn.get(instanceName);
     return last ? { ref: last } : { none: true };
+  }
+
+  /** Looked-up profiles keyed by user id. The directory is workspace-wide and
+   *  so is the bot, so one cache serves every agent. Misses are cached too — a
+   *  wrong id stays wrong, and re-asking Slack about it each turn buys nothing.
+   *  Expired entries are swept lazily once the map grows past a workspace-sized
+   *  handful. */
+  const userCache = new Map<
+    string,
+    { user: SlackUserInfo | null; expiresAt: number }
+  >();
+
+  function cacheUser(id: string, user: SlackUserInfo | null) {
+    const now = Date.now();
+    if (userCache.size > 500) {
+      for (const [key, entry] of userCache) {
+        if (entry.expiresAt <= now) userCache.delete(key);
+      }
+    }
+    userCache.set(id, { user, expiresAt: now + USER_CACHE_TTL_MS });
   }
 
   const AMBIGUOUS_THREAD_ERROR =
@@ -590,6 +661,7 @@ export function createSlackWorker(
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
+      canLookupUsers: await canLookupUsers(gw),
     });
 
     let outcome: TurnOutcome = "failure";
@@ -749,6 +821,7 @@ export function createSlackWorker(
         replyThreadTs: args.threadTs,
         eventTs: args.eventTs,
         brand,
+        canLookupUsers: await canLookupUsers(gw),
       }),
     );
     const replyId = args.eventTs;
@@ -951,7 +1024,9 @@ export function createSlackWorker(
       contract,
       guidance,
       context: lines,
-      contextLegend: hasAgentAuthored ? HISTORY_LEGEND : undefined,
+      contextLegend: hasAgentAuthored
+        ? historyLegend(await canLookupUsers(gw))
+        : undefined,
       text: ctx.text,
       images: ctx.images,
     });
@@ -1461,6 +1536,7 @@ export function createSlackWorker(
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
       brand,
+      canLookupUsers: await canLookupUsers(gw),
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({
@@ -2044,6 +2120,66 @@ export function createSlackWorker(
         // agent as a tool error rather than aborting its turn.
         return { error: formatError(err) };
       }
+    },
+
+    async describeUsers(instanceName: string, userIds: string[]) {
+      // Same gate as every outbound affordance: the binding is the Agent's
+      // membership card into the workspace, so an unbound Agent reads no
+      // directory even though the workspace bot exists.
+      const slackChannelId =
+        await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      // One entry per person: the same id twice, or in two spellings, is one
+      // lookup and one result. Unparseable input keeps its raw spelling so the
+      // agent can see which of its arguments was wrong.
+      const seen = new Set<string>();
+      const requested: { raw: string; id: string | null }[] = [];
+      for (const raw of userIds) {
+        const id = normalizeSlackUserId(raw);
+        if (id) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+        }
+        requested.push({ raw, id });
+      }
+
+      const users = await Promise.all(
+        requested.map(async ({ raw, id }): Promise<ChannelUser> => {
+          if (!id) {
+            return {
+              id: raw,
+              error:
+                "not a Slack user id — pass the U… id as it appears in the conversation",
+            };
+          }
+          const notFound = { id, error: "no such user in this workspace" };
+          const cached = userCache.get(id);
+          if (cached && cached.expiresAt > Date.now()) {
+            return cached.user ? { ...cached.user } : notFound;
+          }
+          const release = await userLookupSemaphore.acquire();
+          let info: SlackUserInfo | null;
+          try {
+            info = await gw.getUserInfo(id);
+          } catch (err) {
+            // A rate limit or a missing scope fails this id, not the batch.
+            return { id, error: formatError(err) };
+          } finally {
+            release();
+          }
+          cacheUser(id, info);
+          return info ? { ...info } : notFound;
+        }),
+      );
+      return { users };
+    },
+
+    async supportsUserLookup() {
+      const gw = await ensureGateway();
+      return gw ? canLookupUsers(gw) : true;
     },
   };
 }

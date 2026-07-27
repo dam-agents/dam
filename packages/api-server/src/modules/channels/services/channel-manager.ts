@@ -50,6 +50,27 @@ export interface ChannelReaction {
   conversationId?: string;
 }
 
+/** One person behind a messenger user id. Everything but `id` is optional —
+ *  the messenger reports only what the person filled in and what the app's
+ *  scopes cover. `error` marks an id that alone failed to resolve, so one bad
+ *  id in a batch never costs the caller the others. */
+export interface ChannelUser {
+  id: string;
+  username?: string;
+  realName?: string;
+  displayName?: string;
+  title?: string;
+  pronouns?: string;
+  email?: string;
+  timezone?: string;
+  timezoneLabel?: string;
+  statusText?: string;
+  statusEmoji?: string;
+  isBot?: boolean;
+  isDeleted?: boolean;
+  error?: string;
+}
+
 /** The dispatch surface both adapters share; per-agent lifecycle is
  *  Slack-only (Telegram is a single platform bot with data-only bindings).
  *  `reply`/`react` are turn-scoped affordances only Slack implements today. */
@@ -72,6 +93,14 @@ interface Worker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  describeUsers?(
+    instanceName: string,
+    userIds: string[],
+  ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** False only when this worker has confirmed a lookup can't succeed (e.g. a
+   *  missing Slack scope). Absent on workers with no directory to begin with
+   *  (Telegram) — those already refuse `describeUsers` on their own. */
+  supportsUserLookup?(): Promise<boolean>;
 }
 
 export interface ChannelManager {
@@ -100,6 +129,19 @@ export interface ChannelManager {
     channelType: ChannelType,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  /** Resolve messenger user ids to the people behind them. */
+  describeUsers(
+    instanceName: string,
+    channelType: ChannelType,
+    userIds: string[],
+  ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** Whether describe_channel_users could plausibly resolve anything right
+   *  now, across every channel type. False only when every worker that
+   *  implements a directory lookup has confirmed it can't (a missing
+   *  optional scope) — an install with no such worker at all, or one whose
+   *  capability is unknown, fails open so the tool stays registered exactly
+   *  as it always has. */
+  supportsUserLookup(): Promise<boolean>;
 }
 
 export function createChannelManager(deps: {
@@ -208,6 +250,22 @@ export function createChannelManager(deps: {
       if (!worker?.react)
         return { error: `reactions not supported on ${channelType}` };
       return worker.react(instanceName, reaction);
+    },
+
+    async describeUsers(instanceName, channelType, userIds) {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.describeUsers)
+        return { error: `user lookup not supported on ${channelType}` };
+      return worker.describeUsers(instanceName, userIds);
+    },
+
+    async supportsUserLookup() {
+      const capable = workers.filter((w) => w.describeUsers);
+      if (capable.length === 0) return true;
+      const results = await Promise.all(
+        capable.map((w) => w.supportsUserLookup?.() ?? Promise.resolve(true)),
+      );
+      return results.some(Boolean);
     },
   };
 }

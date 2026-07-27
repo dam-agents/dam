@@ -81,11 +81,19 @@ export function parseAgentFooter(
 }
 
 /** Legend that explains the attribution prefixes below, injected before thread
- *  history whenever that history contains agent-authored messages. */
-export const HISTORY_LEGEND =
-  'In the conversation history below, a line prefixed "you (this agent):" is ' +
-  'your own earlier post in this channel; "<name> (another agent):" is a ' +
-  "different agent that posted here; everyone else is a human Slack user.";
+ *  history whenever that history contains agent-authored messages. Omits the
+ *  describe_channel_users pointer when that tool isn't registered on this
+ *  Agent's MCP session (the app's Slack scopes don't support a lookup). */
+export function historyLegend(canLookupUsers: boolean): string {
+  const base =
+    'In the conversation history below, a line prefixed "you (this agent):" is ' +
+    'your own earlier post in this channel; "<name> (another agent):" is a ' +
+    "different agent that posted here; everyone else is a human Slack user, " +
+    "prefixed with their Slack id";
+  return canLookupUsers
+    ? `${base} — call describe_channel_users to find out who they are.`
+    : `${base}.`;
+}
 
 /** Render one history message as a `label: text` line, resolving the author
  *  from its footer: the reading agent's own posts become "you (this agent)",

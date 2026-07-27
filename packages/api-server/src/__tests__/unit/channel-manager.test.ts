@@ -15,6 +15,8 @@ function fakeSlackWorker(): SlackWorker {
     postMessage: vi.fn(async () => ({ ok: true as const })),
     reply: vi.fn(async () => ({ ok: true as const })),
     react: vi.fn(async () => ({ ok: true as const })),
+    describeUsers: vi.fn(async () => ({ users: [] })),
+    supportsUserLookup: vi.fn(async () => true),
   };
 }
 
@@ -70,6 +72,68 @@ describe("channel-manager bootstrap", () => {
     await manager.bootstrap(new Map());
 
     expect(telegramWorker.start).toHaveBeenCalledTimes(1);
+
+    await manager.stopAll();
+  });
+});
+
+describe("channel-manager user lookup", () => {
+  it("routes a lookup to the Slack worker", async () => {
+    const slackWorker = fakeSlackWorker();
+    const manager = createChannelManager({ slackWorker });
+
+    await manager.describeUsers("agent-1", ChannelType.Slack, ["U1", "U2"]);
+
+    expect(slackWorker.describeUsers).toHaveBeenCalledWith("agent-1", [
+      "U1",
+      "U2",
+    ]);
+
+    await manager.stopAll();
+  });
+
+  it("refuses on a channel whose worker has no directory", async () => {
+    const telegramWorker = fakeTelegramWorker();
+    const manager = createChannelManager({ telegramWorker });
+
+    const result = await manager.describeUsers(
+      "agent-1",
+      ChannelType.Telegram,
+      ["123456"],
+    );
+
+    expect(result).toEqual({
+      error: "user lookup not supported on telegram",
+    });
+
+    await manager.stopAll();
+  });
+});
+
+describe("channel-manager supportsUserLookup", () => {
+  it("reflects the Slack worker's answer", async () => {
+    const slackWorker = fakeSlackWorker();
+    slackWorker.supportsUserLookup = vi.fn(async () => false);
+    const manager = createChannelManager({ slackWorker });
+
+    expect(await manager.supportsUserLookup()).toBe(false);
+
+    await manager.stopAll();
+  });
+
+  it("fails open when Telegram is the only worker (no directory to begin with)", async () => {
+    const telegramWorker = fakeTelegramWorker();
+    const manager = createChannelManager({ telegramWorker });
+
+    expect(await manager.supportsUserLookup()).toBe(true);
+
+    await manager.stopAll();
+  });
+
+  it("fails open with no channel workers configured at all", async () => {
+    const manager = createChannelManager({});
+
+    expect(await manager.supportsUserLookup()).toBe(true);
 
     await manager.stopAll();
   });

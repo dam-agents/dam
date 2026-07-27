@@ -6,6 +6,7 @@ import type {
   SlackGatewayHandlers,
   SlackImageFile,
   SlackMessage,
+  SlackUserInfo,
 } from "./slack-gateway.js";
 
 type BoltApp = InstanceType<typeof App>;
@@ -26,6 +27,9 @@ export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
+  // Scopes only change on a reinstall, which restarts this process — one
+  // successful probe is good for the gateway's lifetime.
+  let grantedScopes: Set<string> | null = null;
 
   return {
     async start(handlers: SlackGatewayHandlers): Promise<boolean> {
@@ -133,6 +137,7 @@ export function createBoltSlackGateway(
       if (app) {
         await app.stop();
         app = null;
+        grantedScopes = null;
       }
     },
 
@@ -297,12 +302,60 @@ export function createBoltSlackGateway(
       }
     },
 
+    async getUserInfo(userId: string): Promise<SlackUserInfo | null> {
+      if (!app) return null;
+      let info;
+      try {
+        info = await app.client.users.info({ user: userId });
+      } catch (err) {
+        // A wrong or foreign id is a lookup miss, not a gateway fault — the
+        // caller reports it per id and keeps the rest of the batch.
+        if (formatError(err).includes("user_not_found")) return null;
+        throw err;
+      }
+      const user = info.user;
+      if (!user?.id) return null;
+      const profile = user.profile ?? {};
+      return {
+        id: user.id,
+        ...(user.name ? { username: user.name } : {}),
+        ...(user.real_name || profile.real_name
+          ? { realName: user.real_name ?? profile.real_name }
+          : {}),
+        ...(profile.display_name ? { displayName: profile.display_name } : {}),
+        ...(profile.title ? { title: profile.title } : {}),
+        ...(profile.pronouns ? { pronouns: profile.pronouns } : {}),
+        ...(profile.email ? { email: profile.email } : {}),
+        ...(user.tz ? { timezone: user.tz } : {}),
+        ...(user.tz_label ? { timezoneLabel: user.tz_label } : {}),
+        ...(profile.status_text ? { statusText: profile.status_text } : {}),
+        ...(profile.status_emoji ? { statusEmoji: profile.status_emoji } : {}),
+        ...(user.is_bot !== undefined ? { isBot: user.is_bot } : {}),
+        ...(user.deleted !== undefined ? { isDeleted: user.deleted } : {}),
+      };
+    },
+
     async openDirectMessage(userId: string): Promise<string> {
       if (!app) throw new Error("slack bot not running");
       const opened = await app.client.conversations.open({ users: userId });
       const id = opened.channel?.id;
       if (!id) throw new Error("Slack returned no conversation id");
       return id;
+    },
+
+    async getGrantedScopes(): Promise<Set<string> | null> {
+      if (!app) return null;
+      if (grantedScopes) return grantedScopes;
+      try {
+        // auth.test needs no scope of its own and has a generous rate limit;
+        // it's a cheap way to ask Slack what the bot token can actually do.
+        const result = await app.client.auth.test();
+        const scopes = result.response_metadata?.scopes;
+        if (scopes) grantedScopes = new Set(scopes);
+        return grantedScopes;
+      } catch {
+        return null;
+      }
     },
   };
 }

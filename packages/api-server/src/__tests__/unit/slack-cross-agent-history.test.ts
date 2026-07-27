@@ -133,4 +133,73 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).not.toContain("(this agent)");
     expect(prompt).not.toContain("(another agent)");
   });
+
+  it("points the legend and the turn contract at describe_channel_users by default (scopes unknown)", async () => {
+    const h = harness();
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "already looking into it",
+        blocks: [
+          agentContextBlock({
+            uiBaseUrl: "http://ui",
+            agentId: "agent-1",
+            agentName: "Helper",
+          }),
+        ],
+      },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(
+      "call describe_channel_users to find out who they are",
+    );
+    expect(prompt).toContain(
+      'call describe_channel_users with channel="slack"',
+    );
+  });
+
+  it("drops the describe_channel_users pointer once the app's users:read scope is confirmed missing", async () => {
+    const h = harness();
+    // Every other manifest scope granted, users:read specifically withheld.
+    h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "already looking into it",
+        blocks: [
+          agentContextBlock({
+            uiBaseUrl: "http://ui",
+            agentId: "agent-1",
+            agentName: "Helper",
+          }),
+        ],
+      },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    // The legend still explains the attribution prefixes...
+    expect(prompt).toContain("you (this agent)");
+    // ...it just no longer points at a tool that isn't registered.
+    expect(prompt).not.toContain("describe_channel_users");
+    expect(prompt).not.toContain("call describe_channel_users");
+  });
 });
