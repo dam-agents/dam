@@ -1,19 +1,14 @@
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import type { ExperimentStatus } from "api-server-api";
 
-import type { ExperimentStatus } from "../types.js";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
-const statusVariant: Record<ExperimentStatus, BadgeProps["variant"]> = {
-  draft: "secondary",
-  running: "info",
-  completed: "success",
-  stopped: "muted",
-};
-
-const statusLabel: Record<ExperimentStatus, string> = {
-  draft: "Draft",
-  running: "Running",
-  completed: "Completed",
-  stopped: "Stopped",
+const STYLES: Record<ExperimentStatus, string> = {
+  draft: "bg-muted text-foreground/80",
+  running: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+  completed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  failed: "bg-red-500/15 text-red-600 dark:text-red-400",
+  stopped: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
 };
 
 export function ExperimentStatusBadge({
@@ -21,5 +16,12 @@ export function ExperimentStatusBadge({
 }: {
   status: ExperimentStatus;
 }) {
-  return <Badge variant={statusVariant[status]}>{statusLabel[status]}</Badge>;
+  return (
+    <Badge
+      variant="secondary"
+      className={cn("border-0 font-medium capitalize", STYLES[status])}
+    >
+      {status}
+    </Badge>
+  );
 }

@@ -40,6 +40,18 @@ export class AttenuationError extends Error {
   }
 }
 
+/** A spawn stamped with an experiment span while that experiment is not
+ *  the caller's own running experiment — Stop closed the trace (the fan-out
+ *  must die too), or the id belongs to another driver's experiment. */
+export class ExperimentNotRunningError extends Error {
+  constructor(experimentId: string) {
+    super(
+      `experiment ${experimentId} is not running; spawns attached to it are rejected`,
+    );
+    this.name = "ExperimentNotRunningError";
+  }
+}
+
 /** Thrown by `spawn` when the driver supplies a malformed JSON Schema. The
  *  endpoint maps this to 400. */
 export class InvalidSchemaError extends Error {
@@ -67,6 +79,8 @@ export interface SpawnInput {
    *  than the template's default memory (a 1Gi default OOM-kills a clone +
    *  install). Omitted dimensions inherit the template. */
   size?: { cpu?: string; memory?: string };
+  /** Experiments v2 span attach ("<experimentId>/<spanId>"); stored opaque. */
+  experimentSpanId?: string;
 }
 
 export interface RecordResult {
@@ -93,6 +107,13 @@ export function createInvocationsService(deps: {
   agents: AgentsService;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  /** Gate for experiment-attached spawns: a stopped experiment's loop must
+   *  not keep fanning out (its running invocations were already failed),
+   *  and a driver may only attach to its OWN experiment. */
+  isExperimentRunning?: (
+    experimentId: string,
+    driverAgentId: string,
+  ) => Promise<boolean>;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
@@ -134,6 +155,20 @@ export function createInvocationsService(deps: {
       // via a target that can never pass validation.
       compileSchema(input.schema);
 
+      // A spawn attached to an experiment span dies with its experiment: after
+      // Stop, a loop that catches the failed invocation and retries must not
+      // keep fanning out fresh targets. The experiment must also be the
+      // CALLER's — a foreign (same-owner) experiment id would otherwise leak
+      // auto-attributed artifacts into someone else's run.
+      if (input.experimentSpanId && deps.isExperimentRunning) {
+        const experimentId = input.experimentSpanId.split("/", 1)[0]!;
+        if (
+          !(await deps.isExperimentRunning(experimentId, input.driverAgentId))
+        ) {
+          throw new ExperimentNotRunningError(experimentId);
+        }
+      }
+
       // The target is a fresh ephemeral Agent, marked Sweepable so the Agent
       // Sweep reaps it once it hibernates — the backstop for the eager reap on
       // this Invocation reaching terminal. No Lifetime grace: an Invocation
@@ -162,6 +197,7 @@ export function createInvocationsService(deps: {
         owner: deps.owner,
         resultSchema: input.schema,
         expiresAt,
+        experimentSpanId: input.experimentSpanId ?? null,
       });
 
       // Deliver the one-shot prompt (carrying the report_result contract +

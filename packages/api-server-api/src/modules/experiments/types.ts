@@ -1,146 +1,177 @@
-/** Lifecycle of an Experiment. `draft` is the create-time default; start moves
- *  it to `running`; Stop moves it to `stopped`; it reaches `completed` on its
- *  own once every Arm is terminal (derived from Arm Status, written by the
- *  completion path — see {@link ArmStatus}). Only a `running` experiment has an
- *  active arm. */
-export type ExperimentStatus = "draft" | "running" | "completed" | "stopped";
+import type { z } from "zod";
+import type {
+  appendEventsRequestSchema,
+  finishRequestSchema,
+  planRegisterRequestSchema,
+  skeletonSchema,
+  traceEventSchema,
+} from "./schemas.js";
 
-/** Per-Arm lifecycle, the source of truth for Experiment completion. `pending`
- *  (Arm added, Experiment not yet started) → `running` (Trial launched) → one
- *  terminal state: `completed` (`finish_arm` called), `failed` (Inactivity
- *  Deadline tripped, or the Trial failed to launch), or `stopped` (Experiment
- *  Stopped while the Arm was still running). The Experiment becomes `completed`
- *  once every Arm is terminal, regardless of the mix. */
-export type ArmStatus =
-  | "pending"
+/** Lifecycle of an Experiment — one execution of a driver's loop script.
+ *  `draft` (plan registered, reviewable in the UI) → `running` (a started
+ *  run launched the script) → exactly one terminal state: `completed`/`failed`
+ *  (the script finished and said so, or the inactivity sweep reaped a silent
+ *  run, or the launch itself failed) or `stopped` (user Stop; further events
+ *  and tagged spawns are rejected, so the loop dies on its next call).
+ *  Re-execution never reopens a terminal Experiment — it creates a sibling
+ *  sharing the Script Artifact. */
+export type ExperimentStatus =
+  | "draft"
   | "running"
   | "completed"
   | "failed"
   | "stopped";
 
+/** A span starts `running` and ends `ok` or `error`; a span the script never
+ *  closed simply stays `running` until its experiment goes terminal. */
+export type SpanStatus = "running" | "ok" | "error";
+
+export type Skeleton = z.infer<typeof skeletonSchema>;
+export type TraceEvent = z.infer<typeof traceEventSchema>;
+export type PlanRegisterInput = z.infer<typeof planRegisterRequestSchema>;
+export type FinishInput = z.infer<typeof finishRequestSchema>;
+export type AppendEventsInput = z.infer<typeof appendEventsRequestSchema>;
+
 export interface Experiment {
   id: string;
-  ownerId: string;
+  owner: string;
+  driverAgentId: string;
   name: string;
-  /** The common instruction every arm receives; leads each arm's trial prompt. */
-  prompt: string;
   status: ExperimentStatus;
+  skeleton: Skeleton;
+  /** Stages discovered from execution that the skeleton never declared. */
+  drift: string[];
+  /** Pod-local path the launch prompt hands the harness (`python <path>`). */
+  scriptPath: string;
+  /** sha256 of the last captured script source. */
+  scriptSha256: string;
+  /** Artifact Library id of the versioned script source. */
+  scriptArtifactId: string;
+  /** Library version of the source this run executes (bumped when a
+   *  run-start reports a changed sha). */
+  scriptVersion: number;
+  /** Dashboard rendered in the detail view; null = publish failed, the UI
+   *  falls back to a native summary. */
+  dashboardArtifactId: string | null;
+  /** Failure reason for `failed` (launch error, inactivity, script error). */
+  error: string | null;
   createdAt: string;
-  updatedAt: string;
+  executedAt: string | null;
+  finishedAt: string | null;
+  lastActivityAt: string | null;
 }
 
-/** One competitor: an existing Agent (the harness image) plus its config.
- *  Keyed `(experimentId, agentId)` — the same agent cannot be two arms of one
- *  experiment, but the same harness image can back many agents (same-framework
- *  racing happens at the agent level). */
-export interface ExperimentArm {
-  experimentId: string;
-  agentId: string;
-  armVariation: string;
-  status: ArmStatus;
-  createdAt: string;
-}
-
-/** One ledger entry an arm's harness loop emits. `score` is opaque jsonb (the
- *  platform does not rank or normalize it) and `candidateRef` points at a
- *  stored Candidate artifact; both are populated by the ingestion path in a
- *  later ticket. */
-export interface ExperimentRun {
-  id: string;
-  experimentId: string;
-  agentId: string;
-  runNumber: number;
-  sessionId: string;
-  candidateRef: string | null;
-  score: unknown;
-  status: string;
+export interface ExperimentSpan {
+  spanId: string;
+  stage: string;
+  iteration: number | null;
+  parentSpanId: string | null;
+  status: SpanStatus;
+  score: number | null;
+  artifactIds: string[];
+  attrs: Record<string, unknown> | null;
   startedAt: string;
   endedAt: string | null;
 }
 
-export interface ExperimentArmWithRuns extends ExperimentArm {
-  runs: ExperimentRun[];
+/** Per-stage rollup the graph view lights up. `declared` distinguishes
+ *  skeleton stages from drift. */
+export interface TraceFeedStage {
+  id: string;
+  declared: boolean;
+  spansTotal: number;
+  spansRunning: number;
+  spansFailed: number;
+  lastScore: number | null;
+  bestScore: number | null;
 }
 
-/** The detail rollup: an experiment with its arms, each arm carrying its own
- *  run ledger. Comparison in the MVP is per-arm only. */
-export interface ExperimentWithRuns extends Experiment {
-  arms: ExperimentArmWithRuns[];
-}
-
-/** A list-row projection: the experiment plus the cheap rollup the list view
- *  needs — a swatch per arm and the total run count — without fetching every
- *  arm's full run ledger. `armAgentIds` is in arm-creation order; its length is
- *  the arm count. */
-export interface ExperimentListItem extends Experiment {
-  armAgentIds: string[];
-  runCount: number;
-}
-
-/** What the ingestion / harness side needs to attribute work to the right
- *  experiment for a given agent, resolved from the agent's verified identity.
- *  Carries the prompt + arm variation so the harness has its task context in
- *  hand. */
-export interface ActiveArm {
-  experimentId: string;
-  experimentName: string;
-  prompt: string;
-  agentId: string;
-  armVariation: string;
-}
-
-export interface ExperimentCreateInput {
-  name: string;
-  prompt: string;
-}
-
-export interface ExperimentAddArmInput {
-  experimentId: string;
-  agentId: string;
-  armVariation: string;
-}
-
-export interface ExperimentRecordRunInput {
-  experimentId: string;
-  agentId: string;
-  sessionId: string;
-  candidateRef: string;
+export interface ScoreSeriesPoint {
+  iteration: number | null;
   score: number;
+  spanId: string;
 }
 
-/** Attribution for `finish_arm`, resolved from the caller's verified agent
- *  identity exactly like {@link ExperimentRecordRunInput} — the harness never
- *  supplies an experiment id. */
-export interface ExperimentFinishArmInput {
-  experimentId: string;
-  agentId: string;
+/** An Invocation the driver spawned inside a span, summarized for the view. */
+export interface TraceFeedInvocation {
+  id: string;
+  spanId: string | null;
+  status: string;
 }
 
-/** Owner-scoped application service. Composed per-owner for both the user tRPC
- *  router and the in-pod MCP session (the owner is bound at composition time,
- *  never taken from request input). */
+/** The stable projection of Skeleton + Trace the platform serves — the one
+ *  contract shared by the SDK docs, the stock and bespoke dashboards (via the
+ *  postMessage bridge), and the detail view. Bounded: recentSpans and each
+ *  stage's score series are capped server-side, so the frame never grows
+ *  unbounded with iteration count. */
+export interface TraceFeed {
+  experiment: Experiment;
+  stages: TraceFeedStage[];
+  scoreSeries: { stage: string; points: ScoreSeriesPoint[] }[];
+  recentSpans: ExperimentSpan[];
+  invocations: TraceFeedInvocation[];
+  /** Every Artifact Library id any span referenced plus run-attached ids
+   *  (driver monitoring / invocation-target publishes), first-seen order —
+   *  uncapped (unlike recentSpans) so the run-artifacts list is complete. */
+  artifactIds: string[];
+  /** The run's custom-data blob (`exp.post_data(...)` merges into it) —
+   *  opaque to the platform, rendered by dashboards as they see fit. */
+  custom: Record<string, unknown> | null;
+}
+
+/** Per-driver rollup behind the Experiments index. The destination regroups
+ *  these into lineage rows (driver + name); clicking through lands in the
+ *  agent's chat, where the live experiment panel docks. */
+export interface ExperimentDriverSummary {
+  driverAgentId: string;
+  /** Newest first (createdAt), all statuses. */
+  experiments: Pick<Experiment, "id" | "name" | "status" | "createdAt">[];
+  /** The driver's `running` Invocations right now (loop fan-out at work). */
+  runningInvocations: number;
+}
+
+/** Owner-scoped at composition (like every service on the tRPC context); the
+ *  agent-facing methods additionally take the waypoint-verified driver id and
+ *  attribute/reject on it — a driver can only ever touch its own experiments. */
 export interface ExperimentsService {
-  list(): Promise<ExperimentListItem[]>;
-  getWithRuns(id: string): Promise<ExperimentWithRuns | null>;
-  create(input: ExperimentCreateInput): Promise<Experiment>;
-  /** Add an arm referencing an existing owned agent. */
-  addArm(input: ExperimentAddArmInput): Promise<ExperimentArm>;
-  start(id: string): Promise<Experiment>;
+  // Owner surface (tRPC).
+  list(): Promise<Experiment[]>;
+  driverSummaries(): Promise<ExperimentDriverSummary[]>;
+  get(id: string): Promise<Experiment | null>;
+  feed(id: string): Promise<TraceFeed | null>;
+  /** Start a run of this lineage. Building and running are separate: the
+   *  draft is source and persists; a run is an immutable capture — a new
+   *  experiment row with the draft's declaration plus its OWN script clone.
+   *  While live it renders the draft's dashboard; the terminal snapshot
+   *  mints the run's single-version results artifact. `id` may be the draft
+   *  or any run of the lineage (the draft is resolved). Returns the new
+   *  run. */
+  startRun(id: string): Promise<Experiment>;
   stop(id: string): Promise<Experiment>;
   delete(id: string): Promise<void>;
-  /** Resolve the arm of the owner's currently-running experiment that this
-   *  agent belongs to, or null. Used by the ingestion path to attribute a run
-   *  without trusting agent-supplied experiment ids. */
-  resolveActiveArm(agentId: string): Promise<ActiveArm | null>;
-  /** Append a Run to the ledger for an already attribution-resolved arm,
-   *  allocating the next per-arm run number. The caller stores the Candidate
-   *  artifact first; `candidateRef` is its key. Rejected (CONFLICT) once the
-   *  calling arm is no longer `running` — the ledger can't grow after Stop or
-   *  completion. */
-  recordRun(input: ExperimentRecordRunInput): Promise<ExperimentRun>;
-  /** Mark the calling arm `completed` — the success-only completion dual of
-   *  `recordRun`. Advances the arm, then flips the Experiment to `completed`
-   *  once every arm is terminal. Rejected (CONFLICT) unless the calling arm is
-   *  `running`. */
-  finishArm(input: ExperimentFinishArmInput): Promise<ExperimentArm>;
+  // Agent surface (REST on the harness port, mesh-attributed).
+  planRegister(
+    driverAgentId: string,
+    input: PlanRegisterInput,
+  ): Promise<{ experimentId: string }>;
+  appendEvents(
+    driverAgentId: string,
+    experimentId: string,
+    events: TraceEvent[],
+  ): Promise<{ accepted: number }>;
+  finish(
+    driverAgentId: string,
+    experimentId: string,
+    input: FinishInput,
+  ): Promise<void>;
+  /** Attach a library artifact to a run outside the span flow. The driver
+   *  (its monitoring harness) names the run explicitly; an invocation
+   *  target omits `experimentId` and is auto-attributed through the
+   *  invocation its own agent id keys. Returns where it landed, or null
+   *  when the caller has no experiment linkage. */
+  attachArtifact(
+    callerAgentId: string,
+    artifactId: string,
+    experimentId?: string,
+  ): Promise<{ experimentId: string } | null>;
 }

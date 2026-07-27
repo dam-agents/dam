@@ -8,6 +8,7 @@ import {
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   AttenuationError,
+  ExperimentNotRunningError,
   InvalidSchemaError,
   type InvocationsService,
 } from "../../modules/invocations/index.js";
@@ -67,6 +68,9 @@ export function mountInvocationRoutes(
         schema: body.schema,
         ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
         ...(size ? { size } : {}),
+        ...(body.experimentSpanId !== undefined
+          ? { experimentSpanId: body.experimentSpanId }
+          : {}),
       });
       return c.json({ id }, 201);
     } catch (err) {
@@ -85,6 +89,9 @@ export function mountInvocationRoutes(
       }
       if (err instanceof InvalidSchemaError) {
         return c.json({ error: err.message }, 400);
+      }
+      if (err instanceof ExperimentNotRunningError) {
+        return c.json({ error: err.message }, 409);
       }
       throw err;
     }

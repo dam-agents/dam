@@ -49,9 +49,39 @@ const folderIdInput = z
  *  owner's library. */
 export function registerArtifactLibraryTools(
   server: McpServer,
-  deps: { artifactLibrary: ArtifactLibraryServiceImpl; agentId: string },
+  deps: {
+    artifactLibrary: ArtifactLibraryServiceImpl;
+    agentId: string;
+    /** Attach a fresh artifact to an experiment run: explicit id from the
+     *  driver's monitoring harness, or auto-attribution when the calling
+     *  agent is itself an invocation target (experimentId omitted). Returns
+     *  where it landed, or null when there is nothing to attach to. */
+    attachToExperiment?: (
+      artifactId: string,
+      experimentId?: string,
+    ) => Promise<{ experimentId: string } | null>;
+  },
 ): void {
   const lib = deps.artifactLibrary;
+
+  /** Best-effort experiment attach after a successful publish: the artifact
+   *  exists either way, so attach problems report as a field on the result
+   *  instead of failing the tool (which would invite duplicate publishes). */
+  async function experimentAttachment(
+    artifactId: string,
+    experimentId?: string,
+  ): Promise<Record<string, string>> {
+    if (!deps.attachToExperiment) return {};
+    try {
+      const attached = await deps.attachToExperiment(artifactId, experimentId);
+      return attached ? { attached_to_experiment: attached.experimentId } : {};
+    } catch (err) {
+      return {
+        experiment_attach_error:
+          err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
 
   server.tool(
     "create_artifact",
@@ -80,6 +110,12 @@ export function registerArtifactLibraryTools(
         .describe(
           "Artifact lifetime in hours — after expiry (plus a grace week) the artifact is permanently deleted, even if private; omit to keep forever.",
         ),
+      experiment_id: z
+        .string()
+        .optional()
+        .describe(
+          "Attach the artifact to an experiment RUN you are driving (the id from PLATFORM_EXPERIMENT_ID in the launch instructions) so it shows among that run's artifacts. If you were yourself spawned BY an experiment, leave this unset — attribution to the spawning run is automatic.",
+        ),
     },
     ({
       title,
@@ -90,6 +126,7 @@ export function registerArtifactLibraryTools(
       folder_id,
       visibility,
       expires_in_hours,
+      experiment_id,
     }) =>
       run(async () => {
         const artifact = await lib.create(
@@ -105,7 +142,10 @@ export function registerArtifactLibraryTools(
           },
           { agentId: deps.agentId },
         );
-        return json(withInternalLink(artifact));
+        return json({
+          ...withInternalLink(artifact),
+          ...(await experimentAttachment(artifact.id, experiment_id)),
+        });
       }),
   );
 

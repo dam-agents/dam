@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
@@ -27,12 +28,17 @@ export function composeInvocationsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
 }): InvocationsService {
+  const experimentsRepo = createExperimentsRepository(opts.db);
   return createInvocationsService({
     owner: opts.owner,
     repo: createInvocationsRepository(opts.db),
     agents: opts.agents,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    isExperimentRunning: async (experimentId, driverAgentId) => {
+      const row = await experimentsRepo.get(experimentId, opts.owner);
+      return row?.status === "running" && row.driverAgentId === driverAgentId;
+    },
   });
 }
 

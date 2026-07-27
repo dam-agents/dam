@@ -5,7 +5,8 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
-  ExperimentTrial: "experiment_trial",
+  /** The turn that launches an experiment script (Execute on a draft). */
+  ExperimentExecute: "experiment_execute",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];

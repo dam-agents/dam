@@ -51,10 +51,7 @@ export function IconRail({
   const experiments: Destination = {
     label: "Experiments",
     icon: Chemistry,
-    active:
-      view === "experiments" ||
-      view === "experiment-new" ||
-      view === "experiment-detail",
+    active: view === "experiments",
     badge: 0,
     navigate: navigateToExperiments,
   };

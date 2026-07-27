@@ -181,13 +181,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	// everything but keep the pair parked at zero, surfacing OverBudget below.
 	// A denial is remembered per wake attempt: the parked agent does not
 	// start by itself when room frees — only a fresh bump (or an always-on
-	// agent, which declares "always run") retries the gate.
+	// agent, which declares "always run") retries the gate. Sweepable agents
+	// (ephemeral invocation targets, #2942) are exempt too: their driver is
+	// blocked polling for the result and the freed room belongs to the same
+	// owner, so they retry on every resync and start as soon as room frees —
+	// the invocation's own liveness deadline bounds the wait.
 	lastActivity := agent.Annotations[annLastActivity]
 	alwaysOn := idleTimeout <= 0
+	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true"
 	overBudget := ""
 	parked := false
 	if running {
-		if !alwaysOn && r.wakeAlreadyDenied(name, lastActivity) {
+		if !autoRetry && r.wakeAlreadyDenied(name, lastActivity) {
 			running = false
 			parked = true
 		} else {
@@ -201,7 +206,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 				running = false
 				parked = true
 				overBudget = verdict.message
-				if !alwaysOn {
+				if !autoRetry {
 					r.recordDeniedWake(name, lastActivity)
 				}
 			} else {
@@ -226,7 +231,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			running = false
 			parked = true
 			overBudget = verdict.message
-			if !alwaysOn {
+			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}
 			// Scale down NOW, before the template applies below: with

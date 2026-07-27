@@ -43,6 +43,10 @@ export const spawnInvocationRequestSchema = z
       .string()
       .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
       .optional(),
+    // Experiments v2 span attach: "<experimentId>/<spanId>" stamped by the
+    // experiment SDK when the spawn happens inside a span, so the Trace Feed
+    // shows this invocation under its stage. Opaque to invocations.
+    experimentSpanId: z.string().min(1).max(300).optional(),
   })
   .refine((d) => d.image !== undefined || d.templateId !== undefined, {
     message: "either image or templateId is required",

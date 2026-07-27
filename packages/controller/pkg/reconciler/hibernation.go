@@ -11,11 +11,22 @@ import (
 const (
 	annActiveSession = "agent-platform.ai/active-session"
 	annLastActivity  = "agent-platform.ai/last-activity"
+	// Experiments v2 pin (#2942): "true" while the agent drives a running
+	// experiment, so the idle checker can't kill the loop mid-run. Set and
+	// cleared by the api-server on experiment lifecycle transitions; the
+	// inactivity sweep failing a silent run is what eventually releases a
+	// crashed loop's pin. Subordinate to a hard stop, like the session pin.
+	annExperimentActive = "agent-platform.ai/experiment-active"
 	// User-initiated hard stop (#1900): non-empty forces the pair down,
 	// overriding activity and disabled auto-hibernation. Cleared only by an
 	// explicit wake or a schedule fire — background activity bumps never
 	// touch it, so a stopped agent stays stopped under open UI polls.
 	annStopRequested = "agent-platform.ai/stop-requested"
+	// Ephemeral invocation target (#2942), stamped by the api-server at
+	// create. Read by the budget gate: sweepable agents are exempt from the
+	// denied-wake memo (their driver is blocked waiting on the result, so a
+	// spontaneous start once room frees is wanted, not a surprise).
+	annSweepable = "agent-platform.ai/sweepable"
 )
 
 // shouldRun reports whether an agent should be scaled up, derived purely from
@@ -38,6 +49,9 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 		return true
 	}
 	if annotations[annActiveSession] == "true" {
+		return true
+	}
+	if annotations[annExperimentActive] == "true" {
 		return true
 	}
 	last := annotations[annLastActivity]

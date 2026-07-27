@@ -29,25 +29,48 @@ export interface FolderGroupActions {
   onCopyFolderLink: (folder: ArtifactFolder) => Promise<string | null>;
 }
 
+export interface FolderSection {
+  label: string;
+  artifacts: LibraryArtifact[];
+}
+
 interface Props extends ArtifactRowActions, Partial<FolderGroupActions> {
   /** null renders the "Ungrouped" section (no folder actions). */
   folder: ArtifactFolder | null;
   artifacts: LibraryArtifact[];
+  /** Shown instead of the folder's raw name (e.g. with a prefix stripped). */
+  displayName?: string;
+  defaultCollapsed?: boolean;
+  /** Renders as a borderless row for stacking inside a parent section card. */
+  nested?: boolean;
+  /** Subheaded clusters rendered instead of the flat list (a partition of
+   *  `artifacts`, which still drives the header counts). */
+  sections?: FolderSection[];
 }
 
 export function FolderGroup({
   folder,
   artifacts,
+  displayName,
+  defaultCollapsed = false,
+  nested = false,
+  sections,
   onEditFolder,
   onDeleteFolder,
   onCopyFolderLink,
   ...rowActions
 }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const sharedCount = artifacts.filter((a) => a.visibility === "public").length;
+  const Wrapper = nested ? "div" : Card;
 
   return (
-    <Card className="overflow-hidden anim-in">
+    <Wrapper
+      className={cn(
+        "overflow-hidden",
+        nested ? "border-t border-border/60" : "anim-in",
+      )}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -73,7 +96,7 @@ export function FolderGroup({
             folder ? "text-foreground" : "text-muted-foreground",
           )}
         >
-          {folder?.name ?? "Ungrouped"}
+          {displayName ?? folder?.name ?? "Ungrouped"}
         </span>
         <span className="text-[12px] text-muted-foreground">
           {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
@@ -128,6 +151,21 @@ export function FolderGroup({
             <p className="border-t border-border px-4 py-4 text-[12px] text-muted-foreground">
               No artifacts in this folder yet.
             </p>
+          ) : sections ? (
+            sections.map((section) => (
+              <div key={section.label}>
+                <div className="border-t border-border/60 bg-muted/40 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {section.label}
+                </div>
+                {section.artifacts.map((artifact) => (
+                  <ArtifactRow
+                    key={artifact.id}
+                    artifact={artifact}
+                    {...rowActions}
+                  />
+                ))}
+              </div>
+            ))
           ) : (
             artifacts.map((artifact) => (
               <ArtifactRow
@@ -139,6 +177,6 @@ export function FolderGroup({
           )}
         </div>
       )}
-    </Card>
+    </Wrapper>
   );
 }

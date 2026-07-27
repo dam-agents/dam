@@ -5,6 +5,7 @@ import { startAcpService } from "./services/acp-service.js";
 import { createTrpcDispatch } from "./services/trpc-dispatch.js";
 import type { AcpChannel } from "./services/ports.js";
 import { createHarnessSpawn } from "./infrastructure/harness-spawn.js";
+import { createProcessRunner } from "./infrastructure/process-runner.js";
 import { createProxyFetch } from "./infrastructure/proxy-fetch.js";
 import { createSlackReplyPoster } from "./infrastructure/slack-reply.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
@@ -47,6 +48,7 @@ export function composeScriptedMock(): ScriptedMockComposition {
     state,
     workspace: createWorkspaceWriter(process.cwd()),
     proxyFetch,
+    processRunner: createProcessRunner(process.cwd()),
     slackReply: createSlackReplyPoster(),
   });
 

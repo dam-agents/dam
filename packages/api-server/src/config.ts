@@ -205,15 +205,15 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(5 * 1024 * 1024 * 1024),
-  /** Hard ceiling for a single Experiment Candidate artifact, in bytes.
+  /** Hard ceiling for a single stored artifact object, in bytes.
    *  Tune via `MAX_ARTIFACT_BYTES`. */
   maxArtifactBytes: z.coerce
     .number()
     .int()
     .positive()
     .default(50 * 1024 * 1024),
-  /** S3-compatible object store for Candidate artifacts. Unset = no store:
-   *  candidate recording fails closed. */
+  /** S3-compatible object store for artifact content. Unset = no store:
+   *  artifact uploads fail closed. */
   objectStorageEndpoint: z.url().optional(),
   /** Authority agents dial for direct uploads — links are signed against it
    *  (SigV4 binds the Host header). Defaults to the endpoint. */
@@ -233,19 +233,14 @@ const configSchema = z.object({
    *  origin is the isolation boundary that keeps app cookies/tokens away
    *  from user-generated content. */
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
-  /** Inactivity-deadline window for Experiment arms, in seconds. A `running`
-   *  arm that records no Run and never calls `finish_arm` for this long is
-   *  reaped to `failed` by the background sweep, so a started Experiment always
-   *  reaches a terminal state even when a harness crashes, forgets to finish,
-   *  or hibernates mid-loop. The clock resets on each recorded Run. Default
-   *  1 hour — generous enough not to reap an arm mid-iteration, short enough
-   *  that a dead arm doesn't pin an Experiment open indefinitely. Tune via
-   *  `EXPERIMENT_ARM_INACTIVITY_SECONDS`. */
-  experimentArmInactivitySeconds: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(3600),
+  /** Inactivity window for running Experiments, in seconds. A `running`
+   *  experiment whose script sends no trace event for this long is reaped to
+   *  `failed` by the background sweep (releasing the driver's hibernation
+   *  pin), so every executed Experiment reaches a terminal state even when
+   *  the loop crashes or goes silent. The clock resets on every accepted
+   *  event. Default 15 minutes; tune via `EXPERIMENT_INACTIVITY_SECONDS` —
+   *  raise it for loops with long quiet local-compute stretches. */
+  experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -369,8 +364,7 @@ export function loadConfig(): Config {
     objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     shareBaseUrl: process.env.SHARE_BASE_URL,
-    experimentArmInactivitySeconds:
-      process.env.EXPERIMENT_ARM_INACTIVITY_SECONDS,
+    experimentInactivitySeconds: process.env.EXPERIMENT_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

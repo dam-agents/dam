@@ -24,6 +24,9 @@ function makeService(row: InvocationRow) {
     listRunningByDriver: async () => [],
     listRunningAgentIds: async () => [],
     listAgedTerminal: async () => [],
+    listByExperiment: async () => [],
+    countRunningByDriver: async () => new Map(),
+    failAllRunningByExperiment: async () => [],
     delete: async () => {},
   };
   const service = createInvocationsService({
@@ -49,6 +52,7 @@ function runningRow(resultSchema: unknown): InvocationRow {
     errorReason: null,
     expiresAt: new Date(Date.now() + 60_000),
     completedAt: null,
+    experimentSpanId: null,
   };
 }
 

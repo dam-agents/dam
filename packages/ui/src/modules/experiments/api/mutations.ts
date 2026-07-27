@@ -2,37 +2,20 @@ import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-// Start/stop change an experiment's status, so refetch both the list (status
-// pill) and any open detail query. `get.queryKey()` with no input matches
-// every cached detail.
-const invalidatesListAndDetail = [
+// Every experiment mutation changes lifecycle state the list, the index's
+// driver summaries, detail, and feed all render, so refetch the lot.
+const invalidatesExperiments = [
   trpc.experiments.list.queryKey(),
-  trpc.experiments.get.queryKey(),
+  trpc.experiments.driverSummaries.queryKey(),
+  trpc.experiments.feed.queryKey(),
 ];
 
-export function useCreateExperiment() {
+export function useStartRun() {
   return useMutation({
-    ...trpc.experiments.create.mutationOptions(),
+    ...trpc.experiments.startRun.mutationOptions(),
     meta: {
-      invalidates: [trpc.experiments.list.queryKey()],
-      errorToast: "Failed to create experiment",
-    },
-  });
-}
-
-export function useAddArm() {
-  return useMutation({
-    ...trpc.experiments.addArm.mutationOptions(),
-    meta: { errorToast: "Failed to add arm" },
-  });
-}
-
-export function useStartExperiment() {
-  return useMutation({
-    ...trpc.experiments.start.mutationOptions(),
-    meta: {
-      invalidates: invalidatesListAndDetail,
-      errorToast: "Failed to start experiment",
+      invalidates: invalidatesExperiments,
+      errorToast: "Failed to start the run",
     },
   });
 }
@@ -41,8 +24,18 @@ export function useStopExperiment() {
   return useMutation({
     ...trpc.experiments.stop.mutationOptions(),
     meta: {
-      invalidates: invalidatesListAndDetail,
+      invalidates: invalidatesExperiments,
       errorToast: "Failed to stop experiment",
+    },
+  });
+}
+
+export function useDeleteExperiment() {
+  return useMutation({
+    ...trpc.experiments.delete.mutationOptions(),
+    meta: {
+      invalidates: invalidatesExperiments,
+      errorToast: "Failed to delete experiment",
     },
   });
 }

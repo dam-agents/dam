@@ -9,7 +9,7 @@ export interface ArtifactListFilter {
   search?: string;
 }
 
-/** Artifact list — refresh-on-open like experiments; agents publish in the
+/** Artifact list — refresh-on-open; agents publish in the
  *  background, so a fresh read on mount matters more than a live feed.
  *  Pass `null` to hold the query (e.g. no agent resolved yet); pass
  *  `refetchIntervalMs` where the list must track live publishing (the chat

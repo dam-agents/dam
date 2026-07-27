@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-23
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -94,11 +94,11 @@ other than its paired gateway. Enforcement is layered:
   forwards on behalf of the agent — external upstreams via the HITL
   rule model, while platform-internal upstreams pass without a
   per-request human decision: the harness path (control-plane traffic
-  to the api-server) and the Candidate object store, where each
+  to the api-server) and the artifact object store, where each
   request already carries a platform-minted authorization — a
   short-lived link scoped to a single object and operation, issued by
   the api-server after ownership checks and validated by the store
-  itself ([experiments](experiments.md#candidate-storage)). This is
+  itself ([artifact-library](artifact-library.md)). This is
   the destination-side egress gate; no NetworkPolicies on Postgres /
   Redis / Keycloak / the harness or ext-authz Services are needed
   because the agent has no admitted route to any of them.

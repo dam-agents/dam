@@ -2,18 +2,32 @@ import { randomUUID } from "node:crypto";
 import { isRequest, parseFrame, type JsonRpcId } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
 import { recordPrompt, type ProxyFetch } from "./control-service.js";
-import type { AcpChannel, SlackReplyPoster, WorkspaceWriter } from "./ports.js";
+import type {
+  AcpChannel,
+  ProcessRunner,
+  SlackReplyPoster,
+  WorkspaceWriter,
+} from "./ports.js";
 
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
 /** The Slack turn contract injects the thread id; its presence marks a turn
  *  whose reply must go out through the `reply` tool, not plain ACP text. */
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
+/** E2e directive: run a python script (written via scriptFiles) to
+ *  completion — how a spec drives experiment plan registration in-pod. */
+const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
+/** The Experiments Execute launch prompt (#2942) — recognize the composed
+ *  command line and behave like a real harness: start the script detached
+ *  with the run id in its environment, then end the turn. */
+const EXPERIMENT_LAUNCH_DIRECTIVE =
+  /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
   state: MockState;
   workspace: WorkspaceWriter;
   proxyFetch: ProxyFetch;
+  processRunner: ProcessRunner;
   /** Posts to Slack via the reply tool; omitted outside channel turns. */
   slackReply?: SlackReplyPoster;
   now?: () => Date;
@@ -111,6 +125,31 @@ export function startAcpService(deps: AcpServiceDeps): void {
       await deps.workspace.writeFile(file.path, file.content);
     }
 
+    const launch = EXPERIMENT_LAUNCH_DIRECTIVE.exec(promptStr);
+    if (launch) {
+      deps.processRunner.spawnDetached({
+        command: "python3",
+        args: [launch[2]!],
+        env: { PLATFORM_EXPERIMENT_ID: launch[1]! },
+        logPath: `${launch[2]!}.log`,
+      });
+      emitText(sid, `experiment ${launch[1]!} started`);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
+    const pyrunPath = PYRUN_DIRECTIVE.exec(promptStr)?.[1];
+    if (pyrunPath) {
+      const { code, output } = await deps.processRunner.run({
+        command: "python3",
+        args: [pyrunPath],
+        timeoutMs: 60_000,
+      });
+      emitText(sid, `[pyrun exit ${code}] ${output}`);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);
       notify("session/update", {
@@ -131,6 +170,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
   ): Promise<void> {
     if (!threadTs || !deps.slackReply || text.trim() === "") return;
     await deps.slackReply({ text, threadTs });
+  }
+
+  function emitText(sid: string, text: string): void {
+    notify("session/update", {
+      sessionId: sid,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      },
+    });
   }
 
   async function replyWithFetch(sid: string, url: string): Promise<string> {

@@ -8,8 +8,6 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { ExperimentDetailView } from "./modules/experiments/views/experiment-detail-view.js";
-import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
@@ -59,12 +57,7 @@ function MainApp() {
   // known — deep links to disabled features never leave a dead view up.
   const { data: features } = useFeatures();
   useEffect(() => {
-    if (!features) return;
-    const experimentsView =
-      view === "experiments" ||
-      view === "experiment-new" ||
-      view === "experiment-detail";
-    if (experimentsView && !features.experiments) {
+    if (features && view === "experiments" && !features.experiments) {
       setView("list");
     }
   }, [features, view, setView]);
@@ -111,7 +104,6 @@ function MainApp() {
       useStore.setState({
         view: state.view,
         agentId: state.agentId ?? null,
-        experimentId: state.experimentId ?? null,
         settingsTab: state.settingsTab ?? "account",
         sandboxSection: state.sandboxSection ?? "setup",
       });
@@ -144,8 +136,6 @@ function MainApp() {
         <main className="relative z-10 flex-1 overflow-y-auto">
           {view === "sandbox-new" ? (
             <SandboxWizardView />
-          ) : view === "experiment-new" ? (
-            <ExperimentWizardView />
           ) : view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : (
@@ -156,8 +146,6 @@ function MainApp() {
                 <InboxView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
-              ) : view === "experiment-detail" ? (
-                <ExperimentDetailView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

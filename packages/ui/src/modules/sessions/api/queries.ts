@@ -92,9 +92,10 @@ export function setSessionRunning(
 
 /**
  * Sessions list, read straight off the agent over ACP `session/list`
- * and decoded from `_meta.platform`. Regular and experiment-trial sessions are
- * always listed (so an arm's trial is reachable from its agent's sidebar);
- * schedule and channel sessions are included only when asked. Pass
+ * and decoded from `_meta.platform`. Regular and experiment-execute sessions
+ * are always listed (an experiment's launch turn is reachable from its
+ * driver's sidebar); schedule and channel sessions are included only when
+ * asked. Pass
  * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
  * without firing requests.
  *
@@ -117,7 +118,7 @@ export function useAcpSessions(
           const sessions = await listAgentSessions(agentId);
           const allowed: string[] = [
             SessionType.Regular,
-            SessionType.ExperimentTrial,
+            SessionType.ExperimentExecute,
           ];
           if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);

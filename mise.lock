@@ -66,7 +66,7 @@ version = "0.7.0"
 backend = "go:honnef.co/go/tools/cmd/staticcheck"
 
 [[tools."go:sigs.k8s.io/controller-tools/cmd/controller-gen"]]
-version = "0.21.0"
+version = "latest"
 backend = "go:sigs.k8s.io/controller-tools/cmd/controller-gen"
 
 [[tools."go:sigs.k8s.io/crdify"]]
@@ -112,21 +112,6 @@ url = "https://get.helm.sh/helm-v4.2.0-darwin-arm64.tar.gz"
 version = "21.0.2"
 backend = "core:java"
 
-[tools.java.options]
-shorthand_vendor = "openjdk"
-
-[tools.java."platforms.linux-arm64"]
-checksum = "sha256:08db1392a48d4eb5ea5315cf8f18b89dbaf36cda663ba882cf03c704c9257ec2"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-aarch64_bin.tar.gz"
-
-[tools.java."platforms.linux-x64"]
-checksum = "sha256:a2def047a73941e01a73739f92755f86b895811afb1f91243db214cff5bdac3f"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-x64_bin.tar.gz"
-
-[tools.java."platforms.macos-arm64"]
-checksum = "sha256:b3d588e16ec1e0ef9805d8a696591bd518a5cea62567da8f53b5ce32d11d22e4"
-url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_macos-aarch64_bin.tar.gz"
-
 [[tools.kubeconform]]
 version = "0.8.0"
 backend = "aqua:yannh/kubeconform"
@@ -156,16 +141,31 @@ url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux
 url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813992"
 provenance = "github-attestations"
 
+[tools.lima."platforms.linux-arm64-musl"]
+checksum = "sha256:7c6a09c6844f55f811e9b7b2b60a6070a512c696c8ec752dfdb3c8ed50ed0364"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-aarch64.tar.gz"
+provenance = "github-attestations"
+
 [tools.lima."platforms.linux-x64"]
 checksum = "sha256:a0ea1ccf6b7335a900adb5f8d2b8384457965fecb1ba72f09b4e3e46d12f424a"
 url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-x86_64.tar.gz"
 url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813993"
 provenance = "github-attestations"
 
+[tools.lima."platforms.linux-x64-musl"]
+checksum = "sha256:a0ea1ccf6b7335a900adb5f8d2b8384457965fecb1ba72f09b4e3e46d12f424a"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-x86_64.tar.gz"
+provenance = "github-attestations"
+
 [tools.lima."platforms.macos-arm64"]
 checksum = "sha256:bbdef91774885a0d05f7b048c4eb89ae2bcf3a0c252ae7ca7934e63df76d93c3"
 url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Darwin-arm64.tar.gz"
 url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813994"
+provenance = "github-attestations"
+
+[tools.lima."platforms.macos-x64"]
+checksum = "sha256:0d6f99c19f6e4bc3c92730c4c29d929e6927f0cb0a0ba1a84383367135a8ff31"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Darwin-x86_64.tar.gz"
 provenance = "github-attestations"
 
 [[tools.maven]]
@@ -248,6 +248,45 @@ url = "https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.7
 url_api = "https://api.github.com/repos/aquasecurity/trivy/releases/assets/462015117"
 provenance = "cosign"
 
+[[tools.uv]]
+version = "0.9.30"
+backend = "aqua:astral-sh/uv"
+
+[tools.uv."platforms.linux-arm64"]
+checksum = "sha256:b658b56957bceea742ca14f3ef28fb3542adbcedfb8bd5bd718ae255394ccd09"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-aarch64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.linux-arm64-musl"]
+checksum = "sha256:b658b56957bceea742ca14f3ef28fb3542adbcedfb8bd5bd718ae255394ccd09"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-aarch64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.linux-x64"]
+checksum = "sha256:1caf8fe092e2005dd4c134ba515c1aa3eea3d3c143f8a1903bcb58fcdf169365"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-x86_64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.linux-x64-musl"]
+checksum = "sha256:1caf8fe092e2005dd4c134ba515c1aa3eea3d3c143f8a1903bcb58fcdf169365"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-x86_64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.macos-arm64"]
+checksum = "sha256:03a5d9ec7f7d588446b2ec226d13ff6300055e55365eca8f3fab39f342b0e805"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-aarch64-apple-darwin.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.macos-x64"]
+checksum = "sha256:ce069bf750567e9a4a31d6e285d1eae75d444d8a281409b641235903943b7681"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-x86_64-apple-darwin.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.windows-x64"]
+checksum = "sha256:875981be7908295937dee09532bb66d576986d4f223259e171b0c767c885897a"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.30/uv-x86_64-pc-windows-msvc.zip"
+provenance = "github-attestations"
+
 [[tools.yq]]
 version = "4.53.3"
 backend = "aqua:mikefarah/yq"
@@ -280,14 +319,34 @@ url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-aar
 url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211654"
 provenance = "github-attestations"
 
+[tools.zizmor."platforms.linux-arm64-musl"]
+checksum = "sha256:324e43770cfacf4216f8aefb287263b5b5c733c85b03bf7583b5cc4a0460239e"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+provenance = "github-attestations"
+
 [tools.zizmor."platforms.linux-x64"]
 checksum = "sha256:e87b67160194884e375a46a12c57ccc904f762b53845f254fab7f17d98809c09"
 url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211657"
 provenance = "github-attestations"
 
+[tools.zizmor."platforms.linux-x64-musl"]
+checksum = "sha256:e87b67160194884e375a46a12c57ccc904f762b53845f254fab7f17d98809c09"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+provenance = "github-attestations"
+
 [tools.zizmor."platforms.macos-arm64"]
 checksum = "sha256:54949bbd6b4c8527046bb8990bac9e0dab3eec787640f4e6199ae121dd1040be"
 url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211655"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.macos-x64"]
+checksum = "sha256:40a58d8560d65c71357b3977d0da425773bf8f10bf1ffd38099d963d3afdf3aa"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-apple-darwin.tar.gz"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.windows-x64"]
+checksum = "sha256:06e5b2345323201ed4c55897651862fee3b43f79ddced799f1236f0f0d1c1c0f"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-pc-windows-msvc.zip"
 provenance = "github-attestations"
