@@ -20,10 +20,7 @@ const KIND_PRESENTATION: Record<
 export function ArtifactKindBadge({ kind }: { kind: ArtifactKind }) {
   const { label, variant } = KIND_PRESENTATION[kind];
   return (
-    <Badge
-      variant={variant}
-      className="min-w-[46px] justify-center text-[11px] font-semibold"
-    >
+    <Badge size="sm" variant={variant} className="min-w-[46px] justify-center">
       {label}
     </Badge>
   );

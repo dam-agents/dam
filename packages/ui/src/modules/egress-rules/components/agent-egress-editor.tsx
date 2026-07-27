@@ -10,6 +10,7 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -477,10 +478,6 @@ function RuleRow({
   onAction: () => void;
   disabled: boolean;
 }) {
-  const verdictTone =
-    rule.verdict === "allow"
-      ? "text-primary border-primary/40"
-      : "text-destructive border-destructive/40";
   const sourceLabel =
     sourceLabelOverride ??
     (rule.source === "manual" ? null : formatEgressRuleSource(rule.source));
@@ -489,11 +486,7 @@ function RuleRow({
     <li
       className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}
     >
-      <span
-        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
-      >
-        {rule.verdict}
-      </span>
+      <VerdictBadge verdict={rule.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {rule.method}
       </span>
@@ -502,12 +495,7 @@ function RuleRow({
         {rule.pathPattern}
       </span>
       {sourceLabel && (
-        <span
-          title={`source: ${rule.source}`}
-          className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
-        >
-          {sourceLabel}
-        </span>
+        <SourceTag label={sourceLabel} title={`source: ${rule.source}`} />
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
@@ -536,17 +524,9 @@ function PendingAddRow({
   add: PendingAdd;
   onCancel: () => void;
 }) {
-  const verdictTone =
-    add.verdict === "allow"
-      ? "text-primary border-primary/40"
-      : "text-destructive border-destructive/40";
   return (
     <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/10">
-      <span
-        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
-      >
-        {add.verdict}
-      </span>
+      <VerdictBadge verdict={add.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {add.method}
       </span>
@@ -554,9 +534,9 @@ function PendingAddRow({
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {add.pathPattern}
       </span>
-      <span className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5">
+      <Badge size="sm" variant="accent">
         new
-      </span>
+      </Badge>
       <span className="ml-auto" />
       <Button
         type="button"
@@ -613,9 +593,7 @@ function buildPresetPreviewRows(
 function PreviewPresetRow({ row }: { row: PreviewRow }) {
   return (
     <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/5">
-      <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-primary border-primary/40">
-        allow
-      </span>
+      <VerdictBadge verdict="allow" />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {row.method}
       </span>
@@ -623,22 +601,37 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {row.pathPattern}
       </span>
-      <span
+      <SourceTag
+        label={row.sourceBadge}
         title={`Preview — ${row.sourceBadge} (saved on commit)`}
-        className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
-      >
-        {row.sourceBadge}
-      </span>
-      <span
-        className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5"
+      />
+      <Badge
+        size="sm"
+        variant="accent"
         title="This rule will be saved on commit"
       >
         preview
-      </span>
+      </Badge>
       <span className="ml-auto" />
       {/* No per-row actions in preview mode: the rules don't exist yet, so
           there's nothing to revoke. The user can change the dropdown
           selection or cancel the dialog to drop the preview. */}
     </li>
+  );
+}
+
+function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
+  return (
+    <Badge size="sm" variant={verdict === "allow" ? "success" : "danger"}>
+      {verdict}
+    </Badge>
+  );
+}
+
+function SourceTag({ label, title }: { label: string; title: string }) {
+  return (
+    <Badge size="sm" variant="muted" title={title}>
+      {label}
+    </Badge>
   );
 }

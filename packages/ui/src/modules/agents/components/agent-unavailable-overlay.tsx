@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
@@ -131,10 +132,7 @@ export function AgentUnavailableOverlay({
         <Loader2 size={40} className="text-text-muted animate-spin" />
         <div className="flex flex-col items-center gap-2">
           <h2 className="text-[18px] font-bold text-text">{agent.name}</h2>
-          <StatusBadge
-            label="Reconnecting"
-            colorClasses="bg-warning-light text-warning border-warning"
-          />
+          <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-[14px] text-text-secondary">
           Lost contact with the agent. Reconnecting…

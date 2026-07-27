@@ -2,7 +2,6 @@ import type { LibraryArtifact } from "api-server-api";
 import { Box, Clock, Eye, Link as LinkIcon, MoreVertical } from "lucide-react";
 import { useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,6 +17,7 @@ import { expiryState, timeAgo } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { VersionBadge } from "./version-badge.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
@@ -65,11 +65,7 @@ export function ArtifactRow({
         </span>
         <span className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
-          {artifact.version > 1 && (
-            <Badge variant="outline" className="px-1.5 py-0 text-[11px]">
-              v{artifact.version}
-            </Badge>
-          )}
+          {artifact.version > 1 && <VersionBadge version={artifact.version} />}
           <span className="inline-flex items-center gap-1">
             <Eye size={12} />
             {artifact.viewCount}

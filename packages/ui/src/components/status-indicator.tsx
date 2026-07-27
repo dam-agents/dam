@@ -25,26 +25,6 @@ const stateVariant: Record<
   over_budget: "warning",
 };
 
-export function StatusBadge({
-  state,
-  label,
-  colorClasses,
-}: {
-  state?: AgentDisplayState;
-  label?: string;
-  colorClasses?: string;
-}) {
-  const resolvedLabel = label ?? (state ? stateLabel[state] : "");
-  if (colorClasses) {
-    return (
-      <Badge variant="outline" className={colorClasses}>
-        {resolvedLabel}
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant={state ? stateVariant[state] : "outline"}>
-      {resolvedLabel}
-    </Badge>
-  );
+export function StatusBadge({ state }: { state: AgentDisplayState }) {
+  return <Badge variant={stateVariant[state]}>{stateLabel[state]}</Badge>;
 }

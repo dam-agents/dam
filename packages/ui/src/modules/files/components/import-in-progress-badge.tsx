@@ -1,4 +1,5 @@
-import { StatusBadge } from "../../../components/status-indicator.js";
+import { Badge } from "@/components/ui/badge";
+
 import { useIsImporting } from "../hooks/use-is-importing.js";
 
 interface Props {
@@ -11,10 +12,7 @@ export function ImportInProgressBadge({ agentId }: Props) {
   if (!importing) return null;
   return (
     <span title="Importing files into the agent">
-      <StatusBadge
-        label="Importing…"
-        colorClasses="bg-accent-light text-accent border-accent"
-      />
+      <Badge variant="accent">Importing…</Badge>
     </span>
   );
 }

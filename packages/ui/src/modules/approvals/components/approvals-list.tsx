@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
@@ -103,9 +104,9 @@ function ApprovalRow({
               {title}
             </span>
             {row.status !== "pending" && (
-              <span className="text-[10px] uppercase tracking-wider text-text-muted bg-border-light rounded px-1.5 py-0.5">
+              <Badge size="sm" variant="muted">
                 {STATUS_LABEL[row.status]}
-              </span>
+              </Badge>
             )}
           </div>
           {subtitle && (
