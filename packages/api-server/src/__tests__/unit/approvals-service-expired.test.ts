@@ -69,6 +69,10 @@ function makeService(seed: PendingApprovalRow) {
     egressRuleWriter: {
       insert: async (input) => {
         inserts.push({ verdict: input.verdict, agentId: input.agentId });
+        return {
+          kind: "inserted",
+          row: { id: input.id, verdict: input.verdict, source: "inbox" },
+        };
       },
     },
     notifier: { notifyResolved: async () => {} },
