@@ -140,6 +140,8 @@ export function buildConnectCommand(deps: {
         "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
         "  dam connection connect github-app --app-id 123456 --installation-id 987654 \\\n" +
         '      --private-key "$(cat app.pem)"\n' +
+        "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
+        '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
@@ -504,6 +506,7 @@ function buildPayload(
       return {
         ...common,
         authKind: "github-app",
+        ...(v("host") ? { host: v("host")! } : {}),
         appId,
         installationId,
         privateKey,

@@ -758,6 +758,33 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
   ],
 };
 
+// GitHub App installation on a GitHub Enterprise host — the bot/agent
+// counterpart to the interactive `github-enterprise` OAuth connection. The
+// user supplies the enterprise host at connect time; `apiBaseUrl`'s `{host}`
+// placeholder is substituted the same way OAuth endpoint placeholders are
+// (see `buildGitHubApp`), and the host-scoped injections mirror the OAuth
+// template's (subdomain-isolated `api.{host}` for REST, apex `{host}` for
+// git-over-HTTPS).
+function githubEnterpriseApp(
+  creds?: GitHubEnterpriseCredentials,
+): GitHubAppConnectionTemplate {
+  return {
+    id: "github-enterprise-app",
+    name: "GitHub Enterprise (App installation)",
+    category: "app",
+    isCustom: false,
+    description:
+      "Act as a GitHub App installation on a GitHub Enterprise host. The platform mints short-lived installation tokens (ghs_…) from the app's private key — usable by bots and scheduled agents, not just interactive sign-in.",
+    iconSlug: "github-enterprise",
+    authKind: "github-app",
+    ...(creds?.host ? { host: creds.host } : {}),
+    apiBaseUrl: "https://api.{host}",
+    contributions: [
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    ],
+  };
+}
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -824,6 +851,7 @@ export function buildCatalog(
     GITHUB_PAT,
     GITHUB_APP,
     githubEnterprise(creds.githubEnterprise),
+    githubEnterpriseApp(creds.githubEnterprise),
     KUBERNETES,
     spotify(creds.spotify),
     slack(creds.slack),

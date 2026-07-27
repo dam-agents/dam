@@ -71,6 +71,7 @@ export function buildCreatePayload(
       return compact({
         ...common,
         authKind: "github-app" as const,
+        host: submitted("host"),
         appId,
         installationId,
         privateKey,
