@@ -70,3 +70,55 @@ describe("updateRRule sessionMode", () => {
     expect(getSavedSpec()?.sessionMode).toBe("continuous");
   });
 });
+
+describe("createRRule createdBy", () => {
+  /** Fake repo whose create() captures the spec it was asked to persist. */
+  function makeCreateDeps() {
+    let created:
+      | { agentId: string; owner: string; spec: ScheduleSpec }
+      | undefined;
+    const repo = {
+      async create(input: {
+        agentId: string;
+        owner: string;
+        name: string;
+        spec: ScheduleSpec;
+      }) {
+        created = input;
+        return {
+          id: SCHEDULE_ID,
+          agentId: input.agentId,
+          name: input.name,
+          spec: input.spec,
+        };
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async sync() {} } as unknown as SchedulerRunner;
+    const service = createSchedulesService({ repo, runner, owner: OWNER });
+    return { service, getCreated: () => created };
+  }
+
+  const baseCreate = {
+    name: "daily",
+    agentId: "agent-1",
+    rrule: RRULE,
+    timezone: TIMEZONE,
+    task: "do the thing",
+  };
+
+  it("defaults to createdBy 'user' when omitted, like createCron", async () => {
+    const { service, getCreated } = makeCreateDeps();
+
+    await service.createRRule(baseCreate);
+
+    expect(getCreated()?.spec.createdBy).toBe("user");
+  });
+
+  it("labels a schedule an agent registers on itself as createdBy 'agent'", async () => {
+    const { service, getCreated } = makeCreateDeps();
+
+    await service.createRRule(baseCreate, "agent");
+
+    expect(getCreated()?.spec.createdBy).toBe("agent");
+  });
+});

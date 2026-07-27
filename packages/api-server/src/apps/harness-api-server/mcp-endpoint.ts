@@ -9,6 +9,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  quietWindowSchema,
+  SessionType,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -605,7 +607,7 @@ export function createMcpSession(
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
     {
       name: z
         .string()
@@ -614,8 +616,29 @@ export function createMcpSession(
       cron: z
         .string()
         .min(1)
+        .optional()
         .describe(
-          "Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily",
+          "Legacy: standard 5-field cron expression in UTC, e.g. '0 9 * * *' for 9am UTC daily. Mutually exclusive with rrule/timezone.",
+        ),
+      rrule: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Recommended: RFC 5545 RRULE body, e.g. 'FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0' for 9am Monday and Wednesday. Requires timezone. Mutually exclusive with cron.",
+        ),
+      timezone: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "IANA timezone the rrule fires in, e.g. 'Europe/Prague'. Required with rrule.",
+        ),
+      quietHours: z
+        .array(quietWindowSchema)
+        .optional()
+        .describe(
+          "Optional windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
         ),
       task: z
         .string()
@@ -628,18 +651,34 @@ export function createMcpSession(
           "continuous = resume prior session each tick; fresh = new session per run (default)",
         ),
     },
-    async ({ name, cron, task, sessionMode }) => {
-      try {
-        const sched = await schedules.createCron(
-          {
-            name,
-            agentId,
-            cron,
-            task,
-            sessionMode,
-          },
-          "agent",
+    async ({ name, cron, rrule, timezone, quietHours, task, sessionMode }) => {
+      if ((cron === undefined) === (rrule === undefined)) {
+        return errorResult(
+          "pass exactly one of `cron` (legacy, UTC) or `rrule` (with `timezone`).",
         );
+      }
+      if (rrule !== undefined && !timezone) {
+        return errorResult("rrule requires timezone.");
+      }
+      try {
+        const sched =
+          rrule !== undefined
+            ? await schedules.createRRule(
+                {
+                  name,
+                  agentId,
+                  rrule,
+                  timezone: timezone!,
+                  quietHours,
+                  task,
+                  sessionMode,
+                },
+                "agent",
+              )
+            : await schedules.createCron(
+                { name, agentId, cron: cron!, task, sessionMode },
+                "agent",
+              );
         return {
           content: [
             {
@@ -648,7 +687,9 @@ export function createMcpSession(
                 {
                   id: sched.id,
                   name: sched.name,
-                  cron,
+                  ...(sched.spec.type === "rrule"
+                    ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
+                    : { cron: sched.spec.cron }),
                   enabled: sched.spec.enabled,
                 },
                 null,
