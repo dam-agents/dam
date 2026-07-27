@@ -7,11 +7,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import {
-  useAgentSpend,
-  useDailySpend,
-  useModelSpend,
-} from "../api/queries.js";
+import { useAgentSpend, useDailySpend, useModelSpend } from "../api/queries.js";
 import {
   AgentSpendBars,
   ModelSpendTable,
@@ -173,7 +169,10 @@ function UsageSkeleton() {
         <SectionLabel spaced>Spend by model</SectionLabel>
         <Card className="animate-pulse p-0">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-[50px] border-b border-border-hairline last:border-b-0" />
+            <div
+              key={i}
+              className="h-[50px] border-b border-border-hairline last:border-b-0"
+            />
           ))}
         </Card>
       </section>

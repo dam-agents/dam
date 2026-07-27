@@ -262,7 +262,10 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
   // Gridline / axis values, top row first so flex order reads high → low.
   // Index-based so the bottom tick is exactly 0 (no floating-point residual).
   const nTicks = Math.round(top / step);
-  const ticks = Array.from({ length: nTicks + 1 }, (_, i) => (nTicks - i) * step);
+  const ticks = Array.from(
+    { length: nTicks + 1 },
+    (_, i) => (nTicks - i) * step,
+  );
   const CHART_H = 240;
 
   return (
