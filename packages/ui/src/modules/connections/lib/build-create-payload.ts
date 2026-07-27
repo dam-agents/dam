@@ -74,6 +74,8 @@ export function buildCreatePayload(
         appId,
         installationId,
         privateKey,
+        host: submitted("host"),
+        apiBaseUrl: submitted("apiBaseUrl"),
       });
     }
     case "header": {

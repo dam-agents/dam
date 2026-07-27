@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-23
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -254,7 +254,13 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   installation-token endpoint (once at connect, then before each expiry via
   the same refresh loop), and re-bakes the same three GitHub host injections
   as the PAT template. The private key stays at rest and is never sent to any
-  host; only the installation token reaches the gateway's injection path.
+  host; only the installation token reaches the gateway's injection path. A
+  `github-enterprise-app` Connection is the same grant against a GitHub
+  Enterprise host: the user also supplies that host (and, optionally, the
+  REST API base the installation-token endpoint lives at, when it isn't the
+  default `https://api.<host>`), and the re-baked injections target that
+  host's own `api.<host>`/`<host>` pair instead of the github.com trio — the
+  same two-host shape the `github-enterprise` OAuth template already uses.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per

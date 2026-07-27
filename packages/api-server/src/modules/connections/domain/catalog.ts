@@ -758,6 +758,31 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
   ],
 };
 
+// GitHub App installation grant against a GitHub Enterprise host — the bot/agent
+// counterpart to the interactive `github-enterprise` OAuth template above. The
+// host has no fixed default (unless operator-preset): contributions are
+// synthesized per-host at build time (see buildGitHubApp's `github-enterprise-app`
+// branch), mirroring the `api.{host}` / `{host}` split `github-enterprise`'s OAuth
+// build path already uses for its own host-specific contributions.
+function githubEnterpriseApp(
+  creds?: GitHubEnterpriseCredentials,
+): GitHubAppConnectionTemplate {
+  return {
+    id: "github-enterprise-app",
+    name: "GitHub Enterprise App (installation)",
+    category: "app",
+    isCustom: false,
+    description:
+      "Act as a GitHub App installation on a GitHub Enterprise host. The platform mints short-lived installation tokens (ghs_…) from the app's private key.",
+    iconSlug: "github-enterprise",
+    authKind: "github-app",
+    ...(creds?.host ? { host: creds.host } : {}),
+    contributions: [
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    ],
+  };
+}
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -824,6 +849,7 @@ export function buildCatalog(
     GITHUB_PAT,
     GITHUB_APP,
     githubEnterprise(creds.githubEnterprise),
+    githubEnterpriseApp(creds.githubEnterprise),
     KUBERNETES,
     spotify(creds.spotify),
     slack(creds.slack),

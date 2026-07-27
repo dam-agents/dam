@@ -247,8 +247,24 @@ function inputsFor(
         required("valueFormat", { presetValue: t.valueFormat }),
         optional("envName"),
       ];
-    case "github-app":
-      return [
+    case "github-app": {
+      const out: ConnectionTemplateInput[] = [];
+      if (t.id === "github-enterprise-app") {
+        out.push({
+          name: "host",
+          state: t.host ? "overridable" : "required",
+          ...(t.host ? { presetValue: t.host } : {}),
+          label: "Host",
+          hint: "The GitHub Enterprise host to reach, e.g. ghe.acme.com.",
+        });
+        out.push({
+          name: "apiBaseUrl",
+          state: "optional",
+          label: "API base URL",
+          hint: "Where the platform mints installation tokens from. Leave blank to default to https://api.<host>; override for a deployment whose REST API lives elsewhere (e.g. https://<host>/api/v3 for GitHub Enterprise Server).",
+        });
+      }
+      out.push(
         {
           name: "appId",
           state: "required",
@@ -269,7 +285,9 @@ function inputsFor(
           label: "Private key (PEM)",
           hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
         },
-      ];
+      );
+      return out;
+    }
     case "header": {
       const out: ConnectionTemplateInput[] = [];
       if (t.isCustom) {

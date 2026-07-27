@@ -434,6 +434,12 @@ function normalizePrivateKeyPem(raw: string): string {
 // only the signing material (the private key); the installation token and its
 // SDS files are minted by the service before the secret write. The token reaches
 // only the gateway — the private key never leaves the api-server.
+//
+// `github-enterprise-app` is the only variant whose host is per-connection: its
+// contributions are synthesized here (GH_HOST env, plus the same api.{host} /
+// {host} Bearer/Basic split `github-enterprise`'s OAuth build path uses) rather
+// than shipped statically on the template, the way the plain `github-app`
+// template's three github.com contributions are.
 function buildGitHubApp(
   template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
   input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
@@ -448,8 +454,36 @@ function buildGitHubApp(
   }
   const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
 
+  const isEnterprise = template.id === "github-enterprise-app";
+  const host = isEnterprise ? (input.host ?? template.host) : template.host;
+  if (isEnterprise && !host) {
+    throw new Error(`template ${template.id}: missing host`);
+  }
+  const apiBaseUrl = isEnterprise
+    ? (input.apiBaseUrl ?? template.apiBaseUrl ?? `https://api.${host}`)
+    : (template.apiBaseUrl ?? "https://api.github.com");
+
   const secretPath = mintSecretRef(`connection:${template.id}`);
   const contributions: Contribution[] = [...template.contributions];
+
+  if (isEnterprise) {
+    contributions.push(
+      { kind: "env", name: "GH_HOST", placeholder: host! },
+      {
+        kind: "egress-inject",
+        host: `api.${host}`,
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+      {
+        kind: "egress-inject",
+        host: host!,
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+        encoding: "basic-x-access-token",
+      },
+    );
+  }
 
   return {
     auth: {
@@ -458,8 +492,8 @@ function buildGitHubApp(
       installationId: input.installationId,
       privateKeyRef: { ...secretPath, field: "private_key" },
       accessTokenRef: { ...secretPath, field: "access_token" },
-      apiBaseUrl: template.apiBaseUrl ?? "https://api.github.com",
-      ...(template.host ? { host: template.host } : {}),
+      apiBaseUrl,
+      ...(host ? { host } : {}),
     },
     contributions,
     secrets: new Map([[secretPath.path, { private_key: privateKeyPem }]]),

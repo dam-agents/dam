@@ -117,13 +117,17 @@ const clientCredentialsCreateInput = z.object({
 
 // GitHub App installation credential: the app's numeric identity plus a private
 // key. The key is accepted as raw PEM or its base64 encoding (see the build
-// step); the platform mints installation tokens from it server-side.
+// step); the platform mints installation tokens from it server-side. `host`
+// and `apiBaseUrl` only apply to the `github-enterprise-app` template — the
+// plain `github-app` template ignores them and always targets github.com.
 const githubAppCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("github-app"),
   appId: z.string().min(1),
   installationId: z.string().min(1),
   privateKey: z.string().min(1),
+  host: z.string().min(1).optional(),
+  apiBaseUrl: z.string().url().optional(),
 });
 
 const noneCreateInput = z.object({

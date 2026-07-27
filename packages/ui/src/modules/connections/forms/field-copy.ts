@@ -13,6 +13,7 @@ const FIELD_LABELS: Record<string, string> = {
   appId: "App ID",
   installationId: "Installation ID",
   privateKey: "Private key (PEM)",
+  apiBaseUrl: "API base URL",
   envName: "Environment variable",
   caData: "Server CA certificate",
 };
@@ -32,6 +33,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   appId: "123456",
   installationId: "987654",
   privateKey: "-----BEGIN RSA PRIVATE KEY-----\n…",
+  apiBaseUrl: "https://api.ghe.acme.com",
   envName: "MY_API_KEY",
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };
