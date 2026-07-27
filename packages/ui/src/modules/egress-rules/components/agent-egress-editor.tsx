@@ -534,7 +534,7 @@ function PendingAddRow({
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {add.pathPattern}
       </span>
-      <Badge size="sm" variant="accent">
+      <Badge size="sm" variant="accent" className="uppercase tracking-wider">
         new
       </Badge>
       <span className="ml-auto" />
@@ -608,6 +608,7 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       <Badge
         size="sm"
         variant="accent"
+        className="uppercase tracking-wider"
         title="This rule will be saved on commit"
       >
         preview
@@ -622,7 +623,11 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
 
 function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
   return (
-    <Badge size="sm" variant={verdict === "allow" ? "success" : "danger"}>
+    <Badge
+      size="sm"
+      variant={verdict === "allow" ? "success" : "danger"}
+      className="uppercase tracking-wider"
+    >
       {verdict}
     </Badge>
   );

@@ -3,8 +3,9 @@ import { Badge } from "@/components/ui/badge";
 export function VersionBadge({ version }: { version: number }) {
   return (
     <Badge
+      size="sm"
       variant="outline"
-      className="shrink-0 px-1.5 py-0 text-[11px] tabular-nums"
+      className="shrink-0 tabular-nums"
       title={`Version ${version}`}
     >
       v{version}

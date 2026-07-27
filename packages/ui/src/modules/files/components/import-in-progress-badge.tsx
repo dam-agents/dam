@@ -11,8 +11,8 @@ export function ImportInProgressBadge({ agentId }: Props) {
   const importing = useIsImporting(agentId);
   if (!importing) return null;
   return (
-    <span title="Importing files into the agent">
-      <Badge variant="accent">Importing…</Badge>
-    </span>
+    <Badge variant="accent" title="Importing files into the agent">
+      Importing…
+    </Badge>
   );
 }

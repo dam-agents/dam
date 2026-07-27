@@ -25,6 +25,17 @@ const stateVariant: Record<
   over_budget: "warning",
 };
 
+/** Dot color per state — keep aligned with `stateVariant`. */
+export const stateDotClass: Record<AgentDisplayState, string> = {
+  running: "bg-success",
+  starting: "bg-warning",
+  preparing_workspace: "bg-warning",
+  hibernating: "bg-muted-foreground",
+  hibernated: "bg-muted-foreground",
+  error: "bg-danger",
+  over_budget: "bg-warning",
+};
+
 export function StatusBadge({ state }: { state: AgentDisplayState }) {
   return <Badge variant={stateVariant[state]}>{stateLabel[state]}</Badge>;
 }

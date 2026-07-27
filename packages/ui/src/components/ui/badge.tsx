@@ -9,7 +9,7 @@ const badgeVariants = cva(
     variants: {
       size: {
         default: "px-2.5 py-0.5 text-[12px] tracking-[0.338px]",
-        sm: "px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+        sm: "px-1.5 py-0.5 text-[10px] font-medium",
       },
       variant: {
         default:
@@ -21,7 +21,8 @@ const badgeVariants = cva(
         outline: "text-foreground",
         success:
           "border-transparent bg-success-light text-green-700 dark:text-success",
-        warning: "border-transparent bg-warning/15 text-warning",
+        warning:
+          "border-transparent bg-warning/15 text-amber-700 dark:text-warning",
         danger: "border-transparent bg-danger-light text-danger",
         info: "border-transparent bg-info-light text-info",
         muted: "border-transparent bg-muted text-muted-foreground",
@@ -37,12 +38,13 @@ const badgeVariants = cva(
 
 export interface BadgeProps
   extends
-    React.HTMLAttributes<HTMLDivElement>,
+    React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
+// span, not div: badges render inside phrasing content (buttons, inline rows).
 function Badge({ className, variant, size, ...props }: BadgeProps) {
   return (
-    <div
+    <span
       className={cn(badgeVariants({ variant, size }), className)}
       {...props}
     />

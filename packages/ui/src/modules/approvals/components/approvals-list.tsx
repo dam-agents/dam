@@ -104,7 +104,11 @@ function ApprovalRow({
               {title}
             </span>
             {row.status !== "pending" && (
-              <Badge size="sm" variant="muted">
+              <Badge
+                size="sm"
+                variant="muted"
+                className="uppercase tracking-wider"
+              >
                 {STATUS_LABEL[row.status]}
               </Badge>
             )}

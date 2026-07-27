@@ -2,6 +2,7 @@ import type { LibraryArtifact } from "api-server-api";
 import { Box, Clock, Eye, Link as LinkIcon, MoreVertical } from "lucide-react";
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -113,7 +114,7 @@ export function ArtifactRow({
 
 function CreatorChip({ agentId }: { agentId: string | null }) {
   if (!agentId) {
-    return <span className="rounded-full bg-muted px-2 py-px">you</span>;
+    return <Badge variant="muted">you</Badge>;
   }
   return <AgentCreatorChip agentId={agentId} />;
 }

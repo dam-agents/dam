@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 
+import { stateDotClass } from "@/components/status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -433,14 +434,9 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
-  const dotColor =
-    agentDisplay?.state === "running"
-      ? "bg-success"
-      : agentDisplay?.state === "error"
-        ? "bg-danger"
-        : agentDisplay?.state === "hibernated"
-          ? "bg-muted-foreground"
-          : "bg-warning";
+  const dotColor = agentDisplay
+    ? stateDotClass[agentDisplay.state]
+    : "bg-warning";
 
   // The status line normally renders inside the last assistant message; when
   // the transcript ends on something else (replay edge), fall back to a
