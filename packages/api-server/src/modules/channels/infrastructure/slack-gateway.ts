@@ -177,4 +177,10 @@ export interface SlackGateway {
   getUserInfo(userId: string): Promise<SlackUserInfo | null>;
   /** Open (or reuse) the bot's DM with a user; returns the conversation id. */
   openDirectMessage(userId: string): Promise<string>;
+  /** Bot-token OAuth scopes Slack currently reports as granted — the
+   *  install's actual permission set, read from the `x-oauth-scopes` header
+   *  Slack attaches to every Web API response, as opposed to what the app
+   *  manifest asks for. Null when it can't be determined (bot not running,
+   *  or the probe itself failed); treat that as "unknown", not "missing". */
+  getGrantedScopes(): Promise<Set<string> | null>;
 }

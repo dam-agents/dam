@@ -214,3 +214,34 @@ describe("slack user lookup", () => {
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 });
+
+describe("slack supportsUserLookup", () => {
+  it("is true when the scope is unknown (no probe has run yet)", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+
+    expect(await h.worker.supportsUserLookup()).toBe(true);
+  });
+
+  it("is true once users:read is confirmed granted", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    h.gw.setGrantedScopes(["chat:write", "users:read", "users:read.email"]);
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+
+    expect(await h.worker.supportsUserLookup()).toBe(true);
+  });
+
+  it("is false once users:read is confirmed missing", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+
+    expect(await h.worker.supportsUserLookup()).toBe(false);
+  });
+
+  it("fails open when the bot is not running", async () => {
+    const h = harness({ boundChannelId: BOUND, gatewayDown: true });
+
+    expect(await h.worker.supportsUserLookup()).toBe(true);
+  });
+});

@@ -16,6 +16,7 @@ function fakeSlackWorker(): SlackWorker {
     reply: vi.fn(async () => ({ ok: true as const })),
     react: vi.fn(async () => ({ ok: true as const })),
     describeUsers: vi.fn(async () => ({ users: [] })),
+    supportsUserLookup: vi.fn(async () => true),
   };
 }
 
@@ -104,6 +105,35 @@ describe("channel-manager user lookup", () => {
     expect(result).toEqual({
       error: "user lookup not supported on telegram",
     });
+
+    await manager.stopAll();
+  });
+});
+
+describe("channel-manager supportsUserLookup", () => {
+  it("reflects the Slack worker's answer", async () => {
+    const slackWorker = fakeSlackWorker();
+    slackWorker.supportsUserLookup = vi.fn(async () => false);
+    const manager = createChannelManager({ slackWorker });
+
+    expect(await manager.supportsUserLookup()).toBe(false);
+
+    await manager.stopAll();
+  });
+
+  it("fails open when Telegram is the only worker (no directory to begin with)", async () => {
+    const telegramWorker = fakeTelegramWorker();
+    const manager = createChannelManager({ telegramWorker });
+
+    expect(await manager.supportsUserLookup()).toBe(true);
+
+    await manager.stopAll();
+  });
+
+  it("fails open with no channel workers configured at all", async () => {
+    const manager = createChannelManager({});
+
+    expect(await manager.supportsUserLookup()).toBe(true);
 
     await manager.stopAll();
   });

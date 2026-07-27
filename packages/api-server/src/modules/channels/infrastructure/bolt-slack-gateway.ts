@@ -27,6 +27,9 @@ export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
+  // Scopes only change on a reinstall, which restarts this process — one
+  // successful probe is good for the gateway's lifetime.
+  let grantedScopes: Set<string> | null = null;
 
   return {
     async start(handlers: SlackGatewayHandlers): Promise<boolean> {
@@ -134,6 +137,7 @@ export function createBoltSlackGateway(
       if (app) {
         await app.stop();
         app = null;
+        grantedScopes = null;
       }
     },
 
@@ -337,6 +341,21 @@ export function createBoltSlackGateway(
       const id = opened.channel?.id;
       if (!id) throw new Error("Slack returned no conversation id");
       return id;
+    },
+
+    async getGrantedScopes(): Promise<Set<string> | null> {
+      if (!app) return null;
+      if (grantedScopes) return grantedScopes;
+      try {
+        // auth.test needs no scope of its own and has a generous rate limit;
+        // it's a cheap way to ask Slack what the bot token can actually do.
+        const result = await app.client.auth.test();
+        const scopes = result.response_metadata?.scopes;
+        if (scopes) grantedScopes = new Set(scopes);
+        return grantedScopes;
+      } catch {
+        return null;
+      }
     },
   };
 }

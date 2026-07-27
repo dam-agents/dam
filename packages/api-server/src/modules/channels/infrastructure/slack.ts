@@ -64,7 +64,7 @@ import {
 import {
   agentContextBlock,
   agentFooterMrkdwn,
-  HISTORY_LEGEND,
+  historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
@@ -84,6 +84,10 @@ function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
   brand: { name: string; short: string };
+  /** Whether describe_channel_users is registered on this Agent's MCP
+   *  session — omit its mention when it isn't, so the contract never points
+   *  at a tool the agent won't find. */
+  canLookupUsers: boolean;
 }): string {
   return [
     "<how-to-respond>",
@@ -100,10 +104,14 @@ function slackTurnContract(ctx: {
       `(messageTs="${ctx.eventTs}"). Pass the Slack emoji short name, no colons.`,
     "• no_reply_needed — end your turn without posting anything, when the " +
       "message doesn't call for a response.",
-    "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
-      'and inside message text — call describe_channel_users with channel="slack" ' +
-      "to learn who they are before naming someone, attributing work, or " +
-      "reasoning about their local time.",
+    ...(ctx.canLookupUsers
+      ? [
+          "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
+            'and inside message text — call describe_channel_users with channel="slack" ' +
+            "to learn who they are before naming someone, attributing work, or " +
+            "reasoning about their local time.",
+        ]
+      : []),
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
   ].join("\n");
@@ -317,6 +325,11 @@ export interface SlackWorker {
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** Whether a lookup could plausibly succeed right now — false only when the
+   *  app's granted scopes are confirmed to lack `users:read`. An unreachable
+   *  bot or an unprobed gateway reports true: an unknown state should never
+   *  hide a tool that might in fact work. */
+  supportsUserLookup(): Promise<boolean>;
 }
 
 export interface SlackOAuthPending {
@@ -396,6 +409,14 @@ const userLookupSemaphore = createSemaphore(5);
 function normalizeSlackUserId(input: string): string | null {
   const bare = input.trim().replace(/^<@/, "").replace(/>$/, "").split("|")[0]!;
   return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
+}
+
+/** Whether the running gateway's granted scopes are confirmed to include
+ *  `users:read`. An unprobed or unreachable gateway reports true — an
+ *  unknown state fails open rather than hiding a tool that might work. */
+async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
+  const scopes = await gw.getGrantedScopes();
+  return !scopes || scopes.has("users:read");
 }
 
 export function createSlackWorker(
@@ -640,6 +661,7 @@ export function createSlackWorker(
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
+      canLookupUsers: await canLookupUsers(gw),
     });
 
     let outcome: TurnOutcome = "failure";
@@ -799,6 +821,7 @@ export function createSlackWorker(
         replyThreadTs: args.threadTs,
         eventTs: args.eventTs,
         brand,
+        canLookupUsers: await canLookupUsers(gw),
       }),
     );
     const replyId = args.eventTs;
@@ -1001,7 +1024,9 @@ export function createSlackWorker(
       contract,
       guidance,
       context: lines,
-      contextLegend: hasAgentAuthored ? HISTORY_LEGEND : undefined,
+      contextLegend: hasAgentAuthored
+        ? historyLegend(await canLookupUsers(gw))
+        : undefined,
       text: ctx.text,
       images: ctx.images,
     });
@@ -1511,6 +1536,7 @@ export function createSlackWorker(
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
       brand,
+      canLookupUsers: await canLookupUsers(gw),
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({
@@ -2149,6 +2175,11 @@ export function createSlackWorker(
         }),
       );
       return { users };
+    },
+
+    async supportsUserLookup() {
+      const gw = await ensureGateway();
+      return gw ? canLookupUsers(gw) : true;
     },
   };
 }

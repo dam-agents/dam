@@ -36,6 +36,10 @@ export interface FakeSlackGateway extends SlackGateway {
   /** Every id getUserInfo was called with, in order — lets a test see the
    *  lookups that actually reached Slack (i.e. missed the worker's cache). */
   readUserLookups(): string[];
+  /** Bot scopes to report from getGrantedScopes. Defaults to null (matching
+   *  the real gateway before its first probe), so a test only needs this to
+   *  simulate a scope that is confirmed granted or confirmed missing. */
+  setGrantedScopes(scopes: string[] | null): void;
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
@@ -46,6 +50,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
   let nextStreamTs = 1;
+  let grantedScopes: Set<string> | null = null;
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -224,6 +229,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     readUserLookups() {
       return [...userLookups];
+    },
+
+    async getGrantedScopes() {
+      return grantedScopes;
+    },
+
+    setGrantedScopes(scopes) {
+      grantedScopes = scopes ? new Set(scopes) : null;
     },
   };
 }

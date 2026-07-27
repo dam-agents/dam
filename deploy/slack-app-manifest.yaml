@@ -46,7 +46,10 @@ oauth_config:
       - groups:read
       - im:write
       # Resolving the user ids the agent sees in a conversation to the people
-      # behind them (users.info); the email field needs the second scope.
+      # behind them (users.info). Both optional: without users:read the
+      # describe_channel_users tool is not registered at all (rather than
+      # exposing one that would always fail); with users:read but not
+      # users:read.email, the tool works but omits the email field.
       - users:read
       - users:read.email
       - app_mentions:read
