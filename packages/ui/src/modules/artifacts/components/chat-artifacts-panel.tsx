@@ -1,12 +1,21 @@
 import type { LibraryArtifact } from "api-server-api";
-import type { CSSProperties } from "react";
+import { MoreVertical } from "lucide-react";
+import { type CSSProperties, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
+import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { ShareDialog } from "./share-dialog.js";
 
 /** Tracks agents publishing mid-conversation without a manual refresh. */
 const LIVE_POLL_MS = 5000;
@@ -33,6 +42,7 @@ export function ChatArtifactsPanel({
   );
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
 
   return (
     <SidebarSection
@@ -58,9 +68,16 @@ export function ChatArtifactsPanel({
                   artifact.id === openArtifactId ? null : artifact.id,
                 )
               }
+              onShare={setShareTarget}
             />
           ))}
         </div>
+      )}
+      {shareTarget && (
+        <ShareDialog
+          artifact={shareTarget}
+          onClose={() => setShareTarget(null)}
+        />
       )}
     </SidebarSection>
   );
@@ -70,18 +87,24 @@ function ArtifactListRow({
   artifact,
   active,
   onClick,
+  onShare,
 }: {
   artifact: LibraryArtifact;
   active: boolean;
   onClick: () => void;
+  onShare: (artifact: LibraryArtifact) => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick();
+      }}
       title={artifact.title}
       className={cn(
-        "flex h-[32px] w-full items-center gap-2 px-3 text-left text-[13px] text-text-secondary transition-colors hover:bg-muted",
+        "group flex h-[32px] w-full cursor-pointer items-center gap-2 px-3 text-left text-[13px] text-text-secondary transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
       )}
     >
@@ -101,6 +124,28 @@ function ArtifactListRow({
           title="Shared"
         />
       )}
-    </button>
+      <div
+        className="shrink-0"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <DropdownMenu>
+          {/* Kept mounted at opacity-0 so hovering doesn't reflow the row. */}
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+              title="More actions"
+            >
+              <MoreVertical size={13} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <ArtifactRowMenuItems artifact={artifact} onShare={onShare} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
   );
 }
