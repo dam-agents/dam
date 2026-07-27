@@ -12,6 +12,7 @@ import { ExperimentsListView } from "./modules/experiments/views/experiments-lis
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
+import { parseRoute } from "./modules/platform/lib/routes.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -62,7 +63,7 @@ function MainApp() {
     // The sandbox-creation wizard owns its own OAuth-return handling so it can
     // rehydrate the in-progress sandbox before the params are stripped.
     const path = window.location.pathname;
-    if (path === "/sandboxes/new") return;
+    if (parseRoute(path).view === "sandbox-new") return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
