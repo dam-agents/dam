@@ -124,6 +124,23 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
+# -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
+# agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
+# StatefulSet. Requires KubeVirt in the cluster (dev k3s: install via
+# `mise run cluster:install-kubevirt`; prod: OpenShift Virtualization).
+# Off = vm-backend templates are not rendered and vm agents fail reconcile.
+virtualization:
+  enabled: false
+  # emptyDisk scratch capacity attached to every VM (serial "scratch") for the
+  # guest's docker/k3s image stores. Global knob by design; contents die with
+  # hibernation like the rest of the guest rootfs.
+  scratchGi: 30
+  # virt-launcher pod placement — KVM-capable nodes (e.g.
+  # node-role.kubernetes.io/virtualization on OpenShift). Applied instead of
+  # controller.agent.base scheduling; a template's nodeSelector merges on top.
+  nodeSelector: {}
+  tolerations: []
+
 # -- Target namespace for agent workloads (agents, templates, schedules, forks)
 agentNamespace: platform-agents
 
@@ -1134,6 +1151,23 @@ agentTemplates:
     tags: ["Anthropic"]
     image:
       repository: quay.io/dam-agents/claude-code
+      tag: ""
+    storageSize: "5Gi"
+
+  # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
+  # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
+  # inside the sandbox. Rendered only when `virtualization.enabled`; the image
+  # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
+  claude-code-vm:
+    enabled: true
+    displayName: "Claude Code VM"
+    description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    experimental: true
+    tags: ["Anthropic", "VM"]
+    backend:
+      type: vm
+    image:
+      repository: quay.io/dam-agents/claude-code-vm
       tag: ""
     storageSize: "5Gi"
 

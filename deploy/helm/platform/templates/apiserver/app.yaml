@@ -216,6 +216,10 @@ spec:
             - name: E2E_ENABLED
               value: "true"
             {{- end }}
+            {{- if .Values.virtualization.enabled }}
+            - name: VIRTUALIZATION_ENABLED
+              value: "true"
+            {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
               value: "true"
