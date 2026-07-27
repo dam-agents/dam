@@ -13,9 +13,9 @@ export const metricsOverviewInputSchema = z.object({
   limit: z.coerce.number().int().positive().max(1000).default(100),
 });
 
-// Per-model spend over an absolute half-open range [from, to), across all of
-// the caller's agents. Instants (not calendar fields) so the client decides
-// what a "month" means in its own timezone.
+// The absolute half-open range [from, to) every spend read shares, across all
+// of the caller's agents. Instants (not calendar fields) so the client decides
+// what a "month" means in its own timezone. `spendBreakdown` extends this.
 export const metricsSpendInputSchema = z.object({
   from: z.string().datetime(),
   to: z.string().datetime(),
@@ -35,10 +35,12 @@ const isValidTimeZone = (tz: string): boolean => {
   }
 };
 
-// Per-day spend over the same absolute [from, to) range as `spend`, but bucketed
-// into local calendar days. The client supplies its IANA timezone so the server
-// can group by wall-clock day without owning any calendar logic.
-export const metricsSpendByDayInputSchema = metricsSpendInputSchema.extend({
+// The whole Usage tab in one read: per-model, per-agent, and per-day spend over
+// the same absolute [from, to) range. It carries the `spend` range plus the
+// client's IANA timezone, needed only for the per-day bucketing — a "day" is a
+// wall-clock calendar boundary the server otherwise never reasons about. One
+// procedure so ownership resolves once and the client gets one loading state.
+export const metricsSpendBreakdownInputSchema = metricsSpendInputSchema.extend({
   timeZone: z
     .string()
     .min(1)

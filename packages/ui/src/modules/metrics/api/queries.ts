@@ -2,31 +2,13 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-/** Per-model spend across all of the user's agents over [from, to). */
-export function useModelSpend(from: string, to: string) {
+/** The whole Usage tab in one read: per-model, per-agent, and per-day spend
+ *  across all of the user's agents over [from, to). Per-day rows are bucketed
+ *  into the browser's local calendar days and are sparse — the caller zero-fills
+ *  the month. One query so the page has a single loading/error state. */
+export function useSpendBreakdown(from: string, to: string, timeZone: string) {
   return useQuery({
-    ...trpc.metrics.spend.queryOptions({ from, to }),
-    staleTime: 60_000,
-    retry: false,
-  });
-}
-
-/** Per-agent spend across all of the user's agents over [from, to), sorted
- *  highest cost first. */
-export function useAgentSpend(from: string, to: string) {
-  return useQuery({
-    ...trpc.metrics.spendByAgent.queryOptions({ from, to }),
-    staleTime: 60_000,
-    retry: false,
-  });
-}
-
-/** Per-day spend across all of the user's agents over [from, to), bucketed
- *  into the browser's local calendar days. Response is sparse — the caller
- *  zero-fills the month. */
-export function useDailySpend(from: string, to: string, timeZone: string) {
-  return useQuery({
-    ...trpc.metrics.spendByDay.queryOptions({ from, to, timeZone }),
+    ...trpc.metrics.spendBreakdown.queryOptions({ from, to, timeZone }),
     staleTime: 60_000,
     retry: false,
   });

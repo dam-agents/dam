@@ -84,32 +84,19 @@ export function createMetricsService(deps: {
       return { tokenSpendByModel, runtimeBySession, contextPerCall };
     },
 
-    async spend(query) {
+    async spendBreakdown(query) {
+      // Resolve ownership once, then fan the three rollups out over the same
+      // allowlist and range. Collapsed from three procedures so a Usage page
+      // load does one agent-list + scope resolution rather than three.
       const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
-      if (ids.length === 0) return [];
-      return deps.reader.tokenSpendByModel(ids, {
-        fromIso: query.from,
-        toIso: query.to,
-      });
-    },
-
-    async spendByAgent(query) {
-      const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
-      if (ids.length === 0) return [];
-      return deps.reader.spendByAgent(ids, {
-        fromIso: query.from,
-        toIso: query.to,
-      });
-    },
-
-    async spendByDay(query) {
-      const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
-      if (ids.length === 0) return [];
-      return deps.reader.spendByDay(
-        ids,
-        { fromIso: query.from, toIso: query.to },
-        query.timeZone,
-      );
+      if (ids.length === 0) return { byModel: [], byAgent: [], byDay: [] };
+      const window = { fromIso: query.from, toIso: query.to };
+      const [byModel, byAgent, byDay] = await Promise.all([
+        deps.reader.tokenSpendByModel(ids, window),
+        deps.reader.spendByAgent(ids, window),
+        deps.reader.spendByDay(ids, window, query.timeZone),
+      ]);
+      return { byModel, byAgent, byDay };
     },
   };
 }
@@ -123,5 +110,5 @@ export function createDisabledMetricsService(): MetricsService {
       message: "Agent metrics backend is not enabled on this deployment.",
     });
   };
-  return { overview: fail, spend: fail, spendByAgent: fail, spendByDay: fail };
+  return { overview: fail, spendBreakdown: fail };
 }

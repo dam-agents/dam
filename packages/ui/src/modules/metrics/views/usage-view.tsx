@@ -7,12 +7,13 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useAgentSpend, useDailySpend, useModelSpend } from "../api/queries.js";
+import { useSpendBreakdown } from "../api/queries.js";
+import { AgentSpendBars } from "../components/agent-spend-bars.js";
+import { ModelSpendTable } from "../components/model-spend-table.js";
 import {
-  AgentSpendBars,
-  ModelSpendTable,
+  CHART_HEIGHT_CLASS,
   SpendByDayChart,
-} from "../components/metrics-panel.js";
+} from "../components/spend-by-day-chart.js";
 import { formatUsdCents } from "../lib/format.js";
 
 // Month boundaries are computed in the browser's timezone; the API takes the
@@ -55,11 +56,12 @@ export function UsageView() {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const from = month.toISOString();
   const to = monthStart(month, 1).toISOString();
-  const { data, isPending, isError } = useModelSpend(from, to);
-  const { data: agentData } = useAgentSpend(from, to);
-  const { data: dailyData } = useDailySpend(from, to, timeZone);
-  const total = data?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
-  const dailyDays = fillMonthDays(month, isCurrentMonth, dailyData);
+  // One query backs the whole tab, so per-model / per-agent / per-day spend
+  // land together under a single loading/error state — the chart never renders
+  // an all-zero month while its data is still in flight.
+  const { data, isPending, isError } = useSpendBreakdown(from, to, timeZone);
+  const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
+  const dailyDays = fillMonthDays(month, isCurrentMonth, data?.byDay);
 
   return (
     <div>
@@ -98,7 +100,9 @@ export function UsageView() {
       />
 
       {isError && (
-        <Card className="flex h-[240px] items-center justify-center p-5">
+        <Card
+          className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
+        >
           <p className="text-[14px] text-muted-foreground">
             Usage metrics are unavailable on this deployment.
           </p>
@@ -113,10 +117,12 @@ export function UsageView() {
               {formatUsdCents(total)}
             </div>
           </section>
-          {data.length === 0 ? (
+          {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <Card className="flex h-[240px] items-center justify-center p-5">
+              <Card
+                className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
+              >
                 <p className="text-[14px] text-muted-foreground">
                   No LLM calls in {monthLabel}.
                 </p>
@@ -133,16 +139,16 @@ export function UsageView() {
               <section>
                 <SectionLabel spaced>Spend by model</SectionLabel>
                 <Card className="p-0">
-                  <ModelSpendTable rows={data} />
+                  <ModelSpendTable rows={data.byModel} />
                 </Card>
               </section>
             </>
           )}
-          {agentData && agentData.length > 0 && (
+          {data.byAgent.length > 0 && (
             <section>
               <SectionLabel spaced>Spend by agent</SectionLabel>
               <Card className="p-5">
-                <AgentSpendBars rows={agentData} />
+                <AgentSpendBars rows={data.byAgent} />
               </Card>
             </section>
           )}
@@ -163,7 +169,7 @@ function UsageSkeleton() {
       </section>
       <section>
         <SectionLabel spaced>Spend by day</SectionLabel>
-        <Card className="h-[240px] animate-pulse p-5" />
+        <Card className={`${CHART_HEIGHT_CLASS} animate-pulse p-5`} />
       </section>
       <section>
         <SectionLabel spaced>Spend by model</SectionLabel>
