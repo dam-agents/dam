@@ -48,7 +48,7 @@ export interface CreateInvocationLivenessSweepDeps {
   /** Owner-scoped agents service, for reaping a liveness-failed target. */
   agentsFor: (owner: string) => AgentsService;
   /** Reads pod restart status to catch a target crashed mid-turn. */
-  k8s: Pick<K8sClient, "readPodRestart">;
+  k8s: Pick<K8sClient, "readAgentPodRestart">;
   intervalMs: number;
   /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
@@ -101,7 +101,7 @@ export function createInvocationLivenessSweep(
       const stillRunning = await deps.repo.listRunning(deps.batchSize);
       for (const row of stillRunning) {
         try {
-          const restart = await deps.k8s.readPodRestart(`${row.id}-0`);
+          const restart = await deps.k8s.readAgentPodRestart(row.id);
           if (restart && restart.restarts > 0) {
             await failAndReap(
               row,

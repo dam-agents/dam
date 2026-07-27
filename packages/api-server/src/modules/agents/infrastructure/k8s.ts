@@ -14,13 +14,14 @@ export interface K8sClient {
 
   // Agents/forks are custom resources and templates are file-mounted now,
   // so the api-server makes no ConfigMap calls — none are exposed.
-  /** Restart info for a pod: the highest container restart count and the reason
-   *  the last dead container gave (e.g. "OOMKilled"). Null if the pod is gone.
-   *  Read-only; used by the Invocation liveness sweep to fail a one-shot target
-   *  whose pod crashed mid-turn (its trigger will not re-fire, so it can never
-   *  report). */
-  readPodRestart(
-    podName: string,
+  /** Restart info for an agent's backing pod (selected by pair labels, so it
+   *  finds a StatefulSet pod or a vm backend's virt-launcher alike): the
+   *  highest container restart count and the reason the last dead container
+   *  gave (e.g. "OOMKilled"). Null if no pod exists. Read-only; used by the
+   *  Invocation liveness sweep to fail a one-shot target whose pod crashed
+   *  mid-turn (its trigger will not re-fire, so it can never report). */
+  readAgentPodRestart(
+    agentId: string,
   ): Promise<{ restarts: number; reason: string | null } | null>;
 
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
@@ -101,24 +102,29 @@ export function createK8sClient(
   return {
     namespace,
 
-    async readPodRestart(podName) {
-      try {
-        const pod = await api.readNamespacedPod({ name: podName, namespace });
-        const statuses = pod.status?.containerStatuses ?? [];
-        let restarts = 0;
-        let reason: string | null = null;
-        for (const cs of statuses) {
+    async readAgentPodRestart(agentId) {
+      // Label-selected rather than the `-0` ordinal name: a vm backend's pod
+      // is virt-launcher-<name>-<hash>. (A whole-VM crash under runStrategy
+      // Always surfaces as a *replacement* launcher pod, not a container
+      // restart — that signal is not covered here.)
+      const res = await api.listNamespacedPod({
+        namespace,
+        labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
+      });
+      const pods = res.items ?? [];
+      if (pods.length === 0) return null;
+      let restarts = 0;
+      let reason: string | null = null;
+      for (const pod of pods) {
+        for (const cs of pod.status?.containerStatuses ?? []) {
           const count = cs.restartCount ?? 0;
           if (count > restarts) {
             restarts = count;
             reason = cs.lastState?.terminated?.reason ?? null;
           }
         }
-        return { restarts, reason };
-      } catch (err) {
-        if (is404(err)) return null;
-        throw err;
       }
+      return { restarts, reason };
     },
 
     async listSecrets(labelSelector) {

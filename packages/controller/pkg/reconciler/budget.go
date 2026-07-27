@@ -105,36 +105,46 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 	if owner == "" {
 		return allowedVerdict, false, nil
 	}
-	ns := r.config.Namespace
-	existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
+	newCPU, newMem := r.limitsOf(&agent.Spec)
+	if agent.Spec.IsVM() {
+		grew, err := r.vmResizeGrew(ctx, agent.Name, newCPU, newMem)
+		if err != nil {
+			return budgetVerdict{}, false, err
+		}
+		if !grew {
 			return allowedVerdict, false, nil
 		}
-		return budgetVerdict{}, false, fmt.Errorf("reading agent statefulset: %w", err)
-	}
-	if existing.Spec.Replicas == nil || *existing.Spec.Replicas < 1 {
-		return allowedVerdict, false, nil
-	}
-	var oldCPU, oldMem resource.Quantity
-	found := false
-	for i := range existing.Spec.Template.Spec.Containers {
-		c := &existing.Spec.Template.Spec.Containers[i]
-		if c.Name == AgentContainerName {
-			// Absent limits read as zero — a legacy template without limits
-			// counts any concrete new size as growth, which errs toward
-			// checking (conservative on a quota boundary).
-			oldCPU = c.Resources.Limits[corev1.ResourceCPU]
-			oldMem = c.Resources.Limits[corev1.ResourceMemory]
-			found = true
+	} else {
+		ns := r.config.Namespace
+		existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return allowedVerdict, false, nil
+			}
+			return budgetVerdict{}, false, fmt.Errorf("reading agent statefulset: %w", err)
 		}
-	}
-	if !found {
-		return allowedVerdict, false, nil
-	}
-	newCPU, newMem := r.limitsOf(&agent.Spec)
-	if newCPU.Cmp(oldCPU) <= 0 && newMem.Cmp(oldMem) <= 0 {
-		return allowedVerdict, false, nil
+		if existing.Spec.Replicas == nil || *existing.Spec.Replicas < 1 {
+			return allowedVerdict, false, nil
+		}
+		var oldCPU, oldMem resource.Quantity
+		found := false
+		for i := range existing.Spec.Template.Spec.Containers {
+			c := &existing.Spec.Template.Spec.Containers[i]
+			if c.Name == AgentContainerName {
+				// Absent limits read as zero — a legacy template without limits
+				// counts any concrete new size as growth, which errs toward
+				// checking (conservative on a quota boundary).
+				oldCPU = c.Resources.Limits[corev1.ResourceCPU]
+				oldMem = c.Resources.Limits[corev1.ResourceMemory]
+				found = true
+			}
+		}
+		if !found {
+			return allowedVerdict, false, nil
+		}
+		if newCPU.Cmp(oldCPU) <= 0 && newMem.Cmp(oldMem) <= 0 {
+			return allowedVerdict, false, nil
+		}
 	}
 
 	lock := r.ownerLock(owner)
@@ -238,10 +248,14 @@ func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vmBac
 }
 
 // vmDesiredUp reads a vm-backend agent's desired run state off its
-// VirtualMachine's runStrategy. Absent VM (or absent KubeVirt CRD) = down.
+// VirtualMachine's runStrategy. Absent VM / absent KubeVirt CRD = down, and
+// Forbidden too: the kubevirt RBAC is rendered only under
+// virtualization.enabled, and a leftover vm agent after disabling it must not
+// wedge the owner's whole budget gate (a VM the controller can't even read
+// is one it can't be running either).
 func (r *AgentReconciler) vmDesiredUp(ctx context.Context, name string) (bool, error) {
 	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
+	if errors.IsNotFound(err) || errors.IsForbidden(err) {
 		return false, nil
 	}
 	if err != nil {
@@ -249,6 +263,33 @@ func (r *AgentReconciler) vmDesiredUp(ctx context.Context, name string) (bool, e
 	}
 	strategy, _, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
 	return strategy == vmRunStrategyAlways, nil
+}
+
+// vmResizeGrew is resizeAllows' grow detection for the vm backend: diff the
+// new spec's rendered guest size against the LIVE VirtualMachine's domain —
+// the same "diff against the live template" semantics the StatefulSet path
+// uses, on the same rendering (vmGuestCores / memory 1:1). Not-running,
+// absent, or unreadable (see vmDesiredUp) VMs return false — the 0→1 gate
+// owns admission.
+func (r *AgentReconciler) vmResizeGrew(ctx context.Context, name string, newCPU, newMem resource.Quantity) (bool, error) {
+	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if errors.IsNotFound(err) || errors.IsForbidden(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading virtualmachine: %w", err)
+	}
+	strategy, _, _ := unstructured.NestedString(vm.Object, "spec", "runStrategy")
+	if strategy != vmRunStrategyAlways {
+		return false, nil
+	}
+	oldCores, _, _ := unstructured.NestedInt64(vm.Object, "spec", "template", "spec", "domain", "cpu", "cores")
+	oldMemStr, _, _ := unstructured.NestedString(vm.Object, "spec", "template", "spec", "domain", "memory", "guest")
+	// An unreadable live size reads as zero — any concrete new size counts as
+	// growth, erring toward checking (same stance as the container path's
+	// absent-limits case).
+	oldMem := parseQuantityOr(oldMemStr, resource.Quantity{})
+	return vmGuestCores(newCPU) > oldCores || newMem.Cmp(oldMem) > 0, nil
 }
 
 // ensureConcreteSize materializes an absent Size dimension into the Agent

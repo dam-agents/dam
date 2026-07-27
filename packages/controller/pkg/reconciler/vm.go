@@ -120,9 +120,11 @@ func haltAgentVMs(ctx context.Context, dyn dynamic.Interface, namespace, name st
 		LabelSelector: LabelAgent + "=" + name,
 	})
 	if err != nil {
-		// A 404 here means the VirtualMachine CRD is absent (KubeVirt not
-		// installed) — container-only installs have no VMs to halt.
-		if errors.IsNotFound(err) {
+		// 404 = the VirtualMachine CRD is absent (KubeVirt not installed);
+		// 403 = kubevirt RBAC not rendered (virtualization disabled after a
+		// vm agent was created). Either way there is nothing the controller
+		// could halt — don't let a leftover vm agent wedge hibernation.
+		if errors.IsNotFound(err) || errors.IsForbidden(err) {
 			return nil
 		}
 		return fmt.Errorf("listing virtualmachines for %s: %w", name, err)

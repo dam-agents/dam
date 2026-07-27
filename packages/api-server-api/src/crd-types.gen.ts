@@ -145,7 +145,8 @@ export interface AgentSpecCR {
   runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
-   * agent container (operator-supplied envs).
+   * agent container (operator-supplied envs). Container backend only —
+   * rejected on the vm backend (nothing projects it into the guest).
    */
   secretRef?: string;
   /**

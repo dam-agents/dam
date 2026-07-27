@@ -35,6 +35,10 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) *AgentReconciler {
 		Data:       map[string][]byte{"ca.crt": []byte("PEMDATA")},
 	}
 	r, _ := setupReconciler(t, agent, leaf)
+	// Probes on (the chart default): the readinessProbe map must survive
+	// applyVirtualMachine's unstructured deep copy on the update path.
+	r.config.AgentProbesEnabled = true
+	r.config.KubeAPIAddr = "10.43.0.1:443"
 	r.config.VM = config.VMConfig{
 		Enabled:      true,
 		ScratchSize:  "30Gi",
@@ -110,15 +114,36 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
 	assert.NoError(t, err)
 
-	// Cloud-init: env file with proxy wiring, the CA, and the virtiofs mount.
+	// Readiness probe present with JSON-safe (int64) numerics.
+	probePort, found, _ := unstructured.NestedInt64(vm.Object, "spec", "template", "spec", "readinessProbe", "httpGet", "port")
+	require.True(t, found, "readinessProbe must render when probes are enabled")
+	assert.Equal(t, int64(8080), probePort)
+
+	// Cloud-init: env file with proxy wiring (values shell-quoted — the file
+	// is shell-sourced by the boot gate), the CA, the boot-gate deny target,
+	// and virtiofs mounts for persisted mounts ONLY (an ephemeral mount has no
+	// virtiofs device; an fstab entry for it would fail every boot).
 	ci, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, VMCloudInitSecretName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
 	userdata := ci.StringData["userdata"]
 	assert.True(t, strings.HasPrefix(userdata, "#cloud-config\n"))
-	assert.Contains(t, userdata, "HTTPS_PROXY=http://10.96.42.42:10000")
-	assert.Contains(t, userdata, "PLATFORM_AGENT_ID=my-agent")
+	assert.Contains(t, userdata, "HTTPS_PROXY='http://10.96.42.42:10000'")
+	assert.Contains(t, userdata, "PLATFORM_AGENT_ID='my-agent'")
+	assert.Contains(t, userdata, "PLATFORM_KUBE_API_DENY='10.43.0.1:443'")
 	assert.Contains(t, userdata, "PEMDATA")
-	assert.Contains(t, userdata, "virtiofs")
+	assert.Contains(t, userdata, "home-agent")
+	assert.NotContains(t, userdata, "scratchpad", "ephemeral mounts must not render fstab entries")
+}
+
+func TestVMSpecSurvivesUnstructuredDeepCopy(t *testing.T) {
+	// applyVirtualMachine's update path deep-copies the rendered template as
+	// unstructured JSON, which panics on non-JSON scalar types (plain int) —
+	// every rendered value must be JSON-safe.
+	agent := vmAgentCR()
+	r := setupVMReconciler(t, agent)
+	vm, err := BuildAgentVirtualMachine("my-agent", &agent.Spec, r.config, agentOwnerRef(agent), "10.96.42.42")
+	require.NoError(t, err)
+	assert.NotPanics(t, func() { vm.DeepCopy() })
 }
 
 func TestVMBackendDisabledFailsReconcile(t *testing.T) {

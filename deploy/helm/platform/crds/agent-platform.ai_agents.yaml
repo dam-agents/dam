@@ -233,7 +233,8 @@ spec:
               secretRef:
                 description: |-
                   SecretRef names a K8s Secret whose keys are envFrom-projected into the
-                  agent container (operator-supplied envs).
+                  agent container (operator-supplied envs). Container backend only —
+                  rejected on the vm backend (nothing projects it into the guest).
                 type: string
               storageSize:
                 description: StorageSize overrides the chart-wide default PVC size;
@@ -246,6 +247,8 @@ spec:
             - message: runtimeClassName selects a container runtime and is invalid
                 on the vm backend
               rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.runtimeClassName)'
+            - message: secretRef (envFrom projection) is not supported on the vm backend
+              rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.secretRef)'
           status:
             description: |-
               AgentStatus is the observed state of an Agent. The controller is the sole

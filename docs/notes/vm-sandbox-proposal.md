@@ -96,10 +96,13 @@ the single call site (agent_reconciler.go:292). The VM object:
   (unschedulable — no `/dev/kvm` node, containerDisk pull failure, guest boot
   hang) feeding the typed wake-failure classification.
 - **Boot gate (np-gate analogue)** — first-boot systemd unit ordered before
-  agent-runtime: wait until the kube-apiserver is unreachable AND the paired
-  gateway health endpoint answers. Same fail-closed semantics in-guest; only
-  platform-baked code runs at that point. In-guest iptables lockdown is baked
-  defense-in-depth; the NetworkPolicy on virt-launcher stays authoritative.
+  agent-runtime: wait until the kube-apiserver is unreachable (denied target,
+  authority passed via cloud-init since the guest has no kubelet-injected
+  env) AND the paired gateway health endpoint answers. Same fail-closed
+  semantics in-guest; only platform-baked code runs at that point. The
+  NetworkPolicy on virt-launcher stays authoritative; an in-guest iptables
+  lockdown (the egress-lockdown init's defense-in-depth analogue) is a
+  follow-up, not yet baked.
 - **Budgets/resources (decided)** — `spec.resources.limits` maps 1:1 onto
   guest CPU/memory with requests forced equal (CEL) — honest about full
   reservation. No VM-specific budget dimension: a VM agent simply costs more

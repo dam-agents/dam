@@ -13,6 +13,7 @@ import (
 // is chart-only (config.AgentBase); scheduling is chart-wide except
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.secretRef)",message="secretRef (envFrom projection) is not supported on the vm backend"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -69,7 +70,8 @@ type AgentSpec struct {
 	Backend *Backend `json:"backend,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
-	// agent container (operator-supplied envs).
+	// agent container (operator-supplied envs). Container backend only —
+	// rejected on the vm backend (nothing projects it into the guest).
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 

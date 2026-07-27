@@ -48,6 +48,11 @@ type Config struct {
 	// in via the AGENT_VM env var from Helm `virtualization.*`. Disabled by
 	// default — vm-backend agents then fail reconcile with a clear error.
 	VM VMConfig
+	// KubeAPIAddr is the in-cluster kube-apiserver authority (host:port) from
+	// the kubelet-injected KUBERNETES_SERVICE_* env — the vm backend's guest
+	// boot gate probes it as its denied target (must be unreachable before the
+	// workload starts, mirroring the pod np-gate). Empty skips that check.
+	KubeAPIAddr string
 
 	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
 	// per-user Ceiling on concurrently reserved compute (#1900), applied when
@@ -354,6 +359,9 @@ func LoadFromEnv() (*Config, error) {
 		cfg.VM.ScratchSize = "30Gi"
 	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
 		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
+	}
+	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
+		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
 	}
 	// Relayed from the controller's own process: whatever OTEL_* the chart (or
 	// an injector) set — the same env the controller's own SDK reads.

@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -91,12 +92,25 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		agentHome = defaults.AgentHome
 	}
 
+	// Values are single-quoted (shell escaping): the file is both shell-sourced
+	// by the boot gate and read as a systemd EnvironmentFile, and both parse
+	// single quotes — an unquoted value with whitespace would word-split into
+	// root-executed commands or brick the gate.
 	envFile := ""
 	for _, e := range agentPlatformEnv(name, cfg, agentHome, agentProxyAddr(cfg, gatewayClusterIP)) {
-		envFile += e.Name + "=" + e.Value + "\n"
+		envFile += e.Name + "=" + shellQuote(e.Value) + "\n"
 	}
 	for _, e := range defaults.Env {
-		envFile += e.Name + "=" + e.Value + "\n"
+		envFile += e.Name + "=" + shellQuote(e.Value) + "\n"
+	}
+
+	// The boot gate's negative probe target: the kube-apiserver authority as
+	// seen from inside the cluster (kubelet-injected into the controller's own
+	// pod). Kept out of /etc/platform/env so it never leaks into the harness
+	// env; empty (e.g. tests) skips the negative check in the guest.
+	gateEnv := ""
+	if cfg.KubeAPIAddr != "" {
+		gateEnv = "PLATFORM_KUBE_API_DENY=" + shellQuote(cfg.KubeAPIAddr) + "\n"
 	}
 
 	type cloudFile struct {
@@ -110,10 +124,14 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 	}{
 		WriteFiles: []cloudFile{
 			{Path: "/etc/platform/env", Permissions: "0644", Content: envFile},
+			{Path: "/etc/platform/gate.env", Permissions: "0644", Content: gateEnv},
 			{Path: "/etc/platform/ca/ca.crt", Permissions: "0644", Content: caCrt},
 		},
 	}
 	for _, m := range resolveSpecMounts(agentSpec, defaults) {
+		if !m.Persist {
+			continue // no virtiofs device exists for ephemeral mounts (rootfs overlay covers them)
+		}
 		// virtiofs tag == sanitized mount name (matches the filesystem device
 		// on the VM spec). nofail keeps a broken share from wedging boot into
 		// emergency mode — agent-runtime just sees an empty dir and fails loud.
@@ -177,10 +195,7 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	}
 	cpu := limits[corev1.ResourceCPU]
 	mem := limits[corev1.ResourceMemory]
-	cores := int64(math.Ceil(float64(cpu.MilliValue()) / 1000))
-	if cores < 1 {
-		cores = 1
-	}
+	cores := vmGuestCores(cpu)
 
 	disks := []any{
 		map[string]any{"name": "boot", "disk": map[string]any{"bus": "virtio"}},
@@ -190,8 +205,18 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 		// docker/k3s image stores (state there dies with hibernation).
 		map[string]any{"name": "scratch", "serial": "scratch", "disk": map[string]any{"bus": "virtio"}},
 	}
+	// containerDisk supports a single pull secret: the agent-scoped ref wins,
+	// else the first chart-wide default. (The pod path lists all defaults as
+	// fallbacks; KubeVirt's API takes one — a multi-secret install needs the
+	// matching secret first.)
+	bootDisk := map[string]any{"image": agentSpec.Image, "imagePullPolicy": pullPolicy}
+	if ref := agentSpec.ImagePullSecretRef; ref != "" {
+		bootDisk["imagePullSecret"] = ref
+	} else if len(base.ImagePullSecrets) > 0 {
+		bootDisk["imagePullSecret"] = base.ImagePullSecrets[0]
+	}
 	volumes := []any{
-		map[string]any{"name": "boot", "containerDisk": map[string]any{"image": agentSpec.Image, "imagePullPolicy": pullPolicy}},
+		map[string]any{"name": "boot", "containerDisk": bootDisk},
 		map[string]any{"name": "cloudinit", "cloudInitNoCloud": map[string]any{"secretRef": map[string]any{"name": VMCloudInitSecretName(name)}}},
 		map[string]any{"name": "scratch", "emptyDisk": map[string]any{"capacity": cfg.VM.ScratchSize}},
 	}
@@ -230,11 +255,13 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 		// Kubelet executes the probe against the launcher pod IP; masquerade
 		// forwards it to the guest, so ready == agent-runtime healthy — which
 		// also gates the headless Service endpoint the api-server dials.
+		// int64 literals: applyVirtualMachine's update path deep-copies the
+		// template as unstructured JSON, which panics on plain int.
 		podSpec["readinessProbe"] = map[string]any{
-			"httpGet":             map[string]any{"path": "/healthz", "port": 8080},
-			"initialDelaySeconds": 5,
-			"periodSeconds":       2,
-			"failureThreshold":    3,
+			"httpGet":             map[string]any{"path": "/healthz", "port": int64(8080)},
+			"initialDelaySeconds": int64(5),
+			"periodSeconds":       int64(2),
+			"failureThreshold":    int64(3),
 		}
 	}
 	if len(cfg.VM.NodeSelector) > 0 || len(agentSpec.NodeSelector) > 0 {
@@ -273,6 +300,23 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	}}
 	u.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 	return u, nil
+}
+
+// shellQuote single-quotes a value for shell sourcing / systemd
+// EnvironmentFile parsing (an embedded single quote becomes quote-backslash-quote-quote).
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// vmGuestCores maps a CPU limit onto whole guest cores (ceil, min 1). Shared
+// by the builder and the resize budget gate so the two never disagree about
+// what a spec renders to.
+func vmGuestCores(cpu resource.Quantity) int64 {
+	cores := int64(math.Ceil(float64(cpu.MilliValue()) / 1000))
+	if cores < 1 {
+		cores = 1
+	}
+	return cores
 }
 
 // toUnstructuredSlice JSON-shapes a typed slice for embedding in an
