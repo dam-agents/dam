@@ -154,6 +154,9 @@ export interface AgentView {
     | { type: "telegram" }
   )[];
   allowedUserEmails: string[];
+  /** The KB template a Knowledge Base was created from. Null on plain
+   *  sandboxes and on Knowledge Bases created before the id was stamped. */
+  kbTemplateId: string | null;
   /** Which first-class surface owns this agent (a Knowledge Base is an agent
    *  with this marker). Absent on plain sandboxes; each list view filters on
    *  it so an agent appears on exactly one surface. */

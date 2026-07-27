@@ -25,3 +25,11 @@ export const KB_TEMPLATES: readonly KbTemplate[] = [
 ];
 
 export const DEFAULT_KB_TEMPLATE_ID: KnowledgeBaseTemplateId = "llm-wiki";
+
+/** Display name for a KB template id. An unknown id (a newer writer) shows
+ *  as-is rather than disappearing; null (a KB created before the id was
+ *  stamped) stays null so callers can omit the segment. */
+export function kbTemplateName(id: string | null): string | null {
+  if (!id) return null;
+  return KB_TEMPLATES.find((t) => t.id === id)?.name ?? id;
+}

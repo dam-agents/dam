@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-07-24
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -9,7 +9,7 @@ A **Knowledge Base** is an Agent that builds and maintains a body of knowledge t
 Two pieces make an Agent a Knowledge Base:
 
 - **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. Each list surface filters on it, so an agent appears on exactly one surface: the Sandboxes list shows unmarked agents, the Knowledge Bases list shows marked ones. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent.
-- **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). Two exist today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline); the server maps the template id to its command, and a new procedure is a new id plus a new mapping. Each template's bootstrap installs a `/wiki-onboard` command, so the greeting (below) stays template-agnostic. The platform ships the pointer, never the tooling.
+- **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). Two exist today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline); the server maps the template id to its command, and a new procedure is a new id plus a new mapping. Each template's bootstrap installs a `/wiki-onboard` command, so the greeting (below) stays template-agnostic. The platform ships the pointer, never the tooling. The picked template id rides the same create-time annotation stamp as the Kind marker and is surfaced on the Agent view (opaque to the agents module — the knowledge-bases surface owns the id set), so the KB list can display which procedure a knowledge base came from; it is absent on knowledge bases created before it was recorded.
 
 ## Create flow
 

@@ -50,6 +50,7 @@ export function toAgentView(agent: Agent) {
     channels: agent.channels,
     allowedUserEmails: agent.allowedUserEmails,
     kind: agent.kind,
+    kbTemplateId: agent.kbTemplateId ?? null,
   };
 }
 

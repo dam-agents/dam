@@ -94,14 +94,21 @@ export interface Agent {
   /** Agent Kind: which first-class surface owns this agent (a Knowledge Base
    *  is an Agent + this marker). Absent on plain sandboxes. */
   kind?: AgentKind;
+  /** The KB template a Knowledge Base was created from. Opaque here — the
+   *  knowledge-bases surface owns the id set, so an unknown id (a newer
+   *  writer) still round-trips. Absent on plain sandboxes and on Knowledge
+   *  Bases created before the id was stamped. */
+  kbTemplateId?: string;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
-/** The service-level create input. `kind` rides here but not in the wire
- *  schema: only an owning module's create path (knowledge-bases) may mark an
- *  agent, so the public agents.create strips it (Zod drops unknown keys). */
+/** The service-level create input. `kind` and `kbTemplateId` ride here but
+ *  not in the wire schema: only an owning module's create path
+ *  (knowledge-bases) may mark an agent, so the public agents.create strips
+ *  them (Zod drops unknown keys). */
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
+  kbTemplateId?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

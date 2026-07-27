@@ -46,6 +46,7 @@ import {
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
+  ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
 } from "../infrastructure/labels.js";
@@ -888,6 +889,8 @@ export function createAgentsService(deps: {
           createAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
       }
       if (input.kind) createAnnotations[ANN_AGENT_KIND] = input.kind;
+      if (input.kbTemplateId)
+        createAnnotations[ANN_KB_TEMPLATE] = input.kbTemplateId;
 
       // No desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.

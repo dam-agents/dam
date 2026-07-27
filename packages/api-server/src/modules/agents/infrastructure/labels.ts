@@ -62,6 +62,13 @@ export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";
 // immutable afterwards. api-server-only — the controller ignores it.
 export const ANN_AGENT_KIND = "agent-platform.ai/agent-kind";
 
+// KB Template: which installation procedure a Knowledge Base was created
+// from (the researcher-facing "Template"). Rides the same create-time stamp
+// as the Kind marker; absent on plain sandboxes and on Knowledge Bases
+// created before it existed. Opaque to this module — the knowledge-bases
+// surface owns the id set. api-server-only — the controller ignores it.
+export const ANN_KB_TEMPLATE = "agent-platform.ai/kb-template";
+
 // Roll trigger. The api-server bumps this annotation on the Agent
 // to request a rolling restart of the pair: the controller stamps its value
 // into both pod templates, so a change rolls the pods without any spec/status

@@ -12,6 +12,7 @@ import type {
 import type { KubeObject } from "./k8s.js";
 import {
   ANN_AGENT_KIND,
+  ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   GROUP,
@@ -63,6 +64,9 @@ export interface InfraAgent {
   /** Agent Kind (#2946): which first-class surface owns this agent
    *  (knowledge-base). Absent on plain sandboxes. */
   kind?: AgentKind;
+  /** The KB template a Knowledge Base was created from. Opaque here — the
+   *  knowledge-bases surface owns the id set. Absent on plain sandboxes. */
+  kbTemplateId?: string;
   /** When the agent transitioned into hibernation (Ready condition's
    *  lastTransitionTime while hibernated), else undefined. The Sweep bases the
    *  Lifetime grace on this. */
@@ -184,6 +188,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     sweepable: annotations[ANN_SWEEPABLE] === "true",
     lifetimeMs: Number.isFinite(lifetimeMs) && lifetimeMs > 0 ? lifetimeMs : 0,
     ...(kindParse.success ? { kind: kindParse.data } : {}),
+    ...(annotations[ANN_KB_TEMPLATE]
+      ? { kbTemplateId: annotations[ANN_KB_TEMPLATE] }
+      : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
@@ -231,6 +238,7 @@ export function assembleAgent(
     channels,
     allowedUserEmails,
     kind: infra.kind,
+    kbTemplateId: infra.kbTemplateId,
   };
 }
 
