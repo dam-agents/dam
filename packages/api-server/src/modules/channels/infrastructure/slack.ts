@@ -89,7 +89,9 @@ function slackTurnContract(ctx: {
       `(mentioned as @${ctx.brand.short}). Nothing you write as plain text ` +
       "is delivered to Slack — only tool calls reach the channel. To " +
       "respond, call one of:",
-    `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}").`,
+    `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}"). ` +
+      "Pass alsoSendToChannel when this thread is old enough that people " +
+      "watching the channel would miss a thread-only reply.",
     "• react — add a fitting emoji reaction to the message you're answering: a " +
       "quiet acknowledgement that notifies no one — pick an emoji that suits " +
       "the message (e.g. eyes on a bug report, tada on good news) " +
@@ -1999,6 +2001,7 @@ export function createSlackWorker(
           threadTs,
           text: args.text,
           blocks: renderAssistantBlocks(footer, args.text),
+          ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
         });
         return { ok: true as const };
       } catch (err) {

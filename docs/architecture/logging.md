@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-07-21
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -41,7 +41,7 @@ Two disjoint mechanisms feed the one logger:
 | Approvals | `approval.verdict` (approve/deny once/permanent/host) |
 | Authorization lists | `agent.allowed_users_set` (with added/removed diff), `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
 | Credentials | `secret.create|update|delete`, `oauth.token_mint`, `connection.create|delete`, `secret.orphan_cleanup_failed` |
-| Channels | `channel.authz` / `channel.authz_deny` (Slack unlinked + allowed-users gate; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; Telegram driver id in detail), `channel.foreign_turn.begin` (non-owner driving another owner's agent under their own credentials, prompt omitted), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path), `channel.chat_bound` / `channel.chat_unbound` (Telegram binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
+| Channels | `channel.authz` / `channel.authz_deny` (Slack unlinked + allowed-users gate; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; Telegram driver id in detail), `channel.foreign_turn.begin` (non-owner driving another owner's agent under their own credentials, prompt omitted), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (Telegram binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
 | Privileged | `skill.install` / `skill.uninstall` / `skill.publish`, `schedule.create|toggle|delete` (incl. agent-driven), `usage.inspect` / `usage.inspect.deny`, `agent.create|update|delete|restart|wake` |
 
 ## Invariants

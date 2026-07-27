@@ -295,7 +295,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Use send_channel_message instead for a new top-level or cross-channel post.",
+    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Use send_channel_message instead for a new top-level or cross-channel post.",
     {
       text: z.string(),
       threadTs: z
@@ -304,14 +304,21 @@ export function createMcpSession(
         .describe(
           "Thread to reply into. Omit for the thread of the message you're answering.",
         ),
+      alsoSendToChannel: z
+        .boolean()
+        .optional()
+        .describe(
+          'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Use it when the thread is old enough that people watching the channel would otherwise miss the reply; leave it off for ordinary back-and-forth, which would spam the channel.',
+        ),
     },
-    async ({ text, threadTs }) => {
+    async ({ text, threadTs, alsoSendToChannel }) => {
       const result = await deps.channelManager.reply(
         agentId,
         ChannelType.Slack,
         {
           text,
           ...(threadTs ? { threadTs } : {}),
+          ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
         },
       );
       const failed = "error" in result;
@@ -322,7 +329,13 @@ export function createMcpSession(
         surface: ChannelType.Slack,
         agentId,
         result: failed ? "failure" : "success",
-        detail: { action: "reply", textLength: text.length },
+        // A broadcast reply reaches the whole channel, not just the thread's
+        // participants — a wider audience worth recording.
+        detail: {
+          action: "reply",
+          textLength: text.length,
+          ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
+        },
       });
       if ("error" in result) return errorResult(result.error);
       return textResult("Reply posted");
