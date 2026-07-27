@@ -68,7 +68,7 @@ export function AddSkillSourceModal({
         </button>
       </DialogHeader>
 
-      <div className="flex border-b border-border px-5 md:px-7">
+      <div role="tablist" className="flex border-b border-border px-5 md:px-7">
         <TabButton active={tab === "github"} onClick={() => setTab("github")}>
           <LogoGithub size={15} /> GitHub repository
         </TabButton>
@@ -104,6 +104,8 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={cn(
         "flex items-center gap-2 border-b-2 px-1 py-3 text-[14px] transition-colors",

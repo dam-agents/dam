@@ -48,7 +48,11 @@ export function UploadSkillsTab({
 
   const trimmedNames = staged.map((s) => s.name.trim());
   const hasEmpty = trimmedNames.some((n) => n.length === 0);
-  const hasDuplicate = new Set(trimmedNames).size !== trimmedNames.length;
+  // Compare slugs, not names: the pod keys skills by slug, so "My Skill" and
+  // "my_skill" collide there. Left to the server it comes back as a CONFLICT
+  // that marks both rows "already exists" — true of neither.
+  const slugs = staged.map((s) => toSlug(s.name)).filter(Boolean);
+  const hasDuplicate = new Set(slugs).size !== slugs.length;
   const hasUnsluggable = staged.some(
     (s) => s.name.trim().length > 0 && toSlug(s.name) === "",
   );
@@ -109,7 +113,8 @@ export function UploadSkillsTab({
         {topError && <p className="text-[13px] text-destructive">{topError}</p>}
         {hasDuplicate && (
           <p className="text-[13px] text-destructive">
-            Two staged skills share a name — rename one before adding.
+            Two staged skills resolve to the same skill id — rename one before
+            adding.
           </p>
         )}
 
