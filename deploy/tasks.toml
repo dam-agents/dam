@@ -795,7 +795,7 @@ fi
 '''
 
 ["cluster:install-kubevirt"]
-description = "Install KubeVirt into the dev k3s cluster (for virtualization.enabled installs). Uses /dev/kvm when the VM has it (PLATFORM_NESTED_VIRT=1 at cluster:install on M3+/Linux), else TCG emulation (slow but functional)."
+description = "Install KubeVirt into the dev k3s cluster (for virtualization.enabled installs). Uses /dev/kvm when the VM has it (PLATFORM_NESTED_VIRT=1 at cluster:install on M3+/Linux); without it x86_64 falls back to TCG emulation, while aarch64 cannot boot VMIs at all (KubeVirt arm64 is KVM-only)."
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -809,6 +809,15 @@ else
 fi
 KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
 echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
+# arm64 KubeVirt only supports cpu host-passthrough (webhook-enforced), which
+# qemu cannot do without KVM — so TCG is x86_64-only and aarch64 VMIs will
+# never leave Scheduled. Say it now, not seven minutes into a failed boot.
+if [ -z "${HAS_KVM:-}" ] && [ "$(uname -m)" = "aarch64" ]; then
+  echo "WARNING: no /dev/kvm on an aarch64 node — KubeVirt installs, but VMIs" >&2
+  echo "WARNING: cannot boot (arm64 is KVM-only; TCG works on x86_64 only)." >&2
+  echo "WARNING: on Apple silicon recreate the VM with PLATFORM_NESTED_VIRT=1" >&2
+  echo "WARNING: at cluster:install (M3+/macOS 15)." >&2
+fi
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
 # EnableVirtioFsStorageVolumes: virtiofs for the workspace PVCs. This is the
