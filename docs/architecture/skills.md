@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-07-17
+Last verified: 2026-07-23
 
 ## Overview
 
@@ -83,7 +83,7 @@ An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, n
 A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there. The reconciled `state` view splits Locals into:
 
 - **Installed** — also tracked in `agent_skills`. Drift surfaces when its Postgres `contentHash` differs from the upstream scan's `contentHash`.
-- **Standalone** — on disk but not tracked. Authored in place via the Files panel. May carry a "Published" badge if it has a matching `agent_skill_publishes` row.
+- **Standalone** — on disk but not tracked. Authored in place via the Files panel or uploaded as Markdown files. May carry a "Published" badge if it has a matching `agent_skill_publishes` row.
 
 A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a successful publish: skillName, sourceId, prUrl, plus the source name and gitUrl denormalized so the record stays usable after the source is renamed or deleted. This is what drives the "Published" badge — replacing a name-match heuristic that produced false positives.
 
@@ -115,6 +115,7 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - **SKILL.md content read** (`getSkillContent`) — serves one skill's raw `SKILL.md` (frontmatter + markdown body) for the in-product preview, reading through the same public-archive path via `readPublicSkill`. Public sources only; private sources return `NOT_IMPLEMENTED` (preview deferred).
 - **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the shared `ensureReady` primitive rather than refusing (still requires an `agentId` to target).
 - **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
+- **Create Local orchestration** — wakes a hibernated agent via `ensureReady`, delegates the write to agent-runtime `writeLocal`, and security-logs it. Records **nothing** in Postgres: an uploaded skill is a standalone Local Skill by design, so the reconciled `state` read picks it up on the next poll — no `agent_skills` row, no outbox bump. A pod-side collision comes back as `CONFLICT` and is passed through with its message (the offending names) intact.
 - **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), wakes a hibernated agent, calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `agent_skill_publishes` rows.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
@@ -122,13 +123,14 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 
 ### agent-runtime skills service
 
-Lives in [`packages/agent-runtime/src/modules/skills/`](../../packages/agent-runtime/src/modules/skills/). Exposes a Bearer-authenticated tRPC surface (`install`, `uninstall`, `publish`, `scan`, `listLocal`) over the harness port; the api-server is the only caller.
+Lives in [`packages/agent-runtime/src/modules/skills/`](../../packages/agent-runtime/src/modules/skills/). Exposes a Bearer-authenticated tRPC surface (`install`, `uninstall`, `publish`, `scan`, `listLocal`, `readLocal`, `writeLocal`) over the harness port; the api-server is the only caller.
 
-Three responsibilities:
+Four responsibilities:
 
 - **Install** — fetches the source at the requested `version`. For GitHub URLs, uses the REST tarball endpoint (anonymous first, retry authenticated on 404 to distinguish "not found" from "private"); for everything else, shallow-clones via `git`. The paired gateway pod injects the owner's GitHub token on the wire when the request hits `api.github.com`. Resolves the named skill's directory from the source's `path/<name>/` when a [path](#skill-source) is set, else by walking the [Source Roots](#source-roots) in order (then top-level); copies it into every configured Skill Path, and returns the deterministic `contentHash`.
 - **Scan** — same fetch path; enumerates skills from the source's `path` exclusively when set, else across the [Source Roots](#source-roots) (union, deduped by name, top-level fallback); parses frontmatter, and returns `(name, description, version, contentHash)` for each.
 - **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Platform <platform-publish@users.noreply.github.com>`. Files land under the source's [`path`](#skill-source) subdir when set (so the same source's subdir-exclusive scan finds the published skill), else under `skills/`. Branch naming: `platform/publish-<name>-<timestamp>`. There is no `git push`.
+- **Write Local** — validates and materializes user-uploaded Markdown as standalone Local Skills (one skill per file). Each file lands as `<slug>/SKILL.md` in every configured Skill Path, with frontmatter `name:` forced to the confirmed display name (synthesized when absent). Enforces the same size caps as the read side and rejects the whole batch (before writing anything) on any collision — a slug/directory clash or a display-name clash with an existing Local Skill — so an upload never clobbers an installed or in-place-edited skill.
 
 When env credentials arrive over the runtime channel, the agent-runtime reacts by running `gh auth setup-git`, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
 

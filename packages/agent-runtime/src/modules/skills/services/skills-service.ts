@@ -7,6 +7,7 @@ import type {
   SkillsDomainError,
   SkillsService,
   SkillUninstallInput,
+  SkillWriteLocalInput,
 } from "agent-runtime-api";
 import { ok } from "agent-runtime-api";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
@@ -17,6 +18,7 @@ import type { LocalSkillRepository } from "../infrastructure/local-skill-reposit
 import { runInstall } from "./install.js";
 import { runPublish } from "./publish.js";
 import { runScan } from "./scan.js";
+import { runWriteLocal } from "./write-local.js";
 
 export interface SkillsServiceDeps {
   github: GitHubRestClient;
@@ -52,6 +54,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
     listLocal: () => doListLocal(deps),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    writeLocal: (input: SkillWriteLocalInput) =>
+      runWriteLocal(deps, deps.skillPaths, input),
     scan: (input: SkillScanInput) => runScan(deps, input),
     publish: (input: SkillPublishInput) => doPublish(deps, input),
   };

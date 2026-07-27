@@ -4,6 +4,7 @@ import {
   skillPublishInputSchema,
   skillReadLocalInputSchema,
   skillScanInputSchema,
+  skillWriteLocalInputSchema,
 } from "./schemas.js";
 import type { SkillsDomainError } from "./types.js";
 
@@ -28,6 +29,14 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
       return new TRPCError({
         code: "NOT_FOUND",
         message: `skill ${JSON.stringify(error.name)} not found in source ${error.source}`,
+      });
+    case "SkillAlreadyExists":
+      // The `skill(s) already exist: <names>` shape is part of the contract:
+      // api-server (slice 02) forwards it verbatim and the UI (slice 03) parses
+      // the names back out to mark the offending rows. Don't reword.
+      return new TRPCError({
+        code: "CONFLICT",
+        message: `skill(s) already exist: ${error.names.join(", ")}`,
       });
     case "PayloadTooLarge":
       return new TRPCError({
@@ -92,5 +101,13 @@ export const skillsRouter = t.router({
       const result = await ctx.skills.readLocal(input);
       if (!result.ok) throw toTrpcError(result.error);
       return result.value;
+    }),
+
+  writeLocal: protectedProcedure
+    .input(skillWriteLocalInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.skills.writeLocal(input);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { skills: result.value };
     }),
 });

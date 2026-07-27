@@ -52,11 +52,11 @@ function latestPublishByName(
 }
 
 /**
- * "Created in this sandbox" — Standalone Local Skills authored in place. Each
- * row can be published upstream as a PR (or shows an "In review" pill once it
- * has a publish record). The kebab's Download/Delete are shown disabled — no
- * upload/delete-local backend yet (deferred). There is no install toggle:
- * standalone skills are simply present on disk.
+ * "Created in this sandbox" — Standalone Local Skills authored in place or
+ * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
+ * "In review" pill once it has a publish record). The kebab's Download/Delete
+ * are shown disabled — no download/delete-local backend yet (deferred). There
+ * is no install toggle: standalone skills are simply present on disk.
  */
 export function StandaloneSkillsGroup({
   skills,

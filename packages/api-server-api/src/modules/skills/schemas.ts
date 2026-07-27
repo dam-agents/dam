@@ -172,3 +172,26 @@ export const skillPublishInputSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
 });
+
+/** Create standalone Local Skills from uploaded Markdown — one skill per file.
+ *  Caps mirror agent-runtime's MAX_FILE_BYTES/MAX_SKILL_BYTES as a cheap early
+ *  gate (character count, not bytes); agent-runtime stays the authoritative
+ *  byte-accurate enforcement. */
+export const skillCreateLocalInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    skills: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(128),
+          content: z.string().max(2 * 1024 * 1024),
+        }),
+      )
+      .min(1)
+      .max(50),
+  })
+  .refine(
+    (v) =>
+      v.skills.reduce((n, s) => n + s.content.length, 0) <= 5 * 1024 * 1024,
+    "batch exceeds 5 MB",
+  );

@@ -9,6 +9,7 @@ import {
 import {
   localSkillSchema,
   skillContentSchema,
+  skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillGetContentInputSchema,
@@ -81,6 +82,13 @@ export const skillsRouter = t.router({
     .input(skillUninstallInputSchema)
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.uninstall(input)),
+
+  // Ownership is enforced inside the service via ensureAgentReachable →
+  // owner-scoped agentsRepo.get, same as install.
+  createLocal: manageAgentsProcedure
+    .input(skillCreateLocalInputSchema)
+    .output(z.array(localSkillSchema))
+    .mutation(({ ctx, input }) => ctx.skills.createLocal(input)),
 
   listLocal: readAgentProcedure
     .input(skillListLocalInputSchema)
