@@ -358,7 +358,7 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {/* Header spans the full width; on mobile it belongs to the chat screen only */}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-10`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-content`}
       >
         <button
           className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
@@ -416,7 +416,7 @@ export function ChatView() {
         {/* Left: Sessions + Files sections */}
         <div
           style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-10 ${
+          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
@@ -679,7 +679,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
@@ -742,7 +742,7 @@ export function ChatView() {
                   : undefined
               }
               className={cn(
-                "flex flex-col overflow-hidden bg-background relative z-10 max-md:fixed max-md:inset-0 max-md:z-50",
+                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
                 rightW !== null
                   ? "md:shrink-0 md:w-[var(--file-w)]"
                   : "md:flex-1 md:basis-0 md:min-w-0",

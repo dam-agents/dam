@@ -127,7 +127,7 @@ function MainApp() {
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
           <IconRail hideMobileBar />
-          <div className="relative z-10 flex-1 min-w-0">
+          <div className="relative z-content flex-1 min-w-0">
             <ChatView />
           </div>
         </div>
@@ -141,7 +141,7 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
-        <main className="relative z-10 flex-1 overflow-y-auto">
+        <main className="relative z-content flex-1 overflow-y-auto">
           {view === "sandbox-new" ? (
             <SandboxWizardView />
           ) : view === "experiment-new" ? (
