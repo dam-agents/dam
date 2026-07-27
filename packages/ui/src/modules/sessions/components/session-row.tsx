@@ -170,7 +170,7 @@ export function SessionRow({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-3 top-2 z-30 rounded-lg border border-border bg-surface py-1 anim-scale-in shadow-md"
+          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-surface py-1 anim-scale-in shadow-md"
         >
           <Button
             variant="ghost"

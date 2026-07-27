@@ -13,9 +13,9 @@ interface ModalProps {
  * users can't lose in-progress form state by accident.
  *
  * Renders into document.body via a portal so it escapes the app shell's
- * `<main>` stacking context (z-10). Without the portal, the mobile bottom
- * bar (z-40) would render above the modal because the modal's effective
- * stacking happens at z-10 from the root's perspective.
+ * `<main>` stacking context (z-content). Without the portal, the mobile
+ * bottom bar (z-nav) would render above the modal because the modal's
+ * effective stacking happens at z-content from the root's perspective.
  *
  * Compose the inside with `DialogHeader`, `DialogBody`, and `DialogFooter`
  * so layout (padding, dividers, scroll region) is consistent across every
@@ -34,7 +34,7 @@ export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
   useBodyScrollLock();
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
+      <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
         <div
           ref={panelRef}
           role="dialog"

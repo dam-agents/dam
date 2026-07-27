@@ -6,7 +6,7 @@ import { cva } from "class-variance-authority";
  * identical-looking menu, so the surface styling lives here once.
  */
 export const menuContentClassName =
-  "z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
+  "z-popover min-w-[160px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
 
 export const menuSeparatorClassName = "my-1 h-px bg-border";
 

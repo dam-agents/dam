@@ -113,7 +113,7 @@ export function IconRail({
       </nav>
 
       {!hideMobileBar && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             sandboxes,
             ...(showExperiments ? [experiments] : []),

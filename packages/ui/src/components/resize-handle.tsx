@@ -53,7 +53,7 @@ export function ResizeHandle({
     return (
       <div
         onMouseDown={onMouseDown}
-        className="group relative z-20 -mt-[3px] -mb-[2px] h-[5px] shrink-0 cursor-row-resize flex items-center"
+        className="group relative z-raised -mt-[3px] -mb-[2px] h-[5px] shrink-0 cursor-row-resize flex items-center"
       >
         <div className="h-[2px] w-full bg-transparent group-hover:bg-text group-active:bg-text transition-colors" />
       </div>
@@ -64,7 +64,7 @@ export function ResizeHandle({
     <div
       onMouseDown={onMouseDown}
       className={cn(
-        "group relative z-20 w-[5px] shrink-0 cursor-col-resize flex justify-center",
+        "group relative z-raised w-[5px] shrink-0 cursor-col-resize flex justify-center",
         side === "left" ? "-ml-[3px]" : "-mr-[3px]",
       )}
     >
