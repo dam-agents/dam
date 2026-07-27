@@ -11,6 +11,10 @@ import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
+import {
+  parseRoute,
+  routeToNavigationState,
+} from "./modules/platform/lib/routes.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -19,7 +23,7 @@ import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
-import { pathToState, useStore } from "./store.js";
+import { useStore } from "./store.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -88,24 +92,19 @@ function MainApp() {
       useStore.setState({ selectedAgent: null, view: "list" });
     };
     const onPopState = () => {
-      const state = pathToState(window.location.pathname);
-      if (state.view === "chat") return enterChat(state.agent!);
-      if (state.view === "knowledge-base-chat") {
+      const route = parseRoute(window.location.pathname);
+      if (route.view === "chat") return enterChat(route.agent);
+      if (route.view === "knowledge-base-chat") {
         useStore.getState().resetChatContext();
         useStore.setState({
-          selectedAgent: state.agent!,
+          selectedAgent: route.agent,
           view: "knowledge-base-chat",
         });
         return;
       }
       // Unknown paths resolve to "list"; leaveChat also tears down chat context.
-      if (state.view === "list") return leaveChat();
-      useStore.setState({
-        view: state.view,
-        agentId: state.agentId ?? null,
-        settingsTab: state.settingsTab ?? "account",
-        sandboxSection: state.sandboxSection ?? "setup",
-      });
+      if (route.view === "list") return leaveChat();
+      useStore.setState(routeToNavigationState(route));
     };
     onPopState();
     window.addEventListener("popstate", onPopState);
