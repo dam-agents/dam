@@ -1,0 +1,77 @@
+# claude-code-vm — Fedora bootc guest for the KubeVirt vm backend.
+#
+# Build-time reuse, never runtime composition: the harness content is COPY'd
+# from the already-built claude-code OCI image, so that image stays the single
+# source of harness truth and this stays a thin derived artifact. The build
+# pipeline (build.sh) turns this OCI image into a qcow2 via
+# bootc-image-builder and wraps it as a KubeVirt containerDisk.
+#
+# Guest contract (mirrors the pod image + the controller's cloud-init):
+#   - cloud-init (NoCloud) writes /etc/platform/env + /etc/platform/ca/ca.crt
+#     and mounts the workspace PVCs (virtiofs tags = sanitized mount names).
+#   - platform-scratch mounts the "scratch" disk under docker/k3s image stores.
+#   - platform-ca installs the MITM CA into the OS trust store.
+#   - platform-boot-gate blocks agent-runtime until the paired gateway answers.
+#   - agent-runtime runs as uid 65532 (same as the pod image, so PVC content
+#     ownership carries over), spawning harness-chat/-terminal like in a pod.
+ARG AGENT_IMAGE=platform-claude-code:latest
+FROM ${AGENT_IMAGE} AS agent
+
+FROM quay.io/fedora/fedora-bootc:44
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+      moby-engine docker-compose docker-buildx \
+      cloud-init qemu-guest-agent openssh-server sudo \
+      git tar gzip xz jq rsync && \
+    dnf clean all
+
+# k3s: binary in /usr (immutable bootc area), unit written by the installer;
+# stable channel resolved at build time. Airgap images seed
+# /var/lib/rancher/k3s/agent/images so the cluster comes up without any egress
+# approvals (pause/coredns/traefik would otherwise hang on gated pulls).
+RUN curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_SKIP_START=true INSTALL_K3S_SKIP_ENABLE=true \
+      INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_BIN_DIR=/usr/bin sh - && \
+    ver=$(/usr/bin/k3s --version | awk 'NR==1{print $3}') && \
+    arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/') && \
+    mkdir -p /var/lib/rancher/k3s/agent/images && \
+    curl -fL "https://github.com/k3s-io/k3s/releases/download/${ver}/k3s-airgap-images-${arch}.tar.zst" \
+      -o /var/lib/rancher/k3s/agent/images/k3s-airgap-images.tar.zst
+
+# Harness content from the pod image. /usr/local resolves to /var/usrlocal on
+# bootc — fine here: the qcow2 seeds /var at deploy and these VMs never
+# bootc-upgrade. /app is agent-runtime (node dist/server.js + node_modules).
+COPY --from=agent /usr/local/bin/ /usr/local/bin/
+COPY --from=agent /usr/local/lib/ /usr/local/lib/
+COPY --from=agent /usr/local/share/mise/ /usr/local/share/mise/
+COPY --from=agent /usr/local/share/lazy-tools/ /usr/local/share/lazy-tools/
+COPY --from=agent /etc/mise/ /etc/mise/
+COPY --from=agent /etc/AGENTS.md /etc/AGENTS.md
+COPY --from=agent /etc/profile.d/model-gateway.sh /etc/profile.d/model-gateway.sh
+COPY --from=agent /app/ /app/
+COPY --from=agent /opt/ /opt/
+
+# The agent user matches the pod image uid so PVC content ownership carries
+# over across backends. A full VM is deliberately root-capable: docker group +
+# passwordless sudo (the machine is the sandbox; NetworkPolicy on the
+# virt-launcher pod is the boundary, not in-guest privilege).
+RUN useradd -u 65532 -d /home/agent -s /bin/bash agent && \
+    usermod -aG docker agent && \
+    echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent && \
+    chown -R agent /etc/mise /app /usr/local/share/mise && chown agent /etc/AGENTS.md && \
+    printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n' >> /etc/AGENTS.md
+
+COPY system/platform-scratch.sh /usr/libexec/platform-scratch.sh
+COPY system/platform-boot-gate.sh /usr/libexec/platform-boot-gate.sh
+COPY system/platform-scratch.service system/platform-ca.service \
+     system/platform-boot-gate.service system/agent-runtime.service \
+     /usr/lib/systemd/system/
+COPY system/proxy-dropin.conf /usr/lib/systemd/system/docker.service.d/platform.conf
+COPY system/proxy-dropin.conf /usr/lib/systemd/system/k3s.service.d/platform.conf
+COPY system/k3s-config.yaml /etc/rancher/k3s/config.yaml
+COPY system/profile-platform.sh /etc/profile.d/platform-vm.sh
+
+RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.sh && \
+    systemctl enable docker.service k3s.service qemu-guest-agent.service \
+      platform-scratch.service platform-ca.service platform-boot-gate.service \
+      agent-runtime.service

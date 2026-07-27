@@ -39,7 +39,7 @@ const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
  * Buffer client frames (e.g. the tty's initial OP_RESIZE) until the upstream
  * leg is open, then splice the two sockets together. Attaches its message
  * listener synchronously, so frames arriving while the caller awaits are not
- * lost. Shared with the dam-vm relay.
+ * lost.
  */
 export function spliceClient(client: WebSocket) {
   const pending: [Buffer, boolean][] = [];
@@ -77,7 +77,7 @@ export function spliceClient(client: WebSocket) {
   };
 }
 
-/** Shared with the dam-vm relay — see the cadence rationale above. */
+/** See the cadence rationale above. */
 export function keepalive(sock: WebSocket) {
   let alive = true;
   sock.on("pong", () => {

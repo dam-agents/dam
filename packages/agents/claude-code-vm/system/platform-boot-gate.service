@@ -1,0 +1,13 @@
+[Unit]
+Description=Platform boot gate — wait for the paired gateway
+After=cloud-init.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/platform/env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/platform-boot-gate.sh
+
+[Install]
+WantedBy=multi-user.target

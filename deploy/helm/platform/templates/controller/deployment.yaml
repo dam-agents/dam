@@ -110,12 +110,6 @@ spec:
             - name: PLATFORM_OBJECT_STORE_AUTHORITY
               value: {{ . | quote }}
             {{- end }}
-            {{- if .Values.apiServer.vmHost.url }}
-            # A VM host is configured (dam-vm), so agent pods keep the dam-vm
-            # tool in their instructions; the entrypoint strips it otherwise.
-            - name: AGENT_VM_ENABLED
-              value: "1"
-            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Telemetry attribution: when the bundled telemetry backend is on,
             # each gateway gains a collector egress chain that MITM-terminates

@@ -1,0 +1,3 @@
+# Baked k3s server config for the VM sandbox guest.
+# kubeconfig readable by the agent user (the whole VM is the sandbox).
+write-kubeconfig-mode: "0644"

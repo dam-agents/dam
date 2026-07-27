@@ -128,7 +128,16 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
-    limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+    # PLATFORM_NESTED_VIRT=1 exposes /dev/kvm inside the VM so KubeVirt runs
+    # vm-backend agents at full speed (macOS: vz on M3+/macOS 15; without it
+    # cluster:install-kubevirt falls back to TCG emulation). Create-time only —
+    # an existing VM needs cluster:delete + reinstall to gain it.
+    if [ -n "${PLATFORM_NESTED_VIRT:-}" ]; then
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
+        --set '.vmType = "vz" | .nestedVirtualization = true'
+    else
+      limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
+    fi
   fi
   STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
   if [ "$STATUS" != "Running" ]; then
@@ -783,6 +792,35 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
+'''
+
+["cluster:install-kubevirt"]
+description = "Install KubeVirt into the dev k3s cluster (for virtualization.enabled installs). Uses /dev/kvm when the VM has it (PLATFORM_NESTED_VIRT=1 at cluster:install on M3+/Linux), else TCG emulation (slow but functional)."
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  HAS_KVM=$(sudo test -e /dev/kvm && echo 1 || true)
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
+fi
+KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
+echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
+kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
+kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
+# virtiofs for the workspace PVCs; emulation only when the VM lacks /dev/kvm.
+PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["ExperimentalVirtiofsSupport"]'
+if [ -z "${HAS_KVM:-}" ]; then
+  PATCH="$PATCH"',"useEmulation":true'
+fi
+PATCH="$PATCH"'}}}}'
+kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$PATCH"
+echo "Waiting for KubeVirt to become Available (this pulls several images)..."
+kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
+echo "KubeVirt ready. Install the platform with: mise run cluster:install -- --set=virtualization.enabled=true"
 '''
 
 ["cluster:kubectl"]

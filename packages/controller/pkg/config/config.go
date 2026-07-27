@@ -80,7 +80,6 @@ type Config struct {
 	LegacyAgentMemoryLimit resource.Quantity
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
-	VMEnabled                bool          // dam-vm has a VM host configured (api-server's apiServer.vmHost.url); injected as DAM_VM_ENABLED so the entrypoint keeps the dam-vm tool doc
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
 	EnvoyImage               string        // Image for the Envoy credential-injector sidecar
@@ -365,7 +364,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.VMEnabled = envOrDefaultBool("AGENT_VM_ENABLED", false)
 	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome for environments
 	// that ship only the env var (e.g. tests). The chart's deployment.yaml
 	// always sets both from the same `templateDefaults.agentHome` value;
