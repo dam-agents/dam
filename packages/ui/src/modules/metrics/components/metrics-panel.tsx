@@ -190,36 +190,51 @@ export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
 
 /** Hand-rolled horizontal bars — one per agent, widest is the top spender.
  *  Rows arrive sorted highest cost first, so the first row sets the scale.
- *  Deliberately no chart library. */
+ *  Label sits in a fixed left gutter, bar in the middle, cost right-aligned,
+ *  matching the Usage design. Deliberately no chart library. */
 export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
   const max = rows[0]?.costUsd ?? 0;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {rows.map((row) => {
         const label = row.agentName || row.agentId;
+        const pct = max > 0 ? Math.max((row.costUsd / max) * 100, 2) : 0;
         return (
-          <div key={row.agentId}>
-            <div className="mb-1 flex justify-between gap-2 text-[12px]">
-              <span className="truncate text-text-secondary" title={label}>
-                {label}
-              </span>
-              <span className="font-mono font-medium tabular-nums">
-                {formatUsd(row.costUsd)}
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-accent-light">
+          <div
+            key={row.agentId}
+            className="flex items-center gap-3 text-[12px]"
+          >
+            <span
+              className="w-28 shrink-0 truncate text-right text-text-secondary"
+              title={label}
+            >
+              {label}
+            </span>
+            <div className="min-w-0 flex-1">
               <div
-                className="h-full rounded-full bg-accent"
-                style={{
-                  width: `${max > 0 ? Math.max((row.costUsd / max) * 100, 2) : 0}%`,
-                }}
+                className="h-2.5 rounded-[3px] bg-accent"
+                style={{ width: `${pct}%` }}
               />
             </div>
+            <span className="w-20 shrink-0 text-right font-mono font-semibold tabular-nums text-text">
+              {formatUsd(row.costUsd)}
+            </span>
           </div>
         );
       })}
     </div>
   );
+}
+
+// Choose a "nice" axis top and step so the horizontal gridlines land on round
+// numbers (e.g. $0 / $20 / $40 …) rather than raw fractions of the max.
+function niceScale(max: number, ticks = 4): { top: number; step: number } {
+  if (max <= 0) return { top: 1, step: 0.25 };
+  const rawStep = max / ticks;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const niceStep = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+  return { top: Math.ceil(max / niceStep) * niceStep, step: niceStep };
 }
 
 /** Hand-rolled column chart — one column per calendar day of the selected
@@ -229,38 +244,61 @@ export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
  *  column reveals its exact USD. Deliberately no chart library. */
 export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
   const max = days.reduce((m, d) => Math.max(m, d.costUsd), 0);
+  const { top, step } = niceScale(max);
+  // Gridline / axis values, top row first so flex order reads high → low.
+  // Index-based so the bottom tick is exactly 0 (no floating-point residual).
+  const nTicks = Math.round(top / step);
+  const ticks = Array.from({ length: nTicks + 1 }, (_, i) => (nTicks - i) * step);
+  const CHART_H = 224;
+
   return (
-    <div className="flex gap-2">
-      <div className="flex h-40 w-12 flex-col justify-between py-px text-right text-[10px] tabular-nums text-text-secondary">
-        <span>{formatUsd(max)}</span>
-        <span>$0</span>
+    <div className="flex gap-3">
+      {/* Y-axis labels, one per gridline, vertically aligned to the plot. */}
+      <div
+        className="flex flex-col justify-between text-right text-[10px] tabular-nums text-text-muted"
+        style={{ height: CHART_H }}
+      >
+        {ticks.map((t) => (
+          <span key={t} className="leading-none">
+            {formatUsd(t)}
+          </span>
+        ))}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex h-40 items-end gap-px">
-          {days.map((d) => {
-            const dayNum = Number(d.day.slice(8, 10));
-            return (
-              <div
-                key={d.day}
-                title={`${d.day}: ${formatUsd(d.costUsd)}`}
-                className="group flex h-full min-w-0 flex-1 items-end"
-              >
+        <div className="relative" style={{ height: CHART_H }}>
+          {/* Horizontal gridlines, evenly spaced behind the bars. */}
+          <div className="absolute inset-0 flex flex-col justify-between">
+            {ticks.map((t) => (
+              <div key={t} className="border-t border-border-light" />
+            ))}
+          </div>
+          {/* Bars, anchored to the baseline and scaled against the nice top. */}
+          <div className="absolute inset-0 flex items-end gap-1">
+            {days.map((d) => {
+              const dayNum = Number(d.day.slice(8, 10));
+              return (
                 <div
-                  className="w-full rounded-t-sm bg-accent group-hover:bg-accent-hover"
-                  style={{
-                    height: `${d.costUsd > 0 && max > 0 ? Math.max((d.costUsd / max) * 100, 1) : 0}%`,
-                  }}
-                />
-                {/* Hover shows the exact amount via title; this backs it for
-                    screen readers. */}
-                <span className="sr-only">
-                  Day {dayNum}: {formatUsd(d.costUsd)}
-                </span>
-              </div>
-            );
-          })}
+                  key={d.day}
+                  title={`${d.day}: ${formatUsd(d.costUsd)}`}
+                  className="group flex h-full min-w-0 flex-1 items-end"
+                >
+                  <div
+                    className="w-full rounded-t-[2px] bg-accent group-hover:bg-accent-hover"
+                    style={{
+                      height: `${d.costUsd > 0 && top > 0 ? Math.max((d.costUsd / top) * 100, 0.8) : 0}%`,
+                    }}
+                  />
+                  {/* Hover shows the exact amount via title; this backs it for
+                      screen readers. */}
+                  <span className="sr-only">
+                    Day {dayNum}: {formatUsd(d.costUsd)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-        <div className="mt-1 flex gap-px text-[10px] tabular-nums text-text-secondary">
+        <div className="mt-2 flex gap-1 text-[10px] tabular-nums text-text-muted">
           {days.map((d) => {
             const dayNum = Number(d.day.slice(8, 10));
             return (

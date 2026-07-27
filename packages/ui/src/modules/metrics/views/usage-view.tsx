@@ -105,39 +105,45 @@ export function UsageView() {
         <p className="text-[14px] text-muted-foreground">Loading usage…</p>
       )}
       {data && (
-        <>
-          <SectionLabel spaced>Total spend</SectionLabel>
-          <div className="mb-8 text-[32px] font-semibold tabular-nums text-foreground">
-            {formatUsd(total)}
-          </div>
+        <div className="space-y-10">
+          <section>
+            <SectionLabel spaced>Total spend</SectionLabel>
+            <div className="text-[40px] font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+              {formatUsd(total)}
+            </div>
+          </section>
           {data.length === 0 ? (
-            <>
+            <section>
               <SectionLabel spaced>Spend by model</SectionLabel>
               <p className="text-[14px] text-muted-foreground">
                 No LLM calls in {monthLabel}.
               </p>
-            </>
+            </section>
           ) : (
             <>
-              <SectionLabel spaced>Spend by day</SectionLabel>
-              <Card className="mb-2 p-4">
-                <SpendByDayChart days={dailyDays} />
-              </Card>
-              <SectionLabel spaced>Spend by model</SectionLabel>
-              <Card className="p-4 text-[12px]">
-                <ModelSpendTable rows={data} />
-              </Card>
+              <section>
+                <SectionLabel spaced>Spend by day</SectionLabel>
+                <Card className="p-5">
+                  <SpendByDayChart days={dailyDays} />
+                </Card>
+              </section>
+              <section>
+                <SectionLabel spaced>Spend by model</SectionLabel>
+                <Card className="p-4 text-[12px]">
+                  <ModelSpendTable rows={data} />
+                </Card>
+              </section>
             </>
           )}
           {agentData && agentData.length > 0 && (
-            <>
+            <section>
               <SectionLabel spaced>Spend by agent</SectionLabel>
-              <Card className="p-4">
+              <Card className="p-5">
                 <AgentSpendBars rows={agentData} />
               </Card>
-            </>
+            </section>
           )}
-        </>
+        </div>
       )}
     </div>
   );
