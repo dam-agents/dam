@@ -141,6 +141,15 @@ export interface SlackUserInfo {
   isDeleted?: boolean;
 }
 
+/** One emoji reaction on a message, as `reactions.get` reports it. */
+export interface SlackMessageReaction {
+  /** Emoji short name, no colons (e.g. `eyes`). */
+  name: string;
+  count: number;
+  /** User ids who used this reaction. */
+  users: string[];
+}
+
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
@@ -175,6 +184,12 @@ export interface SlackGateway {
   /** Directory lookup for one workspace member; null when Slack can't resolve
    *  the id (deactivated-and-purged, another workspace, or simply wrong). */
   getUserInfo(userId: string): Promise<SlackUserInfo | null>;
+  /** Reactions on one message, via `reactions.get`; null when the message
+   *  can't be found (wrong ts, or a conversation the bot can't see into). */
+  getMessageReactions(
+    channel: string,
+    ts: string,
+  ): Promise<SlackMessageReaction[] | null>;
   /** Open (or reuse) the bot's DM with a user; returns the conversation id. */
   openDirectMessage(userId: string): Promise<string>;
   /** Bot-token OAuth scopes Slack currently reports as granted — the

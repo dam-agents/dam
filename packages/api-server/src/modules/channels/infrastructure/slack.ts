@@ -11,7 +11,9 @@ import type {
   ChannelReaction,
   ChannelReply,
   ChannelUser,
+  MessageReactionsResult,
   PostMessageOptions,
+  ReactionsQuery,
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
@@ -53,6 +55,7 @@ import type {
   SlackGateway,
   SlackImageFile,
   SlackMentionEvent,
+  SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
 } from "./slack-gateway.js";
@@ -330,6 +333,18 @@ export interface SlackWorker {
    *  bot or an unprobed gateway reports true: an unknown state should never
    *  hide a tool that might in fact work. */
   supportsUserLookup(): Promise<boolean>;
+  /** Who reacted to a message, and with what emoji — invisible to the agent
+   *  otherwise, since nothing in the message text or injected history reveals
+   *  it. Unlike describeUsers this is never cached: a reaction count is live
+   *  state, not stable identity, and the point of asking is the current tally. */
+  describeMessageReactions(
+    instanceName: string,
+    query: ReactionsQuery,
+  ): Promise<MessageReactionsResult | { error: string }>;
+  /** Whether a lookup could plausibly succeed right now — false only when the
+   *  app's granted scopes are confirmed to lack `reactions:read`. Same
+   *  fail-open rule as supportsUserLookup. */
+  supportsMessageReactions(): Promise<boolean>;
 }
 
 export interface SlackOAuthPending {
@@ -417,6 +432,14 @@ function normalizeSlackUserId(input: string): string | null {
 async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
   const scopes = await gw.getGrantedScopes();
   return !scopes || scopes.has("users:read");
+}
+
+/** Whether the running gateway's granted scopes are confirmed to include
+ *  `reactions:read`. An unprobed or unreachable gateway reports true — an
+ *  unknown state fails open rather than hiding a tool that might work. */
+async function canReadReactions(gw: SlackGateway): Promise<boolean> {
+  const scopes = await gw.getGrantedScopes();
+  return !scopes || scopes.has("reactions:read");
 }
 
 export function createSlackWorker(
@@ -2180,6 +2203,53 @@ export function createSlackWorker(
     async supportsUserLookup() {
       const gw = await ensureGateway();
       return gw ? canLookupUsers(gw) : true;
+    },
+
+    async describeMessageReactions(
+      instanceName: string,
+      query: ReactionsQuery,
+    ) {
+      // Same gate as every outbound affordance: the binding is the Agent's
+      // membership card into the workspace.
+      const slackChannelId =
+        await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      let messageTs = query.messageTs;
+      if (!messageTs) {
+        const turn = resolveTurn(instanceName);
+        if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("none" in turn) {
+          return {
+            error: "no message to inspect — pass messageTs",
+          };
+        }
+        messageTs = turn.ref.eventTs;
+      }
+      const target = await resolveOutboundTarget(
+        gw,
+        slackChannelId,
+        query.conversationId,
+      );
+      if ("error" in target) return target;
+
+      try {
+        const reactions = await gw.getMessageReactions(target.id, messageTs);
+        if (!reactions) return { error: "message not found" };
+        // Return the resolved target, not just the (often-omitted) request —
+        // the caller audits by these, and an agent that omitted both still
+        // learns which message and chat it actually asked about.
+        return { reactions, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async supportsMessageReactions() {
+      const gw = await ensureGateway();
+      return gw ? canReadReactions(gw) : true;
     },
   };
 }

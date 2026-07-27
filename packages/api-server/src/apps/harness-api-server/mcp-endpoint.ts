@@ -122,6 +122,9 @@ export interface McpSessionDeps {
   /** Resolved once per session, before this function runs — see
    *  ChannelManager.supportsUserLookup for what this reflects. */
   supportsUserLookup: boolean;
+  /** Resolved once per session, before this function runs — see
+   *  ChannelManager.supportsMessageReactions for what this reflects. */
+  supportsMessageReactions: boolean;
 }
 
 export function createMcpSession(
@@ -341,6 +344,84 @@ export function createMcpSession(
           },
         });
         return textResult(JSON.stringify({ users: result.users }));
+      },
+    );
+  }
+
+  // Omitted rather than always registered, same reasoning as
+  // describe_channel_users above: a Slack app missing `reactions:read` can
+  // never make this succeed for any Agent, on any channel.
+  if (deps.supportsMessageReactions) {
+    server.tool(
+      "describe_message_reactions",
+      "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
+      {
+        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+        chatId: z
+          .string()
+          .optional()
+          .describe(
+            "Chat containing the message: an id from describe_channel. Omit for the agent's bound channel.",
+          ),
+        messageTs: z
+          .string()
+          .optional()
+          .describe(
+            "Message to inspect. Omit for the message you're currently answering.",
+          ),
+      },
+      async ({ channel, chatId, messageTs }) => {
+        const result = await deps.channelManager.describeMessageReactions(
+          agentId,
+          channel,
+          { conversationId: chatId, messageTs },
+        );
+        // A read under the agent's own identity, no human in the loop: which
+        // message was asked about is audit-worthy; who reacted is not (same
+        // treatment as describe_channel_users' profiles).
+        const audit = {
+          category: "channel",
+          actor: agentId,
+          actorKind: "agent",
+          surface: channel,
+          agentId,
+        } as const;
+        if ("error" in result) {
+          // Both args are commonly omitted (default to the bound channel /
+          // current turn), and a failure before resolution — no binding, no
+          // active turn — means there is nothing resolved to log instead.
+          securityLog("warn", "channel.reaction_lookup", {
+            ...audit,
+            result: "failure",
+            reason: result.error,
+            detail: {
+              ...(chatId ? { conversationId: chatId } : {}),
+              ...(messageTs ? { messageTs } : {}),
+            },
+          });
+          return errorResult(result.error);
+        }
+        securityLog("info", "channel.reaction_lookup", {
+          ...audit,
+          result: "success",
+          // The resolved target, not the (often-omitted) request — this is
+          // what actually got asked about.
+          detail: {
+            conversationId: result.conversationId,
+            messageTs: result.messageTs,
+            reactions: result.reactions.map((r) => ({
+              name: r.name,
+              count: r.count,
+            })),
+          },
+        });
+        return textResult(
+          JSON.stringify({
+            reactions: result.reactions,
+            conversationId: result.conversationId,
+            messageTs: result.messageTs,
+          }),
+        );
       },
     );
   }
@@ -991,7 +1072,10 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const experiments = deps.experimentsServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const supportsUserLookup = await deps.channelManager.supportsUserLookup();
+    const [supportsUserLookup, supportsMessageReactions] = await Promise.all([
+      deps.channelManager.supportsUserLookup(),
+      deps.channelManager.supportsMessageReactions(),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -1004,6 +1088,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       maxArtifactBytes: deps.maxArtifactBytes,
       agentHome: deps.agentHome,
       supportsUserLookup,
+      supportsMessageReactions,
     });
     await session.server.connect(session.transport);
 
