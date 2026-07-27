@@ -67,7 +67,8 @@ export function IconRail({
     active:
       view === "knowledge-bases" ||
       view === "knowledge-base-new" ||
-      view === "knowledge-base-chat",
+      view === "knowledge-base-chat" ||
+      view === "knowledge-base-config",
     badge: 0,
     navigate: navigateToKnowledgeBases,
   };

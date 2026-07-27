@@ -1,11 +1,7 @@
-import { useMemo } from "react";
-
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
-import { useSyncPausingAgents } from "../../agents/hooks/use-suspend-agent.js";
-import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ConnectionsSection } from "../components/connections-section.js";
@@ -30,22 +26,11 @@ export function SandboxHomeView() {
   const section =
     rawSection === "channels" && !showChannels ? "setup" : rawSection;
 
-  const restartingAgents = useStore((s) => s.restartingAgents);
-  useSyncRestartingAgents();
-  const restartingIds = useMemo(
-    () => new Set(restartingAgents.keys()),
-    [restartingAgents],
-  );
-  const pausingAgents = useStore((s) => s.pausingAgents);
-  useSyncPausingAgents();
-  const pausingIds = useMemo(
-    () => new Set(pausingAgents.keys()),
-    [pausingAgents],
-  );
+  const display = useResolvedAgentDisplay(f.agent);
 
   const summaries = useSectionSummaries(f.agent);
 
-  if (f.status !== "ready" || !f.agent) {
+  if (f.status !== "ready" || !f.agent || !display) {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
@@ -63,7 +48,6 @@ export function SandboxHomeView() {
   }
 
   const { agent } = f;
-  const display = resolveAgentDisplay(agent, restartingIds, pausingIds);
 
   const footer = (
     <>
@@ -111,6 +95,7 @@ export function SandboxHomeView() {
         <ConnectionsSection
           agentId={agent.id}
           oauthReturnView={`/sandboxes/${agent.id}/connections`}
+          inset
         />
       )}
     </SandboxTwoColumnShell>

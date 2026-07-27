@@ -11,11 +11,19 @@ import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 interface Props {
   agentId: string;
   oauthReturnView: string;
+  /** Outdent the panel into the page gutter. Flush by default — a page whose
+   *  layout has a gutter (sandbox home) opts in at the call site, so this
+   *  shared section carries no page's geometry. */
+  inset?: boolean;
 }
 
 /** Grants apply immediately here — only the create wizard stages, since its
  *  sandbox doesn't exist yet. */
-export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
+export function ConnectionsSection({
+  agentId,
+  oauthReturnView,
+  inset = false,
+}: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
@@ -55,6 +63,7 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}
+        inset={inset}
       />
       {catalogOpen && (
         <ConnectionCatalogModal
