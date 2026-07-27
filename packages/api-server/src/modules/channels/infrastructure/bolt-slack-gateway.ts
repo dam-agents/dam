@@ -143,6 +143,10 @@ export function createBoltSlackGateway(
         text: args.text,
         thread_ts: args.threadTs,
         blocks: args.blocks,
+        // Sent only when broadcasting: Slack's own arg type pairs
+        // `reply_broadcast` with a definite `thread_ts`, so an unset flag stays
+        // off the payload entirely rather than riding along as undefined.
+        ...(args.replyBroadcast ? { reply_broadcast: true } : {}),
       } as ChatPostMessageArgs);
     },
 

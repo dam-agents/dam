@@ -64,6 +64,9 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         channel: args.channel,
         text: args.text,
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+        ...(args.replyBroadcast !== undefined
+          ? { replyBroadcast: args.replyBroadcast }
+          : {}),
       });
     },
 

@@ -65,6 +65,9 @@ export interface SlackPostMessage {
   text: string;
   threadTs?: string;
   blocks?: SlackBlock[];
+  /** Slack's "Also send to channel": the threaded reply is one post that also
+   *  surfaces in the channel. Slack ignores it without a `threadTs`. */
+  replyBroadcast?: boolean;
 }
 
 export interface SlackPostEphemeral {

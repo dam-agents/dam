@@ -32,6 +32,10 @@ export interface ChannelReply {
   threadTs?: string;
   /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
+  /** Surface the reply in the channel too, not only inside the thread — one
+   *  post in both places. For threads that have scrolled out of the channel,
+   *  where a thread-only reply would go unseen. Off by default. */
+  alsoSendToChannel?: boolean;
 }
 
 /** An emoji reaction on a specific message. */

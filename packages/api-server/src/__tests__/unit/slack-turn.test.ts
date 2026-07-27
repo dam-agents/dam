@@ -291,6 +291,43 @@ describe("slack reply / react tools", () => {
     expect(msgs[0]).toMatchObject({ threadTs: "9.9" });
   });
 
+  it("reply does not broadcast to the channel unless asked (#2973)", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    await h.worker.reply("agent-1", { text: "thread only" });
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).not.toHaveProperty("replyBroadcast");
+  });
+
+  it("reply broadcasts to the channel as one threaded post when asked (#2973)", async () => {
+    const h = harness({});
+    await h.mention();
+    await tick();
+    h.gw.resetOutbound();
+
+    const result = await h.worker.reply("agent-1", {
+      text: "speaking order",
+      threadTs: "7.7",
+      alsoSendToChannel: true,
+    });
+    expect(result).toEqual({ ok: true });
+
+    // One post, still threaded — Slack fans it out to the channel itself, so
+    // the agent never posts twice to be seen.
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({
+      channel: "C1",
+      threadTs: "7.7",
+      text: "speaking order",
+      replyBroadcast: true,
+    });
+  });
+
   it("reply errors when there is no active thread and none is given", async () => {
     const h = harness({});
     await h.start();
