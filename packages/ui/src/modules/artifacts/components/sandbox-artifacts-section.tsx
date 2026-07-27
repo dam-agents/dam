@@ -3,10 +3,8 @@ import { Info } from "lucide-react";
 import { useState } from "react";
 
 import { Card } from "@/components/ui/card";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useDeleteArtifact } from "../api/mutations.js";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
@@ -21,10 +19,6 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
   );
-  const [deleteTarget, setDeleteTarget] = useState<LibraryArtifact | null>(
-    null,
-  );
-  const deleteArtifact = useDeleteArtifact();
 
   return (
     <section className="mb-8">
@@ -69,7 +63,6 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 showAgent={false}
                 onPreview={setPreviewTarget}
                 onShare={setShareTarget}
-                onDelete={setDeleteTarget}
               />
             ))}
           </div>
@@ -88,20 +81,6 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
           onClose={() => setPreviewTarget(null)}
         />
       )}
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        kind="destructive"
-        title={`Delete “${deleteTarget?.title}”?`}
-        description="All versions are deleted and its share link stops working. This cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={() => {
-          if (deleteTarget) deleteArtifact.mutate({ id: deleteTarget.id });
-          setDeleteTarget(null);
-        }}
-      />
     </section>
   );
 }

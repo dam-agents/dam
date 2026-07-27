@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { api } from "../../../api.js";
-import { useDeleteArtifact, useDeleteFolder } from "../api/mutations.js";
+import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
 import { FolderDialog } from "../components/folder-dialog.js";
@@ -34,13 +34,9 @@ export function ArtifactsView() {
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
   );
-  const [deleteTarget, setDeleteTarget] = useState<LibraryArtifact | null>(
-    null,
-  );
   const [deleteFolderTarget, setDeleteFolderTarget] =
     useState<ArtifactFolder | null>(null);
 
-  const deleteArtifact = useDeleteArtifact();
   const deleteFolder = useDeleteFolder();
 
   const filtered = useMemo(() => {
@@ -70,7 +66,6 @@ export function ArtifactsView() {
   const rowActions = {
     onPreview: setPreviewTarget,
     onShare: setShareTarget,
-    onDelete: setDeleteTarget,
   };
 
   const copyFolderLink = async (folder: ArtifactFolder) => {
@@ -178,20 +173,6 @@ export function ArtifactsView() {
           onClose={() => setPreviewTarget(null)}
         />
       )}
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        kind="destructive"
-        title={`Delete “${deleteTarget?.title}”?`}
-        description="All versions are deleted and its share link stops working. This cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={() => {
-          if (deleteTarget) deleteArtifact.mutate({ id: deleteTarget.id });
-          setDeleteTarget(null);
-        }}
-      />
       <ConfirmDialog
         open={deleteFolderTarget !== null}
         onOpenChange={(open) => {

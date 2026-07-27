@@ -1,14 +1,5 @@
 import type { LibraryArtifact } from "api-server-api";
-import {
-  Box,
-  Clock,
-  Download,
-  Eye,
-  Link as LinkIcon,
-  MoreVertical,
-  Share2,
-  Trash2,
-} from "lucide-react";
+import { Box, Clock, Eye, Link as LinkIcon, MoreVertical } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -26,13 +15,12 @@ import { useStore } from "../../../store.js";
 import { usePrefetchArtifactPreview } from "../api/queries.js";
 import { expiryState, timeAgo } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
+import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
-  onDelete: (artifact: LibraryArtifact) => void;
 }
 
 interface Props extends ArtifactRowActions {
@@ -46,7 +34,6 @@ export function ArtifactRow({
   showAgent = true,
   onPreview,
   onShare,
-  onDelete,
 }: Props) {
   const expiry = expiryState(artifact.expiresAt);
   const prefetchPreview = usePrefetchArtifactPreview();
@@ -118,24 +105,7 @@ export function ArtifactRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onShare(artifact)}>
-                <Share2 size={14} />
-                Sharing…
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => void downloadArtifact(artifact.id)}
-              >
-                <Download size={14} />
-                Download
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                tone="danger"
-                onSelect={() => onDelete(artifact)}
-              >
-                <Trash2 size={14} />
-                Delete
-              </DropdownMenuItem>
+              <ArtifactRowMenuItems artifact={artifact} onShare={onShare} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
