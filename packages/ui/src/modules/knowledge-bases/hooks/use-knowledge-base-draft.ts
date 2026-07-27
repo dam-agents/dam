@@ -10,8 +10,6 @@ export interface KnowledgeBaseDraft {
   name: string;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
-  sizeCpuMilli: number | null;
-  sizeMemoryMi: number | null;
   connectionIds: string[];
 }
 
@@ -20,8 +18,6 @@ const INITIAL_DRAFT: KnowledgeBaseDraft = {
   name: "",
   providerRef: null,
   egressPreset: "trusted",
-  sizeCpuMilli: null,
-  sizeMemoryMi: null,
   connectionIds: [],
 };
 

@@ -14,7 +14,6 @@ export interface CreateKnowledgeBaseInput {
   kbTemplateId: KnowledgeBaseTemplateId;
   connectionIds?: string[];
   egressPreset?: EgressPreset;
-  size?: { cpu?: string; memory?: string };
 }
 
 /** A Knowledge Base is an agent under the hood, so creating one changes the

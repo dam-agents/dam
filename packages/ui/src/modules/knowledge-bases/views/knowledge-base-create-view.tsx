@@ -13,13 +13,11 @@ import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js"
 import { sameProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { GrantedConnectionsPanel } from "../../sandboxes/components/granted-connections-panel.js";
-import { SandboxSizeSection } from "../../sandboxes/components/sandbox-size-section.js";
 import {
   NETWORK_PRESETS,
   NetworkPresetRow,
 } from "../../sandboxes/components/steps/setup-step.js";
 import { excludeProviderConnections } from "../../sandboxes/lib/provider-connections.js";
-import { sizeToQuantities } from "../../sandboxes/lib/quantity.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { useKnowledgeBaseDraft } from "../hooks/use-knowledge-base-draft.js";
@@ -53,7 +51,6 @@ export function KnowledgeBaseCreateView() {
   const create = async () => {
     if (!template) return;
     try {
-      const size = sizeToQuantities(draft.sizeCpuMilli, draft.sizeMemoryMi);
       const connectionIds = [
         ...draft.connectionIds,
         ...(draft.providerRef ? [draft.providerRef.id] : []),
@@ -61,11 +58,11 @@ export function KnowledgeBaseCreateView() {
       const agent = await createKnowledgeBase.mutateAsync({
         name: draft.name.trim(),
         // Harness image is pinned and hidden; the KB template is the picked
-        // installation procedure.
+        // installation procedure. Size is not sent — a knowledge base runs on
+        // the template/platform defaults (same stance as the config page).
         templateId: template.id,
         kbTemplateId: draft.kbTemplateId,
         egressPreset: draft.egressPreset,
-        ...(size ? { size } : {}),
         ...(connectionIds.length ? { connectionIds } : {}),
       });
       openKnowledgeBase(agent.id);
@@ -111,13 +108,6 @@ export function KnowledgeBaseCreateView() {
           placeholder="e.g. spyre-codebase-knowledge"
         />
       </section>
-
-      <SandboxSizeSection
-        templateSize={template?.size}
-        sizeCpuMilli={draft.sizeCpuMilli}
-        sizeMemoryMi={draft.sizeMemoryMi}
-        onChange={update}
-      />
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
