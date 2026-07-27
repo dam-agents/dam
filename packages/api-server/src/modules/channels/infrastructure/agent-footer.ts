@@ -85,7 +85,9 @@ export function parseAgentFooter(
 export const HISTORY_LEGEND =
   'In the conversation history below, a line prefixed "you (this agent):" is ' +
   'your own earlier post in this channel; "<name> (another agent):" is a ' +
-  "different agent that posted here; everyone else is a human Slack user.";
+  "different agent that posted here; everyone else is a human Slack user, " +
+  "prefixed with their Slack id — call describe_channel_users to find out " +
+  "who they are.";
 
 /** Render one history message as a `label: text` line, resolving the author
  *  from its footer: the reading agent's own posts become "you (this agent)",

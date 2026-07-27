@@ -45,6 +45,8 @@ oauth_config:
       - channels:read
       - groups:read
       - im:write
+      # Resolving the user ids the agent sees in a conversation to the people
+      # behind them (users.info); the email field needs the second scope.
       - users:read
       - users:read.email
       - app_mentions:read

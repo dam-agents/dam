@@ -286,6 +286,56 @@ export function createMcpSession(
     },
   );
 
+  server.tool(
+    "describe_channel_users",
+    "Look up who a channel's user ids belong to. People reach you as bare ids (Slack `U…`) — in the speaker labels on shared-channel messages, in conversation history, and in mentions inside message text — and this is how you turn those ids into people. Returns { users: [{ id, username, realName, displayName, title, pronouns, email, timezone, statusText, isBot, ... }] }; a field is absent when the person left it unset or the workspace withholds it, and an id that cannot be resolved comes back with an `error` while the rest of the batch still resolves. Look someone up before addressing them by name, attributing work to them, or reasoning about their local time. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      userIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(20)
+        .describe(
+          'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
+        ),
+    },
+    async ({ channel, userIds }) => {
+      const result = await deps.channelManager.describeUsers(
+        agentId,
+        channel,
+        userIds,
+      );
+      // A directory read under the agent's own identity, no human in the loop:
+      // the ids asked about are audit-worthy, the profiles that came back
+      // (names, emails) are not.
+      const audit = {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: channel,
+        agentId,
+      } as const;
+      if ("error" in result) {
+        securityLog("warn", "channel.user_lookup", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: { requested: userIds.length },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.user_lookup", {
+        ...audit,
+        result: "success",
+        detail: {
+          userIds: result.users.map((u) => u.id),
+          resolved: result.users.filter((u) => !u.error).length,
+        },
+      });
+      return textResult(JSON.stringify({ users: result.users }));
+    },
+  );
+
   // ---- Slack turn tools -----------------------------------------------------
   // `reply` and `react` are how a Slack agent answers the turn it is handling;
   // plain text is not delivered, only these are. They target the turn's thread

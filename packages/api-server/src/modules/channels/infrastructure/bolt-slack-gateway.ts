@@ -6,6 +6,7 @@ import type {
   SlackGatewayHandlers,
   SlackImageFile,
   SlackMessage,
+  SlackUserInfo,
 } from "./slack-gateway.js";
 
 type BoltApp = InstanceType<typeof App>;
@@ -295,6 +296,39 @@ export function createBoltSlackGateway(
         if (formatError(err).includes("channel_not_found")) return null;
         throw err;
       }
+    },
+
+    async getUserInfo(userId: string): Promise<SlackUserInfo | null> {
+      if (!app) return null;
+      let info;
+      try {
+        info = await app.client.users.info({ user: userId });
+      } catch (err) {
+        // A wrong or foreign id is a lookup miss, not a gateway fault — the
+        // caller reports it per id and keeps the rest of the batch.
+        if (formatError(err).includes("user_not_found")) return null;
+        throw err;
+      }
+      const user = info.user;
+      if (!user?.id) return null;
+      const profile = user.profile ?? {};
+      return {
+        id: user.id,
+        ...(user.name ? { username: user.name } : {}),
+        ...(user.real_name || profile.real_name
+          ? { realName: user.real_name ?? profile.real_name }
+          : {}),
+        ...(profile.display_name ? { displayName: profile.display_name } : {}),
+        ...(profile.title ? { title: profile.title } : {}),
+        ...(profile.pronouns ? { pronouns: profile.pronouns } : {}),
+        ...(profile.email ? { email: profile.email } : {}),
+        ...(user.tz ? { timezone: user.tz } : {}),
+        ...(user.tz_label ? { timezoneLabel: user.tz_label } : {}),
+        ...(profile.status_text ? { statusText: profile.status_text } : {}),
+        ...(profile.status_emoji ? { statusEmoji: profile.status_emoji } : {}),
+        ...(user.is_bot !== undefined ? { isBot: user.is_bot } : {}),
+        ...(user.deleted !== undefined ? { isDeleted: user.deleted } : {}),
+      };
     },
 
     async openDirectMessage(userId: string): Promise<string> {

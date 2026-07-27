@@ -6,6 +6,7 @@ import type {
   SlackMentionEvent,
   SlackMessage,
   SlackSlashCommand,
+  SlackUserInfo,
 } from "./slack-gateway.js";
 
 export interface FakeSlackChannel {
@@ -30,6 +31,11 @@ export interface FakeSlackGateway extends SlackGateway {
   /** Seed the messages returned by getThreadReplies / getChannelHistory, so a
    *  test can exercise history injection (e.g. attribution footers). */
   setHistory(messages: SlackMessage[]): void;
+  /** Workspace member directory; unlisted ids resolve as not found. */
+  setUsers(users: SlackUserInfo[]): void;
+  /** Every id getUserInfo was called with, in order — lets a test see the
+   *  lookups that actually reached Slack (i.e. missed the worker's cache). */
+  readUserLookups(): string[];
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
@@ -37,6 +43,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const outbound: SlackOutboundRecord[] = [];
   let channels: FakeSlackChannel[] = [];
   let history: SlackMessage[] = [];
+  let users: SlackUserInfo[] = [];
+  const userLookups: string[] = [];
   let nextStreamTs = 1;
 
   function requireHandlers(): SlackGatewayHandlers {
@@ -165,6 +173,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return channel ? { isMember: channel.botIsMember } : null;
     },
 
+    async getUserInfo(userId) {
+      userLookups.push(userId);
+      return users.find((u) => u.id === userId) ?? null;
+    },
+
     async openDirectMessage(userId) {
       return `D-${userId}`;
     },
@@ -203,6 +216,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setHistory(next) {
       history = [...next];
+    },
+
+    setUsers(next) {
+      users = [...next];
+    },
+
+    readUserLookups() {
+      return [...userLookups];
     },
   };
 }

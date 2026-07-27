@@ -120,6 +120,27 @@ export interface SlackChannelInfo {
   name: string;
 }
 
+/** Directory profile of a workspace member, as `users.info` reports it. Every
+ *  field but the id is optional — Slack omits what the person never filled in
+ *  and what the app's scopes don't cover (email needs `users:read.email`). */
+export interface SlackUserInfo {
+  id: string;
+  /** Slack handle, without the leading `@`. */
+  username?: string;
+  realName?: string;
+  displayName?: string;
+  title?: string;
+  pronouns?: string;
+  email?: string;
+  /** IANA zone (e.g. `Europe/Prague`) and its human label. */
+  timezone?: string;
+  timezoneLabel?: string;
+  statusText?: string;
+  statusEmoji?: string;
+  isBot?: boolean;
+  isDeleted?: boolean;
+}
+
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
@@ -151,6 +172,9 @@ export interface SlackGateway {
   listBotChannels(): Promise<SlackChannelInfo[]>;
   /** Membership lookup for one conversation; null when Slack can't resolve it. */
   getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
+  /** Directory lookup for one workspace member; null when Slack can't resolve
+   *  the id (deactivated-and-purged, another workspace, or simply wrong). */
+  getUserInfo(userId: string): Promise<SlackUserInfo | null>;
   /** Open (or reuse) the bot's DM with a user; returns the conversation id. */
   openDirectMessage(userId: string): Promise<string>;
 }
