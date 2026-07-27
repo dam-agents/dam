@@ -67,7 +67,7 @@ function yamlScalar(value: string): string {
 /**
  * Force a SKILL.md's top-level frontmatter `name:` to `name`, so an uploaded
  * skill lists under exactly the name the user confirmed. With no frontmatter
- * block, prepend a minimal one; with a block, rewrite its `name:` line (or
+ * block, prepend a minimal one; with a block, rewrite its `name:` entry (or
  * insert it as the first line when absent). Every other byte is preserved.
  *
  * The value is emitted as a YAML-safe scalar (plain when simple, else
@@ -88,8 +88,16 @@ export function ensureFrontmatterName(content: string, name: string): string {
   const nl = open.includes("\r\n") ? "\r\n" : "\n";
   const bodyLines = body.length > 0 ? body.split(/\r?\n/) : [];
   const nameIdx = bodyLines.findIndex((l) => /^name:\s*/.test(l));
-  if (nameIdx >= 0) bodyLines[nameIdx] = line;
-  else bodyLines.unshift(line);
+  if (nameIdx >= 0) {
+    // A block scalar (`name: |`), a folded one (`name: >`), or a multi-line
+    // plain scalar carries its value in the following indented lines. Replacing
+    // only the header line leaves those orphaned, and a real YAML parser folds
+    // them into the name we just wrote — so the harness would load a different
+    // name than the one the user confirmed.
+    let end = nameIdx + 1;
+    while (end < bodyLines.length && /^\s+\S/.test(bodyLines[end])) end++;
+    bodyLines.splice(nameIdx, end - nameIdx, line);
+  } else bodyLines.unshift(line);
 
   const rebuilt = open + bodyLines.join(nl) + close;
   return (
