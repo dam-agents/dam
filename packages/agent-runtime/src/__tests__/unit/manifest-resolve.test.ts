@@ -25,7 +25,7 @@ describe("resolveDrivers", () => {
     const r = resolveDrivers(mk({}));
     expect(Object.keys(r).sort()).toEqual([
       "env",
-      "experiment-trigger",
+      "experiment-execute",
       "file",
       "mcp-entry",
       "schedule-reset",
@@ -94,7 +94,7 @@ describe("resolveDrivers", () => {
       "skill-ref",
     ]);
     expect(Object.keys(eventDrivers(r)).sort()).toEqual([
-      "experiment-trigger",
+      "experiment-execute",
       "harness-config",
       "schedule-reset",
       "trigger",

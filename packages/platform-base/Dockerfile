@@ -27,6 +27,10 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise mise install node
+# Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
+# scripts with python3, and a first-use CPython download would ride the
+# egress gateway mid-experiment (slow at best, policy-blocked at worst).
+RUN --mount=type=cache,target=/root/.cache/mise mise install python
 # node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
 # (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
 # node release bundles npm >= 11.17.0.
@@ -103,12 +107,21 @@ COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
 COPY --from=builder /app/packages/driver-sdk/dist/driver-sdk.mjs /usr/local/lib/driver-sdk.mjs
+# The experiment SDK (#2942): one stdlib-only module, importable everywhere via
+# PYTHONPATH — the Python analog of driver-sdk.mjs. --chmod because COPY
+# preserves source modes and git doesn't: an owner-only file in a build
+# context (sandbox worktrees create those) would land root-0600 and lock the
+# non-root agent user out of the import. The explicit dir chmod is needed
+# because --chmod also stamps the parent COPY creates — 0644 on a directory
+# has no execute bit, which is just a different way to break the import.
+COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
+RUN chmod 0755 /usr/local/lib/platform-python
 # The chmod restores world-readability: mise rewrites the lock 0600, which
 # would lock the runtime agent user out after a root-run install in a derived
 # image build — an unreadable lock degrades every shim call to API lookups.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in jq fd rg gh uv uv=uvx python kubectl oc 'npm:@googleworkspace/cli=gws'; do \
+    for spec in jq fd rg gh uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
@@ -142,6 +155,9 @@ USER 65532
 # CA file: that would replace and drop the public CAs.
 ENV SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem \
     REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+
+# `import experiment_sdk` works in any python the pod runs (#2942).
+ENV PYTHONPATH=/usr/local/lib/platform-python
 
 ENV PORT=8080
 EXPOSE 8080

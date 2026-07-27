@@ -1,6 +1,6 @@
-/** A stored Experiment Candidate blob and its metadata. */
+/** A stored artifact blob and its metadata. */
 export interface Artifact {
-  /** Opaque logical address the caller chose (e.g. experiment/agent/run/name). */
+  /** Opaque logical address the caller chose (e.g. library/owner/id/name). */
   key: string;
   content: Buffer;
   contentType: string;

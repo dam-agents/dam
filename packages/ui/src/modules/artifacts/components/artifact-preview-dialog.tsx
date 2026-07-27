@@ -10,6 +10,7 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
+import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
   useArtifactContent,
@@ -45,6 +46,12 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   const total = versions?.length ?? artifact.version;
 
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
+  // An experiment dashboard viewed here gets the live feed too (see the
+  // chat-dock counterpart); undefined for every other artifact — and only on
+  // the LATEST version, so a pinned older version renders its baked state.
+  const latestFeedPost = useDashboardFeedPost(artifact.id);
+  const experimentFeedPost =
+    version === artifact.version ? latestFeedPost : undefined;
   // Source is fetched lazily — only for non-renderable kinds, or once the
   // user flips the toggle.
   const wantSource = !renderable || showSource;
@@ -104,6 +111,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                     html={preview.data}
                     title={artifact.title}
                     className="h-full w-full"
+                    postData={experimentFeedPost}
                   />
                 )
               )}

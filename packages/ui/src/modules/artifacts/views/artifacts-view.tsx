@@ -1,4 +1,5 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
+import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { FolderPlus, Search, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -12,6 +13,7 @@ import { api } from "../../../api.js";
 import { useDeleteArtifact, useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
+import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
 import { ShareDialog } from "../components/share-dialog.js";
@@ -81,6 +83,15 @@ export function ArtifactsView() {
       .then((url) => url ?? null);
   };
 
+  // Platform-managed experiment lineage folders render apart from the user's
+  // own folders — one muted, collapsed section at the bottom.
+  const experimentFolders = folders.filter((f) =>
+    f.name.startsWith(EXPERIMENT_FOLDER_PREFIX),
+  );
+  const userFolders = folders.filter(
+    (f) => !f.name.startsWith(EXPERIMENT_FOLDER_PREFIX),
+  );
+
   const ungrouped = byFolder.get(null) ?? [];
   const isEmpty = !isLoading && artifacts.length === 0 && folders.length === 0;
 
@@ -125,7 +136,7 @@ export function ArtifactsView() {
           <EmptyState onUpload={() => setUploadOpen(true)} />
         ) : (
           <>
-            {folders.map((folder) => (
+            {userFolders.map((folder) => (
               <FolderGroup
                 key={folder.id}
                 folder={folder}
@@ -140,6 +151,17 @@ export function ArtifactsView() {
               <FolderGroup
                 folder={null}
                 artifacts={ungrouped}
+                {...rowActions}
+              />
+            )}
+            {experimentFolders.length > 0 && (
+              <ExperimentsSection
+                folders={experimentFolders}
+                byFolder={byFolder}
+                searching={search.trim().length > 0}
+                onEditFolder={(f) => setFolderDialog({ folder: f })}
+                onDeleteFolder={setDeleteFolderTarget}
+                onCopyFolderLink={copyFolderLink}
                 {...rowActions}
               />
             )}

@@ -4,36 +4,40 @@ import {
   manageAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
-import {
-  experimentAddArmInputSchema,
-  experimentCreateInputSchema,
-  experimentIdInputSchema,
-} from "./schemas.js";
+import { experimentIdInputSchema } from "./schemas.js";
 
 export const experimentsRouter = t.router({
   list: readAgentProcedure.query(({ ctx }) => ctx.experiments.list()),
 
+  driverSummaries: readAgentProcedure.query(({ ctx }) =>
+    ctx.experiments.driverSummaries(),
+  ),
+
   get: readAgentProcedure
     .input(experimentIdInputSchema)
     .query(async ({ ctx, input }) => {
-      const experiment = await ctx.experiments.getWithRuns(input.id);
+      const experiment = await ctx.experiments.get(input.id);
       if (!experiment) throw new TRPCError({ code: "NOT_FOUND" });
       return experiment;
     }),
 
-  create: manageAgentsProcedure
-    .input(experimentCreateInputSchema)
-    .mutation(({ ctx, input }) => ctx.experiments.create(input)),
-
-  addArm: manageAgentsProcedure
-    .input(experimentAddArmInputSchema)
-    .mutation(({ ctx, input }) => ctx.experiments.addArm(input)),
-
-  start: manageAgentsProcedure
+  feed: readAgentProcedure
     .input(experimentIdInputSchema)
-    .mutation(({ ctx, input }) => ctx.experiments.start(input.id)),
+    .query(async ({ ctx, input }) => {
+      const feed = await ctx.experiments.feed(input.id);
+      if (!feed) throw new TRPCError({ code: "NOT_FOUND" });
+      return feed;
+    }),
+
+  startRun: manageAgentsProcedure
+    .input(experimentIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.experiments.startRun(input.id)),
 
   stop: manageAgentsProcedure
     .input(experimentIdInputSchema)
     .mutation(({ ctx, input }) => ctx.experiments.stop(input.id)),
+
+  delete: manageAgentsProcedure
+    .input(experimentIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.experiments.delete(input.id)),
 });

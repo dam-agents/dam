@@ -7,6 +7,7 @@ import {
 
 export const SESSION_CATEGORIES = [
   "chats",
+  "experiments",
   "scheduled",
   "channels",
   "terminal",
@@ -15,6 +16,7 @@ export type SessionCategory = (typeof SESSION_CATEGORIES)[number];
 
 export const SESSION_CATEGORY_LABELS: Record<SessionCategory, string> = {
   chats: "Chats",
+  experiments: "Experiment runs",
   scheduled: "Scheduled",
   channels: "Channels",
   terminal: "Terminal",
@@ -28,6 +30,7 @@ export function sessionCategory(session: SessionView): SessionCategory {
   )
     return "channels";
   if (session.type === SessionType.ScheduleCron) return "scheduled";
+  if (session.type === SessionType.ExperimentExecute) return "experiments";
   return "chats";
 }
 

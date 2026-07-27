@@ -1,5 +1,8 @@
 [tools]
 nodejs = "24"
+# The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
+# declared here so CI runners get the binary; uv manages python itself.
+uv = "0.9"
 
 # Go
 go = "1.26"
@@ -63,6 +66,7 @@ includes = [
     "packages/dam-vm/tasks.toml",
     "packages/db/tasks.toml",
     "packages/driver-sdk/tasks.toml",
+    "packages/experiment-sdk/tasks.toml",
     "packages/e2e/agents/mock-api/tasks.toml",
     "packages/e2e/agents/mock/tasks.toml",
     "packages/e2e/playwright/tasks.toml",

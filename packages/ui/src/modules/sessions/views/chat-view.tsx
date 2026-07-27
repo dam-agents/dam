@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   FileText as FileIcon,
+  Loader2,
   MoreVertical,
   RefreshCw,
   Trash2,
@@ -48,6 +49,9 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
+import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
+import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -101,6 +105,27 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const pendingLaunch = useStore((s) => s.pendingLaunch);
+  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
+  const {
+    experiment: dockedExperiment,
+    options: experimentOptions,
+    select: selectExperiment,
+  } = useDockedExperiment(selectedAgent);
+  // A dashboard artifact is a doorway back to its experiment: opening it from
+  // the artifacts section docks the full panel (buttons and all), not a bare
+  // preview. Prefer a live run over the newest terminal one.
+  const agentExperiments = useAgentExperimentsLive(selectedAgent);
+  const dashboardExperiment = openArtifactId
+    ? (agentExperiments.find(
+        (e) =>
+          e.dashboardArtifactId === openArtifactId &&
+          (e.status === "draft" || e.status === "running"),
+      ) ??
+      agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
+      null)
+    : null;
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
@@ -163,6 +188,17 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+
+  // Pending-launch chat takeover: while a just-started run's session is
+  // being opened (pod wake), blank the pane and show the launch loader.
+  // Safe against the real session: openLaunchSession clears the pending
+  // record BEFORE opening it, and deliberate navigation unfocuses.
+  const launchPaneActive = Boolean(
+    pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
+  );
+  useEffect(() => {
+    if (launchPaneActive && sessionId) resetSession();
+  }, [launchPaneActive, sessionId, resetSession]);
 
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
@@ -254,6 +290,8 @@ export function ChatView() {
 
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
+      // Deliberate navigation releases the pending-launch chat takeover.
+      unfocusPendingLaunch();
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
       // Terminal sessions don't use ACP.
@@ -274,10 +312,13 @@ export function ChatView() {
       setSessionId,
       resumeSession,
       scrollToBottom,
+      unfocusPendingLaunch,
     ],
   );
 
   const handleNewSession = useCallback(() => {
+    // Deliberate navigation releases the pending-launch chat takeover.
+    unfocusPendingLaunch();
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
       return;
@@ -291,6 +332,7 @@ export function ChatView() {
     resetSession,
     setMobileScreen,
     setSessionMode,
+    unfocusPendingLaunch,
   ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
@@ -534,7 +576,23 @@ export function ChatView() {
                     )}
                     {!loadingSession &&
                       !sessionError &&
-                      messages.length === 0 && (
+                      messages.length === 0 &&
+                      (launchPaneActive ? (
+                        <div className="py-24 text-center anim-in">
+                          <Loader2
+                            size={22}
+                            className="mx-auto mb-3 animate-spin text-text-muted"
+                          />
+                          <p className="text-[16px] font-bold text-text mb-2">
+                            Starting the run…
+                          </p>
+                          <p className="text-[14px] text-text-muted">
+                            Waking the agent and opening the launch session —
+                            this can take up to a minute. The conversation
+                            appears here as soon as it&apos;s up.
+                          </p>
+                        </div>
+                      ) : (
                         <div className="py-24 text-center">
                           <p className="text-[16px] font-bold text-text mb-2">
                             Start a conversation
@@ -544,7 +602,7 @@ export function ChatView() {
                             agent
                           </p>
                         </div>
-                      )}
+                      ))}
                     {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
@@ -715,9 +773,11 @@ export function ChatView() {
           )}
         </div>
 
-        {/* Docked file / artifact panel — hidden unless one is open (they
-            are mutually exclusive); fullscreen takeover on mobile */}
-        {(openFilePath || openArtifactId) && (
+        {/* Docked file / artifact / experiment panel — hidden unless one is
+            open (mutually exclusive, in that priority); the experiment panel
+            docks itself while the agent has a draft or live run. Fullscreen
+            takeover on mobile */}
+        {(openFilePath || openArtifactId || dockedExperiment) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -751,9 +811,20 @@ export function ChatView() {
             >
               {openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
-              ) : (
+              ) : dashboardExperiment ? (
+                <ExperimentDockPanel
+                  experiment={dashboardExperiment}
+                  onClose={() => setOpenArtifactId(null)}
+                />
+              ) : openArtifactId ? (
                 <DockedArtifactPanel />
-              )}
+              ) : dockedExperiment ? (
+                <ExperimentDockPanel
+                  experiment={dockedExperiment}
+                  options={experimentOptions}
+                  onSelect={selectExperiment}
+                />
+              ) : null}
             </div>
           </>
         )}

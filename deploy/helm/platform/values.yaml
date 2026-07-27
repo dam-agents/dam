@@ -246,10 +246,10 @@ redis:
       memory: 256Mi
 
 # -- Shared SeaweedFS object store (Apache-2.0), single node. Holds
-# Experiment Candidate artifacts; agents upload and browsers download
+# artifact-library content; agents upload and browsers download
 # directly, using short-lived links the api-server mints after ownership
 # checks. Disable to use an external store (`apiServer.objectStorage`) or
-# none at all (recording candidates is then unavailable).
+# none at all (artifact uploads are then unavailable).
 seaweedfs:
   enabled: true
   # -- Extra annotations for the StatefulSet object / its pod template
@@ -662,7 +662,7 @@ apiServer:
   # 5 GiB import could fill the disk.
   maxImportBundleBytes: 5368709120
 
-  # -- Hard ceiling (bytes) for a single Experiment Candidate artifact.
+  # -- Hard ceiling (bytes) for a single stored artifact object.
   # null = 50 MiB default.
   maxArtifactBytes: null
 

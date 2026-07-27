@@ -5,6 +5,10 @@ import {
   type ArtifactsSlice,
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
+import {
+  createExperimentsSlice,
+  type ExperimentsSlice,
+} from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import { pathToState } from "./modules/platform/lib/routes.js";
 import {
@@ -41,6 +45,7 @@ export type PlatformStore = DialogSlice &
   NavigationSlice &
   AgentsSlice &
   SessionsSlice &
+  ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
   PermissionsSlice;
@@ -51,6 +56,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createNavigationSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
+  ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),

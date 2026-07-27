@@ -148,8 +148,9 @@ export interface ArtifactLibraryService {
   update(id: string, input: ArtifactUpdateInput): Promise<LibraryArtifact>;
   setSharing(id: string, input: ArtifactSharingInput): Promise<LibraryArtifact>;
   delete(id: string): Promise<void>;
-  /** Mint a short-lived direct-upload link (experiments-style direct
-   *  transfer). Fails when no object store is configured. */
+  /** Mint a short-lived direct-upload link (direct transfer — the
+   *  api-server never carries the bytes). Fails when no object store is
+   *  configured. */
   createUploadUrl(fileName: string): Promise<ArtifactUploadTicket>;
 
   listFolders(): Promise<ArtifactFolder[]>;

@@ -10,9 +10,9 @@ import type {
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
+import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 
@@ -27,8 +27,6 @@ export function createHarnessRouter(deps: {
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
-  artifacts: ArtifactService;
-  maxArtifactBytes: number;
   runtimeHello: RuntimeDeliveryService;
 }) {
   const app = new Hono();
@@ -39,17 +37,19 @@ export function createHarnessRouter(deps: {
     composeSkills: deps.composeSkills,
     agentHome: deps.agentHome,
     schedulesServiceFor: deps.schedulesServiceFor,
-    experimentsServiceFor: deps.experimentsServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,
-    artifacts: deps.artifacts,
-    maxArtifactBytes: deps.maxArtifactBytes,
+    experimentsServiceFor: deps.experimentsServiceFor,
   });
   mountInvocationRoutes(app, {
     k8s: deps.k8s,
     invocationsServiceFor: deps.invocationsServiceFor,
     connectionsServiceFor: deps.connectionsServiceFor,
     templates: deps.templates,
+  });
+  mountExperimentRoutes(app, {
+    k8s: deps.k8s,
+    experimentsServiceFor: deps.experimentsServiceFor,
   });
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,

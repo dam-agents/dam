@@ -12,6 +12,7 @@ import {
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { RunningExperimentChip } from "../../experiments/components/running-experiment-chip.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 
@@ -55,6 +56,7 @@ export function AgentRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        <RunningExperimentChip agentId={agent.id} />
         <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and

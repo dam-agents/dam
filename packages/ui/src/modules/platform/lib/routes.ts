@@ -11,8 +11,6 @@ export const viewSchema = z.enum([
   "sandbox-new",
   "sandbox-home",
   "experiments",
-  "experiment-new",
-  "experiment-detail",
   "artifacts",
 ]);
 export type View = z.infer<typeof viewSchema>;
@@ -43,7 +41,6 @@ export function viewToPath(
   agent?: string | null,
   agentId?: string | null,
   settingsTab?: SettingsTab | null,
-  experimentId?: string | null,
   sandboxSection?: SandboxSection | null,
 ): string {
   if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
@@ -63,9 +60,6 @@ export function viewToPath(
       : base;
   }
   if (view === "experiments") return "/experiments";
-  if (view === "experiment-new") return "/experiments/new";
-  if (view === "experiment-detail" && experimentId)
-    return `/experiments/${encodeURIComponent(experimentId)}`;
   if (view === "artifacts") return "/artifacts";
   return "/";
 }
@@ -75,7 +69,6 @@ export function pathToState(path: string): {
   agent?: string;
   agentId?: string;
   settingsTab?: SettingsTab;
-  experimentId?: string;
   sandboxSection?: SandboxSection;
 } {
   if (path.startsWith("/chat/"))
@@ -105,12 +98,5 @@ export function pathToState(path: string): {
       sandboxSection: (sandboxHomeMatch[2] as SandboxSection) ?? "setup",
     };
   if (path === "/experiments") return { view: "experiments" };
-  if (path === "/experiments/new") return { view: "experiment-new" };
-  const experimentDetailMatch = path.match(/^\/experiments\/([^/]+)$/);
-  if (experimentDetailMatch)
-    return {
-      view: "experiment-detail",
-      experimentId: decodeURIComponent(experimentDetailMatch[1]!),
-    };
   return { view: "list" };
 }

@@ -1,98 +1,170 @@
 # Experiments
 
-Last verified: 2026-07-15
+Last verified: 2026-07-27
 
 ## Overview
 
-An **Experiment** races several AI-driven R&D harnesses against one goal and compares what each produced. Each **Arm** is one competitor — an existing Agent (its harness is fixed as the Agent's image) plus an optional **Arm Variation**. Starting an Experiment opens one **Trial** session per Arm; inside that Trial the harness runs its own iterate-and-score loop and appends scored **Runs** to a shared **Run Ledger**.
-
-The platform's role is deliberately narrow: it **starts Arms, captures Runs, and presents the comparison**. It never runs the optimization loop and never interprets a Score. A Score is opaque — captured, never normalized or ranked across Arms.
+An **Experiment** is one execution of a loop script a **driver Agent** authors
+in Python — a design→build→test→learn loop written as ordinary code over the
+[Invocation](platform-topology.md) primitive — **observed live** by the
+platform. The script declares its **Skeleton** (stages, loops) upfront, then
+emits stage-tagged **Spans** (status, an opaque numeric score, Artifact
+references) as it runs; Invocations spawned inside a span attach to it. The
+platform's founding bet survives from the first design: it **never runs the
+optimization loop and never interprets a Score** — the loop's shape lives in
+code, and the code reports its shape.
 
 ### The bet
 
-There is no bespoke experiment harness. A generic Agent runs its own iterate-and-score loop and populates the ledger, driven by two things the platform already had:
+There is no platform-side conductor. The predecessor designs both died for
+good reasons: an arms-racing subsystem forced work into a shape (competing
+harnesses reporting scored runs) most loops don't have, and a platform-driven
+conductor (#2784) would have baked loop shapes into the platform so every new
+shape (tournament, retry-with-backoff, dynamic fan-out) meant a platform
+change. Loops-as-code (#2821) put the shape in an ordinary script; this
+subsystem adds the piece that pivot dropped — observability. The **experiment
+SDK** (stdlib-only Python, baked into platform-base) is an instrumentation
+layer: declaring the skeleton costs a handful of lines around code the driver
+would write anyway, and everything the platform learns arrives as reported
+data over the same waypoint-attributed per-agent HTTP surface the driver
+already uses to spawn.
 
-- **The interface is exposed as MCP tools.** Every agent pod already runs a platform-outbound MCP server — the same one the harness uses to reach channels, skills, and schedules. Experiments adds its reporting tools to it: one to request a Candidate upload link, one to append a scored Run, one to declare the Arm finished. MCP is the one tool-calling surface every modern harness already speaks, so putting the reporting interface there means any harness image can report back with no per-harness client and no new transport. The harness passes no Experiment or Arm id — the platform attributes the call to the caller's active Arm from its network-verified Agent identity (mechanics under [Trial flow](#trial-flow)).
-- **The contract rides in the Trial prompt.** The tools exist, but nothing makes a generic harness call them unprompted. So the composed prompt carries the full reporting contract inline — an autonomous-trial directive telling the harness to run unattended to completion and to report every scored candidate, through those tools, the moment its score lands.
-
-The contract lives in the session-scoped prompt rather than a skill for two reasons: a skill reaches only Claude-family harnesses (those that mount skill files), whereas the prompt is harness-agnostic; and a skill would leak reporting nags into every non-experiment session, whereas the prompt is scoped to the Trial. The MCP tools (how to report) plus the prompt (what to do) are what make Experiments work across any harness image without per-harness code.
-
-## Bounded contexts
-
-The subsystem splits across two contexts, mirroring the Connections owner/grant split ([`docs/ubiquitous-language.md`](../ubiquitous-language.md)):
-
-- **api-server — Experiments context** owns Experiments, Arms, the Run Ledger, and Candidate storage. It composes the Trial prompt, launches Trials, attributes and records inbound Runs, serves Candidate downloads, and enforces the completion and liveness rules. Owner-scoped end to end — like a Connection, an Experiment belongs to a user and references many Agents through its Arms.
-- **agent-runtime side** runs the Trial. A new runtime-channel event handler opens the Trial session against the harness and submits the composed prompt; from then on the harness drives itself and reports back over MCP.
-
-Experiments is assembled from existing rails rather than new plumbing:
-
-- **Ownership** copies the Connections owner + grant-to-many-Agents model.
-- **Launch** reuses the runtime channel's trigger/wake primitive — the same durable outbox delivery and agent-poke the scheduler uses ([connections](connections.md#event), [agent-lifecycle](agent-lifecycle.md)).
-- **Reporting** rides the in-pod outbound MCP surface the agent already uses for channels and skills.
-- **The reporting contract** travels in the Trial prompt, not in code shipped to the harness.
+**Lenient skeleton.** The declared skeleton is a statement of intent, not a
+straitjacket: a span naming an undeclared stage grows the graph and is flagged
+as **drift**, never an error. Agent-authored scripts must not fail hours into
+a run over a declaration mismatch; drift is signal for the human, not a fault.
 
 ## Resources
 
-Described in [ubiquitous language](../ubiquitous-language.md#experiments-bounded-context--proposed-mvp-design); field-level shapes live in the [Experiments contract types](../../packages/api-server-api/src/modules/experiments/).
+Vocabulary in [`docs/ubiquitous-language.md`](../ubiquitous-language.md#experiments-bounded-context--rebase-in-progress-2942);
+field-level shapes in the [contract](../../packages/api-server-api/src/modules/experiments/).
 
-- **Experiment** — owner-scoped, holds the shared prompt (the common instruction every Arm receives), a lifecycle status, and the Run Ledger. Peer to the Agent.
-- **Arm** — one competitor: a reference to one owned Agent plus its Arm Variation. Keyed per `(Experiment, Agent)`, so the same Agent cannot be two Arms of one Experiment, but the same harness image can back many Agents raced against each other.
-- **Arm Variation** — optional free text appended verbatim to the shared prompt at Trial launch, under its own header. The single declared variable that distinguishes one Arm from another. Opaque to the platform, which stores and forwards it but never parses it; the shared prompt is the un-overridable control and the variation only adds.
-- **Trial** — the single Session an Arm's Agent opens when the Experiment starts. The harness runs its loop here. It owns the transcript and session-level telemetry, which are therefore Arm-level, not Run-level.
-- **Run** — one entry the harness appends to the Run Ledger per loop iteration: a Score plus a Candidate. Numbered monotonically within its Arm.
-- **Candidate** — the artifact a Run produced, retrievable as a download. Opaque to the platform.
-- **Score** — the number a harness reports for a Run. Higher-is-better by convention; captured, never normalized across Arms.
-- **Run Ledger** — the append-only record of every Run across an Experiment's Arms. The one genuinely new persistence primitive.
+- **Experiment** — owner-scoped. Building and running are separate: the
+  **draft** is source (persists; plan re-registrations update it, its script
+  artifact's versions are the build history), and each **run** is an
+  immutable capture started from it — its own row
+  (`running → completed | failed | stopped`) carrying the draft's
+  declaration plus its OWN script clone; live it renders the draft's
+  dashboard, and the terminal transition mints its single-version results
+  artifact. A draft never becomes a run; terminal runs never reopen.
+- **Skeleton / Stage / Span** — the declared structure; one stage execution =
+  one span, carrying status, optional Score (captured and charted, never
+  normalized or ranked), Artifact Library references, and an opaque attrs bag.
+- **Script Artifact** — the script source, versioned in the Artifact Library.
+  Everything platform-managed for a lineage — draft script + dashboard,
+  every run's script clone and results page — lives in the lineage's folder
+  (`Experiments / <name>`), keeping the library root free of stock
+  artifacts. Postgres never stores source; every run records the exact
+  version it executed, and a `run-start` announcing a changed sha publishes
+  the next version — divergence is visible history.
+- **Dashboard Artifact** — the HTML renderer of the Trace Feed: a
+  platform-shipped stock dashboard auto-published at plan registration, or a
+  bespoke one the agent generated. Rendered in the sealed in-app iframe; data
+  arrives only via postMessage (see [artifact-library](artifact-library.md)).
+  The live surface is the panel that **docks itself in the driver's chat**:
+  a build session shows the draft's panel (skeleton + "Start a new run"), a
+  run session shows only its run. A live run renders the draft's dashboard
+  (the renderer; data arrives live); on the terminal transition the platform
+  mints the run's own single-version **results artifact** — the renderer
+  plus a baked replay of the final feed over the same message contract — so
+  the finished result is self-contained and shareable without any bridge.
+  The Experiments destination is an index of lineages (status, runs, live
+  invocations, per-run artifacts) that routes into that chat.
+- **Trace Feed** — the bounded JSON projection (per-stage aggregates,
+  downsampled score series, recent spans, attached invocations) served over
+  tRPC; the one contract shared by dashboards, the UI, and the SDK docs.
 
-## Trial flow
+## Flow
 
 ```mermaid
 sequenceDiagram
   participant U as user (UI)
+  participant H as harness (driver pod)
+  participant S as script (experiment SDK)
   participant API as api-server<br/>(Experiments)
-  participant RT as agent-runtime
-  participant H as harness
-  participant S as object store
-
-  U->>API: start Experiment
-  API->>API: mark Arms running, compose Trial prompt per Arm
-  loop per Arm
-    API->>RT: experiment-trigger event (runtime channel) + wake
-    RT->>H: open Trial session, submit prompt
-  end
-  loop each scored candidate
-    H->>API: request_candidate_upload (MCP)
-    API-->>H: short-lived single-object upload link
-    H->>S: upload candidate (via paired gateway)
-    H->>API: record_run (MCP): score + upload reference
-    API->>S: verify upload (exists, within cap)
-    API->>API: append Run to ledger
-  end
-  H->>API: finish_arm (MCP)
-  API->>API: Arm completed; Experiment completed once all Arms terminal
+  U->>H: chat: author the experiment
+  H->>S: python exp.py --plan
+  S->>API: POST /experiments/plan (skeleton + script)
+  API->>API: draft Experiment; script + dashboard artifacts published
+  U->>API: Start a run (new row + script clone)
+  API->>H: runtime-channel event → launch prompt
+  H->>S: python exp.py (background process)
+  S->>API: run-start, span events (batched), spawns tagged with span ids
+  U->>API: poll Trace Feed (only while running)
+  S->>API: finish (completed | failed)
 ```
 
-**Launch.** Start marks each Arm running and composes its Trial prompt — the shared prompt, then the Arm Variation, then the autonomous-trial directive. The prompt is delivered as an `experiment-trigger` event on the runtime channel, which wakes a hibernated Agent and opens the Trial session ([connections](connections.md#event)). A Trial that fails to launch fails its Arm immediately rather than waiting for the liveness sweep — an Arm that never started can never report or finish.
+**Plan registration.** Running the script in plan mode executes declarations
+only; the SDK posts the skeleton plus the script capture (path, sha256, full
+source) and the platform creates the `draft` — publishing the source into the
+Artifact Library and attaching the stock dashboard (or the bespoke HTML the
+SDK captured via `dashboard_path`). Re-registering the same `(driver, name)`
+refreshes the draft in place — script and platform-authored stock dashboard
+both re-version — the draft is the lineage's permanent buildable. **Start a
+run** clones the draft's declaration and script into a fresh run row and
+launches it; results only ever land on the run's own artifacts (script clone
+at start, results artifact at the end), so the draft's stay clean for the
+next build iteration.
 
-**Ingestion and attribution.** The harness reports through the outbound MCP tools — one to request a Candidate upload link, one to append a scored Run, one to declare the Arm finished. None takes an Experiment or Arm id: the platform resolves the caller's active Arm from the Agent's network-verified identity (the mesh waypoint guarantees the MCP principal matches the pod), so a harness cannot report against an Experiment it isn't running. All are rejected once the calling Arm is no longer running — the ledger is closed after Stop or completion. Appending a Run carries the Candidate by reference to a completed direct upload: the platform verifies the upload — including the size cap — before the Run lands, and a reference outside the caller's own Arm reads as unknown. A file-path fallback remains for harnesses that cannot upload themselves — the platform reads the file from the Agent's workspace and stores it on their behalf. The completion tool is success-only: a harness that gives up simply stops and is caught by the liveness sweep.
+**Ingestion and attribution.** The reporting routes live beside the
+invocation endpoints on the harness port: the waypoint-authenticated `:id`
+path segment is the caller, no body ever names the driver, and a foreign or
+missing experiment reads as unknown. Events append only while the experiment
+is `running` — Stop closes the trace, so a stopped loop dies on its next
+call. Every accepted batch bumps the liveness clock.
 
-## Candidate storage
+**Stop has teeth.** Closing the trace alone would let a loop parked inside a
+`spawn()` poll run to the invocation deadline, so Stop also fails the
+experiment's running Invocations (eagerly reaping their targets) — which
+unblocks waiting `spawn()` calls at once — and new spawns stamped with a
+non-running experiment's span are rejected, so a loop that catches the
+failure and retries dies too. A loop doing pure local compute exits at its
+next report; the released pin lets the idle checker reclaim a truly silent
+one.
 
-A Candidate lives in the object store ([persistence](persistence.md) owns the substrate) — never on a per-Agent PVC and never in the database, which keeps only the ledger reference. The platform stays the authority on who may move the bytes; the bytes themselves move directly.
+**Span ↔ spawn attach.** A spawn made inside a span carries
+`experimentSpanId` ("experimentId/spanId") on the invocation request; the
+feed joins invocations back to their stage through it. The invocations
+context stores it opaquely.
 
-The reporting flow is **direct transfer**: the harness requests an upload link over MCP, the api-server attributes the caller and mints a short-lived link scoped to that single object, and the harness uploads straight to the store through its paired gateway. The api-server never carries the bytes; it verifies the completed upload — existence and the size cap, discarding an oversized object — before the Run lands in the ledger. The link is the authorization: the store rejects a different object, an expired link, or a request with no link, so the agent gains no standing access to storage. This is what lets the per-Candidate size cap be pure policy rather than a transport limit; the cap stays configurable and its effective value is quoted to the harness in the Trial prompt's reporting contract, so harnesses self-limit against the real ceiling. A file-path relay flow remains for harnesses that cannot upload themselves: the platform reads the file from the Agent's workspace over the harness file API (which carries its own per-file transfer ceiling) and stores it on their behalf. An install with no object store cannot record Candidates — the reporting tools fail closed with a clear error.
-
-The store is independent of agent pods and the api-server is always running, preserving the core guarantee that a Candidate is **downloadable while the producing Agent is hibernated**. Downloads are owner-scoped — the Run is resolved through the owner's Experiment first, so a non-owned Experiment reads back as not-found and the opaque storage reference is never trusted from the client. When the store has a browser-reachable endpoint, an authorized download answers with a short-lived direct link the browser fetches itself (the same capability shape as uploads); otherwise the api-server relays the blob.
+**Run-attached artifacts.** Artifacts can join a run outside the span flow:
+the `create_artifact` MCP tool takes an optional `experiment_id` (the
+driver's monitoring session names the run it was launched for), and a
+publish by an invocation *target* is attributed automatically through the
+invocation its own agent id keys. Both land on the run row
+(`attached_artifact_ids`) and the Trace Feed unions them with the
+span-referenced rollup, so the run panel and the baked results page list
+them. Only the run's driver may attach explicitly (foreign ids read as
+unknown), and drafts refuse attachment — results belong to runs.
 
 ## Completion and liveness
 
-Per-Arm status is the source of truth for completion. An Arm moves `pending → running` at launch, then to one terminal state: **completed** (the harness declared it finished), **failed** (the Inactivity Deadline tripped, or the Trial failed to launch), or **stopped** (the user Stopped the Experiment while the Arm was still running). An **Experiment becomes completed once every Arm is terminal**, regardless of the mix — the platform reports the comparison, it never judges the whole Experiment failed, so there is no Experiment-level `failed`. Stop is the distinct user-driven terminal path: it moves any still-running Arm to `stopped`.
-
-The **Inactivity Deadline** is the liveness guarantee that lets a started Experiment always reach a terminal state. A background sweep marks a running Arm failed if it records no Run and never declares itself finished within a configured window; the clock resets on each Run. Without it, a harness that crashes, forgets to finish, or hibernates mid-loop would strand its Arm running forever — the one-shot Trial prompt is never re-issued, so a hibernated mid-loop Arm goes quiet permanently. The sweep is safe to run on every api-server replica: each reap is an atomic conditional transition, so a contention race just no-ops on the already-terminal row, and a randomized start offset keeps replicas from scanning in lockstep.
+Starting a run stamps `executedAt`; the script's `finish` (or an unhandled exception
+reported by the SDK) flips `running → completed | failed`. In run mode the
+SDK also runs a **heartbeat**: a daemon thread with its own request path
+posts a no-op `heartbeat` event (~60 s) so a healthy loop that is quiet —
+blocked in a `spawn()`, deep in a local computation — keeps its activity
+clock moving; the thread dies with the script process, which is exactly the
+signal. The **inactivity sweep** is the backstop: a `running` row with no
+accepted event within the configured window
+(`EXPERIMENT_INACTIVITY_SECONDS`, default 15 min) is reaped to `failed` —
+with heartbeats, that now specifically means the script process is gone
+(crashed without reporting, pod lost). A wedged-but-alive script heartbeats
+indefinitely and stays visibly `running` until the user stops it: the sweep
+cannot tell stuck from slow, and Stop exists. Each
+reap is an atomic conditional transition, so multi-replica races no-op, and
+the sweep runs with a jittered start. A running Experiment also **pins** its
+driver Agent against the idle checker's hibernation (the
+`agent-platform.ai/experiment-active` annotation, subordinate to a user hard
+stop); reaching any terminal state releases the pin — the sweep is therefore
+also what un-pins a crashed run's driver.
 
 ## Where the code lives
 
-- Contract (resources, service interface, MCP tool inputs): [`packages/api-server-api/src/modules/experiments/`](../../packages/api-server-api/src/modules/experiments/)
-- Implementation (service, repository, Trial prompt, launcher, liveness sweep, Candidate serving): [`packages/api-server/src/modules/experiments/`](../../packages/api-server/src/modules/experiments/)
-- Trial-side event handler: [`packages/agent-runtime/src/modules/runtime-channel/`](../../packages/agent-runtime/src/modules/runtime-channel/)
+- Contract (resources, Trace Feed, REST payloads, tRPC router):
+  [`packages/api-server-api/src/modules/experiments/`](../../packages/api-server-api/src/modules/experiments/)
+- Implementation (service, repository, sweep, stock dashboard):
+  [`packages/api-server/src/modules/experiments/`](../../packages/api-server/src/modules/experiments/)
+- Harness REST routes: [`packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts`](../../packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts)
+- Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
 - UI destination: [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

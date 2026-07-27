@@ -11,6 +11,7 @@ import {
   boolean,
   bigint,
   integer,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 
 /** Outcome of a recorded activity. Constrained at the DB so a typo or a
@@ -468,55 +469,97 @@ export const apiKeys = pgTable(
   ],
 );
 
+// Experiments v2 (#2942): an Experiment is one execution of a driver Agent's
+// loop script, observed via a declared Skeleton plus a Trace of stage-tagged
+// spans. The platform never runs the loop — this is the observation record.
+// Script source lives in the Artifact Library (versioned), never here; the row
+// keeps only the artifact reference and the sha of the last-executed source.
+// `last_activity_at` is the liveness clock the inactivity sweep reads (bumped
+// on every accepted trace event); the partial indexes back the sweep scan and
+// the pin/agent-card "running experiments for driver" lookups.
 export const experiments = pgTable(
   "experiments",
   {
     id: text("id").primaryKey(),
     owner: text("owner").notNull(),
+    driverAgentId: text("driver_agent_id").notNull(),
     name: text("name").notNull(),
-    prompt: text("prompt").notNull(),
     status: text("status").notNull().default("draft"),
+    skeleton: jsonb("skeleton").notNull(),
+    // Stages discovered from spans that the skeleton never declared.
+    drift: jsonb("drift")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    scriptPath: text("script_path").notNull(),
+    scriptSha256: text("script_sha256").notNull(),
+    scriptArtifactId: text("script_artifact_id").notNull(),
+    scriptVersion: integer("script_version").notNull(),
+    dashboardArtifactId: text("dashboard_artifact_id"),
+    // Run-level custom data the script posts (exp.post_data); opaque,
+    // size-capped at ingestion, delivered to dashboards as feed.custom.
+    customData: jsonb("custom_data"),
+    // Artifact Library ids attached to this run outside the span flow: the
+    // driver's monitoring harness (create_artifact experiment_id=) and
+    // auto-attributed publishes by the run's invocation targets. The feed
+    // unions these with the span-referenced rollup.
+    attachedArtifactIds: jsonb("attached_artifact_ids")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
   },
   (table) => [
     index("experiments_owner_idx").on(table.owner),
-    uniqueIndex("experiments_owner_name_unique_idx").on(
-      table.owner,
-      table.name,
-    ),
+    // One draft per (driver, name): plan re-registration updates the draft
+    // in place; a new plan after execution creates a sibling Experiment.
+    uniqueIndex("experiments_driver_name_draft_idx")
+      .on(table.driverAgentId, table.name)
+      .where(sql`${table.status} = 'draft'`),
+    index("experiments_running_activity_idx")
+      .on(table.lastActivityAt)
+      .where(sql`${table.status} = 'running'`),
+    index("experiments_running_driver_idx")
+      .on(table.driverAgentId)
+      .where(sql`${table.status} = 'running'`),
   ],
 );
 
-// `status` + `last_activity_at` (dam-u1n.13): per-arm status is the source of
-// truth for Experiment completion. Without it, "this arm finished" is not
-// representable and an Experiment can never leave `running`. Lifecycle:
-// pending → running → completed | failed | stopped. `last_activity_at` is the
-// liveness clock the inactivity-deadline sweep reads — set when the arm starts
-// running and bumped on each recorded Run; a `running` arm that goes quiet past
-// the deadline is reaped to `failed` so the Experiment can still complete.
-export const experimentArms = pgTable(
-  "experiment_arms",
+// One span = one execution of a skeleton stage. Upserted: span-start inserts
+// the running row, span-end fills status/score/artifacts/attrs/ended_at. The
+// PK embeds the experiment so the SDK-chosen span_id only has to be unique
+// within its own experiment.
+export const experimentSpans = pgTable(
+  "experiment_spans",
   {
-    experimentId: text("experiment_id").notNull(),
-    agentId: text("agent_id").notNull(),
-    armVariation: text("arm_variation").notNull().default(""),
-    status: text("status").notNull().default("pending"),
-    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    id: text("id").primaryKey(),
+    experimentId: text("experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "cascade" }),
+    spanId: text("span_id").notNull(),
+    stage: text("stage").notNull(),
+    iteration: integer("iteration"),
+    parentSpanId: text("parent_span_id"),
+    status: text("status").notNull().default("running"),
+    score: doublePrecision("score"),
+    artifactIds: jsonb("artifact_ids"),
+    attrs: jsonb("attrs"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
   },
   (table) => [
-    primaryKey({ columns: [table.experimentId, table.agentId] }),
-    index("experiment_arms_agent_idx").on(table.agentId),
-    index("experiment_arms_running_activity_idx")
-      .on(table.lastActivityAt)
-      .where(sql`${table.status} = 'running'`),
+    index("experiment_spans_experiment_started_idx").on(
+      table.experimentId,
+      table.startedAt,
+    ),
+    index("experiment_spans_experiment_stage_idx").on(
+      table.experimentId,
+      table.stage,
+    ),
   ],
 );
 
@@ -631,31 +674,6 @@ export const libraryArtifactVersions = pgTable(
   (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
 );
 
-export const experimentRuns = pgTable(
-  "experiment_runs",
-  {
-    id: text("id").primaryKey(),
-    experimentId: text("experiment_id").notNull(),
-    agentId: text("agent_id").notNull(),
-    runNumber: integer("run_number").notNull(),
-    sessionId: text("session_id").notNull(),
-    candidateRef: text("candidate_ref"),
-    score: jsonb("score"),
-    status: text("status").notNull(),
-    startedAt: timestamp("started_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex("experiment_runs_arm_run_number_idx").on(
-      table.experimentId,
-      table.agentId,
-      table.runNumber,
-    ),
-  ],
-);
-
 // An Invocation (#2816) is a run-once, typed request from a driver Agent to a
 // target Agent: a `(driver, target, prompt, result schema) -> one validated
 // result` binding. The target reports via the fixed `report_result` MCP tool.
@@ -690,11 +708,18 @@ export const invocations = pgTable(
     // Liveness deadline: a `running` Invocation past this is failed by the
     // liveness sweep (bounds one result, not the target agent).
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // Experiments v2 span attach (#2942): "<experimentId>/<spanId>" stamped by
+    // the SDK when the spawn happened inside a span, so the Trace Feed can
+    // show the invocation under its stage. Null for non-experiment spawns.
+    experimentSpanId: text("experiment_span_id"),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
     index("invocations_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),
+    index("invocations_experiment_span_idx")
+      .on(table.experimentSpanId)
+      .where(sql`${table.experimentSpanId} IS NOT NULL`),
   ],
 );

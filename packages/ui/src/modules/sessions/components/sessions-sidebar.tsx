@@ -1,6 +1,6 @@
 import { Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,8 @@ export function SessionsSidebar({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
+  const pendingLaunch = useStore((s) => s.pendingLaunch);
+  const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentRunState = useAgentRunState(selectedAgent);
   const { data: sessions = [], isFetching } = useAcpSessions(
@@ -74,6 +76,24 @@ export function SessionsSidebar({
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
     [sessions, sessionFilter],
+  );
+  // Experiment runs are agent-launched, not conversations — they get their
+  // own group below the sessions the user actually drives.
+  // A run whose launch session hasn't materialized yet (pod waking) renders
+  // as a skeleton row; the real session replaces it once the list has it.
+  const launchingRun =
+    pendingLaunch &&
+    pendingLaunch.agentId === selectedAgent &&
+    !sessions.some((s) => s.experimentId === pendingLaunch.runId)
+      ? pendingLaunch
+      : null;
+
+  const [conversationSessions, runSessions] = useMemo(
+    () => [
+      visibleSessions.filter((s) => sessionCategory(s) !== "experiments"),
+      visibleSessions.filter((s) => sessionCategory(s) === "experiments"),
+    ],
+    [visibleSessions],
   );
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
@@ -93,6 +113,46 @@ export function SessionsSidebar({
     },
     [showConfirm, deleteSession],
   );
+
+  const renderRow = (s: (typeof sessions)[number]) => {
+    const isOpen = s.sessionId === sessionId;
+    // Terminal sessions have no chat turn, so `busy` never applies.
+    const working =
+      s.mode === SessionMode.Terminal
+        ? !!s.running
+        : isOpen
+          ? busy
+          : !!s.running;
+    // Polled approvals cover all sessions; the live store surfaces the open one instantly.
+    const needsApproval =
+      approvalSessions.has(s.sessionId) ||
+      pendingPermissions.some((p) => p.sessionId === s.sessionId);
+    // Terminals have no meaningful unread — their updatedAt tracks the
+    // harness file mtime (bumped by restarts and TUI repaints), not
+    // reading. No seenAt means an untracked (legacy) session — also read.
+    const unread = Boolean(
+      !isOpen &&
+      s.mode !== SessionMode.Terminal &&
+      s.seenAt &&
+      s.updatedAt &&
+      Date.parse(s.updatedAt) > Date.parse(s.seenAt),
+    );
+    return (
+      <SessionRow
+        key={s.sessionId}
+        session={s}
+        active={isOpen}
+        working={working}
+        needsApproval={needsApproval}
+        unread={unread}
+        onResume={() => {
+          if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
+          onResumeSession(s.sessionId, s.mode);
+        }}
+        onDelete={() => confirmDelete(s.sessionId, s.title)}
+      />
+    );
+  };
 
   const headerRight = (
     <>
@@ -172,45 +232,26 @@ export function SessionsSidebar({
             No sessions match the filter
           </p>
         )}
-        {visibleSessions.map((s) => {
-          const isOpen = s.sessionId === sessionId;
-          // Terminal sessions have no chat turn, so `busy` never applies.
-          const working =
-            s.mode === SessionMode.Terminal
-              ? !!s.running
-              : isOpen
-                ? busy
-                : !!s.running;
-          // Polled approvals cover all sessions; the live store surfaces the open one instantly.
-          const needsApproval =
-            approvalSessions.has(s.sessionId) ||
-            pendingPermissions.some((p) => p.sessionId === s.sessionId);
-          // Terminals have no meaningful unread — their updatedAt tracks the
-          // harness file mtime (bumped by restarts and TUI repaints), not
-          // reading. No seenAt means an untracked (legacy) session — also read.
-          const unread = Boolean(
-            !isOpen &&
-            s.mode !== SessionMode.Terminal &&
-            s.seenAt &&
-            s.updatedAt &&
-            Date.parse(s.updatedAt) > Date.parse(s.seenAt),
-          );
-          return (
-            <SessionRow
-              key={s.sessionId}
-              session={s}
-              active={isOpen}
-              working={working}
-              needsApproval={needsApproval}
-              unread={unread}
-              onResume={() => {
-                if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
-                onResumeSession(s.sessionId, s.mode);
-              }}
-              onDelete={() => confirmDelete(s.sessionId, s.title)}
-            />
-          );
-        })}
+        {conversationSessions.map(renderRow)}
+        {(runSessions.length > 0 || launchingRun) && (
+          <p className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            Experiment runs
+          </p>
+        )}
+        {launchingRun && (
+          <button
+            type="button"
+            onClick={focusPendingLaunch}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
+            title="Show the launch progress"
+          >
+            <Loader2 size={14} className="shrink-0 animate-spin" />
+            <span className="min-w-0 flex-1 truncate">
+              Starting run — waking the agent…
+            </span>
+          </button>
+        )}
+        {runSessions.map(renderRow)}
       </div>
     </SidebarSection>
   );

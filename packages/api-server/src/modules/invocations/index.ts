@@ -1,3 +1,4 @@
+export { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 export {
   composeInvocationsForOwner,
   composeInvocationLivenessSweep,
@@ -8,6 +9,7 @@ export {
 } from "./compose.js";
 export {
   AttenuationError,
+  ExperimentNotRunningError,
   InvalidSchemaError,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,

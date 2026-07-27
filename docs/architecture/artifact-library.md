@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-21
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -14,8 +14,8 @@ Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through.
 
 The design is a port of a proven external tool (the "slop" artifact vault)
-onto platform rails: content bytes live in the S3-compatible object store the
-experiments subsystem introduced, metadata lives in Postgres, the agent-facing
+onto platform rails: content bytes live in the S3-compatible object store
+([persistence](persistence.md)), metadata lives in Postgres, the agent-facing
 surface is the per-agent platform MCP server, and public serving happens on a
 dedicated **share host**.
 
@@ -105,9 +105,9 @@ flowchart LR
 ```
 
 - **Agents** publish through artifact tools on the per-agent platform MCP
-  server (the same in-pod outbound surface as channels, skills, schedules,
-  and experiments). Small text content travels inline; anything bigger takes
-  the **direct-transfer** path pioneered by experiment candidates: the tool
+  server (the same in-pod outbound surface as channels, skills, and
+  schedules). Small text content travels inline; anything bigger takes
+  the **direct-transfer** path: the tool
   mints a short-lived presigned upload link, the harness PUTs bytes straight
   to the store through its paired gateway, and the create call references the
   completed upload. The platform verifies the upload (existence, size cap)
@@ -117,9 +117,8 @@ flowchart LR
   owner-scoped service means it can only ever touch its owner's library.
 - **Users** publish from the Artifacts page in the UI: bytes go through an
   authenticated upload route on the app origin (avoiding browser↔store CORS),
-  then the same create call. Downloads mirror the experiments candidate
-  route: a presigned direct link when the store has a browser-reachable
-  endpoint, a relayed blob otherwise.
+  then the same create call. Downloads answer with a presigned direct link
+  when the store has a browser-reachable endpoint, a relayed blob otherwise.
 
 ## UI surfaces
 

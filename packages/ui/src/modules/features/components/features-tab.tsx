@@ -16,7 +16,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "experiments",
     label: "Experiments",
     description:
-      "Race several agents against one goal and compare their scored candidates. Adds the Experiments destination.",
+      "Loop scripts your agents author and run, observed live: skeleton graph, per-stage progress, score charts. Adds the Experiments destination.",
   },
   {
     id: "advanced-connections",

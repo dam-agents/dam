@@ -42,6 +42,12 @@ export const KIND_AGENT = "Agent";
 // ---- Annotation keys ----
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
+/** Experiments v2 pin (#2942): "true" while the agent drives a running
+ *  experiment — a positive run signal the controller's shouldRun honors, so
+ *  the idle checker can't hibernate a loop mid-run. Set on Execute, cleared
+ *  on the driver's last running experiment reaching a terminal state, and
+ *  reconciled against the experiments table at boot. */
+export const EXPERIMENT_ACTIVE_KEY = "agent-platform.ai/experiment-active";
 
 // User-initiated hard stop (#1900): non-empty ⇒ the controller scales the
 // pair to zero now. Sticky: background activity bumps never clear it — only

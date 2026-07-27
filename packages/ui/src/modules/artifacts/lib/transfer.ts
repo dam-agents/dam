@@ -62,8 +62,7 @@ export async function uploadArtifactFile(file: File): Promise<string> {
 }
 
 /** Download an artifact (optionally a past version) — JSON `{ url }` means a
- *  presigned direct link we navigate to; otherwise the relayed blob. Same
- *  shape as the experiments candidate download. */
+ *  presigned direct link we navigate to; otherwise the relayed blob. */
 export async function downloadArtifact(
   id: string,
   version?: number,

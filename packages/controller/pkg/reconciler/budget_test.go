@@ -217,6 +217,40 @@ func TestBudgetAlwaysOnAgentAutoStartsWhenRoomFrees(t *testing.T) {
 	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"))
 }
 
+func TestBudgetSweepableAgentAutoStartsWhenRoomFrees(t *testing.T) {
+	// An ephemeral invocation target (sweepable, #2942) is exempt from the
+	// denial memo: its driver is blocked polling for the result, so it
+	// retries the gate on resync and starts by itself once room frees.
+	peer, peerSS := runningPeer("peer", "3900m", "1Gi")
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+	agent.Annotations = map[string]string{
+		"agent-platform.ai/last-activity": time.Now().UTC().Format(time.RFC3339),
+		"agent-platform.ai/sweepable":     "true",
+	}
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+
+	r, client := setupReconciler(t, agent, peerSS)
+	ctx := context.Background()
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, int32(0), agentSSReplicas(t, r, "my-agent"))
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	require.Equal(t, apiv1.ReasonOverBudget, cond.Reason)
+
+	// Room frees (peer scales to zero) — the resync re-reconcile starts the
+	// parked target without any fresh activity bump.
+	zero := int32(0)
+	peerSS.Spec.Replicas = &zero
+	_, err = client.AppsV1().StatefulSets("test-agents").Update(ctx, peerSS, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"))
+}
+
 func TestBudgetUserBudgetOverrideAdmits(t *testing.T) {
 	// Same overflow as above, but a UserBudget raises this owner's ceiling.
 	peer, peerSS := runningPeer("peer", "3900m", "1Gi")
