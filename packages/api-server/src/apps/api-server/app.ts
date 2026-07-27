@@ -813,6 +813,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
       },
+      virtualizationEnabled: config.virtualizationEnabled,
       resizeGate,
       owner: user.sub,
       db,

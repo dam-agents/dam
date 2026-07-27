@@ -50,6 +50,9 @@ export function composeAgentsModule(deps: {
   agentIdleTimeoutMinutes: number;
   /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: { cpu: string; memory: string };
+  /** KubeVirt vm backend available in this install; absent = false (creating
+   *  from a vm-backend template is rejected). */
+  virtualizationEnabled?: boolean;
   /** Budget gate for live resizes (#1900); omitted by system compositions. */
   resizeGate?: ResizeGatePort;
   /** `undefined` enables system-level composition (cross-owner) for the
@@ -95,6 +98,7 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
+      virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,

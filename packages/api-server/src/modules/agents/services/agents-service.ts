@@ -514,6 +514,8 @@ export function createAgentsService(deps: {
   contributionsSettled: ContributionsSettledPort;
   /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: DefaultResourceLimits;
+  /** KubeVirt vm backend available in this install; absent = false. */
+  virtualizationEnabled?: boolean;
   /** Budget gate for live resizes; omitted by system compositions (which
    *  never resize) — a live resize without it is rejected. */
   resizeGate?: ResizeGatePort;
@@ -834,6 +836,14 @@ export function createAgentsService(deps: {
           },
           deps.agentDefaultLimits,
         );
+      }
+      const backend = spec.backend as { type?: string } | undefined;
+      if (backend?.type === "vm" && !deps.virtualizationEnabled) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this template runs as a full VM, which is not enabled on this install (virtualization.enabled)",
+        });
       }
       // Template-declared env rides the rail like user env (seeded below), not
       // the CR — the controller no longer reads spec.env.

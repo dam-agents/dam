@@ -759,6 +759,7 @@ const harnessAgentsServiceFor = (owner: string) => {
     api,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    virtualizationEnabled: config.virtualizationEnabled,
     agentDefaultLimits: {
       cpu: config.agentDefaultCpuLimit,
       memory: config.agentDefaultMemoryLimit,

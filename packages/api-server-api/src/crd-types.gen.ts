@@ -18,6 +18,19 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
+   * Backend selects the isolation substrate the agent workload runs on;
+   * nil = container. Immutable after create (enforced by the api-server,
+   * the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+   * instead of the agent StatefulSet; the paired gateway is unaffected.
+   */
+  backend?: {
+    type: "container" | "vm";
+    /**
+     * VM carries vm-backend props; present only when type == "vm".
+     */
+    vm?: {};
+  };
+  /**
    * Description is an optional human-readable description.
    */
   description?: string;
@@ -109,6 +122,7 @@ export interface AgentSpecCR {
   name?: string;
   /**
    * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   * Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
    */
   nodeSelector?: {
     [k: string]: string;
@@ -126,6 +140,7 @@ export interface AgentSpecCR {
   };
   /**
    * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   * Selects among *container* runtimes only — rejected on the vm backend.
    */
   runtimeClassName?: string;
   /**

@@ -209,7 +209,10 @@ export function createK8sClient(
 // ---------------------------------------------------------------------------
 
 export function podBaseUrl(agentId: string, namespace: string): string {
-  return `${agentId}-0.${agentId}.${namespace}.svc:8080`;
+  // Headless agent Service DNS — resolves to the single ready backing pod for
+  // either backend (a StatefulSet pod or a vm backend's virt-launcher pod),
+  // unlike the former `-0` ordinal pod DNS which only StatefulSets provide.
+  return `${agentId}.${namespace}.svc:8080`;
 }
 
 export function createApi(namespace: string) {

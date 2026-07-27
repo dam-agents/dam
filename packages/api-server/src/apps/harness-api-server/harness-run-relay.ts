@@ -157,6 +157,13 @@ export function createRunRelay(deps: {
           client.close(1011, "agent not found");
           return release();
         }
+        if (identity.vmBackend) {
+          // A Run executor materializes the agent image as a pod container —
+          // impossible for a vm backend's containerDisk. The sandbox is a
+          // whole machine; run heavy commands directly in it.
+          client.close(1008, "dam-run is not available on VM sandboxes");
+          return release();
+        }
         if (clientGone || spliced.overflowed()) return release();
 
         await deps.runs.create(runId, agentId, identity.uid);

@@ -98,6 +98,10 @@ const configSchema = z.object({
    *  (a host fronted by a publicly-trusted cert); plain `ws://` ignores it. */
   vmHostCaCert: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
+  /** KubeVirt vm backend (spec.backend.type=vm) is available in this install
+   *  (Helm `virtualization.enabled`). Off ⇒ creating an agent from a
+   *  vm-backend template is rejected. */
+  virtualizationEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   /** HMAC key used to pseudonymize Keycloak `sub` values written to
    *  `activity_events`, `actor_roles`, and `instances` (GDPR Art. 32).
@@ -309,6 +313,7 @@ export function loadConfig(): Config {
     vmHostClientKey: process.env.PLATFORM_VM_HOST_CLIENT_KEY,
     vmHostCaCert: process.env.PLATFORM_VM_HOST_CA_CERT,
     e2eEnabled: process.env.E2E_ENABLED,
+    virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
