@@ -8,7 +8,13 @@ import type {
 import { useState } from "react";
 
 import { useMetricsOverview } from "../api/queries.js";
-import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
+import {
+  formatAxisUsd,
+  formatDurationMs,
+  formatTokens,
+  formatUsd,
+  formatUsdCell,
+} from "../lib/format.js";
 
 interface Props {
   agentId: string | null;
@@ -150,36 +156,42 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
   return (
-    <table className="w-full border-collapse tabular-nums">
+    <table className="w-full table-fixed border-collapse tabular-nums">
       <thead>
-        <tr className="text-[10px] uppercase tracking-wide text-text-muted">
-          <th className="py-1 text-left font-medium">Model</th>
-          <th className="py-1 text-right font-medium">In</th>
-          <th className="py-1 text-right font-medium">Out</th>
-          <th className="py-1 text-right font-medium">Cost</th>
+        <tr className="border-b border-border-hairline text-[11px] uppercase tracking-wide text-text-muted">
+          <th className="w-[40%] px-5 py-3.5 text-left font-medium">Model</th>
+          <th className="w-[20%] px-5 py-3.5 text-right font-medium">In</th>
+          <th className="w-[20%] px-5 py-3.5 text-right font-medium">Out</th>
+          <th className="w-[20%] px-5 py-3.5 text-right font-medium">Cost</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className="text-[13px]">
         {rows.map((row) => (
-          <tr key={row.model} className="border-t border-border-light">
+          <tr
+            key={row.model}
+            className="border-b border-border-hairline last:border-b-0"
+          >
             <td
-              className="max-w-0 w-full truncate py-1 pr-2 font-mono text-text-secondary"
+              className="truncate px-5 py-3.5 font-mono text-text-secondary"
               title={row.model}
             >
               {row.model}
             </td>
             {/* Cache reads dominate agent traffic; fold them into "in" so the
                 column reflects what actually entered the context. */}
-            <td className="py-1 pl-2 text-right font-mono">
+            <td className="px-5 py-3.5 text-right font-mono">
               {formatTokens(
                 row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens,
               )}
             </td>
-            <td className="py-1 pl-2 text-right font-mono">
+            <td className="px-5 py-3.5 text-right font-mono">
               {formatTokens(row.outputTokens)}
             </td>
-            <td className="py-1 pl-2 text-right font-mono font-medium">
-              {formatUsd(row.costUsd)}
+            <td
+              className="px-5 py-3.5 text-right font-mono font-semibold"
+              title={formatUsd(row.costUsd)}
+            >
+              {formatUsdCell(row.costUsd)}
             </td>
           </tr>
         ))}
@@ -198,25 +210,27 @@ export function AgentSpendBars({ rows }: { rows: SpendByAgent[] }) {
     <div className="flex flex-col gap-4">
       {rows.map((row) => {
         const label = row.agentName || row.agentId;
-        const pct = max > 0 ? Math.max((row.costUsd / max) * 100, 2) : 0;
+        // Percentage of the widest bar, with an 8px floor for any nonzero
+        // spend so a tiny value is still visible; zero-cost rows stay empty.
+        const pct = max > 0 ? (row.costUsd / max) * 100 : 0;
         return (
           <div
             key={row.agentId}
-            className="flex items-center gap-3 text-[12px]"
+            className="flex items-center gap-4 text-[14px]"
           >
             <span
-              className="w-28 shrink-0 truncate text-right text-text-secondary"
+              className="w-[140px] shrink-0 truncate text-right text-foreground/80"
               title={label}
             >
               {label}
             </span>
             <div className="min-w-0 flex-1">
               <div
-                className="h-2.5 rounded-[3px] bg-accent"
-                style={{ width: `${pct}%` }}
+                className="h-5 rounded bg-accent"
+                style={{ width: row.costUsd > 0 ? `max(${pct}%, 8px)` : "0px" }}
               />
             </div>
-            <span className="w-20 shrink-0 text-right font-mono font-semibold tabular-nums text-text">
+            <span className="w-20 shrink-0 text-left font-mono font-semibold tabular-nums text-text">
               {formatUsd(row.costUsd)}
             </span>
           </div>
@@ -249,18 +263,18 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
   // Index-based so the bottom tick is exactly 0 (no floating-point residual).
   const nTicks = Math.round(top / step);
   const ticks = Array.from({ length: nTicks + 1 }, (_, i) => (nTicks - i) * step);
-  const CHART_H = 224;
+  const CHART_H = 240;
 
   return (
     <div className="flex gap-3">
       {/* Y-axis labels, one per gridline, vertically aligned to the plot. */}
       <div
-        className="flex flex-col justify-between text-right text-[10px] tabular-nums text-text-muted"
+        className="flex flex-col justify-between text-right font-mono text-[12px] tabular-nums text-text-muted"
         style={{ height: CHART_H }}
       >
         {ticks.map((t) => (
           <span key={t} className="leading-none">
-            {formatUsd(t)}
+            {formatAxisUsd(t, step)}
           </span>
         ))}
       </div>
@@ -269,23 +283,26 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
           {/* Horizontal gridlines, evenly spaced behind the bars. */}
           <div className="absolute inset-0 flex flex-col justify-between">
             {ticks.map((t) => (
-              <div key={t} className="border-t border-border-light" />
+              <div key={t} className="border-t border-border-hairline" />
             ))}
           </div>
-          {/* Bars, anchored to the baseline and scaled against the nice top. */}
+          {/* Bars, anchored to the baseline and scaled against the nice top.
+              The bar is centred in its flex-1 slot at ~58% width so the plot
+              reads light; nonzero days get a 3px floor so they stay legible. */}
           <div className="absolute inset-0 flex items-end gap-1">
             {days.map((d) => {
               const dayNum = Number(d.day.slice(8, 10));
+              const pct = top > 0 ? (d.costUsd / top) * 100 : 0;
               return (
                 <div
                   key={d.day}
                   title={`${d.day}: ${formatUsd(d.costUsd)}`}
-                  className="group flex h-full min-w-0 flex-1 items-end"
+                  className="group flex h-full min-w-0 flex-1 items-end justify-center"
                 >
                   <div
-                    className="w-full rounded-t-[2px] bg-accent group-hover:bg-accent-hover"
+                    className="w-[58%] rounded-t-[2px] bg-accent group-hover:bg-accent-hover"
                     style={{
-                      height: `${d.costUsd > 0 && top > 0 ? Math.max((d.costUsd / top) * 100, 0.8) : 0}%`,
+                      height: d.costUsd > 0 ? `max(${pct}%, 3px)` : "0px",
                     }}
                   />
                   {/* Hover shows the exact amount via title; this backs it for
@@ -298,7 +315,7 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
             })}
           </div>
         </div>
-        <div className="mt-2 flex gap-1 text-[10px] tabular-nums text-text-muted">
+        <div className="mt-3 flex gap-1 font-mono text-[10px] tabular-nums text-text-muted">
           {days.map((d) => {
             const dayNum = Number(d.day.slice(8, 10));
             return (

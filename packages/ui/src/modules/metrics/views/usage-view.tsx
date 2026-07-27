@@ -17,7 +17,7 @@ import {
   ModelSpendTable,
   SpendByDayChart,
 } from "../components/metrics-panel.js";
-import { formatUsd } from "../lib/format.js";
+import { formatUsdCents } from "../lib/format.js";
 
 // Month boundaries are computed in the browser's timezone; the API takes the
 // resulting instants, so "calendar month" means the user's wall-clock month.
@@ -69,55 +69,62 @@ export function UsageView() {
     <div>
       <PageHeader
         title="Usage"
-        description="LLM API spend across all supported agents (currently only Claude Code and derivatives)."
+        description={
+          <span className="block max-w-[460px]">
+            LLM API spend across all supported agents (currently only Claude
+            Code and derivatives).
+          </span>
+        }
         actions={
           <div className="flex items-center gap-1">
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-sm"
               aria-label="Previous month"
               onClick={() => setMonth(monthStart(month, -1))}
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={16} className="text-muted-foreground" />
             </Button>
             <span className="min-w-[120px] text-center text-[14px] font-medium">
               {monthLabel}
             </span>
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-sm"
               aria-label="Next month"
               disabled={isCurrentMonth}
               onClick={() => setMonth(monthStart(month, 1))}
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={16} className="text-muted-foreground" />
             </Button>
           </div>
         }
       />
 
       {isError && (
-        <p className="text-[14px] text-muted-foreground">
-          Usage metrics are unavailable on this deployment.
-        </p>
+        <Card className="flex h-[240px] items-center justify-center p-5">
+          <p className="text-[14px] text-muted-foreground">
+            Usage metrics are unavailable on this deployment.
+          </p>
+        </Card>
       )}
-      {isPending && !isError && (
-        <p className="text-[14px] text-muted-foreground">Loading usage…</p>
-      )}
+      {isPending && !isError && <UsageSkeleton />}
       {data && (
         <div className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
-            <div className="text-[40px] font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
-              {formatUsd(total)}
+            <div className="font-mono text-[48px] font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+              {formatUsdCents(total)}
             </div>
           </section>
           {data.length === 0 ? (
             <section>
-              <SectionLabel spaced>Spend by model</SectionLabel>
-              <p className="text-[14px] text-muted-foreground">
-                No LLM calls in {monthLabel}.
-              </p>
+              <SectionLabel spaced>Spend by day</SectionLabel>
+              <Card className="flex h-[240px] items-center justify-center p-5">
+                <p className="text-[14px] text-muted-foreground">
+                  No LLM calls in {monthLabel}.
+                </p>
+              </Card>
             </section>
           ) : (
             <>
@@ -129,7 +136,7 @@ export function UsageView() {
               </section>
               <section>
                 <SectionLabel spaced>Spend by model</SectionLabel>
-                <Card className="p-4 text-[12px]">
+                <Card className="p-0">
                   <ModelSpendTable rows={data} />
                 </Card>
               </section>
@@ -145,6 +152,39 @@ export function UsageView() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Placeholder shell shown while the month's spend loads, shaped at the final
+ *  section heights so the layout doesn't jump when data lands. */
+function UsageSkeleton() {
+  return (
+    <div className="space-y-10">
+      <section>
+        <SectionLabel spaced>Total spend</SectionLabel>
+        <div className="h-[48px] w-40 animate-pulse rounded bg-muted" />
+      </section>
+      <section>
+        <SectionLabel spaced>Spend by day</SectionLabel>
+        <Card className="h-[240px] animate-pulse p-5" />
+      </section>
+      <section>
+        <SectionLabel spaced>Spend by model</SectionLabel>
+        <Card className="animate-pulse p-0">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-[50px] border-b border-border-hairline last:border-b-0" />
+          ))}
+        </Card>
+      </section>
+      <section>
+        <SectionLabel spaced>Spend by agent</SectionLabel>
+        <div className="flex flex-col gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-9 animate-pulse rounded bg-muted" />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
