@@ -12,6 +12,7 @@ import (
 // but observed status the controller derives from activity. Security context
 // is chart-only (config.AgentBase); scheduling is chart-wide except
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -52,11 +53,20 @@ type AgentSpec struct {
 	AgentHome string `json:"agentHome,omitempty"`
 
 	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+	// Selects among *container* runtimes only — rejected on the vm backend.
 	// +optional
 	RuntimeClassName string `json:"runtimeClassName,omitempty"`
 	// NodeSelector overrides the chart-wide node selector; empty = inherit.
+	// Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Backend selects the isolation substrate the agent workload runs on;
+	// nil = container. Immutable after create (enforced by the api-server,
+	// the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+	// instead of the agent StatefulSet; the paired gateway is unaffected.
+	// +optional
+	Backend *Backend `json:"backend,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -101,6 +111,26 @@ type AgentSpec struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	// +kubebuilder:validation:items:Pattern=`^(\*\.)?([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$`
 	L7Hosts []string `json:"l7Hosts,omitempty"`
+}
+
+// Backend is a discriminated union selecting the agent's isolation substrate
+// (K8s convention: `type` plus a sub-block named after the variant).
+// +kubebuilder:validation:XValidation:rule="self.type == 'vm' || !has(self.vm)",message="vm block requires type: vm"
+type Backend struct {
+	// +kubebuilder:validation:Enum=container;vm
+	Type string `json:"type"`
+	// VM carries vm-backend props; present only when type == "vm".
+	// +optional
+	VM *VMBackend `json:"vm,omitempty"`
+}
+
+// VMBackend is deliberately empty for now — scratch sizing and placement are
+// chart-level policy (config.VM); it exists so future vm-only props have a home.
+type VMBackend struct{}
+
+// IsVM reports whether the spec selects the vm backend.
+func (s *AgentSpec) IsVM() bool {
+	return s.Backend != nil && s.Backend.Type == "vm"
 }
 
 // Condition types on an Agent's status. Conditions are the source of truth for
@@ -182,7 +212,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=5
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=6
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

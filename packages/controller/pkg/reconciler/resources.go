@@ -82,6 +82,40 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
 
+// agentPlatformEnv is the platform wiring env shared by both backends: the
+// container backend projects it as pod env, the vm backend writes it into the
+// guest's /etc/platform/env via cloud-init. The agent holds zero platform
+// credentials either way. Inbound calls to agent-runtime's tRPC are gated by
+// the api-server's mesh AuthorizationPolicies; ALL outbound calls — external
+// hosts AND the harness API — cross the paired gateway pod, whose SPIFFE
+// principal (per-instance SA) is the identity the waypoint enforces.
+func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "HTTPS_PROXY", Value: proxyAddr},
+		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "https_proxy", Value: proxyAddr},
+		{Name: "http_proxy", Value: proxyAddr},
+		// Node doesn't read the system trust store, so it gets the cluster CA
+		// through NODE_EXTRA_CA_CERTS (which adds to its built-in CAs). Other
+		// tools (git, curl, Go) read the system store, where the agent
+		// entrypoint installs the CA. Python's certifi-based clients read
+		// neither, so the base image points SSL_CERT_FILE / REQUESTS_CA_BUNDLE
+		// at the merged system bundle — never set those here to the bare CA
+		// file, which would override the image and drop the public CAs.
+		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
+		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		{Name: "PLATFORM_AGENT_ID", Value: name},
+		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "HOME", Value: agentHome},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
+		// agent-runtime opens this SSE stream and materializes pod-files
+		// (gh hosts.yml today; more producers later) directly under HOME.
+		// Forks deliberately do NOT receive this env — see fork_resources.go.
+		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
+	}
+}
+
 // BuildAgentStatefulSet renders the agent half of the paired pod set.
 // The agent container holds zero credentials; egress credential
 // injection happens in the paired gateway pod, reached via HTTPS_PROXY.
@@ -143,46 +177,9 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 	podLabels["istio.io/dataplane-mode"] = "none"
 
-	caCertPath := "/etc/platform/ca/ca.crt"
-
 	proxyAddr := agentProxyAddr(cfg, gatewayClusterIP)
 
-	// The agent container holds zero platform credentials. Inbound calls to
-	// agent-runtime's tRPC are gated by the api-server's mesh
-	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
-	// harness API — cross the paired gateway pod.
-	//
-	// Identity for harness traffic comes from the gateway pod's
-	// SPIFFE principal (gateway runs as the per-instance SA). When the
-	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
-	// the connection with the gateway's principal, and the waypoint
-	// enforces principal == URL `:id`. The Envoy bootstrap routes
-	// harness traffic without ext_authz HITL gating and without
-	// credential-header injection.
-	env := []corev1.EnvVar{
-		{Name: "HTTPS_PROXY", Value: proxyAddr},
-		{Name: "HTTP_PROXY", Value: proxyAddr},
-		{Name: "https_proxy", Value: proxyAddr},
-		{Name: "http_proxy", Value: proxyAddr},
-		// Node doesn't read the system trust store, so it gets the cluster CA
-		// through NODE_EXTRA_CA_CERTS (which adds to its built-in CAs). Other
-		// tools (git, curl, Go) read the system store, where the agent
-		// entrypoint installs the CA. Python's certifi-based clients read
-		// neither, so the base image points SSL_CERT_FILE / REQUESTS_CA_BUNDLE
-		// at the merged system bundle — never set those here to the bare CA
-		// file, which would override the image and drop the public CAs.
-		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "PLATFORM_AGENT_ID", Value: name},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: agentHome},
-		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
-		// agent-runtime opens this SSE stream and materializes pod-files
-		// (gh hosts.yml today; more producers later) directly under HOME.
-		// Forks deliberately do NOT receive this env — see fork_resources.go.
-		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
-	}
+	env := agentPlatformEnv(name, cfg, agentHome, proxyAddr)
 	// Keeps the dam-vm tool doc in the agent's instructions; the entrypoint
 	// strips it otherwise (no VM host configured for this deployment).
 	if cfg.VMEnabled {
@@ -500,7 +497,10 @@ func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
 
 // BuildAgentService is the headless Service the api-server uses to reach the
 // agent pod's ACP/tRPC port. Selector pins to the pair key + role=agent so
-// the gateway pod (which carries the same instance label) is excluded.
+// the gateway pod (which carries the same instance label) is excluded. The
+// target port is numeric, not the named `acp` port: a vm backend's
+// virt-launcher pod matches the selector but declares no named ports, and a
+// named target would drop it from the endpoints.
 func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	selector := map[string]string{LabelPair: name, LabelRole: RoleAgent}
 	return &corev1.Service{
@@ -514,7 +514,7 @@ func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerRef
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  selector,
 			Ports: []corev1.ServicePort{{
-				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
+				Name: "acp", Port: 8080, TargetPort: intstr.FromInt32(8080),
 			}},
 		},
 	}

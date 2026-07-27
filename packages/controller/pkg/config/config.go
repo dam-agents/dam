@@ -44,6 +44,11 @@ type Config struct {
 	// Disabled by default.
 	WarmPool WarmPool
 
+	// VM configures the KubeVirt vm backend (spec.backend.type=vm). Threaded
+	// in via the AGENT_VM env var from Helm `virtualization.*`. Disabled by
+	// default — vm-backend agents then fail reconcile with a clear error.
+	VM VMConfig
+
 	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
 	// per-user Ceiling on concurrently reserved compute (#1900), applied when
 	// a user has no UserBudget CR. Threaded in via DEFAULT_USER_CPU_BUDGET /
@@ -338,6 +343,18 @@ func LoadFromEnv() (*Config, error) {
 		if err := dec.Decode(&cfg.WarmPool); err != nil {
 			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
 		}
+	}
+	if v := os.Getenv("AGENT_VM"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.VM); err != nil {
+			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
+		}
+	}
+	if cfg.VM.ScratchSize == "" {
+		cfg.VM.ScratchSize = "30Gi"
+	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
+		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
 	}
 	// Relayed from the controller's own process: whatever OTEL_* the chart (or
 	// an injector) set — the same env the controller's own SDK reads.

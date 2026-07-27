@@ -107,7 +107,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, name); err != nil {
+		if err := c.hibernate(ctx, name, isVMBackend(agent)); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -137,8 +137,12 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 // controller does not re-derive busy-ness from raw counters. A runtime too old
 // to report the flag parses as idle=false, i.e. busy, which fails safe.
 // Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
+//
+// Addressed via the headless agent Service (resolves to the single ready
+// backing pod) rather than the StatefulSet's `-0` pod DNS, so the same URL
+// reaches a container pod or a vm backend's virt-launcher pod.
 func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
-	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", agentName, agentName, c.config.Namespace)
+	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, c.config.Namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -162,18 +166,25 @@ func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
 	return !status.Idle
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name)
+func (c *IdleChecker) hibernate(ctx context.Context, name string, vmBackend bool) error {
+	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name, vmBackend)
+}
+
+// isVMBackend reads spec.backend.type off the unstructured agent.
+func isVMBackend(agent *unstructured.Unstructured) bool {
+	t, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
+	return t == "vm"
 }
 
 // hibernateAgentPair scales an agent's paired StatefulSets (agent + gateway,
-// both labelled LabelAgent=name) to zero and records the Hibernated phase on
-// the Agent status subresource. Scale-down never writes spec — run state is
-// derived from activity, not a stored desiredState. Idempotent: a StatefulSet
-// already at zero is left untouched. Shared by the idle checker (probe-gated
-// idleness) and the reconciler's hard-stop branch (#1900, user intent).
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string) error {
-	if err := scaleAgentPairToZero(ctx, kube, namespace, name); err != nil {
+// both labelled LabelAgent=name) to zero — plus any vm-backend
+// VirtualMachine — and records the Hibernated phase on the Agent status
+// subresource. Scale-down never writes spec — run state is derived from
+// activity, not a stored desiredState. Idempotent: a StatefulSet already at
+// zero is left untouched. Shared by the idle checker (probe-gated idleness)
+// and the reconciler's hard-stop branch (#1900, user intent).
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
+	if err := scaleAgentPairToZero(ctx, kube, dyn, namespace, name, vmBackend); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
@@ -187,9 +198,16 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 }
 
 // scaleAgentPairToZero scales an agent's paired StatefulSets to zero without
-// touching status. Idempotent; shared by hibernateAgentPair and the
-// reconciler's parked branch (which stamps OverBudget, not Hibernated).
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, namespace, name string) error {
+// touching status; for a vm-backend agent it also halts the VirtualMachine
+// (the VM analogue of replicas 0 — gated by the flag so container agents
+// never touch the kubevirt API). Idempotent; shared by hibernateAgentPair and
+// the reconciler's parked branch (which stamps OverBudget, not Hibernated).
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
+	if vmBackend {
+		if err := haltAgentVMs(ctx, dyn, namespace, name); err != nil {
+			return err
+		}
+	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,
 	})

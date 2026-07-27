@@ -15,7 +15,10 @@ const (
 	// per-template scheduling (GPU-passthrough Kata workloads).
 	// Agent gen 5: l7Hosts added to AgentSpec — per-agent L7 promotion
 	// replaces the owner-scoped allow-only marker Secrets (#2865).
-	AgentSchemaGeneration = 5
+	// Agent gen 6: backend added to AgentSpec — discriminated union selecting
+	// the isolation substrate (container | vm); vm reconciles a KubeVirt
+	// VirtualMachine instead of the agent StatefulSet.
+	AgentSchemaGeneration = 6
 	ForkSchemaGeneration  = 1
 	RunSchemaGeneration   = 1
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
