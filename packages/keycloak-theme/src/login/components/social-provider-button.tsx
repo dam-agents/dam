@@ -33,12 +33,9 @@ export function SocialProviderButton({ provider }: Props) {
           className="h-5 w-auto shrink-0"
         />
       )}
-      <span>
-        Continue with{" "}
-        <span
-          dangerouslySetInnerHTML={{ __html: kcSanitize(provider.displayName) }}
-        />
-      </span>
+      <span
+        dangerouslySetInnerHTML={{ __html: kcSanitize(provider.displayName) }}
+      />
     </a>
   );
 }
