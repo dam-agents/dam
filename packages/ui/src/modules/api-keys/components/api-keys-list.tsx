@@ -3,6 +3,7 @@ import { KeyRound } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useRevokeApiKey } from "../api/mutations.js";
@@ -42,7 +43,7 @@ export function ApiKeysList() {
       )}
 
       {isError && (
-        <div className="p-4 rounded-xl border-2 border-danger-light bg-danger-light">
+        <Callout tone="danger">
           <p className="text-[13px] text-danger font-semibold mb-1">
             Couldn't load API keys
           </p>
@@ -50,7 +51,7 @@ export function ApiKeysList() {
             The server returned an error. Try again or check your network
             connection.
           </p>
-        </div>
+        </Callout>
       )}
 
       {!isLoading && !isError && keys && keys.length === 0 && (

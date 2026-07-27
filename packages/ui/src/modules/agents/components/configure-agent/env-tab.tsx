@@ -1,5 +1,6 @@
 import { AlertTriangle, KeyRound, Lock } from "lucide-react";
 
+import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -72,14 +73,18 @@ export function EnvTab({
       <div className="flex flex-col gap-2">
         <SectionLabel>Custom</SectionLabel>
         {warnings.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-md border-2 border-warning bg-warning-light px-3 py-2 text-[12px]">
+          <Callout
+            tone="warning"
+            size="sm"
+            className="flex flex-col gap-1 text-[12px]"
+          >
             <div className="flex items-center gap-2 text-warning">
               <AlertTriangle size={12} />
               <span className="font-bold uppercase tracking-[0.05em] text-[10px]">
                 Shadowing inherited values
               </span>
             </div>
-            <ul className="list-disc pl-5 text-text-muted">
+            <ul className="list-disc pl-5 text-muted-foreground">
               {warnings.map((w) => (
                 <li key={w.envName}>
                   <span className="font-mono">{w.envName}</span> shadows{" "}
@@ -87,7 +92,7 @@ export function EnvTab({
                 </li>
               ))}
             </ul>
-          </div>
+          </Callout>
         )}
         <EnvVarsEditor
           value={envVars}
