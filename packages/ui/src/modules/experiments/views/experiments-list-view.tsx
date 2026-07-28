@@ -21,6 +21,7 @@ export function ExperimentsListView() {
   const { data: agentsData } = useAgents();
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const setView = useStore((s) => s.setView);
   const deleteExperiment = useDeleteExperiment();
   const [deleteTarget, setDeleteTarget] = useState<LineageRow | null>(null);
 
@@ -40,7 +41,7 @@ export function ExperimentsListView() {
         title="Experiments"
         description={
           groups.length > 0
-            ? "Loop scripts the platform observes live, grouped by the sandbox running them. Open one to land in its chat — the experiment graph docks beside the conversation."
+            ? "Experiments are grouped by the sandbox running them. Open a sandbox to work with it in chat, where the experiment graph docks beside the conversation."
             : undefined
         }
         actions={
@@ -68,7 +69,7 @@ export function ExperimentsListView() {
         </Card>
       )}
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-9">
         {initialLoaded &&
           groups.map((group) => (
             <SandboxGroupCard
@@ -79,6 +80,21 @@ export function ExperimentsListView() {
             />
           ))}
       </div>
+
+      {initialLoaded && groups.length > 0 && (
+        <p className="mt-6 text-[13px] text-muted-foreground">
+          Deleting a sandbox doesn&apos;t delete its experiments — the runs and
+          their published results stay in the{" "}
+          <button
+            type="button"
+            onClick={() => setView("artifacts")}
+            className="text-accent hover:underline"
+          >
+            artifact library
+          </button>
+          .
+        </p>
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}
