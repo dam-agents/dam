@@ -36,12 +36,16 @@ export function useExperimentsAmbient() {
 
 /** The Experiments destination rows: driver agents + what they're doing.
  *  Refresh-on-open like every list. */
-export function useDriverSummaries() {
+export function useDriverSummaries(opts?: { silent?: boolean }) {
   return useQuery({
     ...trpc.experiments.driverSummaries.queryOptions(),
     refetchOnMount: "always",
     staleTime: 0,
-    meta: { errorToast: "Couldn't load experiments" },
+    // Ambient consumers (row subtitles) degrade the segment instead of
+    // toasting about a page the user isn't on.
+    ...(opts?.silent
+      ? {}
+      : { meta: { errorToast: "Couldn't load experiments" } }),
   });
 }
 

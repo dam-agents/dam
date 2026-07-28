@@ -27,7 +27,9 @@ Knowledge Bases is a feature-gated destination ([features](features.md)) with a 
 
 Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, fails silently), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. The greeting mechanism is shared with experiments.
 
-Two known gaps, both about the create being non-transactional. The greeting races the bootstrap: it fires once the agent is running, but the Install Command lands after Ready, so a very fast open can run `/wiki-onboard` before it exists. Experiments close this by waiting for their authoring skill to be reported present; a KB has nothing equivalent to probe, because its onboarding artifact is a *command* and that read covers only skills. Separately, the marker is stamped by the agent create while the install event is enqueued after it, so a failure in between leaves a marked agent whose setup never ran — indistinguishable in the lists from a healthy one, since no setup state is surfaced.
+One known gap: the greeting races the bootstrap. It fires once the agent is running, but the Install Command lands after Ready, so a very fast open can run `/wiki-onboard` before it exists. Experiments close this by waiting for their authoring skill to be reported present; a KB has nothing equivalent to probe, because its onboarding artifact is a *command* and that read covers only skills.
+
+The create itself is compensated rather than transactional: the marker is stamped by the agent create while the install event is enqueued after it, and a failed enqueue deletes the fresh agent and surfaces the failure — so a marked agent whose setup never ran can only arise if that compensating delete itself fails.
 
 Lifecycle actions (wake, restart, pause, stop, delete) are the standard agent actions.
 

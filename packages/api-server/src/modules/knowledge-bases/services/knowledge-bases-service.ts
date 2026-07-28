@@ -13,7 +13,7 @@ import { buildKnowledgeBaseInstallCommand } from "../domain/install-command.js";
 
 export function createKnowledgeBasesService(deps: {
   owner: string;
-  agents: Pick<AgentsService, "create">;
+  agents: Pick<AgentsService, "create" | "delete">;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   now?: () => Date;
