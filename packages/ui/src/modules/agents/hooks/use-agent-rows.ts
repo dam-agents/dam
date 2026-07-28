@@ -34,7 +34,7 @@ export function useAgentRows() {
   const connections = useAppConnections();
   // Experiment-kinded rows lead their subtitle with how many named experiments
   // they drive (#3001); one cached query, shared with the Experiments page.
-  const { data: driverSummaries } = useDriverSummaries();
+  const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);

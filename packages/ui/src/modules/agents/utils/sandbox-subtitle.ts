@@ -50,16 +50,20 @@ export function sandboxSubtitle(
   },
 ): string {
   if (agent.kind === "experiment") {
-    return joinSubtitleSegments([
+    const kinded = joinSubtitleSegments([
       experimentCountLabel(extras?.experimentCount),
       catalogConnectionsLabel(agent, lookup),
     ]);
+    // Mid-load with no connections the line would otherwise be blank.
+    return kinded || sandboxSubtitleParts(agent, lookup).harness;
   }
   if (agent.kind === "knowledge-base") {
-    return joinSubtitleSegments([
+    const kinded = joinSubtitleSegments([
       kbTemplateName(agent.kbTemplateId),
       catalogConnectionsLabel(agent, lookup),
     ]);
+    // A KB from before the template id was recorded can have no segments.
+    return kinded || sandboxSubtitleParts(agent, lookup).harness;
   }
   const { harness, provider } = sandboxSubtitleParts(agent, lookup);
   return joinSubtitleSegments([harness, provider]);
