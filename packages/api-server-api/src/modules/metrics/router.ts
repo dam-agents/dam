@@ -5,7 +5,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   metricsOverviewInputSchema,
-  metricsSpendInputSchema,
+  metricsSpendBreakdownInputSchema,
 } from "./schemas.js";
 
 // Ownership is enforced in the service (it resolves the caller's owned agent
@@ -18,7 +18,11 @@ export const metricsRouter = t.router({
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.metrics.overview(input);
     }),
-  spend: readAgentProcedure
-    .input(metricsSpendInputSchema)
-    .query(({ ctx, input }) => ctx.metrics.spend(input)),
+  // One read backs the whole Usage tab: per-model, per-agent, and per-day spend
+  // over [from, to). Collapsed from three procedures so ownership resolves once
+  // per page load (one agent-list + scope check, not three) and the client gets
+  // a single loading/error state.
+  spendBreakdown: readAgentProcedure
+    .input(metricsSpendBreakdownInputSchema)
+    .query(({ ctx, input }) => ctx.metrics.spendBreakdown(input)),
 });

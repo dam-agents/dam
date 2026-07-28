@@ -26,6 +26,8 @@ function spyReader(): {
     windows,
     reader: {
       tokenSpendByModel: (ids, w) => record(ids, w),
+      spendByAgent: (ids, w) => record(ids, w),
+      spendByDay: (ids, w) => record(ids, w),
       runtimeBySession: (ids, w) => record(ids, w),
       contextPerCall: (ids, w) => record(ids, w),
       close: async () => {},
@@ -83,34 +85,70 @@ describe("metrics ownership gate", () => {
     expect(calls).toEqual([]);
   });
 
-  it("spend scopes to all owned agents and passes the range through", async () => {
+  it("spendBreakdown resolves ownership once, then scopes all three reads to the owned agents and passes the range through", async () => {
     const { reader, calls, windows } = spyReader();
-    const svc = createMetricsService({ reader, listOwnedAgentIds: owned });
-    await svc.spend({
+    let scopeResolutions = 0;
+    const svc = createMetricsService({
+      reader,
+      listOwnedAgentIds: () => {
+        scopeResolutions++;
+        return owned();
+      },
+    });
+    await svc.spendBreakdown({
       from: "2026-07-01T00:00:00.000Z",
       to: "2026-08-01T00:00:00.000Z",
+      timeZone: "America/New_York",
     });
-    expect(calls).toEqual([["agent-a", "agent-b"]]);
-    expect(windows).toEqual([
-      {
+    // One ownership resolution for the whole tab, not three.
+    expect(scopeResolutions).toBe(1);
+    // The three rollups (byModel, byAgent, byDay) all run under that scope.
+    expect(calls).toEqual(Array(3).fill(["agent-a", "agent-b"]));
+    expect(windows).toEqual(
+      Array(3).fill({
         fromIso: "2026-07-01T00:00:00.000Z",
         toIso: "2026-08-01T00:00:00.000Z",
-      },
-    ]);
+      }),
+    );
   });
 
-  it("spend returns nothing when the caller owns no agents", async () => {
+  it("spendBreakdown forwards the timezone to the per-day reader", async () => {
+    const zones: string[] = [];
+    const svc = createMetricsService({
+      reader: {
+        tokenSpendByModel: async () => [],
+        spendByAgent: async () => [],
+        spendByDay: async (_ids, _w, tz) => {
+          zones.push(tz);
+          return [];
+        },
+        runtimeBySession: async () => [],
+        contextPerCall: async () => [],
+        close: async () => {},
+      },
+      listOwnedAgentIds: owned,
+    });
+    await svc.spendBreakdown({
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-08-01T00:00:00.000Z",
+      timeZone: "Europe/Prague",
+    });
+    expect(zones).toEqual(["Europe/Prague"]);
+  });
+
+  it("spendBreakdown returns empty rollups and never queries when the caller owns no agents", async () => {
     const { reader, calls } = spyReader();
     const svc = createMetricsService({
       reader,
       listOwnedAgentIds: () => Promise.resolve([]),
     });
     expect(
-      await svc.spend({
+      await svc.spendBreakdown({
         from: "2026-07-01T00:00:00.000Z",
         to: "2026-08-01T00:00:00.000Z",
+        timeZone: "America/New_York",
       }),
-    ).toEqual([]);
+    ).toEqual({ byModel: [], byAgent: [], byDay: [] });
     expect(calls).toEqual([]);
   });
 
@@ -118,9 +156,10 @@ describe("metrics ownership gate", () => {
     const svc = createDisabledMetricsService();
     await expect(svc.overview(query)).rejects.toThrow(/not enabled/);
     await expect(
-      svc.spend({
+      svc.spendBreakdown({
         from: "2026-07-01T00:00:00.000Z",
         to: "2026-08-01T00:00:00.000Z",
+        timeZone: "America/New_York",
       }),
     ).rejects.toThrow(/not enabled/);
   });

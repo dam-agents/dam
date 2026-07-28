@@ -12,6 +12,7 @@
   --color-surface-raised: var(--c-surface-raised);
   --color-border: var(--border-ui);
   --color-border-light: var(--c-border-light);
+  --color-border-hairline: var(--c-border-hairline);
   --color-text: var(--c-text);
   --color-text-secondary: var(--c-text-secondary);
   --color-text-muted: var(--c-text-muted);
@@ -104,6 +105,7 @@
   --c-surface-raised: #f5f5f4;
   --c-border: #292524;
   --c-border-light: #dde1e6;
+  --c-border-hairline: #ecedf0;
   --c-text: #121619;
   --c-text-secondary: #57534e;
   --c-text-muted: #a8a29e;
@@ -154,6 +156,7 @@
   --c-surface-raised: #262626;
   --c-border: #78716c;
   --c-border-light: #393939;
+  --c-border-hairline: #2a2a2a;
   --c-text: #fafaf9;
   --c-text-secondary: #d6d3d1;
   --c-text-muted: #78716c;

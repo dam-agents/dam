@@ -1,12 +1,9 @@
-import type {
-  CallContext,
-  SessionRuntime,
-  TokenSpendByModel,
-} from "api-server-api";
+import type { CallContext, SessionRuntime } from "api-server-api";
 import { useState } from "react";
 
 import { useMetricsOverview } from "../api/queries.js";
 import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
+import { ModelSpendTable } from "./model-spend-table.js";
 
 interface Props {
   agentId: string | null;
@@ -143,46 +140,6 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     <h3 className="mt-4 mb-2 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted first:mt-0">
       {children}
     </h3>
-  );
-}
-
-export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
-  return (
-    <table className="w-full border-collapse tabular-nums">
-      <thead>
-        <tr className="text-[10px] uppercase tracking-wide text-text-muted">
-          <th className="py-1 text-left font-medium">Model</th>
-          <th className="py-1 text-right font-medium">In</th>
-          <th className="py-1 text-right font-medium">Out</th>
-          <th className="py-1 text-right font-medium">Cost</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.model} className="border-t border-border-light">
-            <td
-              className="max-w-0 w-full truncate py-1 pr-2 font-mono text-text-secondary"
-              title={row.model}
-            >
-              {row.model}
-            </td>
-            {/* Cache reads dominate agent traffic; fold them into "in" so the
-                column reflects what actually entered the context. */}
-            <td className="py-1 pl-2 text-right font-mono">
-              {formatTokens(
-                row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens,
-              )}
-            </td>
-            <td className="py-1 pl-2 text-right font-mono">
-              {formatTokens(row.outputTokens)}
-            </td>
-            <td className="py-1 pl-2 text-right font-mono font-medium">
-              {formatUsd(row.costUsd)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 

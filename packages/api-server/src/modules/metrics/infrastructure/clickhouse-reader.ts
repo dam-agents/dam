@@ -2,6 +2,8 @@ import { type ClickHouseClient, createClient } from "@clickhouse/client";
 import type {
   CallContext,
   SessionRuntime,
+  SpendByAgent,
+  SpendByDay,
   TokenSpendByModel,
 } from "api-server-api";
 import type {
@@ -128,6 +130,52 @@ export function createClickhouseReader(
         cacheCreationTokens: n(x.cacheCreationTokens),
         costUsd: n(x.costUsd),
       })) satisfies TokenSpendByModel[];
+    },
+
+    async spendByAgent(agentIds, window) {
+      // Group on the trusted, gateway-stamped agent id. The display name is
+      // read from the telemetry itself — argMax picks the latest
+      // `platform.agent.name` seen in range — so a since-deleted agent still
+      // shows its last known name. The name is display-only; the id is the key.
+      const r = await rows(
+        `SELECT
+           ResourceAttributes['platform.agent.id'] AS agentId,
+           argMax(ResourceAttributes['platform.agent.name'], Timestamp) AS agentName,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY agentId
+         ORDER BY costUsd DESC`,
+        windowParams(agentIds, window),
+      );
+      return r.map((x) => ({
+        agentId: String(x.agentId ?? ""),
+        agentName: String(x.agentName ?? ""),
+        costUsd: n(x.costUsd),
+      })) satisfies SpendByAgent[];
+    },
+
+    async spendByDay(agentIds, window, timeZone) {
+      // Bucket each call into a wall-clock day in the caller's timezone:
+      // toTimeZone shifts the UTC Timestamp into `tz`, toDate truncates to that
+      // local calendar day. The [from, to) instants already bound the window;
+      // grouping by local day may pull in a call whose UTC day differs, which
+      // is exactly what "the user's calendar" means. Output is sparse — only
+      // days that actually had calls — and the client zero-fills the month.
+      const r = await rows(
+        `SELECT
+           toDate(toTimeZone(Timestamp, {timeZone:String})) AS day,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY day
+         ORDER BY day`,
+        { ...windowParams(agentIds, window), timeZone },
+      );
+      return r.map((x) => ({
+        day: String(x.day ?? ""),
+        costUsd: n(x.costUsd),
+      })) satisfies SpendByDay[];
     },
 
     async runtimeBySession(agentIds, window) {

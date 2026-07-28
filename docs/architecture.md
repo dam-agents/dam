@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-07-20
+Last verified: 2026-07-24
 
 ## System context
 
@@ -71,6 +71,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link on a dedicated share host, with folders, expiry, and versions.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
+- [metrics](architecture/metrics.md) — the user-facing spend read path: owner-scoped tRPC reads over the telemetry store backing the Settings Usage tab, failing closed when the backend is disabled.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh rather than ingestion tokens.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
