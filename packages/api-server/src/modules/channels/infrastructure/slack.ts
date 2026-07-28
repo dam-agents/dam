@@ -2482,7 +2482,8 @@ export function createSlackWorker(
 
       let messageTs = query.messageTs;
       if (!messageTs) {
-        const turn = resolveTurn(instanceName);
+        // Message-level target, same granularity as react.
+        const turn = resolveTurn(instanceName, "react");
         if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
         if ("none" in turn) {
           return {
