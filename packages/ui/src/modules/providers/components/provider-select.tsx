@@ -14,9 +14,6 @@ import { type ProviderRef, providerRef } from "./provider-item.js";
 interface Props {
   selected: ProviderRef | null;
   onSelect: (ref: ProviderRef) => void;
-  /** Gate for switching away from an already-selected provider (Configure's
-   *  warning). Resolve false to keep the current one. Not consulted on first
-   *  selection or when the pick goes through the connect dialog. */
   confirmSwitch?: () => Promise<boolean>;
   autoSelectFirst?: boolean;
   disabled?: boolean;
@@ -26,9 +23,6 @@ interface Props {
   recommended?: ProviderPresetType;
 }
 
-/** Single-select for the sandbox's provider — a sandbox uses exactly one, so
- *  picking another replaces it. Providers without a key show "Connect" and
- *  open the key dialog; a saved key selects that provider directly. */
 export function ProviderSelect({
   selected,
   onSelect,
@@ -38,19 +32,16 @@ export function ProviderSelect({
   allow,
   recommended,
 }: Props) {
-  const { itemByType, isPending } = useProviderItems();
+  const { itemByType, typeByConnectionId, isPending } = useProviderItems();
   const [connecting, setConnecting] = useState<ProviderPresetType | null>(null);
   const rows = useMemo(
     () => offeredProviderRows(allow, recommended),
     [allow, recommended],
   );
 
-  const selectedType = useMemo(() => {
-    if (!selected) return null;
-    for (const [type, item] of itemByType)
-      if (item.id === selected.id) return type;
-    return null;
-  }, [itemByType, selected]);
+  const selectedType = selected
+    ? (typeByConnectionId.get(selected.id) ?? null)
+    : null;
 
   // Only acts while empty so a just-connected provider isn't nulled out during
   // the list refetch.

@@ -13,17 +13,10 @@ export interface RichSelectOption<T extends string = string> {
   value: T;
   title: string;
   description?: string;
-  /** Icon on the menu row (compact). */
   icon?: ReactNode;
-  /** Icon in the closed control while selected; falls back to `icon`. */
   triggerIcon?: ReactNode;
-  /** Rendered after the title on the menu row (e.g. "Recommended"). */
   badge?: ReactNode;
-  /** Rendered after the title in the closed control while selected
-   *  (e.g. a status badge). */
   triggerBadge?: ReactNode;
-  /** Right-aligned affordance on the menu row (e.g. "Connect"). Hidden on
-   *  the selected row, which shows a check instead. */
   trailing?: ReactNode;
   testId?: string;
 }
@@ -31,17 +24,14 @@ export interface RichSelectOption<T extends string = string> {
 interface Props<T extends string> {
   options: readonly RichSelectOption<T>[];
   value: T | null;
-  /** Fires for any option, selected or not — the caller decides whether the
-   *  pick selects, needs a confirmation, or opens a side flow first. */
+  /** Fires for any option, even the selected one — the caller decides
+   *  whether a pick selects, confirms, or opens a side flow. */
   onSelect: (value: T) => void;
   placeholder: string;
   disabled?: boolean;
   testId?: string;
 }
 
-/** Single-select over options too rich for a native `<select>` — each option
- *  carries an icon, title, description, and an optional trailing affordance.
- *  The closed control is a card showing the selected option in full. */
 export function RichSelect<T extends string>({
   options,
   value,
@@ -58,7 +48,7 @@ export function RichSelect<T extends string>({
           type="button"
           disabled={disabled}
           data-testid={testId}
-          className="group flex w-full items-center gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground"
+          className="group flex min-h-[76px] w-full items-center gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground"
         >
           {selected ? (
             <>
@@ -96,8 +86,7 @@ export function RichSelect<T extends string>({
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
-            // Radix emits role="menuitem"; radio semantics announce the
-            // selection state a plain menu item lacks.
+            // Radix's default menuitem role hides which option is selected
             role="menuitemradio"
             aria-checked={option.value === value}
             textValue={option.title}

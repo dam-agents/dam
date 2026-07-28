@@ -8,8 +8,6 @@ import { type ProviderItem, providerRef } from "./provider-item.js";
 import { ProviderRow } from "./provider-row.js";
 import { useProviderActions } from "./use-provider-actions.js";
 
-/** Settings → Providers: the global credential store. Sandboxes pick one of
- *  these via {@link ProviderSelect}; this page only manages the keys. */
 export function ProviderSection() {
   const { itemByType, isPending } = useProviderItems();
   const providerActions = useProviderActions();

@@ -21,8 +21,6 @@ interface Props {
   onRemoveKey: () => void;
 }
 
-/** Settings → Providers row: the global credential per provider. Connected
- *  rows manage the key via the ⋮ menu; the rest offer Connect. */
 export function ProviderRow({
   type,
   description,

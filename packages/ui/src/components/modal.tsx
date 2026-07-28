@@ -122,10 +122,19 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     if (!container) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    if (!container.contains(document.activeElement)) {
-      const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      first?.focus();
-    }
+    // A spawning menu's focus trap stays alive through its exit animation and
+    // refocuses its trigger at the end — a single focus() loses. Re-assert
+    // briefly (same workaround as inline-name-row.tsx).
+    let grabRaf = 0;
+    let grabTicks = 0;
+    const grab = () => {
+      if (!container.contains(document.activeElement)) {
+        const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+        first?.focus();
+      }
+      if (++grabTicks < 30) grabRaf = requestAnimationFrame(grab);
+    };
+    grab();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
@@ -152,6 +161,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
 
     container.addEventListener("keydown", onKey);
     return () => {
+      cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };

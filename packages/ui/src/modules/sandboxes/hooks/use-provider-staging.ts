@@ -6,8 +6,8 @@ import type { ProviderRef } from "../../providers/components/provider-item.js";
 interface Args {
   apps: readonly ConnectionView[];
   assignedAppIds: string[];
-  /** Read at call time, not render time — a confirm dialog can hold
-   *  `selectProvider` open across background grant refetches. */
+  /** Read at call time — a confirm dialog can hold `selectProvider` open
+   *  across background grant refetches. */
   getAssignedAppIds: () => string[];
   setAssignedAppIds: (ids: string[]) => void;
 }

@@ -6,8 +6,6 @@ import { useAppConnections } from "../../connections/api/queries.js";
 import type { ProviderItem } from "../components/provider-item.js";
 import { PROVIDER_ROWS } from "../lib/provider-rows.js";
 
-/** The user's provider credentials, keyed by preset type — one connection per
- *  provider (the first one wins if several exist). */
 export function useProviderItems() {
   const { data: connections = [], isPending } = useAppConnections();
 
@@ -25,5 +23,16 @@ export function useProviderItems() {
     return m;
   }, [connections]);
 
-  return { itemByType, isPending };
+  // itemByType keeps one connection per preset, but a sandbox may hold a
+  // different connection of the same preset — resolve those by id.
+  const typeByConnectionId = useMemo(() => {
+    const m = new Map<string, ProviderPresetType>();
+    for (const c of connections) {
+      const preset = providerTypeForTemplateId(c.templateId);
+      if (preset) m.set(c.id, preset);
+    }
+    return m;
+  }, [connections]);
+
+  return { itemByType, typeByConnectionId, isPending };
 }
