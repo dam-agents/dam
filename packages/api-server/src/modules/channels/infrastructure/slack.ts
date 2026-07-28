@@ -7,6 +7,10 @@ import {
   type AgentsService,
 } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
+import {
+  classifyInboundAttachment,
+  type InboundAttachment,
+} from "../inbound-image.js";
 import type {
   ChannelReaction,
   ChannelReply,
@@ -247,6 +251,27 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
+/** Why a downloaded attachment never became a prompt block, in words the
+ *  sender can act on. A rejected attachment is worth explaining rather than
+ *  dropping: the harness would otherwise hand the model an unreadable blob and
+ *  the agent would answer with an internal resize error (#3008). */
+async function unreadableImageCopy(
+  gw: SlackGateway,
+  attachment: Exclude<InboundAttachment, { kind: "image" }>,
+): Promise<string> {
+  if (attachment.kind === "unreadable") {
+    return `it is ${attachment.description}. The agent reads PNG, JPEG, GIF and WebP images.`;
+  }
+  const scopes = await grantedScopes(gw);
+  return scopes && !scopes.has("files:read")
+    ? "Slack returned a web page instead of the file — this install lacks the " +
+        "`files:read` permission, so it cannot download attachments. Reinstall " +
+        "the app with that scope and send the image again."
+    : "Slack returned a web page instead of the file, so the agent never saw " +
+        "the image. That usually means the app cannot download attachments in " +
+        "this conversation — check that it is still installed and can read files.";
+}
+
 async function fetchSlackImages(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
@@ -265,14 +290,41 @@ async function fetchSlackImages(
     const failures: FetchedFailure[] = [];
     for (const f of imageFiles) {
       try {
-        const buf = await gateway.downloadFile(f.url_private);
-        const data = Buffer.from(buf).toString("base64");
+        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        // Slack's own label is a hint, not a fact: a download can return a
+        // page instead of the file, and `image/*` covers formats no harness
+        // decodes. Trust the bytes — and their sniffed type, so a mislabelled
+        // upload still reaches the agent.
+        const attachment = classifyInboundAttachment(bytes);
+        if (attachment.kind !== "image") {
+          getLogger().warn(
+            {
+              file: f.name,
+              claimedMimeType: f.mimetype,
+              bytes: bytes.length,
+              verdict: attachment.kind,
+            },
+            "slack.image.unreadable",
+          );
+          failures.push({
+            name: f.name,
+            reason: await unreadableImageCopy(gateway, attachment),
+          });
+          continue;
+        }
         images.push({
-          block: { type: "image", data, mimeType: f.mimetype },
+          block: {
+            type: "image",
+            data: bytes.toString("base64"),
+            mimeType: attachment.mimeType,
+          },
           meta: { name: f.name, size: f.size },
         });
       } catch (err) {
-        failures.push({ name: f.name, reason: formatError(err) });
+        failures.push({
+          name: f.name,
+          reason: `${formatError(err)}. Try resending.`,
+        });
       }
     }
     return { kind: "ok", images, failures };
@@ -1592,7 +1644,7 @@ export function createSlackWorker(
         event.channel,
         slackUserId,
         event.threadTs,
-        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
+        `Couldn't use attached image '${f.name}': ${f.reason}`,
       );
     }
     return images;
