@@ -17,6 +17,18 @@ RUN --mount=type=cache,target=/root/.npm \
       "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
     find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
+# Claude Code phones home (usage telemetry to Statsig, error logs to Datadog
+# intake) — traffic the gateway egress chain would surface for approval. The
+# umbrella flag plus its explicit constituents turn all of it off; the
+# auto-updater loss is intentional since the harness version is pinned above.
+# Platform OTEL export is a separate, opt-in path and is unaffected.
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    DISABLE_TELEMETRY=1 \
+    DISABLE_ERROR_REPORTING=1 \
+    DISABLE_FEEDBACK_COMMAND=1 \
+    DISABLE_FEEDBACK_SURVEY=1 \
+    DISABLE_AUTOUPDATER=1
+
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
