@@ -3,13 +3,8 @@ import type { LocalSkill } from "api-server-api";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-/**
- * "Included with sandbox image" — Local Skills the sandbox image shipped
- * (`origin: system` / `system-modified`), segregated from the user's own so
- * "Created in this sandbox" only shows what the user actually authored
- * (#2828). Read-only: no publish (blocked server-side too) and no kebab —
- * these skills are the image's, not the user's.
- */
+/** Image-shipped Local Skills, split out of "Created in this sandbox"
+ *  (#2828). Read-only — publish is also blocked server-side. */
 export function BuiltInSkillsGroup({ skills }: { skills: LocalSkill[] }) {
   return (
     <section>
@@ -29,9 +24,7 @@ export function BuiltInSkillsGroup({ skills }: { skills: LocalSkill[] }) {
   );
 }
 
-/** A `system-modified` row is pilled: its on-disk copy has diverged from the
- *  image (an edit in the sandbox, or a template upgrade moving the image
- *  ahead). */
+/** Pilled when the on-disk copy has diverged from the image. */
 function BuiltInSkillRow({
   skill,
   withDivider,

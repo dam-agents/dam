@@ -81,10 +81,7 @@ export function SkillsSurface({
 
   const publishableSources = sources.filter((s) => s.canPublish);
 
-  // Provenance split (#2828): image-shipped skills get their own read-only
-  // group so "Created in this sandbox" only shows what the user authored.
-  // No origin (an agent image predating classification) counts as
-  // user-authored — the pre-provenance behavior.
+  // Missing origin (pre-provenance agent image) counts as user-authored.
   const createdHere = standalone.filter(
     (s) => s.origin === undefined || s.origin === "user",
   );

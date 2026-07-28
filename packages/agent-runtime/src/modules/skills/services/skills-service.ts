@@ -27,10 +27,8 @@ export interface SkillsServiceDeps {
   /** Read-side paths (listLocal / readLocal / publish), from the manifest's
    *  skill-ref driver. install / uninstall get theirs from the driver. */
   skillPaths: SkillPath[];
-  /** Image-side counterparts of `skillPaths` — the same manifest paths
-   *  expanded against the image's pristine workspace root instead of $HOME.
-   *  listLocal judges each skill's `origin` against them; paths that don't
-   *  exist on the image are harmless (everything classifies as `user`). */
+  /** Image-side counterparts of `skillPaths`, listLocal's origin reference.
+   *  Nonexistent dirs are harmless — everything classifies as `user`. */
   pristineSkillPaths: SkillPath[];
   /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;

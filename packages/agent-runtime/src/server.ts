@@ -84,13 +84,9 @@ const runtimeManifest = loadManifest(manifestPath);
 // Boot-time module composition. Skills + Files services are stable across the
 // lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
-// Origin classification compares each on-PVC skill against the image's
-// pristine copy of the same manifest path — $HOME re-expanded against the
-// image workspace root the first-boot seed copies from. Only $HOME-relative
-// manifest paths have a pristine counterpart; a fixed absolute path would
-// re-expand to itself and compare every skill against its own directory.
-// In dev (or on an image that bakes no skills) the pristine dirs simply
-// don't exist and every Local Skill classifies as user-authored.
+// Pristine counterparts for origin classification. The filter drops
+// non-$HOME manifest paths — those re-expand to themselves and would
+// compare a skill against its own directory.
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const pristineSkillPaths = skillRefPaths(
   runtimeManifest,

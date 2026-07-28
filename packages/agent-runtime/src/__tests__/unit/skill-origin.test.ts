@@ -95,8 +95,7 @@ describe("listLocal origin classification", () => {
   });
 
   it("matches on directory name even when frontmatter names differ", async () => {
-    // Identity is the directory basename (what install/dedupe key on); a
-    // frontmatter rename alone is a content change, not a new identity.
+    // A frontmatter rename is a content change, not a new identity.
     await writeSkill(pristine[0], "tool", skillMd("tool"));
     await writeSkill(local[0], "tool", skillMd("renamed-tool"));
 

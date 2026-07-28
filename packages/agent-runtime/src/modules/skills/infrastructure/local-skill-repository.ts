@@ -23,11 +23,9 @@ const COMMAND_TIMEOUT_MS = 60_000;
 
 export interface LocalSkillRepository {
   /** First-wins listing across skillPaths, dot-prefixed entries skipped,
-   *  frontmatter parsed via the 8 KB fast-path. With `pristinePaths` (the
-   *  image-side counterparts of the skill paths), each skill is stamped with
-   *  an `origin` judged against the image's pristine copy; without them the
-   *  listing carries no origin (callers that only need names, e.g. the
-   *  writeLocal collision guard, skip the classification cost). */
+   *  frontmatter parsed via the 8 KB fast-path. With `pristinePaths`, each
+   *  skill is stamped with an `origin`; without them the listing carries
+   *  none (name-only callers skip the classification cost). */
   listLocal: (
     skillPaths: SkillPath[],
     pristinePaths?: SkillPath[],
@@ -101,9 +99,7 @@ export interface LocalSkillRepository {
 }
 
 export function createLocalSkillRepository(): LocalSkillRepository {
-  // The image is immutable for the life of the process, so pristine-side
-  // skill hashes are computed at most once per directory. A directory absent
-  // from the image memoizes as null.
+  // Image is immutable in-process: pristine hashes memoize once per dir.
   const pristineHashes = new Map<string, Promise<string | null>>();
   return {
     listLocal: (skillPaths, pristinePaths) =>
@@ -180,14 +176,9 @@ async function list(
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * Classify a Local Skill against the image's pristine workspace copy — the
- * directory the first-boot seed copied onto the PVC. Identity is the
- * directory basename (the same identity the listing dedupes on); the verdict
- * itself is the domain's {@link judgeOrigin}. This adapter only acquires the
- * hashes: the counterpart's from the first pristine path that has one, the
- * local one lazily (skipped when there is nothing to compare against).
- */
+/** Identity is the directory basename (what install/dedupe key on); the
+ *  verdict is the domain's {@link judgeOrigin} — this only acquires hashes,
+ *  the local one lazily. */
 async function classifyOrigin(
   dirName: string,
   localDir: string,
@@ -221,8 +212,7 @@ async function firstPristineHash(
   return null;
 }
 
-/** `hashSkillDir` for a directory that may not exist — null when absent (or
- *  unreadable, which for the image-side copy amounts to the same thing). */
+/** null when the directory is absent or unreadable. */
 async function hashSkillDirIfPresent(absDir: string): Promise<string | null> {
   try {
     if (!(await fs.stat(absDir)).isDirectory()) return null;

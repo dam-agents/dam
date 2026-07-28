@@ -8,9 +8,8 @@ import { createSkillsService } from "./services/skills-service.js";
 export interface ComposeSkillsOptions {
   /** Skill paths from the manifest's skill-ref driver ($HOME expanded). */
   skillPaths: string[];
-  /** The same skill-ref paths expanded against the image's pristine workspace
-   *  root (`/app/working-dir`) instead of $HOME — listLocal's reference for
-   *  skill origin classification. */
+  /** skill-ref paths re-expanded against the image workspace root —
+   *  listLocal's origin-classification reference. */
   pristineSkillPaths: string[];
   /** Wall-clock provider. Defaults to `() => new Date()`. Tests inject a
    *  fixed clock to pin publish branch timestamps. */
