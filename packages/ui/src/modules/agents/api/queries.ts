@@ -61,6 +61,8 @@ export function useAgentRunState(
  * references (artifact attribution, approvals) deliberately outlive their
  * agent, so a deleted agent's id is the only attribution left.
  */
+export function useAgentDisplayName(agentId: string): string;
+export function useAgentDisplayName(agentId: string | null): string | null;
 export function useAgentDisplayName(agentId: string | null): string | null {
   const agents = useAgentsList();
   if (!agentId) return null;

@@ -146,11 +146,15 @@ export function ArtifactRow({
 }
 
 function CreatorChip({ agentId }: { agentId: string | null }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const agentName = useAgentDisplayName(agentId);
   if (!agentId) {
     return <span className="rounded-full bg-muted px-2 py-px">you</span>;
   }
+  return <AgentCreatorChip agentId={agentId} />;
+}
+
+function AgentCreatorChip({ agentId }: { agentId: string }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const agentName = useAgentDisplayName(agentId);
   return (
     <button
       type="button"
