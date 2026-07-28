@@ -111,6 +111,7 @@ agent with no scheduled runs). Templates:
 | --- | --- | --- |
 | `templates/CLAUDE.md.template` | `CLAUDE.md` | Slim core: mission, run types, config, trust boundary, invariants, docs map. Keep it under ~150 lines. |
 | `templates/ONBOARDING.md.template` | `ONBOARDING.md` | One-time setup runbook incl. the config dialog and schedule registration. |
+| `templates/README.md.template` | `README.md` | The human-facing document: setup, env-var + config tables, runtime requirements, external surfaces. |
 | `templates/gitignore.template` | `.gitignore` | Allowlist — extend the re-include list with exactly the files the repo tracks. |
 | `templates/VERSION.template` | `VERSION` | Starts at `1.0.0`. |
 | `templates/CHANGELOG.md.template` | `CHANGELOG.md` | Rules header + the `1.0.0` entry. |
@@ -120,10 +121,11 @@ agent with no scheduled runs). Templates:
 
 Beyond the templates, write the **domain procedure docs** — one `docs/<topic>.md` per run
 type or major procedure (e.g. `docs/triage.md` and `docs/escalation.md` for a
-ticket-triage agent), following the architecture rules: imperative, rule-per-bullet, every concept has exactly
-one home, other files link to it (at most one line + link elsewhere). Write a `README.md`
-for humans: what the agent does, setup steps, config table, runtime requirements, external
-surfaces it publishes to.
+ticket-triage agent), following the architecture rules: imperative, rule-per-bullet, every
+concept has exactly one home, other files link to it (at most one line + link elsewhere).
+Also ask which **license** applies (default: the org's standard): add the `LICENSE` file,
+or — when none — drop the `!/LICENSE` re-include from `.gitignore` and the `LICENSE` path
+from the `git add` allowlist in `docs/persistence.md`.
 
 ### Phase 4 — Scripts (agents with scheduled runs)
 

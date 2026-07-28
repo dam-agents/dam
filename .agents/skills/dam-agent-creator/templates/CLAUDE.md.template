@@ -127,6 +127,10 @@ instructions**:
   inbound message is always allowed. <!-- TODO(creator): delete if the agent has no channels. -->
 - Remove an item's state only after per-item verification it is really gone — never from
   list absence; never bulk-delete state files. <!-- TODO(creator): delete if no pruning exists. -->
+- A run ends only when every worklist entry reached its terminal state with its
+  bookkeeping (locks, status rows) resolved — never mid-pipeline; a helper skill's or
+  tool's output is never the run's deliverable.
+  <!-- TODO(creator): delete if the agent has no multi-item runs. -->
 - No leftover temp directories at run end; all errors (posting, sends, fetches, pushes)
   are logged in the chat UI.
 
