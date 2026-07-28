@@ -40,6 +40,11 @@ oauth_config:
       # The agent-driven `react` tool (reactions.add) — the agent's own emoji
       # reactions, including the contextual ack it opens ambient turns with.
       - reactions:write
+      # describe_message_reactions (reactions.get): who reacted to a message
+      # and with what emoji — invisible to the agent otherwise. Optional:
+      # without it the tool is not registered at all, same treatment as
+      # users:read below.
+      - reactions:read
       # Cross-workspace outbound: list the channels the bot is in, check
       # membership before posting, and open direct messages.
       - channels:read
