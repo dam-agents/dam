@@ -416,6 +416,50 @@ describe("slack ambient inbound", () => {
     expect(h.messages()[0]).toMatchObject({ threadTs: "T.0", text: "on it" });
   });
 
+  it("keeps a relay-failed thread turn resolvable — an id-less reply is never cross-routed into another thread", async () => {
+    const pending: Array<{
+      resolve: (v: string) => void;
+      reject: (err: unknown) => void;
+    }> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () =>
+        new Promise<string>((resolve, reject) =>
+          pending.push({ resolve, reject }),
+        ),
+    });
+
+    await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
+    await h.settled(() => pending.length === 1);
+    // The relay settles with a transport error; the pod-side harness may still
+    // be working thread T.1 (the runtime keeps a running prompt alive when its
+    // channel drops) and will reply late over the MCP path.
+    pending[0]!.reject(new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+
+    await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
+    await h.settled(() => pending.length === 2);
+
+    // Routing the late id-less reply to the sole live turn would post T.1's
+    // answer into T.2 — refuse instead; the injected id still resolves.
+    const refused = await h.worker.reply("agent-1", { text: "late answer" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    expect(h.messages()).toHaveLength(0);
+
+    const ok = await h.worker.reply("agent-1", {
+      text: "late answer",
+      threadTs: "T.1",
+    });
+    expect(ok).toEqual({ ok: true });
+    expect(h.messages()[0]).toMatchObject({ threadTs: "T.1" });
+
+    pending[1]!.resolve("");
+    await h.settled(() => h.turnEvents().length === 2);
+  });
+
   it("drains separate threads on independent queues — one busy thread never blocks another", async () => {
     const pending: Array<(v: string) => void> = [];
     const h = harness({
