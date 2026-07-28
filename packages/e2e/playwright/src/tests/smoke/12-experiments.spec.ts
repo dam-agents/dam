@@ -5,6 +5,7 @@ import {
   chatInput,
   gotoAgentDetail,
   sendMessageToAgent,
+  setMockAgentReply,
   setMockReplyWithFiles,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -23,6 +24,10 @@ import { agentName } from "../../lib/fixtures.js";
 
 const experimentName = "e2e-loop";
 const scriptPath = "exp.py";
+// The mock's out-of-the-box reply; 07/08/10-slack rely on it verbatim. This
+// spec overwrites it via setMockReplyWithFiles below, so it must restore it
+// before the shared agent moves on to those specs.
+const mockDefaultReply = "Hello from the mock agent.";
 
 const experimentScript = `import experiment_sdk as x
 
@@ -173,5 +178,9 @@ test("experiment: plan, execute, watch it run to completion", async ({
       a.title.startsWith(`${experimentName} —`),
     );
     expect(script).toBeTruthy();
+  });
+
+  await test.step("restore the mock's default reply for the specs that follow", async () => {
+    await setMockAgentReply(api, agentId, mockDefaultReply);
   });
 });
