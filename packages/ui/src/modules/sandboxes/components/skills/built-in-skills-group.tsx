@@ -1,5 +1,6 @@
 import type { LocalSkill } from "api-server-api";
 
+import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -53,12 +54,13 @@ function BuiltInSkillRow({
         </p>
       </div>
       {skill.origin === "system-modified" && (
-        <span
-          className="inline-flex shrink-0 items-center rounded-full bg-warning/15 px-2.5 py-1 text-[12px] font-medium text-warning"
+        <Badge
+          variant="warning"
+          className="shrink-0"
           title="This skill's files differ from the copy shipped in the sandbox image"
         >
           Modified
-        </span>
+        </Badge>
       )}
     </div>
   );
