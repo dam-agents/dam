@@ -1,6 +1,6 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { Box, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -150,7 +150,6 @@ export function ArtifactsView() {
           title="No artifacts yet"
           message="Artifacts from every sandbox collect here."
           actionLabel="Go to sandboxes"
-          actionIcon={<Box size={16} />}
           onAction={() => setView("list")}
         />
       )}
