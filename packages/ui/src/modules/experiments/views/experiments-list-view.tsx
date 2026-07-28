@@ -21,6 +21,7 @@ export function ExperimentsListView() {
   const { data: agentsData } = useAgents();
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const setView = useStore((s) => s.setView);
   const deleteExperiment = useDeleteExperiment();
   const [deleteTarget, setDeleteTarget] = useState<LineageRow | null>(null);
 
@@ -38,7 +39,11 @@ export function ExperimentsListView() {
     <div>
       <PageHeader
         title="Experiments"
-        description="Loop scripts the platform observes live, grouped by the sandbox running them. Open one to land in its chat — the experiment graph docks beside the conversation."
+        description={
+          groups.length > 0
+            ? "Experiments are grouped by the sandbox running them. Open a sandbox to work with it in chat, where the experiment graph docks beside the conversation."
+            : undefined
+        }
         actions={
           groups.length > 0 ? (
             <Button onClick={createExperimentSandbox}>Create experiment</Button>
@@ -53,7 +58,7 @@ export function ExperimentsListView() {
           <h2 className="text-[16px] font-semibold text-foreground">
             No experiments yet
           </h2>
-          <p className="text-[14px] text-muted-foreground">
+          <p className="max-w-[520px] text-[14px] text-muted-foreground">
             An experiment runs one goal across several variants at once and
             charts each result live, so you can compare them. Create an
             experiment sandbox and its agent will help you design the first one.
@@ -64,7 +69,7 @@ export function ExperimentsListView() {
         </Card>
       )}
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-9">
         {initialLoaded &&
           groups.map((group) => (
             <SandboxGroupCard
@@ -75,6 +80,21 @@ export function ExperimentsListView() {
             />
           ))}
       </div>
+
+      {initialLoaded && groups.length > 0 && (
+        <p className="mt-6 text-[13px] text-muted-foreground">
+          Deleting a sandbox doesn&apos;t delete its experiments — the runs and
+          their published results stay in the{" "}
+          <button
+            type="button"
+            onClick={() => setView("artifacts")}
+            className="text-accent hover:underline"
+          >
+            artifact library
+          </button>
+          .
+        </p>
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

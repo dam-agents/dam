@@ -1,6 +1,6 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { FolderPlus, Search, Upload } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -114,14 +114,11 @@ export function ArtifactsView() {
             <>
               <Button
                 variant="outline"
-                size="sm"
                 onClick={() => setFolderDialog({ folder: null })}
               >
-                <FolderPlus size={16} />
                 New folder
               </Button>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <Upload size={16} />
+              <Button onClick={() => setUploadOpen(true)}>
                 Upload artifact
               </Button>
             </>

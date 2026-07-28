@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 import {
+  clearSnapshot,
   EMPTY_SNAPSHOT,
   saveSnapshot,
   type StartingPoint,
@@ -82,11 +83,14 @@ export const createNavigationSlice: StateCreator<
   },
   navigateToCreateSandbox: (startingPoint) => {
     // Seeded into the snapshot, not the route — where every other pick lives.
+    // Only URL-based re-entry (refresh, OAuth return) resumes a persisted draft.
     if (startingPoint) {
       saveSnapshot({
         ...EMPTY_SNAPSHOT,
         ...startingPointDefaults(startingPoint),
       });
+    } else {
+      clearSnapshot();
     }
     history.pushState(null, "", viewToPath("sandbox-new"));
     set({ view: "sandbox-new", agentId: null });

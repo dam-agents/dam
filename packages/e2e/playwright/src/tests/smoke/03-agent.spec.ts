@@ -58,7 +58,8 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await page.getByPlaceholder("my-sandbox").fill(agentName);
 
     const dialog = page.getByRole("dialog");
-    await page.getByRole("button", { name: /openai/i }).click();
+    await page.getByTestId("provider-select").click();
+    await page.getByTestId("provider-option-openai").click();
     await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog).toBeHidden();

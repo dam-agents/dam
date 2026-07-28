@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import { useDriverSummaries } from "../../experiments/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
@@ -31,6 +32,9 @@ export function useAgentRows() {
   const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
+  // Experiment-kinded rows lead their subtitle with how many named experiments
+  // they drive (#3001); one cached query, shared with the Experiments page.
+  const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
@@ -50,6 +54,16 @@ export function useAgentRows() {
     [pausingAgents],
   );
 
+  const experimentCountByDriver = useMemo(() => {
+    if (!driverSummaries) return undefined;
+    return new Map(
+      driverSummaries.map((summary) => [
+        summary.driverAgentId,
+        new Set(summary.experiments.map((e) => e.name)).size,
+      ]),
+    );
+  }, [driverSummaries]);
+
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
     () => ({
       templateNameById: new Map(templates.map((t) => [t.id, t.name])),
@@ -63,7 +77,13 @@ export function useAgentRows() {
   const rowProps = (agent: AgentView) => ({
     agent,
     display: resolveAgentDisplay(agent, restartingIds, pausingIds),
-    subtitle: sandboxSubtitle(agent, subtitleLookup),
+    subtitle: sandboxSubtitle(agent, subtitleLookup, {
+      // 0, not undefined, once summaries have loaded: a marked sandbox with no
+      // registered experiments reads "No active experiments".
+      experimentCount: experimentCountByDriver
+        ? (experimentCountByDriver.get(agent.id) ?? 0)
+        : undefined,
+    }),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     onWake: () => wakeAgent.wake(agent.id),

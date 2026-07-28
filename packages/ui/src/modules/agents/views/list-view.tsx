@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
@@ -61,9 +62,9 @@ export function ListView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[666px]">
+    <div>
       <PageHeader
-        title="Sandboxes"
+        title="Home"
         actions={
           agents.length > 0 ? (
             <Button onClick={() => navigateToCreateSandbox()}>
@@ -73,7 +74,12 @@ export function ListView() {
         }
       />
 
-      {initialLoaded && agents.length > 0 && <BudgetMeter />}
+      {initialLoaded && agents.length > 0 && (
+        <>
+          <BudgetMeter />
+          <SectionLabel spaced>Sandboxes</SectionLabel>
+        </>
+      )}
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 

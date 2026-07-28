@@ -1,15 +1,12 @@
 import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET } from "@/components/ui/inset";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-import {
-  type ProviderRef,
-  sameProviderRef,
-} from "../../../providers/components/provider-item.js";
-import { ProviderSection } from "../../../providers/components/provider-section.js";
+import type { ProviderRef } from "../../../providers/components/provider-item.js";
+import { ProviderSelect } from "../../../providers/components/provider-select.js";
 import type {
   EgressPreset,
   providerPolicy,
@@ -122,18 +119,15 @@ export function SetupStep({
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
-        <ProviderSection
-          selected={providerRef}
-          onSelect={(ref) => update({ providerRef: ref })}
-          onProviderRemoved={(ref) => {
-            if (providerRef && sameProviderRef(providerRef, ref))
-              update({ providerRef: null });
-          }}
-          autoSelectFirst
-          allow={providers.allow}
-          recommended={providers.recommended}
-          listClassName={FIELD_INSET}
-        />
+        <Inset>
+          <ProviderSelect
+            selected={providerRef}
+            onSelect={(ref) => update({ providerRef: ref })}
+            autoSelectFirst
+            allow={providers.allow}
+            recommended={providers.recommended}
+          />
+        </Inset>
       </section>
 
       <section className="mb-8">

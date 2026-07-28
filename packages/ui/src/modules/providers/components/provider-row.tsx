@@ -1,4 +1,4 @@
-import { MoreVertical } from "lucide-react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
@@ -16,17 +15,8 @@ import { CardIcon } from "./card-icon.js";
 interface Props {
   type: ProviderPresetType;
   description: string;
-  subtitle?: string;
   connected: boolean;
-  selected: boolean;
-  selectable?: boolean;
-  /** The provider this surface steers toward, marked on the row. */
-  recommended?: boolean;
-  /** Show the per-row key-management menu (Edit key / Remove key). Off on
-   *  surfaces that only pick a provider and have no confirm-dialog host. */
-  manageKeys?: boolean;
   onConnect: () => void;
-  onSelect: () => void;
   onEditKey: () => void;
   onRemoveKey: () => void;
 }
@@ -34,14 +24,8 @@ interface Props {
 export function ProviderRow({
   type,
   description,
-  subtitle,
   connected,
-  selected,
-  selectable = true,
-  recommended = false,
-  manageKeys = true,
   onConnect,
-  onSelect,
   onEditKey,
   onRemoveKey,
 }: Props) {
@@ -55,11 +39,7 @@ export function ProviderRow({
         className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
       >
         <CardIcon provider={type} />
-        <ProviderText
-          name={name}
-          description={description}
-          recommended={recommended}
-        />
+        <ProviderText name={name} description={description} />
         <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
           Connect
         </span>
@@ -67,61 +47,36 @@ export function ProviderRow({
     );
   }
 
-  const info = (
-    <>
-      <CardIcon provider={type} />
-      <ProviderText
-        name={name}
-        description={subtitle ?? description}
-        connected
-        recommended={recommended}
-      />
-    </>
-  );
-
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1 rounded-lg border bg-card pr-2 transition-colors",
-        selectable && selected ? "border-foreground" : "border-border",
-      )}
-    >
-      {selectable ? (
-        <button
-          type="button"
-          onClick={onSelect}
-          aria-pressed={selected}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-muted/30"
-        >
-          {info}
-        </button>
-      ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
-          {info}
-        </div>
-      )}
-      {manageKeys && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" title="Provider actions">
-              <MoreVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
-            <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
-              Remove key
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+    <div className="flex items-center gap-1 rounded-lg border border-border bg-card pr-2 transition-colors">
+      <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
+        <CardIcon provider={type} />
+        <ProviderText name={name} description={description} connected />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${name}`}
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
+          <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
+            Remove key
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
   return (
-    <div className="h-[72px] rounded-lg border border-border bg-card anim-pulse" />
+    <div className="h-[76px] rounded-lg border border-border bg-card anim-pulse" />
   );
 };
 
@@ -129,19 +84,16 @@ function ProviderText({
   name,
   description,
   connected = false,
-  recommended = false,
 }: {
   name: string;
   description: string;
   connected?: boolean;
-  recommended?: boolean;
 }) {
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <p className="text-[16px] font-medium text-foreground">{name}</p>
         {connected && <Badge variant="success">Connected</Badge>}
-        {recommended && <Badge variant="muted">Recommended</Badge>}
       </div>
       <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>

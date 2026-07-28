@@ -5,7 +5,10 @@ import { cn } from "@/lib/utils";
 interface PageHeaderProps {
   title: ReactNode;
   description?: ReactNode;
+  /** Text CTAs are default-size Buttons without leading icons;
+   *  icon-only utility buttons (nav, overflow menus) are fine. */
   actions?: ReactNode;
+  /** Status chip/badge rendered inline after the title. */
   adornment?: ReactNode;
   className?: string;
 }

@@ -63,7 +63,7 @@ export function StartingPointStep({
         </p>
       )}
 
-      <div className="mb-8 flex flex-col gap-3">
+      <CardList className="mb-8">
         {kindedHarnessInstalled && (
           <StartingPointRow
             startingPoint="experiment"
@@ -109,7 +109,7 @@ export function StartingPointStep({
           selected={startingPoint === "custom"}
           onSelect={() => onPickStartingPoint("custom")}
         />
-      </div>
+      </CardList>
 
       <StartingPointReveal
         snapshot={snapshot}
@@ -138,7 +138,7 @@ function StartingPointReveal({
     return (
       <section className="anim-in">
         <SectionLabel spaced>Template</SectionLabel>
-        <div className="flex flex-col gap-3">
+        <CardList>
           {KB_TEMPLATES.map((template) => (
             <KbTemplateCard
               key={template.id}
@@ -147,7 +147,7 @@ function StartingPointReveal({
               onSelect={() => onPickKbTemplate(template.id)}
             />
           ))}
-        </div>
+        </CardList>
       </section>
     );
   }

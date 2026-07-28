@@ -194,10 +194,10 @@ function InvocationDots({
               waitingForRoom(invocation)
                 ? "animate-pulse bg-amber-500"
                 : invocation.status === "running"
-                  ? "animate-pulse bg-blue-500"
+                  ? "animate-pulse bg-emerald-500"
                   : invocation.status === "failed"
                     ? "bg-red-500"
-                    : "bg-emerald-500",
+                    : "bg-muted-foreground/45",
             )}
           />
         ))}

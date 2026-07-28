@@ -277,10 +277,10 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
               row.waitingForRoom
                 ? "animate-pulse bg-amber-500"
                 : row.status === "running"
-                  ? "animate-pulse bg-blue-500"
+                  ? "animate-pulse bg-emerald-500"
                   : row.status === "failed"
                     ? "bg-red-500"
-                    : "bg-emerald-500",
+                    : "bg-muted-foreground/45",
             )}
           />
           <span className="min-w-0 flex-1 truncate">

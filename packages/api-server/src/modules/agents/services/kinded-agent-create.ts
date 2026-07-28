@@ -8,7 +8,7 @@ const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface KindedAgentCreateDeps {
   owner: string;
-  agents: Pick<AgentsService, "create">;
+  agents: Pick<AgentsService, "create" | "delete">;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   now?: () => Date;
@@ -28,9 +28,13 @@ export interface KindedAgentCreateArgs {
  *  delivery (survives a pod that isn't up), once in-pod via the plugin's
  *  sentinel, retried each wake until the TTL lapses. No agent turn.
  *
- *  Not transactional — the marker is stamped by the create while the event is
- *  enqueued after, so a throw between them leaves a marked agent whose setup
- *  never ran, indistinguishable from a healthy one (#2946). */
+ *  Compensated, not transactional: the marker is stamped by the create while
+ *  the event is enqueued after, so a throw between them would leave a marked
+ *  agent whose setup never ran — the create therefore deletes the fresh agent
+ *  and rethrows when the enqueue fails, and the caller sees a clean failure.
+ *  The residual window is the compensation itself failing (best-effort). A
+ *  failed wake deliberately does NOT compensate: the event is durable and
+ *  delivers on the next wake. */
 export async function createKindedAgent(
   deps: KindedAgentCreateDeps,
   args: KindedAgentCreateArgs,
@@ -39,15 +43,20 @@ export async function createKindedAgent(
 
   const agent = await deps.agents.create(args.createInput);
 
-  await deps.runtimeMutator.bump(agent.id, [
-    {
-      id: `${args.eventIdPrefix}:${agent.id}:${now().getTime()}`,
-      kind: "workspace-command",
-      payload: { command: args.installCommand },
-      expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
-    },
-  ]);
-  await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+  try {
+    await deps.runtimeMutator.bump(agent.id, [
+      {
+        id: `${args.eventIdPrefix}:${agent.id}:${now().getTime()}`,
+        kind: "workspace-command",
+        payload: { command: args.installCommand },
+        expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
+      },
+    ]);
+    await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+  } catch (err) {
+    await deps.agents.delete(agent.id).catch(() => {});
+    throw err;
+  }
   await deps.wakeAgent(agent.id);
 
   securityLog("info", args.securityEvent, {
