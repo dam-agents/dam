@@ -9,6 +9,7 @@ import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
+import { knowledgeBasesRouter } from "./modules/knowledge-bases/router.js";
 import { featuresRouter } from "./modules/features/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
@@ -30,6 +31,7 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   egressRules: egressRulesRouter,
   experiments: experimentsRouter,
+  knowledgeBases: knowledgeBasesRouter,
   artifactLibrary: artifactLibraryRouter,
   features: featuresRouter,
   files: filesRouter,

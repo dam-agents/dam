@@ -31,6 +31,7 @@ describe("resolveDrivers", () => {
       "schedule-reset",
       "skill-ref",
       "trigger",
+      "workspace-command",
       "workspace-seed",
     ]);
     expect(r["mcp-entry"]).toMatchObject({
@@ -98,6 +99,7 @@ describe("resolveDrivers", () => {
       "harness-config",
       "schedule-reset",
       "trigger",
+      "workspace-command",
       "workspace-seed",
     ]);
   });

@@ -10,6 +10,9 @@ import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
+import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
+import { KnowledgeBaseCreateView } from "./modules/knowledge-bases/views/knowledge-base-create-view.js";
+import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -60,6 +63,14 @@ function MainApp() {
     if (features && view === "experiments" && !features.experiments) {
       setView("list");
     }
+    const knowledgeBasesView =
+      view === "knowledge-bases" ||
+      view === "knowledge-base-new" ||
+      view === "knowledge-base-chat" ||
+      view === "knowledge-base-config";
+    if (features && knowledgeBasesView && !features["knowledge-bases"]) {
+      setView("list");
+    }
   }, [features, view, setView]);
 
   useEffect(() => {
@@ -99,6 +110,14 @@ function MainApp() {
     const onPopState = () => {
       const state = pathToState(window.location.pathname);
       if (state.view === "chat") return enterChat(state.agent!);
+      if (state.view === "knowledge-base-chat") {
+        useStore.getState().resetChatContext();
+        useStore.setState({
+          selectedAgent: state.agent!,
+          view: "knowledge-base-chat",
+        });
+        return;
+      }
       // Unknown paths resolve to "list"; leaveChat also tears down chat context.
       if (state.view === "list") return leaveChat();
       useStore.setState({
@@ -113,8 +132,10 @@ function MainApp() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar here.
-  if (view === "chat")
+  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar
+  // here. A knowledge base's standalone page is the same chat surface under
+  // its own route, so it shares the shell.
+  if (view === "chat" || view === "knowledge-base-chat")
     return (
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
@@ -138,6 +159,10 @@ function MainApp() {
             <SandboxWizardView />
           ) : view === "sandbox-home" ? (
             <SandboxHomeView />
+          ) : view === "knowledge-base-new" ? (
+            <KnowledgeBaseCreateView />
+          ) : view === "knowledge-base-config" ? (
+            <KnowledgeBaseConfigView />
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
               {view === "settings" ? (
@@ -146,6 +171,8 @@ function MainApp() {
                 <InboxView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
+              ) : view === "knowledge-bases" ? (
+                <KnowledgeBasesListView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

@@ -24,7 +24,7 @@ import {
 } from "./schemas.js";
 import type { Agent } from "./types.js";
 
-function toView(agent: Agent) {
+export function toAgentView(agent: Agent) {
   return {
     id: agent.id,
     name: agent.name,
@@ -49,6 +49,8 @@ function toView(agent: Agent) {
     contributionFailures: agent.contributionFailures,
     channels: agent.channels,
     allowedUserEmails: agent.allowedUserEmails,
+    kind: agent.kind,
+    kbTemplateId: agent.kbTemplateId ?? null,
   };
 }
 
@@ -61,7 +63,7 @@ export const agentsRouter = t.router({
       ctx.user.agentIds === "*"
         ? agents
         : agents.filter((a) => ctx.user.agentIds.includes(a.id));
-    return allowed.map(toView);
+    return allowed.map(toAgentView);
   }),
 
   get: readAgentProcedure
@@ -70,14 +72,14 @@ export const agentsRouter = t.router({
       checkAgentBinding(ctx, input.id);
       const agent = await ctx.agents.get(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   create: manageAgentsProcedure
     .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.create(input);
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   update: manageAgentsProcedure
@@ -85,7 +87,7 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   delete: manageAgentsProcedure
@@ -104,7 +106,7 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.wake(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   stop: manageAgentsProcedure
@@ -112,7 +114,7 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.stop(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   pause: manageAgentsProcedure
@@ -120,14 +122,14 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.pause(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   upgrade: manageAgentsProcedure
     .input(agentUpgradeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.upgrade(input.id, input.expectedToImage);
-      if (res.ok) return toView(res.value);
+      if (res.ok) return toAgentView(res.value);
       switch (res.error.type) {
         case "AgentNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });
@@ -159,7 +161,7 @@ export const agentsRouter = t.router({
         input.mode,
         input.ambient,
       );
-      if (res.ok) return toView(res.value);
+      if (res.ok) return toAgentView(res.value);
       switch (res.error.type) {
         case "AgentNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });
@@ -184,7 +186,7 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.disconnectSlack(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
+      return toAgentView(agent);
     }),
 
   bindSlackChannel: manageAgentsProcedure

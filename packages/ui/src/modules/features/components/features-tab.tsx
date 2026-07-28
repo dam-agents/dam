@@ -19,6 +19,12 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Loop scripts your agents author and run, observed live: skeleton graph, per-stage progress, score charts. Adds the Experiments destination.",
   },
   {
+    id: "knowledge-bases",
+    label: "Knowledge bases",
+    description:
+      "Agents that build and maintain a body of knowledge you chat with. Adds the Knowledge bases destination.",
+  },
+  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:

@@ -44,6 +44,7 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
+import { composeKnowledgeBasesForOwner } from "../../modules/knowledge-bases/index.js";
 import {
   composeArtifactLibraryForOwner,
   composeShareViewer,
@@ -860,6 +861,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
+    const { knowledgeBases } = composeKnowledgeBasesForOwner({
+      owner: user.sub,
+      agents,
+      runtimeMutator,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
+    });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
       db,
       artifacts,
@@ -961,6 +970,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         approvals,
         egressRules,
         experiments,
+        knowledgeBases,
         artifactLibrary,
         features,
         files,

@@ -46,6 +46,10 @@ export interface AgentsSlice {
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
   selectAgent: (id: string) => void;
+  /** Enter a knowledge base's standalone chat page (`/knowledge-bases/:id`).
+   *  Same chat surface as selectAgent, but the view keeps KB identity so the
+   *  rail highlights Knowledge bases and goBack returns to the KB list. */
+  openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
   /** Enter chat and open a fresh web terminal for the agent. */
   openAgentTerminal: (agentId: string) => void;
@@ -116,6 +120,16 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
+  openKnowledgeBase: (id) => {
+    history.pushState(null, "", viewToPath("knowledge-base-chat", id));
+    get().resetChatContext();
+    set({
+      selectedAgent: id,
+      view: "knowledge-base-chat",
+      mobileScreen: "sessions",
+    });
+  },
+
   openAgentSession: (agentId, sessionId) => {
     history.pushState(null, "", viewToPath("chat", agentId));
     get().resetChatContext();
@@ -141,9 +155,18 @@ export const createAgentsSlice: StateCreator<
   },
 
   goBack: () => {
-    history.pushState(null, "", "/");
+    // Leaving a knowledge base's chat returns to its own list, not Sandboxes.
+    const fromKnowledgeBase = get().view === "knowledge-base-chat";
+    history.pushState(
+      null,
+      "",
+      fromKnowledgeBase ? viewToPath("knowledge-bases") : "/",
+    );
     get().resetChatContext();
-    set({ selectedAgent: null, view: "list" });
+    set({
+      selectedAgent: null,
+      view: fromKnowledgeBase ? "knowledge-bases" : "list",
+    });
   },
 });
 

@@ -14,6 +14,10 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
+  /** Outdent the group cards into the page gutter (the default on gutter
+   *  forms). Set false on flush pages with no gutter, so the cards don't
+   *  bleed left of the other fields. */
+  inset?: boolean;
 }
 
 /** The sandbox's granted connections, grouped by provider, with the entry
@@ -24,6 +28,7 @@ export function GrantedConnectionsPanel({
   templateById,
   onToggleGrant,
   onOpenCatalog,
+  inset = true,
 }: Props) {
   if (groups.length === 0)
     return (
@@ -52,7 +57,7 @@ export function GrantedConnectionsPanel({
           New
         </Button>
       </div>
-      <Inset className="flex flex-col gap-4">
+      <Wrap inset={inset}>
         {groups.map((group) => (
           <ConnectionGroupCard
             key={group.provider.id}
@@ -67,7 +72,20 @@ export function GrantedConnectionsPanel({
             onManage={onOpenCatalog}
           />
         ))}
-      </Inset>
+      </Wrap>
     </>
   );
+}
+
+/** Group-card container: outdented into the gutter by default, flush when the
+ *  hosting page has none. */
+function Wrap({
+  inset,
+  children,
+}: {
+  inset: boolean;
+  children: React.ReactNode;
+}) {
+  if (inset) return <Inset className="flex flex-col gap-4">{children}</Inset>;
+  return <div className="flex flex-col gap-4">{children}</div>;
 }

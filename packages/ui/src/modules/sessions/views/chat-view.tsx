@@ -57,6 +57,8 @@ import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
+import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -131,6 +133,10 @@ export function ChatView() {
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const navigateToKnowledgeBaseConfig = useStore(
+    (s) => s.navigateToKnowledgeBaseConfig,
+  );
+  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
@@ -189,6 +195,16 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+
+  // On a freshly-created knowledge base, greet the user by running the wiki
+  // onboarding on their behalf instead of opening to an empty chat.
+  const view = useStore((s) => s.view);
+  useKnowledgeBaseGreeting({
+    agentId: selectedAgent,
+    active: view === "knowledge-base-chat",
+    idle: !sessionId && messages.length === 0,
+    sendPrompt,
+  });
 
   // Pending-launch chat takeover: while a just-started run's session is
   // being opened (pod wake), blank the pane and show the launch loader.
@@ -351,9 +367,36 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
+  // A knowledge base is an agent under its own surface — when the chat was
+  // reached via the KB route, header actions route to the KB config page and
+  // speak in KB terms, not "sandbox". Route-derived on purpose (not
+  // agent.kind): leaving must return to the surface the user came from. One
+  // copy object instead of per-string ternaries in the JSX below.
+  const isKnowledgeBaseView = view === "knowledge-base-chat";
+  const surfaceCopy = isKnowledgeBaseView
+    ? {
+        actionsAria: "Knowledge base actions",
+        configure: "Configure knowledge base",
+        delete: "Delete Knowledge Base",
+        modelTitle: "Open knowledge base configuration",
+      }
+    : {
+        actionsAria: "Sandbox actions",
+        configure: "Configure sandbox",
+        delete: "Delete Sandbox",
+        modelTitle: "Model — change in sandbox configuration",
+      };
+
   const handleConfigureSandbox = useCallback(() => {
-    if (selectedAgent) navigateToSandboxHome(selectedAgent);
-  }, [selectedAgent, navigateToSandboxHome]);
+    if (!selectedAgent) return;
+    if (isKnowledgeBaseView) navigateToKnowledgeBaseConfig(selectedAgent);
+    else navigateToSandboxHome(selectedAgent);
+  }, [
+    selectedAgent,
+    isKnowledgeBaseView,
+    navigateToKnowledgeBaseConfig,
+    navigateToSandboxHome,
+  ]);
 
   const handleRestartSandbox = useCallback(() => {
     if (selectedAgent) restart(selectedAgent);
@@ -361,15 +404,26 @@ export function ChatView() {
 
   const handleDeleteSandbox = useCallback(async () => {
     if (!selectedAgent) return;
-    const ok = await showConfirm(
-      "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
-      "Delete Sandbox",
-      { kind: "destructive" },
-    );
+    const ok = isKnowledgeBaseView
+      ? await confirmDeleteKnowledgeBase(showConfirm, selectedAgentName ?? "")
+      : await showConfirm(
+          "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
+          "Delete Sandbox",
+          { kind: "destructive" },
+        );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
-    setView("list");
-  }, [selectedAgent, showConfirm, deleteAgent, setView]);
+    if (isKnowledgeBaseView) navigateToKnowledgeBases();
+    else setView("list");
+  }, [
+    selectedAgent,
+    selectedAgentName,
+    isKnowledgeBaseView,
+    showConfirm,
+    deleteAgent,
+    navigateToKnowledgeBases,
+    setView,
+  ]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -422,7 +476,7 @@ export function ChatView() {
               <Button
                 variant="ghost"
                 size="icon-xs"
-                aria-label="Sandbox actions"
+                aria-label={surfaceCopy.actionsAria}
                 className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
                 <MoreVertical size={14} />
@@ -430,7 +484,7 @@ export function ChatView() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                Configure sandbox
+                {surfaceCopy.configure}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={handleRestartSandbox}>
                 Restart
@@ -439,7 +493,7 @@ export function ChatView() {
                 className="text-destructive focus:text-destructive"
                 onSelect={handleDeleteSandbox}
               >
-                Delete Sandbox
+                {surfaceCopy.delete}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -760,7 +814,7 @@ export function ChatView() {
                       <button
                         type="button"
                         onClick={handleConfigureSandbox}
-                        title="Model — change in sandbox configuration"
+                        title={surfaceCopy.modelTitle}
                         className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
                       >
                         {harnessCurrent.model}

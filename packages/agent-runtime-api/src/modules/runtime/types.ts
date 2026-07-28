@@ -14,6 +14,7 @@ export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
   "workspace-seed",
+  "workspace-command",
   "experiment-execute",
   "harness-config",
 ]);
@@ -155,6 +156,27 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
+// One-shot shell command run in the work dir. Like workspace-seed: fire once
+// on create, run, forget — never re-asserted; the command's effects are the
+// user's mutable workspace. The command is composed server-side (e.g. a
+// Knowledge Base's bootstrap installer), never user-supplied free text.
+// Run-to-success at-most-once is enforced in-pod by a sentinel; a failed run
+// stays pending and retries until it succeeds or the event's TTL lapses.
+export const workspaceCommandEventPayload = z.object({
+  command: z.string().min(1),
+});
+export type WorkspaceCommandEventPayload = z.infer<
+  typeof workspaceCommandEventPayload
+>;
+
+export const workspaceCommandEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("workspace-command"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: workspaceCommandEventPayload,
+});
+
 // Experiments v2 (#2942): the user pressed Execute on a draft Experiment. The
 // payload's task is the composed launch prompt — the harness backgrounds the
 // script and ends its turn; the script reports to the platform on its own.
@@ -201,6 +223,7 @@ export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
+  workspaceCommandEvent,
   experimentExecuteEvent,
   harnessConfigEvent,
 ]);

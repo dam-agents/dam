@@ -163,6 +163,18 @@ An Experiment is *one execution of a driver Agent's loop script* — a design→
 | Inactivity sweep | The liveness backstop: a `running` Experiment with no accepted trace event within `EXPERIMENT_INACTIVITY_SECONDS` (default 15 min; clock basis falls back to Execute time) is reaped to `failed`, so every executed Experiment reaches a terminal state |
 | Trace writers | Driver-only: targets speak through their schema-validated result and published artifacts. Multi-writer (target spans nesting under the spawning span) is the planned fast-follow that gives long-running framework nodes mid-flight visibility |
 
+## Knowledge Bases (bounded context)
+
+A Knowledge Base is an Agent that builds and maintains a body of knowledge the user works with through chat. The platform owns the pairing, not the knowledge: no ingestion pipeline, no query API, no schema — the agent bootstraps its own tooling. Phase 1 of epic #2796.
+
+| Term | Definition |
+|------|-----------|
+| Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, bootstrapped by an Install Command at create. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
+| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface owns it — currently only `knowledge-base`. Absent on plain sandboxes. Each list surface filters on it, so an agent appears on exactly one surface |
+| KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which v1 pins and hides). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command; a new procedure is a new id plus a new mapping, and its bootstrap must install a `/wiki-onboard` command (the greeting depends on it) |
+| Install Command | The one-shot shell command run in a Knowledge Base's workspace at create, delivered over the `workspace-command` rail: bootstrap the knowledge tooling from an external installer. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds. Chosen by the picked KB Template |
+| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
+
 ## Secrets (bounded context)
 
 | Term | Definition |

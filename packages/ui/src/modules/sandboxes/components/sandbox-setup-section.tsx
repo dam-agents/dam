@@ -15,7 +15,9 @@ import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 import { TemplateUpdateNotice } from "./template-update-notice.js";
 
-const READ_ONLY_FIELD =
+/** Disabled-input look for create-only values (image, harness) shown as text.
+ *  Shared with the KB config page so the read-only field style can't drift. */
+export const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;

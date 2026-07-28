@@ -9,6 +9,7 @@ import type { E2eService } from "./modules/e2e/types.js";
 import type { FeaturesService } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
+import type { KnowledgeBasesService } from "./modules/knowledge-bases/types.js";
 import type { FilesService } from "./modules/files/router.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
@@ -44,6 +45,7 @@ export interface ApiContext {
   approvals: ApprovalsService;
   egressRules: EgressRulesService;
   experiments: ExperimentsService;
+  knowledgeBases: KnowledgeBasesService;
   artifactLibrary: ArtifactLibraryService;
   features: FeaturesService;
   files: FilesService;

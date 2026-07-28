@@ -23,24 +23,27 @@ import {
 import { SandboxSizeSection } from "../sandbox-size-section.js";
 import { StepHeader } from "../step-header.js";
 
-const NETWORK_PRESETS: { value: EgressPreset; label: string; help: string }[] =
-  [
-    {
-      value: "none",
-      label: "Strict default-deny",
-      help: "All outbound hosts require approval via inbox.",
-    },
-    {
-      value: "trusted",
-      label: "Trusted defaults (recommended)",
-      help: "npm, PyPI, GitHub, package mirrors, Anthropic. Everything else hits inbox.",
-    },
-    {
-      value: "all",
-      label: "Allow everything",
-      help: "Development escape hatch — no network restrictions.",
-    },
-  ];
+export const NETWORK_PRESETS: {
+  value: EgressPreset;
+  label: string;
+  help: string;
+}[] = [
+  {
+    value: "none",
+    label: "Strict default-deny",
+    help: "All outbound hosts require approval via inbox.",
+  },
+  {
+    value: "trusted",
+    label: "Trusted defaults (recommended)",
+    help: "npm, PyPI, GitHub, package mirrors, Anthropic. Everything else hits inbox.",
+  },
+  {
+    value: "all",
+    label: "Allow everything",
+    help: "Development escape hatch — no network restrictions.",
+  },
+];
 
 interface Props {
   name: string;
@@ -153,7 +156,7 @@ export function SetupStep({
   );
 }
 
-function NetworkPresetRow({
+export function NetworkPresetRow({
   label,
   help,
   selected,

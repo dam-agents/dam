@@ -19,6 +19,9 @@ export interface NavigationSlice {
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToExperiments: () => void;
+  navigateToKnowledgeBases: () => void;
+  navigateToCreateKnowledgeBase: () => void;
+  navigateToKnowledgeBaseConfig: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -94,6 +97,24 @@ export const createNavigationSlice: StateCreator<
   navigateToExperiments: () => {
     history.pushState(null, "", viewToPath("experiments"));
     set({ view: "experiments", agentId: null });
+  },
+  navigateToKnowledgeBases: () => {
+    history.pushState(null, "", viewToPath("knowledge-bases"));
+    set({ view: "knowledge-bases", agentId: null });
+  },
+  navigateToCreateKnowledgeBase: () => {
+    history.pushState(null, "", viewToPath("knowledge-base-new"));
+    set({ view: "knowledge-base-new", agentId: null });
+  },
+  navigateToKnowledgeBaseConfig: (agentId) => {
+    history.pushState(
+      null,
+      "",
+      viewToPath("knowledge-base-config", null, agentId),
+    );
+    // The settings form keys off `agentId`; chat keeps `selectedAgent`. Set
+    // both so returning to the KB chat keeps the same agent selected.
+    set({ view: "knowledge-base-config", agentId });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

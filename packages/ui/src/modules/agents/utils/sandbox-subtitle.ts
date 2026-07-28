@@ -21,6 +21,15 @@ export function sandboxSubtitleParts(
   return { harness, provider: providerLabel(agent, lookup) };
 }
 
+/** The one way row-subtitle segments are joined — surfaces that prepend their
+ *  own segment (the KB list's template) use this too, so the separator and
+ *  empty-segment omission can't drift. */
+export function joinSubtitleSegments(
+  segments: ReadonlyArray<string | null | undefined>,
+): string {
+  return segments.filter(Boolean).join(" · ");
+}
+
 /** "harness · provider" row subtitle; the provider segment is omitted when no
  *  granted connection resolves to a provider. */
 export function sandboxSubtitle(
@@ -28,7 +37,7 @@ export function sandboxSubtitle(
   lookup: SandboxSubtitleLookup,
 ): string {
   const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-  return provider ? `${harness} · ${provider}` : harness;
+  return joinSubtitleSegments([harness, provider]);
 }
 
 function providerLabel(

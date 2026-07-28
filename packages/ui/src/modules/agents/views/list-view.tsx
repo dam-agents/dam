@@ -1,80 +1,28 @@
-import { useMemo } from "react";
-
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import type { AgentView, TemplateView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
 import { BudgetMeter } from "../../budgets/components/budget-meter.js";
-import { useAppConnections } from "../../connections/api/queries.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
-import { useDeleteAgent } from "../api/mutations.js";
-import { useAgents } from "../api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
-import {
-  useRestartAgent,
-  useSyncRestartingAgents,
-} from "../hooks/use-restart-agent.js";
-import {
-  useSuspendAgent,
-  useSyncPausingAgents,
-} from "../hooks/use-suspend-agent.js";
-import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-} from "../utils/sandbox-subtitle.js";
-
-// Stable fallback so `subtitleLookup`'s memo isn't defeated while the
-// templates query has no data yet.
-const NO_TEMPLATES: TemplateView[] = [];
+import { useAgentRows } from "../hooks/use-agent-rows.js";
+import { isKnowledgeBase } from "../utils/agent-kind.js";
 
 export function ListView() {
-  const { data: templatesData } = useTemplates();
-  const templates = templatesData ?? NO_TEMPLATES;
-  const { data: agentsData } = useAgents();
-  const connections = useAppConnections();
-  const agents = agentsData?.list ?? [];
-  const restartingAgents = useStore((s) => s.restartingAgents);
-  useSyncRestartingAgents();
-  const pausingAgents = useStore((s) => s.pausingAgents);
-  useSyncPausingAgents();
-
-  const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
-  const { restart: restartAgent } = useRestartAgent();
-  const wakeAgent = useWakeAgent();
+  const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
+    useAgentRows();
+  // Knowledge Bases are agents too, but they live on their own surface — the
+  // Sandboxes list shows only unmarked agents.
+  const agents = (agentsData?.list ?? []).filter(
+    (agent) => !isKnowledgeBase(agent),
+  );
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
-
-  // Gate on data presence, not query success: a transient poll failure keeps
-  // the cached list rendered instead of flashing skeletons over it.
-  const initialLoaded = agentsData !== undefined;
-
-  const restartingIds = useMemo(
-    () => new Set(restartingAgents.keys()),
-    [restartingAgents],
-  );
-  const pausingIds = useMemo(
-    () => new Set(pausingAgents.keys()),
-    [pausingAgents],
-  );
-
-  const subtitleLookup = useMemo<SandboxSubtitleLookup>(
-    () => ({
-      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
-      connectionTemplateIdById: new Map(
-        (connections.data ?? []).map((c) => [c.id, c.templateId]),
-      ),
-    }),
-    [templates, connections.data],
-  );
 
   const stopSandbox = async (agent: AgentView) => {
     // Schedules override a stop by design (#1900) — say so before it lands.
@@ -144,16 +92,8 @@ export function ListView() {
           agents.map((agent) => (
             <AgentRow
               key={agent.id}
-              agent={agent}
-              display={resolveAgentDisplay(agent, restartingIds, pausingIds)}
-              subtitle={sandboxSubtitle(agent, subtitleLookup)}
-              deletePending={
-                deleteAgent.isPending && deleteAgent.variables?.id === agent.id
-              }
+              {...rowProps(agent)}
               onSelect={() => navigateToSandboxHome(agent.id)}
-              onWake={() => wakeAgent.wake(agent.id)}
-              onRestart={() => restartAgent(agent.id)}
-              onPause={() => suspend.pause(agent.id)}
               onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}
             />
