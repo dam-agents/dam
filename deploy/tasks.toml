@@ -54,7 +54,7 @@ esac
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+description = "Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true also creates the VM with nested virt and installs KubeVirt. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 depends = ["controller:image", "api-server:image", "ui:image", "keycloak-theme:image"]
 dir = "{{config_root}}"
 raw = true
@@ -90,6 +90,26 @@ fi
 AGENT_VALUE_FLAGS=()
 [ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
+
+# virtualization.enabled drives extra provisioning below (nested-virt VM
+# creation, KubeVirt install) — resolve it from the values file + --set flags
+# (chart default is false) so one flag configures the whole stack.
+VIRT_ENABLED=""
+if [ -n "$HELM_VALUES" ] && [ "$(yq '.virtualization.enabled // false' "$HELM_VALUES")" = "true" ]; then
+  VIRT_ENABLED=1
+fi
+for arg in "${HELM_EXTRA_ARGS[@]}"; do
+  case "$arg" in
+    --set=virtualization.enabled=true) VIRT_ENABLED=1 ;;
+    --set=virtualization.enabled=false) VIRT_ENABLED="" ;;
+  esac
+done
+if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ]; then
+  echo "FATAL: virtualization.enabled=true cannot work in a sandboxed cluster:" >&2
+  echo "the sandbox's device cgroup blocks /dev/kvm and /dev/loop* (no VMI boot," >&2
+  echo "no containerDisk build). Run this on the host instead." >&2
+  exit 1
+fi
 
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
@@ -128,11 +148,12 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
-    # PLATFORM_NESTED_VIRT=1 exposes /dev/kvm inside the VM so KubeVirt runs
-    # vm-backend agents at full speed (macOS: vz on M3+/macOS 15; without it
-    # cluster:install-kubevirt falls back to TCG emulation). Create-time only —
-    # an existing VM needs cluster:delete + reinstall to gain it.
-    if [ -n "${PLATFORM_NESTED_VIRT:-}" ]; then
+    # Nested virtualization exposes /dev/kvm inside the VM so KubeVirt runs
+    # vm-backend agents at full speed (macOS: vz on M3+/macOS 15). Enabled
+    # automatically with virtualization.enabled=true; PLATFORM_NESTED_VIRT=1
+    # forces it for a plain install. Create-time only — an existing VM needs
+    # cluster:delete + reinstall to gain it.
+    if [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
         --set '.vmType = "vz" | .nestedVirtualization = true'
     else
@@ -143,6 +164,15 @@ else
   if [ "$STATUS" != "Running" ]; then
     echo "Starting k3s VM..."
     limactl start "$LIMA_INSTANCE"
+  fi
+  # Pre-existing VM without nested virt (create-time only): KVM-less VMIs boot
+  # nowhere on aarch64 (KubeVirt arm64 is KVM-only) — stop early with the fix.
+  if [ -n "$VIRT_ENABLED" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm \
+      && [ "$(limactl shell "$LIMA_INSTANCE" uname -m)" = "aarch64" ]; then
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; aarch64 VMIs need it." >&2
+    echo "Recreate it: mise run cluster:delete, then rerun this install (nested" >&2
+    echo "virt is enabled automatically when virtualization.enabled=true)." >&2
+    exit 1
   fi
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
@@ -392,6 +422,11 @@ YAML
 # install below targets the `default` namespace; label it now (the
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
+
+# 2c. KubeVirt — required by vm-backend agents (idempotent, waits Available).
+if [ -n "$VIRT_ENABLED" ]; then
+  LIMA_INSTANCE="$LIMA_INSTANCE" {{ mise_bin }} run cluster:install-kubevirt
+fi
 
 # Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
 # clickstack.enabled=false.
@@ -795,7 +830,7 @@ fi
 '''
 
 ["cluster:install-kubevirt"]
-description = "Install KubeVirt into the dev k3s cluster (for virtualization.enabled installs). Uses /dev/kvm when the VM has it (PLATFORM_NESTED_VIRT=1 at cluster:install on M3+/Linux); without it x86_64 falls back to TCG emulation, while aarch64 cannot boot VMIs at all (KubeVirt arm64 is KVM-only)."
+description = "Install KubeVirt into the dev k3s cluster. Run automatically by cluster:install when virtualization.enabled=true. Uses /dev/kvm when the VM has it; without it x86_64 falls back to TCG emulation, while aarch64 cannot boot VMIs at all (KubeVirt arm64 is KVM-only)."
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -815,8 +850,9 @@ echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulatio
 if [ -z "${HAS_KVM:-}" ] && [ "$(uname -m)" = "aarch64" ]; then
   echo "WARNING: no /dev/kvm on an aarch64 node — KubeVirt installs, but VMIs" >&2
   echo "WARNING: cannot boot (arm64 is KVM-only; TCG works on x86_64 only)." >&2
-  echo "WARNING: on Apple silicon recreate the VM with PLATFORM_NESTED_VIRT=1" >&2
-  echo "WARNING: at cluster:install (M3+/macOS 15)." >&2
+  echo "WARNING: on Apple silicon (M3+/macOS 15): mise run cluster:delete, then" >&2
+  echo "WARNING: mise run cluster:install -- --set=virtualization.enabled=true" >&2
+  echo "WARNING: (nested virt is enabled automatically at VM creation)." >&2
 fi
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
 kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
@@ -838,7 +874,7 @@ fi
 kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$PATCH"
 echo "Waiting for KubeVirt to become Available (this pulls several images)..."
 kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
-echo "KubeVirt ready. Install the platform with: mise run cluster:install -- --set=virtualization.enabled=true"
+echo "KubeVirt ready."
 '''
 
 ["cluster:kubectl"]
