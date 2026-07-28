@@ -68,8 +68,6 @@ each one:
    behavior is otherwise unverifiable (no manual smoke path, e.g. a pure algorithm with tricky
    edges); if the plan calls for tests, treat it as a divergence (see below) and get the user's
    go-ahead first.
-   **Comment sparingly.** Comment only the non-obvious *why* — a constraint, an edge case, a
-   deliberate departure; never narrate *what* a line does. Match the file's existing comment density.
 3. **Self-validate:** confirm each acceptance criterion is met; run the **scoped tests** for the
    touched package(s) (`mise run <pkg>:test`) to confirm you haven't regressed the **existing**
    suite; run the sub-issue's **smoke test yourself**.
@@ -96,10 +94,9 @@ each one:
 Once every sub-issue is approved and committed:
 
 - Run the **full** `mise run test` to catch cross-slice regressions.
-- Run a final review pass on the whole branch diff with **both** `/review-work` (requirements)
-  and `/code-review` (correctness). Fix blocking findings by **amending the relevant sub-issue's
-  commit** — safe because nothing is pushed yet, so the one-commit-per-sub-issue history stays
-  intact.
+- Run a final review pass on the whole branch diff with `/code-review`. Fix blocking findings by
+  **amending the relevant sub-issue's commit** — safe because nothing is pushed yet, so the
+  one-commit-per-sub-issue history stays intact.
 
 ### 7. Open the PR
 
