@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# validate-definition.sh — read-only structural validation of a generated agent
+# definition repository (dam-agent-creator, Phase 5).
+#
+# Usage: validate-definition.sh <path-to-generated-repo>
+# Prints PASS/WARN/FAIL lines; exit 0 = no FAILs, exit 1 = at least one FAIL.
+# Deliberately awk-free and BSD/GNU-portable (runs on dev macOS and the Linux pod).
+
+set -u
+export LC_ALL=C
+
+REPO="${1:-.}"
+FAILS=0
+WARNS=0
+
+pass() { printf 'PASS  %s\n' "$1"; }
+warn() { printf 'WARN  %s\n' "$1"; WARNS=$((WARNS + 1)); }
+fail() { printf 'FAIL  %s\n' "$1"; FAILS=$((FAILS + 1)); }
+
+[ -d "$REPO" ] || { echo "FAIL  no such directory: $REPO"; exit 1; }
+cd "$REPO" || exit 1
+
+# ---------------------------------------------------------- required files ----
+for f in CLAUDE.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
+         docs/self-modification.md docs/persistence.md; do
+  if [ -f "$f" ]; then pass "required file: $f"; else fail "missing required file: $f"; fi
+done
+
+# ------------------------------------------------------- allowlist gitignore ----
+if [ -f .gitignore ]; then
+  first_rule="$(grep -v '^[[:space:]]*#' .gitignore | grep -v '^[[:space:]]*$' | head -1)"
+  if [ "$first_rule" = "/*" ]; then
+    pass ".gitignore is an allowlist (first rule is /*)"
+  else
+    fail ".gitignore must ignore everything first ('/*'); first rule is: ${first_rule:-<none>}"
+  fi
+  for inc in '!/.gitignore' '!/CLAUDE.md' '!/ONBOARDING.md' '!/VERSION' '!/CHANGELOG.md' '!/docs/'; do
+    grep -qxF "$inc" .gitignore \
+      && pass ".gitignore re-includes ${inc#!/}" \
+      || fail ".gitignore missing re-include: $inc"
+  done
+  grep -qxF '!/scripts/' .gitignore || { [ -d scripts ] \
+      && fail ".gitignore missing re-include: !/scripts/ (scripts/ exists)" \
+      || warn "no !/scripts/ re-include (fine only if the agent has no scripts)"; }
+fi
+
+# ---------------------------------------------------- version & changelog ----
+if [ -f VERSION ]; then
+  ver="$(head -1 VERSION)"
+  if printf '%s' "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    pass "VERSION is semver: $ver"
+  else
+    fail "VERSION is not plain semver: '$ver'"
+  fi
+  if [ -f CHANGELOG.md ]; then
+    latest="$(grep -m1 '^## ' CHANGELOG.md | cut -d' ' -f2)"
+    if [ "$ver" = "$latest" ]; then
+      pass "VERSION matches newest CHANGELOG heading ($latest)"
+    else
+      fail "VERSION ($ver) != newest CHANGELOG heading (${latest:-<none>})"
+    fi
+    grep -q '^\*\*Changed:\*\*' CHANGELOG.md && grep -q '^\*\*Upgrade:\*\*' CHANGELOG.md \
+      && pass "CHANGELOG entries carry Changed + Upgrade blocks" \
+      || fail "CHANGELOG must carry '**Changed:**' and '**Upgrade:**' blocks"
+  fi
+fi
+
+# ------------------------------------------------- CLAUDE.md mandatory parts ----
+if [ -f CLAUDE.md ]; then
+  for section in 'trust boundary' 'Hard invariants' 'Runtime configuration' 'Map of'; do
+    grep -qi "$section" CLAUDE.md \
+      && pass "CLAUDE.md has: $section" \
+      || fail "CLAUDE.md missing mandatory section: $section"
+  done
+  lines="$(wc -l < CLAUDE.md | tr -d ' ')"
+  [ "$lines" -le 170 ] \
+    && pass "CLAUDE.md is slim ($lines lines)" \
+    || warn "CLAUDE.md is $lines lines (>170) — move procedure text into docs/"
+fi
+
+# ----------------------------------------------- leftover scaffolding marks ----
+leftovers="$(grep -rnE '\{\{[A-Z_]+\}\}|TODO\(creator\)' \
+  --include='*.md' --include='*.sh' . 2>/dev/null | grep -v '^\./\.git/' || true)"
+if [ -n "$leftovers" ]; then
+  fail "unresolved placeholders / TODO(creator) markers remain:"
+  printf '%s\n' "$leftovers" | sed 's/^/      /'
+else
+  pass "no unresolved placeholders or TODO(creator) markers"
+fi
+
+grep -rqi 'code-guardian' --include='*.md' --include='*.sh' . 2>/dev/null \
+  && warn "definition mentions 'code-guardian' — copied text? (fine only as an explicit credit)" \
+  || pass "no stray reference-implementation mentions"
+
+# ------------------------------------------------------------- shell scripts ----
+if [ -d scripts ]; then
+  for s in scripts/*.sh; do
+    [ -e "$s" ] || continue
+    if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
+    # comment-only lines don't count ("deliberately awk-free" headers)
+    grep -vE '^[[:space:]]*#' "$s" | grep -qE '(^|[^a-zA-Z0-9_])awk([^a-zA-Z0-9_]|$)' \
+      && fail "$s uses awk — not available on the pod" \
+      || pass "$s is awk-free"
+  done
+fi
+
+# ------------------------------------------------------- dead relative links ----
+dead=0
+for f in *.md docs/*.md; do
+  [ -e "$f" ] || continue
+  links="$(grep -oE '\]\([^)]+\)' "$f" 2>/dev/null | sed -e 's/^](//' -e 's/)$//')"
+  [ -n "$links" ] || continue
+  dir="$(dirname "$f")"
+  while IFS= read -r l; do
+    case "$l" in http://*|https://*|mailto:*|\#*) continue ;; esac
+    # placeholder link targets in examples are not real paths
+    case "$l" in "<"*|*"…"*|*'$'*|*"{"*|*" "*) continue ;; esac
+    target="${l%%#*}"; [ -n "$target" ] || continue
+    if [ ! -e "$dir/$target" ] && [ ! -e "$target" ]; then
+      fail "dead link in $f: $l"
+      dead=$((dead + 1))
+    fi
+  done <<EOF
+$links
+EOF
+done
+[ "$dead" -eq 0 ] && pass "no dead relative links in *.md / docs/*.md"
+
+# ----------------------------------------------------- sentinel consistency ----
+if [ -f CLAUDE.md ] && [ -f ONBOARDING.md ]; then
+  s_claude="$(grep -oE '\.[a-z0-9-]+-onboarded' CLAUDE.md | head -1)"
+  s_onb="$(grep -oE '\.[a-z0-9-]+-onboarded' ONBOARDING.md | head -1)"
+  if [ -n "$s_onb" ]; then
+    if [ -z "$s_claude" ] || [ "$s_claude" = "$s_onb" ]; then
+      pass "onboarding sentinel consistent ($s_onb)"
+    else
+      fail "sentinel mismatch: CLAUDE.md '$s_claude' vs ONBOARDING.md '$s_onb'"
+    fi
+  else
+    fail "ONBOARDING.md defines no .<name>-onboarded sentinel guard"
+  fi
+fi
+
+# -------------------------------------------------------------------- summary ----
+echo
+echo "validate-definition: $FAILS fail, $WARNS warn"
+[ "$FAILS" -eq 0 ] || exit 1
+exit 0
