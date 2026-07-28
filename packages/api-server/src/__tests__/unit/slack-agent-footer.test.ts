@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   agentContextBlock,
   agentFooterMrkdwn,
+  formatSlackTs,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
@@ -94,6 +95,37 @@ describe("labelHistoryMessage", () => {
 
   it("keeps humans as their Slack id", () => {
     expect(labelHistoryMessage(human, null, footer.agentId)).toBe("U123: hey");
+  });
+
+  it("includes a human-readable timestamp when the message carries one", () => {
+    const withTs: SlackMessage = { ts: "0.1", text: "hey", user: "U123" };
+    expect(labelHistoryMessage(withTs, null, footer.agentId)).toBe(
+      `U123 [${formatSlackTs("0.1")}]: hey`,
+    );
+  });
+
+  it("marks a message Slack reports as edited", () => {
+    const edited: SlackMessage = {
+      ts: "0.1",
+      text: "hey",
+      user: "U123",
+      edited: true,
+    };
+    expect(labelHistoryMessage(edited, null, footer.agentId)).toBe(
+      `U123 [${formatSlackTs("0.1")}]: hey (edited)`,
+    );
+  });
+});
+
+describe("formatSlackTs", () => {
+  it("renders a Slack ts as a human-readable UTC string", () => {
+    // 1774620000 = 2026-03-27T14:00:00Z (a fixed, DST-adjacent instant so the
+    // test isn't sensitive to the local runner's timezone).
+    expect(formatSlackTs("1774620000.123456")).toBe("Fri 2026-03-27 14:00 UTC");
+  });
+
+  it("falls back to the raw string on unparseable input", () => {
+    expect(formatSlackTs("not-a-timestamp")).toBe("not-a-timestamp");
   });
 });
 

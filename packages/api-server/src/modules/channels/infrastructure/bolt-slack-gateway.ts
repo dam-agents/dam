@@ -234,6 +234,7 @@ export function createBoltSlackGateway(
         user: m.user,
         text: m.text,
         blocks: m.blocks as SlackMessage["blocks"],
+        ...(m.edited ? { edited: true } : {}),
       }));
     },
 
@@ -248,6 +249,7 @@ export function createBoltSlackGateway(
         user: m.user,
         text: m.text,
         blocks: m.blocks as SlackMessage["blocks"],
+        ...(m.edited ? { edited: true } : {}),
       }));
     },
 
@@ -358,6 +360,20 @@ export function createBoltSlackGateway(
         count: r.count ?? 0,
         users: r.users ?? [],
       }));
+    },
+
+    async getPermalink(channel: string, ts: string): Promise<string | null> {
+      if (!app) return null;
+      try {
+        const result = await app.client.chat.getPermalink({
+          channel,
+          message_ts: ts,
+        });
+        return result.permalink ?? null;
+      } catch {
+        // Never fails the turn over a link — the contract just omits it.
+        return null;
+      }
     },
 
     async openDirectMessage(userId: string): Promise<string> {

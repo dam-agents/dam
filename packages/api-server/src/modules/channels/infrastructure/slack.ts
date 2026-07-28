@@ -67,6 +67,7 @@ import {
 import {
   agentContextBlock,
   agentFooterMrkdwn,
+  formatSlackTs,
   historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
@@ -96,6 +97,12 @@ function slackTurnContract(ctx: {
    *  `inThread` batches still reply into their one thread; top-level batches
    *  must name the message a reply threads under. */
   batch?: { count: number; inThread: boolean };
+  /** Whether the triggering message arrived in a 1:1 DM rather than a shared
+   *  channel or group DM — changes who else can see the exchange. */
+  isDirectMessage: boolean;
+  /** A permanent link to the triggering message, or null when Slack couldn't
+   *  resolve one (never fails the turn over this). */
+  permalink: string | null;
 }): string {
   const multi = (ctx.batch?.count ?? 1) > 1;
   const replyBullet =
@@ -132,6 +139,10 @@ function slackTurnContract(ctx: {
             "reasoning about their local time.",
         ]
       : []),
+    `You're answering a message sent ${formatSlackTs(ctx.eventTs)}, in ` +
+      `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
+      (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
+      ".",
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
   ].join("\n");
@@ -846,6 +857,8 @@ export function createSlackWorker(
       eventTs: ctx.eventTs,
       brand,
       canLookupUsers: await canLookupUsers(gw),
+      isDirectMessage: isDirectMessageId(ctx.channel),
+      permalink: await gw.getPermalink(ctx.channel, ctx.eventTs),
     });
 
     let outcome: TurnOutcome = "failure";
@@ -1015,6 +1028,8 @@ export function createSlackWorker(
         eventTs: args.eventTs,
         brand,
         canLookupUsers: await canLookupUsers(gw),
+        isDirectMessage: isDirectMessageId(args.channel),
+        permalink: await gw.getPermalink(args.channel, args.eventTs),
       }),
     );
     const replyId = args.eventTs;
@@ -1756,6 +1771,8 @@ export function createSlackWorker(
       brand,
       canLookupUsers: await canLookupUsers(gw),
       batch: { count: args.messages.length, inThread: args.hasThread },
+      isDirectMessage: isDirectMessageId(args.channel),
+      permalink: await gw.getPermalink(args.channel, args.eventTs),
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({

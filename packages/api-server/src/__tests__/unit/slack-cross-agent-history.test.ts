@@ -3,7 +3,10 @@ import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
-import { agentContextBlock } from "../../modules/channels/infrastructure/agent-footer.js";
+import {
+  agentContextBlock,
+  formatSlackTs,
+} from "../../modules/channels/infrastructure/agent-footer.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
@@ -15,7 +18,7 @@ const OWNER = "kc|owner-1";
 // A shared binding: a mention relays straight to the main pod, and — because
 // listSessions returns [] — always mints a fresh session, so the injected
 // thread history runs through the attribution relabeling.
-function harness() {
+function harness(boundChannelId = "C1") {
   const gw = createFakeSlackGateway();
   const prompts: Array<string | ContentBlock[]> = [];
   const acp: AcpClient = {
@@ -45,7 +48,7 @@ function harness() {
         owner: OWNER,
         mode: "shared" as const,
       }),
-      resolveSlackChannelByInstance: async () => "C1",
+      resolveSlackChannelByInstance: async () => boundChannelId,
     } as never,
     async () => {},
     async () => {},
@@ -103,11 +106,15 @@ describe("slack cross-agent history attribution", () => {
     expect(h.prompts).toHaveLength(1);
     const prompt = String(h.prompts[0]);
     // The reading agent's own past post — resolved server-side, not by name.
-    expect(prompt).toContain("you (this agent): already looking into it");
+    expect(prompt).toContain(
+      `you (this agent) [${formatSlackTs("0.1")}]: already looking into it`,
+    );
     // A different agent, named from its footer.
-    expect(prompt).toContain("Ops (another agent): I ran the deploy");
+    expect(prompt).toContain(
+      `Ops (another agent) [${formatSlackTs("0.2")}]: I ran the deploy`,
+    );
     // A human keeps their Slack id.
-    expect(prompt).toContain("U999: thanks all");
+    expect(prompt).toContain(`U999 [${formatSlackTs("0.3")}]: thanks all`);
     // The legend that explains the prefixes is present…
     expect(prompt).toContain("you (this agent)");
     expect(prompt).toContain("another agent");
@@ -129,7 +136,9 @@ describe("slack cross-agent history attribution", () => {
     });
 
     const prompt = String(h.prompts[0]);
-    expect(prompt).toContain("U999: just humans here");
+    expect(prompt).toContain(
+      `U999 [${formatSlackTs("0.1")}]: just humans here`,
+    );
     expect(prompt).not.toContain("(this agent)");
     expect(prompt).not.toContain("(another agent)");
   });
@@ -201,5 +210,42 @@ describe("slack cross-agent history attribution", () => {
     // ...it just no longer points at a tool that isn't registered.
     expect(prompt).not.toContain("describe_channel_users");
     expect(prompt).not.toContain("call describe_channel_users");
+  });
+
+  it("names the conversation as a shared channel or group DM, with a permalink, in a channel mention", async () => {
+    const h = harness();
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("in a shared channel or group DM");
+    expect(prompt).toContain(
+      "permalink: https://fake-workspace.slack.com/archives/C1/p11",
+    );
+  });
+
+  it("recognizes a 1:1 DM by the conversation id", async () => {
+    const h = harness("D123");
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    // A DM's messages arrive via message.im, not an @mention (that path
+    // drops any event whose channel is DM-shaped, since Slack's app_mention
+    // for a DM — if it fires at all — would just duplicate this one).
+    await h.gw.fireDirectMessage({
+      user: "U999",
+      channel: "D123",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("in a 1:1 direct message");
+    expect(prompt).not.toContain("shared channel or group DM");
   });
 });

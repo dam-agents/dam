@@ -56,6 +56,8 @@ export interface SlackMessage {
    *  author of a bot post can be recovered from injected history (every agent
    *  posts under the same install-wide bot user id). */
   blocks?: SlackBlock[];
+  /** Whether Slack reports this message as edited since it was first posted. */
+  edited?: boolean;
 }
 
 export type SlackBlock = Record<string, unknown>;
@@ -192,6 +194,11 @@ export interface SlackGateway {
   ): Promise<SlackMessageReaction[] | null>;
   /** Open (or reuse) the bot's DM with a user; returns the conversation id. */
   openDirectMessage(userId: string): Promise<string>;
+  /** A permanent link to one message, via `chat.getPermalink`; null when
+   *  Slack can't resolve it (wrong ts, or a conversation the bot can't see
+   *  into) rather than throwing — a missing link degrades the turn contract,
+   *  it doesn't fail it. */
+  getPermalink(channel: string, ts: string): Promise<string | null>;
   /** Bot-token OAuth scopes Slack currently reports as granted — the
    *  install's actual permission set, read from the `x-oauth-scopes` header
    *  Slack attaches to every Web API response, as opposed to what the app

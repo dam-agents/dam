@@ -197,6 +197,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return messageReactions.get(`${channel}:${ts}`) ?? null;
     },
 
+    async getPermalink(channel, ts) {
+      // Deterministic fake, assertable without per-test setup; a test that
+      // needs the not-found path overrides this property directly, the same
+      // way other tests already override getUserInfo/getMessageReactions.
+      return `https://fake-workspace.slack.com/archives/${channel}/p${ts.replace(".", "")}`;
+    },
+
     async openDirectMessage(userId) {
       return `D-${userId}`;
     },
