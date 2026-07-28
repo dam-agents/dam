@@ -7,6 +7,7 @@ interface Props {
   title: string;
   message: ReactNode;
   actionLabel: string;
+  actionIcon?: ReactNode;
   onAction: () => void;
 }
 
@@ -17,6 +18,7 @@ export function PageEmptyState({
   title,
   message,
   actionLabel,
+  actionIcon,
   onAction,
 }: Props) {
   return (
@@ -24,6 +26,7 @@ export function PageEmptyState({
       <h2 className="text-[16px] font-semibold text-foreground">{title}</h2>
       <p className="text-[14px] text-muted-foreground">{message}</p>
       <Button className="mt-1" onClick={onAction}>
+        {actionIcon}
         {actionLabel}
       </Button>
     </Card>
