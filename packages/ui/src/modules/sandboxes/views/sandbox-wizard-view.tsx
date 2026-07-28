@@ -112,14 +112,12 @@ export function SandboxWizardView() {
 
   const goToStep = (step: WizardStep) => update({ step });
 
-  const step1CanAdvance = startingPointComplete(snapshot);
   const registryFilled = registryFilledCount(registryCredential);
   const registryPartial =
     isCustomImage && registryFilled > 0 && registryFilled < 3;
+  const step1CanAdvance = startingPointComplete(snapshot) && !registryPartial;
   const step2CanAdvance =
-    snapshot.name.trim().length > 0 &&
-    snapshot.providerRef !== null &&
-    !registryPartial;
+    snapshot.name.trim().length > 0 && snapshot.providerRef !== null;
 
   const finish = async () => {
     const image = snapshot.customImage.trim();
@@ -200,9 +198,20 @@ export function SandboxWizardView() {
         Continue <ArrowRight size={16} />
       </Button>
     ) : (
-      <Button onClick={finish} disabled={creating}>
-        {creating ? "Creating…" : createLabel(snapshot.startingPoint)}
-      </Button>
+      <>
+        {registryPartial && (
+          <button
+            type="button"
+            onClick={() => update({ step: 1 })}
+            className="text-[13px] text-destructive underline underline-offset-2"
+          >
+            Finish the private-registry credentials on step 1
+          </button>
+        )}
+        <Button onClick={finish} disabled={creating || registryPartial}>
+          {creating ? "Creating…" : createLabel(snapshot.startingPoint)}
+        </Button>
+      </>
     );
 
   return (
@@ -218,6 +227,15 @@ export function SandboxWizardView() {
           snapshot={snapshot}
           templates={templateList}
           loading={isLoading}
+          registry={
+            isCustomImage
+              ? {
+                  value: registryCredential,
+                  onChange: setRegistryCredential,
+                  partial: registryPartial,
+                }
+              : undefined
+          }
           onPickStartingPoint={(startingPoint) =>
             update(startingPointDefaults(startingPoint))
           }
@@ -239,9 +257,6 @@ export function SandboxWizardView() {
           name={snapshot.name}
           providerRef={snapshot.providerRef}
           egressPreset={snapshot.egressPreset}
-          showRegistry={isCustomImage}
-          registryCredential={registryCredential}
-          onRegistryChange={setRegistryCredential}
           update={update}
           setupNote={
             templateList.find((t) => t.id === snapshot.templateId)?.setupNote

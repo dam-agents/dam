@@ -12,7 +12,7 @@ import {
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
 import { StepHeader } from "../step-header.js";
-import { CustomImageCard } from "./custom-image-card.js";
+import { CustomImageCard, type RegistryControls } from "./custom-image-card.js";
 import { HarnessCard } from "./harness-card.js";
 import { KbTemplateCard } from "./kb-template-card.js";
 import { StartingPointRow } from "./starting-point-row.js";
@@ -22,6 +22,7 @@ interface Props {
   snapshot: WizardSnapshot;
   templates: TemplateView[];
   loading: boolean;
+  registry?: RegistryControls;
   onPickStartingPoint: (startingPoint: StartingPoint) => void;
   onPickTemplate: (templateId: string) => void;
   onPickKbTemplate: (kbTemplateId: WizardSnapshot["kbTemplateId"]) => void;
@@ -33,6 +34,7 @@ export function StartingPointStep({
   snapshot,
   templates,
   loading,
+  registry,
   onPickStartingPoint,
   onPickTemplate,
   onPickKbTemplate,
@@ -115,6 +117,7 @@ export function StartingPointStep({
         snapshot={snapshot}
         templates={templates}
         loading={loading}
+        registry={registry}
         onPickTemplate={onPickTemplate}
         onPickKbTemplate={onPickKbTemplate}
         onCustomImageChange={onCustomImageChange}
@@ -129,6 +132,7 @@ function StartingPointReveal({
   snapshot,
   templates,
   loading,
+  registry,
   onPickTemplate,
   onPickKbTemplate,
   onCustomImageChange,
@@ -217,6 +221,7 @@ function StartingPointReveal({
             selected={snapshot.customImage.trim().length > 0}
             onChange={onCustomImageChange}
             onSubmit={onContinue}
+            registry={registry}
           />
         </CardList>
       </section>
