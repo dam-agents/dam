@@ -19,8 +19,12 @@ FROM ${AGENT_IMAGE} AS agent
 
 FROM quay.io/fedora/fedora-bootc:44
 
+# runc explicitly: install_weak_deps=False drops it, and dockerd then dies on
+# startup — "failed to find runc binary" while initialising buildkit — so the
+# `docker` this image advertises never comes up. k3s hides the gap by shipping
+# its own containerd and runc, so the cluster works while docker does not.
 RUN dnf install -y --setopt=install_weak_deps=False \
-      moby-engine docker-compose docker-buildx \
+      moby-engine docker-compose docker-buildx runc \
       cloud-init qemu-guest-agent openssh-server sudo \
       git tar gzip xz jq rsync && \
     dnf clean all
