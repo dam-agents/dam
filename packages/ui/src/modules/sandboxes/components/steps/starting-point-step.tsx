@@ -53,7 +53,7 @@ export function StartingPointStep({
       <StepHeader
         step={1}
         title="Choose your starting point"
-        subtitle="Every sandbox boots from an image. Start with one already set up for a particular job, or take a general-purpose image and configure it yourself."
+        subtitle="Every sandbox starts from an image. Choose one configured for a specific job, or start with a general-purpose image and customize it yourself."
       />
 
       {!kindedHarnessInstalled && (
