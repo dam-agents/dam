@@ -198,9 +198,20 @@ export function SandboxWizardView() {
         Continue <ArrowRight size={16} />
       </Button>
     ) : (
-      <Button onClick={finish} disabled={creating}>
-        {creating ? "Creating…" : createLabel(snapshot.startingPoint)}
-      </Button>
+      <>
+        {registryPartial && (
+          <button
+            type="button"
+            onClick={() => update({ step: 1 })}
+            className="text-[13px] text-destructive underline underline-offset-2"
+          >
+            Finish the private-registry credentials on step 1
+          </button>
+        )}
+        <Button onClick={finish} disabled={creating || registryPartial}>
+          {creating ? "Creating…" : createLabel(snapshot.startingPoint)}
+        </Button>
+      </>
     );
 
   return (

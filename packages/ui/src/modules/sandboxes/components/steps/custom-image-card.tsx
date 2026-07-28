@@ -12,20 +12,22 @@ export interface RegistryControls {
   partial: boolean;
 }
 
-export function CustomImageCard({
-  value,
-  selected,
-  onChange,
-  onSubmit,
-  registry,
-}: {
+interface Props {
   value: string;
   selected: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
   /** Pull-credential controls; present once a custom image is entered. */
   registry?: RegistryControls;
-}) {
+}
+
+export function CustomImageCard({
+  value,
+  selected,
+  onChange,
+  onSubmit,
+  registry,
+}: Props) {
   return (
     <div
       className={cn(
