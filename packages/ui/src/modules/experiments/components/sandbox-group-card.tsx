@@ -10,8 +10,9 @@ interface Props {
   onDeleteLineage: (lineage: LineageRow) => void;
 }
 
-/** A sandbox and the experiments it holds, including none yet. The sandbox is a
- *  visible container that bundles them, so ownership reads off the page. */
+/** A sandbox and the experiments it holds, including none yet. No container
+ *  box, per the design: the header sits bare on the page and only the
+ *  experiment cards are bordered — the grouping reads from proximity. */
 export function SandboxGroupCard({
   group,
   onOpenSandbox,
@@ -19,33 +20,19 @@ export function SandboxGroupCard({
 }: Props) {
   const deleted = group.agent === null;
   const count = group.lineages.length;
-  const live = group.lineages.some((lineage) => lineage.liveCount > 0);
   const open = () => onOpenSandbox(group.agentId);
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border bg-surface",
-        // A live run tints the whole container, so a busy sandbox is findable
-        // without reading any row.
-        live ? "border-success" : "border-border",
-        deleted && "border-dashed",
-      )}
-    >
-      {deleted && (
-        <p className="px-4 pt-2.5 text-[12px] text-text-muted">
-          This sandbox was deleted; its runs and results still live in the
-          artifact library.
-        </p>
-      )}
-
+    <section>
       <div
         role={deleted ? undefined : "button"}
         tabIndex={deleted ? undefined : 0}
         onClick={deleted ? undefined : open}
         onKeyDown={(e) => !deleted && e.key === "Enter" && open()}
+        // The hairline under the header is what scopes the group now that the
+        // container box is gone.
         className={cn(
-          "group/head flex w-full items-center gap-2.5 border-b border-border-light px-4 py-3.5 text-left",
+          "group/head mb-3 flex w-full items-center gap-2.5 border-b border-border-light px-1.5 pb-3 pt-1.5 text-left",
           !deleted && "cursor-pointer transition-colors hover:bg-info-light",
         )}
       >
@@ -82,13 +69,20 @@ export function SandboxGroupCard({
         )}
       </div>
 
+      {deleted && (
+        <p className="mb-3 px-1.5 text-[12px] text-text-muted">
+          These sandboxes were deleted; their runs and results still live in the
+          artifact library.
+        </p>
+      )}
+
       {count === 0 ? (
-        <p className="px-4 py-[18px] text-[13px] text-muted-foreground">
+        <p className="px-1.5 text-[13px] text-muted-foreground">
           No experiments yet — open the sandbox chat and ask the agent to set
           one up.
         </p>
       ) : (
-        <div className="flex flex-col gap-2.5 p-3">
+        <div className="flex flex-col gap-3">
           {group.lineages.map((lineage) => (
             <LineageCard
               key={lineage.key}
@@ -100,6 +94,6 @@ export function SandboxGroupCard({
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

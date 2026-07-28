@@ -81,14 +81,22 @@ describe("toSandboxGroups", () => {
     expect(groups[0]?.lineages).toHaveLength(1);
   });
 
-  test("keeps a deleted sandbox's experiments reachable, marked as deleted", () => {
+  test("collects every deleted sandbox's experiments into one trailing group", () => {
     const groups = toSandboxGroups(
-      [summary("gone", [experiment("e1", "evolver", "completed")])],
+      [
+        summary("gone-1", [experiment("e1", "evolver", "completed")]),
+        summary("gone-2", [experiment("e2", "tuner", "completed")]),
+      ],
       [],
       isExperimentSandbox,
     );
-    expect(groups[0]?.agent).toBeNull();
-    expect(groups[0]?.lineages).toHaveLength(1);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      agentId: "__deleted__",
+      agent: null,
+      name: "Deleted sandboxes",
+    });
+    expect(groups[0]?.lineages).toHaveLength(2);
   });
 
   test("excludes plain sandboxes that never registered a plan", () => {
@@ -177,7 +185,7 @@ describe("toSandboxGroups", () => {
       "live",
       "busy",
       "empty",
-      "gone",
+      "__deleted__",
     ]);
   });
 });
