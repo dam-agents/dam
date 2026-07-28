@@ -76,7 +76,7 @@ export function ProviderRow({
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
   return (
-    <div className="h-[72px] rounded-lg border border-border bg-card anim-pulse" />
+    <div className="h-[76px] rounded-lg border border-border bg-card anim-pulse" />
   );
 };
 

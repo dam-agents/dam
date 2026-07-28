@@ -51,13 +51,15 @@ export function ProviderSelect({
   }, [autoSelectFirst, selected, itemByType, rows, onSelect]);
 
   const pick = async (type: ProviderPresetType) => {
+    if (type === selectedType) return;
+    // Ask before the key dialog, so nobody enters a credential only to be
+    // asked whether they meant to switch.
+    if (selectedType && confirmSwitch && !(await confirmSwitch())) return;
     const item = itemByType.get(type);
     if (!item) {
       setConnecting(type);
       return;
     }
-    if (type === selectedType) return;
-    if (selected && confirmSwitch && !(await confirmSwitch())) return;
     onSelect(providerRef(item));
   };
 
