@@ -25,7 +25,7 @@ import {
 /**
  * The redesigned skills surface: skills grouped by provenance — user-authored
  * Standalone Local Skills ("Created in this sandbox"), image-shipped ones
- * ("Built into this sandbox"), and Skill Sources ("Sourced from GitHub").
+ * ("Included with sandbox image"), and Skill Sources ("Sourced from GitHub").
  * Toggles install/uninstall immediately; the "+ Add source" control and the
  * per-source kebab (re-scan / view repo / remove) administer sources. While the
  * agent is stopped/starting the whole surface is a dimmed, non-interactive

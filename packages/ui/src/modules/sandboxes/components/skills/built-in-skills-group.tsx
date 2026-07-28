@@ -4,7 +4,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 /**
- * "Built into this sandbox" — Local Skills the sandbox image shipped
+ * "Included with sandbox image" — Local Skills the sandbox image shipped
  * (`origin: system` / `system-modified`), segregated from the user's own so
  * "Created in this sandbox" only shows what the user actually authored
  * (#2828). Read-only: no publish (blocked server-side too) and no kebab —
@@ -16,9 +16,9 @@ export function BuiltInSkillsGroup({ skills }: { skills: LocalSkill[] }) {
   return (
     <section>
       <div className="mb-3">
-        <SectionLabel>Built into this sandbox</SectionLabel>
+        <SectionLabel>Included with sandbox image</SectionLabel>
       </div>
-      <div className="rounded-lg border border-border bg-muted">
+      <div className="rounded-lg border border-border bg-card">
         {skills.map((skill, i) => (
           <div
             key={`${skill.skillPath}::${skill.name}`}
