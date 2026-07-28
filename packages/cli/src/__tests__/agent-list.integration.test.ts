@@ -67,8 +67,11 @@ async function startFixture(opts: {
     get: opts.get ?? (async () => null),
   };
 
+  // agents.list/get join spawn attribution in from the invocations table, so
+  // the fixture must answer that read too.
+  const invocationsQuery = { listTargets: async () => [] };
   const ctx = new Proxy(
-    { agents, user: FIXTURE_USER } as Record<string, unknown>,
+    { agents, invocationsQuery, user: FIXTURE_USER } as Record<string, unknown>,
     {
       get(target, prop) {
         if (prop in target) return target[prop as string];

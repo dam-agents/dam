@@ -1,11 +1,17 @@
 import type { z } from "zod";
+import type { Agent } from "../agents/types.js";
 import type {
   appendEventsRequestSchema,
+  experimentSandboxCreateInputSchema,
   finishRequestSchema,
   planRegisterRequestSchema,
   skeletonSchema,
   traceEventSchema,
 } from "./schemas.js";
+
+export type ExperimentSandboxCreateInput = z.infer<
+  typeof experimentSandboxCreateInputSchema
+>;
 
 /** Lifecycle of an Experiment — one execution of a driver's loop script.
  *  `draft` (plan registered, reviewable in the UI) → `running` (a started
@@ -135,6 +141,10 @@ export interface ExperimentDriverSummary {
  *  attribute/reject on it — a driver can only ever touch its own experiments. */
 export interface ExperimentsService {
   // Owner surface (tRPC).
+  /** Create an experiment sandbox — an Agent marked `experiment`, set up with
+   *  the authoring skill. Registers no Experiment: a draft only ever comes
+   *  from the script's Plan Registration. Wired on the tRPC surface only. */
+  createSandbox(input: ExperimentSandboxCreateInput): Promise<Agent>;
   list(): Promise<Experiment[]>;
   driverSummaries(): Promise<ExperimentDriverSummary[]>;
   get(id: string): Promise<Experiment | null>;

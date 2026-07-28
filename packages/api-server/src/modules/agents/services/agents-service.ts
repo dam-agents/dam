@@ -866,7 +866,7 @@ export function createAgentsService(deps: {
         });
       }
       const owner = deps.owner;
-      const agentId = generateK8sName("agent");
+      const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
         await deps.registrySecretPort.create(

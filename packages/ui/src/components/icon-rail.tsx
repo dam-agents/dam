@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
-import { useFeatures } from "../modules/features/api/queries.js";
 import { useStore } from "../store.js";
 
 const EMPTY: never[] = [];
@@ -40,9 +39,6 @@ export function IconRail({
 
   const { data: approvals = EMPTY } = useApprovalsForOwner();
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
-  const { data: features } = useFeatures();
-  const showExperiments = features?.experiments ?? false;
-  const showKnowledgeBases = features?.["knowledge-bases"] ?? false;
 
   const sandboxes: Destination = {
     label: "Sandboxes",
@@ -63,7 +59,6 @@ export function IconRail({
     icon: Book,
     active:
       view === "knowledge-bases" ||
-      view === "knowledge-base-new" ||
       view === "knowledge-base-chat" ||
       view === "knowledge-base-config",
     badge: 0,
@@ -110,8 +105,8 @@ export function IconRail({
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...sandboxes} />
-          {showExperiments && <RailItem {...experiments} />}
-          {showKnowledgeBases && <RailItem {...knowledgeBases} />}
+          <RailItem {...experiments} />
+          <RailItem {...knowledgeBases} />
           <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
@@ -126,8 +121,8 @@ export function IconRail({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             sandboxes,
-            ...(showExperiments ? [experiments] : []),
-            ...(showKnowledgeBases ? [knowledgeBases] : []),
+            experiments,
+            knowledgeBases,
             artifacts,
             inbox,
             settings,

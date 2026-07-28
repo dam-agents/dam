@@ -47,6 +47,7 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
+import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
@@ -54,6 +55,7 @@ import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
+import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -196,13 +198,20 @@ export function ChatView() {
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
 
-  // On a freshly-created knowledge base, greet the user by running the wiki
-  // onboarding on their behalf instead of opening to an empty chat.
+  // A KB has its own route to key off; an experiment sandbox opens in this
+  // ordinary chat, so its greeting keys off the Kind marker.
   const view = useStore((s) => s.view);
+  const chatIdle = !sessionId && messages.length === 0;
   useKnowledgeBaseGreeting({
     agentId: selectedAgent,
     active: view === "knowledge-base-chat",
-    idle: !sessionId && messages.length === 0,
+    idle: chatIdle,
+    sendPrompt,
+  });
+  useExperimentGreeting({
+    agentId: selectedAgent,
+    active: agentView !== null && isExperimentSandbox(agentView),
+    idle: chatIdle,
     sendPrompt,
   });
 

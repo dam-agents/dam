@@ -1,13 +1,16 @@
 # Experimental features
 
-Last verified: 2026-07-27
+Last verified: 2026-07-28
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces. Every
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
-current feature is advanced connection types.
+current feature is advanced connection types. Graduating a feature to
+always-on is deletion: drop its id from the enum and its gates from the UI —
+stored rows for a dropped id are simply never read again (Experiments and
+Knowledge Bases graduated this way).
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only. A

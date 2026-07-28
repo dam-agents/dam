@@ -50,6 +50,10 @@ COPY managed-settings.json /etc/claude-code/managed-settings.json
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
+# Staged outside /app/working-dir so the first-boot `cp -rn` never seeds it into
+# a plain sandbox; an experiment sandbox's Install Command copies it in instead.
+COPY --chown=65532:0 dam-skills/ /usr/local/share/dam-skills/
+
 # Override platform-base's manifest to add the Claude-specific harnessConfig block.
 COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
 

@@ -1,6 +1,7 @@
 export { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 export {
   composeInvocationsForOwner,
+  composeInvocationsQueryForOwner,
   composeInvocationLivenessSweep,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,

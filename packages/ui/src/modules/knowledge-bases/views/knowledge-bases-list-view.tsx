@@ -20,9 +20,9 @@ export function KnowledgeBasesListView() {
   const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
-  const navigateToCreateKnowledgeBase = useStore(
-    (s) => s.navigateToCreateKnowledgeBase,
-  );
+  // Created in the shared wizard, entered with the KB starting point picked.
+  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const createKnowledgeBase = () => navigateToCreateSandbox("knowledge-base");
   const showConfirm = useStore((s) => s.showConfirm);
 
   const deleteKnowledgeBase = async (agent: AgentView) => {
@@ -36,9 +36,7 @@ export function KnowledgeBasesListView() {
         title="Knowledge bases"
         actions={
           knowledgeBases.length > 0 ? (
-            <Button onClick={navigateToCreateKnowledgeBase}>
-              New knowledge base
-            </Button>
+            <Button onClick={createKnowledgeBase}>New knowledge base</Button>
           ) : undefined
         }
       />
@@ -50,7 +48,7 @@ export function KnowledgeBasesListView() {
           title="No knowledge bases yet"
           message="A knowledge base is an agent that builds and maintains a body of knowledge for you. Create one and it sets itself up."
           actionLabel="New knowledge base"
-          onAction={navigateToCreateKnowledgeBase}
+          onAction={createKnowledgeBase}
         />
       )}
 

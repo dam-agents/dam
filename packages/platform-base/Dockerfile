@@ -5,8 +5,10 @@ WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
-RUN dnf install -y git tar gzip && dnf clean all &&\
-    set -eu; \
+# `set -eu` first, or a failed step exits 0 via the trailing `rm` and caches a
+# mise-less layer; `mise --version` last so the layer can't lie about it.
+RUN set -eu; \
+    dnf install -y git tar gzip; dnf clean all; \
     case "$(uname -m)" in \
     x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
     aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
@@ -16,7 +18,8 @@ RUN dnf install -y git tar gzip && dnf clean all &&\
     echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/mise.tar.gz -C /tmp; \
     mv /tmp/mise/bin/mise /usr/local/bin/mise; \
-    rm -rf /tmp/mise /tmp/mise.tar.gz
+    rm -rf /tmp/mise /tmp/mise.tar.gz; \
+    mise --version
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml

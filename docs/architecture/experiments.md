@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-07-27
+Last verified: 2026-07-28
 
 ## Overview
 
@@ -33,6 +33,36 @@ already uses to spawn.
 straitjacket: a span naming an undeclared stage grows the graph and is flagged
 as **drift**, never an error. Agent-authored scripts must not fail hours into
 a run over a declaration mismatch; drift is signal for the human, not a fault.
+
+## The experiment sandbox
+
+Nothing about an Experiment requires a special Agent — Plan Registration is keyed
+only on the calling agent's waypoint identity, so any Agent with the SDK can
+register one. But an agent has to *know how*, and until it does the Experiments
+destination has nothing to show and the user has nothing to click.
+
+So creating one is a first-class flow: an **experiment sandbox** is an Agent
+carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
+copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
+out of a path staged in the image. It rides the same kinded-create rail as a
+Knowledge Base, differing only in the marker and the command; nothing is fetched
+over the network, because the kit ships with the image. The skill used to be baked
+into every Claude Code sandbox's seeded workspace — moving it behind the marker is
+what makes the two things distinguishable. Sandboxes seeded before the move keep
+their copy: the marker is not retroactive, and nothing is migrated.
+
+**The marker is declared intent, not a capability gate.** It records that a
+sandbox was made to run loops; it does not stop any other agent from registering a
+plan. Both populations therefore belong on the destination, which lists **marked
+sandboxes ∪ agents with at least one Experiment row** — a marked sandbox with
+nothing in it yet is an empty container, and an unmarked agent that registered a
+plan earns a container too. There is no backfill and nothing disappears.
+
+Opening a fresh experiment sandbox **greets the user**: the UI hidden-sends
+`/experiment-onboard` so the agent opens by asking what to optimize. It waits until the
+sandbox reports that skill among its installed skills, so it never runs a command
+the Install Command has not delivered yet — the copy installs the command before
+the skill precisely so the skill's presence implies both.
 
 ## Resources
 
@@ -68,8 +98,10 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   mints the run's own single-version **results artifact** — the renderer
   plus a baked replay of the final feed over the same message contract — so
   the finished result is self-contained and shareable without any bridge.
-  The Experiments destination is an index of lineages (status, runs, live
-  invocations, per-run artifacts) that routes into that chat.
+  The Experiments destination groups lineages (status, runs, live invocations,
+  per-run artifacts) under the sandbox running them and routes into that chat —
+  the sandbox is the container because one holds many lineages, so there is no
+  per-experiment page to route to.
 - **Trace Feed** — the bounded JSON projection (per-stage aggregates,
   downsampled score series, recent spans, attached invocations) served over
   tRPC; the one contract shared by dashboards, the UI, and the SDK docs.
@@ -167,4 +199,6 @@ also what un-pins a crashed run's driver.
   [`packages/api-server/src/modules/experiments/`](../../packages/api-server/src/modules/experiments/)
 - Harness REST routes: [`packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts`](../../packages/api-server/src/apps/harness-api-server/experiment-endpoints.ts)
 - Python SDK: [`packages/experiment-sdk/`](../../packages/experiment-sdk/)
+- Authoring kit staged in the image: [`packages/agents/claude-code/dam-skills/`](../../packages/agents/claude-code/dam-skills/)
+- Shared kinded-create rail: [`packages/api-server/src/modules/agents/services/kinded-agent-create.ts`](../../packages/api-server/src/modules/agents/services/kinded-agent-create.ts)
 - UI destination: [`packages/ui/src/modules/experiments/`](../../packages/ui/src/modules/experiments/)

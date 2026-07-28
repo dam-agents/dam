@@ -36,6 +36,8 @@ export type {
   SpawnInvocationResponse,
   InvocationView,
   InvocationStatus,
+  InvocationTarget,
+  InvocationsQueryService,
 } from "./modules/invocations/types.js";
 
 export type {
@@ -130,6 +132,7 @@ export type {
   AppendEventsInput,
   Experiment,
   ExperimentDriverSummary,
+  ExperimentSandboxCreateInput,
   ExperimentSpan,
   TraceFeed,
   TraceFeedStage,
@@ -146,6 +149,8 @@ export {
   appendEventsResponseSchema,
   finishRequestSchema,
   experimentIdInputSchema,
+  experimentSandboxCreateInputSchema,
+  EXPERIMENT_SKILL_NAME,
   SCRIPT_CONTENT_MAX_BYTES,
   DASHBOARD_CONTENT_MAX_BYTES,
   CUSTOM_DATA_MAX_BYTES,

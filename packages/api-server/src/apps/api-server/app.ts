@@ -44,6 +44,7 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
+import { composeInvocationsQueryForOwner } from "../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../modules/knowledge-bases/index.js";
 import {
   composeArtifactLibraryForOwner,
@@ -861,6 +862,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
+    const invocationsQuery = composeInvocationsQueryForOwner({
+      db,
+      owner: user.sub,
+    });
     const { knowledgeBases } = composeKnowledgeBasesForOwner({
       owner: user.sub,
       agents,
@@ -970,6 +975,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         approvals,
         egressRules,
         experiments,
+        invocationsQuery,
         knowledgeBases,
         artifactLibrary,
         features,

@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-07-23
+Last verified: 2026-07-28
 
 ## Overview
 
@@ -83,7 +83,9 @@ An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, n
 A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there. The reconciled `state` view splits Locals into:
 
 - **Installed** — also tracked in `agent_skills`. Drift surfaces when its Postgres `contentHash` differs from the upstream scan's `contentHash`.
-- **Standalone** — on disk but not tracked. Authored in place via the Files panel or uploaded as Markdown files. May carry a "Published" badge if it has a matching `agent_skill_publishes` row.
+- **Standalone** — on disk but not tracked. Authored in place via the Files panel, uploaded as Markdown files, or copied in by an Agent Kind's Install Command at create ([experiments](experiments.md) installs its authoring skill that way). May carry a "Published" badge if it has a matching `agent_skill_publishes` row.
+
+The reconciled `state` read has a consumer beyond the Skills surface: the Experiments destination gates a fresh experiment sandbox's onboarding greeting on its authoring skill being reported present, which is how it avoids running a command whose Install Command has not landed yet. A skill's bucket is not stable — tracking one moves it from Standalone to Installed — so a reader asking "is this skill on disk" must consider both.
 
 A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a successful publish: skillName, sourceId, prUrl, plus the source name and gitUrl denormalized so the record stays usable after the source is renamed or deleted. This is what drives the "Published" badge — replacing a name-match heuristic that produced false positives.
 

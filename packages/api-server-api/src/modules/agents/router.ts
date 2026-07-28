@@ -24,8 +24,12 @@ import {
 } from "./schemas.js";
 import type { Agent } from "./types.js";
 
-export function toAgentView(agent: Agent) {
+export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
   return {
+    // The driver that spawned this agent as an Invocation target, joined in
+    // from the invocations table at read time — Postgres stays the single
+    // source of the edge. Null for every agent a user created.
+    spawnedBy,
     id: agent.id,
     name: agent.name,
     templateId: agent.templateId ?? null,
@@ -56,23 +60,38 @@ export function toAgentView(agent: Agent) {
 
 export const agentsRouter = t.router({
   list: readAgentProcedure.query(async ({ ctx }) => {
-    const agents = await ctx.agents.list();
+    // The row is written before the target agent exists, so this join can
+    // never see an unattributed target — no flash of a temporary spawn
+    // rendering as a plain sandbox.
+    const [agents, targets] = await Promise.all([
+      ctx.agents.list(),
+      ctx.invocationsQuery.listTargets(),
+    ]);
+    const driverByTarget = new Map(
+      targets.map((t) => [t.targetAgentId, t.driverAgentId]),
+    );
     // For agent-bound keys, narrow the listing to the bound set so callers
     // don't see agents they couldn't operate on anyway.
     const allowed =
       ctx.user.agentIds === "*"
         ? agents
         : agents.filter((a) => ctx.user.agentIds.includes(a.id));
-    return allowed.map(toAgentView);
+    return allowed.map((agent) =>
+      toAgentView(agent, driverByTarget.get(agent.id) ?? null),
+    );
   }),
 
   get: readAgentProcedure
     .input(agentGetInputSchema)
     .query(async ({ ctx, input }) => {
       checkAgentBinding(ctx, input.id);
-      const agent = await ctx.agents.get(input.id);
+      const [agent, targets] = await Promise.all([
+        ctx.agents.get(input.id),
+        ctx.invocationsQuery.listTargets(),
+      ]);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
+      const driver = targets.find((t) => t.targetAgentId === agent.id);
+      return toAgentView(agent, driver?.driverAgentId ?? null);
     }),
 
   create: manageAgentsProcedure

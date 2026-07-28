@@ -2,6 +2,12 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 import {
+  EMPTY_SNAPSHOT,
+  saveSnapshot,
+  type StartingPoint,
+  startingPointDefaults,
+} from "../../sandboxes/lib/wizard-snapshot.js";
+import {
   pathToState,
   type SandboxSection,
   type SettingsTab,
@@ -15,12 +21,13 @@ export interface NavigationSlice {
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
   setView: (v: View) => void;
-  navigateToCreateSandbox: () => void;
+  /** `startingPoint` pre-selects step 1, so a per-kind "New …" button lands in
+   *  the shared wizard pointed at that kind. */
+  navigateToCreateSandbox: (startingPoint?: StartingPoint) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToExperiments: () => void;
   navigateToKnowledgeBases: () => void;
-  navigateToCreateKnowledgeBase: () => void;
   navigateToKnowledgeBaseConfig: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
@@ -73,7 +80,14 @@ export const createNavigationSlice: StateCreator<
       set({ view: v, agentId: null, settingsTab: "account" });
     else set({ view: v, agentId: null });
   },
-  navigateToCreateSandbox: () => {
+  navigateToCreateSandbox: (startingPoint) => {
+    // Seeded into the snapshot, not the route — where every other pick lives.
+    if (startingPoint) {
+      saveSnapshot({
+        ...EMPTY_SNAPSHOT,
+        ...startingPointDefaults(startingPoint),
+      });
+    }
     history.pushState(null, "", viewToPath("sandbox-new"));
     set({ view: "sandbox-new", agentId: null });
   },
@@ -101,10 +115,6 @@ export const createNavigationSlice: StateCreator<
   navigateToKnowledgeBases: () => {
     history.pushState(null, "", viewToPath("knowledge-bases"));
     set({ view: "knowledge-bases", agentId: null });
-  },
-  navigateToCreateKnowledgeBase: () => {
-    history.pushState(null, "", viewToPath("knowledge-base-new"));
-    set({ view: "knowledge-base-new", agentId: null });
   },
   navigateToKnowledgeBaseConfig: (agentId) => {
     history.pushState(

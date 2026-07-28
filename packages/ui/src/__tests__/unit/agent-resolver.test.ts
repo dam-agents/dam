@@ -23,6 +23,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   contributionFailures: [],
   channels: [],
   allowedUserEmails: [],
+  spawnedBy: null,
 });
 
 describe("resolveAgentDisplay", () => {

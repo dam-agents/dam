@@ -9,15 +9,17 @@ import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
-import { isKnowledgeBase } from "../utils/agent-kind.js";
+import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function ListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
     useAgentRows();
-  // Knowledge Bases are agents too, but they live on their own surface — the
-  // Sandboxes list shows only unmarked agents.
-  const agents = (agentsData?.list ?? []).filter(
-    (agent) => !isKnowledgeBase(agent),
+  // Every agent the user created, badged with its Kind: the per-kind
+  // destinations are filtered views onto this list. Invocation targets are the
+  // one exception — run-owned and ephemeral, they hide behind a meta line on
+  // the driver's own row that accounts for their compute.
+  const { visible: agents, drawByDriver } = splitTemporarySandboxes(
+    agentsData?.list ?? [],
   );
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
@@ -64,7 +66,9 @@ export function ListView() {
         title="Sandboxes"
         actions={
           agents.length > 0 ? (
-            <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+            <Button onClick={() => navigateToCreateSandbox()}>
+              Create sandbox
+            </Button>
           ) : undefined
         }
       />
@@ -78,7 +82,9 @@ export function ListView() {
           title="No sandboxes yet"
           message="Create your first sandbox to get started."
           actionLabel="Create sandbox"
-          onAction={navigateToCreateSandbox}
+          // Wrapped: navigateToCreateSandbox takes an optional starting point,
+          // and a bare handler would receive the click event as one.
+          onAction={() => navigateToCreateSandbox()}
         />
       )}
 
@@ -88,6 +94,7 @@ export function ListView() {
             <AgentRow
               key={agent.id}
               {...rowProps(agent)}
+              temporaryDraw={drawByDriver.get(agent.id)}
               onSelect={() => navigateToSandboxHome(agent.id)}
               onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}

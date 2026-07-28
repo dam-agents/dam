@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { useStore } from "../../../store.js";
+import type { SessionView } from "../../../types.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
@@ -63,15 +64,15 @@ export function SessionsSidebar({
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentRunState = useAgentRunState(selectedAgent);
-  const { data: sessions = [], isFetching } = useAcpSessions(
-    selectedAgent,
-    listInclude,
-    {
-      enabled: agentRunState === "running",
-      activeSessionId: sessionId,
-    },
-  );
-  const loading = isFetching;
+  const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
+    enabled: agentRunState === "running",
+    activeSessionId: sessionId,
+  });
+  const sessions: SessionView[] = data ?? EMPTY;
+  // First load only, not every refetch: the list polls every few seconds, and
+  // keying the empty state off `isFetching` made "No sessions yet" blink out on
+  // each poll for an agent that genuinely has none.
+  const loading = data === undefined && isFetching;
 
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
