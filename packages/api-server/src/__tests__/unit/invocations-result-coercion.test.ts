@@ -23,6 +23,7 @@ function makeService(row: InvocationRow) {
     listRunning: async () => [],
     listRunningByDriver: async () => [],
     listRunningAgentIds: async () => [],
+    listTargetsByOwner: async () => [],
     listAgedTerminal: async () => [],
     listByExperiment: async () => [],
     countRunningByDriver: async () => new Map(),

@@ -20,6 +20,8 @@ interface Props {
   connected: boolean;
   selected: boolean;
   selectable?: boolean;
+  /** The provider this surface steers toward, marked on the row. */
+  recommended?: boolean;
   /** Show the per-row key-management menu (Edit key / Remove key). Off on
    *  surfaces that only pick a provider and have no confirm-dialog host. */
   manageKeys?: boolean;
@@ -36,6 +38,7 @@ export function ProviderRow({
   connected,
   selected,
   selectable = true,
+  recommended = false,
   manageKeys = true,
   onConnect,
   onSelect,
@@ -52,7 +55,11 @@ export function ProviderRow({
         className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
       >
         <CardIcon provider={type} />
-        <ProviderText name={name} description={description} />
+        <ProviderText
+          name={name}
+          description={description}
+          recommended={recommended}
+        />
         <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
           Connect
         </span>
@@ -67,6 +74,7 @@ export function ProviderRow({
         name={name}
         description={subtitle ?? description}
         connected
+        recommended={recommended}
       />
     </>
   );
@@ -121,16 +129,19 @@ function ProviderText({
   name,
   description,
   connected = false,
+  recommended = false,
 }: {
   name: string;
   description: string;
   connected?: boolean;
+  recommended?: boolean;
 }) {
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <p className="text-[16px] font-medium text-foreground">{name}</p>
         {connected && <Badge variant="success">Connected</Badge>}
+        {recommended && <Badge variant="muted">Recommended</Badge>}
       </div>
       <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>

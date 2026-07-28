@@ -27,6 +27,7 @@ const badgeVariants = cva(
         info: "border-transparent bg-info-light text-info",
         muted: "border-transparent bg-muted text-muted-foreground",
         accent: "border-transparent bg-accent-light text-accent",
+        template: "border-transparent bg-template-light text-template",
       },
     },
     defaultVariants: {

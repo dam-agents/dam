@@ -9,9 +9,7 @@ import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
-import { useFeatures } from "./modules/features/api/queries.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
-import { KnowledgeBaseCreateView } from "./modules/knowledge-bases/views/knowledge-base-create-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
@@ -51,27 +49,9 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const setView = useStore((s) => s.setView);
 
   useAgentCrashToasts();
   useFirstRunRedirect();
-
-  // Feature-gated destinations bounce to Home once the per-user flags are
-  // known — deep links to disabled features never leave a dead view up.
-  const { data: features } = useFeatures();
-  useEffect(() => {
-    if (features && view === "experiments" && !features.experiments) {
-      setView("list");
-    }
-    const knowledgeBasesView =
-      view === "knowledge-bases" ||
-      view === "knowledge-base-new" ||
-      view === "knowledge-base-chat" ||
-      view === "knowledge-base-config";
-    if (features && knowledgeBasesView && !features["knowledge-bases"]) {
-      setView("list");
-    }
-  }, [features, view, setView]);
 
   useEffect(() => {
     // The sandbox-creation wizard owns its own OAuth-return handling so it can
@@ -159,8 +139,6 @@ function MainApp() {
             <SandboxWizardView />
           ) : view === "sandbox-home" ? (
             <SandboxHomeView />
-          ) : view === "knowledge-base-new" ? (
-            <KnowledgeBaseCreateView />
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
           ) : (

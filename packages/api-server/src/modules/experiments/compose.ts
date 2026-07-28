@@ -1,8 +1,14 @@
 import type { Db } from "db";
-import type { AgentsService, ExperimentsService } from "api-server-api";
+import type {
+  AgentsService,
+  ExperimentSandboxCreateInput,
+  ExperimentsService,
+} from "api-server-api";
+import { createKindedAgent } from "../agents/services/kinded-agent-create.js";
 import type { ArtifactLibraryServiceImpl } from "../artifact-library/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { createInvocationsRepository } from "../invocations/index.js";
+import { buildExperimentInstallCommand } from "./domain/install-command.js";
 import { createExperimentsRepository } from "./infrastructure/experiments-repository.js";
 import { createExecuteLauncher } from "./infrastructure/execute-launcher.js";
 import { createDashboardSnapshotter } from "./services/dashboard-snapshot.js";
@@ -42,6 +48,13 @@ export function composeExperimentsForOwner(opts: {
   agents?: AgentsService;
 }): { experiments: ExperimentsService } {
   const invocationsRepo = createInvocationsRepository(opts.db);
+  // Destructured so TS narrows the three into the closure below, rather than
+  // asserting non-null on `opts` fields it can't prove stay set.
+  const { agents, runtimeMutator, wakeAgent, owner } = opts;
+  const kindedRail =
+    agents && runtimeMutator && wakeAgent
+      ? { owner, agents, runtimeMutator, wakeAgent }
+      : null;
   const experiments = createExperimentsService({
     owner: opts.owner,
     repo: createExperimentsRepository(opts.db),
@@ -57,6 +70,20 @@ export function composeExperimentsForOwner(opts: {
             runtimeMutator: opts.runtimeMutator,
             wakeAgent: opts.wakeAgent,
           }),
+        }
+      : {}),
+    // Same rail Knowledge Bases ride. Wired only where all three deps exist (the
+    // tRPC composition); the harness REST surface omits them and createSandbox
+    // refuses there — an agent never mints agents.
+    ...(kindedRail
+      ? {
+          createSandbox: (input: ExperimentSandboxCreateInput) =>
+            createKindedAgent(kindedRail, {
+              createInput: { ...input, kind: "experiment" },
+              installCommand: buildExperimentInstallCommand(),
+              eventIdPrefix: "experiment-install",
+              securityEvent: "experiment_sandbox.create",
+            }),
         }
       : {}),
     invocationsForExperiment: async (driverAgentId, experimentId) => {

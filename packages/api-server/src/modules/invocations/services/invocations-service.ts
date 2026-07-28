@@ -7,6 +7,7 @@ import {
   MAX_INVOCATION_TTL_MS,
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import type {
   InvocationsRepository,
@@ -169,6 +170,24 @@ export function createInvocationsService(deps: {
         }
       }
 
+      // Row BEFORE agent, under a pre-minted id: from the first instant the
+      // target can appear in any agents list, the invocations table already
+      // attributes it to its driver — no window where it reads as a plain
+      // sandbox. The orphan sweeper's created-at grace covers the moments the
+      // row exists without its agent; a failed create deletes the row.
+      const targetId = generateK8sName("agent");
+      const expiresAt = new Date(
+        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
+      );
+      await deps.repo.insert({
+        id: targetId,
+        driverAgentId: input.driverAgentId,
+        owner: deps.owner,
+        resultSchema: input.schema,
+        expiresAt,
+        experimentSpanId: input.experimentSpanId ?? null,
+      });
+
       // The target is a fresh ephemeral Agent, marked Sweepable so the Agent
       // Sweep reaps it once it hibernates — the backstop for the eager reap on
       // this Invocation reaching terminal. No Lifetime grace: an Invocation
@@ -176,29 +195,24 @@ export function createInvocationsService(deps: {
       // target has no egress identity of its own — the ext_authz gate resolves
       // every request to the driver's rules, so seeded target rules would be
       // dead rows.
-      const agent = await deps.agents.create({
-        name: `invocation-${randomBytes(6).toString("hex")}`,
-        sweepable: true,
-        egressPreset: "none",
-        ...(input.templateId ? { templateId: input.templateId } : {}),
-        ...(input.image ? { image: input.image } : {}),
-        ...(input.connections.length
-          ? { connectionIds: input.connections }
-          : {}),
-        ...(input.size ? { size: input.size } : {}),
-      });
-
-      const expiresAt = new Date(
-        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
-      );
-      await deps.repo.insert({
-        id: agent.id,
-        driverAgentId: input.driverAgentId,
-        owner: deps.owner,
-        resultSchema: input.schema,
-        expiresAt,
-        experimentSpanId: input.experimentSpanId ?? null,
-      });
+      let agent;
+      try {
+        agent = await deps.agents.create({
+          id: targetId,
+          name: `invocation-${randomBytes(6).toString("hex")}`,
+          sweepable: true,
+          egressPreset: "none",
+          ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(input.image ? { image: input.image } : {}),
+          ...(input.connections.length
+            ? { connectionIds: input.connections }
+            : {}),
+          ...(input.size ? { size: input.size } : {}),
+        });
+      } catch (err) {
+        await deps.repo.delete(targetId).catch(() => {});
+        throw err;
+      }
 
       // Deliver the one-shot prompt (carrying the report_result contract +
       // schema) via the trigger rail, then wake the fresh agent so it drains it.

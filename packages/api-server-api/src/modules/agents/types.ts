@@ -109,6 +109,11 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   kbTemplateId?: string;
+  /** Pre-minted agent id, service-level only (never on the wire): lets a
+   *  caller that must record the id BEFORE the agent exists — invocations
+   *  write their Postgres row first, so a list can never see an unattributed
+   *  target — bind the two without a window. */
+  id?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

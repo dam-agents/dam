@@ -77,6 +77,10 @@ interface Props {
   /** Show the per-row key-management menu (Edit key / Remove key). Off on
    *  surfaces that only pick a provider and have no confirm-dialog host. */
   manageKeys?: boolean;
+  /** Restrict the offered providers. Omit to offer all of them. */
+  allow?: readonly ProviderPresetType[];
+  /** Ordered first and badged; `autoSelectFirst` therefore prefers it. */
+  recommended?: ProviderPresetType;
   listClassName?: string;
 }
 
@@ -88,6 +92,8 @@ export function ProviderSection({
   variant = "stacked",
   manage = false,
   manageKeys = true,
+  allow,
+  recommended,
   listClassName,
 }: Props) {
   const { data: connections = [], isPending } = useAppConnections();
@@ -98,6 +104,16 @@ export function ProviderSection({
   } | null>(null);
   const [expanded, setExpanded] = useState(false);
 
+  const rows = useMemo(() => {
+    const offered = allow
+      ? PROVIDER_ROWS.filter((row) => allow.includes(row.type))
+      : PROVIDER_ROWS;
+    if (!recommended) return offered;
+    return [...offered].sort(
+      (a, b) => Number(b.type === recommended) - Number(a.type === recommended),
+    );
+  }, [allow, recommended]);
+
   const itemByType = useMemo(() => {
     const connByType = new Map<ProviderPresetType, ConnectionView>();
     for (const c of connections) {
@@ -105,22 +121,20 @@ export function ProviderSection({
       if (preset && !connByType.has(preset)) connByType.set(preset, c);
     }
     const m = new Map<ProviderPresetType, ProviderItem>();
-    for (const row of PROVIDER_ROWS) {
+    for (const row of rows) {
       const conn = connByType.get(row.type);
       if (conn) m.set(row.type, { id: conn.id, conn });
     }
     return m;
-  }, [connections]);
+  }, [connections, rows]);
 
   // Only acts while empty so a just-connected provider isn't nulled out during
   // the list refetch.
   useEffect(() => {
     if (!autoSelectFirst || selected) return;
-    const first = PROVIDER_ROWS.map((r) => itemByType.get(r.type)).find(
-      Boolean,
-    );
+    const first = rows.map((r) => itemByType.get(r.type)).find(Boolean);
     if (first) onSelect?.(providerRef(first));
-  }, [autoSelectFirst, selected, itemByType, onSelect]);
+  }, [autoSelectFirst, selected, itemByType, rows, onSelect]);
 
   const renderRow = (row: (typeof PROVIDER_ROWS)[number]) => {
     const item = itemByType.get(row.type);
@@ -133,6 +147,7 @@ export function ProviderSection({
         subtitle={item ? itemSubtitle(row.type, item) : undefined}
         connected={!!item}
         selectable={!manage}
+        recommended={row.type === recommended}
         manageKeys={manageKeys}
         selected={!!ref && !!selected && sameProviderRef(ref, selected)}
         onConnect={() => setDialog({ provider: row.type })}
@@ -148,8 +163,8 @@ export function ProviderSection({
     );
   };
 
-  const connectedRows = PROVIDER_ROWS.filter((r) => itemByType.has(r.type));
-  const disconnectedRows = PROVIDER_ROWS.filter((r) => !itemByType.has(r.type));
+  const connectedRows = rows.filter((r) => itemByType.has(r.type));
+  const disconnectedRows = rows.filter((r) => !itemByType.has(r.type));
   // Connected providers stay visible; the rest hide behind "Show all". With
   // nothing connected there's nothing to collapse, so reveal everything.
   const collapsible =
@@ -162,13 +177,13 @@ export function ProviderSection({
           ...connectedRows,
           ...(collapsible && !expanded ? [] : disconnectedRows),
         ]
-      : PROVIDER_ROWS;
+      : rows;
 
   return (
     <>
       <div className={cn("flex flex-col gap-3", listClassName)}>
         {isPending
-          ? PROVIDER_ROWS.map((row) => <ProviderRow.Skeleton key={row.type} />)
+          ? rows.map((row) => <ProviderRow.Skeleton key={row.type} />)
           : visibleRows.map(renderRow)}
       </div>
 

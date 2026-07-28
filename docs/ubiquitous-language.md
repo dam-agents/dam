@@ -24,6 +24,9 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
 | Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A single ConfigMap whose `spec.yaml` (api-server writer) carries env, secret refs, allowed users, and `desiredState`, and whose `status.yaml` (controller writer) carries observed state. Optionally derived from a Template at create-time |
 | Sandbox | The user-facing name for an Agent across the redesigned UI (#892); "Agent" remains the domain/code term |
+| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain sandboxes. The Sandboxes list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
+| Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment sandbox copies in its authoring skill from a path staged in the image |
+| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
 | Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an Agent: running or hibernated |
@@ -149,6 +152,7 @@ An Experiment is *one execution of a driver Agent's loop script* — a design→
 | Term | Definition |
 |------|-----------|
 | Experiment | Building and running are separate lifecycles sharing one table. The **draft** (plan registered) is source: it persists, re-registrations update it. A **run** is an immutable capture started from the draft: its own row (`running` → `completed`/`failed`/`stopped`) with the draft's declaration and its own cloned artifacts. A draft never becomes a run; a run never reopens |
+| Driver Agent | The Agent an Experiment runs on. Usually one created as an experiment sandbox (the `experiment` Agent Kind), which is what installs the authoring skill — but the marker is intent, not a gate: Plan Registration is keyed only on the calling agent's identity, so any Agent that registers a plan is a Driver Agent too. The Experiments destination therefore lists both — marked sandboxes (even with no experiments yet) and unmarked agents that registered one |
 | Skeleton | The stage/loop/fork structure the script declares upfront, registered before execution. Lenient: a span naming an undeclared stage grows the graph and is marked as drift, never an error |
 | Stage / Span | Stage = one declared skeleton node (produce, eval, select, …). Span = one execution of a stage, iteration-keyed, carrying status, timings, an optional numeric Score (captured, plotted, never normalized — the old bet survives), Artifact references, and an opaque `attrs` JSON bag |
 | Trace | The append-only stream of spans plus attached Invocations for one Experiment, held by the platform (SDK reports over the per-agent HTTP surface; the browser being closed never pauses a run) |
@@ -170,10 +174,7 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 | Term | Definition |
 |------|-----------|
 | Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, bootstrapped by an Install Command at create. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
-| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface owns it — currently only `knowledge-base`. Absent on plain sandboxes. Each list surface filters on it, so an agent appears on exactly one surface |
 | KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which v1 pins and hides). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command; a new procedure is a new id plus a new mapping, and its bootstrap must install a `/wiki-onboard` command (the greeting depends on it) |
-| Install Command | The one-shot shell command run in a Knowledge Base's workspace at create, delivered over the `workspace-command` rail: bootstrap the knowledge tooling from an external installer. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds. Chosen by the picked KB Template |
-| workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 
 ## Secrets (bounded context)
 

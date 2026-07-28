@@ -4,9 +4,19 @@ import {
   manageAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
-import { experimentIdInputSchema } from "./schemas.js";
+import { toAgentView } from "../agents/router.js";
+import {
+  experimentIdInputSchema,
+  experimentSandboxCreateInputSchema,
+} from "./schemas.js";
 
 export const experimentsRouter = t.router({
+  createSandbox: manageAgentsProcedure
+    .input(experimentSandboxCreateInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      toAgentView(await ctx.experiments.createSandbox(input)),
+    ),
+
   list: readAgentProcedure.query(({ ctx }) => ctx.experiments.list()),
 
   driverSummaries: readAgentProcedure.query(({ ctx }) =>

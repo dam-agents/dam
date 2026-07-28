@@ -12,6 +12,7 @@ import {
 import { ProviderSection } from "../../../providers/components/provider-section.js";
 import type {
   EgressPreset,
+  providerPolicy,
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
@@ -57,6 +58,8 @@ interface Props {
   templateSize?: { cpu?: string; memory?: string };
   sizeCpuMilli: number | null;
   sizeMemoryMi: number | null;
+  /** Which providers this starting point offers, and which it steers toward. */
+  providers: ReturnType<typeof providerPolicy>;
 }
 
 export function SetupStep({
@@ -71,6 +74,7 @@ export function SetupStep({
   templateSize,
   sizeCpuMilli,
   sizeMemoryMi,
+  providers,
 }: Props) {
   const registryPartial =
     showRegistry &&
@@ -126,6 +130,8 @@ export function SetupStep({
               update({ providerRef: null });
           }}
           autoSelectFirst
+          allow={providers.allow}
+          recommended={providers.recommended}
           listClassName={FIELD_INSET}
         />
       </section>

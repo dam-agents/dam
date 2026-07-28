@@ -1,4 +1,4 @@
-import type { EnvVar } from "api-server-api";
+import type { AgentKind, EnvVar } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -157,10 +157,15 @@ export interface AgentView {
   /** The KB template a Knowledge Base was created from. Null on plain
    *  sandboxes and on Knowledge Bases created before the id was stamped. */
   kbTemplateId: string | null;
-  /** Which first-class surface owns this agent (a Knowledge Base is an agent
-   *  with this marker). Absent on plain sandboxes; each list view filters on
-   *  it so an agent appears on exactly one surface. */
-  kind?: "knowledge-base";
+  /** The driver that spawned this agent as an Invocation target; null for
+   *  every agent the user created. Targets are run-owned and ephemeral, so the
+   *  list hides them and accounts for their compute on the driver's row. */
+  spawnedBy: string | null;
+  /** Which first-class surface this agent also belongs to (a Knowledge Base and
+   *  an experiment sandbox are each an agent plus this marker). Absent on plain
+   *  sandboxes. The Sandboxes list shows every agent badged with its kind; the
+   *  per-kind destinations are filtered views onto the same agents. */
+  kind?: AgentKind;
 }
 
 export interface QuietWindowView {

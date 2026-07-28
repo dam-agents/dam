@@ -12,7 +12,6 @@ export const viewSchema = z.enum([
   "sandbox-home",
   "experiments",
   "knowledge-bases",
-  "knowledge-base-new",
   "knowledge-base-chat",
   "knowledge-base-config",
   "artifacts",
@@ -65,7 +64,6 @@ export function viewToPath(
   }
   if (view === "experiments") return "/experiments";
   if (view === "knowledge-bases") return "/knowledge-bases";
-  if (view === "knowledge-base-new") return "/knowledge-bases/new";
   if (view === "knowledge-base-chat" && agent)
     return `/knowledge-bases/${encodeURIComponent(agent)}`;
   if (view === "knowledge-base-config" && agentId)
@@ -109,7 +107,10 @@ export function pathToState(path: string): {
     };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
-  if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
+  // Knowledge bases are created in the shared sandbox wizard now. Land old
+  // links there instead of letting them fall through to the chat matcher
+  // below, which would try to open a knowledge base named "new".
+  if (path === "/knowledge-bases/new") return { view: "sandbox-new" };
   const knowledgeBaseConfigMatch = path.match(
     /^\/knowledge-bases\/([^/]+)\/settings$/,
   );
