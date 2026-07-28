@@ -8,9 +8,7 @@ import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
-import { joinSubtitleSegments } from "../../agents/utils/sandbox-subtitle.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
-import { kbTemplateName } from "../lib/kb-templates.js";
 
 /** The Knowledge Bases surface: the owner's agents carrying the
  *  `knowledge-base` kind. Rows open the standalone knowledge-base page — the
@@ -55,18 +53,10 @@ export function KnowledgeBasesListView() {
       <div className="flex flex-col gap-3">
         {initialLoaded &&
           knowledgeBases.map((agent) => {
-            const props = rowProps(agent);
             return (
               <AgentRow
                 key={agent.id}
-                {...props}
-                // Lead the subtitle with the KB template (the installation
-                // procedure) — the segment KBs are told apart by; harness and
-                // provider follow. Omitted on KBs from before it was recorded.
-                subtitle={joinSubtitleSegments([
-                  kbTemplateName(agent.kbTemplateId),
-                  props.subtitle,
-                ])}
+                {...rowProps(agent)}
                 onSelect={() => openKnowledgeBase(agent.id)}
                 onDelete={() => void deleteKnowledgeBase(agent)}
               />

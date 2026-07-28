@@ -25,6 +25,7 @@ function makeHarness() {
     bumped: [] as { agentId: string; events: unknown[] }[],
     enqueued: [] as string[],
     woken: [] as string[],
+    deleted: [] as string[],
   };
   const runtimeMutator: RuntimeMutator = {
     async bump(agentId, events) {
@@ -41,6 +42,9 @@ function makeHarness() {
       async create(input: AgentCreateInput) {
         calls.createInputs.push(input);
         return fakeAgent("agent-x1");
+      },
+      async delete(id: string) {
+        calls.deleted.push(id);
       },
     },
     runtimeMutator,
@@ -107,6 +111,33 @@ describe("createKindedAgent", () => {
 
     expect(calls.enqueued).toEqual(["agent-x1"]);
     expect(calls.woken).toEqual(["agent-x1"]);
+  });
+
+  it("deletes the fresh agent when the install enqueue fails", async () => {
+    // Without the compensation, a throw here would leave a marked agent whose
+    // setup never ran — indistinguishable in the lists from a healthy one.
+    const { deps, calls } = makeHarness();
+    await expect(
+      createKindedAgent(
+        {
+          ...deps,
+          runtimeMutator: {
+            async bump() {
+              throw new Error("outbox unavailable");
+            },
+            async enqueueAfterCommit() {},
+          },
+        },
+        {
+          createInput: { name: "my-experiments", templateId: "claude-code" },
+          installCommand: buildExperimentInstallCommand(),
+          eventIdPrefix: "experiment-install",
+          securityEvent: "experiment_sandbox.create",
+        },
+      ),
+    ).rejects.toThrow("outbox unavailable");
+    expect(calls.deleted).toEqual(["agent-x1"]);
+    expect(calls.woken).toEqual([]);
   });
 
   it("wakes only after the install event is enqueued", async () => {

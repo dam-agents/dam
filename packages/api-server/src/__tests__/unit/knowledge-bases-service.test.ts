@@ -41,6 +41,7 @@ function makeHarness() {
         calls.createInputs.push(input);
         return fakeAgent("agent-kb1");
       },
+      async delete() {},
     },
     runtimeMutator,
     wakeAgent: async (agentId) => {
