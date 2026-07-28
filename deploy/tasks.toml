@@ -471,7 +471,10 @@ if [ -n "$VIRT_ENABLED" ]; then
   if [ -z "${HAS_KVM:-}" ]; then
     KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":true}},"customizeComponents":{"patches":[{"resourceType":"DaemonSet","resourceName":"virt-handler","type":"json","patch":"[{\"op\":\"replace\",\"path\":\"/spec/template/spec/initContainers/0/env\",\"value\":[{\"name\":\"PREFERRED_VIRTTYPE\",\"value\":\"qemu\"},{\"name\":\"HYPERVISOR_DEVICE\",\"value\":\"kvm\"}]}]"}]}}}'
   else
-    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"]}}}}'
+    # Explicit nulls: merge-patch deletes them, so a cluster once configured
+    # for emulation heals when the node gains KVM (adds-only would keep TCG
+    # forever — fatal on aarch64, where qemu rejects host-passthrough).
+    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":null}},"customizeComponents":{"patches":null}}}'
   fi
   kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$KV_PATCH"
   echo "Waiting for KubeVirt to become Available (this pulls several images)..."
