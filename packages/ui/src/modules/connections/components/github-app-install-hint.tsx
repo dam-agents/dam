@@ -31,7 +31,7 @@ export function GithubAppInstallHint({
       className="mx-4 mt-3 text-[13px] leading-relaxed text-muted-foreground"
     >
       <strong className="text-foreground/80">
-        GitHub App connections need one more step.
+        GitHub app connections need one more step.
       </strong>{" "}
       To let {getBrand().name} work with your private repos, install the app on
       the organization that owns them.
