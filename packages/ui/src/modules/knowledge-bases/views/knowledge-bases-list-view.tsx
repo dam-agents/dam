@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -46,18 +46,12 @@ export function KnowledgeBasesListView() {
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && knowledgeBases.length === 0 && (
-        <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-          <h2 className="text-[16px] font-semibold text-foreground">
-            No knowledge bases yet
-          </h2>
-          <p className="text-[14px] text-muted-foreground">
-            A knowledge base is an agent that builds and maintains a body of
-            knowledge for you. Create one and it sets itself up.
-          </p>
-          <Button className="mt-1" onClick={navigateToCreateKnowledgeBase}>
-            New knowledge base
-          </Button>
-        </Card>
+        <PageEmptyState
+          title="No knowledge bases yet"
+          message="A knowledge base is an agent that builds and maintains a body of knowledge for you. Create one and it sets itself up."
+          actionLabel="New knowledge base"
+          onAction={navigateToCreateKnowledgeBase}
+        />
       )}
 
       <div className="flex flex-col gap-3">

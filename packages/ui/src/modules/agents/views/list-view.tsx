@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -74,17 +74,12 @@ export function ListView() {
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && agents.length === 0 && (
-        <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-          <h2 className="text-[16px] font-semibold text-foreground">
-            No sandboxes yet
-          </h2>
-          <p className="text-[14px] text-muted-foreground">
-            Create your first sandbox to get started.
-          </p>
-          <Button className="mt-1" onClick={navigateToCreateSandbox}>
-            Create sandbox
-          </Button>
-        </Card>
+        <PageEmptyState
+          title="No sandboxes yet"
+          message="Create your first sandbox to get started."
+          actionLabel="Create sandbox"
+          onAction={navigateToCreateSandbox}
+        />
       )}
 
       <div className="flex flex-col gap-3">
