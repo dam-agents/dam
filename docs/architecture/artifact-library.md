@@ -128,6 +128,11 @@ flowchart LR
   (markdown prose, highlighted code, inline images).
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
+- The chat view carries the same library twice over: an **Artifacts section**
+  in the session sidebar, scoped to the sandbox's agent and offering the same
+  per-artifact actions, and a **docked preview** beside the conversation that
+  renders the selected artifact and follows new versions as they are
+  published. Deleting the artifact a preview is showing closes that preview.
 
 ## Lifecycle and cleanup
 
