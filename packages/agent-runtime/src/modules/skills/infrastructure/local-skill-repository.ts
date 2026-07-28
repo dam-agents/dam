@@ -13,6 +13,7 @@ import type {
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
+import { judgeOrigin } from "../domain/skill-origin.js";
 import type { SkillPath } from "../domain/skill-path.js";
 
 const FRONTMATTER_READ_BYTES = 8 * 1024;
@@ -180,13 +181,12 @@ async function list(
 }
 
 /**
- * Judge a Local Skill's provenance against the image's pristine workspace
- * copy — the directory the first-boot seed copied onto the PVC. Identity is
- * the directory basename (the same identity the listing dedupes on): a
- * same-named directory in any pristine path means the image shipped it, and
- * the content hash then separates untouched (`system`) from diverged
- * (`system-modified`). No pristine counterpart means the skill appeared at
- * runtime — `user`.
+ * Classify a Local Skill against the image's pristine workspace copy — the
+ * directory the first-boot seed copied onto the PVC. Identity is the
+ * directory basename (the same identity the listing dedupes on); the verdict
+ * itself is the domain's {@link judgeOrigin}. This adapter only acquires the
+ * hashes: the counterpart's from the first pristine path that has one, the
+ * local one lazily (skipped when there is nothing to compare against).
  */
 async function classifyOrigin(
   dirName: string,
@@ -194,6 +194,20 @@ async function classifyOrigin(
   pristinePaths: SkillPath[],
   pristineHashes: Map<string, Promise<string | null>>,
 ): Promise<SkillOrigin> {
+  const pristineHash = await firstPristineHash(
+    dirName,
+    pristinePaths,
+    pristineHashes,
+  );
+  const localHash = pristineHash === null ? null : await hashSkillDir(localDir);
+  return judgeOrigin(localHash, pristineHash);
+}
+
+async function firstPristineHash(
+  dirName: string,
+  pristinePaths: SkillPath[],
+  pristineHashes: Map<string, Promise<string | null>>,
+): Promise<string | null> {
   for (const base of pristinePaths) {
     const pristineDir = path.join(base, dirName);
     let hashPromise = pristineHashes.get(pristineDir);
@@ -201,12 +215,10 @@ async function classifyOrigin(
       hashPromise = hashSkillDirIfPresent(pristineDir);
       pristineHashes.set(pristineDir, hashPromise);
     }
-    const pristineHash = await hashPromise;
-    if (pristineHash === null) continue;
-    const localHash = await hashSkillDir(localDir);
-    return localHash === pristineHash ? "system" : "system-modified";
+    const hash = await hashPromise;
+    if (hash !== null) return hash;
   }
-  return "user";
+  return null;
 }
 
 /** `hashSkillDir` for a directory that may not exist — null when absent (or
