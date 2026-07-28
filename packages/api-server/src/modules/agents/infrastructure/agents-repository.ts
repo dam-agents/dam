@@ -68,6 +68,9 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
+  /** Agent ids currently carrying `annotation[key] === value` — used by
+   *  boot-time pin reconciliation (experiments) alongside the setters. */
+  listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
   clearActiveSessions(): Promise<number>;
   wakeIfHibernated(id: string): Promise<boolean>;
   /** Authoritative reachability: the controller's Ready condition
@@ -290,6 +293,16 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: { annotations: { [key]: value } },
       });
+    },
+
+    async listAgentIdsWithAnnotation(key, value) {
+      const objs = await k8s.listCustomObjects(AGENTS_PLURAL);
+      const ids: string[] = [];
+      for (const o of objs) {
+        const id = o.metadata?.name;
+        if (id && o.metadata?.annotations?.[key] === value) ids.push(id);
+      }
+      return ids;
     },
 
     async clearActiveSessions() {

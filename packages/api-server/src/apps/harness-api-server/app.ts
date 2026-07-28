@@ -7,12 +7,14 @@ import type {
 } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
+import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
@@ -75,6 +77,24 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
     });
 
+  const artifactLibraryFor = (owner: string) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      shareBaseUrl: config.shareBaseUrl,
+    }).artifactLibrary;
+
+  // Pin port for the REST-side experiment finish path (a script's own
+  // completion must release the driver's hibernation pin).
+  const harnessAgentsRepo = createAgentsRepository(k8sClient);
+  const experimentPin = {
+    set: (agentId: string) =>
+      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
+    clear: (agentId: string) =>
+      harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
+  };
+
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
@@ -97,20 +117,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeExperimentsForOwner({
         db,
         owner,
-        maxArtifactBytes: config.maxArtifactBytes,
+        artifactLibrary: artifactLibraryFor(owner),
+        pin: experimentPin,
       }).experiments,
-    artifactLibraryFor: (owner) =>
-      composeArtifactLibraryForOwner({
-        db,
-        artifacts,
-        owner,
-        shareBaseUrl: config.shareBaseUrl,
-      }).artifactLibrary,
+    artifactLibraryFor,
     invocationsServiceFor,
     connectionsServiceFor,
     templates,
-    artifacts,
-    maxArtifactBytes: config.maxArtifactBytes,
   });
 
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the

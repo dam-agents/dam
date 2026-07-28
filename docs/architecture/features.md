@@ -1,13 +1,13 @@
 # Experimental features
 
-Last verified: 2026-07-21
+Last verified: 2026-07-27
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces. Every
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
-current features are experiments and advanced connection types.
+current feature is advanced connection types.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only. A

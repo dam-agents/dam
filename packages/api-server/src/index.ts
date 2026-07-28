@@ -117,8 +117,15 @@ import {
 } from "./modules/connections/compose.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
-import { composeExperimentArmSweeper } from "./modules/experiments/index.js";
-import { composeArtifactExpirySweeper } from "./modules/artifact-library/index.js";
+import {
+  composeExperimentInactivitySweep,
+  reconcileExperimentPins,
+} from "./modules/experiments/index.js";
+import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
+import {
+  composeArtifactExpirySweeper,
+  composeArtifactLibraryForOwner,
+} from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { sweepLegacyCredentialSecrets } from "./modules/connections/sweep/legacy-secret-sweep.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -491,6 +498,7 @@ const telegramWorker =
         pendingOAuthFlows: pendingTelegramOAuthFlows,
         isTermsAccepted,
         uiBaseUrl: config.uiBaseUrl,
+        brandShort: config.brand.short,
       })
     : undefined;
 
@@ -627,26 +635,61 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
   batchSize: 200,
 });
 
-// Inactivity-deadline sweep: reaps `running` Experiment arms that have gone
-// quiet (no Run, no finish_arm) past the configured window to `failed`, so a
-// started Experiment always reaches a terminal state. Atomic conditional
-// transitions make it multi-replica safe. Sweep at the window cadence, capped
-// at 5 minutes so the default 1h window isn't scanned needlessly often.
-const armInactivityMs = config.experimentArmInactivitySeconds * 1000;
-const experimentArmSweeper = composeExperimentArmSweeper({
+// Experiments v2 inactivity sweep: reaps `running` Experiments whose script
+// has gone silent (no trace event) past the configured window to `failed`, so
+// every executed Experiment reaches a terminal state — and releases the
+// driver's hibernation pin when it was its last running experiment. Atomic
+// conditional transitions make it multi-replica safe. Sweep at the window
+// cadence, capped at 5 minutes.
+const experimentPin = {
+  set: (agentId: string) =>
+    agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
+  clear: (agentId: string) =>
+    agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
+};
+const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
+const experimentInactivitySweep = composeExperimentInactivitySweep({
   db,
-  inactivityMs: armInactivityMs,
-  intervalMs: Math.min(armInactivityMs, 5 * 60_000),
+  inactivityMs: experimentInactivityMs,
+  intervalMs: Math.min(experimentInactivityMs, 5 * 60_000),
   batchSize: 200,
+  pin: experimentPin,
+  artifactLibraryFor: (owner) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      shareBaseUrl: config.shareBaseUrl,
+    }).artifactLibrary,
 });
-experimentArmSweeper.start();
+experimentInactivitySweep.start();
+
+// Converge experiment pins to database truth — experiments survive restarts
+// (unlike sessions), so this reconciles rather than blanket-clears.
+void reconcileExperimentPins({
+  db,
+  listPinnedAgentIds: () =>
+    agentsRepo.listAgentIdsWithAnnotation(EXPERIMENT_ACTIVE_KEY, "true"),
+  pin: experimentPin,
+}).then(
+  ({ set, cleared }) => {
+    if (set > 0 || cleared > 0) {
+      process.stderr.write(
+        `[experiments] pin reconciliation: set ${set}, cleared ${cleared}\n`,
+      );
+    }
+  },
+  (err) => {
+    process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
+  },
+);
 
 // Periodic background work runs as BullMQ job schedulers, one queue per job
 // ("periodic.<name>") — one execution per period across replicas, and a
 // hung tick can only stall its own lane. Ticks stay idempotent; the queue
 // is scheduling and visibility, never correctness. The remaining interval
-// sweepers (experiment arms, approvals delivery, cron sweep, OAuth refresh)
-// migrate here incrementally.
+// sweepers (approvals delivery, cron sweep, OAuth refresh) migrate here
+// incrementally.
 const periodicJobs = createPeriodicJobs({
   connection: bullConnection,
   log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
@@ -848,7 +891,7 @@ async function shutdown() {
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();
-  await experimentArmSweeper.stop();
+  await experimentInactivitySweep.stop();
   await invocationLivenessSweep.stop();
   await agentSweep.stop();
   await periodicJobs.close();

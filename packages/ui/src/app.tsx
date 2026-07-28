@@ -8,8 +8,6 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { ExperimentDetailView } from "./modules/experiments/views/experiment-detail-view.js";
-import { ExperimentWizardView } from "./modules/experiments/views/experiment-wizard-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { useFeatures } from "./modules/features/api/queries.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
@@ -62,12 +60,7 @@ function MainApp() {
   // known — deep links to disabled features never leave a dead view up.
   const { data: features } = useFeatures();
   useEffect(() => {
-    if (!features) return;
-    const experimentsView =
-      view === "experiments" ||
-      view === "experiment-new" ||
-      view === "experiment-detail";
-    if (experimentsView && !features.experiments) {
+    if (features && view === "experiments" && !features.experiments) {
       setView("list");
     }
     const knowledgeBasesView =
@@ -75,7 +68,7 @@ function MainApp() {
       view === "knowledge-base-new" ||
       view === "knowledge-base-chat" ||
       view === "knowledge-base-config";
-    if (knowledgeBasesView && !features["knowledge-bases"]) {
+    if (features && knowledgeBasesView && !features["knowledge-bases"]) {
       setView("list");
     }
   }, [features, view, setView]);
@@ -130,7 +123,6 @@ function MainApp() {
       useStore.setState({
         view: state.view,
         agentId: state.agentId ?? null,
-        experimentId: state.experimentId ?? null,
         settingsTab: state.settingsTab ?? "account",
         sandboxSection: state.sandboxSection ?? "setup",
       });
@@ -148,7 +140,7 @@ function MainApp() {
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
           <IconRail hideMobileBar />
-          <div className="relative z-10 flex-1 min-w-0">
+          <div className="relative z-content flex-1 min-w-0">
             <ChatView />
           </div>
         </div>
@@ -162,11 +154,9 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
-        <main className="relative z-10 flex-1 overflow-y-auto">
+        <main className="relative z-content flex-1 overflow-y-auto">
           {view === "sandbox-new" ? (
             <SandboxWizardView />
-          ) : view === "experiment-new" ? (
-            <ExperimentWizardView />
           ) : view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : view === "knowledge-base-new" ? (
@@ -181,8 +171,6 @@ function MainApp() {
                 <InboxView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
-              ) : view === "experiment-detail" ? (
-                <ExperimentDetailView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
               ) : view === "artifacts" ? (

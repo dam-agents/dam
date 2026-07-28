@@ -212,10 +212,14 @@ describe("slack ambient inbound", () => {
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
-  it("ambient on: reply after the turn threads under the triggering message", async () => {
-    const h = harness({ binding: ambient });
+  it("ambient on: a reply during the turn threads under the triggering message", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
     await h.message(STRANGER, "what is our deploy process?", { ts: "7.7" });
-    await h.settled(() => h.turnEvents().length === 1);
+    await h.settled(() => pending.length === 1);
 
     const result = await h.worker.reply("agent-1", {
       text: "here's the runbook",
@@ -226,6 +230,25 @@ describe("slack ambient inbound", () => {
       threadTs: "7.7",
       text: "here's the runbook",
     });
+
+    pending[0]!("");
+    await h.settled(() => h.turnEvents().length === 1);
+  });
+
+  it("ambient on: a silent read-along turn does not repoint the proactive reply fallback", async () => {
+    const h = harness({ binding: ambient });
+    // The agent stays silent on a drifted-by channel message. A later
+    // proactive id-less reply must not thread under that bystander message.
+    await h.message(STRANGER, "random chatter nobody asked about", {
+      ts: "7.7",
+    });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const result = await h.worker.reply("agent-1", { text: "follow-up" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("no active thread"),
+    });
+    expect(h.messages()).toHaveLength(0);
   });
 
   it("ambient on: keys top-level flow to the channel's rolling ambient session", async () => {
@@ -240,12 +263,16 @@ describe("slack ambient inbound", () => {
   });
 
   it("ambient on: a thread reply keeps the thread's own session key and reply target", async () => {
-    const h = harness({ binding: ambient });
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
     await h.message(STRANGER, "sure, in this thread", {
       ts: "5.2",
       threadTs: "5.1",
     });
-    await h.settled(() => h.turnEvents().length === 1);
+    await h.settled(() => pending.length === 1);
 
     expect(h.sendOpts).toHaveLength(1);
     const opts = h.sendOpts[0]!;
@@ -253,6 +280,9 @@ describe("slack ambient inbound", () => {
     // A reply threads back into the same thread, not the triggering ts.
     await h.worker.reply("agent-1", { text: "here" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "5.1" });
+
+    pending[0]!("");
+    await h.settled(() => h.turnEvents().length === 1);
   });
 
   it("ambient on: the turn response is never auto-posted — posting is the agent's tool call", async () => {
@@ -365,18 +395,197 @@ describe("slack ambient inbound", () => {
     pending[0]!("");
     await h.settled(() => pending.length === 2);
 
-    // One serialized turn for both queued messages, speaker-labelled lines.
+    // One serialized turn for both queued messages, speaker-labelled lines —
+    // each tagged with its own ts so the agent can name the one it answers.
     expect(h.prompts).toHaveLength(2);
     const batched = String(h.prompts[1]);
-    expect(batched).toContain("<@U-B>: two");
-    expect(batched).toContain("<@U-C>: three");
+    expect(batched).toContain("[ts 2.2] <@U-B>: two");
+    expect(batched).toContain("[ts 3.3] <@U-C>: three");
+
+    // Two top-level messages share this turn, so an id-less reply could
+    // thread an answer to one under the other — refuse it; the tagged ts
+    // targets the right message, even the older one.
+    const refused = await h.worker.reply("agent-1", { text: "on it" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    const ok = await h.worker.reply("agent-1", {
+      text: "answering two",
+      threadTs: "2.2",
+    });
+    expect(ok).toEqual({ ok: true });
+    expect(h.messages()[0]).toMatchObject({
+      threadTs: "2.2",
+      text: "answering two",
+    });
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);
-    // The turn's reply target is the newest message of the batch, so a reply
-    // now threads under it.
+  });
+
+  it("coalesces thread read-along messages that arrive while a turn is in flight into one prompt", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+
+    // A burst of replies in the same thread while the first turn is in flight.
+    await h.message("U-A", "one", { ts: "1.1", threadTs: "T.0" });
+    await h.settled(() => pending.length === 1);
+    await h.message("U-B", "two", { ts: "2.2", threadTs: "T.0" });
+    await h.message("U-C", "three", { ts: "3.3", threadTs: "T.0" });
+
+    pending[0]!("");
+    await h.settled(() => pending.length === 2);
+
+    // The two that arrived during the in-flight turn coalesce into a single
+    // serialized turn instead of racing concurrent prompts into the thread's
+    // session — the race the runtime resolves by silently dropping the losers.
+    expect(h.prompts).toHaveLength(2);
+    const batched = String(h.prompts[1]);
+    expect(batched).toContain("[ts 2.2] <@U-B>: two");
+    expect(batched).toContain("[ts 3.3] <@U-C>: three");
+
+    // Every turn resumes the thread's own session, never the channel's rolling
+    // ambient one.
+    for (const o of h.sendOpts) {
+      expect("platformMeta" in o && o.platformMeta?.threadTs).toBe("T.0");
+    }
+
+    // The batched messages all live in one thread, so an id-less reply during
+    // the turn is unambiguous and threads back into it.
     await h.worker.reply("agent-1", { text: "on it" });
-    expect(h.messages()[0]).toMatchObject({ threadTs: "3.3", text: "on it" });
+    expect(h.messages()[0]).toMatchObject({ threadTs: "T.0", text: "on it" });
+
+    pending[1]!("on it");
+    await h.settled(() => h.turnEvents().length === 2);
+
+    // Engagement recorded the batch's newest message, so a later proactive
+    // id-less react targets it rather than an arbitrary older batch member.
+    const reacted = await h.worker.react("agent-1", { emoji: "eyes" });
+    expect(reacted).toEqual({ ok: true });
+    expect(h.reactions()[0]).toMatchObject({ ts: "3.3" });
+  });
+
+  it("serializes a mention behind an in-flight ambient turn on the same thread session", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+    await h.message("U-A", "reading along", { ts: "1.1", threadTs: "T.1" });
+    await h.settled(() => pending.length === 1);
+
+    // A mention on the same thread resumes the same session — it must wait
+    // for the ambient turn instead of racing a second prompt into the
+    // session's runtime queue, where a dropped relay silently loses it.
+    void h.gw.fireMention({
+      user: "U-B",
+      channel: "C1",
+      ts: "2.2",
+      threadTs: "T.1",
+      text: "hey bot",
+    });
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(h.prompts).toHaveLength(1);
+
+    pending[0]!("");
+    await h.settled(() => pending.length === 2);
+    pending[1]!("answer");
+    await h.settled(() => h.turnEvents().length === 2);
+  });
+
+  it("an engaged ambient turn becomes the proactive reply fallback", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+    await h.message("U-A", "can someone check the build?", { ts: "9.9" });
+    await h.settled(() => pending.length === 1);
+
+    // The agent chimes in during the turn — that engagement, not the turn's
+    // mere existence, makes this thread the last active one.
+    await h.worker.reply("agent-1", { text: "on it" });
+    pending[0]!("");
+    await h.settled(() => h.turnEvents().length === 1);
+    h.gw.resetOutbound();
+
+    // A later proactive id-less reply follows the engagement, not whatever
+    // message last drifted by.
+    const ok = await h.worker.reply("agent-1", { text: "build is green" });
+    expect(ok).toEqual({ ok: true });
+    expect(h.messages()[0]).toMatchObject({ threadTs: "9.9" });
+  });
+
+  it("keeps a relay-failed thread turn resolvable — an id-less reply is never cross-routed into another thread", async () => {
+    const pending: Array<{
+      resolve: (v: string) => void;
+      reject: (err: unknown) => void;
+    }> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () =>
+        new Promise<string>((resolve, reject) =>
+          pending.push({ resolve, reject }),
+        ),
+    });
+
+    await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
+    await h.settled(() => pending.length === 1);
+    // The relay settles with a transport error; the pod-side harness may still
+    // be working thread T.1 (the runtime keeps a running prompt alive when its
+    // channel drops) and will reply late over the MCP path.
+    pending[0]!.reject(new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+
+    await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
+    await h.settled(() => pending.length === 2);
+
+    // Routing the late id-less reply to the sole live turn would post T.1's
+    // answer into T.2 — refuse instead; the injected id still resolves.
+    const refused = await h.worker.reply("agent-1", { text: "late answer" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    expect(h.messages()).toHaveLength(0);
+
+    const ok = await h.worker.reply("agent-1", {
+      text: "late answer",
+      threadTs: "T.1",
+    });
+    expect(ok).toEqual({ ok: true });
+    expect(h.messages()[0]).toMatchObject({ threadTs: "T.1" });
+
+    pending[1]!.resolve("");
+    await h.settled(() => h.turnEvents().length === 2);
+  });
+
+  it("drains separate threads on independent queues — one busy thread never blocks another", async () => {
+    const pending: Array<(v: string) => void> = [];
+    const h = harness({
+      binding: ambient,
+      respond: () => new Promise<string>((r) => pending.push(r)),
+    });
+
+    // One message in each of two different threads; neither turn resolves yet.
+    await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
+    await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
+
+    // Both turns are in flight at once: distinct threads drain on distinct
+    // queues, so a busy thread never serializes another behind it. Keying the
+    // queue by channel alone — the tempting simplification — would wrongly
+    // block the second turn behind the first.
+    await h.settled(() => pending.length === 2);
+    expect(h.prompts).toHaveLength(2);
+    expect(
+      h.sendOpts.map((o) => "platformMeta" in o && o.platformMeta?.threadTs),
+    ).toEqual(["T.1", "T.2"]);
+
+    pending.forEach((r) => r(""));
+    await h.settled(() => h.turnEvents().length === 2);
   });
 
   it("re-checks the owner's ToU at drain time — a queued batch never relays past a stale gate", async () => {

@@ -22,6 +22,27 @@ export interface ApprovalsNotifier {
   notifyResolved(approvalId: string): Promise<void>;
 }
 
+/** Consumer-side view of the rule the writer touched — only the fields
+ *  the approvals service needs for audit and conflict reporting; the
+ *  egress-rules adapter's richer row stays structurally assignable. */
+export interface WrittenEgressRule {
+  id: string;
+  verdict: "allow" | "deny";
+  source: EgressRuleSource;
+}
+
+/** What the rule write actually did. `verdict-clash` means the rules
+ *  table is unchanged — an equivalent active rule with the opposite
+ *  verdict already exists — and the verdict must NOT resolve (#2766). */
+export type EgressRuleWriteOutcome =
+  | { kind: "inserted"; row: WrittenEgressRule }
+  | {
+      kind: "duplicate";
+      row: WrittenEgressRule;
+      tookOwnershipFrom?: EgressRuleSource;
+    }
+  | { kind: "verdict-clash"; existing: WrittenEgressRule };
+
 /** Narrow port the approvals service consumes for the
  *  approve-permanent / deny-forever paths. The egress-rules module's
  *  `compose.ts` provides an adapter; the approvals service never sees the
@@ -37,7 +58,7 @@ export interface EgressRuleWriter {
     verdict: "allow" | "deny";
     decidedBy: string;
     source: EgressRuleSource;
-  }): Promise<void>;
+  }): Promise<EgressRuleWriteOutcome>;
 }
 
 /** Outbox port: opens a one-shot WS to the wrapper and sends a JSON-RPC
@@ -121,6 +142,53 @@ async function loadOwned(
   return row;
 }
 
+/** The rule write no-oped against an equivalent rule with the opposite
+ *  verdict: refuse loudly instead of resolving an approval that changed
+ *  nothing (#2766). Audited as a distinct event — not `approval.verdict`,
+ *  whose invariant is "a verdict was applied and the approval resolved" —
+ *  so refused intent stays joinable on correlationId for forensics. */
+function verdictConflict(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  attemptedVerdict: "allow" | "deny",
+  ruleFields: Record<string, unknown>,
+  existing: WrittenEgressRule,
+): TRPCError {
+  securityLog("warn", "approval.verdict_conflict", {
+    category: "approval",
+    actor: deps.ownerSub,
+    actorKind: "user",
+    agentId: row.agentId,
+    decision: "deny",
+    correlationId: row.id,
+    detail: {
+      attemptedVerdict,
+      ...ruleFields,
+      existingRuleId: existing.id,
+      existingVerdict: existing.verdict,
+    },
+  });
+  return new TRPCError({
+    code: "CONFLICT",
+    message: `an equivalent rule already exists with verdict '${existing.verdict}' — edit the agent's network rules instead`,
+  });
+}
+
+/** Truthful rule-write fields for the `approval.verdict` audit line:
+ *  whether a row was actually inserted, which rule now governs, and any
+ *  implicit rule the verdict took ownership of (#2766). */
+function auditRuleFields(
+  outcome: Exclude<EgressRuleWriteOutcome, { kind: "verdict-clash" }>,
+): Record<string, unknown> {
+  return {
+    ruleWritten: outcome.kind === "inserted",
+    ruleId: outcome.row.id,
+    ...(outcome.kind === "duplicate" && outcome.tookOwnershipFrom
+      ? { takenOverFromSource: outcome.tookOwnershipFrom }
+      : {}),
+  };
+}
+
 /** One audit line per HITL verdict. correlationId === the pending-approval id,
  *  which is the same id the ext_authz gate logs on hold-open / hold-resolve —
  *  so the held request and the human decision join on it. */
@@ -191,13 +259,26 @@ export function createApprovalsService(
           pathPattern: row.payload.path,
           verdict: "allow" as const,
         };
-        await deps.egressRuleWriter.insert({
+        const written = await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "allow",
+            {
+              host: row.payload.host,
+              method: row.payload.method,
+              pathPattern: row.payload.path,
+            },
+            written.existing,
+          );
+        }
         const casWon = await deps.repo.resolvePending(
           id,
           "allow",
@@ -207,7 +288,7 @@ export function createApprovalsService(
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
@@ -236,13 +317,22 @@ export function createApprovalsService(
           pathPattern: "*",
           verdict: "allow" as const,
         };
-        await deps.egressRuleWriter.insert({
+        const written = await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "allow",
+            { host: row.payload.host, hostWide: true },
+            written.existing,
+          );
+        }
         const casWon = await deps.repo.resolvePending(
           id,
           "allow",
@@ -254,7 +344,7 @@ export function createApprovalsService(
         // allow-list; flag it.
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           hostWide: true,
         });
@@ -274,13 +364,26 @@ export function createApprovalsService(
           pathPattern: row.payload.path,
           verdict: "deny" as const,
         };
-        await deps.egressRuleWriter.insert({
+        const written = await deps.egressRuleWriter.insert({
           id: randomUUID(),
           agentId: row.agentId,
           ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "deny",
+            {
+              host: row.payload.host,
+              method: row.payload.method,
+              pathPattern: row.payload.path,
+            },
+            written.existing,
+          );
+        }
         const casWon = await deps.repo.resolvePending(
           id,
           "deny",
@@ -290,7 +393,7 @@ export function createApprovalsService(
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,

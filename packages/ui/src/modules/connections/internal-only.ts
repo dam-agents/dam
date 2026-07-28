@@ -7,6 +7,7 @@ export const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
   "youtube",
   "custom-client-credentials",
   "github-app",
+  "github-enterprise-app",
 ]);
 
 // All Google services (catalog ids "google-*") are internal-only as a group.

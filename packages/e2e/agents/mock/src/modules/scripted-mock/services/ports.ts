@@ -24,3 +24,21 @@ export interface SlackReplyPoster {
 export interface HarnessSpawn {
   (input: SpawnInvocationInput): Promise<SpawnInvocationResult>;
 }
+
+/** Subprocess execution for the experiment directives (#2942): `run` waits
+ *  (plan-mode scripts exit fast), `spawnDetached` backgrounds a loop the way
+ *  a real harness does on a run launch. */
+export interface ProcessRunner {
+  run(args: {
+    command: string;
+    args: string[];
+    env?: Record<string, string>;
+    timeoutMs: number;
+  }): Promise<{ code: number; output: string }>;
+  spawnDetached(args: {
+    command: string;
+    args: string[];
+    env?: Record<string, string>;
+    logPath: string;
+  }): void;
+}

@@ -122,25 +122,36 @@ export type {
 } from "./modules/schedules/types.js";
 export type {
   ExperimentStatus,
-  ArmStatus,
+  SpanStatus,
+  Skeleton,
+  TraceEvent,
+  PlanRegisterInput,
+  FinishInput,
+  AppendEventsInput,
   Experiment,
-  ExperimentArm,
-  ExperimentRun,
-  ExperimentArmWithRuns,
-  ExperimentWithRuns,
-  ExperimentListItem,
-  ActiveArm,
-  ExperimentCreateInput,
-  ExperimentAddArmInput,
-  ExperimentRecordRunInput,
-  ExperimentFinishArmInput,
+  ExperimentDriverSummary,
+  ExperimentSpan,
+  TraceFeed,
+  TraceFeedStage,
+  TraceFeedInvocation,
+  ScoreSeriesPoint,
   ExperimentsService,
 } from "./modules/experiments/types.js";
 export {
-  armVariationSchema,
-  experimentAddArmInputSchema,
-  experimentCreateInputSchema,
+  skeletonSchema,
+  traceEventSchema,
+  planRegisterRequestSchema,
+  planRegisterResponseSchema,
+  appendEventsRequestSchema,
+  appendEventsResponseSchema,
+  finishRequestSchema,
   experimentIdInputSchema,
+  SCRIPT_CONTENT_MAX_BYTES,
+  DASHBOARD_CONTENT_MAX_BYTES,
+  CUSTOM_DATA_MAX_BYTES,
+  EXPERIMENT_FEED_MESSAGE_TYPE,
+  EXPERIMENT_FOLDER_PREFIX,
+  experimentFolderName,
 } from "./modules/experiments/schemas.js";
 export type {
   KnowledgeBaseCreateInput,
@@ -284,6 +295,9 @@ export {
   SessionType,
   SessionMode,
   sessionModeSchema,
+  AMBIENT_THREAD_KEY_PREFIX,
+  ambientThreadKey,
+  isAmbientThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 
@@ -317,6 +331,7 @@ export type {
 export type {
   LocalSkill,
   Skill,
+  SkillCreateLocalInput,
   SkillCreateSourceInput,
   SkillInstallInput,
   SkillPublishInput,

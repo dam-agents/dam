@@ -32,7 +32,7 @@ export function FullscreenPreviewDialog({ title, onClose, children }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex flex-col bg-background"
+      className="fixed inset-0 z-overlay flex flex-col bg-background"
     >
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
         <span

@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import type {
   LocalSkill,
   Skill,
+  SkillCreateLocalInput,
   SkillCreateSourceInput,
   SkillInstallInput,
   SkillPublishInput,
@@ -25,7 +26,10 @@ import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
-import type { AgentRuntimeSkillsClient } from "../infrastructure/agent-runtime-client.js";
+import {
+  AgentRuntimeConflictError,
+  type AgentRuntimeSkillsClient,
+} from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
@@ -459,6 +463,39 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
         name: input.name,
       });
+    },
+
+    async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {
+      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      let created: LocalSkill[];
+      try {
+        created = await deps.runtimeClient.writeLocal(
+          input.agentId,
+          input.skills,
+        );
+      } catch (err) {
+        // Pass the pod's collision verdict through verbatim — the message names
+        // the offending skills and the UI matches rows against it.
+        if (err instanceof AgentRuntimeConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: err.message });
+        }
+        throw err;
+      }
+      // No agent_skills row, no outbox bump: a standalone Local Skill is
+      // deliberately untracked — the reconciled `state` read surfaces it on the
+      // next poll. User-authored content written onto the agent's PV must be
+      // answerable post-incident, so log the write (parity with skill.install).
+      securityLog("info", "skill.create_local", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: "local",
+        result: "success",
+        detail: { names: input.skills.map((s) => s.name) },
+      });
+      return created;
     },
 
     async publish(input: SkillPublishInput): Promise<SkillPublishResult> {

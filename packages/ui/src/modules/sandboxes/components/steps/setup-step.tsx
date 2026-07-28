@@ -1,4 +1,5 @@
 import { FormField } from "@/components/form-field";
+import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -104,14 +105,14 @@ export function SetupStep({
 
       {setupNote && (
         <section className="mb-8">
-          <div className="rounded-lg border border-callout-border bg-callout p-4 md:-ml-4">
+          <Callout tone="info" inset>
             <p className="text-[14px] font-semibold text-foreground">
               {setupNote.title}
             </p>
             <p className="mt-1 text-[14px] text-muted-foreground">
               {setupNote.body}
             </p>
-          </div>
+          </Callout>
         </section>
       )}
 

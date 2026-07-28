@@ -58,6 +58,43 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ── z-index ladder — the ordered source of truth for stacking.
+     Use the matching z-* utilities below; never raw z numbers.
+     The Sonner toaster manages its own (higher) z-index and sits above z-toast. ── */
+  --z-content: 10;
+  --z-raised: 20;
+  --z-nav: 30;
+  --z-overlay: 40;
+  --z-banner: 50;
+  --z-popover: 60;
+  --z-tooltip: 70;
+  --z-toast: 80;
+}
+
+@utility z-content {
+  z-index: var(--z-content);
+}
+@utility z-raised {
+  z-index: var(--z-raised);
+}
+@utility z-nav {
+  z-index: var(--z-nav);
+}
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+@utility z-banner {
+  z-index: var(--z-banner);
+}
+@utility z-popover {
+  z-index: var(--z-popover);
+}
+@utility z-tooltip {
+  z-index: var(--z-tooltip);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
 }
 
 /* ── Light theme (default) ── */

@@ -44,9 +44,7 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import { composeKnowledgeBasesForOwner } from "../../modules/knowledge-bases/index.js";
-import { createCandidateRoutes } from "../../modules/experiments/candidate-route.js";
 import {
   composeArtifactLibraryForOwner,
   composeShareViewer,
@@ -54,6 +52,8 @@ import {
   createShareHostGate,
   createShareViewerApp,
 } from "../../modules/artifact-library/index.js";
+import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
+import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import { composeFeaturesForOwner } from "../../modules/features/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
@@ -384,22 +384,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   );
 
   deps.mountUsageRoutes(app);
-
-  // Candidate download — non-tRPC because it streams a binary artifact (zip).
-  // Boot-time artifact service (owner-agnostic store); the route owner-scopes
-  // each read through the experiments service.
-  app.route(
-    "/",
-    createCandidateRoutes({
-      experimentsFor: (owner) =>
-        composeExperimentsForOwner({
-          db,
-          owner,
-          maxArtifactBytes: config.maxArtifactBytes,
-        }).experiments,
-      artifacts,
-    }),
-  );
 
   // Artifact-library binary paths — non-tRPC (upload carries raw bytes in,
   // download streams bytes or returns a presigned direct link).
@@ -877,28 +861,35 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
-    const wakeAgent = async (agentId: string) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    };
-    const { experiments } = composeExperimentsForOwner({
-      db,
-      owner: user.sub,
-      maxArtifactBytes: config.maxArtifactBytes,
-      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
-      runtimeMutator,
-      wakeAgent,
-    });
     const { knowledgeBases } = composeKnowledgeBasesForOwner({
       owner: user.sub,
       agents,
       runtimeMutator,
-      wakeAgent,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
     });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
       db,
       artifacts,
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
+    });
+    const { experiments } = composeExperimentsForOwner({
+      db,
+      owner: user.sub,
+      artifactLibrary,
+      agents,
+      pin: {
+        set: (agentId) =>
+          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
+        clear: (agentId) =>
+          agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
+      },
+      runtimeMutator,
+      wakeAgent: async (agentId) => {
+        await agentsRepo.wakeIfHibernated(agentId);
+      },
     });
     const { features } = composeFeaturesForOwner({ db, owner: user.sub });
     const skills = composeSkillsModule(

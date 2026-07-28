@@ -1,7 +1,14 @@
 export {
   composeExperimentsForOwner,
-  composeExperimentArmSweeper,
+  composeExperimentInactivitySweep,
+  reconcileExperimentPins,
+  type ExperimentPinPort,
 } from "./compose.js";
-export type { ComposeExperimentsForOwnerOpts } from "./compose.js";
-export type { ExperimentArmSweeper } from "./services/experiment-arm-sweeper.js";
+export type { ExperimentInactivitySweep } from "./services/experiment-inactivity-sweep.js";
+export {
+  CustomDataTooLargeError,
+  ExperimentClosedError,
+  ScriptContentRequiredError,
+  UnknownExperimentError,
+} from "./services/experiments-service.js";
 export type { ExperimentsRepository } from "./infrastructure/experiments-repository.js";

@@ -6,6 +6,7 @@ import type {
   skillReadLocalInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
+  skillWriteLocalInputSchema,
 } from "./schemas.js";
 
 export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
@@ -13,6 +14,7 @@ export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
+export type SkillWriteLocalInput = z.infer<typeof skillWriteLocalInputSchema>;
 
 export interface ScannedSkill {
   source: string;
@@ -60,6 +62,7 @@ export type SkillsDomainError =
   | { kind: "InvalidSkillPath"; path: string; reason: string }
   | { kind: "SkillNotFound"; name: string; skillPaths: string[] }
   | { kind: "SkillNotFoundInSource"; source: string; name: string }
+  | { kind: "SkillAlreadyExists"; names: string[] }
   | { kind: "PayloadTooLarge"; detail: string }
   | { kind: "SourceFetchFailed"; source: string; detail: string }
   | {
@@ -90,6 +93,9 @@ export interface SkillsService {
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
+  writeLocal: (
+    input: SkillWriteLocalInput,
+  ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
   scan: (
     input: SkillScanInput,
   ) => Promise<Result<ScannedSkill[], SkillsDomainError>>;

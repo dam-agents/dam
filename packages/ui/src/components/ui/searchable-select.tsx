@@ -117,7 +117,7 @@ export function SearchableSelect({
         <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div className="absolute z-popover mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
           <div className="p-1.5">
             <input
               ref={inputRef}

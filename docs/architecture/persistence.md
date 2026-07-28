@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-07-22
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -9,7 +9,7 @@ Platform persists state on four durable substrates, split cleanly between the pl
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned. The bundled instance runs under three roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
-- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: Experiment Candidate artifacts. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot record Candidates — the feature fails closed.
+- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
 - **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Forks), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:
@@ -69,7 +69,7 @@ The api-server is the sole writer for all of it. The controller does not touch P
 
 ### Object store
 
-The object store carries bulk binary blobs that would be wrong as database rows — data whose size, not queryability, is the point. Its first consumer is Experiment Candidate artifacts ([experiments](experiments.md)); it is also the durable-bulk-storage foundation intended for future features like storage backups and agent duplication.
+The object store carries bulk binary blobs that would be wrong as database rows — data whose size, not queryability, is the point. Its first consumer is artifact-library content ([artifact-library](artifact-library.md)); it is also the durable-bulk-storage foundation intended for future features like storage backups and agent duplication.
 
 Ownership is api-server-centric: it holds the only standing credentials, the controller never touches the store, and bulk bytes move **directly** between producer/consumer and the store under platform-minted authorization — the api-server issues short-lived links scoped to a single object and operation (upload links to agents after attributing the caller, download links to browsers after owner checks), and the store rejects anything else. An agent's traffic still exits only through its paired gateway; what changes with the store present is that the gateway forwards store-bound requests without a per-request human decision, the link itself being the authorization ([security-and-credentials](security-and-credentials.md)). Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
 
@@ -129,7 +129,7 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 | Wake (replicas → 1) | survives | survives | survives | survives |
 | api-server restart | survives | survives | survives | survives |
 | Controller restart | survives | survives | survives | survives |
-| Agent delete | agent row marked deleted by api-server | survives (Candidates belong to the Experiment, not the Agent) | CR removed | PVCs removed by controller |
+| Agent delete | agent row marked deleted by api-server | survives (artifacts belong to the owner's library, not the Agent) | CR removed | PVCs removed by controller |
 | Schedule delete | schedule row removed | n/a | n/a | n/a |
 
 Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.

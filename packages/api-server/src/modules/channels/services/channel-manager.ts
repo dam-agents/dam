@@ -26,20 +26,49 @@ export interface PostMessageOptions {
 /** A reply threaded under the turn the agent is answering. */
 export interface ChannelReply {
   text: string;
-  /** Thread to post into; defaults to the agent's most recent turn thread. */
+  /** Thread to post into. Omitted, it resolves to the sole in-flight turn's
+   *  thread; with several turns in flight at once the reply is refused rather
+   *  than guessed, so the agent must pass this (the prompt injects it). */
   threadTs?: string;
   /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
+  /** Surface the reply in the channel too, not only inside the thread — one
+   *  post in both places. For threads that have scrolled out of the channel,
+   *  where a thread-only reply would go unseen. Off by default. */
+  alsoSendToChannel?: boolean;
 }
 
 /** An emoji reaction on a specific message. */
 export interface ChannelReaction {
   /** Emoji short name, no surrounding colons (e.g. `eyes`, `white_check_mark`). */
   emoji: string;
-  /** Message to react to; defaults to the agent's most recent turn message. */
+  /** Message to react to. Omitted, it resolves to the sole in-flight turn's
+   *  message; with several turns in flight at once the react is refused rather
+   *  than guessed, so the agent must pass this (the prompt injects it). */
   messageTs?: string;
   /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
+}
+
+/** One person behind a messenger user id. Everything but `id` is optional —
+ *  the messenger reports only what the person filled in and what the app's
+ *  scopes cover. `error` marks an id that alone failed to resolve, so one bad
+ *  id in a batch never costs the caller the others. */
+export interface ChannelUser {
+  id: string;
+  username?: string;
+  realName?: string;
+  displayName?: string;
+  title?: string;
+  pronouns?: string;
+  email?: string;
+  timezone?: string;
+  timezoneLabel?: string;
+  statusText?: string;
+  statusEmoji?: string;
+  isBot?: boolean;
+  isDeleted?: boolean;
+  error?: string;
 }
 
 /** The dispatch surface both adapters share; per-agent lifecycle is
@@ -64,6 +93,14 @@ interface Worker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  describeUsers?(
+    instanceName: string,
+    userIds: string[],
+  ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** False only when this worker has confirmed a lookup can't succeed (e.g. a
+   *  missing Slack scope). Absent on workers with no directory to begin with
+   *  (Telegram) — those already refuse `describeUsers` on their own. */
+  supportsUserLookup?(): Promise<boolean>;
 }
 
 export interface ChannelManager {
@@ -92,6 +129,19 @@ export interface ChannelManager {
     channelType: ChannelType,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  /** Resolve messenger user ids to the people behind them. */
+  describeUsers(
+    instanceName: string,
+    channelType: ChannelType,
+    userIds: string[],
+  ): Promise<{ users: ChannelUser[] } | { error: string }>;
+  /** Whether describe_channel_users could plausibly resolve anything right
+   *  now, across every channel type. False only when every worker that
+   *  implements a directory lookup has confirmed it can't (a missing
+   *  optional scope) — an install with no such worker at all, or one whose
+   *  capability is unknown, fails open so the tool stays registered exactly
+   *  as it always has. */
+  supportsUserLookup(): Promise<boolean>;
 }
 
 export function createChannelManager(deps: {
@@ -146,10 +196,16 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
-      // The platform bot polls unconditionally — /login must work in chats
-      // that have no binding yet.
+      // Both platform bots connect unconditionally at startup — inbound
+      // commands (the bind command), mentions and DMs must reach the bot in
+      // chats that have no binding yet. Slack opens its socket-mode connection
+      // here rather than lazily on the first bind/post, so it never misses
+      // those events.
       if (telegramWorker) await telegramWorker.start();
+      if (slackWorker) await slackWorker.connect();
 
+      // The socket is already up; walking the bindings only restores the
+      // per-Agent registration the SlackConnected event installs at runtime.
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
           if (channel.type === ChannelType.Slack && slackWorker) {
@@ -194,6 +250,22 @@ export function createChannelManager(deps: {
       if (!worker?.react)
         return { error: `reactions not supported on ${channelType}` };
       return worker.react(instanceName, reaction);
+    },
+
+    async describeUsers(instanceName, channelType, userIds) {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.describeUsers)
+        return { error: `user lookup not supported on ${channelType}` };
+      return worker.describeUsers(instanceName, userIds);
+    },
+
+    async supportsUserLookup() {
+      const capable = workers.filter((w) => w.describeUsers);
+      if (capable.length === 0) return true;
+      const results = await Promise.all(
+        capable.map((w) => w.supportsUserLookup?.() ?? Promise.resolve(true)),
+      );
+      return results.some(Boolean);
     },
   };
 }

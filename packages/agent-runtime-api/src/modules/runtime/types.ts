@@ -15,7 +15,7 @@ export const eventKind = z.enum([
   "schedule-reset",
   "workspace-seed",
   "workspace-command",
-  "experiment-trigger",
+  "experiment-execute",
   "harness-config",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
@@ -177,20 +177,23 @@ export const workspaceCommandEvent = z.object({
   payload: workspaceCommandEventPayload,
 });
 
-export const experimentTriggerEventPayload = z.object({
+// Experiments v2 (#2942): the user pressed Execute on a draft Experiment. The
+// payload's task is the composed launch prompt — the harness backgrounds the
+// script and ends its turn; the script reports to the platform on its own.
+export const experimentExecuteEventPayload = z.object({
   experimentId: z.string().min(1),
   task: z.string().min(1),
 });
-export type ExperimentTriggerEventPayload = z.infer<
-  typeof experimentTriggerEventPayload
+export type ExperimentExecuteEventPayload = z.infer<
+  typeof experimentExecuteEventPayload
 >;
 
-export const experimentTriggerEvent = z.object({
+export const experimentExecuteEvent = z.object({
   id: z.string().min(1),
-  kind: z.literal("experiment-trigger"),
+  kind: z.literal("experiment-execute"),
   version: z.number().int().nonnegative(),
   expiresAt: z.string().datetime({ offset: true }),
-  payload: experimentTriggerEventPayload,
+  payload: experimentExecuteEventPayload,
 });
 
 // One-shot apply of a per-agent harness config change (model / mode / config
@@ -221,7 +224,7 @@ export const event = z.discriminatedUnion("kind", [
   scheduleResetEvent,
   workspaceSeedEvent,
   workspaceCommandEvent,
-  experimentTriggerEvent,
+  experimentExecuteEvent,
   harnessConfigEvent,
 ]);
 export type Event = z.infer<typeof event>;

@@ -278,7 +278,7 @@ export const agentsRouter = t.router({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              "Bind link is invalid or expired — send /login again in Telegram",
+              "Bind link is invalid or expired — run the bind command again in Telegram",
           });
         case "AgentNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });

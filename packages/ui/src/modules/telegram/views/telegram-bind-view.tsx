@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import { getBrand } from "../../../brand.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import type { AgentView } from "../../../types.js";
 import { BindAgentRow } from "../../agents/components/bind-agent-row.js";
@@ -22,6 +23,7 @@ const flowId = readFlowIdFromSearch(window.location.search);
 const callbackError = readCallbackErrorFromSearch(window.location.search);
 
 export function TelegramBindView() {
+  const brandShort = getBrand().short;
   const bind = useBindTelegramChat();
   const {
     isLoading,
@@ -43,14 +45,16 @@ export function TelegramBindView() {
   };
 
   if (callbackError) {
-    return <TerminalError copy={callbackErrorCopy(callbackError)} />;
+    return (
+      <TerminalError copy={callbackErrorCopy(callbackError, brandShort)} />
+    );
   }
   if (!flowId) {
     return (
       <TerminalError
         copy={{
           title: "This page is opened from Telegram",
-          hint: "Send /login in your chat to get a fresh link.",
+          hint: `Send \`/${brandShort} bind\` in your chat to get a fresh link.`,
           terminal: true,
         }}
       />
@@ -58,7 +62,11 @@ export function TelegramBindView() {
   }
   if (bound) {
     return (
-      <BindSuccess agentName={bound.agentName} chatTitle={bound.chatTitle} />
+      <BindSuccess
+        agentName={bound.agentName}
+        chatTitle={bound.chatTitle}
+        brandShort={brandShort}
+      />
     );
   }
   if (error?.terminal) {
@@ -81,7 +89,7 @@ export function TelegramBindView() {
           setBound({ agentName: agent.name, chatTitle: res.chatTitle }),
         onError: (e) => {
           const code = (e as { data?: { code?: string } }).data?.code;
-          setError(bindErrorCopy(code));
+          setError(bindErrorCopy(code, brandShort));
         },
       },
     );
@@ -133,17 +141,19 @@ export function TelegramBindView() {
 function BindSuccess({
   agentName,
   chatTitle,
+  brandShort,
 }: {
   agentName: string;
   chatTitle: string | null;
+  brandShort: string;
 }) {
   const bot = useTelegramBot();
   return (
     <Page title={chatTitle ? `“${chatTitle}” is connected` : "Chat connected"}>
       <p className="text-sm text-muted-foreground">
         The chat is now connected to <strong>{agentName}</strong>. Return to
-        Telegram — the bot has posted a confirmation in your chat. Send /logout
-        there to disconnect.
+        Telegram — the bot has posted a confirmation in your chat. Send{" "}
+        <code>/{brandShort} unbind</code> there to disconnect.
       </p>
       {bot.data?.username && (
         <a

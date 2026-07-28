@@ -38,7 +38,7 @@ Users can also author skills in the Files panel and publish them upstream as pul
 
 ## Object storage
 
-Experiment Candidate artifacts are stored in an S3-compatible object store. The chart bundles a single-node SeaweedFS by default, so a fresh install needs no setup. For production, point the platform at your own store instead — same shape as the external-database config (`apiServer.db`): a set endpoint wins over the shared local instance.
+Artifact content is stored in an S3-compatible object store. The chart bundles a single-node SeaweedFS by default, so a fresh install needs no setup. For production, point the platform at your own store instead — same shape as the external-database config (`apiServer.db`): a set endpoint wins over the shared local instance.
 
 ```yaml
 seaweedfs:
@@ -55,15 +55,19 @@ apiServer:
     forcePathStyle: false # path-style is for SeaweedFS/self-hosted; AWS wants virtual-hosted
 ```
 
-The api-server creates the bucket at startup if it is missing (grant CreateBucket, or pre-create the bucket to run with tighter credentials). Disabling both the bundled store and the endpoint disables candidate recording — the reporting tools fail with a clear error.
+The api-server creates the bucket at startup if it is missing (grant CreateBucket, or pre-create the bucket to run with tighter credentials). Disabling both the bundled store and the endpoint disables artifact storage — uploads fail with a clear error.
 
-Artifact bytes move directly: agents upload candidates to the store through their gateway using short-lived links the platform mints, so the size cap is policy, not a transport limit. Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for external stores usually the same as `endpoint`) to have candidate downloads redirect to the store as well; leave it empty and the api-server serves downloads itself — note it buffers each download in memory, so if you raise `apiServer.maxArtifactBytes` well past the default, set `publicEndpoint` too (and size the bundled store's volume to match).
+Artifact bytes move directly: agents upload to the store through their gateway using short-lived links the platform mints, so the size cap is policy, not a transport limit. Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for external stores usually the same as `endpoint`) to have downloads redirect to the store as well; leave it empty and the api-server serves downloads itself — note it buffers each download in memory, so if you raise `apiServer.maxArtifactBytes` well past the default, set `publicEndpoint` too (and size the bundled store's volume to match).
+
+## Experiments
+
+A `running` Experiment whose script sends no trace event for `EXPERIMENT_INACTIVITY_SECONDS` (api-server env var, default 900) is reaped to `failed`, releasing the driver agent's hibernation pin. The SDK heartbeats every ~60 s from a background thread, so quiet-but-alive stages (long spawns, local compute) don't trip it — a reap means the script process is gone.
 
 ## Slack Integration
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. A Slack channel binds to at most one instance globally; the binding routes every mention in that channel.
 
-1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `commands`, `users:read`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel.)
+1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `files:read`, `files:write`, `groups:read`, `im:write`, `reactions:write`, `commands`, `users:read`, `users:read.email`. (`channels:read`, `groups:read`, and `im:write` power agent-initiated posts to other bot-member channels and direct messages; without them agents can still post to their bound channel. The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`. Both are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`deploy/slack-app-manifest.yaml`](../deploy/slack-app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
 2. Add slash command `/platform` pointing to your app.
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
 
@@ -88,10 +92,10 @@ Platform runs a single Telegram bot for the entire installation. A Telegram chat
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
 2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
-3. Connect a chat: add the bot to a chat (or message it directly) and send `/login` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
+3. Connect a chat: add the bot to a chat (or message it directly) and send `/platform bind` (or just `/start`). In groups, only chat admins can start the flow. Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
 
-**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/logout` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
+**Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed. Every turn runs under the instance's own credentials, and `/platform unbind` in the chat disconnects it (the owner can also disconnect it from the web UI). Messages in unconnected group chats are ignored.
 
 ## Development mode
 

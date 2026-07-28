@@ -2,6 +2,7 @@ import type { LibraryArtifact } from "api-server-api";
 import { Info } from "lucide-react";
 import { useState } from "react";
 
+import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -33,7 +34,11 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         Pages and files this agent has published to your artifact library.
       </p>
 
-      <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-callout-border bg-callout p-3 text-[13px] text-text-secondary">
+      <Callout
+        tone="info"
+        size="sm"
+        className="mb-4 flex items-start gap-2.5 text-[13px] text-muted-foreground"
+      >
         <Info size={16} className="mt-0.5 shrink-0 text-accent" />
         <span>
           Agents publish through the built-in platform MCP tools —{" "}
@@ -47,7 +52,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
           for direct-to-storage uploads. No extra credentials needed in the
           sandbox.
         </span>
-      </div>
+      </Callout>
 
       {isLoading ? (
         <p className="text-[13px] text-muted-foreground">Loading…</p>

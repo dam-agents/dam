@@ -1,8 +1,10 @@
 import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
-import { Plus } from "lucide-react";
+import { Plus, Upload } from "lucide-react";
+import type { DragEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +47,11 @@ export function SkillsSurface({
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const [addOpen, setAddOpen] = useState(false);
+  const [modal, setModal] = useState<{
+    tab: "github" | "upload";
+    files: File[];
+  } | null>(null);
+  const [pageDrag, setPageDrag] = useState(false);
   const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
   const [renderFor, setRenderFor] = useState<{
     source: SkillSource;
@@ -65,6 +71,7 @@ export function SkillsSurface({
     toggle,
     update,
     createSource,
+    createLocalSkills,
     removeSource,
     refreshSource,
     publish,
@@ -85,10 +92,37 @@ export function SkillsSurface({
   // administering sources is a running-agent action, so drop "Add source"
   // rather than dim a dead control.
   const addSourceButton = readOnly ? null : (
-    <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setModal({ tab: "github", files: [] })}
+    >
       <Plus size={14} /> Add source
     </Button>
   );
+
+  // Dropping .md files anywhere on the surface opens the upload tab preloaded.
+  // Only while the agent can actually take the write (running + targetable).
+  const dropEnabled = !readOnly && !!agentId;
+  const surfaceDropProps = dropEnabled
+    ? {
+        onDragOver: (e: DragEvent<HTMLDivElement>) => {
+          if (![...e.dataTransfer.types].includes("Files")) return;
+          e.preventDefault();
+          setPageDrag(true);
+        },
+        onDragLeave: (e: DragEvent<HTMLDivElement>) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            setPageDrag(false);
+        },
+        onDrop: (e: DragEvent<HTMLDivElement>) => {
+          e.preventDefault();
+          setPageDrag(false);
+          const files = [...e.dataTransfer.files];
+          if (files.length > 0) setModal({ tab: "upload", files });
+        },
+      }
+    : {};
 
   // While stopped, `standalone` is always empty (the list lives on the offline
   // pod), so an empty standalone list isn't evidence the sandbox is bare —
@@ -102,27 +136,29 @@ export function SkillsSurface({
 
   return (
     <div
+      {...surfaceDropProps}
       className={cn(
         "flex flex-col gap-8",
         // Stopped / starting: a dimmed, non-interactive read-only snapshot.
         // Per Figma: rows at 40% opacity when stopped, 60% while starting.
         readOnly && "pointer-events-none",
         readOnly && (comingUp ? "opacity-60" : "opacity-40"),
+        pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
       {isEmpty ? (
         <section>
           <SectionLabel spaced>Skills</SectionLabel>
-          {/* The design's empty state also invites dropping a `.md` file to
-              create a skill, but that upload path isn't built yet (deferred),
-              so the copy only promises what works today — adding a source.
-              Restore the drop affordance when the upload backend lands. */}
-          <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border px-6 py-14 text-center">
-            <p className="text-[14px] text-muted-foreground">
-              Add a GitHub repo as a source to install skills into this sandbox.
-            </p>
-            {addSourceButton}
-          </div>
+          <Callout variant="dashed">
+            <div className="flex flex-col items-center gap-4 py-10 text-center">
+              <Upload size={22} className="text-muted-foreground" />
+              <p className="text-[14px] text-muted-foreground">
+                Drop a .md file here to create a skill, or add a GitHub repo as
+                a source.
+              </p>
+              {addSourceButton}
+            </div>
+          </Callout>
         </section>
       ) : (
         <>
@@ -186,10 +222,13 @@ export function SkillsSurface({
         </>
       )}
 
-      {addOpen && (
+      {modal && (
         <AddSkillSourceModal
-          onClose={() => setAddOpen(false)}
+          onClose={() => setModal(null)}
           onCreate={createSource}
+          onCreateSkills={createLocalSkills}
+          initialTab={modal.tab}
+          initialFiles={modal.files}
         />
       )}
 

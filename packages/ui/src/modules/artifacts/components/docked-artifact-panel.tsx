@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import {
   useArtifact,
   useArtifactContent,
@@ -53,6 +54,12 @@ export function DockedArtifactPanel() {
     artifact && !showFrame ? artifact.id : null,
     shownVersion,
   );
+  const experimentFeedPost = useDashboardFeedPost(openArtifactId);
+  // Only the LATEST version gets the live feed: a pinned older version must
+  // render exactly its baked state, or the version history is meaningless
+  // (the live push always outruns the baked replay).
+  const feedPostForShown =
+    shownVersion === latest ? experimentFeedPost : undefined;
 
   if (!openArtifactId) return null;
 
@@ -127,6 +134,7 @@ export function DockedArtifactPanel() {
               title={artifact.title}
               className="h-full w-full bg-white"
               deferMs={0}
+              postData={feedPostForShown}
             />
           ) : (
             <p className="py-6 text-center text-[13px] text-muted-foreground">

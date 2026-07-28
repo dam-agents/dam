@@ -75,7 +75,7 @@ function OverlayFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-bg/95 backdrop-blur-sm">
+    <div className="absolute inset-0 z-overlay flex flex-col bg-bg/95 backdrop-blur-sm">
       <button
         onClick={onBack}
         className="absolute left-4 top-3 flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"

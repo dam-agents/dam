@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   FileText as FileIcon,
+  Loader2,
   MoreVertical,
   RefreshCw,
   Trash2,
@@ -18,6 +19,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +50,9 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
+import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
+import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -103,6 +108,27 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const pendingLaunch = useStore((s) => s.pendingLaunch);
+  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
+  const {
+    experiment: dockedExperiment,
+    options: experimentOptions,
+    select: selectExperiment,
+  } = useDockedExperiment(selectedAgent);
+  // A dashboard artifact is a doorway back to its experiment: opening it from
+  // the artifacts section docks the full panel (buttons and all), not a bare
+  // preview. Prefer a live run over the newest terminal one.
+  const agentExperiments = useAgentExperimentsLive(selectedAgent);
+  const dashboardExperiment = openArtifactId
+    ? (agentExperiments.find(
+        (e) =>
+          e.dashboardArtifactId === openArtifactId &&
+          (e.status === "draft" || e.status === "running"),
+      ) ??
+      agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
+      null)
+    : null;
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
@@ -179,6 +205,17 @@ export function ChatView() {
     idle: !sessionId && messages.length === 0,
     sendPrompt,
   });
+
+  // Pending-launch chat takeover: while a just-started run's session is
+  // being opened (pod wake), blank the pane and show the launch loader.
+  // Safe against the real session: openLaunchSession clears the pending
+  // record BEFORE opening it, and deliberate navigation unfocuses.
+  const launchPaneActive = Boolean(
+    pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
+  );
+  useEffect(() => {
+    if (launchPaneActive && sessionId) resetSession();
+  }, [launchPaneActive, sessionId, resetSession]);
 
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
@@ -270,6 +307,8 @@ export function ChatView() {
 
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
+      // Deliberate navigation releases the pending-launch chat takeover.
+      unfocusPendingLaunch();
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
       // Terminal sessions don't use ACP.
@@ -290,10 +329,13 @@ export function ChatView() {
       setSessionId,
       resumeSession,
       scrollToBottom,
+      unfocusPendingLaunch,
     ],
   );
 
   const handleNewSession = useCallback(() => {
+    // Deliberate navigation releases the pending-launch chat takeover.
+    unfocusPendingLaunch();
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
       return;
@@ -307,6 +349,7 @@ export function ChatView() {
     resetSession,
     setMobileScreen,
     setSessionMode,
+    unfocusPendingLaunch,
   ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
@@ -412,7 +455,7 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {/* Header spans the full width; on mobile it belongs to the chat screen only */}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-10`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-content`}
       >
         <button
           className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
@@ -470,7 +513,7 @@ export function ChatView() {
         {/* Left: Sessions + Files sections */}
         <div
           style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-10 ${
+          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
@@ -588,7 +631,23 @@ export function ChatView() {
                     )}
                     {!loadingSession &&
                       !sessionError &&
-                      messages.length === 0 && (
+                      messages.length === 0 &&
+                      (launchPaneActive ? (
+                        <div className="py-24 text-center anim-in">
+                          <Loader2
+                            size={22}
+                            className="mx-auto mb-3 animate-spin text-text-muted"
+                          />
+                          <p className="text-[16px] font-bold text-text mb-2">
+                            Starting the run…
+                          </p>
+                          <p className="text-[14px] text-text-muted">
+                            Waking the agent and opening the launch session —
+                            this can take up to a minute. The conversation
+                            appears here as soon as it&apos;s up.
+                          </p>
+                        </div>
+                      ) : (
                         <div className="py-24 text-center">
                           <p className="text-[16px] font-bold text-text mb-2">
                             Start a conversation
@@ -598,7 +657,7 @@ export function ChatView() {
                             agent
                           </p>
                         </div>
-                      )}
+                      ))}
                     {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
@@ -733,7 +792,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-20 inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
@@ -769,9 +828,11 @@ export function ChatView() {
           )}
         </div>
 
-        {/* Docked file / artifact panel — hidden unless one is open (they
-            are mutually exclusive); fullscreen takeover on mobile */}
-        {(openFilePath || openArtifactId) && (
+        {/* Docked file / artifact / experiment panel — hidden unless one is
+            open (mutually exclusive, in that priority); the experiment panel
+            docks itself while the agent has a draft or live run. Fullscreen
+            takeover on mobile */}
+        {(openFilePath || openArtifactId || dockedExperiment) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -796,7 +857,7 @@ export function ChatView() {
                   : undefined
               }
               className={cn(
-                "flex flex-col overflow-hidden bg-background relative z-10 max-md:fixed max-md:inset-0 max-md:z-50",
+                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
                 rightW !== null
                   ? "md:shrink-0 md:w-[var(--file-w)]"
                   : "md:flex-1 md:basis-0 md:min-w-0",
@@ -805,9 +866,20 @@ export function ChatView() {
             >
               {openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
-              ) : (
+              ) : dashboardExperiment ? (
+                <ExperimentDockPanel
+                  experiment={dashboardExperiment}
+                  onClose={() => setOpenArtifactId(null)}
+                />
+              ) : openArtifactId ? (
                 <DockedArtifactPanel />
-              )}
+              ) : dockedExperiment ? (
+                <ExperimentDockPanel
+                  experiment={dockedExperiment}
+                  options={experimentOptions}
+                  onSelect={selectExperiment}
+                />
+              ) : null}
             </div>
           </>
         )}
@@ -877,7 +949,7 @@ function SessionErrorCard({
         ? "Can't reach the agent"
         : "Failed to load session";
   return (
-    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in">
+    <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -897,7 +969,7 @@ function SessionErrorCard({
           </Button>
         )}
       </div>
-    </div>
+    </Callout>
   );
 }
 
@@ -909,8 +981,9 @@ function SendErrorCard({
   onRetry?: () => void;
 }) {
   return (
-    <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
+    <Callout
+      tone="danger"
+      className="flex max-w-[620px] items-start gap-2.5"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -929,6 +1002,6 @@ function SendErrorCard({
           </Button>
         )}
       </div>
-    </div>
+    </Callout>
   );
 }

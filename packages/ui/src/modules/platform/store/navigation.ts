@@ -12,7 +12,6 @@ import {
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
-  experimentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
   setView: (v: View) => void;
@@ -20,8 +19,6 @@ export interface NavigationSlice {
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToExperiments: () => void;
-  navigateToCreateExperiment: () => void;
-  navigateToExperiment: (experimentId: string) => void;
   navigateToKnowledgeBases: () => void;
   navigateToCreateKnowledgeBase: () => void;
   navigateToKnowledgeBaseConfig: (agentId: string) => void;
@@ -66,7 +63,6 @@ export const createNavigationSlice: StateCreator<
     return pathToState(window.location.pathname).view;
   })(),
   agentId: pathToState(window.location.pathname).agentId ?? null,
-  experimentId: pathToState(window.location.pathname).experimentId ?? null,
   settingsTab: pathToState(window.location.pathname).settingsTab ?? "account",
   sandboxSection:
     pathToState(window.location.pathname).sandboxSection ?? "setup",
@@ -74,13 +70,8 @@ export const createNavigationSlice: StateCreator<
     history.pushState(null, "", viewToPath(v));
     // viewToPath(v) without a tab is /settings, so keep the tab in sync.
     if (v === "settings")
-      set({
-        view: v,
-        agentId: null,
-        experimentId: null,
-        settingsTab: "account",
-      });
-    else set({ view: v, agentId: null, experimentId: null });
+      set({ view: v, agentId: null, settingsTab: "account" });
+    else set({ view: v, agentId: null });
   },
   navigateToCreateSandbox: () => {
     history.pushState(null, "", viewToPath("sandbox-new"));
@@ -99,33 +90,21 @@ export const createNavigationSlice: StateCreator<
     history.pushState(
       null,
       "",
-      viewToPath("sandbox-home", null, agentId, null, null, section),
+      viewToPath("sandbox-home", null, agentId, null, section),
     );
     set({ view: "sandbox-home", agentId, sandboxSection: section });
   },
   navigateToExperiments: () => {
     history.pushState(null, "", viewToPath("experiments"));
-    set({ view: "experiments", agentId: null, experimentId: null });
-  },
-  navigateToCreateExperiment: () => {
-    history.pushState(null, "", viewToPath("experiment-new"));
-    set({ view: "experiment-new", agentId: null, experimentId: null });
-  },
-  navigateToExperiment: (experimentId) => {
-    history.pushState(
-      null,
-      "",
-      viewToPath("experiment-detail", null, null, null, experimentId),
-    );
-    set({ view: "experiment-detail", agentId: null, experimentId });
+    set({ view: "experiments", agentId: null });
   },
   navigateToKnowledgeBases: () => {
     history.pushState(null, "", viewToPath("knowledge-bases"));
-    set({ view: "knowledge-bases", agentId: null, experimentId: null });
+    set({ view: "knowledge-bases", agentId: null });
   },
   navigateToCreateKnowledgeBase: () => {
     history.pushState(null, "", viewToPath("knowledge-base-new"));
-    set({ view: "knowledge-base-new", agentId: null, experimentId: null });
+    set({ view: "knowledge-base-new", agentId: null });
   },
   navigateToKnowledgeBaseConfig: (agentId) => {
     history.pushState(
@@ -135,7 +114,7 @@ export const createNavigationSlice: StateCreator<
     );
     // The settings form keys off `agentId`; chat keeps `selectedAgent`. Set
     // both so returning to the KB chat keeps the same agent selected.
-    set({ view: "knowledge-base-config", agentId, experimentId: null });
+    set({ view: "knowledge-base-config", agentId });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

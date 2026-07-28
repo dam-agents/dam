@@ -36,6 +36,7 @@ export type {
   SkillsDomainError,
   SkillsService,
   SkillUninstallInput,
+  SkillWriteLocalInput,
 } from "./modules/skills/types.js";
 export {
   skillInstallInputSchema,
@@ -43,6 +44,7 @@ export {
   skillReadLocalInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
+  skillWriteLocalInputSchema,
 } from "./modules/skills/schemas.js";
 export {
   SKILL_SOURCE_ROOTS,
@@ -76,8 +78,8 @@ export {
   skillRefContribution,
   triggerEvent,
   triggerEventPayload,
-  experimentTriggerEvent,
-  experimentTriggerEventPayload,
+  experimentExecuteEvent,
+  experimentExecuteEventPayload,
   harnessConfigEvent,
   harnessConfigEventPayload,
   stateSlice,
@@ -99,7 +101,7 @@ export type {
   MergeMode,
   FileFormat,
   TriggerEventPayload,
-  ExperimentTriggerEventPayload,
+  ExperimentExecuteEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
   WorkspaceCommandEventPayload,

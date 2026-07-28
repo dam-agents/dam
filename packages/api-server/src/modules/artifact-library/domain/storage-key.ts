@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 /** Object-store keys, namespaced under `library/` so they can never collide
- *  with experiment candidate keys in the shared bucket. */
+ *  with other consumers' keys in the shared bucket. */
 
 const SAFE_BASENAME = /[^A-Za-z0-9._-]/g;
 

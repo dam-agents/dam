@@ -246,10 +246,10 @@ redis:
       memory: 256Mi
 
 # -- Shared SeaweedFS object store (Apache-2.0), single node. Holds
-# Experiment Candidate artifacts; agents upload and browsers download
+# artifact-library content; agents upload and browsers download
 # directly, using short-lived links the api-server mints after ownership
 # checks. Disable to use an external store (`apiServer.objectStorage`) or
-# none at all (recording candidates is then unavailable).
+# none at all (artifact uploads are then unavailable).
 seaweedfs:
   enabled: true
   # -- Extra annotations for the StatefulSet object / its pod template
@@ -590,8 +590,8 @@ apiServer:
   slackAppToken: ""
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
-  # by sending /login in the chat and picking the agent in the web UI, or
-  # via a one-time connect link created in the UI.
+  # by sending the bind command in the chat and picking the agent in the web
+  # UI, or via a one-time connect link created in the UI.
   telegramBotToken: ""
   # -- The bot's @handle without the @ (e.g. "dam_ibm_bot"). Used to build
   # t.me connect links and for mention detection; when empty the api-server
@@ -662,7 +662,7 @@ apiServer:
   # 5 GiB import could fill the disk.
   maxImportBundleBytes: 5368709120
 
-  # -- Hard ceiling (bytes) for a single Experiment Candidate artifact.
+  # -- Hard ceiling (bytes) for a single stored artifact object.
   # null = 50 MiB default.
   maxArtifactBytes: null
 

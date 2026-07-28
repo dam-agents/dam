@@ -142,20 +142,7 @@ async function buildOAuthStatic(
 
   if (template.id === "github-enterprise") {
     if (!host) throw new Error(`template github-enterprise: missing host`);
-    contributions.push({ kind: "env", name: "GH_HOST", placeholder: host });
-    contributions.push({
-      kind: "egress-inject",
-      host: `api.${host}`,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    });
-    contributions.push({
-      kind: "egress-inject",
-      host,
-      headerName: "Authorization",
-      valueFormat: "Basic {value}",
-      encoding: "basic-x-access-token",
-    });
+    contributions.push(...githubEnterpriseHostContributions(host));
   }
 
   const appSlug =
@@ -212,6 +199,29 @@ function substituteHostInContribution(
     case "skill-ref":
       return c;
   }
+}
+
+// Shared by every GitHub Enterprise auth mode (OAuth today, GitHub App
+// below): GH_HOST for the `gh` CLI, plus the two host-scoped injections a
+// subdomain-isolated GHES instance serves — `api.{host}` (Bearer, REST) and
+// the apex `{host}` (Basic x-access-token, git-over-HTTPS).
+function githubEnterpriseHostContributions(host: string): Contribution[] {
+  return [
+    { kind: "env", name: "GH_HOST", placeholder: host },
+    {
+      kind: "egress-inject",
+      host: `api.${host}`,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host,
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+  ];
 }
 
 async function buildOAuthDcr(
@@ -448,8 +458,26 @@ function buildGitHubApp(
   }
   const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
 
+  // A host-parameterized template (its apiBaseUrl carries `{host}`, e.g. the
+  // GitHub Enterprise sibling) takes the host from user input and substitutes
+  // it through, same as the OAuth GHE path; the fixed github.com template has
+  // nothing to substitute and keeps its static host + contributions.
+  const apiBaseUrlTemplate = template.apiBaseUrl ?? "https://api.github.com";
+  const needsHost = apiBaseUrlTemplate.includes("{host}");
+  const host = needsHost ? (input.host ?? template.host) : template.host;
+  if (needsHost && !host)
+    throw new Error(`template ${template.id}: missing host`);
+  const apiBaseUrl = host
+    ? apiBaseUrlTemplate.replace(/\{host\}/g, host)
+    : apiBaseUrlTemplate;
+
   const secretPath = mintSecretRef(`connection:${template.id}`);
-  const contributions: Contribution[] = [...template.contributions];
+  const contributions: Contribution[] = template.contributions.map((c) =>
+    needsHost && host ? substituteHostInContribution(c, host) : c,
+  );
+  if (needsHost && host) {
+    contributions.push(...githubEnterpriseHostContributions(host));
+  }
 
   return {
     auth: {
@@ -458,8 +486,8 @@ function buildGitHubApp(
       installationId: input.installationId,
       privateKeyRef: { ...secretPath, field: "private_key" },
       accessTokenRef: { ...secretPath, field: "access_token" },
-      apiBaseUrl: template.apiBaseUrl ?? "https://api.github.com",
-      ...(template.host ? { host: template.host } : {}),
+      apiBaseUrl,
+      ...(host ? { host } : {}),
     },
     contributions,
     secrets: new Map([[secretPath.path, { private_key: privateKeyPem }]]),

@@ -76,12 +76,10 @@ harness scripts. The chat harness drives `nous` per `AGENTS.md`:
   `run.pid`, output in `campaign.log`) so the agent stays conversational and can
   poll `nous status` while it runs. Both design/findings gates auto-pass; a bound
   Slack/Telegram channel still receives gate summaries as progress.
-- **Experiment trial** → when launched as an arm of a platform Experiment
-  (the Trial prompt carries the autonomous-trial directive), the interactive
-  doctrine is suspended: the agent self-authors the campaign, runs
-  `--auto-approve`, keeps its turn alive until `DONE`, and reports one
-  `record_run` per iteration (composite score from `best_found.json`) before
-  `finish_arm` — see `AGENTS.md` → "Experiment trial sessions".
+- **Autonomous launch** → when the launch prompt carries an autonomous
+  directive (no human will reply), the interactive doctrine is suspended: the
+  agent self-authors the campaign, runs `--auto-approve`, and keeps its turn
+  alive until `DONE` — see `AGENTS.md` → "Autonomous sessions".
 
 ### Never hibernates; resume-on-restart
 

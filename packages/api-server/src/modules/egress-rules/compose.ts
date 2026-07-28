@@ -14,6 +14,7 @@ import {
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
+import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
 import { backfillL7Promotions } from "./services/l7-promotion-backfill.js";
 import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
@@ -80,6 +81,9 @@ export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
  * approve-permanent / deny-forever paths. Narrow port — only `insert`,
  * matching the `EgressRuleWriter` interface declared on the consumer side.
  * The row's `agentId` keys the L7 promotion when the rule needs it (#2865).
+ * The returned outcome tells the caller whether a rule was actually
+ * written, no-oped against an equivalent rule, or clashed with the
+ * opposite verdict (#2766).
  */
 export interface EgressRuleWriterAdapter {
   insert(input: {
@@ -91,7 +95,7 @@ export interface EgressRuleWriterAdapter {
     verdict: RuleVerdict;
     decidedBy: string;
     source: EgressRuleSource;
-  }): Promise<void>;
+  }): Promise<EgressRuleWriteOutcome>;
 }
 
 export function createEgressRuleWriterAdapter(

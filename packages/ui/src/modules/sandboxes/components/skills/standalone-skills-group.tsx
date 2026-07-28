@@ -52,11 +52,11 @@ function latestPublishByName(
 }
 
 /**
- * "Created in this sandbox" — Standalone Local Skills authored in place. Each
- * row can be published upstream as a PR (or shows an "In review" pill once it
- * has a publish record). The kebab's Download/Delete are shown disabled — no
- * upload/delete-local backend yet (deferred). There is no install toggle:
- * standalone skills are simply present on disk.
+ * "Created in this sandbox" — Standalone Local Skills authored in place or
+ * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
+ * "In review" pill once it has a publish record). The kebab's Download/Delete
+ * are shown disabled — no download/delete-local backend yet (deferred). There
+ * is no install toggle: standalone skills are simply present on disk.
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -103,8 +103,13 @@ export function StandaloneSkillsGroup({
                 <p className="truncate text-[15px] font-medium text-foreground">
                   {skill.name}
                 </p>
-                <p className="truncate text-[13px] text-muted-foreground">
-                  only in this sandbox
+                <p
+                  className={cn(
+                    "truncate text-[13px] text-muted-foreground",
+                    !skill.description && "italic",
+                  )}
+                >
+                  {skill.description || "No description"}
                 </p>
               </div>
 

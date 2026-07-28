@@ -33,3 +33,17 @@ export const skillPublishInputSchema = z.object({
 export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
 });
+
+export const skillWriteLocalInputSchema = z.object({
+  skills: z
+    .array(
+      z.object({
+        /** Confirmed display name — becomes frontmatter `name:`; the dir is its slug. */
+        name: z.string().min(1).max(128),
+        /** Raw Markdown file content; lands as SKILL.md. */
+        content: z.string(),
+      }),
+    )
+    .min(1)
+    .max(50),
+});

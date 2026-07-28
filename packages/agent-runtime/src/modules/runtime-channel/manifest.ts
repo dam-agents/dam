@@ -122,8 +122,8 @@ const BUILTIN_DRIVERS: Record<
   },
   trigger: { binding: { impl: "trigger" }, defaultOn: true },
   "schedule-reset": { binding: { impl: "trigger" }, defaultOn: true },
-  "experiment-trigger": {
-    binding: { impl: "experiment-trigger" },
+  "experiment-execute": {
+    binding: { impl: "experiment-execute" },
     defaultOn: true,
   },
   "workspace-seed": { binding: { impl: "workspace-seed" }, defaultOn: true },

@@ -61,10 +61,9 @@ export interface EgressRulesRepository {
    *  Returns the active row (newly inserted, promoted, or pre-existing
    *  user-owned row that we left alone). */
   insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
-  /** Promotes the row's source to `manual` regardless of prior origin. */
-  updatePromoteToManual(
-    input: PromoteToManualInput,
-  ): Promise<EgressRuleRow | null>;
+  /** Reassigns the row to an explicit user-decision source (`manual` or
+   *  `inbox`) regardless of prior origin. */
+  updateTakeOwnership(input: TakeOwnershipInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
   /** Reassign an agent's active rules from any of `fromSources` to `toSource`,
    *  in place. The secrets→connections migration uses this to hand a legacy
@@ -114,12 +113,13 @@ export interface NewEgressRule {
   source: EgressRuleSource;
 }
 
-export interface PromoteToManualInput {
+export interface TakeOwnershipInput {
   id: string;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;
   decidedBy: string;
+  source: Extract<EgressRuleSource, "manual" | "inbox">;
 }
 
 type RawRule = {
@@ -333,7 +333,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return existing;
     },
 
-    async updatePromoteToManual(input) {
+    async updateTakeOwnership(input) {
       const updated = await db
         .update(egressRules)
         .set({
@@ -341,7 +341,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           pathPattern: input.pathPattern,
           verdict: input.verdict,
           decidedBy: input.decidedBy,
-          source: "manual",
+          source: input.source,
         })
         .where(
           and(eq(egressRules.id, input.id), eq(egressRules.status, "active")),

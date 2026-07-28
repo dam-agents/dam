@@ -1,8 +1,11 @@
 import {
   and,
   eq,
+  isNotNull,
+  like,
   lt,
   inArray,
+  sql,
   type Db,
   invocations as invocationsTable,
 } from "db";
@@ -21,6 +24,8 @@ export interface InvocationRow {
   errorReason: string | null;
   expiresAt: Date;
   completedAt: Date | null;
+  /** Experiments v2 span attach ("<experimentId>/<spanId>"), null otherwise. */
+  experimentSpanId: string | null;
 }
 
 export interface InvocationsRepository {
@@ -30,6 +35,7 @@ export interface InvocationsRepository {
     owner: string;
     resultSchema: unknown;
     expiresAt: Date;
+    experimentSpanId: string | null;
   }): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
   /** Store the validated result and flip to `done`. No-op (returns false) if the
@@ -48,6 +54,25 @@ export interface InvocationsRepository {
   listRunningAgentIds(): Promise<string[]>;
   /** Terminal rows whose result is old enough to drop (retention elapsed). */
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
+  /** Invocations a driver stamped with this experiment's span ids — the
+   *  Trace Feed's span↔spawn attach. */
+  listByExperiment(
+    driverAgentId: string,
+    experimentId: string,
+    limit: number,
+  ): Promise<InvocationRow[]>;
+  /** `running` experiment-attached Invocation counts per driver for one
+   *  owner — the experiments index's "what is this agent doing right now"
+   *  signal. Plain (non-experiment) spawns are deliberately excluded. */
+  countRunningByDriver(owner: string): Promise<Map<string, number>>;
+  /** Fail every `running` Invocation attached to this experiment (Stop's
+   *  teeth: unblocks spawn() waiters at once). Returns the failed ids so the
+   *  caller can eagerly reap the target agents. */
+  failAllRunningByExperiment(
+    driverAgentId: string,
+    experimentId: string,
+    reason: string,
+  ): Promise<string[]>;
   delete(id: string): Promise<void>;
 }
 
@@ -62,6 +87,7 @@ function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     errorReason: r.errorReason,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
+    experimentSpanId: r.experimentSpanId,
   };
 }
 
@@ -75,6 +101,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
+        experimentSpanId: input.experimentSpanId,
       });
     },
 
@@ -177,6 +204,53 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         )
         .limit(limit);
       return rows.map(toRow);
+    },
+
+    async listByExperiment(driverAgentId, experimentId, limit) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.driverAgentId, driverAgentId),
+            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
+          ),
+        )
+        .limit(limit);
+      return rows.map(toRow);
+    },
+
+    async failAllRunningByExperiment(driverAgentId, experimentId, reason) {
+      const updated = await db
+        .update(invocationsTable)
+        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
+        .where(
+          and(
+            eq(invocationsTable.driverAgentId, driverAgentId),
+            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
+            eq(invocationsTable.status, "running"),
+          ),
+        )
+        .returning({ id: invocationsTable.id });
+      return updated.map((r) => r.id);
+    },
+
+    async countRunningByDriver(owner) {
+      const rows = await db
+        .select({
+          driverAgentId: invocationsTable.driverAgentId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.owner, owner),
+            eq(invocationsTable.status, "running"),
+            isNotNull(invocationsTable.experimentSpanId),
+          ),
+        )
+        .groupBy(invocationsTable.driverAgentId);
+      return new Map(rows.map((r) => [r.driverAgentId, r.count]));
     },
 
     async delete(id) {

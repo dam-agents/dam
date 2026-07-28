@@ -247,8 +247,15 @@ function inputsFor(
         required("valueFormat", { presetValue: t.valueFormat }),
         optional("envName"),
       ];
-    case "github-app":
-      return [
+    case "github-app": {
+      const out: ConnectionTemplateInput[] = [];
+      // Only a host-parameterized template (its apiBaseUrl carries a
+      // `{host}` placeholder, e.g. the GitHub Enterprise sibling) asks for a
+      // host — the fixed github.com template has nothing to substitute.
+      if (t.apiBaseUrl?.includes("{host}")) {
+        out.push(t.host ? overridable("host", t.host) : required("host"));
+      }
+      out.push(
         {
           name: "appId",
           state: "required",
@@ -269,7 +276,9 @@ function inputsFor(
           label: "Private key (PEM)",
           hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
         },
-      ];
+      );
+      return out;
+    }
     case "header": {
       const out: ConnectionTemplateInput[] = [];
       if (t.isCustom) {

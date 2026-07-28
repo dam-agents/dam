@@ -4,12 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
+import type { ExperimentsService } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
-  SessionType,
-  type ExperimentsService,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -19,14 +18,7 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { createAcpClient } from "../../core/acp-client.js";
-import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
-import { formatByteCap } from "../../modules/experiments/domain/trial-prompt.js";
-import {
-  armCandidateKey,
-  isArmCandidateKey,
-} from "../../modules/experiments/domain/candidate-key.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
@@ -113,12 +105,13 @@ export interface McpSessionDeps {
   k8s: K8sClient;
   skills: SkillsService;
   schedules: SchedulesService;
-  experiments: ExperimentsService;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
-  artifacts: ArtifactService;
-  maxArtifactBytes: number;
+  experiments: ExperimentsService;
   agentHome: string;
+  /** Resolved once per session, before this function runs — see
+   *  ChannelManager.supportsUserLookup for what this reflects. */
+  supportsUserLookup: boolean;
 }
 
 export function createMcpSession(
@@ -126,7 +119,6 @@ export function createMcpSession(
   deps: McpSessionDeps,
 ): McpSession {
   const { agentHome, schedules } = deps;
-  const candidateCap = formatByteCap(deps.maxArtifactBytes);
   const server = new McpServer({
     name: `platform-${agentId}`,
     version: "1.0.0",
@@ -139,29 +131,6 @@ export function createMcpSession(
       }),
     ],
   });
-
-  async function resolveTrialSessionId(
-    experimentId: string,
-  ): Promise<string | null> {
-    const acp = createAcpClient({
-      namespace: deps.k8s.namespace,
-      instanceName: agentId,
-    });
-    let sessions: Awaited<ReturnType<typeof acp.listSessions>>;
-    try {
-      sessions = await acp.listSessions();
-    } catch {
-      return null;
-    }
-    const trial = sessions
-      .filter(
-        (s) =>
-          s.platform?.type === SessionType.ExperimentTrial &&
-          s.platform?.experimentId === experimentId,
-      )
-      .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
-    return trial?.sessionId ?? null;
-  }
 
   server.tool(
     "describe_channel",
@@ -286,6 +255,62 @@ export function createMcpSession(
     },
   );
 
+  // Omitted rather than always registered (unlike every other channel tool
+  // below): unlike a missing binding, a Slack app missing `users:read` can
+  // never make this succeed for any Agent, on any channel, so a static tool
+  // that always errors teaches the agent nothing and just wastes a turn.
+  if (deps.supportsUserLookup) {
+    server.tool(
+      "describe_channel_users",
+      "Look up who a channel's user ids belong to. People reach you as bare ids (Slack `U…`) — in the speaker labels on shared-channel messages, in conversation history, and in mentions inside message text — and this is how you turn those ids into people. Returns { users: [{ id, username, realName, displayName, title, pronouns, email, timezone, statusText, isBot, ... }] }; a field is absent when the person left it unset or the workspace withholds it, and an id that cannot be resolved comes back with an `error` while the rest of the batch still resolves. Look someone up before addressing them by name, attributing work to them, or reasoning about their local time. Slack only.",
+      {
+        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+        userIds: z
+          .array(z.string().min(1))
+          .min(1)
+          .max(20)
+          .describe(
+            'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
+          ),
+      },
+      async ({ channel, userIds }) => {
+        const result = await deps.channelManager.describeUsers(
+          agentId,
+          channel,
+          userIds,
+        );
+        // A directory read under the agent's own identity, no human in the loop:
+        // the ids asked about are audit-worthy, the profiles that came back
+        // (names, emails) are not.
+        const audit = {
+          category: "channel",
+          actor: agentId,
+          actorKind: "agent",
+          surface: channel,
+          agentId,
+        } as const;
+        if ("error" in result) {
+          securityLog("warn", "channel.user_lookup", {
+            ...audit,
+            result: "failure",
+            reason: result.error,
+            detail: { requested: userIds.length },
+          });
+          return errorResult(result.error);
+        }
+        securityLog("info", "channel.user_lookup", {
+          ...audit,
+          result: "success",
+          detail: {
+            userIds: result.users.map((u) => u.id),
+            resolved: result.users.filter((u) => !u.error).length,
+          },
+        });
+        return textResult(JSON.stringify({ users: result.users }));
+      },
+    );
+  }
+
   // ---- Slack turn tools -----------------------------------------------------
   // `reply` and `react` are how a Slack agent answers the turn it is handling;
   // plain text is not delivered, only these are. They target the turn's thread
@@ -295,7 +320,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Use send_channel_message instead for a new top-level or cross-channel post.",
+    "Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread. Set alsoSendToChannel to have the reply surface in the channel as well, for a thread old enough that channel readers would miss it. Use send_channel_message instead for a new top-level or cross-channel post.",
     {
       text: z.string(),
       threadTs: z
@@ -304,14 +329,21 @@ export function createMcpSession(
         .describe(
           "Thread to reply into. Omit for the thread of the message you're answering.",
         ),
+      alsoSendToChannel: z
+        .boolean()
+        .optional()
+        .describe(
+          'Also surface this reply in the channel, not just inside the thread — Slack\'s "Also send to channel". One post, visible in both places. Use it when the thread is old enough that people watching the channel would otherwise miss the reply; leave it off for ordinary back-and-forth, which would spam the channel.',
+        ),
     },
-    async ({ text, threadTs }) => {
+    async ({ text, threadTs, alsoSendToChannel }) => {
       const result = await deps.channelManager.reply(
         agentId,
         ChannelType.Slack,
         {
           text,
           ...(threadTs ? { threadTs } : {}),
+          ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
         },
       );
       const failed = "error" in result;
@@ -322,7 +354,13 @@ export function createMcpSession(
         surface: ChannelType.Slack,
         agentId,
         result: failed ? "failure" : "success",
-        detail: { action: "reply", textLength: text.length },
+        // A broadcast reply reaches the whole channel, not just the thread's
+        // participants — a wider audience worth recording.
+        detail: {
+          action: "reply",
+          textLength: text.length,
+          ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
+        },
       });
       if ("error" in result) return errorResult(result.error);
       return textResult("Reply posted");
@@ -615,198 +653,14 @@ export function createMcpSession(
     },
   );
 
-  // ---- Experiments tools ----------------------------------------------------
-  server.tool(
-    "request_candidate_upload",
-    `Request a direct-upload link for a candidate artifact (up to ${candidateCap}). Returns an uploadUrl to HTTP PUT the file to and the candidateRef to pass to record_run afterwards. Upload with your environment's default proxy settings, e.g.: curl -sS -f -X PUT --upload-file <file> '<uploadUrl>'. The link is valid for one object and a short time; request a fresh one per candidate. Only works while this agent is an arm of a running experiment.`,
-    {
-      filename: z
-        .string()
-        .min(1)
-        .max(255)
-        .optional()
-        .describe(
-          "Basename to store the artifact under (e.g. candidate.json); used as the download filename later.",
-        ),
-    },
-    async ({ filename }) => {
-      const active = await deps.experiments.resolveActiveArm(agentId);
-      if (!active) {
-        return errorResult(
-          "request_candidate_upload is only available while this agent is an arm of a running experiment; none is active.",
-        );
-      }
-      const key = armCandidateKey(active.experimentId, agentId, filename);
-      const upload = await deps.artifacts.createUploadUrl(key);
-      if (!upload) {
-        return errorResult(
-          "direct upload is not available on this deployment; call record_run with `candidate` set to a file path instead.",
-        );
-      }
-      return textResult(
-        JSON.stringify({
-          uploadUrl: upload.url,
-          candidateRef: key,
-          expiresInSeconds: upload.expiresSeconds,
-          maxBytes: deps.maxArtifactBytes,
-          instructions: `HTTP PUT the file to uploadUrl (e.g. curl -sS -f -X PUT --upload-file <file> '<uploadUrl>'), then call record_run with this candidateRef.`,
-        }),
-      );
-    },
-  );
-
-  server.tool(
-    "record_run",
-    `Append a Run to your Experiment's ledger — call this once per optimization-loop iteration that produced a result. Pass the iteration's \`score\` (a single number, higher is better) and exactly one of: \`candidateRef\` (from request_candidate_upload, after uploading the file — preferred, supports candidates up to ${candidateCap}) or \`candidate\`, the path to the artifact file the iteration produced (absolute under ${agentHome} or workspace-relative, e.g. candidate.json), which the platform reads and stores itself (${candidateCap} cap). The Run is attributed to your active experiment arm automatically. Only works while this agent is an arm of a running experiment.`,
-    {
-      score: z
-        .number()
-        .describe("The iteration's score; a single number, higher is better."),
-      candidate: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          `Path to the candidate artifact file: absolute under ${agentHome} or workspace-relative (e.g. candidate.json). Mutually exclusive with candidateRef.`,
-        ),
-      candidateRef: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "candidateRef returned by request_candidate_upload, after the file was uploaded to its uploadUrl. Mutually exclusive with candidate.",
-        ),
-    },
-    async ({ score, candidate, candidateRef }) => {
-      const active = await deps.experiments.resolveActiveArm(agentId);
-      if (!active) {
-        return errorResult(
-          "record_run is only available while this agent is an arm of a running experiment; none is active.",
-        );
-      }
-      if ((candidate === undefined) === (candidateRef === undefined)) {
-        return errorResult(
-          "pass exactly one of `candidate` (a file path) or `candidateRef` (from request_candidate_upload).",
-        );
-      }
-
-      // Resolve the session before touching storage so a failed resolution
-      // doesn't leave an orphaned object behind.
-      const sessionId = await resolveTrialSessionId(active.experimentId);
-      if (!sessionId) {
-        return errorResult(
-          "no active trial session found for this experiment; start the experiment before recording runs.",
-        );
-      }
-
-      let key: string;
-      if (candidateRef !== undefined) {
-        if (!isArmCandidateKey(candidateRef, active.experimentId, agentId)) {
-          return errorResult(
-            "unknown candidateRef; use the value returned by request_candidate_upload.",
-          );
-        }
-        try {
-          await deps.artifacts.verifyUpload(candidateRef);
-        } catch (err) {
-          return errorResult(
-            `candidate upload verification failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-        key = candidateRef;
-      } else {
-        const resolvedPath = resolveWorkspacePath(candidate!, agentHome);
-        let file: { content: string; binary: boolean; mimeType?: string };
-        try {
-          file = await runtimeClient.files.read.query({ path: resolvedPath });
-        } catch (err) {
-          if (err instanceof TRPCClientError) {
-            if (err.data?.code === "NOT_FOUND") {
-              return errorResult(
-                `candidate not found: ${candidate} (resolved to ${resolvedPath})`,
-              );
-            }
-            if (err.data?.code === "PAYLOAD_TOO_LARGE") {
-              // The file API's own wire ceiling, not the artifact cap.
-              return errorResult(
-                `candidate ${candidate} exceeds the harness file API's per-file transfer cap; use request_candidate_upload + candidateRef instead`,
-              );
-            }
-          }
-          return errorResult(
-            `failed to read candidate ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-
-        const content = file.binary
-          ? Buffer.from(file.content, "base64")
-          : Buffer.from(file.content, "utf8");
-        const contentType = file.mimeType ?? "application/octet-stream";
-
-        key = armCandidateKey(active.experimentId, agentId, candidate);
-        try {
-          await deps.artifacts.put({ key, content, contentType });
-        } catch (err) {
-          return errorResult(
-            `failed to store candidate: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-
-      const run = await deps.experiments.recordRun({
-        experimentId: active.experimentId,
-        agentId,
-        sessionId,
-        candidateRef: key,
-        score,
-      });
-
-      return textResult(
-        JSON.stringify({
-          runId: run.id,
-          runNumber: run.runNumber,
-          experimentId: run.experimentId,
-          score: run.score,
-          candidateRef: run.candidateRef,
-        }),
-      );
-    },
-  );
-
-  server.tool(
-    "finish_arm",
-    "Declare your Experiment arm's optimization loop finished — call this ONCE, after your final iteration, when there are no more candidates to produce and every scored Run is already recorded with record_run. It marks your arm complete so the platform can wrap up the comparison; once every arm finishes, the Experiment is done. Only works while this agent is an arm of a running experiment, and only once: afterwards both record_run and finish_arm report no active arm. Do NOT call it if you intend to record more Runs — there is no failure form, a loop that gives up should simply stop.",
-    {},
-    async () => {
-      const active = await deps.experiments.resolveActiveArm(agentId);
-      if (!active) {
-        return errorResult(
-          "finish_arm is only available while this agent is an arm of a running experiment; none is active.",
-        );
-      }
-      return textTool(
-        "Failed to finish arm",
-        () =>
-          deps.experiments.finishArm({
-            experimentId: active.experimentId,
-            agentId,
-          }),
-        (arm) =>
-          JSON.stringify({
-            experimentId: arm.experimentId,
-            agentId: arm.agentId,
-            status: arm.status,
-          }),
-      );
-    },
-  );
-
   // ---- Artifact-library tools ----------------------------------------------
   // Publish/share/version artifacts; owner-scoped service, creations
   // attributed to the network-verified caller.
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
+    attachToExperiment: (artifactId, experimentId) =>
+      deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
 
   server.tool(
@@ -858,11 +712,9 @@ export interface MountMcpDeps {
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
-  experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
-  artifacts: ArtifactService;
-  maxArtifactBytes: number;
+  experimentsServiceFor: (owner: string) => ExperimentsService;
   agentHome: string;
 }
 
@@ -916,20 +768,20 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
-    const experiments = deps.experimentsServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
+    const supportsUserLookup = await deps.channelManager.supportsUserLookup();
+    const experiments = deps.experimentsServiceFor(verified.owner);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
       schedules,
-      experiments,
       artifactLibrary,
       invocations,
-      artifacts: deps.artifacts,
-      maxArtifactBytes: deps.maxArtifactBytes,
+      experiments,
       agentHome: deps.agentHome,
+      supportsUserLookup,
     });
     await session.server.connect(session.transport);
 

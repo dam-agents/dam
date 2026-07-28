@@ -124,7 +124,7 @@ export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";
   agentId: string;
-  /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
+  /** Null for unauthenticated relays (Telegram: only the owner runs the bind, so guest replies have no Keycloak sub). */
   actorSub: string | null;
   /** Messenger-native id of the driving user (e.g. Telegram user id) — the
    *  actor record for relays that carry no platform identity. */

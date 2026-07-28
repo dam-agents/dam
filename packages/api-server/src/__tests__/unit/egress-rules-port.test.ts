@@ -51,7 +51,7 @@ function fakeRepo(
       const r = rows.find((x) => x.id === id);
       if (r) r.status = "revoked";
     },
-    updatePromoteToManual: async () => null,
+    updateTakeOwnership: async () => null,
     listForAgent: async (agentId) =>
       rows.filter((r) => r.agentId === agentId && r.status === "active"),
     reassignActiveSource: async () => {},

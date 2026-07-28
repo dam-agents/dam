@@ -39,6 +39,10 @@ export interface AgentRuntimeSkillsClient {
   listLocal(agentId: string): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
+  writeLocal(
+    agentId: string,
+    skills: { name: string; content: string }[],
+  ): Promise<LocalSkill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -59,6 +63,17 @@ export class AgentRuntimeUnreachableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AgentRuntimeUnreachableError";
+  }
+}
+
+/** The pod returned a tRPC CONFLICT — a writeLocal collision. Carries the
+ *  pod's message verbatim (`skill(s) already exist: <names>`, per the
+ *  agent-runtime contract) so the api-server can pass it through and the UI
+ *  can parse the offending names back out. */
+export class AgentRuntimeConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRuntimeConflictError";
   }
 }
 
@@ -100,9 +115,16 @@ async function runWithUpstreamMapping<T>(
     return await fn();
   } catch (e) {
     if (e instanceof TRPCClientError) {
-      const data = (e.data as { upstream?: unknown } | null) ?? null;
+      const data =
+        (e.data as { upstream?: unknown; code?: unknown } | null) ?? null;
       if (data === null) {
         throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
+      }
+      // A pod-side CONFLICT (writeLocal collision) has no `.upstream` envelope
+      // and would otherwise flatten to a plain Error, losing the code. Preserve
+      // it with the message verbatim so the UI can mark the offending rows.
+      if (data.code === "CONFLICT") {
+        throw new AgentRuntimeConflictError(e.message);
       }
       const upstream = data.upstream;
       if (isUpstreamGatewayError(upstream)) {
@@ -139,6 +161,14 @@ export function createAgentRuntimeSkillsClient(
           }),
       );
       return skills as Skill[];
+    },
+    writeLocal: async (agentId, skills) => {
+      const { skills: created } = await runWithUpstreamMapping(
+        `agent-runtime writeLocal ${agentId}`,
+        () =>
+          makeClient(agentId, namespace).skills.writeLocal.mutate({ skills }),
+      );
+      return created as LocalSkill[];
     },
   };
 }

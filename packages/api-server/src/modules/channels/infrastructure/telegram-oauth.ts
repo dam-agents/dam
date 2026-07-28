@@ -10,7 +10,7 @@ import {
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
-/** Completes the /login Keycloak roundtrip. The callback writes nothing
+/** Completes the bind Keycloak roundtrip. The callback writes nothing
  *  durable: it verifies the login, mints a bind flow pinned to the
  *  authenticated sub, and hands the user to the UI agent picker — the bind
  *  mutation does the ownership check and the write. Every human-visible

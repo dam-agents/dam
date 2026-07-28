@@ -62,15 +62,20 @@ export function buildCreatePayload(
         envName: submitted("envName"),
       });
     case "github-app": {
+      const host = submitted("host");
       const appId = submitted("appId");
       const installationId = submitted("installationId");
       const privateKey = submitted("privateKey");
+      if (inputsByName.get("host")?.state === "required" && !host) {
+        return { error: "Host is required" };
+      }
       if (!appId) return { error: "App ID is required" };
       if (!installationId) return { error: "Installation ID is required" };
       if (!privateKey) return { error: "Private key is required" };
       return compact({
         ...common,
         authKind: "github-app" as const,
+        host,
         appId,
         installationId,
         privateKey,
