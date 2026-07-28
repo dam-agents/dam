@@ -66,10 +66,15 @@ if [ ! -f "$disk_dir/disk.qcow2" ]; then
 		-v "$STORAGE_VOL:/var/lib/containers/storage" \
 		"$SKOPEO_IMAGE" copy \
 		"docker-daemon:$BOOTC_TAG" "containers-storage:localhost/claude-code-vm:$hash"
+	# --chown: bib runs privileged and writes the output as root. macOS Docker
+	# remaps ownership through its file-sharing layer and hides this, but on a
+	# native Linux daemon (CI) the qcow2 really is root-owned and the mv below
+	# fails for the non-root runner.
 	docker run --rm --privileged --security-opt label=disable \
 		-v "$STORAGE_VOL:/var/lib/containers/storage" \
 		-v "$PWD/$disk_dir:/output" \
 		"$BIB_IMAGE" build --type qcow2 --rootfs ext4 \
+		--chown "$(id -u):$(id -g)" \
 		"localhost/claude-code-vm:$hash"
 	mv "$disk_dir/qcow2/disk.qcow2" "$disk_dir/disk.qcow2"
 	rm -rf "$disk_dir/qcow2" "$disk_dir/manifest-qcow2.json" 2>/dev/null || true
