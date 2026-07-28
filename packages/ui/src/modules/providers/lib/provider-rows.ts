@@ -1,10 +1,12 @@
 import type { ProviderPresetType } from "../../../types.js";
 
 /** The offered providers, in display order, with their static descriptions. */
-export const PROVIDER_ROWS: {
+export interface ProviderRowDef {
   type: ProviderPresetType;
   description: string;
-}[] = [
+}
+
+export const PROVIDER_ROWS: ProviderRowDef[] = [
   {
     type: "ibm-litellm",
     description: "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
@@ -24,3 +26,17 @@ export const PROVIDER_ROWS: {
     description: "GPT-family models for Codex and OpenAI-compatible agents.",
   },
 ];
+
+/** The rows a surface offers: `allow` restricts them, `recommended` goes first. */
+export function offeredProviderRows(
+  allow?: readonly ProviderPresetType[],
+  recommended?: ProviderPresetType,
+): ProviderRowDef[] {
+  const offered = allow
+    ? PROVIDER_ROWS.filter((row) => allow.includes(row.type))
+    : PROVIDER_ROWS;
+  if (!recommended) return offered;
+  return [...offered].sort(
+    (a, b) => Number(b.type === recommended) - Number(a.type === recommended),
+  );
+}

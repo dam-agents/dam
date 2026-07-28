@@ -17,6 +17,8 @@ export interface RichSelectOption<T extends string = string> {
   icon?: ReactNode;
   /** Icon in the closed control while selected; falls back to `icon`. */
   triggerIcon?: ReactNode;
+  /** Rendered after the title on the menu row (e.g. "Recommended"). */
+  badge?: ReactNode;
   /** Rendered after the title in the closed control while selected
    *  (e.g. a status badge). */
   triggerBadge?: ReactNode;
@@ -108,9 +110,12 @@ export function RichSelect<T extends string>({
           >
             {option.icon}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-medium text-foreground">
-                {option.title}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="truncate text-[14px] font-medium text-foreground">
+                  {option.title}
+                </p>
+                {option.badge}
+              </div>
               {option.description && (
                 <p className="truncate text-[13px] text-muted-foreground">
                   {option.description}
