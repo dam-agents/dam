@@ -42,6 +42,10 @@ RUN curl -sfL https://get.k3s.io | \
 # bootc — fine here: the qcow2 seeds /var at deploy and these VMs never
 # bootc-upgrade. /app is agent-runtime (node dist/server.js + node_modules).
 COPY --from=agent /usr/local/bin/ /usr/local/bin/
+# sbin too, not just bin: the mise shims are symlinks to /usr/local/sbin/mise,
+# so without it every shim dangles — `node` doesn't resolve and agent-runtime
+# exits immediately, restart-looping forever.
+COPY --from=agent /usr/local/sbin/ /usr/local/sbin/
 COPY --from=agent /usr/local/lib/ /usr/local/lib/
 COPY --from=agent /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=agent /usr/local/share/lazy-tools/ /usr/local/share/lazy-tools/
@@ -62,6 +66,40 @@ RUN mkdir -p /var/home && \
     echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent && \
     chown -R agent /etc/mise /app /usr/local/share/mise && chown agent /etc/AGENTS.md && \
     printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n' >> /etc/AGENTS.md
+
+# The guest has no SSH and an ephemeral rootfs, so a boot that fails before
+# agent-runtime leaves the journal unreachable — the serial console (captured
+# by virt-launcher, readable with `kubectl logs -c guest-console-log`) is the
+# only channel out. Forward via kmsg, not ForwardToConsole: userspace writes to
+# /dev/console follow the last console= kernel arg, which bootc-image-builder
+# sets to ttyS0 — nonexistent on aarch64, where the PL011 port is ttyAMA0.
+# The kernel ring buffer reaches every registered console, so kmsg lands on the
+# captured one regardless of arch.
+# warning, not info: the console is an emulated serial port and journald writes
+# to it synchronously, so forwarding every info line slows boot noticeably.
+# warning still carries the failures worth a post-mortem — "Failed to start",
+# "Dependency failed", "Found ordering cycle" — without the flood.
+RUN mkdir -p /usr/lib/systemd/journald.conf.d && \
+    printf '[Journal]\nForwardToKMsg=yes\nMaxLevelKMsg=warning\n' \
+      > /usr/lib/systemd/journald.conf.d/platform-console.conf
+
+# Boot can run far slower than systemd's 45s defaults assume — a virtiofs
+# device forces a shared-memory backing for guest RAM, and on a nested host
+# that measured ~17x slower to reach the initrd than the same VM without one.
+# The resulting failures are fatal rather than merely slow:
+#   - a device that appears late fails its .mount, which fails local-fs.target,
+#     which ships OnFailure=emergency.target + OnFailureJobMode=replace-irreversibly
+#     and so discards the rest of the boot;
+#   - a generator sandbox that overruns leaves PID1 "Freezing execution".
+# Set on the kernel command line, not just system.conf.d: the initrd runs its
+# own systemd with the initramfs's configuration, and both failures above were
+# seen there. Harmless where boot is fast — these are ceilings, not delays.
+RUN printf 'kargs = ["systemd.default_timeout_start_sec=300", "systemd.default_device_timeout_sec=300"]\n' \
+      > /usr/lib/bootc/kargs.d/10-platform-slow-host.toml
+
+RUN mkdir -p /usr/lib/systemd/system.conf.d && \
+    printf '[Manager]\nDefaultDeviceTimeoutSec=300\nDefaultTimeoutStartSec=300\n' \
+      > /usr/lib/systemd/system.conf.d/platform-timeouts.conf
 
 COPY system/platform-scratch.sh /usr/libexec/platform-scratch.sh
 COPY system/platform-boot-gate.sh /usr/libexec/platform-boot-gate.sh

@@ -11,12 +11,22 @@
 # a containers-storage (it refuses to pull) — a containerized skopeo copies
 # the image out of the docker daemon into a named-volume storage bib mounts.
 # A named volume, not a bind mount: overlayfs won't run on macOS-shared paths.
+#
+# rootfs is ext4, not xfs: osbuild mounts the fresh rootfs through the *build
+# host's* kernel, and Fedora 44's mkfs.xfs (xfsprogs 7) always enables the
+# exchange-range + parent-pointer incompat bits, needing host kernel >= 6.12.
+# Colima's Ubuntu 24.04 VM ships 6.8, so xfs fails with "unknown incompatible
+# features (0xc0)". ext4 mounts on every kernel we build on.
 set -euo pipefail
 
 PKG="packages/agents/claude-code-vm"
 CACHE="$PKG/.build"
 BOOTC_TAG="platform-claude-code-vm-bootc:latest"
-OUT_TAG="platform-claude-code-vm:latest"
+# Overridable so CI can source the harness from the registry image it just
+# published and name the result for a push; local dev keeps the :latest tags
+# that cluster:install loads into k3s.
+AGENT_IMAGE="${AGENT_IMAGE:-platform-claude-code:latest}"
+OUT_TAG="${OUT_TAG:-platform-claude-code-vm:latest}"
 STORAGE_VOL="platform-ccvm-storage"
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
 SKOPEO_IMAGE="quay.io/skopeo/stable:latest"
@@ -24,19 +34,26 @@ SKOPEO_IMAGE="quay.io/skopeo/stable:latest"
 # Preflight: osbuild assembles the disk on loop devices; containerized hosts
 # whose device cgroup blocks them (e.g. Locki sandboxes) can never build this
 # image — fail fast with the reason instead of 15 min into the qcow2 step.
+# Detach what the probe attaches: the loop device outlives the container, and
+# leaking one per build exhausts the kernel's 8-device default — after which
+# every later build fails this very check and blames the environment.
 if ! docker run --rm --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
-	'truncate -s 1M /tmp/probe && losetup -f /tmp/probe' >/dev/null 2>&1; then
+	'truncate -s 1M /tmp/probe && d=$(losetup -f --show /tmp/probe) && losetup -d "$d"' >/dev/null 2>&1; then
 	echo "claude-code-vm: FATAL: this environment cannot attach loop devices" >&2
 	echo "(required by bootc-image-builder). Build on a host whose Docker allows" >&2
 	echo "privileged loop access (macOS Docker, CI, a Linux workstation)." >&2
 	exit 1
 fi
 
-docker build -t "$BOOTC_TAG" -f "$PKG/Containerfile" --build-arg AGENT_IMAGE=platform-claude-code:latest "$PKG"
+docker build -t "$BOOTC_TAG" -f "$PKG/Containerfile" --build-arg AGENT_IMAGE="$AGENT_IMAGE" "$PKG"
 
-id=$(docker image inspect -f '{{.Id}}' "$BOOTC_TAG")
-hash="${id#sha256:}"
-hash="${hash:0:16}"
+# Key on the rootfs layers, not .Id: buildx stamps a fresh provenance
+# attestation on every run, so the image index digest (.Id) changes even when
+# nothing was rebuilt — which missed this cache every time and re-ran the
+# ~15 min disk build. Layer diff IDs are content-addressed, so they are stable
+# across rebuilds and still change the moment the image content does.
+hash=$(docker image inspect -f '{{.RootFS.Layers}}' "$BOOTC_TAG" \
+	| openssl dgst -sha256 -r | cut -c1-16)
 disk_dir="$CACHE/disk-$hash"
 
 if [ ! -f "$disk_dir/disk.qcow2" ]; then
@@ -52,7 +69,7 @@ if [ ! -f "$disk_dir/disk.qcow2" ]; then
 	docker run --rm --privileged --security-opt label=disable \
 		-v "$STORAGE_VOL:/var/lib/containers/storage" \
 		-v "$PWD/$disk_dir:/output" \
-		"$BIB_IMAGE" build --type qcow2 --rootfs xfs \
+		"$BIB_IMAGE" build --type qcow2 --rootfs ext4 \
 		"localhost/claude-code-vm:$hash"
 	mv "$disk_dir/qcow2/disk.qcow2" "$disk_dir/disk.qcow2"
 	rm -rf "$disk_dir/qcow2" "$disk_dir/manifest-qcow2.json" 2>/dev/null || true
