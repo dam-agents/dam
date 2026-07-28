@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type { AgentsService } from "api-server-api";
+import { ChannelType, type AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
+import { createChannelManager } from "../../modules/channels/services/channel-manager.js";
 import {
   createFakeSlackGateway,
   type FakeSlackChannel,
@@ -202,5 +203,63 @@ describe("slack supportsMessageReactions", () => {
     const h = harness({ boundChannelId: BOUND, gatewayDown: true });
 
     expect(await h.worker.supportsMessageReactions()).toBe(true);
+  });
+});
+
+// Withholding an optional scope must degrade the one affordance it backs and
+// nothing else — never fail the scope check itself, and never fail the MCP
+// session the check gates.
+describe("missing optional scopes never fail the gate", () => {
+  it("both scopes withheld: each check resolves false, neither rejects", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+
+    // Resolved as a pair, the way the MCP session gate asks for them.
+    await expect(
+      Promise.all([
+        h.worker.supportsUserLookup(),
+        h.worker.supportsMessageReactions(),
+      ]),
+    ).resolves.toEqual([false, false]);
+  });
+
+  it("a probe that throws is unknown, not missing — both fail open", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    h.gw.getGrantedScopes = async () => {
+      throw new Error("ratelimited");
+    };
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+
+    await expect(
+      Promise.all([
+        h.worker.supportsUserLookup(),
+        h.worker.supportsMessageReactions(),
+      ]),
+    ).resolves.toEqual([true, true]);
+  });
+
+  it("the aggregate keeps working through the channel manager with both withheld", async () => {
+    const h = harness({ boundChannelId: BOUND });
+    h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    const manager = createChannelManager({ slackWorker: h.worker });
+
+    // This pair is exactly what mountMcpRoutes awaits before building a
+    // session — a rejection here would deny the agent its MCP endpoint
+    // outright rather than just dropping two tools.
+    await expect(
+      Promise.all([
+        manager.supportsUserLookup(),
+        manager.supportsMessageReactions(),
+      ]),
+    ).resolves.toEqual([false, false]);
+
+    // The unaffected affordances are untouched by the withheld scopes.
+    expect(
+      await manager.listConversations("agent-1", ChannelType.Slack),
+    ).toEqual([{ id: BOUND, title: BOUND }]);
+
+    await manager.stopAll();
   });
 });

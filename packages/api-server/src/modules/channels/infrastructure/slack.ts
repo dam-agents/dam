@@ -470,11 +470,24 @@ function normalizeSlackUserId(input: string): string | null {
   return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
 }
 
+/** The granted-scope set, or null for "unknown". The port already promises
+ *  null rather than a throw on a failed probe, but these checks gate the MCP
+ *  session build: a rejection escaping here would cost the agent *every* tool
+ *  instead of the one affordance a withheld scope backs, so an unexpectedly
+ *  throwing gateway is also read as unknown. */
+async function grantedScopes(gw: SlackGateway): Promise<Set<string> | null> {
+  try {
+    return await gw.getGrantedScopes();
+  } catch {
+    return null;
+  }
+}
+
 /** Whether the running gateway's granted scopes are confirmed to include
  *  `users:read`. An unprobed or unreachable gateway reports true — an
  *  unknown state fails open rather than hiding a tool that might work. */
 async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
-  const scopes = await gw.getGrantedScopes();
+  const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("users:read");
 }
 
@@ -482,7 +495,7 @@ async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
  *  `reactions:read`. An unprobed or unreachable gateway reports true — an
  *  unknown state fails open rather than hiding a tool that might work. */
 async function canReadReactions(gw: SlackGateway): Promise<boolean> {
-  const scopes = await gw.getGrantedScopes();
+  const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("reactions:read");
 }
 
