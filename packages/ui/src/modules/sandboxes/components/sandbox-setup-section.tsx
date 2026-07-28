@@ -3,12 +3,13 @@ import { Controller } from "react-hook-form";
 import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET } from "@/components/ui/inset";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useStore } from "../../../store.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { ProviderSection } from "../../providers/components/provider-section.js";
+import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
@@ -27,8 +28,22 @@ interface Props {
 }
 
 export function SandboxSetupSection({ f }: Props) {
+  const showConfirm = useStore((s) => s.showConfirm);
   const { agent } = f;
   if (!agent) return null;
+
+  const confirmSwitch = () =>
+    showConfirm(
+      <p>
+        This will change the model provider used by{" "}
+        <strong>{agent.name}</strong>. Switching between different model
+        families (for example, Claude → OpenAI) may cause the agent to stop
+        working and can interrupt tasks in progress. The switch applies when you
+        save.
+      </p>,
+      "Switch this sandbox's provider?",
+      { confirmLabel: "Switch provider" },
+    );
 
   return (
     <>
@@ -74,13 +89,14 @@ export function SandboxSetupSection({ f }: Props) {
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
-        <ProviderSection
-          variant="collapsible"
-          listClassName={FIELD_INSET}
-          selected={f.selectedProvider}
-          onSelect={f.selectProvider}
-          onProviderRemoved={f.dropProviderGrant}
-        />
+        <Inset>
+          <ProviderSelect
+            selected={f.selectedProvider}
+            onSelect={f.selectProvider}
+            confirmSwitch={confirmSwitch}
+            disabled={f.saving}
+          />
+        </Inset>
         <p className="mt-3 text-[12px] text-muted-foreground">
           Changing the provider swaps this sandbox's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can

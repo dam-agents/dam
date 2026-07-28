@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 
 import type { AgentView } from "../../../types.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
-import { ProviderSection } from "../../providers/components/provider-section.js";
+import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { generateSandboxName } from "../../sandboxes/lib/sandbox-name.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
@@ -93,12 +93,10 @@ export function CreateAgentInline({ onCreated }: Props) {
 
       <div>
         <SectionLabel spaced>Provider</SectionLabel>
-        <ProviderSection
+        <ProviderSelect
           selected={providerRef}
           onSelect={setProviderRef}
           autoSelectFirst
-          variant="collapsible"
-          manageKeys={false}
         />
       </div>
 

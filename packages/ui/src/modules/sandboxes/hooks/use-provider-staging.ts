@@ -6,6 +6,9 @@ import type { ProviderRef } from "../../providers/components/provider-item.js";
 interface Args {
   apps: readonly ConnectionView[];
   assignedAppIds: string[];
+  /** Read at call time — a confirm dialog can hold `selectProvider` open
+   *  across background grant refetches. */
+  getAssignedAppIds: () => string[];
   setAssignedAppIds: (ids: string[]) => void;
 }
 
@@ -13,6 +16,7 @@ interface Args {
 export function useProviderStaging({
   apps,
   assignedAppIds,
+  getAssignedAppIds,
   setAssignedAppIds,
 }: Args) {
   const providerAppIds = useMemo(
@@ -36,18 +40,15 @@ export function useProviderStaging({
     setAssignedAppIds(
       [
         ...new Set([
-          ...assignedAppIds.filter((id) => !providerAppIds.has(id)),
+          ...getAssignedAppIds().filter((id) => !providerAppIds.has(id)),
           ref.id,
         ]),
       ].sort(),
     );
-  const dropProviderGrant = (ref: ProviderRef) =>
-    setAssignedAppIds(assignedAppIds.filter((id) => id !== ref.id).sort());
 
   return {
     providerAppIds,
     selectedProvider,
     selectProvider,
-    dropProviderGrant,
   };
 }
