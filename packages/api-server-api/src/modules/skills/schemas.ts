@@ -65,6 +65,12 @@ export const localSkillSchema = z.object({
   name: z.string(),
   description: z.string(),
   skillPath: z.string(),
+  /** Provenance judged by the pod against the image's pristine workspace
+   *  copy: `system` = shipped by the image untouched, `system-modified` =
+   *  shipped by the image but diverged on the PVC, `user` = created at
+   *  runtime. Absent when the pod predates origin classification — treat
+   *  as `user` (the pre-provenance behavior). */
+  origin: z.enum(["system", "system-modified", "user"]).optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful

@@ -7,6 +7,7 @@ import type {
   LocalSkill,
   LocalSkillFile,
   Result,
+  SkillOrigin,
   SkillsDomainError,
 } from "agent-runtime-api";
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
@@ -21,8 +22,15 @@ const COMMAND_TIMEOUT_MS = 60_000;
 
 export interface LocalSkillRepository {
   /** First-wins listing across skillPaths, dot-prefixed entries skipped,
-   *  frontmatter parsed via the 8 KB fast-path. */
-  listLocal: (skillPaths: SkillPath[]) => Promise<LocalSkill[]>;
+   *  frontmatter parsed via the 8 KB fast-path. With `pristinePaths` (the
+   *  image-side counterparts of the skill paths), each skill is stamped with
+   *  an `origin` judged against the image's pristine copy; without them the
+   *  listing carries no origin (callers that only need names, e.g. the
+   *  writeLocal collision guard, skip the classification cost). */
+  listLocal: (
+    skillPaths: SkillPath[],
+    pristinePaths?: SkillPath[],
+  ) => Promise<LocalSkill[]>;
   /** Read every file in a skill's directory, enforcing the per-file and
    *  per-skill caps. Errors with `SkillNotFound` when no skillPath contains
    *  the named skill, `PayloadTooLarge` on cap breach. */
@@ -92,8 +100,13 @@ export interface LocalSkillRepository {
 }
 
 export function createLocalSkillRepository(): LocalSkillRepository {
+  // The image is immutable for the life of the process, so pristine-side
+  // skill hashes are computed at most once per directory. A directory absent
+  // from the image memoizes as null.
+  const pristineHashes = new Map<string, Promise<string | null>>();
   return {
-    listLocal: list,
+    listLocal: (skillPaths, pristinePaths) =>
+      list(skillPaths, pristinePaths, pristineHashes),
     readLocal: read,
     writeFromDir: write,
     writeLocalSkill,
@@ -108,7 +121,11 @@ export function createLocalSkillRepository(): LocalSkillRepository {
   };
 }
 
-async function list(skillPaths: SkillPath[]): Promise<LocalSkill[]> {
+async function list(
+  skillPaths: SkillPath[],
+  pristinePaths: SkillPath[] | undefined,
+  pristineHashes: Map<string, Promise<string | null>>,
+): Promise<LocalSkill[]> {
   const seen = new Set<string>();
   const out: LocalSkill[] = [];
 
@@ -142,6 +159,16 @@ async function list(skillPaths: SkillPath[]): Promise<LocalSkill[]> {
           name: fm.name?.trim() || ent.name,
           description: fm.description?.trim() || "",
           skillPath,
+          ...(pristinePaths !== undefined
+            ? {
+                origin: await classifyOrigin(
+                  ent.name,
+                  path.join(skillPath, ent.name),
+                  pristinePaths,
+                  pristineHashes,
+                ),
+              }
+            : {}),
         });
       } finally {
         await fd.close();
@@ -150,6 +177,47 @@ async function list(skillPaths: SkillPath[]): Promise<LocalSkill[]> {
   }
 
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Judge a Local Skill's provenance against the image's pristine workspace
+ * copy — the directory the first-boot seed copied onto the PVC. Identity is
+ * the directory basename (the same identity the listing dedupes on): a
+ * same-named directory in any pristine path means the image shipped it, and
+ * the content hash then separates untouched (`system`) from diverged
+ * (`system-modified`). No pristine counterpart means the skill appeared at
+ * runtime — `user`.
+ */
+async function classifyOrigin(
+  dirName: string,
+  localDir: string,
+  pristinePaths: SkillPath[],
+  pristineHashes: Map<string, Promise<string | null>>,
+): Promise<SkillOrigin> {
+  for (const base of pristinePaths) {
+    const pristineDir = path.join(base, dirName);
+    let hashPromise = pristineHashes.get(pristineDir);
+    if (!hashPromise) {
+      hashPromise = hashSkillDirIfPresent(pristineDir);
+      pristineHashes.set(pristineDir, hashPromise);
+    }
+    const pristineHash = await hashPromise;
+    if (pristineHash === null) continue;
+    const localHash = await hashSkillDir(localDir);
+    return localHash === pristineHash ? "system" : "system-modified";
+  }
+  return "user";
+}
+
+/** `hashSkillDir` for a directory that may not exist — null when absent (or
+ *  unreadable, which for the image-side copy amounts to the same thing). */
+async function hashSkillDirIfPresent(absDir: string): Promise<string | null> {
+  try {
+    if (!(await fs.stat(absDir)).isDirectory()) return null;
+    return await hashSkillDir(absDir);
+  } catch {
+    return null;
+  }
 }
 
 async function read(

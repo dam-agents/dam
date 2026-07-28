@@ -24,10 +24,20 @@ export interface ScannedSkill {
   contentHash: string;
 }
 
+/** Provenance of a Local Skill, judged against the image's pristine workspace
+ *  copy (`/app/working-dir`, the source the first-boot seed copies onto the
+ *  PVC): `system` = shipped by the image and untouched, `system-modified` =
+ *  shipped by the image but the on-PVC copy has diverged (user edit or a
+ *  template upgrade moving the image ahead), `user` = created at runtime. */
+export type SkillOrigin = "system" | "system-modified" | "user";
+
 export interface LocalSkill {
   name: string;
   description: string;
   skillPath: string;
+  /** Absent when the responding agent-runtime predates origin
+   *  classification — treat as `user` (the pre-provenance behavior). */
+  origin?: SkillOrigin;
 }
 
 export interface LocalSkillFile {

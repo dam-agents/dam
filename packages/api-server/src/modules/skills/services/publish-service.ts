@@ -65,6 +65,20 @@ export async function publishSkill(
     });
   }
 
+  // Untouched image-shipped skills aren't the user's to publish (#2828) —
+  // block them here rather than in the pod so the verdict is uniform across
+  // callers (UI and MCP). A `system-modified` skill passes: the user changed
+  // its content, so the divergence is theirs to publish. Pods predating
+  // origin classification report no origin and stay publishable, matching
+  // pre-provenance behavior.
+  const local = await deps.runtimeClient.listLocal(input.agentId);
+  if (local.find((s) => s.name === input.name)?.origin === "system") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `"${input.name}" is built into this sandbox's image and can't be published`,
+    });
+  }
+
   let result;
   try {
     result = await deps.runtimeClient.publish(input.agentId, {

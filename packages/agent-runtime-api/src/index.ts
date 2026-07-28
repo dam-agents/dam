@@ -28,6 +28,7 @@ export type {
   ScannedSkill,
   SkillInstallInput,
   SkillInstallResult,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishResult,
   SkillReadLocalInput,

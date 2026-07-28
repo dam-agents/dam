@@ -27,6 +27,11 @@ export interface SkillsServiceDeps {
   /** Read-side paths (listLocal / readLocal / publish), from the manifest's
    *  skill-ref driver. install / uninstall get theirs from the driver. */
   skillPaths: SkillPath[];
+  /** Image-side counterparts of `skillPaths` — the same manifest paths
+   *  expanded against the image's pristine workspace root instead of $HOME.
+   *  listLocal judges each skill's `origin` against them; paths that don't
+   *  exist on the image are harmless (everything classifies as `user`). */
+  pristineSkillPaths: SkillPath[];
   /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;
   log: (msg: string) => void;
@@ -83,7 +88,10 @@ async function doUninstall(
 }
 
 async function doListLocal(deps: SkillsServiceDeps) {
-  const skills = await deps.repo.listLocal(deps.skillPaths);
+  const skills = await deps.repo.listLocal(
+    deps.skillPaths,
+    deps.pristineSkillPaths,
+  );
   return ok(skills);
 }
 

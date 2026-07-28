@@ -12,6 +12,7 @@ import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
+import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
@@ -22,8 +23,9 @@ import {
 } from "./standalone-skills-group.js";
 
 /**
- * The redesigned skills surface: skills grouped by location — Standalone Local
- * Skills ("Created in this sandbox") and Skill Sources ("Sourced from GitHub").
+ * The redesigned skills surface: skills grouped by provenance — user-authored
+ * Standalone Local Skills ("Created in this sandbox"), image-shipped ones
+ * ("Built into this sandbox"), and Skill Sources ("Sourced from GitHub").
  * Toggles install/uninstall immediately; the "+ Add source" control and the
  * per-source kebab (re-scan / view repo / remove) administer sources. While the
  * agent is stopped/starting the whole surface is a dimmed, non-interactive
@@ -78,6 +80,17 @@ export function SkillsSurface({
   } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
 
   const publishableSources = sources.filter((s) => s.canPublish);
+
+  // Provenance split (#2828): image-shipped skills get their own read-only
+  // group so "Created in this sandbox" only shows what the user authored.
+  // No origin (an agent image predating classification) counts as
+  // user-authored — the pre-provenance behavior.
+  const createdHere = standalone.filter(
+    (s) => s.origin === undefined || s.origin === "user",
+  );
+  const builtIn = standalone.filter(
+    (s) => s.origin === "system" || s.origin === "system-modified",
+  );
 
   const removeWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
@@ -162,9 +175,9 @@ export function SkillsSurface({
         </section>
       ) : (
         <>
-          {standalone.length > 0 ? (
+          {createdHere.length > 0 ? (
             <StandaloneSkillsGroup
-              skills={standalone}
+              skills={createdHere}
               readOnly={readOnly}
               publishes={publishes}
               canPublish={publishableSources.length > 0}
@@ -176,6 +189,8 @@ export function SkillsSurface({
             // section with a placeholder instead of dropping it.
             readOnly && <StandaloneSkillsPlaceholder />
           )}
+
+          {builtIn.length > 0 && <BuiltInSkillsGroup skills={builtIn} />}
 
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
