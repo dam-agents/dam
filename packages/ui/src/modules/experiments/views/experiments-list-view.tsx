@@ -38,7 +38,11 @@ export function ExperimentsListView() {
     <div>
       <PageHeader
         title="Experiments"
-        description="Loop scripts the platform observes live, grouped by the sandbox running them. Open one to land in its chat — the experiment graph docks beside the conversation."
+        description={
+          groups.length > 0
+            ? "Loop scripts the platform observes live, grouped by the sandbox running them. Open one to land in its chat — the experiment graph docks beside the conversation."
+            : undefined
+        }
         actions={
           groups.length > 0 ? (
             <Button onClick={createExperimentSandbox}>Create experiment</Button>
@@ -53,7 +57,7 @@ export function ExperimentsListView() {
           <h2 className="text-[16px] font-semibold text-foreground">
             No experiments yet
           </h2>
-          <p className="text-[14px] text-muted-foreground">
+          <p className="max-w-[520px] text-[14px] text-muted-foreground">
             An experiment runs one goal across several variants at once and
             charts each result live, so you can compare them. Create an
             experiment sandbox and its agent will help you design the first one.
