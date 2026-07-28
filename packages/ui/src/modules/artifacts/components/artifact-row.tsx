@@ -163,10 +163,10 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
         navigateToSandboxHome(agentId, "artifacts");
       }}
       title={`Open ${agentName}'s artifacts`}
-      className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
+      className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
     >
-      <Box size={12} />
-      {agentName}
+      <Box size={12} className="shrink-0" />
+      <span className="truncate">{agentName}</span>
     </button>
   );
 }
