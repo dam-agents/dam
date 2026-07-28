@@ -24,7 +24,9 @@ export function PageEmptyState({
   return (
     <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
       <h2 className="text-[16px] font-semibold text-foreground">{title}</h2>
-      <p className="max-w-[520px] text-[14px] text-muted-foreground">{message}</p>
+      <p className="max-w-[520px] text-[14px] text-muted-foreground">
+        {message}
+      </p>
       <Button className="mt-1" onClick={onAction}>
         {actionIcon}
         {actionLabel}

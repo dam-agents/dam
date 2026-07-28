@@ -19,11 +19,12 @@ RUN --mount=type=cache,target=/root/.npm \
 
 # Claude Code phones home (usage telemetry to Statsig, error logs to Datadog
 # intake) — traffic the gateway egress chain would surface for approval. The
-# umbrella flag plus its explicit constituents turn all of it off; the
-# auto-updater loss is intentional since the harness version is pinned above.
-# Platform OTEL export is a separate, opt-in path and is unaffected.
-ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-    DISABLE_TELEMETRY=1 \
+# explicit flags below turn exactly that off; the umbrella
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is deliberately NOT set — it also
+# switches off wanted behavior beyond these constituents. The auto-updater
+# loss is intentional since the harness version is pinned above. Platform
+# OTEL export is a separate, opt-in path and is unaffected.
+ENV DISABLE_TELEMETRY=1 \
     DISABLE_ERROR_REPORTING=1 \
     DISABLE_FEEDBACK_COMMAND=1 \
     DISABLE_FEEDBACK_SURVEY=1 \
