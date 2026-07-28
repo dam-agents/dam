@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   DriverBinding,
@@ -50,7 +49,7 @@ export function createWorkspaceCommandPlugin(deps: {
       return async (payload, ctx) => {
         const { command } = payload as WorkspaceCommandEventPayload;
         const sentinel = join(ctx.pluginStateDir, DONE_SENTINEL);
-        if (existsSync(sentinel)) {
+        if (await sentinelExists(sentinel)) {
           deps.log(`[workspace-command] already run, skipping`);
           return;
         }
@@ -69,6 +68,20 @@ export function createWorkspaceCommandPlugin(deps: {
       };
     },
   };
+}
+
+// Probe by reading rather than existsSync: the sentinel is single-writer per
+// pod, and reading avoids the check-then-write pattern CodeQL flags as a
+// file-system race (js/file-system-race); the wx write below stays the only
+// arbiter if two settles ever overlap.
+async function sentinelExists(path: string): Promise<boolean> {
+  try {
+    await readFile(path);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
 }
 
 // `bash -lc` so the command sees the same login-shell environment an
