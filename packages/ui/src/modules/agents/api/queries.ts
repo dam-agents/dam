@@ -57,6 +57,19 @@ export function useAgentRunState(
 }
 
 /**
+ * Resolve an agent id to its user-facing name. Falls back to the raw id —
+ * references (artifact attribution, approvals) deliberately outlive their
+ * agent, so a deleted agent's id is the only attribution left.
+ */
+export function useAgentDisplayName(agentId: string): string;
+export function useAgentDisplayName(agentId: string | null): string | null;
+export function useAgentDisplayName(agentId: string | null): string | null {
+  const agents = useAgentsList();
+  if (!agentId) return null;
+  return agents.find((a) => a.id === agentId)?.name ?? agentId;
+}
+
+/**
  * Whether the UI can actually talk to the pod right now. Three inputs, because
  * each catches a gap the others miss:
  *   - server reports `running` (the lifecycle truth, but it lags reality),

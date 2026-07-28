@@ -12,6 +12,7 @@ import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -73,6 +74,7 @@ function ApprovalRow({
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const agentName = useAgentDisplayName(row.agentId);
   const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
@@ -110,8 +112,8 @@ function ApprovalRow({
             <p className="text-[11px] text-text-muted truncate">{subtitle}</p>
           )}
           {density === "full" && (
-            <p className="text-[10px] text-text-muted mt-0.5">
-              agent {row.agentId}
+            <p className="text-[10px] text-text-muted mt-0.5 truncate">
+              agent {agentName}
             </p>
           )}
         </div>

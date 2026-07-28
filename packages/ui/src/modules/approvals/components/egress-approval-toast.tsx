@@ -11,7 +11,7 @@ import type { ApprovalView } from "api-server-api";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useAgents } from "../../agents/api/queries.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -29,9 +29,7 @@ export function EgressApprovalToast({
   /** Row belongs to a sandbox other than the one being viewed. */
   foreign: boolean;
 }) {
-  const { data: agentsData } = useAgents();
-  const agentName =
-    agentsData?.list.find((a) => a.id === row.agentId)?.name ?? row.agentId;
+  const agentName = useAgentDisplayName(row.agentId);
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();

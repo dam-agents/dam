@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { usePrefetchArtifactPreview } from "../api/queries.js";
 import { expiryState, timeAgo } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
@@ -115,10 +116,15 @@ export function ArtifactRow({
 }
 
 function CreatorChip({ agentId }: { agentId: string | null }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!agentId) {
     return <span className="rounded-full bg-muted px-2 py-px">you</span>;
   }
+  return <AgentCreatorChip agentId={agentId} />;
+}
+
+function AgentCreatorChip({ agentId }: { agentId: string }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const agentName = useAgentDisplayName(agentId);
   return (
     <button
       type="button"
@@ -126,11 +132,11 @@ function CreatorChip({ agentId }: { agentId: string | null }) {
         e.stopPropagation();
         navigateToSandboxHome(agentId, "artifacts");
       }}
-      title={`Open ${agentId}'s artifacts`}
-      className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
+      title={`Open ${agentName}'s artifacts`}
+      className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
     >
-      <Box size={12} />
-      {agentId}
+      <Box size={12} className="shrink-0" />
+      <span className="truncate">{agentName}</span>
     </button>
   );
 }

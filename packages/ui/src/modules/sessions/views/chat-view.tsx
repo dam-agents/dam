@@ -96,8 +96,7 @@ export function ChatView() {
   const agentDisplay = agentView
     ? resolveAgentDisplay(agentView, restartingIds)
     : null;
-  const selectedAgentName =
-    agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent;
+  const selectedAgentName = agentView?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
