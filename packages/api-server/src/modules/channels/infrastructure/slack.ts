@@ -104,7 +104,8 @@ function slackTurnContract(ctx: {
    *  resolve one (never fails the turn over this). */
   permalink: string | null;
 }): string {
-  const multi = (ctx.batch?.count ?? 1) > 1;
+  const batchCount = ctx.batch?.count ?? 1;
+  const multi = batchCount > 1;
   const replyBullet =
     multi && ctx.batch?.inThread === false
       ? "• reply — post a message threaded under the batched message you are " +
@@ -139,10 +140,17 @@ function slackTurnContract(ctx: {
             "reasoning about their local time.",
         ]
       : []),
-    `You're answering a message sent ${formatSlackTs(ctx.eventTs)}, in ` +
-      `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
-      (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
-      ".",
+    // A coalesced batch has no single send time or permalink to name — each
+    // message carries its own [ts …] tag instead.
+    multi
+      ? `You're reading ${batchCount} messages from ` +
+        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}. ` +
+        "Each [ts …] tag above is that message's own send time, in seconds " +
+        "since the Unix epoch."
+      : `You're answering a message sent ${formatSlackTs(ctx.eventTs)}, in ` +
+        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
+        (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
+        ".",
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
   ].join("\n");
@@ -478,6 +486,25 @@ async function canReadReactions(gw: SlackGateway): Promise<boolean> {
   return !scopes || scopes.has("reactions:read");
 }
 
+/** The two Slack-dependent turn-contract inputs, resolved together. The scope
+ *  probe is cached for the gateway's lifetime, but the permalink is a live
+ *  `chat.getPermalink` round trip on the relay's critical path — so they run in
+ *  parallel rather than back to back, and a coalesced batch (which names no
+ *  single message, so renders no permalink) skips the call entirely instead of
+ *  paying for a result it discards. */
+async function turnContractContext(
+  gw: SlackGateway,
+  channel: string,
+  eventTs: string,
+  opts?: { batched?: boolean },
+): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
+  const [lookup, permalink] = await Promise.all([
+    canLookupUsers(gw),
+    opts?.batched ? Promise.resolve(null) : gw.getPermalink(channel, eventTs),
+  ]);
+  return { canLookupUsers: lookup, permalink };
+}
+
 export function createSlackWorker(
   makeAcpClient: AcpClientFactory,
   createGateway: () => SlackGateway,
@@ -681,6 +708,14 @@ export function createSlackWorker(
     'threadTs shown in your turn instructions (reply threadTs="…", react ' +
     'messageTs="…") so this lands in the thread you are answering.';
 
+  /** The read-only sibling of AMBIGUOUS_THREAD_ERROR: a lookup delivers
+   *  nowhere, so the "lands in the right thread" framing would misdescribe
+   *  what is at stake — reading the wrong message, not posting to it. */
+  const AMBIGUOUS_MESSAGE_ERROR =
+    "This agent is handling more than one Slack thread right now — pass the " +
+    "messageTs shown in your turn instructions so this inspects the message " +
+    "you mean.";
+
   /** Attribution footer for a post by `instanceName`: the agent's name linked to
    *  its UI page, with the id carried in the URL so the author can be recovered
    *  from injected history. The name lookup is best-effort — a lookup failure or
@@ -856,9 +891,8 @@ export function createSlackWorker(
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
-      canLookupUsers: await canLookupUsers(gw),
       isDirectMessage: isDirectMessageId(ctx.channel),
-      permalink: await gw.getPermalink(ctx.channel, ctx.eventTs),
+      ...(await turnContractContext(gw, ctx.channel, ctx.eventTs)),
     });
 
     let outcome: TurnOutcome = "failure";
@@ -1027,9 +1061,8 @@ export function createSlackWorker(
         replyThreadTs: args.threadTs,
         eventTs: args.eventTs,
         brand,
-        canLookupUsers: await canLookupUsers(gw),
         isDirectMessage: isDirectMessageId(args.channel),
-        permalink: await gw.getPermalink(args.channel, args.eventTs),
+        ...(await turnContractContext(gw, args.channel, args.eventTs)),
       }),
     );
     const replyId = args.eventTs;
@@ -1769,10 +1802,11 @@ export function createSlackWorker(
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
       brand,
-      canLookupUsers: await canLookupUsers(gw),
       batch: { count: args.messages.length, inThread: args.hasThread },
       isDirectMessage: isDirectMessageId(args.channel),
-      permalink: await gw.getPermalink(args.channel, args.eventTs),
+      ...(await turnContractContext(gw, args.channel, args.eventTs, {
+        batched: args.messages.length > 1,
+      })),
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({
@@ -2481,21 +2515,31 @@ export function createSlackWorker(
       if (!gw) return { error: "slack bot not running" };
 
       let messageTs = query.messageTs;
+      let turnChannel: string | undefined;
       if (!messageTs) {
         // Message-level target, same granularity as react.
         const turn = resolveTurn(instanceName, "react");
-        if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("ambiguous" in turn) return { error: AMBIGUOUS_MESSAGE_ERROR };
         if ("none" in turn) {
           return {
             error: "no message to inspect — pass messageTs",
           };
         }
         messageTs = turn.ref.eventTs;
+        // Like react: the message lives in the turn's conversation, not
+        // necessarily the currently-bound one.
+        turnChannel = turn.ref.channel;
+      } else {
+        const id = messageTs;
+        turnChannel = findTurnRef(
+          instanceName,
+          (ref) => ref.eventTs === id,
+        )?.channel;
       }
       const target = await resolveOutboundTarget(
         gw,
         slackChannelId,
-        query.conversationId,
+        query.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;
 

@@ -171,6 +171,43 @@ describe("create_schedule MCP tool", () => {
     expect(res.isError).toBe(true);
   });
 
+  it("refuses cron paired with timezone rather than silently scheduling in UTC", async () => {
+    const { client, cronCalls } = await mcpHarness();
+
+    // Accepting this would hand back a UTC schedule the agent believes fires
+    // at 9am Prague — the DST drift the rrule path exists to prevent.
+    const res = await client.callTool({
+      name: "create_schedule",
+      arguments: {
+        name: "misleading",
+        cron: "0 9 * * *",
+        timezone: "Europe/Prague",
+        task: "do the thing",
+      },
+    });
+
+    expect(res.isError).toBe(true);
+    expect((res.content as [{ text: string }])[0].text).toContain("UTC-only");
+    expect(cronCalls).toHaveLength(0);
+  });
+
+  it("refuses cron paired with quietHours, which only the rrule path honors", async () => {
+    const { client, cronCalls } = await mcpHarness();
+
+    const res = await client.callTool({
+      name: "create_schedule",
+      arguments: {
+        name: "misleading",
+        cron: "0 9 * * *",
+        quietHours: [{ startTime: "23:00", endTime: "07:00", enabled: true }],
+        task: "do the thing",
+      },
+    });
+
+    expect(res.isError).toBe(true);
+    expect(cronCalls).toHaveLength(0);
+  });
+
   it("refuses rrule without a timezone", async () => {
     const { client, rruleCalls } = await mcpHarness();
 

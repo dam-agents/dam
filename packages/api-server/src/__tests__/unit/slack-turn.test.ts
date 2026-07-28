@@ -907,4 +907,49 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (const g of gates) g();
     await tick();
   });
+
+  it("describeMessageReactions inspects the turn's channel, not the newly bound one", async () => {
+    let bound = "C1";
+    const gates: Array<() => void> = [];
+    const h = harness({
+      sendPrompt: async () => {
+        await new Promise<void>((resolve) => gates.push(resolve));
+        return "answer";
+      },
+      boundChannel: () => bound,
+    });
+    h.gw.setChannels([{ id: "C1", name: "general", botIsMember: true }]);
+    h.gw.setMessageReactions("C1", "100.1", [
+      { name: "eyes", count: 1, users: ["U2"] },
+    ]);
+    await h.start();
+    void h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "100.1",
+      text: "question",
+      teamId: "T-e2e",
+    });
+    for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
+    expect(gates.length).toBe(1);
+
+    // Rebound mid-turn: the turn's ts only resolves inside C1, so a lookup
+    // that defaulted to the new binding would miss the message entirely.
+    bound = "C2";
+    expect(await h.worker.describeMessageReactions("agent-1", {})).toEqual({
+      reactions: [{ name: "eyes", count: 1, users: ["U2"] }],
+      conversationId: "C1",
+      messageTs: "100.1",
+    });
+
+    // An explicit ts naming the live turn is back-filled to its channel too.
+    expect(
+      await h.worker.describeMessageReactions("agent-1", {
+        messageTs: "100.1",
+      }),
+    ).toMatchObject({ conversationId: "C1" });
+
+    for (const g of gates) g();
+    await tick();
+  });
 });

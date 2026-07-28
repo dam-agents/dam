@@ -10,7 +10,6 @@ import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
   quietWindowSchema,
-  SessionType,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -659,6 +658,14 @@ export function createMcpSession(
       }
       if (rrule !== undefined && !timezone) {
         return errorResult("rrule requires timezone.");
+      }
+      // cron is UTC-only: silently dropping a timezone here would hand back a
+      // schedule that fires an hour off the asked-for local time half the
+      // year — the exact DST drift the rrule path exists to prevent.
+      if (cron !== undefined && (timezone || quietHours)) {
+        return errorResult(
+          "`cron` is UTC-only and ignores `timezone`/`quietHours` — use `rrule` with `timezone` to schedule in a local zone.",
+        );
       }
       try {
         const sched =

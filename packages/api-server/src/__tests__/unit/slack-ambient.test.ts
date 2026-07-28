@@ -402,6 +402,14 @@ describe("slack ambient inbound", () => {
     expect(batched).toContain("[ts 2.2] <@U-B>: two");
     expect(batched).toContain("[ts 3.3] <@U-C>: three");
 
+    // A batch has no single send time or permalink to name, so the contract
+    // points at the per-message tags instead of asserting one of each.
+    expect(batched).toContain("You're reading 2 messages from");
+    expect(batched).not.toContain("You're answering a message sent");
+    expect(batched).not.toContain("permalink");
+    // The single-message turn before it still names its own send time.
+    expect(String(h.prompts[0])).toContain("You're answering a message sent");
+
     // Two top-level messages share this turn, so an id-less reply could
     // thread an answer to one under the other — refuse it; the tagged ts
     // targets the right message, even the older one.

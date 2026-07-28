@@ -248,4 +248,23 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain("in a 1:1 direct message");
     expect(prompt).not.toContain("shared channel or group DM");
   });
+
+  it("omits the permalink clause when Slack can't resolve one, keeping the rest of the line", async () => {
+    const h = harness();
+    // A permalink is never worth failing a turn over, so an unresolvable one
+    // degrades to an absent clause rather than an error.
+    h.gw.getPermalink = async () => null;
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("in a shared channel or group DM");
+    expect(prompt).not.toContain("permalink");
+  });
 });
