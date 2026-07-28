@@ -105,10 +105,33 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
   esac
 done
 if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ]; then
-  echo "FATAL: virtualization.enabled=true cannot work in a sandboxed cluster:" >&2
-  echo "the sandbox's device cgroup blocks /dev/kvm and /dev/loop* (no VMI boot," >&2
-  echo "no containerDisk build). Run this on the host instead." >&2
-  exit 1
+  # Sandbox device access varies with the outer container's configuration —
+  # probe instead of assuming. Both checks must actually open/attach: nodes
+  # can exist while the device cgroup still denies them.
+  VIRT_ERR=""
+  PROBE_IMG=$(mktemp)
+  truncate -s 1M "$PROBE_IMG"
+  if PROBE_DEV=$(losetup -f --show "$PROBE_IMG" 2>/dev/null); then
+    losetup -d "$PROBE_DEV"
+  else
+    VIRT_ERR="loop devices are unusable (bootc-image-builder assembles the containerDisk on them)"
+  fi
+  rm -f "$PROBE_IMG"
+  if [ "$(uname -m)" = "aarch64" ] && ! python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; then
+    VIRT_ERR="${VIRT_ERR:+$VIRT_ERR; }/dev/kvm is unusable (aarch64 VMIs are KVM-only; TCG works only on x86_64)"
+  fi
+  # bootc-image-builder writes the guest's SELinux labels through this kernel;
+  # label types unknown to the loaded policy need mac_admin (SELinux-less
+  # kernels accept anything). Probe with a made-up type.
+  if ! python3 -c 'import os,tempfile; f=tempfile.NamedTemporaryFile(); os.setxattr(f.name, "security.selinux", b"system_u:object_r:platform_probe_nonexistent_t:s0")' 2>/dev/null; then
+    VIRT_ERR="${VIRT_ERR:+$VIRT_ERR; }cannot write arbitrary SELinux labels (the containerDisk build labels the guest through the host kernel; needs mac_admin or an SELinux-less kernel)"
+  fi
+  if [ -n "$VIRT_ERR" ]; then
+    echo "FATAL: virtualization.enabled=true needs device access this sandbox lacks:" >&2
+    echo "  $VIRT_ERR" >&2
+    echo "Grant the sandbox these devices, or run the install on the host." >&2
+    exit 1
+  fi
 fi
 
 # 1. Provision cluster and set KUBECONFIG
@@ -424,10 +447,14 @@ YAML
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
 # 2c. KubeVirt — required by vm-backend agents (idempotent apply + wait).
-# The KVM-less-aarch64 and sandbox cases were already rejected above, so no
-# KVM here means an x86_64 VM: TCG emulation (slow but functional).
+# The KVM-less-aarch64 cases (lima and sandbox) were already rejected above,
+# so no KVM here means an x86_64 node: TCG emulation (slow but functional).
 if [ -n "$VIRT_ENABLED" ]; then
-  HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    HAS_KVM=$(test -e /dev/kvm && echo 1 || true)
+  else
+    HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
+  fi
   KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
   echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
   kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
