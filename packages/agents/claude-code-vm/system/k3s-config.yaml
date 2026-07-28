@@ -1,3 +1,16 @@
 # Baked k3s server config for the VM sandbox guest.
 # kubeconfig readable by the agent user (the whole VM is the sandbox).
 write-kubeconfig-mode: "0644"
+
+# The in-VM cluster must not claim the ranges the *host* cluster uses. k3s
+# defaults to 10.42.0.0/16 for pods and 10.43.0.0/16 for services — exactly
+# what a k3s host cluster uses, so the VM's own address (e.g. 10.42.0.249)
+# lands inside the range its own inner k3s believes it owns. flannel and
+# kube-proxy then program routes and iptables across it, and every inbound
+# connection to the VM dies the moment k3s finishes starting — the
+# agent-runtime readiness probe stops answering and the sandbox never goes
+# Ready. Observed exactly that: reachable on :8080 early in boot, black-holed
+# once k3s came up.
+cluster-cidr: "10.144.0.0/16"
+service-cidr: "10.145.0.0/16"
+cluster-dns: "10.145.0.10"

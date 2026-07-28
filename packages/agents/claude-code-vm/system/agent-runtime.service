@@ -1,8 +1,14 @@
 [Unit]
 Description=Platform agent-runtime (ACP server + harness supervisor)
-# cloud-final: virtiofs workspace mounts and /etc/platform/* are in place.
+# Order after cloud-init's *init* stage, which is where both write_files and
+# mounts run (cloud_init_modules) — so /etc/platform/* and the virtiofs
+# workspace mounts are in place. NOT cloud-final: that is itself
+# After=multi-user.target, so combining it with WantedBy=multi-user.target below
+# formed an ordering cycle and systemd resolved it by deleting this unit's start
+# job — agent-runtime never started, on any boot. cloud-init.service is the
+# pre-24.3 name of cloud-init-network.service; naming both works on either.
 # Requires on the gate keeps this fail-closed — gate failure ⇒ no runtime.
-After=cloud-final.service platform-ca.service platform-boot-gate.service
+After=cloud-init.service cloud-init-network.service platform-ca.service platform-boot-gate.service
 Requires=platform-boot-gate.service
 
 [Service]
@@ -19,6 +25,12 @@ Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 # own attempt just warns; the ~/.cache→/tmp symlink and mise-pin heal still
 # apply, then it execs the runtime.
 ExecStart=/usr/local/bin/agent-entrypoint node dist/server.js
+# stderr to kmsg, not the journal: a startup failure here happens before
+# anything can read the guest's journal (no SSH, ephemeral rootfs), and systemd
+# logs service output at info — below the journald→kmsg threshold. This puts the
+# reason on the serial console, the only channel out of the guest. stdout stays
+# on the journal; it carries every ACP message and would flood the console.
+StandardError=kmsg
 Restart=always
 RestartSec=2
 

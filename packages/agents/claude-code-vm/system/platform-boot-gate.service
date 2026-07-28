@@ -1,6 +1,12 @@
 [Unit]
 Description=Platform boot gate — wait for the paired gateway
-After=cloud-init.service network-online.target
+# cloud-init >= 24.3 renamed cloud-init.service to cloud-init-network.service
+# (no alias); systemd silently ignores ordering on a unit that doesn't exist,
+# so naming both keeps this after write_files on either version. Without it the
+# gate races /etc/platform/env, its ConditionPathExists fails, and the unit is
+# *skipped* — which satisfies agent-runtime's Requires= and boots the workload
+# with the egress boundary unverified.
+After=cloud-init.service cloud-init-network.service network-online.target
 Wants=network-online.target
 ConditionPathExists=/etc/platform/env
 
