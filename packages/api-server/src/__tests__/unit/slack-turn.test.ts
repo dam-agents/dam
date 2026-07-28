@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { AgentsService } from "api-server-api";
-import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
+import {
+  createSlackWorker,
+  TURN_LINGER_MS,
+} from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type {
   AcpClient,
@@ -43,6 +46,8 @@ function harness(opts: {
   ensureReady?: AgentsService["ensureReady"];
   isAllowedUser?: boolean;
   linkedSub?: string | null;
+  /** Currently-bound channel; a function so a test can rebind mid-turn. */
+  boundChannel?: () => string;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -74,7 +79,7 @@ function harness(opts: {
         instanceName: "agent-1",
         owner: OWNER,
       }),
-      resolveSlackChannelByInstance: async () => "C1",
+      resolveSlackChannelByInstance: async () => opts.boundChannel?.() ?? "C1",
     } as never,
     async () => {},
     async () => {},
@@ -371,46 +376,66 @@ describe("slack reply / react tools", () => {
   });
 });
 
-describe("slack reply / react tools — concurrent turns (#2952)", () => {
-  /** A harness whose turns park in `sendPrompt` until released, so a test can
-   *  hold several turns in flight for one agent at once — the situation that
-   *  used to cross-route a reply into the wrong thread. Each turn records the
-   *  thread it drives (its fresh-session `platformMeta.threadTs`). */
-  function gatedHarness() {
-    const started = new Set<string>();
-    const gates: Array<() => void> = [];
-    const sendPrompt: SendPromptFn = async (_prompt, opts) => {
-      const meta = opts as { platformMeta?: { threadTs?: string } };
-      started.add(meta.platformMeta?.threadTs ?? "unknown");
-      await new Promise<void>((resolve) => gates.push(resolve));
-      return "answer";
-    };
-    const h = harness({ sendPrompt });
-    return {
-      ...h,
-      started,
-      /** Fire a mention without awaiting — its turn parks in flight. */
-      fire(ts: string) {
-        void h.gw.fireMention({
-          user: "U1",
-          channel: "C1",
-          ts,
-          text: `msg ${ts}`,
-          teamId: "T-e2e",
-        });
-      },
-      async waitInFlight(...threads: string[]) {
-        for (let i = 0; i < 200 && !threads.every((t) => started.has(t)); i++) {
-          await tick();
-        }
-        expect(threads.every((t) => started.has(t))).toBe(true);
-      },
-      release() {
-        for (const g of gates) g();
-      },
-    };
-  }
+/** A harness whose turns park in `sendPrompt` until released or failed, so a
+ *  test can hold several turns in flight for one agent at once — the situation
+ *  that used to cross-route a reply into the wrong thread. Each turn records
+ *  the thread it drives (its fresh-session `platformMeta.threadTs`). */
+function gatedHarness() {
+  const started = new Set<string>();
+  const gates: Array<{ release: () => void; fail: (err: unknown) => void }> =
+    [];
+  const sendPrompt: SendPromptFn = async (_prompt, opts) => {
+    const meta = opts as { platformMeta?: { threadTs?: string } };
+    started.add(meta.platformMeta?.threadTs ?? "unknown");
+    await new Promise<void>((resolve, reject) =>
+      gates.push({ release: resolve, fail: reject }),
+    );
+    return "answer";
+  };
+  const h = harness({ sendPrompt });
+  return {
+    ...h,
+    started,
+    /** Prompts started so far — tells a same-thread re-relay apart. */
+    calls: () => gates.length,
+    /** Fire a mention without awaiting — its turn parks in flight. */
+    fire(ts: string, threadTs?: string) {
+      void h.gw.fireMention({
+        user: "U1",
+        channel: "C1",
+        ts,
+        ...(threadTs !== undefined ? { threadTs } : {}),
+        text: `msg ${ts}`,
+        teamId: "T-e2e",
+      });
+    },
+    async waitInFlight(...threads: string[]) {
+      for (let i = 0; i < 200 && !threads.every((t) => started.has(t)); i++) {
+        await tick();
+      }
+      expect(threads.every((t) => started.has(t))).toBe(true);
+    },
+    release() {
+      for (const g of gates) g.release();
+    },
+    /** Fail the i-th started turn's prompt — the relay settles with an error
+     *  while, in production, the pod-side harness would keep working. */
+    fail(i: number, err: unknown) {
+      gates[i]!.fail(err);
+    },
+    releaseAt(i: number) {
+      gates[i]!.release();
+    },
+    async settled(done: () => boolean) {
+      for (let i = 0; i < 200 && !done(); i++) {
+        await tick();
+      }
+      expect(done()).toBe(true);
+    },
+  };
+}
 
+describe("slack reply / react tools — concurrent turns (#2952)", () => {
   it("refuses an id-less reply while two threads are in flight, and honours an explicit threadTs", async () => {
     const h = gatedHarness();
     await h.start();
@@ -474,6 +499,244 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
 
     h.release();
+    await tick();
+  });
+});
+
+describe("slack reply / react tools — turns that outlive their relay", () => {
+  // The runtime keeps a running prompt alive when its relay drops, so a turn
+  // whose relay settles with a transport error may still be executing in the
+  // pod — and its late id-less reply used to resolve against whatever turn was
+  // live by then, posting one thread's answer into another.
+
+  it("refuses an id-less reply while a failed turn may still run and another thread is live", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.fail(0, new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+
+    h.fire("200.2");
+    await h.waitInFlight("200.2");
+    h.gw.resetOutbound();
+
+    // The failed turn's harness may still be working thread 100.1; routing its
+    // id-less reply to the sole *live* turn would post it into thread 200.2.
+    const refused = await h.worker.reply("agent-1", { text: "late answer" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+    expect(h.records().some((r) => r.kind === "message")).toBe(false);
+
+    // The prompt-injected id still resolves deterministically.
+    const ok = await h.worker.reply("agent-1", {
+      text: "late answer",
+      threadTs: "100.1",
+    });
+    expect(ok).toEqual({ ok: true });
+    expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+      threadTs: "100.1",
+    });
+
+    h.release();
+    await tick();
+  });
+
+  it("resolves an id-less reply to the failed turn once later turns finish — not to the last active thread", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.fail(0, new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+
+    h.fire("200.2");
+    await h.waitInFlight("200.2");
+    h.releaseAt(1);
+    await h.settled(() => h.turnEvents().length === 2);
+    h.gw.resetOutbound();
+
+    // Thread 200.2 is the last active thread, but its turn finished cleanly —
+    // the only work that can still be running is the failed turn's.
+    const ok = await h.worker.reply("agent-1", { text: "late answer" });
+    expect(ok).toEqual({ ok: true });
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
+  });
+
+  it("a successfully completed turn does not linger — the next sole live turn resolves", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.releaseAt(0);
+    await h.settled(() => h.turnEvents().length === 1);
+
+    h.fire("200.2");
+    await h.waitInFlight("200.2");
+    h.gw.resetOutbound();
+
+    const ok = await h.worker.reply("agent-1", { text: "for the live turn" });
+    expect(ok).toEqual({ ok: true });
+    expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+      threadTs: "200.2",
+    });
+
+    h.release();
+    await tick();
+  });
+
+  it("an expired lingering turn falls back to the last active thread", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.fail(0, new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+
+    h.fire("200.2");
+    await h.waitInFlight("200.2");
+    h.releaseAt(1);
+    await h.settled(() => h.turnEvents().length === 2);
+    h.gw.resetOutbound();
+
+    const later = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date().getTime() + TURN_LINGER_MS + 1_000);
+    try {
+      const ok = await h.worker.reply("agent-1", { text: "proactive" });
+      expect(ok).toEqual({ ok: true });
+      expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+        threadTs: "200.2",
+      });
+    } finally {
+      later.mockRestore();
+    }
+  });
+
+  it("same-thread candidates resolve an id-less reply but refuse an id-less react", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    await h.waitInFlight("100.1");
+    h.fail(0, new Error("ACP connection lost (agent unreachable)"));
+    await h.settled(() => h.turnEvents().length === 1);
+
+    // A new mention in the SAME thread: both candidates name thread 100.1, so
+    // a reply is unambiguous — but they trigger from different messages, so an
+    // id-less react could mark the wrong one.
+    h.fire("100.2", "100.1");
+    await h.settled(() => h.calls() === 2);
+    h.gw.resetOutbound();
+
+    const ok = await h.worker.reply("agent-1", { text: "same thread" });
+    expect(ok).toEqual({ ok: true });
+    expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+      threadTs: "100.1",
+    });
+
+    const refused = await h.worker.react("agent-1", { emoji: "eyes" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+
+    h.release();
+    await tick();
+  });
+
+  it("a resume attempt that fails mid-turn keeps its turn resolvable after the fallback succeeds", async () => {
+    // The resume prompt may have reached the harness before the relay dropped
+    // — the runtime keeps that run alive while the worker retries on a fresh
+    // session. After the retry completes, the ghost run can still be working.
+    const started = new Set<string>();
+    const gates: Array<() => void> = [];
+    const sendPrompt: SendPromptFn = async (_prompt, opts) => {
+      if ("resumeSessionId" in opts) {
+        throw new Error("ACP connection lost (agent unreachable)");
+      }
+      const meta = opts as { platformMeta?: { threadTs?: string } };
+      const thread = meta.platformMeta?.threadTs ?? "unknown";
+      started.add(thread);
+      if (thread === "200.2") {
+        await new Promise<void>((resolve) => gates.push(resolve));
+      }
+      return "answer";
+    };
+    const h = harness({
+      sendPrompt,
+      listSessions: async () => [
+        { sessionId: "s-1", platform: { threadTs: "100.1" } },
+      ],
+    });
+    await h.start();
+    await h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "100.1",
+      text: "resumed turn",
+      teamId: "T-e2e",
+    });
+    await tick();
+    expect(h.turnEvents()[0]!.outcome).toBe("success");
+
+    void h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "200.2",
+      text: "new thread",
+      teamId: "T-e2e",
+    });
+    for (let i = 0; i < 200 && !started.has("200.2"); i++) await tick();
+    h.gw.resetOutbound();
+
+    // The ghost run from the failed resume may still be driving thread 100.1;
+    // an id-less reply must not resolve to the sole live turn's thread.
+    const refused = await h.worker.reply("agent-1", { text: "late" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
+
+    for (const g of gates) g();
+    await tick();
+  });
+
+  it("an id-less reply resolved from a turn posts into that turn's channel, not the newly bound one", async () => {
+    let bound = "C1";
+    const gates: Array<() => void> = [];
+    const h = harness({
+      sendPrompt: async () => {
+        await new Promise<void>((resolve) => gates.push(resolve));
+        return "answer";
+      },
+      boundChannel: () => bound,
+    });
+    h.gw.setChannels([{ id: "C1", name: "general", botIsMember: true }]);
+    await h.start();
+    void h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "100.1",
+      text: "question",
+      teamId: "T-e2e",
+    });
+    for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
+    expect(gates.length).toBe(1);
+
+    // The owner rebinds the agent to another channel while the turn is live.
+    // The turn's threadTs only means anything inside C1 — the reply must
+    // follow the turn, not the binding.
+    bound = "C2";
+    h.gw.resetOutbound();
+    const ok = await h.worker.reply("agent-1", { text: "for C1's thread" });
+    expect(ok).toEqual({ ok: true });
+    expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+      channel: "C1",
+      threadTs: "100.1",
+    });
+
+    for (const g of gates) g();
     await tick();
   });
 });

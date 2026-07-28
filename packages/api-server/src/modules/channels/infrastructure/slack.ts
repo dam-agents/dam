@@ -394,6 +394,14 @@ async function resolveOutboundTarget(
   return { id: conversationId };
 }
 
+/** How long a turn whose relay settled with a transport-ish error stays
+ *  resolvable for id-less `reply`/`react`. The runtime keeps a running prompt
+ *  alive when its relay channel drops, so the harness may work on such a turn
+ *  long after the worker saw it fail — up to the ACP turn ceiling, whose
+ *  default this mirrors. An entry outstaying a longer configured ceiling only
+ *  reopens the last-active-thread fallback, never a crash. */
+export const TURN_LINGER_MS = 60 * 60_000;
+
 /** How long a looked-up profile (or a confirmed miss) stays good. Names,
  *  titles and time zones change rarely, and an agent reading a busy channel
  *  asks about the same handful of people turn after turn. */
@@ -460,19 +468,27 @@ export function createSlackWorker(
    *  multiplexes every thread over one harness process and one MCP identity,
    *  so the outbound `reply`/`react` call carries no turn id — only the
    *  prompt-injected `threadTs` argument distinguishes them. This set is the
-   *  fallback for when the agent omits it: with exactly one live turn the
+   *  fallback for when the agent omits it: with one candidate thread the
    *  target is unambiguous; with several, guessing would post one thread's
    *  reply into another (#2952), so the tools refuse and ask for the id the
    *  prompt already gave. A turn joins when it starts driving the harness and
-   *  leaves when its prompt settles; a wedged turn lingers until the ACP turn
-   *  ceiling, which only forces id-less calls onto the injected id — never a
-   *  mis-route. */
+   *  leaves when its prompt settles. */
   const inFlightTurns = new Map<string, Set<TurnRef>>();
+
+  /** Turns whose relay settled with an error that says nothing about the
+   *  harness: on a relay drop, a heartbeat abort or the turn ceiling the
+   *  runtime keeps the running prompt alive, so the pod may still be working
+   *  the turn and its late `reply`/`react` calls still arrive over the MCP
+   *  path. Deleting the ref then would resolve those calls against whatever
+   *  turn is live by that time — the residual #2952 cross-route. Instead the
+   *  ref lingers (value + expiry) and keeps counting toward resolution until
+   *  {@link TURN_LINGER_MS} passes; swept lazily, no timers. */
+  const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
   /** The most recent turn per agent, never cleared — the last-active-thread
    *  fallback for a proactive `reply`/`react` made outside any live turn (e.g.
    *  from a scheduled session), mirroring Telegram. Consulted only when no turn
-   *  is in flight. */
+   *  is live or lingering. */
   const lastTurn = new Map<string, TurnRef>();
 
   function beginTurn(instanceName: string, ref: TurnRef) {
@@ -485,22 +501,69 @@ export function createSlackWorker(
     live.add(ref);
   }
 
-  function endTurn(instanceName: string, ref: TurnRef) {
+  /** `harnessMayStillRun`: the turn settled on a path that says nothing about
+   *  the pod (relay drop, ceiling, generic ACP error) — keep the ref lingering
+   *  so the harness's late tool calls can't resolve against another thread.
+   *  Settlements that prove the harness is done (success) or never ran the
+   *  prompt (wake failure, agent stopped) pass false and drop the ref. */
+  function endTurn(
+    instanceName: string,
+    ref: TurnRef,
+    opts?: { harnessMayStillRun?: boolean },
+  ) {
     const live = inFlightTurns.get(instanceName);
-    if (!live) return;
-    live.delete(ref);
-    if (live.size === 0) inFlightTurns.delete(instanceName);
+    if (live) {
+      live.delete(ref);
+      if (live.size === 0) inFlightTurns.delete(instanceName);
+    }
+    if (opts?.harnessMayStillRun) {
+      let lingering = lingeringTurns.get(instanceName);
+      if (!lingering) {
+        lingering = new Map();
+        lingeringTurns.set(instanceName, lingering);
+      }
+      lingering.set(ref, Date.now() + TURN_LINGER_MS);
+    }
   }
 
-  /** Resolve the turn a reply/react targets when the agent passed no ids:
-   *  the sole live turn, else the last-active-thread fallback, else `ambiguous`
-   *  when several turns are live at once (the agent must name the thread). */
+  /** Unexpired lingering refs for the agent, sweeping expired ones out. */
+  function lingeringFor(instanceName: string): TurnRef[] {
+    const lingering = lingeringTurns.get(instanceName);
+    if (!lingering) return [];
+    const now = Date.now();
+    for (const [ref, expiresAt] of lingering) {
+      if (expiresAt <= now) lingering.delete(ref);
+    }
+    if (lingering.size === 0) {
+      lingeringTurns.delete(instanceName);
+      return [];
+    }
+    return [...lingering.keys()];
+  }
+
+  /** Resolve the turn a reply/react targets when the agent passed no ids.
+   *  Candidates are the live turns plus the lingering ones (either may be the
+   *  caller). What must be unambiguous is the *target*, not the turn: a reply
+   *  needs one thread, a react one message — so several candidates that agree
+   *  on it still resolve (e.g. a retried relay of the same thread), while
+   *  distinct targets refuse and the agent must name the id its prompt
+   *  injected. No candidates → the last-active-thread fallback. */
   function resolveTurn(
     instanceName: string,
+    kind: "reply" | "react",
   ): { ref: TurnRef } | { ambiguous: true } | { none: true } {
-    const live = inFlightTurns.get(instanceName);
-    if (live && live.size === 1) return { ref: [...live][0]! };
-    if (live && live.size > 1) return { ambiguous: true };
+    const candidates = [
+      ...(inFlightTurns.get(instanceName) ?? []),
+      ...lingeringFor(instanceName),
+    ];
+    if (candidates.length > 0) {
+      const target = (ref: TurnRef) =>
+        kind === "reply"
+          ? `${ref.channel} ${ref.threadTs}`
+          : `${ref.channel} ${ref.eventTs}`;
+      const targets = new Set(candidates.map(target));
+      return targets.size === 1 ? { ref: candidates[0]! } : { ambiguous: true };
+    }
     const last = lastTurn.get(instanceName);
     return last ? { ref: last } : { none: true };
   }
@@ -591,6 +654,11 @@ export function createSlackWorker(
     onImagesDropped?: () => void;
     /** Live per-update stream for the turn (omitted → no status presentation). */
     onUpdate?: (update: PromptUpdate) => void;
+    /** The resume attempt failed after it may have delivered the prompt (a
+     *  relay drop mid-turn leaves the harness running it), and the turn is
+     *  being re-run on a fresh session. The caller must keep the turn's ref
+     *  resolvable past its own settlement. */
+    onGhostTurn?: () => void;
   }): Promise<string> {
     await agents().ensureReady(args.instanceName, { onWaking: args.onWaking });
     const acp = makeAcpClient(args.instanceName);
@@ -607,6 +675,7 @@ export function createSlackWorker(
           onUpdate: args.onUpdate,
         });
       } catch {
+        args.onGhostTurn?.();
         return acp.sendPrompt(await args.buildFreshPrompt(), {
           platformMeta,
           onImagesDropped: args.onImagesDropped,
@@ -689,6 +758,7 @@ export function createSlackWorker(
       );
     };
 
+    let ghostTurn = false;
     const runTurn = async () => {
       const resumePrompt = framePrompt({
         contract,
@@ -705,6 +775,9 @@ export function createSlackWorker(
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
+        onGhostTurn: () => {
+          ghostTurn = true;
+        },
       });
       outcome = "success";
     };
@@ -761,7 +834,12 @@ export function createSlackWorker(
     } catch (err) {
       await postFailure(err);
     } finally {
-      endTurn(instanceName, turnRef);
+      // "acp-error" is the settlement class that says nothing about the pod —
+      // the harness may still be running this turn (so may a ghost run left by
+      // a failed resume attempt); keep the ref lingering for those.
+      endTurn(instanceName, turnRef, {
+        harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+      });
       await presenter.clearStatus();
       emit({
         type: EventType.ChannelTurnRelayed,
@@ -955,7 +1033,11 @@ export function createSlackWorker(
             text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
           });
         } finally {
-          endTurn(ctx.instanceName, turnRef);
+          // A fork ACP error is transport-shaped like the owner path's
+          // "acp-error": the fork pod may still be working the turn.
+          endTurn(ctx.instanceName, turnRef, {
+            harnessMayStillRun: turnOutcome === "failure",
+          });
           await ctx.presenter.clearStatus();
           emit({
             type: EventType.ChannelTurnRelayed,
@@ -1546,6 +1628,7 @@ export function createSlackWorker(
       images: args.images,
     });
 
+    let ghostTurn = false;
     const runTurn = () =>
       runSessionTurn({
         instanceName: args.instanceName,
@@ -1566,6 +1649,9 @@ export function createSlackWorker(
             contract,
             guidance,
           ),
+        onGhostTurn: () => {
+          ghostTurn = true;
+        },
       });
 
     try {
@@ -1599,7 +1685,12 @@ export function createSlackWorker(
         "slack.ambient_turn.failed",
       );
     } finally {
-      endTurn(args.instanceName, turnRef);
+      // Same settlement classes as the owner path: an "acp-error" (or a ghost
+      // run left by a failed resume attempt) may leave the harness working
+      // this turn, so its ref must stay resolvable.
+      endTurn(args.instanceName, turnRef, {
+        harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+      });
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -2052,8 +2143,9 @@ export function createSlackWorker(
       if (!args.text) return { error: "nothing to send — reply needs text" };
 
       let threadTs = args.threadTs;
+      let turnChannel: string | undefined;
       if (!threadTs) {
-        const turn = resolveTurn(instanceName);
+        const turn = resolveTurn(instanceName, "reply");
         if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
         if ("none" in turn) {
           return {
@@ -2062,11 +2154,15 @@ export function createSlackWorker(
           };
         }
         threadTs = turn.ref.threadTs;
+        // A threadTs is only meaningful inside its own conversation — post
+        // where the resolved turn ran, not wherever the agent is bound *now*,
+        // or a mid-turn rebind would redirect the reply into the new channel.
+        turnChannel = turn.ref.channel;
       }
       const target = await resolveOutboundTarget(
         gw,
         slackChannelId,
-        args.conversationId,
+        args.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;
 
@@ -2093,11 +2189,15 @@ export function createSlackWorker(
       if (!gw) return { error: "slack bot not running" };
 
       let messageTs = args.messageTs;
+      let turnChannel: string | undefined;
       if (!messageTs) {
-        const turn = resolveTurn(instanceName);
+        const turn = resolveTurn(instanceName, "react");
         if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
         if ("none" in turn) return { error: "no message to react to" };
         messageTs = turn.ref.eventTs;
+        // Like reply: the message lives in the turn's conversation, not
+        // necessarily the currently-bound one.
+        turnChannel = turn.ref.channel;
       }
       // Slack wants the bare short name; tolerate :colons: or an accidental
       // leading/trailing space.
@@ -2108,7 +2208,7 @@ export function createSlackWorker(
       const target = await resolveOutboundTarget(
         gw,
         slackChannelId,
-        args.conversationId,
+        args.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;
 
