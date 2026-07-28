@@ -142,7 +142,15 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.Contains(t, userdata, "mount -t virtiofs 'home-agent'")
 	assert.Contains(t, userdata, "mountpoint -q '/home/agent'")
 	assert.NotContains(t, userdata, "mounts:", "cloud-init's mounts module drops bare virtiofs tags")
-	assert.NotContains(t, userdata, "scratchpad", "ephemeral mounts must not be mounted")
+	// An ephemeral mount still needs its directory: agent-runtime spawns the
+	// harness with WORK_DIR as cwd, and a missing cwd fails the spawn.
+	assert.Contains(t, userdata, "mkdir -p '/scratchpad'")
+	assert.NotContains(
+		t,
+		userdata,
+		"mount -t virtiofs 'scratchpad'",
+		"ephemeral mounts have no virtiofs device to mount",
+	)
 }
 
 func TestVMSpecSurvivesUnstructuredDeepCopy(t *testing.T) {

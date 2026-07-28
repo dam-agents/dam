@@ -79,6 +79,10 @@ func BuildVMWorkspacePVCs(name string, agentSpec *types.AgentSpec, cfg *config.C
 	return pvcs
 }
 
+// The uid the guest's agent user is created with (claude-code-vm Containerfile),
+// matching the container backend so workspace ownership carries across backends.
+const vmAgentUID = 65532
+
 // BuildVMCloudInitSecret renders the NoCloud userdata the guest consumes at
 // boot: the platform env block as /etc/platform/env (the VM image's
 // agent-runtime unit sources it), the MITM CA at the same path the container
@@ -129,8 +133,19 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		},
 	}
 	for _, m := range resolveSpecMounts(agentSpec, defaults) {
+		// Every mount gets its directory created, persisted or not. On the
+		// container backend an ephemeral mount is an emptyDir and kubelet
+		// creates the path; nothing does that here, and a missing one is not
+		// harmless — agent-runtime spawns the harness with WORK_DIR as its cwd,
+		// and Node fails a spawn whose cwd does not exist:
+		//   [agent-process] spawn error: spawn /usr/local/bin/harness-chat ENOENT
+		// which reads as a missing binary rather than a missing directory.
 		if !m.Persist {
-			continue // no virtiofs device exists for ephemeral mounts (rootfs overlay covers them)
+			cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
+				"mkdir -p %[1]s && chown %[2]d:%[2]d %[1]s || true",
+				shellQuote(m.Path), vmAgentUID,
+			)})
+			continue // no virtiofs device for an ephemeral mount; the rootfs overlay covers its contents
 		}
 		// virtiofs tag == sanitized mount name (matches the filesystem device
 		// on the VM spec).
