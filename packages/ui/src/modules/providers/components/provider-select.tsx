@@ -33,13 +33,20 @@ export function ProviderSelect({
 }: Props) {
   const { itemByType, typeByConnectionId, isPending } = useProviderItems();
   const [connecting, setConnecting] = useState<ProviderPresetType | null>(null);
+  const [connected, setConnected] = useState<{
+    id: string;
+    type: ProviderPresetType;
+  } | null>(null);
   const rows = useMemo(
     () => offeredProviderRows(allow, recommended),
     [allow, recommended],
   );
 
+  // A key saved through the dialog isn't in the connections list until it
+  // refetches; until then resolve the selection from the dialog's own result.
   const selectedType = selected
-    ? (typeByConnectionId.get(selected.id) ?? null)
+    ? (typeByConnectionId.get(selected.id) ??
+      (connected?.id === selected.id ? connected.type : null))
     : null;
 
   // Only acts while empty so a just-connected provider isn't nulled out during
@@ -96,6 +103,7 @@ export function ProviderSelect({
         value={selectedType}
         onSelect={(type) => void pick(type)}
         placeholder="Select a provider"
+        ariaLabel="Provider"
         disabled={disabled}
         testId="provider-select"
       />
@@ -103,6 +111,7 @@ export function ProviderSelect({
         <ProviderConnectDialog
           provider={connecting}
           onConnected={(ref) => {
+            setConnected({ id: ref.id, type: connecting });
             onSelect(ref);
             setConnecting(null);
           }}

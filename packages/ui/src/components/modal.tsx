@@ -123,16 +123,15 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
     // A spawning menu's focus trap stays alive through its exit animation and
-    // refocuses its trigger at the end — a single focus() loses. Re-assert
-    // briefly (same workaround as inline-name-row.tsx).
+    // refocuses its trigger at the end, so re-assert until it gives up.
     let grabRaf = 0;
-    let grabTicks = 0;
+    const reassertUntil = performance.now() + 500;
     const grab = () => {
       if (!container.contains(document.activeElement)) {
-        const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-        first?.focus();
+        container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
       }
-      if (++grabTicks < 30) grabRaf = requestAnimationFrame(grab);
+      if (performance.now() < reassertUntil)
+        grabRaf = requestAnimationFrame(grab);
     };
     grab();
 

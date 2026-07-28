@@ -28,6 +28,8 @@ interface Props<T extends string> {
    *  whether a pick selects, confirms, or opens a side flow. */
   onSelect: (value: T) => void;
   placeholder: string;
+  /** Names what the control picks, read out ahead of the current value. */
+  ariaLabel?: string;
   disabled?: boolean;
   testId?: string;
 }
@@ -37,6 +39,7 @@ export function RichSelect<T extends string>({
   value,
   onSelect,
   placeholder,
+  ariaLabel,
   disabled = false,
   testId,
 }: Props<T>) {
@@ -50,6 +53,7 @@ export function RichSelect<T extends string>({
           data-testid={testId}
           className="group flex min-h-[76px] w-full items-center gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground"
         >
+          {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
           {selected ? (
             <>
               {selected.triggerIcon ?? selected.icon}

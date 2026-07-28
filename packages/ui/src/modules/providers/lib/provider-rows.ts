@@ -5,7 +5,7 @@ export interface ProviderRowDef {
   description: string;
 }
 
-export const PROVIDER_ROWS: ProviderRowDef[] = [
+export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",
     description: "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
@@ -30,7 +30,7 @@ export const PROVIDER_ROWS: ProviderRowDef[] = [
 export function offeredProviderRows(
   allow?: readonly ProviderPresetType[],
   recommended?: ProviderPresetType,
-): ProviderRowDef[] {
+): readonly ProviderRowDef[] {
   const offered = allow
     ? PROVIDER_ROWS.filter((row) => allow.includes(row.type))
     : PROVIDER_ROWS;

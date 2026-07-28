@@ -83,8 +83,7 @@ export const createNavigationSlice: StateCreator<
   },
   navigateToCreateSandbox: (startingPoint) => {
     // Seeded into the snapshot, not the route — where every other pick lives.
-    // Without a starting point the wizard opens fresh; only URL-based re-entry
-    // (refresh, OAuth return) resumes a persisted draft.
+    // Only URL-based re-entry (refresh, OAuth return) resumes a persisted draft.
     if (startingPoint) {
       saveSnapshot({
         ...EMPTY_SNAPSHOT,
