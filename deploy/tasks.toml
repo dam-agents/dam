@@ -423,9 +423,32 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# 2c. KubeVirt — required by vm-backend agents (idempotent, waits Available).
+# 2c. KubeVirt — required by vm-backend agents (idempotent apply + wait).
+# The KVM-less-aarch64 and sandbox cases were already rejected above, so no
+# KVM here means an x86_64 VM: TCG emulation (slow but functional).
 if [ -n "$VIRT_ENABLED" ]; then
-  LIMA_INSTANCE="$LIMA_INSTANCE" {{ mise_bin }} run cluster:install-kubevirt
+  HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
+  KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
+  echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
+  # EnableVirtioFsStorageVolumes: virtiofs for the workspace PVCs. This is the
+  # gate the v1.8 webhook actually checks — the pre-1.7 ExperimentalVirtiofsSupport
+  # gate is discontinued, and KubeVirt's own deprecation warning suggests
+  # "EnableVirtioFsPVC", which v1.8.4 does not register.
+  # Without KVM the node-labeller init container must also be forced to qemu:
+  # it picks virttype from /proc/misc (kvm may be listed yet unusable, e.g. in
+  # nested/containerized nodes) and crash-loops virt-handler otherwise. Only a
+  # json-type customizeComponents patch works here — strategicMerge is mangled
+  # by the operator's customizer and wedges reconciliation.
+  if [ -z "${HAS_KVM:-}" ]; then
+    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":true}},"customizeComponents":{"patches":[{"resourceType":"DaemonSet","resourceName":"virt-handler","type":"json","patch":"[{\"op\":\"replace\",\"path\":\"/spec/template/spec/initContainers/0/env\",\"value\":[{\"name\":\"PREFERRED_VIRTTYPE\",\"value\":\"qemu\"},{\"name\":\"HYPERVISOR_DEVICE\",\"value\":\"kvm\"}]}]"}]}}}'
+  else
+    KV_PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"]}}}}'
+  fi
+  kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$KV_PATCH"
+  echo "Waiting for KubeVirt to become Available (this pulls several images)..."
+  kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
 fi
 
 # Resolve chart deps into charts/ (gitignored) — Helm needs them present even when
@@ -827,54 +850,6 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
-'''
-
-["cluster:install-kubevirt"]
-description = "Install KubeVirt into the dev k3s cluster. Run automatically by cluster:install when virtualization.enabled=true. Uses /dev/kvm when the VM has it; without it x86_64 falls back to TCG emulation, while aarch64 cannot boot VMIs at all (KubeVirt arm64 is KVM-only)."
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-  HAS_KVM=$(sudo test -e /dev/kvm && echo 1 || true)
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
-  HAS_KVM=$(limactl shell "$LIMA_INSTANCE" test -e /dev/kvm && echo 1 || true)
-fi
-KUBEVIRT_VERSION="${KUBEVIRT_VERSION:-$(curl -fsSL https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)}"
-echo "Installing KubeVirt $KUBEVIRT_VERSION (kvm: ${HAS_KVM:-no — TCG emulation})..."
-# arm64 KubeVirt only supports cpu host-passthrough (webhook-enforced), which
-# qemu cannot do without KVM — so TCG is x86_64-only and aarch64 VMIs will
-# never leave Scheduled. Say it now, not seven minutes into a failed boot.
-if [ -z "${HAS_KVM:-}" ] && [ "$(uname -m)" = "aarch64" ]; then
-  echo "WARNING: no /dev/kvm on an aarch64 node — KubeVirt installs, but VMIs" >&2
-  echo "WARNING: cannot boot (arm64 is KVM-only; TCG works on x86_64 only)." >&2
-  echo "WARNING: on Apple silicon (M3+/macOS 15): mise run cluster:delete, then" >&2
-  echo "WARNING: mise run cluster:install -- --set=virtualization.enabled=true" >&2
-  echo "WARNING: (nested virt is enabled automatically at VM creation)." >&2
-fi
-kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml"
-kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-cr.yaml"
-# EnableVirtioFsStorageVolumes: virtiofs for the workspace PVCs. This is the
-# gate the v1.8 webhook actually checks — the pre-1.7 ExperimentalVirtiofsSupport
-# gate is discontinued, and KubeVirt's own deprecation warning suggests
-# "EnableVirtioFsPVC", which v1.8.4 does not register.
-# Emulation only when the VM lacks /dev/kvm.
-# Without KVM the node-labeller init container must also be forced to qemu:
-# it picks virttype from /proc/misc (kvm may be listed yet unusable, e.g. in
-# nested/containerized nodes) and crash-loops virt-handler otherwise. Only a
-# json-type customizeComponents patch works here — strategicMerge is mangled
-# by the operator's customizer and wedges reconciliation.
-if [ -z "${HAS_KVM:-}" ]; then
-  PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"],"useEmulation":true}},"customizeComponents":{"patches":[{"resourceType":"DaemonSet","resourceName":"virt-handler","type":"json","patch":"[{\"op\":\"replace\",\"path\":\"/spec/template/spec/initContainers/0/env\",\"value\":[{\"name\":\"PREFERRED_VIRTTYPE\",\"value\":\"qemu\"},{\"name\":\"HYPERVISOR_DEVICE\",\"value\":\"kvm\"}]}]"}]}}}'
-else
-  PATCH='{"spec":{"configuration":{"developerConfiguration":{"featureGates":["EnableVirtioFsStorageVolumes"]}}}}'
-fi
-kubectl --kubeconfig="$KUBECONFIG" -n kubevirt patch kubevirt kubevirt --type merge -p "$PATCH"
-echo "Waiting for KubeVirt to become Available (this pulls several images)..."
-kubectl --kubeconfig="$KUBECONFIG" -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=15m
-echo "KubeVirt ready."
 '''
 
 ["cluster:kubectl"]

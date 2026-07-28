@@ -126,8 +126,8 @@ istio:
 
 # -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
 # agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
-# StatefulSet. Requires KubeVirt in the cluster (dev k3s: install via
-# `mise run cluster:install-kubevirt`; prod: OpenShift Virtualization).
+# StatefulSet. Requires KubeVirt in the cluster (dev k3s: cluster:install
+# sets it up when this flag is on; prod: OpenShift Virtualization).
 # Off = vm-backend templates are not rendered and vm agents fail reconcile.
 virtualization:
   enabled: false
