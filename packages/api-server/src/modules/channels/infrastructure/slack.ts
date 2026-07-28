@@ -513,7 +513,14 @@ async function turnContractContext(
 ): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
   const [lookup, permalink] = await Promise.all([
     canLookupUsers(gw),
-    opts?.batched ? Promise.resolve(null) : gw.getPermalink(channel, eventTs),
+    // A permalink is one decorative line of the prompt, so it must never be
+    // able to fail the turn that carries it — an unanswered Slack message is
+    // a far worse outcome than a contract missing its link. The port promises
+    // null over a throw and Bolt honors it; this enforces the promise rather
+    // than trusting every future gateway to keep it.
+    opts?.batched
+      ? Promise.resolve(null)
+      : gw.getPermalink(channel, eventTs).catch(() => null),
   ]);
   return { canLookupUsers: lookup, permalink };
 }

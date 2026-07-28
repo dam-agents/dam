@@ -267,4 +267,28 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain("in a shared channel or group DM");
     expect(prompt).not.toContain("permalink");
   });
+
+  it("still relays the turn when the permalink lookup throws outright", async () => {
+    const h = harness();
+    // The port promises null over a throw, but this sits on the relay's
+    // critical path: an escaping rejection would drop the inbound message
+    // entirely, leaving a human in Slack unanswered over a decoration.
+    h.gw.getPermalink = async () => {
+      throw new Error("missing_scope");
+    };
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    // The prompt was still built and relayed — minus only the link.
+    expect(h.prompts).toHaveLength(1);
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("You're answering a message sent");
+    expect(prompt).not.toContain("permalink");
+  });
 });
