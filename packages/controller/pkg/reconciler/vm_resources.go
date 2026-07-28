@@ -120,7 +120,7 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 	}
 	cc := struct {
 		WriteFiles []cloudFile `json:"write_files"`
-		Mounts     [][]string  `json:"mounts,omitempty"`
+		BootCmd    [][]string  `json:"bootcmd,omitempty"`
 	}{
 		WriteFiles: []cloudFile{
 			{Path: "/etc/platform/env", Permissions: "0644", Content: envFile},
@@ -133,11 +133,23 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 			continue // no virtiofs device exists for ephemeral mounts (rootfs overlay covers them)
 		}
 		// virtiofs tag == sanitized mount name (matches the filesystem device
-		// on the VM spec). nofail keeps a broken share from wedging boot into
-		// emergency mode — agent-runtime just sees an empty dir and fails loud.
-		cc.Mounts = append(cc.Mounts, []string{
-			types.SanitizeMountName(m.Path), m.Path, "virtiofs", "defaults,nofail", "0", "0",
-		})
+		// on the VM spec).
+		//
+		// bootcmd, not cloud-init's `mounts:` module: that module runs every
+		// device through sanitize_devname(), which resolves paths, LABEL= and
+		// UUID= but not a bare virtiofs tag — it returns None for one, and the
+		// entry is dropped with only a debug line ("Ignoring nonexistent
+		// default named mount"). The workspace then never mounts and
+		// agent-runtime fails loud against an empty $HOME. bootcmd runs in the
+		// init-local stage, before agent-runtime, on every boot — which is what
+		// we want anyway, since the rootfs is an ephemeral containerDisk
+		// overlay and any fstab edit would be discarded.
+		// `|| true` keeps a broken share from wedging boot, as nofail did.
+		tag := types.SanitizeMountName(m.Path)
+		cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
+			"mkdir -p %[1]s && { mountpoint -q %[1]s || mount -t virtiofs %[2]s %[1]s; } || true",
+			shellQuote(m.Path), shellQuote(tag),
+		)})
 	}
 	body, err := yaml.Marshal(cc)
 	if err != nil {
@@ -197,13 +209,21 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	mem := limits[corev1.ResourceMemory]
 	cores := vmGuestCores(cpu)
 
+	// cache=writeback on the ephemeral disks. KubeVirt defaults containerDisk
+	// and emptyDisk to cache=none (O_DIRECT), which bypasses the host page
+	// cache — fine on real storage, pathological when the image is a
+	// copy-on-write overlay stacked on another VM's disk, as in any nested
+	// setup: every guest read becomes a synchronous trip down the whole stack
+	// and boot slows by orders of magnitude, tripping systemd's 45s timeouts.
+	// Both disks are already discarded on VM restart, so the weaker crash
+	// durability of writeback costs nothing here.
 	disks := []any{
-		map[string]any{"name": "boot", "disk": map[string]any{"bus": "virtio"}},
+		map[string]any{"name": "boot", "cache": "writeback", "disk": map[string]any{"bus": "virtio"}},
 		map[string]any{"name": "cloudinit", "disk": map[string]any{"bus": "virtio"}},
 		// Serial "scratch" gives the guest a stable /dev/disk/by-id handle;
 		// the VM image's scratch unit formats and mounts it for the
 		// docker/k3s image stores (state there dies with hibernation).
-		map[string]any{"name": "scratch", "serial": "scratch", "disk": map[string]any{"bus": "virtio"}},
+		map[string]any{"name": "scratch", "serial": "scratch", "cache": "writeback", "disk": map[string]any{"bus": "virtio"}},
 	}
 	// containerDisk supports a single pull secret: the agent-scoped ref wins,
 	// else the first chart-wide default. (The pod path lists all defaults as
@@ -234,7 +254,14 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	}
 
 	devices := map[string]any{
-		"disks":      disks,
+		"disks": disks,
+		// virtio-rng: without a host entropy source the guest's CRNG seeds from
+		// interrupt timing alone, which barely accrues in a quiet VM. Every
+		// crypto consumer then blocks — measured on a boot without it: 30s
+		// loading kernel signing certs, 25s on the IMA CA, 30s entering /init,
+		// 52s attaching the BPF LSM. That pushed ordinary boot past systemd's
+		// 45s timeouts and wedged it (generator sandbox EPROTO → PID1 freeze).
+		"rng":        map[string]any{},
 		"interfaces": []any{map[string]any{"name": "default", "masquerade": map[string]any{}}},
 	}
 	if len(filesystems) > 0 {

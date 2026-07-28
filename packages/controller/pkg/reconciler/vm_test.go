@@ -122,7 +122,7 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	// Cloud-init: env file with proxy wiring (values shell-quoted — the file
 	// is shell-sourced by the boot gate), the CA, the boot-gate deny target,
 	// and virtiofs mounts for persisted mounts ONLY (an ephemeral mount has no
-	// virtiofs device; an fstab entry for it would fail every boot).
+	// virtiofs device; mounting it every boot would fail).
 	ci, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, VMCloudInitSecretName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
 	userdata := ci.StringData["userdata"]
@@ -131,8 +131,18 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.Contains(t, userdata, "PLATFORM_AGENT_ID='my-agent'")
 	assert.Contains(t, userdata, "PLATFORM_KUBE_API_DENY='10.43.0.1:443'")
 	assert.Contains(t, userdata, "PEMDATA")
-	assert.Contains(t, userdata, "home-agent")
-	assert.NotContains(t, userdata, "scratchpad", "ephemeral mounts must not render fstab entries")
+	// The share must be mounted from bootcmd, never cloud-init's `mounts:`
+	// module: that runs every device through sanitize_devname(), which returns
+	// None for a bare virtiofs tag, so the entry is silently dropped and the
+	// workspace never mounts. Assert the mechanism, not just the tag — the
+	// broken form also contained "home-agent".
+	// Substrings kept short: go-yaml folds the long command across lines (it
+	// re-parses to the same string, but a full-command match would be brittle).
+	assert.Contains(t, userdata, "bootcmd:")
+	assert.Contains(t, userdata, "mount -t virtiofs 'home-agent'")
+	assert.Contains(t, userdata, "mountpoint -q '/home/agent'")
+	assert.NotContains(t, userdata, "mounts:", "cloud-init's mounts module drops bare virtiofs tags")
+	assert.NotContains(t, userdata, "scratchpad", "ephemeral mounts must not be mounted")
 }
 
 func TestVMSpecSurvivesUnstructuredDeepCopy(t *testing.T) {
