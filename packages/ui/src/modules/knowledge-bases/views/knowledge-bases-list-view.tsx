@@ -31,7 +31,7 @@ export function KnowledgeBasesListView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[666px]">
+    <div>
       <PageHeader
         title="Knowledge bases"
         actions={

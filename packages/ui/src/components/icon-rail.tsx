@@ -41,7 +41,7 @@ export function IconRail({
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
 
   const sandboxes: Destination = {
-    label: "Sandboxes",
+    label: "Home",
     icon: Home,
     active: view === "list",
     badge: 0,
