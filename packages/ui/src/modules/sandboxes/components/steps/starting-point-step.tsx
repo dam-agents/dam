@@ -17,7 +17,6 @@ import { CustomImageCard, type RegistryControls } from "./custom-image-card.js";
 import { HarnessCard } from "./harness-card.js";
 import { KbTemplateCard } from "./kb-template-card.js";
 import { StartingPointRow } from "./starting-point-row.js";
-import { VmToggle } from "./vm-toggle.js";
 import { WorkloadCard } from "./workload-card.js";
 
 interface Props {
@@ -26,7 +25,6 @@ interface Props {
   loading: boolean;
   registry?: RegistryControls;
   vmFeatureEnabled: boolean;
-  onVmChange: (vm: boolean) => void;
   onPickStartingPoint: (startingPoint: StartingPoint) => void;
   onPickTemplate: (templateId: string) => void;
   onPickKbTemplate: (kbTemplateId: WizardSnapshot["kbTemplateId"]) => void;
@@ -40,7 +38,6 @@ export function StartingPointStep({
   loading,
   registry,
   vmFeatureEnabled,
-  onVmChange,
   onPickStartingPoint,
   onPickTemplate,
   onPickKbTemplate,
@@ -125,7 +122,6 @@ export function StartingPointStep({
         loading={loading}
         registry={registry}
         vmFeatureEnabled={vmFeatureEnabled}
-        onVmChange={onVmChange}
         onPickTemplate={onPickTemplate}
         onPickKbTemplate={onPickKbTemplate}
         onCustomImageChange={onCustomImageChange}
@@ -142,16 +138,12 @@ function StartingPointReveal({
   loading,
   registry,
   vmFeatureEnabled,
-  onVmChange,
   onPickTemplate,
   onPickKbTemplate,
   onCustomImageChange,
   onContinue,
 }: Omit<Props, "onPickStartingPoint">) {
-  const catalogue = imageCatalogue(templates, {
-    vm: snapshot.vm,
-    vmFeatureEnabled,
-  });
+  const catalogue = imageCatalogue(templates, { vmFeatureEnabled });
   if (snapshot.startingPoint === "knowledge-base") {
     return (
       <section className="anim-in">
@@ -174,9 +166,6 @@ function StartingPointReveal({
     return (
       <section className="anim-in">
         <SectionLabel spaced>Choose an image</SectionLabel>
-        {catalogue.showVmToggle && (
-          <VmToggle vm={catalogue.vmSelected} onChange={onVmChange} />
-        )}
         <CardList>
           {loading ? (
             <ListSkeleton rows={4} rowHeight={64} />

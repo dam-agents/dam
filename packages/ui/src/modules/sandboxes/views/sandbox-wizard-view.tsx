@@ -239,9 +239,6 @@ export function SandboxWizardView() {
               : undefined
           }
           vmFeatureEnabled={flags?.["vm-sandboxes"] ?? false}
-          // Flipping the switch swaps the catalogue, so the current pick no
-          // longer belongs to it.
-          onVmChange={(vm) => update({ vm, templateId: null })}
           onPickStartingPoint={(startingPoint) =>
             update(startingPointDefaults(startingPoint))
           }

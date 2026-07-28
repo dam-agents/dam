@@ -23,50 +23,39 @@ const CATALOGUE = [
   template("codex", false),
   template("claude-code-vm", true),
   template("nous", false, "preconfigured"),
+  template("nous-vm", true, "preconfigured"),
 ];
 
-// The switch is the only door to a VM sandbox: a stale `vm: true` in a
-// persisted wizard snapshot must not open it once the feature is off again.
+// The feature flag is the only thing standing between a user and a VM sandbox,
+// so the "off" case is the one worth pinning down.
 describe("imageCatalogue", () => {
-  it("hides VM templates and the toggle when the feature is off", () => {
-    for (const vm of [false, true]) {
-      const { showVmToggle, vmSelected, harnesses } = imageCatalogue(
-        CATALOGUE,
-        { vm, vmFeatureEnabled: false },
-      );
-      expect(showVmToggle).toBe(false);
-      expect(vmSelected).toBe(false);
+  it("hides VM-backed templates entirely when the feature is off", () => {
+    const { harnesses, preconfigured } = imageCatalogue(CATALOGUE, {
+      vmFeatureEnabled: false,
+    });
+    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
+    expect(preconfigured.map((t) => t.id)).toEqual(["nous"]);
+  });
+
+  it("mixes VM-backed templates in alongside container ones when on", () => {
+    const { harnesses, preconfigured } = imageCatalogue(CATALOGUE, {
+      vmFeatureEnabled: true,
+    });
+    expect(harnesses.map((t) => t.id)).toEqual([
+      "claude-code",
+      "codex",
+      "claude-code-vm",
+    ]);
+    expect(preconfigured.map((t) => t.id)).toEqual(["nous", "nous-vm"]);
+  });
+
+  it("is a no-op on an install that ships no VM templates", () => {
+    const containersOnly = CATALOGUE.filter((t) => !t.vm);
+    for (const vmFeatureEnabled of [false, true]) {
+      const { harnesses } = imageCatalogue(containersOnly, {
+        vmFeatureEnabled,
+      });
       expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
     }
-  });
-
-  it("reveals the toggle but still shows container images until it is on", () => {
-    const { showVmToggle, harnesses } = imageCatalogue(CATALOGUE, {
-      vm: false,
-      vmFeatureEnabled: true,
-    });
-    expect(showVmToggle).toBe(true);
-    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
-  });
-
-  it("swaps the catalogue to VM images when the toggle is on", () => {
-    const { vmSelected, harnesses, preconfigured } = imageCatalogue(CATALOGUE, {
-      vm: true,
-      vmFeatureEnabled: true,
-    });
-    expect(vmSelected).toBe(true);
-    expect(harnesses.map((t) => t.id)).toEqual(["claude-code-vm"]);
-    expect(preconfigured).toEqual([]);
-  });
-
-  it("keeps the toggle hidden when the install ships no VM templates", () => {
-    const containersOnly = CATALOGUE.filter((t) => !t.vm);
-    const { showVmToggle, vmSelected, harnesses } = imageCatalogue(
-      containersOnly,
-      { vm: true, vmFeatureEnabled: true },
-    );
-    expect(showVmToggle).toBe(false);
-    expect(vmSelected).toBe(false);
-    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
   });
 });
