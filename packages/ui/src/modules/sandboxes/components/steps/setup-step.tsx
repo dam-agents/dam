@@ -16,11 +16,6 @@ import type {
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
-import {
-  type RegistryCredential,
-  RegistryCredentialSection,
-  registryFilledCount,
-} from "../registry-credential-section.js";
 import { SandboxSizeSection } from "../sandbox-size-section.js";
 import { StepHeader } from "../step-header.js";
 
@@ -50,9 +45,6 @@ interface Props {
   name: string;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
-  showRegistry: boolean;
-  registryCredential: RegistryCredential;
-  onRegistryChange: (value: RegistryCredential) => void;
   update: (patch: Partial<WizardSnapshot>) => void;
   setupNote?: { title: string; body: string };
   templateSize?: { cpu?: string; memory?: string };
@@ -66,9 +58,6 @@ export function SetupStep({
   name,
   providerRef,
   egressPreset,
-  showRegistry,
-  registryCredential,
-  onRegistryChange,
   update,
   setupNote,
   templateSize,
@@ -76,11 +65,6 @@ export function SetupStep({
   sizeMemoryMi,
   providers,
 }: Props) {
-  const registryPartial =
-    showRegistry &&
-    registryFilledCount(registryCredential) > 0 &&
-    registryFilledCount(registryCredential) < 3;
-
   return (
     <div>
       <StepHeader
@@ -150,14 +134,6 @@ export function SetupStep({
           ))}
         </CardList>
       </section>
-
-      {showRegistry && (
-        <RegistryCredentialSection
-          value={registryCredential}
-          onChange={onRegistryChange}
-          partial={registryPartial}
-        />
-      )}
     </div>
   );
 }

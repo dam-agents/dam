@@ -3,16 +3,28 @@ import { Input } from "@/components/ui/input";
 import { CUSTOM_IMAGE_DOCS_URL } from "@/constants";
 import { cn } from "@/lib/utils";
 
+import type { RegistryCredential } from "../registry-credential-section.js";
+import { RegistryCredentialSection } from "../registry-credential-section.js";
+
+export interface RegistryControls {
+  value: RegistryCredential;
+  onChange: (value: RegistryCredential) => void;
+  partial: boolean;
+}
+
 export function CustomImageCard({
   value,
   selected,
   onChange,
   onSubmit,
+  registry,
 }: {
   value: string;
   selected: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  /** Pull-credential controls; present once a custom image is entered. */
+  registry?: RegistryControls;
 }) {
   return (
     <div
@@ -47,6 +59,15 @@ export function CustomImageCard({
           variant="monospace"
         />
       </div>
+      {registry && (
+        <div className="mt-4 border-t border-border pt-3">
+          <RegistryCredentialSection
+            value={registry.value}
+            onChange={registry.onChange}
+            partial={registry.partial}
+          />
+        </div>
+      )}
     </div>
   );
 }

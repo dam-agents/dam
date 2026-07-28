@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -38,10 +38,11 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
     onChange({ ...value, [key]: next });
 
   return (
-    <section className="mb-8">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={expanded}
         className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground hover:text-foreground"
       >
         <Icon size={12} />
@@ -54,20 +55,21 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
             the sandbox and used only by the cluster to pull the image — never
             exposed to the agent.
           </p>
-          <FormField label="Server">
+          <FormField label="Server" labelInset>
             <Input
               placeholder="ghcr.io"
               value={value.server}
               onChange={(e) => set("server", e.target.value)}
             />
           </FormField>
-          <FormField label="Username">
+          <FormField label="Username" labelInset>
             <Input
+              placeholder="octocat"
               value={value.username}
               onChange={(e) => set("username", e.target.value)}
             />
           </FormField>
-          <FormField label="Password">
+          <FormField label="Password" labelInset>
             <Input
               type="password"
               placeholder="PAT, robot account, or access token"
@@ -82,6 +84,6 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
