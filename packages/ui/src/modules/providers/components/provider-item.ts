@@ -16,10 +16,6 @@ export function providerRef(item: ProviderItem): ProviderRef {
   return { id: item.id };
 }
 
-export function sameProviderRef(a: ProviderRef, b: ProviderRef): boolean {
-  return a.id === b.id;
-}
-
 // Bob's config inputs ride as `env` contributions whose placeholder holds the
 // (non-secret) value, keyed by the same env names the legacy pins use.
 export function bobPinsFromConnection(conn: ConnectionView): BobModelPins {
