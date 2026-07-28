@@ -56,7 +56,15 @@ export function createWorkspaceCommandPlugin(deps: {
         }
         deps.log(`[workspace-command] running in ${deps.workDir}: ${command}`);
         await run(command, deps.workDir, deps.log);
-        await writeFile(sentinel, `${new Date().toISOString()}\n`);
+        // Exclusive create: if a concurrent settle already wrote the sentinel,
+        // the run is done either way — losing the race is not an error.
+        try {
+          await writeFile(sentinel, `${new Date().toISOString()}\n`, {
+            flag: "wx",
+          });
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+        }
         deps.log(`[workspace-command] completed`);
       };
     },
