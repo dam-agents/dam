@@ -88,20 +88,37 @@ function slackTurnContract(ctx: {
    *  session — omit its mention when it isn't, so the contract never points
    *  at a tool the agent won't find. */
   canLookupUsers: boolean;
+  /** Set when several coalesced read-along messages share this turn: each is
+   *  tagged `[ts …]` in the prompt so the agent can target the one it means.
+   *  `inThread` batches still reply into their one thread; top-level batches
+   *  must name the message a reply threads under. */
+  batch?: { count: number; inThread: boolean };
 }): string {
+  const multi = (ctx.batch?.count ?? 1) > 1;
+  const replyBullet =
+    multi && ctx.batch?.inThread === false
+      ? "• reply — post a message threaded under the batched message you are " +
+        "answering: pass its [ts …] tag as threadTs (several messages share " +
+        "this turn, so an id-less reply is refused). Pass alsoSendToChannel " +
+        "when that message is old enough that people watching the channel " +
+        "would miss a thread-only reply."
+      : `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}"). ` +
+        "Pass alsoSendToChannel when this thread is old enough that people " +
+        "watching the channel would miss a thread-only reply.";
+  const reactIds = multi
+    ? "messageTs = the [ts …] tag of the message you are reacting to"
+    : `messageTs="${ctx.eventTs}"`;
   return [
     "<how-to-respond>",
     `You appear in this Slack workspace as the bot "${ctx.brand.name}" ` +
       `(mentioned as @${ctx.brand.short}). Nothing you write as plain text ` +
       "is delivered to Slack — only tool calls reach the channel. To " +
       "respond, call one of:",
-    `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}"). ` +
-      "Pass alsoSendToChannel when this thread is old enough that people " +
-      "watching the channel would miss a thread-only reply.",
+    replyBullet,
     "• react — add a fitting emoji reaction to the message you're answering: a " +
       "quiet acknowledgement that notifies no one — pick an emoji that suits " +
       "the message (e.g. eyes on a bug report, tada on good news) " +
-      `(messageTs="${ctx.eventTs}"). Pass the Slack emoji short name, no colons.`,
+      `(${reactIds}). Pass the Slack emoji short name, no colons.`,
     "• no_reply_needed — end your turn without posting anything, when the " +
       "message doesn't call for a response.",
     ...(ctx.canLookupUsers
@@ -488,11 +505,19 @@ export function createSlackWorker(
   /** The most recent turn per agent, never cleared — the last-active-thread
    *  fallback for a proactive `reply`/`react` made outside any live turn (e.g.
    *  from a scheduled session), mirroring Telegram. Consulted only when no turn
-   *  is live or lingering. */
+   *  is live or lingering. Addressed turns (mention, DM, fork) advance it when
+   *  they start; ambient read-along turns do not — most end silent, and a
+   *  proactive reply must not target whatever channel message last drifted by.
+   *  An ambient turn advances it only through engagement: when a `reply`/
+   *  `react` actually lands on the turn's thread or message. */
   const lastTurn = new Map<string, TurnRef>();
 
-  function beginTurn(instanceName: string, ref: TurnRef) {
-    lastTurn.set(instanceName, ref);
+  function beginTurn(
+    instanceName: string,
+    ref: TurnRef,
+    opts?: { advanceLastTurn?: boolean },
+  ) {
+    if (opts?.advanceLastTurn !== false) lastTurn.set(instanceName, ref);
     let live = inFlightTurns.get(instanceName);
     if (!live) {
       live = new Set();
@@ -568,6 +593,35 @@ export function createSlackWorker(
     return last ? { ref: last } : { none: true };
   }
 
+  /** The newest live ref matching `match`, then the newest lingering one —
+   *  newest first so a multi-message batch resolves to its most recent
+   *  matching message, not an arbitrary older one. */
+  function findTurnRef(
+    instanceName: string,
+    match: (ref: TurnRef) => boolean,
+  ): TurnRef | undefined {
+    const live = [...(inFlightTurns.get(instanceName) ?? [])];
+    for (let i = live.length - 1; i >= 0; i--) {
+      if (match(live[i]!)) return live[i];
+    }
+    const lingering = lingeringFor(instanceName);
+    for (let i = lingering.length - 1; i >= 0; i--) {
+      if (match(lingering[i]!)) return lingering[i];
+    }
+    return undefined;
+  }
+
+  /** The turn ref (live or lingering) a successful `reply`/`react` engaged,
+   *  matched by the ids it actually posted with. Engagement advances the
+   *  last-active-thread fallback — the one way an ambient turn ever does. */
+  function noteEngagedTurn(
+    instanceName: string,
+    match: (ref: TurnRef) => boolean,
+  ) {
+    const engaged = findTurnRef(instanceName, match);
+    if (engaged) lastTurn.set(instanceName, engaged);
+  }
+
   /** Looked-up profiles keyed by user id. The directory is workspace-wide and
    *  so is the bot, so one cache serves every agent. Misses are cached too — a
    *  wrong id stays wrong, and re-asking Slack about it each turn buys nothing.
@@ -641,6 +695,35 @@ export function createSlackWorker(
     return sessions.find((s) => s.platform?.threadTs === threadTs) ?? null;
   }
 
+  /** One turn at a time per (agent, thread-session). Concurrent prompts on one
+   *  session collide in the runtime's per-session queue — which silently drops
+   *  a queued prompt when its relay connection tears down — and the
+   *  list-then-create session match can mint two sessions for one thread key.
+   *  The ambient queue already serializes read-along traffic; this lock closes
+   *  the remaining routes into a session (mentions, DMs) against each other
+   *  and against ambient turns. Promise-chained per key; an entry is removed
+   *  once its chain drains. */
+  const sessionTurnLocks = new Map<string, Promise<void>>();
+
+  async function withSessionTurnLock<T>(
+    instanceName: string,
+    threadKey: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${instanceName} ${threadKey}`;
+    const prev = sessionTurnLocks.get(key) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    sessionTurnLocks.set(key, tail);
+    void tail.then(() => {
+      if (sessionTurnLocks.get(key) === tail) sessionTurnLocks.delete(key);
+    });
+    return run;
+  }
+
   /** One ACP turn against the session keyed by `threadKey`
    *  (`_meta.platform.threadTs`): wake the pod, resume the matching session
    *  (falling back to a fresh context-injected one when resume fails), or
@@ -660,33 +743,42 @@ export function createSlackWorker(
      *  resolvable past its own settlement. */
     onGhostTurn?: () => void;
   }): Promise<string> {
-    await agents().ensureReady(args.instanceName, { onWaking: args.onWaking });
-    const acp = makeAcpClient(args.instanceName);
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
     };
-    const existing = await findThreadSession(acp, args.threadKey);
-    if (existing) {
-      try {
-        return await acp.sendPrompt(args.resumePrompt, {
-          resumeSessionId: existing.sessionId,
-          onImagesDropped: args.onImagesDropped,
-          onUpdate: args.onUpdate,
-        });
-      } catch {
-        args.onGhostTurn?.();
-        return acp.sendPrompt(await args.buildFreshPrompt(), {
-          platformMeta,
-          onImagesDropped: args.onImagesDropped,
-          onUpdate: args.onUpdate,
-        });
+    // The lock spans readiness, the session match, and the prompt: a second
+    // turn for the same thread waits its turn instead of racing the runtime's
+    // per-session queue, finds the session the first turn minted instead of
+    // minting a duplicate for the same thread key, and re-verifies readiness
+    // when it actually runs rather than when it queued.
+    return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
+      await agents().ensureReady(args.instanceName, {
+        onWaking: args.onWaking,
+      });
+      const acp = makeAcpClient(args.instanceName);
+      const existing = await findThreadSession(acp, args.threadKey);
+      if (existing) {
+        try {
+          return await acp.sendPrompt(args.resumePrompt, {
+            resumeSessionId: existing.sessionId,
+            onImagesDropped: args.onImagesDropped,
+            onUpdate: args.onUpdate,
+          });
+        } catch {
+          args.onGhostTurn?.();
+          return acp.sendPrompt(await args.buildFreshPrompt(), {
+            platformMeta,
+            onImagesDropped: args.onImagesDropped,
+            onUpdate: args.onUpdate,
+          });
+        }
       }
-    }
-    return acp.sendPrompt(await args.buildFreshPrompt(), {
-      platformMeta,
-      onImagesDropped: args.onImagesDropped,
-      onUpdate: args.onUpdate,
+      return acp.sendPrompt(await args.buildFreshPrompt(), {
+        platformMeta,
+        onImagesDropped: args.onImagesDropped,
+        onUpdate: args.onUpdate,
+      });
     });
   }
 
@@ -1003,25 +1095,35 @@ export function createSlackWorker(
           );
         try {
           const acp = makeForkAcpClient(event.podIP);
-          const existing = await findThreadSession(acp, ctx.threadTs);
-          // The fork replies via the `reply` tool during its turn; the response
-          // text is not posted here.
-          if (existing) {
-            await acp.sendPrompt(ctx.prompt, {
-              resumeSessionId: existing.sessionId,
-              onImagesDropped,
-              onUpdate: ctx.presenter.onUpdate,
-            });
-          } else {
-            await acp.sendPrompt(ctx.prompt, {
-              platformMeta: {
-                type: SessionType.ChannelSlack,
-                threadTs: ctx.threadTs,
-              },
-              onImagesDropped,
-              onUpdate: ctx.presenter.onUpdate,
-            });
-          }
+          // The same lock main-pod turns take: fork pods share the agent's
+          // session store (same PVC), so an unserialized fork turn could mint
+          // a duplicate session for the thread key or race a prompt into a
+          // session another turn is driving.
+          await withSessionTurnLock(
+            ctx.instanceName,
+            ctx.threadTs,
+            async () => {
+              const existing = await findThreadSession(acp, ctx.threadTs);
+              // The fork replies via the `reply` tool during its turn; the
+              // response text is not posted here.
+              if (existing) {
+                await acp.sendPrompt(ctx.prompt, {
+                  resumeSessionId: existing.sessionId,
+                  onImagesDropped,
+                  onUpdate: ctx.presenter.onUpdate,
+                });
+              } else {
+                await acp.sendPrompt(ctx.prompt, {
+                  platformMeta: {
+                    type: SessionType.ChannelSlack,
+                    threadTs: ctx.threadTs,
+                  },
+                  onImagesDropped,
+                  onUpdate: ctx.presenter.onUpdate,
+                });
+              }
+            },
+          );
           turnOutcome = "success";
         } catch (err) {
           process.stderr.write(
@@ -1589,28 +1691,39 @@ export function createSlackWorker(
     /** `_meta.platform.threadTs` session key: the real thread_ts for thread
      *  replies, the synthetic ambient key for top-level channel flow. */
     threadKey: string;
-    /** Where a reply (if the agent chimes in) is threaded. */
+    /** Where a reply (if the agent chimes in) is threaded by default: the
+     *  thread's ts in a thread, the batch's newest message top-level. */
     replyThreadTs: string;
-    /** The triggering message ts, excluded from injected context. */
+    /** The triggering message ts (the batch's newest), excluded from
+     *  injected context. */
     eventTs: string;
     hasThread: boolean;
-    /** Speaker-labelled; multi-line when messages were coalesced. */
-    text: string;
+    /** The coalesced batch, oldest first — speaker-labelled text plus each
+     *  message's own ts, so a multi-message turn can target per message. */
+    messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
     externalActorId: string;
   }) {
     if (!gateway) return;
     const gw = gateway;
 
-    // A reply (if the agent chimes in) threads under the triggering message; a
+    // A reply (if the agent chimes in) threads under the message it answers; a
     // react targets that message. No 👀 ack and no status — ambient stays out
-    // of the channel's way until the agent decides to speak.
-    const turnRef: TurnRef = {
+    // of the channel's way until the agent decides to speak. Every batched
+    // message registers as its own target: in a thread they share the reply
+    // thread, but a multi-message top-level batch has no single "the" thread —
+    // its prompt tags each message with its ts, an id-less reply refuses, and
+    // an answer to an older batched message threads under that message instead
+    // of silently attaching to the newest one.
+    const multi = args.messages.length > 1;
+    const turnRefs: TurnRef[] = args.messages.map((m) => ({
       channel: args.channel,
-      threadTs: args.replyThreadTs,
-      eventTs: args.eventTs,
-    };
-    beginTurn(args.instanceName, turnRef);
+      threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
+      eventTs: m.eventTs,
+    }));
+    const text = multi
+      ? args.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
+      : args.messages[0]!.text;
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -1619,12 +1732,13 @@ export function createSlackWorker(
       eventTs: args.eventTs,
       brand,
       canLookupUsers: await canLookupUsers(gw),
+      batch: { count: args.messages.length, inThread: args.hasThread },
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({
       contract,
       guidance,
-      text: args.text,
+      text,
       images: args.images,
     });
 
@@ -1642,7 +1756,7 @@ export function createSlackWorker(
               channel: args.channel,
               threadTs: args.threadKey,
               eventTs: args.eventTs,
-              text: args.text,
+              text,
               hasThread: args.hasThread,
               images: args.images,
             },
@@ -1655,6 +1769,13 @@ export function createSlackWorker(
       });
 
     try {
+      // Registered inside the try (like the owner path) so a throw can never
+      // leak a live entry — live refs, unlike lingering ones, never expire.
+      // Read-along turns never advance the last-active-thread fallback at
+      // start; engagement (an actual reply/react) is what advances it.
+      for (const ref of turnRefs) {
+        beginTurn(args.instanceName, ref, { advanceLastTurn: false });
+      }
       // The response is not posted — the agent chimes in via the `reply`/`react`
       // tools, or stays silent via `no_reply_needed`.
       try {
@@ -1687,10 +1808,12 @@ export function createSlackWorker(
     } finally {
       // Same settlement classes as the owner path: an "acp-error" (or a ghost
       // run left by a failed resume attempt) may leave the harness working
-      // this turn, so its ref must stay resolvable.
-      endTurn(args.instanceName, turnRef, {
-        harnessMayStillRun: ghostTurn || failureReason === "acp-error",
-      });
+      // this turn, so its refs must stay resolvable.
+      for (const ref of turnRefs) {
+        endTurn(args.instanceName, ref, {
+          harnessMayStillRun: ghostTurn || failureReason === "acp-error",
+        });
+      }
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -1792,7 +1915,7 @@ export function createSlackWorker(
           replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
           eventTs: last.eventTs,
           hasThread: inThread,
-          text: batch.map((m) => m.text).join("\n"),
+          messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
           images: batch.flatMap((m) => m.images),
           externalActorId: last.slackUserId,
         });
@@ -2158,6 +2281,15 @@ export function createSlackWorker(
         // where the resolved turn ran, not wherever the agent is bound *now*,
         // or a mid-turn rebind would redirect the reply into the new channel.
         turnChannel = turn.ref.channel;
+      } else {
+        // An explicit id that names a live/lingering turn follows that turn's
+        // conversation too — batch turns must pass ids, and the rebind
+        // protection would otherwise skip exactly them.
+        const id = threadTs;
+        turnChannel = findTurnRef(
+          instanceName,
+          (ref) => ref.threadTs === id,
+        )?.channel;
       }
       const target = await resolveOutboundTarget(
         gw,
@@ -2175,6 +2307,10 @@ export function createSlackWorker(
           blocks: renderAssistantBlocks(footer, args.text),
           ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
         });
+        noteEngagedTurn(
+          instanceName,
+          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
+        );
         return { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };
@@ -2198,6 +2334,12 @@ export function createSlackWorker(
         // Like reply: the message lives in the turn's conversation, not
         // necessarily the currently-bound one.
         turnChannel = turn.ref.channel;
+      } else {
+        const id = messageTs;
+        turnChannel = findTurnRef(
+          instanceName,
+          (ref) => ref.eventTs === id,
+        )?.channel;
       }
       // Slack wants the bare short name; tolerate :colons: or an accidental
       // leading/trailing space.
@@ -2214,6 +2356,10 @@ export function createSlackWorker(
 
       try {
         await gw.addReaction({ channel: target.id, ts: messageTs, name });
+        noteEngagedTurn(
+          instanceName,
+          (ref) => ref.eventTs === messageTs && ref.channel === target.id,
+        );
         return { ok: true as const };
       } catch (err) {
         // Bad emoji name, already_reacted, or a missing scope surface to the

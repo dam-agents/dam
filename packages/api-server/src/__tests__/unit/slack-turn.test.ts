@@ -702,6 +702,117 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
+  it("two rapid first messages in a new thread mint one session — the second resumes it", async () => {
+    const sessions: Array<{
+      sessionId: string;
+      platform: { threadTs?: string };
+    }> = [];
+    const resumed: string[] = [];
+    const gates: Array<() => void> = [];
+    const sendPrompt: SendPromptFn = async (_p, opts) => {
+      if ("resumeSessionId" in opts) {
+        resumed.push(opts.resumeSessionId);
+      } else {
+        const meta = opts as { platformMeta?: { threadTs?: string } };
+        sessions.push({
+          sessionId: `s-${sessions.length + 1}`,
+          platform: { threadTs: meta.platformMeta?.threadTs },
+        });
+      }
+      await new Promise<void>((r) => gates.push(r));
+      return "answer";
+    };
+    const h = harness({ sendPrompt, listSessions: async () => sessions });
+    await h.start();
+    void h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "100.1",
+      text: "first",
+      teamId: "T-e2e",
+    });
+    void h.gw.fireMention({
+      user: "U2",
+      channel: "C1",
+      ts: "100.2",
+      threadTs: "100.1",
+      text: "second",
+      teamId: "T-e2e",
+    });
+    for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
+    for (let i = 0; i < 20; i++) await tick();
+    // The second turn waits at the session lock instead of racing the
+    // list-then-create session match into a duplicate session.
+    expect(gates).toHaveLength(1);
+    expect(sessions).toHaveLength(1);
+
+    gates[0]!();
+    for (let i = 0; i < 200 && gates.length < 2; i++) await tick();
+    gates[1]!();
+    await tick();
+
+    expect(sessions).toHaveLength(1);
+    expect(resumed).toEqual(["s-1"]);
+  });
+
+  it("serializes fork turns per thread session — forks share the agent's session store", async () => {
+    const forkGates: Array<() => void> = [];
+    let forkCalls = 0;
+    const h = harness({
+      isAllowedUser: true,
+      linkedSub: "kc|member-2",
+      forkSendPrompt: async () => {
+        forkCalls++;
+        await new Promise<void>((r) => forkGates.push(r));
+        return "fork answer";
+      },
+    });
+    await h.start();
+    // Two foreign replies in the same thread, each provisioning a fork.
+    await h.gw.fireMention({
+      user: "U-S1",
+      channel: "C1",
+      ts: "1.1",
+      text: "first foreign reply",
+      teamId: "T-e2e",
+    });
+    await h.gw.fireMention({
+      user: "U-S2",
+      channel: "C1",
+      ts: "1.2",
+      threadTs: "1.1",
+      text: "second foreign reply",
+      teamId: "T-e2e",
+    });
+    const foreigns = h.events.filter(
+      (e): e is ForeignReplyReceived =>
+        e.type === EventType.ForeignReplyReceived,
+    );
+    expect(foreigns).toHaveLength(2);
+    emitGlobal({
+      type: EventType.ForkReady,
+      forkId: "fork-1",
+      replyId: foreigns[0]!.replyId,
+      podIP: "10.0.0.5",
+    });
+    emitGlobal({
+      type: EventType.ForkReady,
+      forkId: "fork-2",
+      replyId: foreigns[1]!.replyId,
+      podIP: "10.0.0.6",
+    });
+    for (let i = 0; i < 20; i++) await tick();
+    // Fork pods mount the same session store as the main pod, so the second
+    // fork must wait for the first instead of racing the session match.
+    expect(forkCalls).toBe(1);
+
+    forkGates[0]!();
+    for (let i = 0; i < 200 && forkCalls < 2; i++) await tick();
+    expect(forkCalls).toBe(2);
+    forkGates[1]!();
+    await tick();
+  });
+
   it("an id-less reply resolved from a turn posts into that turn's channel, not the newly bound one", async () => {
     let bound = "C1";
     const gates: Array<() => void> = [];
@@ -731,6 +842,19 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.gw.resetOutbound();
     const ok = await h.worker.reply("agent-1", { text: "for C1's thread" });
     expect(ok).toEqual({ ok: true });
+    expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
+      channel: "C1",
+      threadTs: "100.1",
+    });
+
+    // An explicit id naming the live turn follows it into C1 the same way —
+    // batch turns must pass ids, so the protection can't hinge on omission.
+    h.gw.resetOutbound();
+    const okExplicit = await h.worker.reply("agent-1", {
+      text: "explicit id",
+      threadTs: "100.1",
+    });
+    expect(okExplicit).toEqual({ ok: true });
     expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
       channel: "C1",
       threadTs: "100.1",
