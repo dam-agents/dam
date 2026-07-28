@@ -61,7 +61,7 @@ export function ListView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[666px]">
+    <div>
       <PageHeader
         title="Sandboxes"
         actions={
