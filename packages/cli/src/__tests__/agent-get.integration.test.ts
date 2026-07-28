@@ -40,7 +40,16 @@ async function runDam(
   env: Record<string, string>,
 ): Promise<RunResult> {
   try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
+    // process.execPath, not "node" from PATH: under mise, PATH's node is a
+    // shim that needs mise's own env, which this deliberately stripped env
+    // doesn't carry — the shim then dies silently with exit 1.
+    const { stdout, stderr } = await exec(
+      process.execPath,
+      [BIN_PATH, ...args],
+      {
+        env,
+      },
+    );
     return { exitCode: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code?: number; stdout?: string; stderr?: string };

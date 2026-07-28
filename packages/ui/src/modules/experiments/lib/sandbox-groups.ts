@@ -85,15 +85,33 @@ export function toSandboxGroups(
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const groups = new Map<string, SandboxGroup>();
 
+  // Every deleted sandbox's lineages collect into ONE trailing group, as the
+  // vision draws it — the sandboxes are gone, so per-sandbox containers would
+  // just multiply tombstones.
+  const deletedLineages: LineageRow[] = [];
   for (const summary of summaries) {
     const agent = agentById.get(summary.driverAgentId) ?? null;
     const lineages = toLineages(summary);
+    if (agent === null) {
+      deletedLineages.push(...lineages);
+      continue;
+    }
     groups.set(summary.driverAgentId, {
       agentId: summary.driverAgentId,
       agent,
-      name: agent?.name ?? "Deleted sandbox",
+      name: agent.name,
       lineages,
       rollup: rollupStatus(lineages),
+    });
+  }
+  if (deletedLineages.length > 0) {
+    deletedLineages.sort((a, b) => b.newestAt.localeCompare(a.newestAt));
+    groups.set("__deleted__", {
+      agentId: "__deleted__",
+      agent: null,
+      name: "Deleted sandboxes",
+      lineages: deletedLineages,
+      rollup: null,
     });
   }
 
