@@ -23,12 +23,7 @@ export function CustomImageCard({
     >
       <div className="flex items-center gap-2">
         <p className="text-[16px] font-semibold text-foreground">Custom</p>
-        <Badge
-          variant="outline"
-          className="border-transparent bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-        >
-          Advanced
-        </Badge>
+        <Badge variant="accent">Advanced</Badge>
       </div>
       <p className="mt-1 text-[14px] text-muted-foreground">
         Bring your own ACP-compatible image{" "}

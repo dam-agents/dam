@@ -21,8 +21,9 @@ export function ArtifactKindBadge({ kind }: { kind: ArtifactKind }) {
   const { label, variant } = KIND_PRESENTATION[kind];
   return (
     <Badge
+      size="sm"
       variant={variant}
-      className="min-w-[46px] justify-center text-[11px] font-semibold"
+      className="min-w-[46px] justify-center tracking-wider"
     >
       {label}
     </Badge>

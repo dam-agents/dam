@@ -1,4 +1,5 @@
-import { StatusBadge } from "../../../components/status-indicator.js";
+import { Badge } from "@/components/ui/badge";
+
 import type { AgentView } from "../../../types.js";
 
 /** Degraded indicator: a running agent whose last settle left contributions unfinished. */
@@ -14,11 +15,8 @@ export function ContributionFailuresBadge({
       : `${failures.length} installs failed`;
   const detail = failures.map((f) => `${f.kind}: ${f.message}`).join("\n");
   return (
-    <span title={detail}>
-      <StatusBadge
-        label={label}
-        colorClasses="bg-warning-light text-warning border-warning"
-      />
-    </span>
+    <Badge variant="warning" title={detail}>
+      {label}
+    </Badge>
   );
 }

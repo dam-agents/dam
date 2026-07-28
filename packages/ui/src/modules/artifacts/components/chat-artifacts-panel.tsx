@@ -16,6 +16,7 @@ import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { ShareDialog } from "./share-dialog.js";
+import { VersionBadge } from "./version-badge.js";
 
 /** Tracks agents publishing mid-conversation without a manual refresh. */
 const LIVE_POLL_MS = 5000;
@@ -110,14 +111,7 @@ function ArtifactListRow({
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-      {artifact.version > 1 && (
-        <span
-          className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
-          title={`Version ${artifact.version}`}
-        >
-          v{artifact.version}
-        </span>
-      )}
+      {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
         <span
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"

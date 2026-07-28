@@ -18,6 +18,8 @@ import {
   useState,
 } from "react";
 
+import { stateDotClass } from "@/components/status-indicator";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import {
@@ -30,7 +32,6 @@ import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
-import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -433,14 +434,9 @@ export function ChatView() {
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
 
-  const dotColor =
-    agentDisplay?.state === "running"
-      ? "bg-emerald-500"
-      : agentDisplay?.state === "error"
-        ? "bg-red-500"
-        : agentDisplay?.state === "hibernated"
-          ? "bg-zinc-400"
-          : "bg-amber-500";
+  const dotColor = agentDisplay
+    ? stateDotClass[agentDisplay.state]
+    : "bg-warning";
 
   // The status line normally renders inside the last assistant message; when
   // the transcript ends on something else (replay edge), fall back to a
@@ -918,12 +914,7 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {reconnecting && (
-        <StatusBadge
-          label="Reconnecting"
-          colorClasses="bg-warning-light text-warning border-warning"
-        />
-      )}
+      {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (
         <ContributionFailuresBadge failures={agent.contributionFailures} />

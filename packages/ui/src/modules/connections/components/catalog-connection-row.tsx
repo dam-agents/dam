@@ -1,7 +1,7 @@
 import { Add, Checkmark, OverflowMenuHorizontal } from "@carbon/icons-react";
-import type { ConnectionStatus, ConnectionView } from "api-server-api";
+import type { ConnectionView } from "api-server-api";
 
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { ConnectionStatusBadge } from "./connection-status-badge.js";
 import { GithubAppInstallLink } from "./github-app-install-hint.js";
 
 export interface RowGrantControls {
@@ -51,7 +52,7 @@ export function CatalogConnectionRow({
               {connection.name}
             </p>
             {connection.status !== "active" && (
-              <StatusBadge status={connection.status} />
+              <ConnectionStatusBadge status={connection.status} />
             )}
           </div>
           <p className="truncate text-[14px] text-muted-foreground">
@@ -63,10 +64,14 @@ export function CatalogConnectionRow({
           {grant &&
             !grant.actionHidden &&
             (grant.granted ? (
-              <span className="inline-flex h-[32px] shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 text-[14px] text-foreground">
+              // Height and text size match the sibling "Add to sandbox" button.
+              <Badge
+                variant="muted"
+                className="h-[32px] shrink-0 gap-1.5 px-3 text-[14px] text-foreground"
+              >
                 <Checkmark size={16} className="text-success" />
                 In this sandbox
-              </span>
+              </Badge>
             ) : (
               <Button
                 variant="outline"
@@ -115,19 +120,4 @@ export function CatalogConnectionRow({
       </div>
     </div>
   );
-}
-
-const STATUS_BADGE: Record<
-  ConnectionStatus,
-  { label: string; variant: BadgeProps["variant"] }
-> = {
-  active: { label: "Connected", variant: "success" },
-  pending: { label: "Authorizing…", variant: "muted" },
-  expired: { label: "Expired", variant: "danger" },
-  disconnected: { label: "Disconnected", variant: "muted" },
-};
-
-function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const { label, variant } = STATUS_BADGE[status];
-  return <Badge variant={variant}>{label}</Badge>;
 }

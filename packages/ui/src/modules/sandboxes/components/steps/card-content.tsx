@@ -12,7 +12,7 @@ export function CardContent({ template }: { template: TemplateView }) {
             {template.name}
           </p>
           {template.experimental && (
-            <Badge className="shrink-0 border-transparent bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            <Badge variant="warning" className="shrink-0">
               Alpha
             </Badge>
           )}
