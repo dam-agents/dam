@@ -1,4 +1,4 @@
-import { Inset } from "@/components/ui/inset";
+import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
@@ -26,11 +26,11 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
           <SectionLabel>Model settings</SectionLabel>
           <WakeToEditButton agentId={agentId} comingUp={comingUp} />
         </div>
-        <Inset className="rounded-lg border border-border p-4">
+        <Callout inset>
           <p className="text-[13px] text-muted-foreground">
             Start the agent to load and edit its model settings.
           </p>
-        </Inset>
+        </Callout>
       </section>
     );
   }

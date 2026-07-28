@@ -1,3 +1,5 @@
+import { Callout } from "@/components/ui/callout";
+
 import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
 import { useDeleteConnection } from "../api/mutations.js";
@@ -47,7 +49,7 @@ export function useDisconnectConnection() {
           function as expected.
         </p>
         {affected.length > 0 && (
-          <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
+          <Callout tone="muted" className="mt-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">
               Affected sandboxes
             </p>
@@ -56,7 +58,7 @@ export function useDisconnectConnection() {
                 <li key={n}>{n}</li>
               ))}
             </ul>
-          </div>
+          </Callout>
         )}
       </>,
       `Delete ${name}?`,

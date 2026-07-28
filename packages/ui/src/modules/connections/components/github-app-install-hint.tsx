@@ -1,6 +1,8 @@
 import { Launch } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
+import { Callout } from "@/components/ui/callout";
+
 import { getBrand } from "../../../brand.js";
 import { githubAppInstallUrl } from "../lib/github-app-install-url.js";
 
@@ -23,13 +25,17 @@ export function GithubAppInstallHint({
 }) {
   if (!connections.some((c) => activeInstallUrl(c) !== null)) return null;
   return (
-    <p className="mx-4 mt-3 rounded-md border border-border bg-muted/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
+    <Callout
+      tone="muted"
+      size="sm"
+      className="mx-4 mt-3 text-[13px] leading-relaxed text-muted-foreground"
+    >
       <strong className="text-foreground/80">
         GitHub App connections need one more step.
       </strong>{" "}
       To let {getBrand().name} work with your private repos, install the app on
       the organization that owns them.
-    </p>
+    </Callout>
   );
 }
 

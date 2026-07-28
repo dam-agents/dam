@@ -1,7 +1,7 @@
 import { Add } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { Inset } from "@/components/ui/inset";
+import { Callout } from "@/components/ui/callout";
 
 interface Props {
   message: string;
@@ -20,8 +20,8 @@ export function EmptyStateCard({
   actionTestId,
 }: Props) {
   return (
-    <Inset className="rounded-lg border border-border bg-card">
-      <div className="flex flex-col items-center gap-4 py-10">
+    <Callout inset className="bg-card">
+      <div className="flex flex-col items-center gap-4 py-6">
         <p className="text-[14px] text-foreground/80">{message}</p>
         <Button
           variant="outline"
@@ -33,6 +33,6 @@ export function EmptyStateCard({
           {actionLabel}
         </Button>
       </div>
-    </Inset>
+    </Callout>
   );
 }

@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { Callout } from "@/components/ui/callout";
+
 import { useBudgetReserved } from "../api/queries.js";
 import { formatCores, formatGi } from "../lib/format.js";
 
@@ -40,8 +42,8 @@ export function BudgetMeter() {
   if (!data) return null;
   const { cpu, memory } = data;
   return (
-    <div
-      className="mb-6 flex items-center gap-6 rounded-lg border border-border px-4 py-3"
+    <Callout
+      className="mb-6 flex items-center gap-6"
       title="Compute your running sandboxes can use, against your budget. Pause or stop a sandbox to free room."
     >
       <Dimension
@@ -58,6 +60,6 @@ export function BudgetMeter() {
         unit="Gi"
         fill={fillPercent(memory.reservedBytes, memory.ceilingBytes)}
       />
-    </div>
+    </Callout>
   );
 }

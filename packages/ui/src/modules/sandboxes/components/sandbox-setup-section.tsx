@@ -1,8 +1,9 @@
 import { Controller } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
+import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET, Inset } from "@/components/ui/inset";
+import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
@@ -89,18 +90,18 @@ export function SandboxSetupSection({ f }: Props) {
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>
-        <Inset className="rounded-lg border border-border p-4">
+        <Callout inset>
           <AgentEgressEditor
             agentId={agent.id}
             currentPreset={f.currentPreset}
             staged={f.egressStaged}
           />
-        </Inset>
+        </Callout>
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Lifecycle</SectionLabel>
-        <Inset className="rounded-lg border border-border p-4">
+        <Callout inset>
           <HibernationTimeoutField
             register={f.register("hibernationTimeoutMin", {
               valueAsNumber: true,
@@ -109,12 +110,12 @@ export function SandboxSetupSection({ f }: Props) {
             error={f.errors.hibernationTimeoutMin?.message}
             disabled={f.saving}
           />
-        </Inset>
+        </Callout>
       </section>
 
       <section className="mb-8">
         <SectionLabel spaced>Environment</SectionLabel>
-        <Inset className="rounded-lg border border-border p-4">
+        <Callout inset>
           <Controller
             control={f.control}
             name="envVars"
@@ -127,7 +128,7 @@ export function SandboxSetupSection({ f }: Props) {
               />
             )}
           />
-        </Inset>
+        </Callout>
       </section>
     </>
   );

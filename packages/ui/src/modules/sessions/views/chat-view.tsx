@@ -19,6 +19,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -894,7 +895,7 @@ function SessionErrorCard({
         ? "Can't reach the agent"
         : "Failed to load session";
   return (
-    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in">
+    <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -914,7 +915,7 @@ function SessionErrorCard({
           </Button>
         )}
       </div>
-    </div>
+    </Callout>
   );
 }
 
@@ -926,8 +927,9 @@ function SendErrorCard({
   onRetry?: () => void;
 }) {
   return (
-    <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
+    <Callout
+      tone="danger"
+      className="flex max-w-[620px] items-start gap-2.5"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -946,6 +948,6 @@ function SendErrorCard({
           </Button>
         )}
       </div>
-    </div>
+    </Callout>
   );
 }
