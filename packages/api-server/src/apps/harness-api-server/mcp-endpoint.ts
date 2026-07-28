@@ -9,6 +9,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  quietWindowSchema,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -112,6 +113,9 @@ export interface McpSessionDeps {
   /** Resolved once per session, before this function runs — see
    *  ChannelManager.supportsUserLookup for what this reflects. */
   supportsUserLookup: boolean;
+  /** Resolved once per session, before this function runs — see
+   *  ChannelManager.supportsMessageReactions for what this reflects. */
+  supportsMessageReactions: boolean;
 }
 
 export function createMcpSession(
@@ -307,6 +311,84 @@ export function createMcpSession(
           },
         });
         return textResult(JSON.stringify({ users: result.users }));
+      },
+    );
+  }
+
+  // Omitted rather than always registered, same reasoning as
+  // describe_channel_users above: a Slack app missing `reactions:read` can
+  // never make this succeed for any Agent, on any channel.
+  if (deps.supportsMessageReactions) {
+    server.tool(
+      "describe_message_reactions",
+      "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
+      {
+        channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+        chatId: z
+          .string()
+          .optional()
+          .describe(
+            "Chat containing the message: an id from describe_channel. Omit for the agent's bound channel.",
+          ),
+        messageTs: z
+          .string()
+          .optional()
+          .describe(
+            "Message to inspect. Omit for the message you're currently answering.",
+          ),
+      },
+      async ({ channel, chatId, messageTs }) => {
+        const result = await deps.channelManager.describeMessageReactions(
+          agentId,
+          channel,
+          { conversationId: chatId, messageTs },
+        );
+        // A read under the agent's own identity, no human in the loop: which
+        // message was asked about is audit-worthy; who reacted is not (same
+        // treatment as describe_channel_users' profiles).
+        const audit = {
+          category: "channel",
+          actor: agentId,
+          actorKind: "agent",
+          surface: channel,
+          agentId,
+        } as const;
+        if ("error" in result) {
+          // Both args are commonly omitted (default to the bound channel /
+          // current turn), and a failure before resolution — no binding, no
+          // active turn — means there is nothing resolved to log instead.
+          securityLog("warn", "channel.reaction_lookup", {
+            ...audit,
+            result: "failure",
+            reason: result.error,
+            detail: {
+              ...(chatId ? { conversationId: chatId } : {}),
+              ...(messageTs ? { messageTs } : {}),
+            },
+          });
+          return errorResult(result.error);
+        }
+        securityLog("info", "channel.reaction_lookup", {
+          ...audit,
+          result: "success",
+          // The resolved target, not the (often-omitted) request — this is
+          // what actually got asked about.
+          detail: {
+            conversationId: result.conversationId,
+            messageTs: result.messageTs,
+            reactions: result.reactions.map((r) => ({
+              name: r.name,
+              count: r.count,
+            })),
+          },
+        });
+        return textResult(
+          JSON.stringify({
+            reactions: result.reactions,
+            conversationId: result.conversationId,
+            messageTs: result.messageTs,
+          }),
+        );
       },
     );
   }
@@ -524,7 +606,7 @@ export function createMcpSession(
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
     {
       name: z
         .string()
@@ -533,8 +615,29 @@ export function createMcpSession(
       cron: z
         .string()
         .min(1)
+        .optional()
         .describe(
-          "Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily",
+          "Legacy: standard 5-field cron expression in UTC, e.g. '0 9 * * *' for 9am UTC daily. Mutually exclusive with rrule/timezone.",
+        ),
+      rrule: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Recommended: RFC 5545 RRULE body, e.g. 'FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0' for 9am Monday and Wednesday. Requires timezone. Mutually exclusive with cron.",
+        ),
+      timezone: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "IANA timezone the rrule fires in, e.g. 'Europe/Prague'. Required with rrule.",
+        ),
+      quietHours: z
+        .array(quietWindowSchema)
+        .optional()
+        .describe(
+          "Optional windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
         ),
       task: z
         .string()
@@ -547,18 +650,42 @@ export function createMcpSession(
           "continuous = resume prior session each tick; fresh = new session per run (default)",
         ),
     },
-    async ({ name, cron, task, sessionMode }) => {
-      try {
-        const sched = await schedules.createCron(
-          {
-            name,
-            agentId,
-            cron,
-            task,
-            sessionMode,
-          },
-          "agent",
+    async ({ name, cron, rrule, timezone, quietHours, task, sessionMode }) => {
+      if ((cron === undefined) === (rrule === undefined)) {
+        return errorResult(
+          "pass exactly one of `cron` (legacy, UTC) or `rrule` (with `timezone`).",
         );
+      }
+      if (rrule !== undefined && !timezone) {
+        return errorResult("rrule requires timezone.");
+      }
+      // cron is UTC-only: silently dropping a timezone here would hand back a
+      // schedule that fires an hour off the asked-for local time half the
+      // year — the exact DST drift the rrule path exists to prevent.
+      if (cron !== undefined && (timezone || quietHours)) {
+        return errorResult(
+          "`cron` is UTC-only and ignores `timezone`/`quietHours` — use `rrule` with `timezone` to schedule in a local zone.",
+        );
+      }
+      try {
+        const sched =
+          rrule !== undefined
+            ? await schedules.createRRule(
+                {
+                  name,
+                  agentId,
+                  rrule,
+                  timezone: timezone!,
+                  quietHours,
+                  task,
+                  sessionMode,
+                },
+                "agent",
+              )
+            : await schedules.createCron(
+                { name, agentId, cron: cron!, task, sessionMode },
+                "agent",
+              );
         return {
           content: [
             {
@@ -567,7 +694,9 @@ export function createMcpSession(
                 {
                   id: sched.id,
                   name: sched.name,
-                  cron,
+                  ...(sched.spec.type === "rrule"
+                    ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
+                    : { cron: sched.spec.cron }),
                   enabled: sched.spec.enabled,
                 },
                 null,
@@ -770,8 +899,11 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const supportsUserLookup = await deps.channelManager.supportsUserLookup();
     const experiments = deps.experimentsServiceFor(verified.owner);
+    const [supportsUserLookup, supportsMessageReactions] = await Promise.all([
+      deps.channelManager.supportsUserLookup(),
+      deps.channelManager.supportsMessageReactions(),
+    ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -782,6 +914,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       experiments,
       agentHome: deps.agentHome,
       supportsUserLookup,
+      supportsMessageReactions,
     });
     await session.server.connect(session.transport);
 

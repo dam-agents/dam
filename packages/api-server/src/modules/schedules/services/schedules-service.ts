@@ -88,7 +88,7 @@ export function createSchedulesService(deps: {
       return schedule;
     },
 
-    async createRRule(input: ScheduleCreateRRuleInput) {
+    async createRRule(input: ScheduleCreateRRuleInput, createdBy = "user") {
       asBadRequest(() => validateTimezone(input.timezone));
       asBadRequest(() => validateRRule(input.rrule));
       asBadRequest(() =>
@@ -102,7 +102,7 @@ export function createSchedulesService(deps: {
         timezone: input.timezone,
         task: input.task,
         enabled: true,
-        createdBy: "user",
+        createdBy,
         ...(input.quietHours && input.quietHours.length > 0
           ? { quietHours: input.quietHours }
           : {}),
@@ -115,15 +115,17 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      // An agent self-scheduling recurring executions (createdBy='agent') is
+      // especially notable.
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
-        actorKind: "user",
+        actorKind: createdBy === "agent" ? "agent" : "user",
         agentId: input.agentId,
         target: schedule.id,
         result: "success",
         detail: {
-          createdBy: "user",
+          createdBy,
           type: "rrule",
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },

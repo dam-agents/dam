@@ -17,6 +17,12 @@ function fakeSlackWorker(): SlackWorker {
     react: vi.fn(async () => ({ ok: true as const })),
     describeUsers: vi.fn(async () => ({ users: [] })),
     supportsUserLookup: vi.fn(async () => true),
+    describeMessageReactions: vi.fn(async () => ({
+      reactions: [],
+      conversationId: "C1",
+      messageTs: "1.1",
+    })),
+    supportsMessageReactions: vi.fn(async () => true),
   };
 }
 
@@ -134,6 +140,70 @@ describe("channel-manager supportsUserLookup", () => {
     const manager = createChannelManager({});
 
     expect(await manager.supportsUserLookup()).toBe(true);
+
+    await manager.stopAll();
+  });
+});
+
+describe("channel-manager message reactions", () => {
+  it("routes a lookup to the Slack worker", async () => {
+    const slackWorker = fakeSlackWorker();
+    const manager = createChannelManager({ slackWorker });
+
+    await manager.describeMessageReactions("agent-1", ChannelType.Slack, {
+      messageTs: "1.1",
+    });
+
+    expect(slackWorker.describeMessageReactions).toHaveBeenCalledWith(
+      "agent-1",
+      { messageTs: "1.1" },
+    );
+
+    await manager.stopAll();
+  });
+
+  it("refuses on a channel whose worker has no reaction lookup", async () => {
+    const telegramWorker = fakeTelegramWorker();
+    const manager = createChannelManager({ telegramWorker });
+
+    const result = await manager.describeMessageReactions(
+      "agent-1",
+      ChannelType.Telegram,
+      { messageTs: "1.1" },
+    );
+
+    expect(result).toEqual({
+      error: "message reactions not supported on telegram",
+    });
+
+    await manager.stopAll();
+  });
+});
+
+describe("channel-manager supportsMessageReactions", () => {
+  it("reflects the Slack worker's answer", async () => {
+    const slackWorker = fakeSlackWorker();
+    slackWorker.supportsMessageReactions = vi.fn(async () => false);
+    const manager = createChannelManager({ slackWorker });
+
+    expect(await manager.supportsMessageReactions()).toBe(false);
+
+    await manager.stopAll();
+  });
+
+  it("fails open when Telegram is the only worker (nothing to ask to begin with)", async () => {
+    const telegramWorker = fakeTelegramWorker();
+    const manager = createChannelManager({ telegramWorker });
+
+    expect(await manager.supportsMessageReactions()).toBe(true);
+
+    await manager.stopAll();
+  });
+
+  it("fails open with no channel workers configured at all", async () => {
+    const manager = createChannelManager({});
+
+    expect(await manager.supportsMessageReactions()).toBe(true);
 
     await manager.stopAll();
   });

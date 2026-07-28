@@ -11,7 +11,9 @@ import type {
   ChannelReaction,
   ChannelReply,
   ChannelUser,
+  MessageReactionsResult,
   PostMessageOptions,
+  ReactionsQuery,
 } from "../services/channel-manager.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
@@ -53,6 +55,7 @@ import type {
   SlackGateway,
   SlackImageFile,
   SlackMentionEvent,
+  SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
 } from "./slack-gateway.js";
@@ -64,6 +67,7 @@ import {
 import {
   agentContextBlock,
   agentFooterMrkdwn,
+  formatSlackTs,
   historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
@@ -93,8 +97,15 @@ function slackTurnContract(ctx: {
    *  `inThread` batches still reply into their one thread; top-level batches
    *  must name the message a reply threads under. */
   batch?: { count: number; inThread: boolean };
+  /** Whether the triggering message arrived in a 1:1 DM rather than a shared
+   *  channel or group DM — changes who else can see the exchange. */
+  isDirectMessage: boolean;
+  /** A permanent link to the triggering message, or null when Slack couldn't
+   *  resolve one (never fails the turn over this). */
+  permalink: string | null;
 }): string {
-  const multi = (ctx.batch?.count ?? 1) > 1;
+  const batchCount = ctx.batch?.count ?? 1;
+  const multi = batchCount > 1;
   const replyBullet =
     multi && ctx.batch?.inThread === false
       ? "• reply — post a message threaded under the batched message you are " +
@@ -129,6 +140,17 @@ function slackTurnContract(ctx: {
             "reasoning about their local time.",
         ]
       : []),
+    // A coalesced batch has no single send time or permalink to name — each
+    // message carries its own [ts …] tag instead.
+    multi
+      ? `You're reading ${batchCount} messages from ` +
+        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}. ` +
+        "Each [ts …] tag above is that message's own send time, in seconds " +
+        "since the Unix epoch."
+      : `You're answering a message sent ${formatSlackTs(ctx.eventTs)}, in ` +
+        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
+        (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
+        ".",
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
   ].join("\n");
@@ -347,6 +369,18 @@ export interface SlackWorker {
    *  bot or an unprobed gateway reports true: an unknown state should never
    *  hide a tool that might in fact work. */
   supportsUserLookup(): Promise<boolean>;
+  /** Who reacted to a message, and with what emoji — invisible to the agent
+   *  otherwise, since nothing in the message text or injected history reveals
+   *  it. Unlike describeUsers this is never cached: a reaction count is live
+   *  state, not stable identity, and the point of asking is the current tally. */
+  describeMessageReactions(
+    instanceName: string,
+    query: ReactionsQuery,
+  ): Promise<MessageReactionsResult | { error: string }>;
+  /** Whether a lookup could plausibly succeed right now — false only when the
+   *  app's granted scopes are confirmed to lack `reactions:read`. Same
+   *  fail-open rule as supportsUserLookup. */
+  supportsMessageReactions(): Promise<boolean>;
 }
 
 export interface SlackOAuthPending {
@@ -436,12 +470,59 @@ function normalizeSlackUserId(input: string): string | null {
   return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
 }
 
+/** The granted-scope set, or null for "unknown". The port already promises
+ *  null rather than a throw on a failed probe, but these checks gate the MCP
+ *  session build: a rejection escaping here would cost the agent *every* tool
+ *  instead of the one affordance a withheld scope backs, so an unexpectedly
+ *  throwing gateway is also read as unknown. */
+async function grantedScopes(gw: SlackGateway): Promise<Set<string> | null> {
+  try {
+    return await gw.getGrantedScopes();
+  } catch {
+    return null;
+  }
+}
+
 /** Whether the running gateway's granted scopes are confirmed to include
  *  `users:read`. An unprobed or unreachable gateway reports true — an
  *  unknown state fails open rather than hiding a tool that might work. */
 async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
-  const scopes = await gw.getGrantedScopes();
+  const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("users:read");
+}
+
+/** Whether the running gateway's granted scopes are confirmed to include
+ *  `reactions:read`. An unprobed or unreachable gateway reports true — an
+ *  unknown state fails open rather than hiding a tool that might work. */
+async function canReadReactions(gw: SlackGateway): Promise<boolean> {
+  const scopes = await grantedScopes(gw);
+  return !scopes || scopes.has("reactions:read");
+}
+
+/** The two Slack-dependent turn-contract inputs, resolved together. The scope
+ *  probe is cached for the gateway's lifetime, but the permalink is a live
+ *  `chat.getPermalink` round trip on the relay's critical path — so they run in
+ *  parallel rather than back to back, and a coalesced batch (which names no
+ *  single message, so renders no permalink) skips the call entirely instead of
+ *  paying for a result it discards. */
+async function turnContractContext(
+  gw: SlackGateway,
+  channel: string,
+  eventTs: string,
+  opts?: { batched?: boolean },
+): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
+  const [lookup, permalink] = await Promise.all([
+    canLookupUsers(gw),
+    // A permalink is one decorative line of the prompt, so it must never be
+    // able to fail the turn that carries it — an unanswered Slack message is
+    // a far worse outcome than a contract missing its link. The port promises
+    // null over a throw and Bolt honors it; this enforces the promise rather
+    // than trusting every future gateway to keep it.
+    opts?.batched
+      ? Promise.resolve(null)
+      : gw.getPermalink(channel, eventTs).catch(() => null),
+  ]);
+  return { canLookupUsers: lookup, permalink };
 }
 
 export function createSlackWorker(
@@ -647,6 +728,14 @@ export function createSlackWorker(
     'threadTs shown in your turn instructions (reply threadTs="…", react ' +
     'messageTs="…") so this lands in the thread you are answering.';
 
+  /** The read-only sibling of AMBIGUOUS_THREAD_ERROR: a lookup delivers
+   *  nowhere, so the "lands in the right thread" framing would misdescribe
+   *  what is at stake — reading the wrong message, not posting to it. */
+  const AMBIGUOUS_MESSAGE_ERROR =
+    "This agent is handling more than one Slack thread right now — pass the " +
+    "messageTs shown in your turn instructions so this inspects the message " +
+    "you mean.";
+
   /** Attribution footer for a post by `instanceName`: the agent's name linked to
    *  its UI page, with the id carried in the URL so the author can be recovered
    *  from injected history. The name lookup is best-effort — a lookup failure or
@@ -822,7 +911,8 @@ export function createSlackWorker(
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
-      canLookupUsers: await canLookupUsers(gw),
+      isDirectMessage: isDirectMessageId(ctx.channel),
+      ...(await turnContractContext(gw, ctx.channel, ctx.eventTs)),
     });
 
     let outcome: TurnOutcome = "failure";
@@ -991,7 +1081,8 @@ export function createSlackWorker(
         replyThreadTs: args.threadTs,
         eventTs: args.eventTs,
         brand,
-        canLookupUsers: await canLookupUsers(gw),
+        isDirectMessage: isDirectMessageId(args.channel),
+        ...(await turnContractContext(gw, args.channel, args.eventTs)),
       }),
     );
     const replyId = args.eventTs;
@@ -1731,8 +1822,11 @@ export function createSlackWorker(
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
       brand,
-      canLookupUsers: await canLookupUsers(gw),
       batch: { count: args.messages.length, inThread: args.hasThread },
+      isDirectMessage: isDirectMessageId(args.channel),
+      ...(await turnContractContext(gw, args.channel, args.eventTs, {
+        batched: args.messages.length > 1,
+      })),
     });
     const guidance = ambientGuidance(brand);
     const resumePrompt = framePrompt({
@@ -2426,6 +2520,64 @@ export function createSlackWorker(
     async supportsUserLookup() {
       const gw = await ensureGateway();
       return gw ? canLookupUsers(gw) : true;
+    },
+
+    async describeMessageReactions(
+      instanceName: string,
+      query: ReactionsQuery,
+    ) {
+      // Same gate as every outbound affordance: the binding is the Agent's
+      // membership card into the workspace.
+      const slackChannelId =
+        await channelRegistry.resolveSlackChannelByInstance(instanceName);
+      if (!slackChannelId) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      let messageTs = query.messageTs;
+      let turnChannel: string | undefined;
+      if (!messageTs) {
+        // Message-level target, same granularity as react.
+        const turn = resolveTurn(instanceName, "react");
+        if ("ambiguous" in turn) return { error: AMBIGUOUS_MESSAGE_ERROR };
+        if ("none" in turn) {
+          return {
+            error: "no message to inspect — pass messageTs",
+          };
+        }
+        messageTs = turn.ref.eventTs;
+        // Like react: the message lives in the turn's conversation, not
+        // necessarily the currently-bound one.
+        turnChannel = turn.ref.channel;
+      } else {
+        const id = messageTs;
+        turnChannel = findTurnRef(
+          instanceName,
+          (ref) => ref.eventTs === id,
+        )?.channel;
+      }
+      const target = await resolveOutboundTarget(
+        gw,
+        slackChannelId,
+        query.conversationId ?? turnChannel,
+      );
+      if ("error" in target) return target;
+
+      try {
+        const reactions = await gw.getMessageReactions(target.id, messageTs);
+        if (!reactions) return { error: "message not found" };
+        // Return the resolved target, not just the (often-omitted) request —
+        // the caller audits by these, and an agent that omitted both still
+        // learns which message and chat it actually asked about.
+        return { reactions, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async supportsMessageReactions() {
+      const gw = await ensureGateway();
+      return gw ? canReadReactions(gw) : true;
     },
   };
 }

@@ -71,6 +71,32 @@ export interface ChannelUser {
   error?: string;
 }
 
+/** One emoji reaction on a message: the emoji's short name, how many people
+ *  used it, and which messenger user ids did. */
+export interface ChannelMessageReaction {
+  name: string;
+  count: number;
+  users: string[];
+}
+
+/** Which message to inspect for reactions. Same addressing as ChannelReaction
+ *  minus the emoji: conversationId defaults to the bound channel, messageTs to
+ *  the sole in-flight turn's message. */
+export interface ReactionsQuery {
+  conversationId?: string;
+  messageTs?: string;
+}
+
+/** Reactions on one message, plus the conversation and message they were
+ *  resolved against — the caller's query is often left to default (the bound
+ *  channel, the current turn's message), so the resolved ids are what the
+ *  caller should audit and surface, not the (possibly empty) request. */
+export interface MessageReactionsResult {
+  reactions: ChannelMessageReaction[];
+  conversationId: string;
+  messageTs: string;
+}
+
 /** The dispatch surface both adapters share; per-agent lifecycle is
  *  Slack-only (Telegram is a single platform bot with data-only bindings).
  *  `reply`/`react` are turn-scoped affordances only Slack implements today. */
@@ -101,6 +127,13 @@ interface Worker {
    *  missing Slack scope). Absent on workers with no directory to begin with
    *  (Telegram) — those already refuse `describeUsers` on their own. */
   supportsUserLookup?(): Promise<boolean>;
+  describeMessageReactions?(
+    instanceName: string,
+    query: ReactionsQuery,
+  ): Promise<MessageReactionsResult | { error: string }>;
+  /** False only when this worker has confirmed a lookup can't succeed (e.g. a
+   *  missing Slack scope). Absent on workers with nothing to ask (Telegram). */
+  supportsMessageReactions?(): Promise<boolean>;
 }
 
 export interface ChannelManager {
@@ -142,6 +175,16 @@ export interface ChannelManager {
    *  capability is unknown, fails open so the tool stays registered exactly
    *  as it always has. */
   supportsUserLookup(): Promise<boolean>;
+  /** Who reacted to a message, and with what emoji. */
+  describeMessageReactions(
+    instanceName: string,
+    channelType: ChannelType,
+    query: ReactionsQuery,
+  ): Promise<MessageReactionsResult | { error: string }>;
+  /** Whether describe_message_reactions could plausibly resolve anything
+   *  right now, across every channel type — same fail-open semantics as
+   *  supportsUserLookup. */
+  supportsMessageReactions(): Promise<boolean>;
 }
 
 export function createChannelManager(deps: {
@@ -264,6 +307,24 @@ export function createChannelManager(deps: {
       if (capable.length === 0) return true;
       const results = await Promise.all(
         capable.map((w) => w.supportsUserLookup?.() ?? Promise.resolve(true)),
+      );
+      return results.some(Boolean);
+    },
+
+    async describeMessageReactions(instanceName, channelType, query) {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.describeMessageReactions)
+        return { error: `message reactions not supported on ${channelType}` };
+      return worker.describeMessageReactions(instanceName, query);
+    },
+
+    async supportsMessageReactions() {
+      const capable = workers.filter((w) => w.describeMessageReactions);
+      if (capable.length === 0) return true;
+      const results = await Promise.all(
+        capable.map(
+          (w) => w.supportsMessageReactions?.() ?? Promise.resolve(true),
+        ),
       );
       return results.some(Boolean);
     },

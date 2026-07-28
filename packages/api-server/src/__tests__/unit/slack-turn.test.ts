@@ -374,6 +374,34 @@ describe("slack reply / react tools", () => {
     expect(result).toMatchObject({ error: expect.stringContaining("emoji") });
     expect(h.records().some((r) => r.kind === "reaction")).toBe(false);
   });
+
+  it("describeMessageReactions defaults to the current turn's message", async () => {
+    const h = harness({});
+    await h.mention(); // sets the active turn (thread 1.1, message 1.1)
+    await tick();
+    h.gw.setMessageReactions("C1", "1.1", [
+      { name: "thumbsup", count: 2, users: ["U1", "U2"] },
+    ]);
+
+    const result = await h.worker.describeMessageReactions("agent-1", {});
+    expect(result).toEqual({
+      reactions: [{ name: "thumbsup", count: 2, users: ["U1", "U2"] }],
+      // Resolved and returned even though the query left both to default —
+      // the caller (and its audit log) needs to know what actually got asked.
+      conversationId: "C1",
+      messageTs: "1.1",
+    });
+  });
+
+  it("describeMessageReactions errors when there is no active turn and no messageTs", async () => {
+    const h = harness({});
+    await h.start();
+
+    const result = await h.worker.describeMessageReactions("agent-1", {});
+    expect(result).toMatchObject({
+      error: expect.stringContaining("pass messageTs"),
+    });
+  });
 });
 
 /** A harness whose turns park in `sendPrompt` until released or failed, so a
@@ -497,6 +525,22 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ threadTs: "100.1" });
+
+    h.release();
+    await tick();
+  });
+
+  it("refuses an id-less describeMessageReactions while two threads are in flight", async () => {
+    const h = gatedHarness();
+    await h.start();
+    h.fire("100.1");
+    h.fire("200.2");
+    await h.waitInFlight("100.1", "200.2");
+
+    const ambiguous = await h.worker.describeMessageReactions("agent-1", {});
+    expect(ambiguous).toMatchObject({
+      error: expect.stringContaining("more than one"),
+    });
 
     h.release();
     await tick();
@@ -859,6 +903,51 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       channel: "C1",
       threadTs: "100.1",
     });
+
+    for (const g of gates) g();
+    await tick();
+  });
+
+  it("describeMessageReactions inspects the turn's channel, not the newly bound one", async () => {
+    let bound = "C1";
+    const gates: Array<() => void> = [];
+    const h = harness({
+      sendPrompt: async () => {
+        await new Promise<void>((resolve) => gates.push(resolve));
+        return "answer";
+      },
+      boundChannel: () => bound,
+    });
+    h.gw.setChannels([{ id: "C1", name: "general", botIsMember: true }]);
+    h.gw.setMessageReactions("C1", "100.1", [
+      { name: "eyes", count: 1, users: ["U2"] },
+    ]);
+    await h.start();
+    void h.gw.fireMention({
+      user: "U1",
+      channel: "C1",
+      ts: "100.1",
+      text: "question",
+      teamId: "T-e2e",
+    });
+    for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
+    expect(gates.length).toBe(1);
+
+    // Rebound mid-turn: the turn's ts only resolves inside C1, so a lookup
+    // that defaulted to the new binding would miss the message entirely.
+    bound = "C2";
+    expect(await h.worker.describeMessageReactions("agent-1", {})).toEqual({
+      reactions: [{ name: "eyes", count: 1, users: ["U2"] }],
+      conversationId: "C1",
+      messageTs: "100.1",
+    });
+
+    // An explicit ts naming the live turn is back-filled to its channel too.
+    expect(
+      await h.worker.describeMessageReactions("agent-1", {
+        messageTs: "100.1",
+      }),
+    ).toMatchObject({ conversationId: "C1" });
 
     for (const g of gates) g();
     await tick();

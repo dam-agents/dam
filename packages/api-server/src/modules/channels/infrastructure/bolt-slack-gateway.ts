@@ -6,6 +6,7 @@ import type {
   SlackGatewayHandlers,
   SlackImageFile,
   SlackMessage,
+  SlackMessageReaction,
   SlackUserInfo,
 } from "./slack-gateway.js";
 
@@ -233,6 +234,7 @@ export function createBoltSlackGateway(
         user: m.user,
         text: m.text,
         blocks: m.blocks as SlackMessage["blocks"],
+        ...(m.edited ? { edited: true } : {}),
       }));
     },
 
@@ -247,6 +249,7 @@ export function createBoltSlackGateway(
         user: m.user,
         text: m.text,
         blocks: m.blocks as SlackMessage["blocks"],
+        ...(m.edited ? { edited: true } : {}),
       }));
     },
 
@@ -333,6 +336,44 @@ export function createBoltSlackGateway(
         ...(user.is_bot !== undefined ? { isBot: user.is_bot } : {}),
         ...(user.deleted !== undefined ? { isDeleted: user.deleted } : {}),
       };
+    },
+
+    async getMessageReactions(
+      channel: string,
+      ts: string,
+    ): Promise<SlackMessageReaction[] | null> {
+      if (!app) return null;
+      let result;
+      try {
+        result = await app.client.reactions.get({
+          channel,
+          timestamp: ts,
+          full: true,
+        });
+      } catch (err) {
+        // A ts Slack can't find is a lookup miss, not a gateway fault.
+        if (formatError(err).includes("message_not_found")) return null;
+        throw err;
+      }
+      return (result.message?.reactions ?? []).map((r) => ({
+        name: r.name ?? "",
+        count: r.count ?? 0,
+        users: r.users ?? [],
+      }));
+    },
+
+    async getPermalink(channel: string, ts: string): Promise<string | null> {
+      if (!app) return null;
+      try {
+        const result = await app.client.chat.getPermalink({
+          channel,
+          message_ts: ts,
+        });
+        return result.permalink ?? null;
+      } catch {
+        // Never fails the turn over a link — the contract just omits it.
+        return null;
+      }
     },
 
     async openDirectMessage(userId: string): Promise<string> {

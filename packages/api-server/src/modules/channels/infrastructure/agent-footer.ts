@@ -95,9 +95,30 @@ export function historyLegend(canLookupUsers: boolean): string {
     : `${base}.`;
 }
 
-/** Render one history message as a `label: text` line, resolving the author
- *  from its footer: the reading agent's own posts become "you (this agent)",
- *  other agents' posts name that agent, and everyone else keeps their Slack id. */
+/** Render a Slack `ts` (seconds.microseconds since the epoch) as a human
+ *  string, e.g. "Mon 2026-07-27 14:32 UTC" — Slack's history and mention
+ *  payloads carry only the raw epoch, which an agent would otherwise have to
+ *  parse by hand. Always UTC, never a message's sender's local time:
+ *  resolving that would cost a directory lookup per message, and an agent
+ *  that needs a specific person's local time can already get it via
+ *  describe_channel_users. Falls back to the raw string on anything unparseable. */
+export function formatSlackTs(ts: string): string {
+  const seconds = Number(ts.split(".")[0]);
+  if (!Number.isFinite(seconds)) return ts;
+  const date = new Date(seconds * 1000);
+  const [datePart, timePart] = date.toISOString().split("T");
+  const weekday = date.toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+  return `${weekday} ${datePart} ${timePart.slice(0, 5)} UTC`;
+}
+
+/** Render one history message as a `label [timestamp]: text` line, resolving
+ *  the author from its footer: the reading agent's own posts become "you
+ *  (this agent)", other agents' posts name that agent, and everyone else
+ *  keeps their Slack id. A trailing "(edited)" marks a message Slack reports
+ *  as changed since it was first posted. */
 export function labelHistoryMessage(
   message: SlackMessage,
   footer: { agentId: string; agentName: string } | null,
@@ -108,5 +129,7 @@ export function labelHistoryMessage(
       ? "you (this agent)"
       : `${footer.agentName || footer.agentId} (another agent)`
     : (message.user ?? "unknown");
-  return `${label}: ${message.text ?? ""}`;
+  const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
+  const edited = message.edited ? " (edited)" : "";
+  return `${label}${when}: ${message.text ?? ""}${edited}`;
 }

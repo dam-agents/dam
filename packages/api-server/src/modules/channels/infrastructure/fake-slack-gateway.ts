@@ -5,6 +5,7 @@ import type {
   SlackGatewayHandlers,
   SlackMentionEvent,
   SlackMessage,
+  SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
 } from "./slack-gateway.js";
@@ -40,6 +41,14 @@ export interface FakeSlackGateway extends SlackGateway {
    *  the real gateway before its first probe), so a test only needs this to
    *  simulate a scope that is confirmed granted or confirmed missing. */
   setGrantedScopes(scopes: string[] | null): void;
+  /** Seed the reactions getMessageReactions reports for one channel+ts pair.
+   *  An unseeded pair reports as message-not-found (null), matching the real
+   *  gateway on a bad ts. */
+  setMessageReactions(
+    channel: string,
+    ts: string,
+    reactions: SlackMessageReaction[],
+  ): void;
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
@@ -51,6 +60,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const userLookups: string[] = [];
   let nextStreamTs = 1;
   let grantedScopes: Set<string> | null = null;
+  const messageReactions = new Map<string, SlackMessageReaction[]>();
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -183,6 +193,17 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return users.find((u) => u.id === userId) ?? null;
     },
 
+    async getMessageReactions(channel, ts) {
+      return messageReactions.get(`${channel}:${ts}`) ?? null;
+    },
+
+    async getPermalink(channel, ts) {
+      // Deterministic fake, assertable without per-test setup; a test that
+      // needs the not-found path overrides this property directly, the same
+      // way other tests already override getUserInfo/getMessageReactions.
+      return `https://fake-workspace.slack.com/archives/${channel}/p${ts.replace(".", "")}`;
+    },
+
     async openDirectMessage(userId) {
       return `D-${userId}`;
     },
@@ -237,6 +258,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setGrantedScopes(scopes) {
       grantedScopes = scopes ? new Set(scopes) : null;
+    },
+
+    setMessageReactions(channel, ts, reactions) {
+      messageReactions.set(`${channel}:${ts}`, [...reactions]);
     },
   };
 }

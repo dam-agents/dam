@@ -71,7 +71,12 @@ export interface SchedulesService {
     input: ScheduleCreateCronInput,
     createdBy?: ScheduleCreator,
   ) => Promise<Schedule>;
-  createRRule: (input: ScheduleCreateRRuleInput) => Promise<Schedule>;
+  /** `createdBy` defaults to "user" when omitted, same convention as
+   *  createCron. */
+  createRRule: (
+    input: ScheduleCreateRRuleInput,
+    createdBy?: ScheduleCreator,
+  ) => Promise<Schedule>;
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
