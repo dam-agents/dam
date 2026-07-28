@@ -34,6 +34,9 @@ export const wizardSnapshotSchema = z.object({
   templateId: z.string().nullable(),
   /** The installation procedure; set only on the `knowledge-base` path. */
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
+  // Filters step 1 to VM-backed templates. Not sent on create — the backend
+  // rides the chosen template — and inert unless the vm-sandboxes feature is on.
+  vm: z.boolean().default(false),
   customImage: z.string(),
   name: z.string(),
   // The selected provider Connection (the single credential model). A snapshot
@@ -63,6 +66,7 @@ export const EMPTY_SNAPSHOT: WizardSnapshot = {
   startingPoint: null,
   templateId: null,
   kbTemplateId: null,
+  vm: false,
   customImage: "",
   name: "",
   providerRef: null,
