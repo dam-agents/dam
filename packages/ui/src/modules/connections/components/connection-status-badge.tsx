@@ -3,19 +3,19 @@ import type { ConnectionStatus } from "api-server-api";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 const STATUS_PRESENTATION: Record<
-  ConnectionStatus,
+  Exclude<ConnectionStatus, "active">,
   { label: string; variant: BadgeProps["variant"] }
 > = {
-  active: { label: "Connected", variant: "success" },
   pending: { label: "Authorizing…", variant: "muted" },
   expired: { label: "Expired", variant: "danger" },
   disconnected: { label: "Disconnected", variant: "muted" },
 };
 
+/** Active connections render no badge; callers only show this for the rest. */
 export function ConnectionStatusBadge({
   status,
 }: {
-  status: ConnectionStatus;
+  status: Exclude<ConnectionStatus, "active">;
 }) {
   const { label, variant } = STATUS_PRESENTATION[status];
   return <Badge variant={variant}>{label}</Badge>;
