@@ -93,7 +93,7 @@ function ProviderText({
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <p className="text-[16px] font-medium text-foreground">{name}</p>
-{connected && <Badge variant="success">Connected</Badge>}
+        {connected && <Badge variant="success">Connected</Badge>}
       </div>
       <p className="text-[14px] text-muted-foreground">{description}</p>
     </div>

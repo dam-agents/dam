@@ -7,7 +7,6 @@ import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { offeredProviderRows } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
-import { ConnectedBadge } from "./connected-badge.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { type ProviderRef, providerRef } from "./provider-item.js";
 
@@ -77,7 +76,9 @@ export function ProviderSelect({
       row.type === recommended ? (
         <Badge variant="muted">Recommended</Badge>
       ) : undefined,
-    triggerBadge: itemByType.has(row.type) ? <ConnectedBadge /> : undefined,
+    triggerBadge: itemByType.has(row.type) ? (
+      <Badge variant="success">Connected</Badge>
+    ) : undefined,
     trailing: itemByType.has(row.type) ? undefined : (
       <span className="shrink-0 text-[13px] text-muted-foreground">
         Connect
