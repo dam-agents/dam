@@ -18,6 +18,7 @@ import { SkillRenderModal } from "./skill-render-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import {
+  StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
   StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
@@ -181,10 +182,12 @@ export function SkillsSurface({
               onPublish={setPublishFor}
               action={addSourceButton}
             />
-          ) : (
+          ) : readOnly ? (
             // Stopped/starting: the list is on the offline pod, so show the
             // section with a placeholder instead of dropping it.
-            readOnly && <StandaloneSkillsPlaceholder />
+            <StandaloneSkillsPlaceholder />
+          ) : (
+            <StandaloneSkillsEmptyState action={addSourceButton} />
           )}
 
           {builtIn.length > 0 && <BuiltInSkillsGroup skills={builtIn} />}

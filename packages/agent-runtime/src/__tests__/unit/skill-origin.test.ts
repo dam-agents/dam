@@ -106,6 +106,53 @@ describe("listLocal origin classification", () => {
     expect(skills[0].origin).toBe("system-modified");
   });
 
+  it("finds counterparts in any pristine root, e.g. the staged-skills dir", async () => {
+    const staged = path.join(tmp, "staged") as SkillPath;
+    await fs.mkdir(staged, { recursive: true });
+    await writeSkill(staged, "dam-experiment", skillMd("dam-experiment"));
+    await writeSkill(local[0], "dam-experiment", skillMd("dam-experiment"));
+
+    const repo = createLocalSkillRepository();
+    const skills = await repo.listLocal(local, [...pristine, staged]);
+
+    expect(skills[0].origin).toBe("system");
+  });
+
+  it("ignores a pristine dir without a SKILL.md (not a skill counterpart)", async () => {
+    // e.g. the staged kit's `commands/` dir sharing a root with real skills.
+    await fs.mkdir(path.join(pristine[0], "commands"), { recursive: true });
+    await fs.writeFile(
+      path.join(pristine[0], "commands", "foo.md"),
+      "not a skill\n",
+    );
+    await writeSkill(local[0], "commands", skillMd("commands"));
+
+    const repo = createLocalSkillRepository();
+    const skills = await repo.listLocal(local, pristine);
+
+    expect(skills[0].origin).toBe("user");
+  });
+
+  it("degrades an unhashable local copy to system-modified instead of throwing", async () => {
+    await writeSkill(pristine[0], "broken", skillMd("broken"));
+    await writeSkill(local[0], "broken", skillMd("broken"));
+    await writeSkill(local[0], "healthy", skillMd("healthy"));
+    const unreadable = path.join(local[0], "broken", "secret.txt");
+    await fs.writeFile(unreadable, "cannot read me\n");
+    await fs.chmod(unreadable, 0o000);
+
+    try {
+      const repo = createLocalSkillRepository();
+      const skills = await repo.listLocal(local, pristine);
+
+      const byName = Object.fromEntries(skills.map((s) => [s.name, s.origin]));
+      expect(byName["broken"]).toBe("system-modified");
+      expect(byName["healthy"]).toBe("user");
+    } finally {
+      await fs.chmod(unreadable, 0o644);
+    }
+  });
+
   it("stamps no origin when pristine paths aren't provided", async () => {
     await writeSkill(local[0], "my-own", skillMd("my-own"));
 

@@ -12,6 +12,7 @@ import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
+import { STAGED_SKILLS_DIR } from "agent-runtime-api";
 import {
   OP_INPUT,
   OP_OUTPUT,
@@ -84,14 +85,19 @@ const runtimeManifest = loadManifest(manifestPath);
 // Boot-time module composition. Skills + Files services are stable across the
 // lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
-// Pristine counterparts for origin classification. The filter drops
-// non-$HOME manifest paths — those re-expand to themselves and would
-// compare a skill against its own directory.
+// Pristine roots for origin classification: the manifest paths re-expanded
+// against the image workspace root, plus the staged-skills dir (system
+// skills an Install Command copies in post-create). The Set drops non-$HOME
+// manifest paths — those re-expand to themselves and would compare a skill
+// against its own directory.
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
-const pristineSkillPaths = skillRefPaths(
-  runtimeManifest,
-  config.IMAGE_WORKSPACE_DIR,
-).filter((p, i) => p !== readSidePaths[i]);
+const readSideSet = new Set(readSidePaths);
+const pristineSkillPaths = [
+  ...skillRefPaths(runtimeManifest, config.IMAGE_WORKSPACE_DIR).filter(
+    (p) => !readSideSet.has(p),
+  ),
+  STAGED_SKILLS_DIR,
+];
 const skillsService = composeSkills({
   skillPaths: readSidePaths,
   pristineSkillPaths,

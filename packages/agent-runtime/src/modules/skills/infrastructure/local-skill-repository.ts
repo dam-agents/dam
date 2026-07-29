@@ -190,7 +190,10 @@ async function classifyOrigin(
     pristinePaths,
     pristineHashes,
   );
-  const localHash = pristineHash === null ? null : await hashSkillDir(localDir);
+  // Guarded on both sides: an unhashable local copy (unreadable file, a
+  // deletion racing the listing) must degrade, never throw the listing away.
+  const localHash =
+    pristineHash === null ? null : await hashSkillDirIfPresent(localDir);
   return judgeOrigin(localHash, pristineHash);
 }
 
@@ -212,10 +215,12 @@ async function firstPristineHash(
   return null;
 }
 
-/** null when the directory is absent or unreadable. */
+/** null when the directory is absent, unreadable, or not a skill (no
+ *  SKILL.md — keeps non-skill dirs in a pristine root, e.g. the staged kit's
+ *  `commands/`, from counting as counterparts). */
 async function hashSkillDirIfPresent(absDir: string): Promise<string | null> {
   try {
-    if (!(await fs.stat(absDir)).isDirectory()) return null;
+    await fs.access(path.join(absDir, "SKILL.md"));
     return await hashSkillDir(absDir);
   } catch {
     return null;

@@ -65,14 +65,17 @@ export async function publishSkill(
     });
   }
 
-  // Untouched image-shipped skills aren't the user's to publish (#2828).
-  // `system-modified` passes — the divergence is the user's; missing origin
-  // (pre-provenance pod) stays publishable.
+  // Image-shipped skills aren't the user's to publish (#2828) — modified or
+  // not: divergence (a user edit, or an image upgrade moving the baked copy)
+  // doesn't transfer ownership, so the gate can't be disarmed by appending a
+  // byte or by a routine image bump. Missing origin (pre-provenance pod)
+  // stays publishable.
   const local = await deps.runtimeClient.listLocal(input.agentId);
-  if (local.find((s) => s.name === input.name)?.origin === "system") {
+  const origin = local.find((s) => s.name === input.name)?.origin;
+  if (origin === "system" || origin === "system-modified") {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `"${input.name}" is built into this sandbox's image and can't be published`,
+      message: `"${input.name}" is included with this sandbox's image and can't be published`,
     });
   }
 

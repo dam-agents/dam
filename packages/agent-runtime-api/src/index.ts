@@ -49,6 +49,7 @@ export {
 } from "./modules/skills/schemas.js";
 export {
   SKILL_SOURCE_ROOTS,
+  STAGED_SKILLS_DIR,
   dedupeByName,
 } from "./modules/skills/source-roots.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
