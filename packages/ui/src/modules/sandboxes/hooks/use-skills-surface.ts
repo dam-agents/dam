@@ -59,6 +59,9 @@ export interface SkillsSurface {
   ) => Promise<
     { ok: true } | { ok: false; conflictNames: string[]; message: string }
   >;
+  /** Delete a standalone skill from the sandbox. Returns whether it was
+   *  removed; the mutation's result is the authoritative remaining list. */
+  deleteStandalone: (skill: LocalSkill) => Promise<boolean>;
   /** Delete a Skill Source; returns whether it was removed. */
   removeSource: (id: string) => Promise<boolean>;
   /** Re-scan a source: refresh its scan cache, then re-list. The card shows a
@@ -315,6 +318,21 @@ export function useSkillsSurface(
     [agentId],
   );
 
+  const deleteStandalone = useCallback(
+    async (skill: LocalSkill) => {
+      if (!agentId) return false;
+      const result = await runAction(
+        () => api.skills.deleteLocal.mutate({ agentId, name: skill.name }),
+        `Failed to delete ${skill.name}`,
+      );
+      if (result === ACTION_FAILED) return false;
+      setStandalone(result);
+      emitToast({ kind: "success", message: `Deleted ${skill.name}` });
+      return true;
+    },
+    [agentId],
+  );
+
   const removeSource = useCallback(async (id: string) => {
     const result = await runAction(
       () => api.skills.sources.delete.mutate({ id }),
@@ -424,6 +442,7 @@ export function useSkillsSurface(
     update,
     createSource,
     createLocalSkills,
+    deleteStandalone,
     removeSource,
     refreshSource,
     publish,

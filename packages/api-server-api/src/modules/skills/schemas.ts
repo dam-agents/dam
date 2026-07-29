@@ -169,6 +169,14 @@ export const skillStateInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+/** Remove a standalone Local Skill's directory from every Skill Path on the
+ *  pod. `name` is what `state`/`listLocal` reported, which is the frontmatter
+ *  display name — the pod resolves it to a directory. */
+export const skillDeleteLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
 export const skillPublishInputSchema = z.object({
   agentId: z.string().min(1),
   sourceId: z.string().min(1),

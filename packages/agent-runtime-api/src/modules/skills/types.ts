@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { Result } from "../../result.js";
 import type {
+  skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
@@ -14,6 +15,7 @@ export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
+export type SkillDeleteLocalInput = z.infer<typeof skillDeleteLocalInputSchema>;
 export type SkillWriteLocalInput = z.infer<typeof skillWriteLocalInputSchema>;
 
 export interface ScannedSkill {
@@ -99,6 +101,9 @@ export interface SkillsService {
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
+  deleteLocal: (
+    input: SkillDeleteLocalInput,
+  ) => Promise<Result<void, SkillsDomainError>>;
   writeLocal: (
     input: SkillWriteLocalInput,
   ) => Promise<Result<LocalSkill[], SkillsDomainError>>;

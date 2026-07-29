@@ -1,4 +1,10 @@
-import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
+import type {
+  LocalSkill,
+  Skill,
+  SkillPublishRecord,
+  SkillRef,
+  SkillSource,
+} from "api-server-api";
 import { Plus, Upload } from "lucide-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
@@ -75,6 +81,7 @@ export function SkillsSurface({
     update,
     createSource,
     createLocalSkills,
+    deleteStandalone,
     removeSource,
     refreshSource,
     publish,
@@ -89,6 +96,38 @@ export function SkillsSurface({
   const builtIn = standalone.filter(
     (s) => s.origin === "system" || s.origin === "system-modified",
   );
+
+  const deleteWithConfirm = async (
+    skill: LocalSkill,
+    pub?: SkillPublishRecord,
+  ) => {
+    // State-neutral wording about the PR: the "In review" pill is never
+    // refreshed against GitHub, so we can't claim the PR is still open (#3019).
+    const ok = await showConfirm(
+      <>
+        This skill will be removed from the sandbox.
+        {pub && (
+          // Leading space joins this onto the sentence above: JSX drops the
+          // newline whitespace that would otherwise separate them.
+          <>
+            {" The "}
+            <a
+              href={pub.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              pull request
+            </a>{" "}
+            you published to {pub.sourceName} isn't withdrawn.
+          </>
+        )}
+      </>,
+      `Delete ${skill.name}?`,
+      { kind: "destructive", confirmLabel: "Delete skill" },
+    );
+    if (ok) await deleteStandalone(skill);
+  };
 
   const removeWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
@@ -180,6 +219,7 @@ export function SkillsSurface({
               publishes={publishes}
               canPublish={publishableSources.length > 0}
               onPublish={setPublishFor}
+              onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
               action={addSourceButton}
             />
           ) : readOnly ? (

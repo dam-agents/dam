@@ -43,6 +43,7 @@ export interface AgentRuntimeSkillsClient {
     agentId: string,
     skills: { name: string; content: string }[],
   ): Promise<LocalSkill[]>;
+  deleteLocal(agentId: string, name: string): Promise<void>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -169,6 +170,11 @@ export function createAgentRuntimeSkillsClient(
           makeClient(agentId, namespace).skills.writeLocal.mutate({ skills }),
       );
       return created as LocalSkill[];
+    },
+    deleteLocal: async (agentId, name) => {
+      await runWithUpstreamMapping(`agent-runtime deleteLocal ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.deleteLocal.mutate({ name }),
+      );
     },
   };
 }

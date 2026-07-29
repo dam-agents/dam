@@ -27,6 +27,7 @@ export type {
   LocalSkillFile,
   ScannedSkill,
   SkillInstallInput,
+  SkillDeleteLocalInput,
   SkillInstallResult,
   SkillOrigin,
   SkillPublishInput,
@@ -40,6 +41,7 @@ export type {
   SkillWriteLocalInput,
 } from "./modules/skills/types.js";
 export {
+  skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
