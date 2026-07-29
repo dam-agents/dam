@@ -4,8 +4,6 @@ Shared content guidelines for writing GitHub issues.
 
 A GitHub issue should read like a product ticket, not an engineering plan. The reader should understand **what problem exists** and **what success looks like** — enough context to see *why it matters*, without being told *how to build it*.
 
-On solutions: usually it's best to state the problem and invite discussion. But if you're confident in an outcome, you may state it — as long as you show the reasoning, so someone else can follow it to the same conclusion. The problem to avoid isn't proposing a solution; it's an *unexplained* one that shuts down discussion before it starts.
-
 Keep it concise and easy to digest.
 
 ## Which type?
