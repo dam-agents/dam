@@ -3,10 +3,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /** The card surface, for elements that must be something other than a `div` —
- *  see `CardButton`. In dark mode `--card` equals `--background`, so a downward
- *  shadow is invisible; the light lift is what separates a card from the page. */
-export const CARD_SURFACE =
-  "rounded-lg bg-card text-card-foreground border dark:shadow-[0_2px_5px_0_rgb(255_255_255_/_0.12)]";
+ *  see `CardButton`. */
+export const CARD_SURFACE = "rounded-lg bg-card text-card-foreground border";
 
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
