@@ -1,11 +1,10 @@
 import { LogoGithub } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
 import { Upload } from "lucide-react";
-import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
-import { cn } from "@/lib/utils";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 
 import { useGithubSourceForm } from "../../hooks/use-github-source-form.js";
 import { useUploadStaging } from "../../hooks/use-upload-staging.js";
@@ -13,6 +12,15 @@ import { GithubSourceTab } from "./github-source-tab.js";
 import { UploadSkillsTab } from "./upload-skills-tab.js";
 
 type Tab = "github" | "upload";
+
+const TABS: readonly TabDef<Tab>[] = [
+  {
+    value: "github",
+    label: "GitHub repository",
+    icon: <LogoGithub size={15} />,
+  },
+  { value: "upload", label: "Upload .md files", icon: <Upload size={15} /> },
+];
 
 /**
  * Add a Skill Source or upload skills. Two tabs — a GitHub repository (a
@@ -56,18 +64,13 @@ export function AddSkillSourceModal({
     <Modal>
       <DialogHeader title="Add skill source" onClose={onClose} />
 
-      <div role="tablist" className="flex border-b border-border px-5 md:px-7">
-        <TabButton active={tab === "github"} onClick={() => setTab("github")}>
-          <LogoGithub size={15} /> GitHub repository
-        </TabButton>
-        <TabButton
-          active={tab === "upload"}
-          onClick={() => setTab("upload")}
-          className="ml-6"
-        >
-          <Upload size={15} /> Upload .md files
-        </TabButton>
-      </div>
+      <Tabs
+        ariaLabel="Skill source"
+        tabs={TABS}
+        value={tab}
+        onValueChange={setTab}
+        className="px-5 md:px-7"
+      />
 
       {tab === "github" ? (
         <GithubSourceTab github={githubForm} onClose={onClose} />
@@ -75,35 +78,5 @@ export function AddSkillSourceModal({
         <UploadSkillsTab staging={uploadStaging} onClose={onClose} />
       )}
     </Modal>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  className,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2 border-b-2 px-1 py-3 text-[14px] transition-colors",
-        active
-          ? "border-foreground font-medium text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground",
-        className,
-      )}
-    >
-      {children}
-    </button>
   );
 }

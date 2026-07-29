@@ -2,6 +2,7 @@ import { OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CardButton } from "@/components/ui/card-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,17 +34,16 @@ export function ProviderRow({
 
   if (!connected) {
     return (
-      <button
-        type="button"
+      <CardButton
         onClick={onConnect}
-        className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-start gap-3 p-4"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
         <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
           Connect
         </span>
-      </button>
+      </CardButton>
     );
   }
 

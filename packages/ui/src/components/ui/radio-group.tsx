@@ -54,8 +54,10 @@ function RadioGroupItem({
       )}
       {...props}
     >
-      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-primary">
-        <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-primary" />
+      {/* Fixed px, not rem: the root font-size is 15px, so rem sizes land the
+          dot on half device pixels and it reads as off-centre. */}
+      <span className="mt-0.5 flex size-[16px] shrink-0 items-center justify-center rounded-full border border-primary">
+        <RadioGroupPrimitive.Indicator className="size-[8px] rounded-full bg-primary" />
       </span>
       <span className="flex flex-1 flex-col gap-0.5">
         <span

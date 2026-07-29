@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
@@ -27,13 +28,13 @@ import type { SettingsTab } from "../../platform/lib/routes.js";
 import { useAppVersion } from "../api/queries.js";
 import { ProvidersView } from "./providers-view.js";
 
-const baseTabs: { id: SettingsTab; label: string }[] = [
-  { id: "account", label: "Account" },
-  { id: "appearance", label: "Appearance" },
-  { id: "providers", label: "Providers" },
-  { id: "connections", label: "Connections" },
-  { id: "api-keys", label: "API keys" },
-  { id: "usage", label: "Usage" },
+const baseTabs: readonly TabDef<SettingsTab>[] = [
+  { value: "account", label: "Account" },
+  { value: "appearance", label: "Appearance" },
+  { value: "providers", label: "Providers" },
+  { value: "connections", label: "Connections" },
+  { value: "api-keys", label: "API keys" },
+  { value: "usage", label: "Usage" },
 ];
 
 const themeOptions = [
@@ -66,7 +67,7 @@ export function SettingsView() {
   const tabs = [
     ...baseTabs,
     ...(showFeatures
-      ? [{ id: "features" as const, label: "Experimental features" }]
+      ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
   ];
   const rawTab = useStore((s) => s.settingsTab);
@@ -94,25 +95,17 @@ export function SettingsView() {
 
   return (
     <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
-      {/* Tab sidebar */}
-      <div className="flex md:flex-col gap-1 md:w-[180px] shrink-0">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => navigateToSettings(tab.id)}
-            className={cn(
-              "px-3 py-2 text-[14px] font-medium rounded-lg text-left transition-colors",
-              activeTab === tab.id
-                ? "text-primary bg-muted"
-                : "text-foreground/80 hover:text-foreground hover:bg-muted",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="Settings sections"
+        tabs={tabs}
+        value={activeTab}
+        onValueChange={navigateToSettings}
+        variant="pill"
+        size="sm"
+        orientation="vertical"
+        className="flex-row md:flex-col md:w-[180px] shrink-0"
+      />
 
-      {/* Tab content */}
       <div className="flex-1 min-w-0">
         {activeTab === "appearance" && (
           <div className="anim-in">

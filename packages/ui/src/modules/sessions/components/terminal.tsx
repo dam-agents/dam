@@ -10,10 +10,11 @@ import {
   OP_INPUT,
   OP_OUTPUT,
 } from "api-server-api";
-import { Loader2, TerminalIcon, XCircle } from "lucide-react";
+import { TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
 
@@ -191,7 +192,7 @@ export function Terminal({
       {state === "connecting" && (
         <div className="absolute inset-0 z-content flex items-center justify-center bg-bg/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 text-[14px] text-text-muted">
-            <Loader2 size={18} className="animate-spin" />
+            <Spinner size={18} />
             Connecting terminal...
           </div>
         </div>

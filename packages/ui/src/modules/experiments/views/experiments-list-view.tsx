@@ -85,13 +85,14 @@ export function ExperimentsListView() {
         <p className="mt-6 text-[13px] text-muted-foreground">
           Deleting a sandbox doesn&apos;t delete its experiments — the runs and
           their published results stay in the{" "}
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={() => setView("artifacts")}
-            className="text-accent hover:underline"
+            className="text-accent"
           >
             artifact library
-          </button>
+          </Button>
           .
         </p>
       )}

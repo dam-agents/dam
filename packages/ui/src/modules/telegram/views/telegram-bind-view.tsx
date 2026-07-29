@@ -126,13 +126,14 @@ export function TelegramBindView() {
       {creating ? (
         <CreateAgentInline onCreated={handleCreated} />
       ) : hasAgents ? (
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="inline"
           onClick={openCreateForm}
-          className="self-start text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="self-start text-sm text-muted-foreground hover:text-foreground"
         >
           + Create a new agent
-        </button>
+        </Button>
       ) : null}
     </Page>
   );

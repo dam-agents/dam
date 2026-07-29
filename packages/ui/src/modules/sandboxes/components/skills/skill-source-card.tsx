@@ -3,17 +3,18 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Loader2,
   MoreHorizontal,
 } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
 import { cn } from "@/lib/utils";
@@ -55,13 +56,14 @@ function SourceError({
         </a>
       ) : (
         onManageConnections && (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={onManageConnections}
-            className="shrink-0 font-semibold underline hover:opacity-80"
+            className="shrink-0 font-semibold text-current underline hover:opacity-80"
           >
             Manage connections
-          </button>
+          </Button>
         )
       )}
     </div>
@@ -174,21 +176,20 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {loading && (
-            <Loader2 size={15} className="animate-spin text-muted-foreground" />
-          )}
+          {loading && <Spinner size={15} className="text-muted-foreground" />}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even
               while the agent is stopped. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 title="Source actions"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="shrink-0 text-muted-foreground"
               >
                 <MoreHorizontal size={18} />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>

@@ -4,7 +4,6 @@ import {
   AlertCircle,
   ArrowLeft,
   FileText as FileIcon,
-  Loader2,
   MoreVertical,
   RefreshCw,
   Trash2,
@@ -28,6 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -461,12 +461,15 @@ export function ChatView() {
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-content`}
       >
-        <button
-          className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+        <Button
+          variant="link"
+          size="inline"
+          aria-label="Back to sandboxes"
           onClick={handleBack}
+          className="md:hidden gap-1 text-[13px] font-medium text-text-secondary hover:text-accent"
         >
           <ArrowLeft size={14} />
-        </button>
+        </Button>
         <div className="group flex items-center gap-3 min-w-0">
           <span
             aria-hidden
@@ -638,10 +641,7 @@ export function ChatView() {
                       messages.length === 0 &&
                       (launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
-                          <Loader2
-                            size={22}
-                            className="mx-auto mb-3 animate-spin text-text-muted"
-                          />
+                          <Spinner size={22} className="mb-3 text-text-muted" />
                           <p className="text-[16px] font-bold text-text mb-2">
                             Starting the run…
                           </p>

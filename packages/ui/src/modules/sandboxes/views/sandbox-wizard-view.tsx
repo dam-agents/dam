@@ -203,13 +203,14 @@ export function SandboxWizardView() {
     ) : (
       <>
         {registryPartial && (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={() => update({ step: 1 })}
-            className="text-[13px] text-destructive underline underline-offset-2"
+            className="whitespace-normal text-left text-[13px] text-destructive underline"
           >
             Finish the private-registry credentials on step 1
-          </button>
+          </Button>
         )}
         <Button onClick={finish} disabled={creating || registryPartial}>
           {creating ? "Creating…" : createLabel(snapshot.startingPoint)}

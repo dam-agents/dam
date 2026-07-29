@@ -2,8 +2,8 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
 
 import { useAppConnections } from "../api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
@@ -55,6 +55,16 @@ export function ConnectionCatalogModal({
     connectionsQ.data ?? NO_CONNECTIONS,
   );
   const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
+  const catalogTabs = useMemo<TabDef<CatalogTab>[]>(
+    () =>
+      CATALOG_TAB_ORDER.map((tab) => ({
+        value: tab,
+        label: CATALOG_TAB_LABEL[tab],
+        trailing: <span className="text-muted-foreground">{counts[tab]}</span>,
+        testId: `catalog-tab-${tab}`,
+      })),
+    [counts],
+  );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
 
   // Deleting a granted connection also drops its grant (#2426).
@@ -110,28 +120,19 @@ export function ConnectionCatalogModal({
         closeTestId="catalog-close"
       />
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[200px] shrink-0 flex-col gap-1 border-r border-border-light p-3">
-          {CATALOG_TAB_ORDER.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => {
-                setActiveTab(tab);
-                setPane({ kind: "browse" });
-              }}
-              data-testid={`catalog-tab-${tab}`}
-              className={cn(
-                "flex h-[44px] items-center justify-between rounded-lg px-4 text-[14px]",
-                tab === activeTab && pane.kind === "browse"
-                  ? "bg-muted font-semibold text-foreground"
-                  : "text-foreground hover:bg-muted/60",
-              )}
-            >
-              {CATALOG_TAB_LABEL[tab]}
-              <span className="text-muted-foreground">{counts[tab]}</span>
-            </button>
-          ))}
-        </nav>
+        <Tabs
+          ariaLabel="Connection categories"
+          tabs={catalogTabs}
+          // No tab is highlighted while a create/choose pane is open.
+          value={pane.kind === "browse" ? activeTab : null}
+          onValueChange={(tab) => {
+            setActiveTab(tab);
+            setPane({ kind: "browse" });
+          }}
+          variant="pill"
+          orientation="vertical"
+          className="w-[200px] shrink-0 border-r border-border-light p-3"
+        />
         <div className="flex min-h-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">

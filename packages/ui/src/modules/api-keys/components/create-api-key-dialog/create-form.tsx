@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -155,20 +156,26 @@ interface ScopeOptionProps {
 }
 
 function ScopeOption({ scope, checked, onToggle }: ScopeOptionProps) {
+  const id = `api-key-scope-${scope}`;
   return (
-    <label className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 cursor-pointer">
-      <input
-        type="checkbox"
+    // The whole row is the label, so its padding and hover area are also the
+    // click target.
+    <label
+      htmlFor={id}
+      className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 cursor-pointer"
+    >
+      <Checkbox
+        id={id}
         checked={checked}
-        onChange={onToggle}
+        onCheckedChange={onToggle}
         className="mt-1"
       />
-      <div className="flex-1">
+      <span className="flex-1">
         <code className="text-[13px] font-semibold">{scope}</code>
         <span className="text-[12px] text-muted-foreground block">
           {scopeDescription(scope)}
         </span>
-      </div>
+      </span>
     </label>
   );
 }

@@ -1,6 +1,6 @@
 import { Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -246,7 +247,7 @@ export function SessionsSidebar({
             className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
-            <Loader2 size={14} className="shrink-0 animate-spin" />
+            <Spinner />
             <span className="min-w-0 flex-1 truncate">
               Starting run — waking the agent…
             </span>

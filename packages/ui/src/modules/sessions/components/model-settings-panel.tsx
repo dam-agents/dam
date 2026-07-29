@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { queryClient } from "../../../query-client.js";
@@ -206,7 +207,7 @@ export function ModelSettingsPanel({
 function SavingHint() {
   return (
     <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-text-muted">
-      <Loader2 size={11} className="animate-spin" />
+      <Spinner size={11} />
       Saving…
     </span>
   );

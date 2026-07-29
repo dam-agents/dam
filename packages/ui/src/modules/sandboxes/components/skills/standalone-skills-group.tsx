@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
@@ -148,8 +149,9 @@ export function StandaloneSkillsGroup({
                   <GitPullRequest size={13} /> In review · {pub.sourceName}
                 </a>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="xs"
                   disabled={!canPublish}
                   onClick={() => onPublish(skill)}
                   title={
@@ -157,21 +159,22 @@ export function StandaloneSkillsGroup({
                       ? "Publish this skill as a pull request"
                       : "Add a GitHub source first to publish there"
                   }
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  className="shrink-0 gap-1.5"
                 >
                   Publish <ExternalLink size={13} />
-                </button>
+                </Button>
               )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     title="Skill actions"
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="shrink-0 text-muted-foreground"
                   >
                     <MoreHorizontal size={18} />
-                  </button>
+                  </Button>
                 </DropdownMenuTrigger>
                 {/* Download and Delete have no backend yet (deferred) — shown
                     disabled so the affordance is visible without dead actions. */}

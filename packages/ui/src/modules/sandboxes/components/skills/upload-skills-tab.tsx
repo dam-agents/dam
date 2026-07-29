@@ -215,22 +215,24 @@ function StagedSkillRow({
           </p>
         )}
       </div>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-xs"
         title="Rename skill"
         onClick={onStartRename}
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="shrink-0 text-muted-foreground"
       >
         <Pencil size={16} />
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
         title="Remove skill"
         onClick={onRemove}
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="shrink-0 text-muted-foreground"
       >
         <Trash2 size={16} />
-      </button>
+      </Button>
     </div>
   );
 }

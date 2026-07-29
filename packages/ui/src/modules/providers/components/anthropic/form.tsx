@@ -5,6 +5,7 @@ import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
@@ -13,6 +14,11 @@ import {
   type AnthropicCredentialValues,
 } from "./credential-schema.js";
 import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
+
+const MODE_TABS: readonly TabDef<Mode>[] = MODE_KEYS.map((mode) => ({
+  value: mode,
+  label: MODES[mode].label,
+}));
 
 export function AnthropicForm({
   variant,
@@ -108,8 +114,8 @@ export function AnthropicForm({
       onCancel={onCancel}
     >
       {lockMode ? (
-        <div className="flex items-center gap-1 border-b">
-          <span className="h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] border-primary text-primary flex items-center">
+        <div className="flex items-center gap-4 border-b border-border">
+          <span className="-mb-px flex h-10 items-center border-b-2 border-foreground px-4 text-[13px] font-medium text-foreground">
             {MODES[initialMode].label}
           </span>
         </div>
@@ -214,24 +220,12 @@ function ModeToggle({
   onChange: (m: Mode) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b">
-      {MODE_KEYS.map((m) => {
-        const active = mode === m;
-        return (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onChange(m)}
-            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] transition-colors ${
-              active
-                ? "text-primary border-primary"
-                : "text-muted-foreground border-transparent hover:text-foreground"
-            }`}
-          >
-            {MODES[m].label}
-          </button>
-        );
-      })}
-    </div>
+    <Tabs
+      ariaLabel="Credential mode"
+      tabs={MODE_TABS}
+      value={mode}
+      onValueChange={onChange}
+      size="sm"
+    />
   );
 }

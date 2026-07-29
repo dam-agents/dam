@@ -1,6 +1,6 @@
 import { Add, Close } from "@carbon/icons-react";
 import { useState } from "react";
-import type { Control, UseFormRegister } from "react-hook-form";
+import type { Control } from "react-hook-form";
 import { Controller, useFieldArray, useWatch } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -12,6 +12,7 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -81,7 +82,7 @@ export function SlackChannelModal({
             />
           </FormField>
 
-          <AccessModePicker register={register} locked={editing} />
+          <AccessModePicker control={control} locked={editing} />
 
           {mode === "shared" && (
             <Controller
@@ -119,45 +120,42 @@ export function SlackChannelModal({
 }
 
 function AccessModePicker({
-  register,
+  control,
   locked,
 }: {
-  register: UseFormRegister<SlackChannelFormValues>;
+  control: Control<SlackChannelFormValues>;
   locked: boolean;
 }) {
   return (
-    <div
-      className="flex flex-col gap-2"
-      role="radiogroup"
-      aria-label="Access mode"
-    >
+    <div className="flex flex-col gap-2">
       <SectionLabel>Access mode</SectionLabel>
-      {MODE_OPTIONS.map((opt) => (
-        <label
-          key={opt.value}
-          className={cn(
-            "flex items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5",
-            locked ? "opacity-60" : "cursor-pointer",
-          )}
-        >
-          <input
-            type="radio"
-            value={opt.value}
-            disabled={locked}
-            aria-describedby={locked ? "slack-mode-locked" : undefined}
-            className="mt-1"
-            {...register("mode")}
-          />
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[14px] font-medium text-foreground">
-              {opt.label}
-            </span>
-            <span className="text-[13px] text-muted-foreground">
-              {opt.description}
-            </span>
-          </span>
-        </label>
-      ))}
+      <Controller
+        control={control}
+        name="mode"
+        render={({ field }) => (
+          <RadioGroup
+            aria-label="Access mode"
+            value={field.value}
+            onValueChange={field.onChange}
+            onBlur={field.onBlur}
+          >
+            {MODE_OPTIONS.map((opt) => (
+              <RadioGroupItem
+                key={opt.value}
+                value={opt.value}
+                label={opt.label}
+                description={opt.description}
+                disabled={locked}
+                aria-describedby={locked ? "slack-mode-locked" : undefined}
+                className={cn(
+                  "rounded-md border border-border bg-background px-3 py-2.5",
+                  locked ? "opacity-60" : "cursor-pointer",
+                )}
+              />
+            ))}
+          </RadioGroup>
+        )}
+      />
       {locked && (
         <p id="slack-mode-locked" className="text-[13px] text-muted-foreground">
           The mode is fixed per binding — disconnect and reconnect to change it.

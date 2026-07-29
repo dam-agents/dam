@@ -1,5 +1,5 @@
 import type { Experiment, TraceFeed } from "api-server-api";
-import { ChevronDown, Loader2, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -110,7 +111,7 @@ export function ExperimentDockPanel({
     >
       {launching ? (
         <>
-          <Loader2 size={14} className="animate-spin" />
+          <Spinner />
           Starting…
         </>
       ) : (
