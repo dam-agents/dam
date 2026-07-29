@@ -616,7 +616,7 @@ export function ChatView() {
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
-                        <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
+                        <Spinner size={20} className="text-accent" />
                         Loading session...
                       </div>
                     )}

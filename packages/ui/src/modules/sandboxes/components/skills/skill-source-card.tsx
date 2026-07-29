@@ -8,6 +8,7 @@ import {
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -153,12 +154,7 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border",
-        readOnly ? "bg-muted" : "bg-card",
-      )}
-    >
+    <Card className={cn(readOnly && "bg-muted")}>
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -262,6 +258,6 @@ export function SkillSourceCard({
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}
-    </div>
+    </Card>
   );
 }

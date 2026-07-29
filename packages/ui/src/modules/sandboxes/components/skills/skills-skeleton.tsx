@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+
 /** Placeholder rows shown while a source's skills load, shaped like the real
  *  skill rows so the card doesn't reflow (and never flashes "No skills"). The
  *  bars sit inside `<p>` lines with the same font-sizes as `SkillRow`, so each

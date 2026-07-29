@@ -202,17 +202,6 @@
   --ring: #ffffff;
 }
 
-/* ── Dark-mode card elevation ──
-   Card surfaces (`--card`) share the same value as `--background` in dark
-   mode, so the default downward dark shadow is invisible and borderless
-   cards melt into the page. Give the Card a soft light lift so it reads as
-   raised without a border. Scoped to `[data-slot="card"]` so the shared
-   shadow utilities on bordered overlays (modal, tooltip, sonner, popovers,
-   menus) keep their own styling instead of picking up a white halo. */
-.dark [data-slot="card"] {
-  box-shadow: 0 2px 5px 0 rgb(255 255 255 / 0.12);
-}
-
 @layer base {
   *,
   *::before,
@@ -287,11 +276,6 @@
     opacity: 0;
   }
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @keyframes slide {
   0% {
     transform: translateX(-100%);
@@ -353,9 +337,6 @@
 }
 .anim-blink {
   animation: blink 1s step-end infinite;
-}
-.anim-spin {
-  animation: spin 0.7s linear infinite;
 }
 .anim-slide {
   animation: slide 1s ease-in-out infinite;

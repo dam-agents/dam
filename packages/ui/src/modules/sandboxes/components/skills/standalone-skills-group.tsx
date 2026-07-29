@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,12 +109,7 @@ export function StandaloneSkillsGroup({
         <SectionLabel>Created in this sandbox</SectionLabel>
         {action}
       </div>
-      <div
-        className={cn(
-          "rounded-lg border border-border",
-          readOnly ? "bg-muted" : "bg-card",
-        )}
-      >
+      <Card className={cn(readOnly && "bg-muted")}>
         {skills.map((skill, i) => {
           const pub = published.get(skill.name);
           return (
@@ -191,7 +187,7 @@ export function StandaloneSkillsGroup({
             </div>
           );
         })}
-      </div>
+      </Card>
     </section>
   );
 }
