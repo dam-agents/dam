@@ -82,6 +82,7 @@ export function SkillsSurface({
     createSource,
     createLocalSkills,
     deleteStandalone,
+    downloadStandalone,
     removeSource,
     refreshSource,
     publish,
@@ -219,6 +220,7 @@ export function SkillsSurface({
               publishes={publishes}
               canPublish={publishableSources.length > 0}
               onPublish={setPublishFor}
+              onDownload={(skill) => void downloadStandalone(skill)}
               onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
               action={addSourceButton}
             />

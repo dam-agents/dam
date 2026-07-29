@@ -78,9 +78,9 @@ function latestPublishByName(
 /**
  * "Created in this sandbox" — Standalone Local Skills authored in place or
  * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
- * "In review" pill once it has a publish record), and the kebab deletes it. The
- * kebab's Download is shown disabled — no download backend yet (deferred).
- * There is no install toggle: standalone skills are simply present on disk.
+ * "In review" pill once it has a publish record), and the kebab downloads or
+ * deletes it. There is no install toggle: standalone skills are simply present
+ * on disk.
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -88,6 +88,7 @@ export function StandaloneSkillsGroup({
   publishes,
   canPublish,
   onPublish,
+  onDownload,
   onDelete,
   action,
 }: {
@@ -97,6 +98,7 @@ export function StandaloneSkillsGroup({
   /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: (skill: LocalSkill) => void;
+  onDownload: (skill: LocalSkill) => void;
   /** The row's latest publish record is passed along so the confirm dialog can
    *  mention the PR without re-deriving it in the parent. */
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
@@ -178,9 +180,7 @@ export function StandaloneSkillsGroup({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  {/* Download has no backend yet (deferred) — shown disabled so
-                      the affordance is visible without a dead action. */}
-                  <DropdownMenuItem disabled>
+                  <DropdownMenuItem onSelect={() => onDownload(skill)}>
                     <Download size={14} />
                     <span className="flex-1">Download skill</span>
                   </DropdownMenuItem>

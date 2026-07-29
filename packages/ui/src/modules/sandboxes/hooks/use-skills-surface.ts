@@ -11,6 +11,7 @@ import { api } from "../../../api.js";
 import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
+import { saveSkillFiles } from "../lib/skill-download.js";
 
 /** Row identity shared by the surface and its child components. */
 export const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -62,6 +63,8 @@ export interface SkillsSurface {
   /** Delete a standalone skill from the sandbox. Returns whether it was
    *  removed; the mutation's result is the authoritative remaining list. */
   deleteStandalone: (skill: LocalSkill) => Promise<boolean>;
+  /** Download a standalone skill's files (a lone SKILL.md as .md, else a .zip). */
+  downloadStandalone: (skill: LocalSkill) => Promise<void>;
   /** Delete a Skill Source; returns whether it was removed. */
   removeSource: (id: string) => Promise<boolean>;
   /** Re-scan a source: refresh its scan cache, then re-list. The card shows a
@@ -333,6 +336,21 @@ export function useSkillsSurface(
     [agentId],
   );
 
+  const downloadStandalone = useCallback(
+    async (skill: LocalSkill) => {
+      if (!agentId) return;
+      // runAction already toasts failures, including the pod's
+      // PAYLOAD_TOO_LARGE for a skill over the 5 MB cap. No success toast —
+      // the browser's download is the feedback.
+      const result = await runAction(
+        () => api.skills.readLocal.query({ agentId, name: skill.name }),
+        `Failed to download ${skill.name}`,
+      );
+      if (result !== ACTION_FAILED) saveSkillFiles(result);
+    },
+    [agentId],
+  );
+
   const removeSource = useCallback(async (id: string) => {
     const result = await runAction(
       () => api.skills.sources.delete.mutate({ id }),
@@ -443,6 +461,7 @@ export function useSkillsSurface(
     createSource,
     createLocalSkills,
     deleteStandalone,
+    downloadStandalone,
     removeSource,
     refreshSource,
     publish,

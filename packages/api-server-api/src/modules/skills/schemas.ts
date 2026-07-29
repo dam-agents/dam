@@ -177,6 +177,25 @@ export const skillDeleteLocalInputSchema = z.object({
   name: z.string().min(1),
 });
 
+export const skillReadLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
+/** Every file in a Local Skill's directory, plus the resolved directory
+ *  basename so the browser names the download from the on-disk identity. Caps
+ *  are enforced pod-side; `base64` marks a file whose content is binary. */
+export const skillLocalFilesSchema = z.object({
+  dir: z.string(),
+  files: z.array(
+    z.object({
+      relPath: z.string(),
+      content: z.string(),
+      base64: z.literal(true).optional(),
+    }),
+  ),
+});
+
 export const skillPublishInputSchema = z.object({
   agentId: z.string().min(1),
   sourceId: z.string().min(1),

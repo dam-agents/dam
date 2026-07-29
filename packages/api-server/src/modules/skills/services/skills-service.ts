@@ -7,8 +7,10 @@ import type {
   SkillCreateSourceInput,
   SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
   SkillPublishInput,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,
@@ -28,6 +30,7 @@ import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
+  AgentRuntimeClientError,
   AgentRuntimeConflictError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
@@ -222,6 +225,16 @@ async function resolveSourcePathByGitUrl(
   const seeds = deps.seedSources.map(seedToSkillSource);
   const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
   return merged.find((s) => s.gitUrl === gitUrl)?.path;
+}
+
+/** Re-throw a pod client-error verdict with its own code and message, so a
+ *  missing skill answers 404 and a cap breach 413 rather than a 500. Anything
+ *  else passes through untouched (and stays a server fault). */
+function asPodVerdict(err: unknown): unknown {
+  if (err instanceof AgentRuntimeClientError) {
+    return new TRPCError({ code: err.code, message: err.podMessage });
+  }
+  return err;
 }
 
 /** On-disk Local Skills minus anything tracked as installed-from-remote (by
@@ -524,7 +537,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `skill ${JSON.stringify(input.name)} is installed from a source; uninstall it instead`,
         });
       }
-      await deps.runtimeClient.deleteLocal(input.agentId, input.name);
+      try {
+        await deps.runtimeClient.deleteLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
       // Removing user-authored content from the agent's PV must be answerable
       // post-incident (parity with skill.create_local).
       securityLog("info", "skill.delete_local", {
@@ -540,6 +557,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // are left intact: a publish record logs something that really happened
       // and is reaped only by the AgentDeleted cleanup saga.
       return standaloneFor(deps, input.agentId, tracked);
+    },
+
+    async readLocal(input: SkillReadLocalInput): Promise<SkillLocalFiles> {
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      // A thin passthrough by design: the size caps and the not-found verdict
+      // are pod-side. No security log — the Files panel already serves
+      // arbitrary pod file content unlogged, so a skill read is strictly less.
+      try {
+        return await deps.runtimeClient.readLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
     },
 
     async publish(input: SkillPublishInput): Promise<SkillPublishResult> {

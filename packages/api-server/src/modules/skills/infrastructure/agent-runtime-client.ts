@@ -1,6 +1,6 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
-import type { LocalSkill, Skill } from "api-server-api";
+import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface PublishSkillCall {
@@ -44,6 +44,7 @@ export interface AgentRuntimeSkillsClient {
     skills: { name: string; content: string }[],
   ): Promise<LocalSkill[]>;
   deleteLocal(agentId: string, name: string): Promise<void>;
+  readLocal(agentId: string, name: string): Promise<SkillLocalFiles>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -75,6 +76,32 @@ export class AgentRuntimeConflictError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AgentRuntimeConflictError";
+  }
+}
+
+/** Pod verdicts that describe the *caller's* request, not a server fault, so
+ *  they must keep their code on the way out. CONFLICT is deliberately absent —
+ *  it has its own class above, which `createLocal` catches by type. */
+const PASSTHROUGH_CODES = new Set([
+  "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
+  "BAD_REQUEST",
+]);
+
+/** The pod returned a client-error verdict (missing skill, cap breach, invalid
+ *  name). Carries the code so the service re-throws it with the right status
+ *  instead of flattening a user error into a 500. */
+export class AgentRuntimeClientError extends Error {
+  constructor(
+    label: string,
+    /** The pod's own message, with none of this hop's internals — what a
+     *  caller may safely surface to the user. `message` keeps the labelled
+     *  form so api-server logs still say which call on which agent failed. */
+    public readonly podMessage: string,
+    public readonly code: "NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "BAD_REQUEST",
+  ) {
+    super(`${label}: ${podMessage}`);
+    this.name = "AgentRuntimeClientError";
   }
 }
 
@@ -127,6 +154,13 @@ async function runWithUpstreamMapping<T>(
       if (data.code === "CONFLICT") {
         throw new AgentRuntimeConflictError(e.message);
       }
+      if (typeof data.code === "string" && PASSTHROUGH_CODES.has(data.code)) {
+        throw new AgentRuntimeClientError(
+          label,
+          e.message,
+          data.code as AgentRuntimeClientError["code"],
+        );
+      }
       const upstream = data.upstream;
       if (isUpstreamGatewayError(upstream)) {
         throw new AgentRuntimeUpstreamError(`${label}: ${e.message}`, upstream);
@@ -176,5 +210,9 @@ export function createAgentRuntimeSkillsClient(
         makeClient(agentId, namespace).skills.deleteLocal.mutate({ name }),
       );
     },
+    readLocal: (agentId, name) =>
+      runWithUpstreamMapping(`agent-runtime readLocal ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readLocal.query({ name }),
+      ),
   };
 }

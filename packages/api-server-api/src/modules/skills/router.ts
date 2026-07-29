@@ -18,8 +18,10 @@ import {
   skillListInputSchema,
   skillListLocalInputSchema,
   skillListSourcesInputSchema,
+  skillLocalFilesSchema,
   skillPublishInputSchema,
   skillPublishResultSchema,
+  skillReadLocalInputSchema,
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
@@ -104,6 +106,15 @@ export const skillsRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.skills.listLocal(input.agentId);
+    }),
+
+  // A read, so readAgentProcedure rather than manageAgentsProcedure.
+  readLocal: readAgentProcedure
+    .input(skillReadLocalInputSchema)
+    .output(skillLocalFilesSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.skills.readLocal(input);
     }),
 
   state: readAgentProcedure

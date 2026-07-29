@@ -45,6 +45,9 @@ export interface LocalSkillFile {
 }
 
 export interface SkillReadLocalResult {
+  /** The skill's on-disk directory basename — may differ from the requested
+   *  name, which is the frontmatter `name:` for anything writeLocal created. */
+  dir: string;
   files: LocalSkillFile[];
 }
 

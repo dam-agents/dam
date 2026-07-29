@@ -31,12 +31,16 @@ export interface LocalSkillRepository {
     pristinePaths?: SkillPath[],
   ) => Promise<LocalSkill[]>;
   /** Read every file in a skill's directory, enforcing the per-file and
-   *  per-skill caps. Errors with `SkillNotFound` when no skillPath contains
-   *  the named skill, `PayloadTooLarge` on cap breach. */
+   *  per-skill caps. Returns the resolved directory basename alongside the
+   *  files, so a caller can name a download from the on-disk identity rather
+   *  than re-slugging the display name. Errors with `SkillNotFound` when no
+   *  skillPath contains the named skill, `PayloadTooLarge` on cap breach. */
   readLocal: (
     name: SkillName,
     skillPaths: SkillPath[],
-  ) => Promise<Result<{ files: LocalSkillFile[] }, SkillsDomainError>>;
+  ) => Promise<
+    Result<{ dir: string; files: LocalSkillFile[] }, SkillsDomainError>
+  >;
   /** Resolve a Local Skill's directory from the name a caller holds. Tries
    *  `<skillPath>/<name>` first — the on-disk identity, which install and the
    *  driver pass — then matches a directory's frontmatter `name:`, which is
@@ -290,7 +294,9 @@ async function hashSkillDirIfPresent(absDir: string): Promise<string | null> {
 async function read(
   name: SkillName,
   skillPaths: SkillPath[],
-): Promise<Result<{ files: LocalSkillFile[] }, SkillsDomainError>> {
+): Promise<
+  Result<{ dir: string; files: LocalSkillFile[] }, SkillsDomainError>
+> {
   const resolved = await resolveLocalSkillDir(name, skillPaths);
   if (!resolved) return err({ kind: "SkillNotFound", name, skillPaths });
   const root = resolved.absDir;
@@ -328,7 +334,7 @@ async function read(
     }
   }
 
-  return ok({ files: out });
+  return ok({ dir: resolved.dir, files: out });
 }
 
 async function write(
