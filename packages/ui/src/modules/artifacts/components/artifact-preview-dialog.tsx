@@ -60,7 +60,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   return (
     <>
       <Modal widthClass="w-[860px]">
-        <DialogHeader>{artifact.title}</DialogHeader>
+        <DialogHeader title={artifact.title} />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
             <span className="truncate">{artifact.fileName}</span>

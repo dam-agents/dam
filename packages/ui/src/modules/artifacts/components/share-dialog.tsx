@@ -60,7 +60,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader>Share “{artifact.title}”</DialogHeader>
+      <DialogHeader title={`Share “${artifact.title}”`} />
       <DialogBody>
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between gap-3">

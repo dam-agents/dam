@@ -83,9 +83,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     // Body/Footer sit directly in the Modal's flex column — otherwise the form
     // wrapper breaks the column and the scrollable body, overflowing the panel.
     <form onSubmit={handleSubmit} className="contents">
-      <DialogHeader>
-        <h2 className="text-[18px] font-bold">Create API key</h2>
-      </DialogHeader>
+      <DialogHeader title="Create API key" />
       <DialogBody>
         <div className="mb-4">
           <FormField label="Name">

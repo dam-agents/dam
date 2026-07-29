@@ -1,4 +1,3 @@
-import { Close } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -103,25 +102,13 @@ export function ConnectionCatalogModal({
 
   return (
     <Modal widthClass="w-[860px] max-w-full h-[85vh]">
-      <DialogHeader className="flex items-start justify-between gap-4 border-b">
-        <div>
-          <h2 className="text-[18px] font-semibold text-foreground">
-            Connection catalogue
-          </h2>
-          <p className="mt-1 text-[14px] text-muted-foreground">
-            Manage and create new connections your sandboxes can use
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          data-testid="catalog-close"
-          className="rounded p-1 text-muted-foreground hover:text-foreground"
-        >
-          <Close size={20} />
-        </button>
-      </DialogHeader>
+      <DialogHeader
+        className="border-b border-border"
+        title="Connection catalogue"
+        subtitle="Manage and create new connections your sandboxes can use"
+        onClose={onClose}
+        closeTestId="catalog-close"
+      />
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-[200px] shrink-0 flex-col gap-1 border-r border-border-light p-3">
           {CATALOG_TAB_ORDER.map((tab) => (

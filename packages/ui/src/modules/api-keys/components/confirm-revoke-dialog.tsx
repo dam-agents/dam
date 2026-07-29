@@ -24,9 +24,7 @@ export function ConfirmRevokeDialog({
 }: Props) {
   return (
     <Modal>
-      <DialogHeader>
-        <h2 className="text-[18px] font-bold">Revoke API key?</h2>
-      </DialogHeader>
+      <DialogHeader title="Revoke API key?" />
       <DialogBody>
         <p className="text-[13px] text-muted-foreground mb-2">
           The key{" "}

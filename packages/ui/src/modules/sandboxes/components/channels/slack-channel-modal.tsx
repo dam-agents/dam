@@ -60,11 +60,9 @@ export function SlackChannelModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-        <DialogHeader>
-          <h2 className="text-[16px] font-semibold text-foreground">
-            {editing ? "Edit Slack channel" : "Connect a Slack channel"}
-          </h2>
-        </DialogHeader>
+        <DialogHeader
+          title={editing ? "Edit Slack channel" : "Connect a Slack channel"}
+        />
 
         <DialogBody className="flex flex-col gap-4">
           <FormField

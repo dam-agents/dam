@@ -1,5 +1,5 @@
 import { Chat, ChevronDown, Code, Terminal } from "@carbon/icons-react";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { CopyableCommand } from "@/components/copyable-command";
@@ -60,28 +60,6 @@ export function OpenInMenu({ agent }: { agent: AgentView }) {
   );
 }
 
-function DialogTitle({
-  title,
-  onClose,
-}: {
-  title: string;
-  onClose: () => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <h2 className="text-[18px] font-bold">{title}</h2>
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-      >
-        <X size={18} />
-      </button>
-    </div>
-  );
-}
-
 function CliQuickstartNote() {
   return (
     <p className="text-[13px] text-muted-foreground">
@@ -107,14 +85,17 @@ function OpenInTerminalDialog({
 }) {
   return (
     <Modal widthClass="w-[480px]">
-      <DialogHeader>
-        <DialogTitle title="Open in Terminal" onClose={onClose} />
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          <code className="font-mono">dam chat</code> connects your terminal to{" "}
-          <strong className="text-foreground">{agent.name}</strong>'s
-          interactive TUI.
-        </p>
-      </DialogHeader>
+      <DialogHeader
+        title="Open in Terminal"
+        onClose={onClose}
+        subtitle={
+          <>
+            <code className="font-mono">dam chat</code> connects your terminal
+            to <strong className="text-foreground">{agent.name}</strong>'s
+            interactive TUI.
+          </>
+        }
+      />
       <DialogBody className="flex flex-col gap-3">
         <span className="text-[13px] font-medium text-foreground">
           Attach to the sandbox
@@ -135,15 +116,18 @@ function OpenInIdeDialog({
 }) {
   return (
     <Modal widthClass="w-[480px]">
-      <DialogHeader>
-        <DialogTitle title="Open in IDE" onClose={onClose} />
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          <code className="font-mono">dam ssh connect</code> launches your
-          editor against{" "}
-          <strong className="text-foreground">{agent.name}</strong>'s workspace
-          over SSH.
-        </p>
-      </DialogHeader>
+      <DialogHeader
+        title="Open in IDE"
+        onClose={onClose}
+        subtitle={
+          <>
+            <code className="font-mono">dam ssh connect</code> launches your
+            editor against{" "}
+            <strong className="text-foreground">{agent.name}</strong>'s
+            workspace over SSH.
+          </>
+        }
+      />
       <DialogBody className="flex flex-col gap-3">
         <span className="text-[13px] font-medium text-foreground">
           Open in VS Code

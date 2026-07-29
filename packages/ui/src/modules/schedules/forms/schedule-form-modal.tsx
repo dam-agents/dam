@@ -112,11 +112,9 @@ export function ScheduleFormModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-        <DialogHeader>
-          <h2 className="text-[16px] font-semibold text-foreground">
-            {existing ? "Edit schedule" : "Create a new Schedule"}
-          </h2>
-        </DialogHeader>
+        <DialogHeader
+          title={existing ? "Edit schedule" : "Create a new Schedule"}
+        />
 
         <DialogBody className="flex flex-col gap-4">
           <FormField label="Name" error={errors.name?.message} disableInset>

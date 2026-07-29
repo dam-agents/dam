@@ -1,7 +1,6 @@
-import { Close, Launch } from "@carbon/icons-react";
+import { Launch } from "@carbon/icons-react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 
 import type { Schedule, SessionView } from "../../../types.js";
 import { useScheduleSessions } from "../api/queries.js";
@@ -58,23 +57,12 @@ export function ScheduleResultsModal({
 
   return (
     <Modal>
-      <DialogHeader className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-[16px] font-semibold text-foreground">
-            {schedule.name}
-          </h2>
-          <p className="mt-0.5 text-[14px] text-muted-foreground">{subtitle}</p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onClose}
-          aria-label="Close"
-          className="text-muted-foreground"
-        >
-          <Close size={18} />
-        </Button>
-      </DialogHeader>
+      <DialogHeader
+        title={schedule.name}
+        truncateTitle
+        subtitle={subtitle}
+        onClose={onClose}
+      />
       <DialogBody flush className="min-h-[50vh]">
         {sessionsQuery.isError && (
           <p className="px-5 py-6 text-center text-[14px] text-muted-foreground md:px-7">

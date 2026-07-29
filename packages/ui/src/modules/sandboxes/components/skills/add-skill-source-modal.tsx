@@ -1,6 +1,6 @@
 import { LogoGithub } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
-import { Upload, X } from "lucide-react";
+import { Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -54,19 +54,7 @@ export function AddSkillSourceModal({
 
   return (
     <Modal>
-      <DialogHeader className="flex items-center justify-between">
-        <h2 className="text-[17px] font-semibold text-foreground">
-          Add skill source
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Close"
-        >
-          <X size={18} />
-        </button>
-      </DialogHeader>
+      <DialogHeader title="Add skill source" onClose={onClose} />
 
       <div role="tablist" className="flex border-b border-border px-5 md:px-7">
         <TabButton active={tab === "github"} onClick={() => setTab("github")}>
