@@ -4,6 +4,7 @@ import type {
   SkillPublishRecord,
   SkillRef,
   SkillSource,
+  SkillsState,
 } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
@@ -85,11 +86,13 @@ export function useSkillsSurface(
   opts: {
     readOnly: boolean;
     isError: boolean;
-    /** Mirrors the installed set to the nav summary's query cache. Stable. */
-    onInstalledChange?: (installed: SkillRef[]) => void;
+    /** Mirrors the whole reconciled state to the nav summary's query cache —
+     *  not just `installed`, or the summary goes stale on every standalone
+     *  add/delete. Stable. */
+    onStateChange?: (state: SkillsState) => void;
   },
 ): SkillsSurface {
-  const { readOnly, isError, onInstalledChange } = opts;
+  const { readOnly, isError, onStateChange } = opts;
 
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
@@ -109,8 +112,12 @@ export function useSkillsSurface(
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
-    onInstalledChange?.(installed);
-  }, [installed, onInstalledChange]);
+    // Gate on stateLoaded: before the first `skills.state` resolves all three
+    // arrays are empty placeholders, and publishing those would blank a summary
+    // the sidebar's own one-shot fetch already populated.
+    if (!stateLoaded) return;
+    onStateChange?.({ installed, standalone, instancePublishes: publishes });
+  }, [stateLoaded, installed, standalone, publishes, onStateChange]);
 
   const loadSkills = useCallback(
     async (sourceId: string) => {

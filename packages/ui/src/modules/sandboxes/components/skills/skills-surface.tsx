@@ -2,8 +2,8 @@ import type {
   LocalSkill,
   Skill,
   SkillPublishRecord,
-  SkillRef,
   SkillSource,
+  SkillsState,
 } from "api-server-api";
 import { Plus, Upload } from "lucide-react";
 import type { DragEvent } from "react";
@@ -43,7 +43,7 @@ export function SkillsSurface({
   agentState,
   readOnly,
   comingUp,
-  onInstalledChange,
+  onStateChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -51,7 +51,7 @@ export function SkillsSurface({
   /** Agent is coming up (starting) — still read-only, but rendered a touch
    *  less dimmed than a full stop to signal it's on its way. */
   comingUp?: boolean;
-  onInstalledChange?: (installed: SkillRef[]) => void;
+  onStateChange?: (state: SkillsState) => void;
 }) {
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
@@ -86,7 +86,7 @@ export function SkillsSurface({
     removeSource,
     refreshSource,
     publish,
-  } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
+  } = useSkillsSurface(agentId, { readOnly, isError, onStateChange });
 
   const publishableSources = sources.filter((s) => s.canPublish);
 
