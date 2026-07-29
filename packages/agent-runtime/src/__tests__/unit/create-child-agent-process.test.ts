@@ -2,23 +2,6 @@ import { describe, it, expect } from "vitest";
 import { createChildAgentProcess } from "../../modules/acp/infrastructure/create-child-agent-process.js";
 
 describe("createChildAgentProcess", () => {
-  it("exposes the harness's own pid, not a wrapper's", async () => {
-    // Background-work tracking roots its search at this pid and treats a process
-    // hanging directly off it as another session's machinery. If the command were
-    // spawned through a shell, this would be the shell's pid and that rule would
-    // invert — silently attributing nothing, or everything.
-    const proc = createChildAgentProcess({
-      command: [process.execPath, "-e", `console.log(process.pid)`],
-      workingDir: process.cwd(),
-    });
-
-    const reported = await new Promise<string>((resolve) => {
-      proc.onLine(resolve);
-    });
-
-    expect(proc.pid).toBe(Number(reported));
-  });
-
   it("reassembles a frame split across stdout chunks and skips blank lines", async () => {
     // First write has no trailing newline, so the frame is only complete
     // after the second write — the incremental-buffering case the readline

@@ -27,7 +27,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
     },
     status: () => ({
       idle: true,
-      backgroundWorkSessions: [],
+      backgroundWork: [],
     }),
     resetSession: () => {},
     refreshEnv: () => {},

@@ -31,6 +31,9 @@ ENV DISABLE_TELEMETRY=1 \
     DISABLE_AUTOUPDATER=1
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
+# Implements the platform's background-work contract from Claude Code's Stop
+# hook, so a session that left a job running is not reaped out from under it.
+COPY report-background-work.mjs /usr/local/lib/report-background-work.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service

@@ -64,6 +64,5 @@ export function createChildAgentProcess(
       child.kill();
     },
     exited,
-    pid: child.pid,
   };
 }

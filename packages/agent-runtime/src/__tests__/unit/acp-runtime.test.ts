@@ -6,7 +6,7 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
-import type { BackgroundWorkTracker } from "../../modules/acp/services/background-work-tracker.js";
+import type { BackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -102,22 +102,22 @@ function makeFakeChannel(): FakeChannel {
 }
 
 /**
- * Stands in for the process-watching tracker: `live` decides whether a session
- * is holding, `calls` records the wiring the runtime is responsible for.
+ * Stands in for the registry sessions report their background work to: `live`
+ * decides whether a session is holding, `calls` records the wiring the runtime
+ * is responsible for.
  */
-function makeFakeTracker() {
+function makeFakeRegistry() {
   const calls: string[] = [];
   let live = false;
-  const tracker: BackgroundWorkTracker = {
-    turnStarted: (sessionId) => calls.push(`turnStarted:${sessionId}`),
-    turnEnded: (sessionId) => calls.push(`turnEnded:${sessionId}`),
-    hasLiveWork: () => live,
-    heldSessions: () => (live ? [SID] : []),
+  const registry: BackgroundWorkRegistry = {
+    report: (sessionId) => calls.push(`report:${sessionId}`),
+    hasWork: () => live,
+    held: () => (live ? [{ sessionId: SID, items: [{ id: "t1" }] }] : []),
     forget: (sessionId) => calls.push(`forget:${sessionId}`),
     clear: () => calls.push("clear"),
   };
   return {
-    tracker,
+    registry,
     calls,
     set live(value: boolean) {
       live = value;
@@ -1101,11 +1101,11 @@ describe("createAcpRuntime", () => {
     vi.useFakeTimers();
     try {
       const fa = makeFakeAgent();
-      const tracker = makeFakeTracker();
+      const tracker = makeFakeRegistry();
       const runtime = createAcpRuntime({
         spawnAgent: () => fa.agent,
         workingDir: "/tmp",
-        backgroundWork: tracker.tracker,
+        backgroundWork: tracker.registry,
         backgroundWorkRecheckMs: 1_000,
       });
 
@@ -1126,7 +1126,9 @@ describe("createAcpRuntime", () => {
       ).toHaveLength(0);
       // The pod must not hibernate under the work either.
       expect(runtime.status().idle).toBe(false);
-      expect(runtime.status().backgroundWorkSessions).toEqual([SID]);
+      expect(runtime.status().backgroundWork).toEqual([
+        { sessionId: SID, items: [{ id: "t1" }] },
+      ]);
 
       // Still running at the next check → still held.
       vi.advanceTimersByTime(1_000);
@@ -1146,36 +1148,13 @@ describe("createAcpRuntime", () => {
     }
   });
 
-  it("reports the turn boundaries the tracker baselines against", () => {
-    // The tracker tells the turn's own processes from the harness's machinery by
-    // diffing these two moments; a mis-wire silently disables the hold.
+  it("drops reported work when the session is torn down, since it dies with the subprocess", () => {
     const fa = makeFakeAgent();
-    const tracker = makeFakeTracker();
+    const tracker = makeFakeRegistry();
     const runtime = createAcpRuntime({
       spawnAgent: () => fa.agent,
       workingDir: "/tmp",
-      backgroundWork: tracker.tracker,
-    });
-
-    const c = makeFakeChannel();
-    runtime.attach(c.channel);
-    c.pushMessage(newSessionRequest(1));
-    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
-
-    c.pushMessage(promptRequest(2));
-    expect(tracker.calls).toEqual([`turnStarted:${SID}`]);
-
-    fa.pushLine(agentPromptResponse(outboundId(fa.sent[1])));
-    expect(tracker.calls).toEqual([`turnStarted:${SID}`, `turnEnded:${SID}`]);
-  });
-
-  it("drops tracked work when the session is torn down, since it dies with the subprocess", () => {
-    const fa = makeFakeAgent();
-    const tracker = makeFakeTracker();
-    const runtime = createAcpRuntime({
-      spawnAgent: () => fa.agent,
-      workingDir: "/tmp",
-      backgroundWork: tracker.tracker,
+      backgroundWork: tracker.registry,
     });
 
     const c = makeFakeChannel();

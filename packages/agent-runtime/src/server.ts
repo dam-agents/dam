@@ -11,8 +11,11 @@ import * as nodePty from "@lydell/node-pty";
 import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
-import type { AgentRuntimeContext } from "agent-runtime-api";
-import { STAGED_SKILLS_DIR } from "agent-runtime-api";
+import {
+  STAGED_SKILLS_DIR,
+  backgroundWorkReportSchema,
+  type AgentRuntimeContext,
+} from "agent-runtime-api";
 import {
   OP_INPUT,
   OP_OUTPUT,
@@ -127,10 +130,17 @@ const podService = existsSync(podServicePath)
 
 if (envStore.ready()) podService?.refreshEnv();
 
+// Where in-pod callers reach this runtime. Set on our own env so every process
+// the runtime spawns inherits it — the harness (and anything it runs) needs it
+// to report background work, and a hook or wrapper script shouldn't have to
+// guess a port. See the background-work contract in agent-runtime-api.
+process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
+
 const {
   runtime: acpRuntime,
   triggerDriver,
   sessionMetadata,
+  backgroundWork,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -139,10 +149,6 @@ const {
   stateBackend,
   envReader: envStore,
   isTerminalSessionActive: isPtySessionActive,
-  backgroundWorkHoldMaxMs:
-    config.BACKGROUND_WORK_HOLD_MAX_MINUTES === undefined
-      ? undefined
-      : config.BACKGROUND_WORK_HOLD_MAX_MINUTES * 60_000,
   backgroundWorkMaxHeldSessions: config.BACKGROUND_WORK_MAX_HELD_SESSIONS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
@@ -436,6 +442,20 @@ function attachPty(
   });
 }
 
+/** Small JSON body reader for the plain-HTTP routes (tRPC has its own). */
+async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    bytes += buf.length;
+    // A report is a short list; anything larger is a caller bug, not a payload.
+    if (bytes > 64 * 1024) throw new Error("body too large");
+    chunks.push(buf);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS).end();
@@ -451,9 +471,9 @@ const server = http.createServer((req, res) => {
     const acp = acpRuntime.status();
     const status = {
       idle: acp.idle && ptySlots.size === 0,
-      // Reported for diagnosis only — the controller reads `idle`, which
-      // already accounts for these.
-      backgroundWorkSessions: acp.backgroundWorkSessions,
+      // Published for diagnosis only — the controller reads `idle`, which
+      // already accounts for these. It answers "why is this pod awake?".
+      backgroundWork: acp.backgroundWork,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -472,6 +492,37 @@ const server = http.createServer((req, res) => {
   if (sessionResetMatch) {
     acpRuntime.resetSession(decodeURIComponent(sessionResetMatch[1]!));
     res.writeHead(204, CORS).end();
+    return;
+  }
+
+  // The background-work contract (#2965): a session reports its complete
+  // in-flight set, and the platform keeps the session — and the pod — alive
+  // while that set is non-empty. Local to the pod, like the reset route above:
+  // anything that can reach it already runs as the agent.
+  const backgroundWorkMatch =
+    req.method === "POST" &&
+    req.url?.match(/^\/api\/sessions\/([^/]+)\/background-work$/);
+  if (backgroundWorkMatch) {
+    void readJsonBody(req)
+      .then((body) => {
+        const parsed = backgroundWorkReportSchema.safeParse(body);
+        if (!parsed.success) {
+          res
+            .writeHead(400, { "Content-Type": "application/json", ...CORS })
+            .end(JSON.stringify({ error: parsed.error.message }));
+          return;
+        }
+        backgroundWork.report(
+          decodeURIComponent(backgroundWorkMatch[1]!),
+          parsed.data.items,
+        );
+        res.writeHead(204, CORS).end();
+      })
+      .catch((err: unknown) => {
+        res
+          .writeHead(400, { "Content-Type": "application/json", ...CORS })
+          .end(JSON.stringify({ error: String(err) }));
+      });
     return;
   }
 

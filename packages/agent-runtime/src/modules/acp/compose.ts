@@ -4,13 +4,15 @@ import {
   type RuntimeEnvReader,
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
-import { createProcFsProcessTable } from "./infrastructure/process-table.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
 import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
-import { createBackgroundWorkTracker } from "./services/background-work-tracker.js";
+import {
+  createBackgroundWorkRegistry,
+  type BackgroundWorkRegistry,
+} from "./services/background-work-registry.js";
 import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
@@ -22,9 +24,7 @@ export interface ComposeAcpOptions {
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   isTerminalSessionActive?: (sessionId: string) => boolean;
-  /** Bound how long background work may hold a session awake; 0 = unbounded. */
-  backgroundWorkHoldMaxMs?: number;
-  /** Cap sessions holding at once; 0 disables background-work tracking. */
+  /** Cap sessions holding background work at once; 0 refuses every hold. */
   backgroundWorkMaxHeldSessions?: number;
   log?: (msg: string) => void;
 }
@@ -33,37 +33,25 @@ export function composeAcp(opts: ComposeAcpOptions): {
   runtime: AcpRuntime;
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
+  backgroundWork: BackgroundWorkRegistry;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
-  // The live harness's pid roots background-work tracking. Held here rather
-  // than inside the runtime so the runtime never deals in pids: it asks the
-  // tracker about sessions, and the tracker asks the OS about processes.
-  let harnessPid: number | undefined;
+  // Sessions report their in-flight background work here (the contract lives in
+  // agent-runtime-api). The runtime reads it when deciding whether to close a
+  // session or to call itself idle; the server exposes the reporting route.
+  const backgroundWork = createBackgroundWorkRegistry({
+    maxHeldSessions: opts.backgroundWorkMaxHeldSessions,
+    log: opts.log,
+  });
   const runtime = createAcpRuntime({
     // Env read fresh per spawn; process.env wins (user env > placeholders).
-    spawnAgent: () => {
-      const agent = createChildAgentProcess({
+    spawnAgent: () =>
+      createChildAgentProcess({
         command: opts.command,
         workingDir: opts.workingDir,
         env: mergedSpawnEnv(opts.envReader),
-      });
-      harnessPid = agent.pid;
-      // Drop the pid the moment the harness dies: the kernel may hand it to
-      // something unrelated before the respawn.
-      void agent.exited.then(() => {
-        if (harnessPid === agent.pid) harnessPid = undefined;
-      });
-      return agent;
-    },
-    backgroundWork: createBackgroundWorkTracker({
-      processTable: createProcFsProcessTable(),
-      harnessPid: () => harnessPid,
-      // Operator overrides; unset keeps the tracker's own defaults (no ceiling,
-      // a small concurrent-hold cap). `0` sessions disables tracking outright.
-      holdMaxMs: opts.backgroundWorkHoldMaxMs,
-      maxHeldSessions: opts.backgroundWorkMaxHeldSessions,
-      log: opts.log,
-    }),
+      }),
+    backgroundWork,
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
@@ -75,5 +63,5 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata };
+  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
 }
