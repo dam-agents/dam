@@ -19,11 +19,11 @@ const FALLBACK: Brand = {
   title: "",
   theme: {
     light: {
-      accent: "#1D6BE1",
-      accentHover: "#1556B8",
-      accentLight: "#eaf2fe",
+      accent: "#0F62FE",
+      accentHover: "#0353E9",
+      accentLight: "#edf5ff",
     },
-    dark: { accent: "#3C92FD", accentHover: "#2F88FD", accentLight: "#0f1f3a" },
+    dark: { accent: "#4589FF", accentHover: "#78A9FF", accentLight: "#0f1f3a" },
   },
 };
 

@@ -253,7 +253,7 @@ export function renderMarkdownInner(source: string, title: string): string {
   code { font-family: ui-monospace, monospace; font-size: 0.9em; background: light-dark(#f2f4f8, #262626); border-radius: 4px; padding: 1px 5px; }
   pre { background: light-dark(#f2f4f8, #262626); border-radius: 8px; padding: 14px; overflow-x: auto; } pre code { background: none; padding: 0; }
   blockquote { border-left: 3px solid light-dark(#dde1e6, #393939); padding-left: 14px; color: light-dark(#57534e, #a8a29e); }
-  a { color: light-dark(#1d6be1, #3c92fd); }
+  a { color: light-dark(#0f62fe, #4589ff); }
   table { border-collapse: collapse; } th, td { border: 1px solid light-dark(#dde1e6, #393939); padding: 6px 10px; text-align: left; }
   img { max-width: 100%; }
 </style>
@@ -436,7 +436,7 @@ export function renderFolderPage(input: {
       .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid light-dark(#dde1e6, #393939); border-radius: 8px; margin-bottom: 8px; text-decoration: none; color: inherit; background: light-dark(#fff, #161616); }
       .row:hover { background: light-dark(#f2f4f8, #262626); }
       .row.expired { opacity: 0.5; }
-      .kind { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 999px; padding: 2px 8px; background: light-dark(#eaf2fe, #0f1f3a); color: light-dark(#1d6be1, #3c92fd); }
+      .kind { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 999px; padding: 2px 8px; background: light-dark(#edf5ff, #0f1f3a); color: light-dark(#0f62fe, #4589ff); }
       .rtitle { font-size: 14px; font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .meta { font-size: 12px; color: light-dark(#57534e, #a8a29e); white-space: nowrap; }
     </style>
