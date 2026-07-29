@@ -8,6 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CardButton } from "@/components/ui/card-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
@@ -116,39 +117,34 @@ export function SettingsView() {
 
             {/* Theme selector */}
             <div className="mb-8">
-              <h3 className="text-[14px] font-semibold mb-3">Theme</h3>
+              <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {themeOptions.map(
                   ({ value, icon: Icon, label, description }) => (
-                    <button
+                    <CardButton
                       key={value}
                       onClick={() => setTheme(value)}
-                      className={cn(
-                        "flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all",
-                        theme === value
-                          ? "border-primary bg-primary/10 shadow-sm"
-                          : "border-border hover:border-muted-foreground bg-card",
-                      )}
+                      selected={theme === value}
+                      className="flex flex-col items-start gap-2.5 p-4"
                     >
-                      <div
+                      <Icon
+                        size={22}
                         className={cn(
-                          "h-9 w-9 rounded-lg flex items-center justify-center",
+                          "shrink-0",
                           theme === value
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-foreground/80",
+                            ? "text-foreground"
+                            : "text-muted-foreground",
                         )}
-                      >
-                        <Icon size={18} />
-                      </div>
-                      <div>
-                        <div className="text-[14px] font-semibold text-foreground">
+                      />
+                      <span>
+                        <span className="block text-[16px] font-medium leading-[1.2] text-foreground">
                           {label}
-                        </div>
-                        <div className="text-[12px] text-muted-foreground mt-0.5">
+                        </span>
+                        <span className="mt-1 block text-[14px] text-muted-foreground">
                           {description}
-                        </div>
-                      </div>
-                    </button>
+                        </span>
+                      </span>
+                    </CardButton>
                   ),
                 )}
               </div>
