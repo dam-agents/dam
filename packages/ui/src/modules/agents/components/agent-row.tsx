@@ -55,7 +55,9 @@ export function AgentRow({
     <Card
       data-testid="agent-row"
       onClick={onSelect}
-      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-shadow hover:not-has-[button:hover]:shadow-md"
+      // The guard keeps the card flat while a nested action is hovered, so the
+      // two hover states don't stack.
+      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">

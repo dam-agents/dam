@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 
-import { CARD_SURFACE } from "@/components/ui/card";
+import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 const cardButtonVariants = cva(
@@ -10,7 +10,7 @@ const cardButtonVariants = cva(
     variants: {
       selected: {
         true: "border-foreground",
-        false: "border-border hover:bg-muted/40",
+        false: `border-border ${CARD_HOVER}`,
       },
     },
     defaultVariants: { selected: false },

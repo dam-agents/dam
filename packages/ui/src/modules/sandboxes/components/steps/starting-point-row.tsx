@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { CardButton } from "@/components/ui/card-button";
 
 import type { StartingPoint } from "../../lib/wizard-snapshot.js";
 
@@ -25,17 +25,11 @@ export function StartingPointRow({
   onSelect,
 }: Props) {
   return (
-    <button
-      type="button"
+    <CardButton
       data-testid={`starting-point-${startingPoint}`}
       onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        "flex w-full items-start gap-3.5 rounded-lg border px-4 py-3.5 text-left transition-colors",
-        selected
-          ? "border-foreground bg-card"
-          : "border-border bg-card hover:bg-muted/30",
-      )}
+      selected={selected}
+      className="flex w-full items-start gap-3.5 px-4 py-3.5"
     >
       <Icon
         size={22}
@@ -55,6 +49,6 @@ export function StartingPointRow({
           {tag}
         </span>
       )}
-    </button>
+    </CardButton>
   );
 }
