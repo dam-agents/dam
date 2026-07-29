@@ -1,12 +1,12 @@
 ---
 name: implement-feature
 description: >
-  Implement a feature from the plan that plan-feature produced under docs/plan/<feature>/, one
+  Implement a feature from the plan that plan-feature-v2 produced under docs/plan/<feature>/, one
   reviewed sub-issue at a time. Use when the user wants to implement or build a feature from a
   docs/plan/<feature>/ plan or a planned GitHub issue.
 ---
 
-This skill implements a feature that `plan-feature` has already planned. It consumes the
+This skill implements a feature that `plan-feature-v2` has already planned. It consumes the
 ephemeral plan under `docs/plan/<NNN-slug>/` (README + one file per sub-issue) and turns it into
 code: a feature branch, one atomic commit per sub-issue, and a single PR for the whole feature.
 

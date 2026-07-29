@@ -15,7 +15,8 @@ plus one Markdown file per sub-issue, written under `docs/plan/<feature-slug>/`.
 **The plan is committed and starts the feature branch.** The plan files are working artifacts
 for the implementation phase, not permanent docs — but they live in git: planning ends by
 creating the feature branch, committing the plan as its **first commit**, and opening a **draft
-PR** (step 4).
+PR** (step 4). The plan never merges: the `Plan check` CI job fails while `docs/plan/` exists,
+so the PR stays blocked until the cleanup commit deletes the folder.
 
 A sub-issue is "self-contained" in the sense that **README + that sub-issue together** give a
 fresh agent (plus the linked issue) everything needed to implement the slice cold. Shared
