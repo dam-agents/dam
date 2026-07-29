@@ -47,6 +47,3 @@ Never hardcode the brand (`Dam`, `dam`, or any replacement) in code. The codenam
 
 Use `.worktrees/` for git worktrees. Branch naming follows commit conventions (e.g., `feat/session-history`).
 
-## Issue tracking
-
-`bd` (beads) tracks issues, and its state lives in Dolt rather than git, so `bd dolt push` is a separate step from `git push`. The `bd prime` SessionStart hook injects the command reference, and `.beads/PRIME.md` is where that text is edited.
