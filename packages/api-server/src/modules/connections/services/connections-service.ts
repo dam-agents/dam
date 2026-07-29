@@ -541,32 +541,41 @@ function stripSecretsFromInputs(input: {
 function deriveStatus(conn: Connection): ConnectionView["status"] {
   switch (conn.auth.kind) {
     case "oauth":
-      // `expiresAt` stays in the OR for back-compat: connections created
-      // before `connectedAt` existed have an expiry but no marker.
-      return conn.auth.connectedAt || conn.auth.expiresAt
-        ? "active"
-        : "pending";
+      // Never authorized — `expiresAt` stays in the OR for back-compat:
+      // connections created before `connectedAt` existed have an expiry but no
+      // `connectedAt`.
+      if (!conn.auth.connectedAt && !conn.auth.expiresAt) return "pending";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "client-credentials":
       // expiresAt is always stamped at mint (provider expiry or the 1h
       // fallback) — the unset guard is defensive. Past-expiry means the
       // refresh loop has been failing to re-mint (it retries every tick
       // and re-mints before expiry when healthy).
-      return conn.auth.expiresAt &&
-        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
-        ? "expired"
-        : "active";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "github-app":
       // Same horizon logic as client-credentials: past-expiry means the
       // refresh loop has been failing to re-mint the installation token.
-      return conn.auth.expiresAt &&
-        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
-        ? "expired"
-        : "active";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
       return "active";
     case "none":
       return "active";
   }
+}
+
+// The marker is the definitive signal, written only on a permanent rejection.
+// A past horizon is the fallback: refresh renews well ahead of expiry, so a
+// token that outlived its own horizon has no working refresh path. A provider
+// that issues no `expires_in` (GitHub) carries no horizon and stays active.
+function isExpiredAuth(auth: {
+  expiresAt?: number;
+  refreshFailedAt?: number;
+}): boolean {
+  if (auth.refreshFailedAt !== undefined) return true;
+  return (
+    auth.expiresAt !== undefined &&
+    auth.expiresAt < Math.floor(Date.now() / 1000)
+  );
 }
 
 function newConnectionId(): string {

@@ -17,6 +17,37 @@ export interface OAuthProvider {
   extraAuthParams?: Record<string, string>;
 }
 
+/** A token-endpoint rejection, carrying the machine-readable OAuth error code
+ *  alongside the HTTP status so callers can tell a dead credential from a
+ *  transient blip. GitHub returns its errors in a **200** form-encoded body, so
+ *  `oauthError` — not `status` — is the reliable discriminator. */
+export class OAuthTokenEndpointError extends Error {
+  readonly status: number | undefined;
+  readonly oauthError: string | undefined;
+
+  constructor(
+    message: string,
+    opts: { status?: number; oauthError?: string } = {},
+  ) {
+    super(message);
+    this.name = "OAuthTokenEndpointError";
+    this.status = opts.status;
+    this.oauthError = opts.oauthError;
+  }
+}
+
+// A non-2xx body often still carries the machine-readable code — JSON for most
+// providers, form-encoded for a few. Best-effort: an unparseable body leaves
+// the classification to the HTTP status alone.
+function parseOAuthErrorCode(body: string): string | undefined {
+  try {
+    const json = JSON.parse(body) as { error?: unknown };
+    return typeof json.error === "string" ? json.error : undefined;
+  } catch {
+    return new URLSearchParams(body).get("error") ?? undefined;
+  }
+}
+
 export interface PendingFlow<Ctx = unknown> {
   provider: OAuthProvider;
   ctx: Ctx;
@@ -104,8 +135,10 @@ export function createOAuthEngine(
     });
     if (!res.ok) {
       const txt = await res.text();
-      throw new Error(
+      const oauthError = parseOAuthErrorCode(txt);
+      throw new OAuthTokenEndpointError(
         `OAuth token endpoint ${provider.id}: ${res.status} ${txt.slice(0, 500)}`,
+        { status: res.status, ...(oauthError ? { oauthError } : {}) },
       );
     }
     const ct = res.headers.get("content-type") ?? "";
@@ -134,8 +167,12 @@ export function createOAuthEngine(
       const detail =
         data.error_description ?? data.error ?? "no access_token in response";
       const code = data.error ? `${data.error}: ` : "";
-      throw new Error(
+      throw new OAuthTokenEndpointError(
         `OAuth ${provider.id} rejected by provider — ${code}${detail}`,
+        {
+          status: res.status,
+          ...(data.error ? { oauthError: data.error } : {}),
+        },
       );
     }
     const tokens: TokenSet = { accessToken: data.access_token };

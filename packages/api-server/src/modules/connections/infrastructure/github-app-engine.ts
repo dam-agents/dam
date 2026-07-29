@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { OAuthTokenEndpointError } from "./oauth-engine.js";
 
 export interface GitHubAppTokenSet {
   /** The installation access token (`ghs_…`). */
@@ -108,8 +109,18 @@ export function createGitHubAppEngine(
       });
       if (!res.ok) {
         const txt = await res.text();
-        throw new Error(
+        // GitHub speaks REST here, not OAuth, so there is no error code to
+        // carry — translate the two dead ends into the classifier's vocabulary
+        // for "the client's credential was rejected", so the refresh loop parks
+        // them instead of re-signing a dead key every tick: 401 = signature
+        // rejected (rotated/revoked key), 404 = app or installation gone.
+        const permanentlyRejected = res.status === 401 || res.status === 404;
+        throw new OAuthTokenEndpointError(
           `GitHub App ${id}: installation-token request failed — ${res.status} ${txt.slice(0, 500)}`,
+          {
+            status: res.status,
+            ...(permanentlyRejected ? { oauthError: "invalid_client" } : {}),
+          },
         );
       }
       const data = (await res.json()) as InstallationTokenResponse;

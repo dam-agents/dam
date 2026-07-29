@@ -17,6 +17,11 @@ export const oauthAuth = z.object({
   clientSecretRef: secretRef.optional(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  // Refresh-failure marker (epoch seconds): set only when the token endpoint
+  // rejected a refresh permanently, so the connection derives `expired` and
+  // the refresh loop stops retrying a credential that can't recover on its
+  // own. Any successful token write clears it, as does credential maintenance.
+  refreshFailedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
@@ -38,6 +43,7 @@ export const clientCredentialsAuth = z.object({
   audience: z.string().min(1).optional(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  refreshFailedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   host: z.string().min(1).optional(),
 });
@@ -57,6 +63,7 @@ export const githubAppAuth = z.object({
   apiBaseUrl: z.string().url(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  refreshFailedAt: z.number().int().optional(),
   host: z.string().min(1).optional(),
 });
 

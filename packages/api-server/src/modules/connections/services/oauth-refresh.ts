@@ -13,13 +13,19 @@ import {
   type ConnectionAuthConfig,
   type Contribution,
 } from "api-server-api";
-import type {
-  OAuthEngine,
-  OAuthProvider,
+import {
+  OAuthTokenEndpointError,
+  type OAuthEngine,
+  type OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
+import {
+  isPermanentTokenRejection,
+  withoutRefreshFailureMarker,
+} from "../domain/refresh-failure-marker.js";
+import { securityLog } from "../../../core/security-log.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { mintGitHubAppToken } from "./github-app.js";
@@ -116,6 +122,16 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           refreshed++;
         } catch (err) {
           failed++;
+          // A permanent rejection is parked, not retried: the marker takes the
+          // connection out of the due set until credential maintenance clears
+          // it. A failed marker write falls through to the transient backoff so
+          // the connection keeps being attempted rather than going quiet.
+          if (
+            isPermanentAuthFailure(err, conn.auth) &&
+            (await markRefreshFailure(conn, err, deps, now(), log))
+          ) {
+            continue;
+          }
           const failures = (state?.failures ?? 0) + 1;
           const delay = backoffDelayMs(failures, backoffBaseMs, backoffMaxMs);
           backoff.set(conn.id, { failures, nextAttempt: startedAt + delay });
@@ -158,6 +174,10 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
           "client-credentials",
           "github-app",
         ]),
+        // A marked connection is parked: its credential can't recover without
+        // someone supplying a new one, so clearing the marker (credential
+        // maintenance, or any successful token write) is what re-admits it.
+        sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
           AND ((${connectionsTable.auth} ->> 'expiresAt')::int - extract(epoch from now())::int) <= ${skewSec}
@@ -176,6 +196,93 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
   return rows
     .map((r) => parseRow(r))
     .filter((c): c is Connection => c !== null);
+}
+
+function isPermanentAuthFailure(
+  err: unknown,
+  auth: ConnectionAuthConfig,
+): boolean {
+  if (!(err instanceof OAuthTokenEndpointError)) return false;
+  return isPermanentTokenRejection({
+    oauthError: err.oauthError,
+    status: err.status,
+    ownsClientSecret: ownsClientSecret(auth),
+  });
+}
+
+function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
+  switch (auth.kind) {
+    case "oauth":
+      // Absent means the client secret comes from the operator's deploy config
+      // — a rotation there is fixed centrally, not per connection.
+      return auth.clientSecretRef !== undefined;
+    case "client-credentials":
+    case "github-app":
+      return true;
+    case "header":
+    case "none":
+      return false;
+  }
+}
+
+/** Persists the refresh-failure marker. Returns false when there is nothing to
+ *  mark or the write failed, so the caller falls back to the transient backoff
+ *  instead of silently giving up on the connection. */
+async function markRefreshFailure(
+  conn: Connection,
+  err: unknown,
+  deps: { db: Db },
+  nowMs: number,
+  log: (msg: string) => void,
+): Promise<boolean> {
+  if (conn.auth.kind === "header" || conn.auth.kind === "none") return false;
+  const auth = conn.auth;
+  try {
+    // This verdict is as old as the tick's read, and credential maintenance may
+    // have fixed the connection since. Merge the one key server-side (never
+    // replace `auth`, which would clobber a concurrent write), and only when
+    // `expiresAt`/`connectedAt` still match what the tick saw — every
+    // successful credential write bumps one of them, so a fresher fix wins and
+    // the stale failure marks nothing.
+    await deps.db
+      .update(connectionsTable)
+      .set({
+        auth: sql`jsonb_set(${connectionsTable.auth}, '{refreshFailedAt}', to_jsonb(${Math.floor(nowMs / 1000)}::bigint))`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(connectionsTable.id, conn.id),
+          sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${auth.expiresAt === undefined ? null : String(auth.expiresAt)}`,
+          sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
+        ),
+      );
+  } catch (writeErr) {
+    log(
+      `connection ${conn.id} refresh-failure marker write failed: ` +
+        `${(writeErr as Error).message}`,
+    );
+    return false;
+  }
+  securityLog("warn", "connection.refresh_permanent_failure", {
+    category: "credential",
+    actor: "system:oauth-refresh",
+    actorKind: "system",
+    target: conn.id,
+    result: "failure",
+    decision: "expired",
+    detail: {
+      templateId: conn.templateId,
+      authKind: conn.auth.kind,
+      ...(err instanceof OAuthTokenEndpointError
+        ? {
+            ...(err.oauthError ? { oauthError: err.oauthError } : {}),
+            ...(err.status !== undefined ? { status: err.status } : {}),
+          }
+        : {}),
+    },
+  });
+  return true;
 }
 
 function parseRow(row: {
@@ -257,7 +364,7 @@ async function refreshOne(
   }
   await deps.secretStore.putFields(auth.accessTokenRef, fields);
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db
@@ -293,7 +400,7 @@ export async function remintOne(
     ...buildConnectionSdsFields(conn.contributions, next.accessToken),
   });
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db
@@ -329,7 +436,7 @@ export async function remintGitHubAppOne(
     ...buildConnectionSdsFields(conn.contributions, next.accessToken),
   });
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db

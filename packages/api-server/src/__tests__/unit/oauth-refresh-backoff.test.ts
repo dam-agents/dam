@@ -42,6 +42,12 @@ const CC_AUTH: Extract<ConnectionAuthConfig, { kind: "client-credentials" }> = {
   connectedAt: 900,
 };
 
+// The kinds that can carry a refresh-failure marker (header/none never do).
+type MarkableAuth = Extract<
+  ConnectionAuthConfig,
+  { kind: "oauth" | "client-credentials" | "github-app" }
+>;
+
 interface RawRow {
   id: string;
   owner: string;
@@ -62,6 +68,38 @@ const rowFor = (id: string, auth: ConnectionAuthConfig = AUTH): RawRow => ({
   contributions: [],
 });
 
+type Mode =
+  | "transient"
+  | "revoked-grant"
+  | "revoked-grant-200"
+  | "invalid-client"
+  | "ok";
+
+const MODE_RESPONSES: Record<Mode, () => Response> = {
+  // Retryable: the token endpoint failed to answer, it didn't reject anything.
+  transient: () => new Response("upstream unavailable", { status: 503 }),
+  // What Google returns for a revoked refresh token, form-encoded.
+  "revoked-grant": () => new Response("error=invalid_grant", { status: 400 }),
+  // GitHub's shape: the same rejection carried in a 200 form body, so the code
+  // — not the status — has to be what classifies it.
+  "revoked-grant-200": () =>
+    new Response("error=bad_refresh_token&error_description=expired", {
+      status: 200,
+    }),
+  // The *client's* credential was rejected — permanent only when the
+  // connection stores that secret itself.
+  "invalid-client": () =>
+    new Response(JSON.stringify({ error: "invalid_client" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    }),
+  ok: () =>
+    new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+};
+
 function makeLoop(opts?: {
   baseMs?: number;
   maxMs?: number;
@@ -69,29 +107,53 @@ function makeLoop(opts?: {
 }) {
   const auth = opts?.auth ?? AUTH;
   let clock = 0;
-  let mode: "fail" | "ok" = "fail";
+  let mode: Mode = "transient";
   let fetchCount = 0;
   let rows: RawRow[] = [rowFor("conn-1", auth)];
+  const written: ConnectionAuthConfig[] = [];
 
   const fetchImpl = (async () => {
     fetchCount++;
-    if (mode === "fail") {
-      // What Google returns for a revoked refresh token.
-      return new Response("error=invalid_grant", { status: 400 });
-    }
-    return new Response(
-      JSON.stringify({ access_token: "tok", expires_in: 3600 }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
+    return MODE_RESPONSES[mode]();
   }) as typeof fetch;
 
-  // dueConnections' SQL predicate is exercised against Postgres elsewhere; the
-  // fake returns the current row set verbatim so these tests isolate the
-  // loop's backoff bookkeeping.
+  // The loop writes the marker as a server-side jsonb merge, so that write
+  // arrives as a SQL fragment rather than an object — the point being that a
+  // concurrent credential fix is never clobbered. The fake stands in for
+  // Postgres applying it: merge `refreshFailedAt` (from the clock the loop
+  // reads) onto whatever auth the row currently holds. Success paths still
+  // write plain auth objects and pass through verbatim.
+  const applyAuthWrite = (
+    current: MarkableAuth,
+    next: unknown,
+  ): ConnectionAuthConfig =>
+    next && typeof next === "object" && "queryChunks" in next
+      ? { ...current, refreshFailedAt: Math.floor(clock / 1000) }
+      : (next as ConnectionAuthConfig);
+
+  // dueConnections' SQL is exercised against Postgres elsewhere; the fake
+  // reproduces only the refresh-failure-marker clause, because "a marked
+  // connection is parked" is behavior these tests assert. Auth writes land back
+  // on the rows so the next tick sees them (one connection under test).
   const db = {
-    select: () => ({ from: () => ({ where: () => Promise.resolve(rows) }) }),
+    select: () => ({
+      from: () => ({
+        where: () =>
+          Promise.resolve(
+            rows.filter((r) => !("refreshFailedAt" in (r.auth as object))),
+          ),
+      }),
+    }),
     update: () => ({
-      set: () => ({ where: () => Promise.resolve(undefined) }),
+      set: (patch: { auth: unknown }) => ({
+        where: () => {
+          for (const r of rows) {
+            r.auth = applyAuthWrite(r.auth as MarkableAuth, patch.auth);
+          }
+          written.push((rows[0]?.auth ?? patch.auth) as ConnectionAuthConfig);
+          return Promise.resolve(undefined);
+        },
+      }),
     }),
   } as unknown as Db;
 
@@ -115,9 +177,19 @@ function makeLoop(opts?: {
   return {
     loop,
     setClock: (t: number) => (clock = t),
-    setMode: (m: "fail" | "ok") => (mode = m),
+    setMode: (m: Mode) => (mode = m),
     setRows: (ids: string[]) => (rows = ids.map((id) => rowFor(id, auth))),
     fetchCount: () => fetchCount,
+    /** Auth objects the loop persisted, oldest first. */
+    written: () => written,
+    /** Stands in for credential maintenance clearing the marker. */
+    clearMarker: () => {
+      for (const r of rows) {
+        const { refreshFailedAt: _dropped, ...rest } =
+          r.auth as ConnectionAuthConfig & { refreshFailedAt?: number };
+        r.auth = rest;
+      }
+    },
   };
 }
 
@@ -172,6 +244,10 @@ describe("oauth refresh loop backoff", () => {
     h.setClock(120_000);
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(2);
+
+    // A transient failure never persists a marker — the connection must stay in
+    // the due set so the backoff above is what governs the retry.
+    expect(h.written()).toEqual([]);
   });
 
   it("resets the failure counter (not just the timer) after a success", async () => {
@@ -190,7 +266,7 @@ describe("oauth refresh loop backoff", () => {
     // (nextAttempt = 60_001 + 60_000 = 120_001). Had the entry survived the
     // success, it would be failures=2 → a 120s window (nextAttempt = 180_001).
     h.setClock(60_001);
-    h.setMode("fail");
+    h.setMode("transient");
     expect((await h.loop.tickOnce()).failed).toBe(1);
     const afterSecondFailure = h.fetchCount();
 
@@ -239,5 +315,68 @@ describe("oauth refresh loop backoff", () => {
     h.setClock(50_000);
     expect((await h.loop.tickOnce()).failed).toBe(1);
     expect(h.fetchCount()).toBe(2);
+  });
+});
+
+describe("oauth refresh permanent failures", () => {
+  it.each(["revoked-grant", "revoked-grant-200"] as const)(
+    "marks a revoked grant (%s) and parks it out of the due set",
+    async (mode) => {
+      const h = makeLoop();
+      h.setMode(mode);
+      h.setClock(5_000);
+
+      expect(await h.loop.tickOnce()).toEqual({
+        refreshed: 0,
+        failed: 1,
+        skipped: 0,
+      });
+      expect(h.written().at(-1)).toMatchObject({ refreshFailedAt: 5 });
+
+      // Parked, not backed off: the connection is gone from the due set, so the
+      // next tick doesn't even count it as skipped.
+      expect(await h.loop.tickOnce()).toEqual({
+        refreshed: 0,
+        failed: 0,
+        skipped: 0,
+      });
+      expect(h.fetchCount()).toBe(1);
+    },
+  );
+
+  it("marks a rejected client secret only when the connection owns it", async () => {
+    // AUTH carries no clientSecretRef: the secret is the operator's, a redeploy
+    // fixes it, so parking it would demand a needless re-consent.
+    const operatorBaked = makeLoop();
+    operatorBaked.setMode("invalid-client");
+    expect((await operatorBaked.loop.tickOnce()).failed).toBe(1);
+    expect(operatorBaked.written()).toEqual([]);
+
+    const ownSecret = makeLoop({
+      auth: {
+        ...AUTH,
+        clientSecretRef: {
+          storeId: "test",
+          path: "secret-p",
+          field: "client_secret",
+        },
+      },
+    });
+    ownSecret.setMode("invalid-client");
+    ownSecret.setClock(9_000);
+    expect((await ownSecret.loop.tickOnce()).failed).toBe(1);
+    expect(ownSecret.written().at(-1)).toMatchObject({ refreshFailedAt: 9 });
+  });
+
+  it("re-admits a connection once the marker is cleared", async () => {
+    const h = makeLoop();
+    h.setMode("revoked-grant");
+    await h.loop.tickOnce();
+    expect((await h.loop.tickOnce()).failed).toBe(0);
+
+    h.clearMarker();
+    h.setMode("ok");
+    expect((await h.loop.tickOnce()).refreshed).toBe(1);
+    expect(h.written().at(-1)).not.toHaveProperty("refreshFailedAt");
   });
 });
