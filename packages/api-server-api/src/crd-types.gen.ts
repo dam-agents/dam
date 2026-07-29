@@ -153,6 +153,18 @@ export interface AgentSpecCR {
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */
   storageSize?: string;
+  /**
+   * TelemetryAttributionID is the agent id stamped as the trusted telemetry
+   * attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+   * by the api-server for Invocation targets to their root Driver, so a
+   * target's spend credits the agent that drove it rather than the
+   * short-lived target. When set, the gateway also stamps
+   * `x-platform-invocation-id` with this agent's own id, keeping child rows
+   * distinguishable after their attribution is merged. Never user-settable —
+   * a user-supplied value would forge attribution onto an agent the caller
+   * does not drive; it is service-only input, like the pre-minted id.
+   */
+  telemetryAttributionId?: string;
 }
 
 /**

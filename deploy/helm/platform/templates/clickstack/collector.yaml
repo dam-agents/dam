@@ -24,7 +24,7 @@ data:
             endpoint: 0.0.0.0:4317
             # Retain request headers as client metadata so the
             # resource/agent-identity processor can read the gateway-stamped
-            # x-platform-agent-id header.
+            # x-platform-agent-id and x-platform-invocation-id headers.
             include_metadata: true
           http:
             endpoint: 0.0.0.0:4318
@@ -42,14 +42,26 @@ data:
       # set it ONLY from the trusted header. MUST run before `batch`, which emits
       # a new context and drops per-request client metadata. Telemetry with no
       # header (platform components) ends up with no platform.agent.id, which is
-      # how the read path tells agent telemetry apart. See
-      # docs/architecture/observability.md.
+      # how the read path tells agent telemetry apart.
+      #
+      # platform.invocation.id gets the same delete-then-upsert treatment from
+      # the x-platform-invocation-id header. The gateway stamps that header only
+      # for an Invocation target whose attribution was overridden to its root
+      # Driver — it carries the target's own id so the merged child row stays
+      # distinguishable. A missing header leaves the attribute absent (upsert
+      # from a missing context key is a no-op), which is exactly the non-target
+      # case. See docs/architecture/observability.md.
       resource/agent-identity:
         attributes:
           - key: platform.agent.id
             action: delete
           - key: platform.agent.id
             from_context: "metadata.x-platform-agent-id"
+            action: upsert
+          - key: platform.invocation.id
+            action: delete
+          - key: platform.invocation.id
+            from_context: "metadata.x-platform-invocation-id"
             action: upsert
       batch: {}
     exporters:
