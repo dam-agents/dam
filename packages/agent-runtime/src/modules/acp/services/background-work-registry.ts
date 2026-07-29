@@ -1,15 +1,5 @@
 import type { BackgroundWorkItem } from "agent-runtime-api";
 
-/**
- * How many sessions may hold at once. Each held session keeps the harness's
- * per-session subprocess alive (~300 MB), against an agent pod whose memory
- * limit defaults to 2Gi — so an unbounded number of holds would trade a lost
- * background job for an OOM kill that takes down the pod and *every* job in it.
- * Over the cap the longest-held session is released first: it has had the most
- * time to finish, and is the likeliest to be a reporter that stopped reporting.
- */
-const DEFAULT_MAX_HELD_SESSIONS = 2;
-
 export interface HeldSession {
   sessionId: string;
   items: BackgroundWorkItem[];
@@ -29,9 +19,12 @@ export interface BackgroundWorkRegistry {
 }
 
 export interface BackgroundWorkRegistryDeps {
-  /** Override the concurrent-hold cap; 0 refuses every hold. */
-  maxHeldSessions?: number;
-  now?: () => number;
+  /**
+   * Kill switch. `false` refuses every hold, so an install that finds the
+   * behaviour surprising can turn it off without a new image; sessions then reap
+   * on idleness exactly as they did before the contract existed.
+   */
+  enabled?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -55,22 +48,22 @@ export interface BackgroundWorkRegistryDeps {
  *
  * **Failure posture.** A reporter that stops reporting while its last set was
  * non-empty holds its session until the session is torn down for another reason
- * — deliberately, because the alternative is a timer that cannot tell unfinished
- * work from work that will never finish. Holds are logged with what they are for
- * and published on the runtime's status surface, a hard stop or pause reclaims
- * the pod regardless, and the concurrent-hold cap bounds the memory cost.
+ * — deliberately, because every bound available here is a worse failure than the
+ * one it prevents. A timer cannot tell unfinished work from work that will never
+ * finish; a cap on concurrent holds can only be enforced by reaping a session,
+ * which kills the very work being protected, and it would guard a boundary the
+ * platform does not otherwise defend (an open tab pins the same subprocess, with
+ * no cap at all). What keeps a hold honest instead is that it is never silent or
+ * final: it is logged with what it is for, published on the runtime's status
+ * surface, and a hard stop or pause reclaims the pod regardless.
  */
 export function createBackgroundWorkRegistry(
   deps: BackgroundWorkRegistryDeps = {},
 ): BackgroundWorkRegistry {
-  const maxHeldSessions = deps.maxHeldSessions ?? DEFAULT_MAX_HELD_SESSIONS;
-  const now = deps.now ?? (() => Date.now());
+  const enabled = deps.enabled ?? true;
 
-  /** Session → its reported set plus when it first became non-empty. */
-  const holds = new Map<
-    string,
-    { items: BackgroundWorkItem[]; heldSince: number }
-  >();
+  /** Session → the set it last reported. */
+  const holds = new Map<string, BackgroundWorkItem[]>();
 
   function describe(items: BackgroundWorkItem[]): string {
     return items
@@ -79,44 +72,23 @@ export function createBackgroundWorkRegistry(
       .slice(0, 300);
   }
 
-  /** Keep the newest holds when over the cap; releasing frees a subprocess. */
-  function enforceCap(): void {
-    if (maxHeldSessions <= 0 || holds.size <= maxHeldSessions) return;
-    const oldestFirst = [...holds.entries()].sort(
-      (a, b) => a[1].heldSince - b[1].heldSince,
-    );
-    for (const [sessionId] of oldestFirst.slice(
-      0,
-      holds.size - maxHeldSessions,
-    )) {
-      holds.delete(sessionId);
-      deps.log?.(
-        `background work in session ${sessionId} released — more than ${maxHeldSessions} sessions holding at once`,
-      );
-    }
-  }
-
   return {
     report(sessionId, items) {
-      const previous = holds.get(sessionId);
+      const held = holds.has(sessionId);
       if (!items.length) {
-        if (previous) {
+        if (held) {
           holds.delete(sessionId);
           deps.log?.(`background work in session ${sessionId} is done`);
         }
         return;
       }
-      if (maxHeldSessions <= 0) return;
-      holds.set(sessionId, {
-        items,
-        heldSince: previous?.heldSince ?? now(),
-      });
-      if (!previous) {
+      if (!enabled) return;
+      holds.set(sessionId, items);
+      if (!held) {
         deps.log?.(
           `holding session ${sessionId} for background work: ${describe(items)}`,
         );
       }
-      enforceCap();
     },
 
     hasWork(sessionId) {
@@ -124,9 +96,9 @@ export function createBackgroundWorkRegistry(
     },
 
     held() {
-      return [...holds.entries()].map(([sessionId, hold]) => ({
+      return [...holds.entries()].map(([sessionId, items]) => ({
         sessionId,
-        items: hold.items,
+        items,
       }));
     },
 

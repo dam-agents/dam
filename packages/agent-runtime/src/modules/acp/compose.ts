@@ -24,8 +24,8 @@ export interface ComposeAcpOptions {
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   isTerminalSessionActive?: (sessionId: string) => boolean;
-  /** Cap sessions holding background work at once; 0 refuses every hold. */
-  backgroundWorkMaxHeldSessions?: number;
+  /** False refuses every background-work hold (the feature's kill switch). */
+  backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -40,7 +40,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   // agent-runtime-api). The runtime reads it when deciding whether to close a
   // session or to call itself idle; the server exposes the reporting route.
   const backgroundWork = createBackgroundWorkRegistry({
-    maxHeldSessions: opts.backgroundWorkMaxHeldSessions,
+    enabled: opts.backgroundWorkHolds,
     log: opts.log,
   });
   const runtime = createAcpRuntime({

@@ -155,18 +155,18 @@ real work rather than the work itself: a loop launched detached with its progres
 watched by a supervised log tail reports the tail, and holds the session for
 that.
 
-A hold lasts as long as the work is reported. There is no time bound, because no
-bound can tell work that has not finished yet from work that never will — the two
-are indistinguishable from outside — so imposing one would trade a silent kill
-for a self-healing leak, the same trade a running Experiment already declines.
-What makes that safe is that a hold is neither invisible nor final: it is logged
-and published with what it is for, and a [hard stop or pause](#hibernate) scales
-the pair down regardless. One bound is not optional — a cap on how many sessions
-may hold at once, since each held session keeps a subprocess alive against a
-finite pod memory limit and an OOM kill would cost more work than the reap ever
-could; over the cap the longest-held session is released, and setting the cap to
-zero refuses every hold. The cost of all this is worth stating plainly: a sandbox
-with reported background work does not scale to zero until that work ends.
+A hold lasts as long as the work is reported, and nothing bounds it — not a
+timer, not a count. Every available bound is a worse failure than the one it
+prevents. A timer cannot tell work that has not finished yet from work that never
+will, so it only moves the silent kill later. A cap on concurrent holds can be
+enforced only by reaping a session, which destroys the work being protected, and
+it would defend a boundary the platform does not otherwise defend: an open tab
+keeps the same subprocess alive, and engaged sessions are uncapped. What keeps a
+hold honest instead is that it is never silent or final — it is logged and
+published with what it is for, and a [hard stop or pause](#hibernate) scales the
+pair down regardless — plus a switch that refuses holds outright for an install
+that wants the old behaviour. The cost is worth stating plainly: a sandbox with
+reported background work does not scale to zero until that work ends.
 
 Terminal-mode sessions follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that reattaching while the PTY lives replays the serialized buffer. A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace (30 s, sized for a tab refresh), it is killed only once the harness has also been quiet — no output for five minutes. Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
