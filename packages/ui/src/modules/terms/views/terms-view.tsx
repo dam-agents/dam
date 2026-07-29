@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 
 import { Markdown } from "../../../components/markdown.js";
+import { useStore } from "../../../store.js";
 import { useAcceptTerms } from "../api/mutations.js";
 import { useLatestAcceptance, useTermsDocument } from "../api/queries.js";
 
@@ -46,6 +47,8 @@ export function TermsView() {
             onClick={() =>
               accept.mutate(
                 { version: doc.version },
+                // Full reload on purpose (unlike BackButton): it clears the
+                // server's 412 terms_stale gate with a clean refetch.
                 { onSuccess: () => window.location.assign("/") },
               )
             }
@@ -92,8 +95,11 @@ function AcceptButton({
 }
 
 function BackButton() {
+  const setView = useStore((s) => s.setView);
+  // setView rather than history.back(): a deep link to /terms has no in-app
+  // history behind it, and history.back() would leave the app entirely.
   return (
-    <Button type="button" onClick={() => window.location.assign("/")}>
+    <Button type="button" onClick={() => setView("list")}>
       Back
     </Button>
   );

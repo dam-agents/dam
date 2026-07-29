@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pathToState, viewToPath } from "../../modules/platform/lib/routes.js";
+import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 import {
   bindErrorCopy,
   callbackErrorCopy,
@@ -41,7 +41,7 @@ describe("telegram bind flow helpers", () => {
 
 describe("telegram bind route", () => {
   it("round-trips /telegram/bind", () => {
-    expect(pathToState("/telegram/bind")).toEqual({ view: "telegram-bind" });
-    expect(viewToPath("telegram-bind")).toBe("/telegram/bind");
+    expect(parseRoute("/telegram/bind")).toEqual({ view: "telegram-bind" });
+    expect(routeToPath({ view: "telegram-bind" })).toBe("/telegram/bind");
   });
 });

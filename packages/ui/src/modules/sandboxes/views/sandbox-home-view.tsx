@@ -4,6 +4,7 @@ import { useStore } from "../../../store.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
@@ -94,7 +95,11 @@ export function SandboxHomeView() {
       ) : (
         <ConnectionsSection
           agentId={agent.id}
-          oauthReturnView={`/sandboxes/${agent.id}/connections`}
+          oauthReturnView={routeToPath({
+            view: "sandbox-home",
+            agentId: agent.id,
+            sandboxSection: "connections",
+          })}
           inset
         />
       )}

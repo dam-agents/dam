@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
+import { routeToPath } from "./modules/platform/lib/routes.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 import { useStore } from "./store.js";
@@ -22,7 +23,7 @@ async function main() {
   if (!user) return; // Redirecting to Keycloak, don't render
 
   if (!(await preflightTermsGate())) {
-    window.history.replaceState({}, "", "/terms");
+    window.history.replaceState({}, "", routeToPath({ view: "terms" }));
     useStore.setState({ view: "terms" });
   }
 

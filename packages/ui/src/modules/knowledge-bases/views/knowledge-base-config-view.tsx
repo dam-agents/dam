@@ -9,7 +9,7 @@ import { useStore } from "../../../store.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { viewToPath } from "../../platform/lib/routes.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { READ_ONLY_FIELD } from "../../sandboxes/components/sandbox-setup-section.js";
 import { useSandboxSettingsForm } from "../../sandboxes/hooks/use-sandbox-settings-form.js";
@@ -106,7 +106,10 @@ export function KnowledgeBaseConfigView() {
         <SectionLabel spaced>Connections</SectionLabel>
         <ConnectionsSection
           agentId={agent.id}
-          oauthReturnView={viewToPath("knowledge-base-config", null, agent.id)}
+          oauthReturnView={routeToPath({
+            view: "knowledge-base-config",
+            agentId: agent.id,
+          })}
         />
       </section>
 

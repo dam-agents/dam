@@ -11,6 +11,7 @@ import { useCreateExperimentSandbox } from "../../experiments/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useCreateKnowledgeBase } from "../../knowledge-bases/api/mutations.js";
 import { DEFAULT_KB_TEMPLATE_ID } from "../../knowledge-bases/lib/kb-templates.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import {
   EMPTY_REGISTRY_CREDENTIAL,
@@ -90,7 +91,7 @@ export function SandboxWizardView() {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
     if (!result) return;
-    window.history.replaceState({}, "", "/sandboxes/new");
+    window.history.replaceState({}, "", routeToPath({ view: "sandbox-new" }));
     const connectionId = params.get("connection");
     if (result === "success" && connectionId) {
       const saved = loadSnapshot();
