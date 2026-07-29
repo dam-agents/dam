@@ -3,7 +3,6 @@ export { runMigrations } from "./migrate.js";
 export {
   channels,
   identityLinks,
-  allowedUsers,
   telegramConversations,
   skillSources,
   agentSkills,

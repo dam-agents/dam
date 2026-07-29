@@ -69,12 +69,6 @@ function renderAgent(agent: AgentView): string {
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
-  entries.push([
-    "ALLOWED",
-    agent.allowedUserEmails.length === 0
-      ? "<none>"
-      : agent.allowedUserEmails.join(", "),
-  ]);
   if (agent.state === "error" && agent.error)
     entries.push(["ERROR", agent.error]);
   const pad = Math.max(...entries.map(([k]) => k.length)) + 2;

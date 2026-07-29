@@ -54,7 +54,7 @@ test("user env rides the contribution rail", async () => {
   // agents.update replaces the whole agent_env list, which also carries the
   // template-seeded env (e.g. the mock's MOCK_DEFAULT_REPLY). Keep the
   // baseline in every update and restore it at the end — wiping it strips
-  // the default reply from forks and breaks 07-slack.
+  // the default reply and breaks the Slack specs.
   const baselineEnv = (await api.agents.get.query({ id: agentId })).env ?? [];
 
   await test.step("setting user env reaches the agent — no pod roll", async () => {

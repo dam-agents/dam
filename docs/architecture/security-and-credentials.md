@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-27
+Last verified: 2026-07-29
 
 ## Overview
 
@@ -26,16 +26,11 @@ Three rules carry the security model:
    tunnelled to ztunnel; its only admitted intra-cluster destination
    is the paired gateway pod on the Envoy proxy port. The gateway pod
    stays in ambient; istiod stamps it with a SPIFFE workload cert whose
-   SA name equals the Agent (or fork) name. Two per-Agent
+   SA name equals the Agent name. Two per-Agent
    AuthorizationPolicies enforce the gateway-originated boundary
    cryptographically: the api-server's harness waypoint ALLOWs the
    gateway principal to `/api/agents/<id>/*`; the per-Agent
-   ext-authz Service ALLOWs only the matching SA. Fork pairs
-   get their **own** per-fork SA — distinct from the parent's — so a
-   compromised fork can't impersonate the parent on the harness path;
-   per-fork policies layer narrowly on top, admitting the fork's
-   gateway SA only to `/api/agents/<parent>/mcp` and to the
-   parent's ext-authz Service.
+   ext-authz Service ALLOWs only the matching SA.
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).
@@ -292,8 +287,7 @@ above. It does not ride the Envoy path at all:
   the image pull. It is never mounted into the gateway pod and never
   projected into the agent container — like egress credentials, the agent
   never holds the bytes, but here that is a property of *where the Secret
-  is consumed* rather than of Envoy injection. A foreign-replier fork
-  pulls the parent's private image with it without ever seeing it.
+  is consumed* rather than of Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are
   owner-scoped and reusable across every Agent that owner runs; a pull
   credential is agent-scoped — one Secret per Agent (still carrying the
@@ -303,8 +297,7 @@ above. It does not ride the Envoy path at all:
   configure an install-wide default pull secret applied to every agent
   pod. When an Agent carries its own pull-secret ref the controller lists
   it *first* on the pod's `imagePullSecrets`, ahead of the install-wide
-  default, which is retained as a fallback — override, not replace. The
-  same ordering applies to fork Jobs.
+  default, which is retained as a fallback — override, not replace.
 
 The api-server builds the Secret from structured `{server, username,
 password}` input and writes it before the Agent record, rolling it back if
@@ -489,49 +482,29 @@ Invocations are failed and their targets eagerly reaped (transitively
 for chains), and a target that slips past the cascade fails closed at
 the gate because its driver no longer resolves.
 
-## Per-turn fork pods (Slack foreign replier)
+## Channel turns
 
-This section covers person-scoped Slack bindings — the default access
-mode ([channels](channels.md)). Who may drive a thread at all is
-decided upstream: channel-side identities are linked to platform
-users, and the per-Agent `allowedUsers` gate admits or rejects each
-replier.
-
-When a user other than the Agent owner replies in a Slack thread,
-the api-server creates a Fork CR that the controller materialises
-into a per-turn paired pod set: a fork agent Job and a fork gateway
-Pod. The fork's gateway pod mounts the **replier's** K8s credential
-Secrets — selected by `agent-platform.ai/owner=<replier-sub>`, not the Agent
-owner's `sub`. The credential boundary is preserved: the fork pair runs
-the replier's credentials, never the parent Agent owner's. The fork
-agent's `agent-platform.ai/agent` label still points at the parent
-Agent so traffic resolves under the parent's egress rules; the fork's
-own pair key (`agent-platform.ai/pair`) isolates it from the parent
-Agent's pair. The fork gateway's chain shape follows the same
-authority: it inherits the **parent's** promoted `l7Hosts` alongside
-the replier's credential Secrets, so the parent's path/method/port
-narrowing binds foreign turns at the same granularity as the owner's
-own (#2866).
-
-## Shared-mode channel turns
-
-Binding a conversation surface in **shared** mode — a Slack binding's
-bind-time choice, and structurally every Telegram binding — lends the
-Agent, credentials included, to everyone the messenger admits there
-([channels](channels.md)). Every shared turn relays to the main agent
-pod and runs under the Agent's own credential set, gated by the
-owner's HITL rules and egress rules exactly like any other turn; no
-per-speaker credential selection happens, and no fork pods are
-involved. The binding owner's Terms-of-Use acceptance gates each turn
+Binding a conversation surface — a Slack channel/DM or a Telegram
+chat — lends the Agent, credentials included, to everyone the
+messenger admits there ([channels](channels.md)). Every channel turn
+relays to the main agent pod and runs under the Agent's own
+credential set, gated by the owner's HITL rules and egress rules
+exactly like any other turn; no per-speaker credential selection
+happens. The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.
 
-## `dam-run` executor pods
+## `dam-run` executor pods (disabled)
+
+Currently disabled — the executor co-wrote the agent's live workspace,
+which ReadWriteOnce volumes no longer allow; the relay refuses every
+invocation while the machinery stays dormant (see
+[agent-lifecycle](agent-lifecycle.md#run-executors-dam-run--disabled)).
+The boundary description below still holds for the dormant machinery.
 
 The in-pod `dam-run` CLI runs a command in a fresh ephemeral pod (a
-`Run`; see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run)).
-It adds **no new privilege to the agent pod**: `dam-run` only dials the
+`Run`). It adds **no new privilege to the agent pod**: `dam-run` only dials the
 api-server harness port the agent can already reach, pinned to the
 agent's own SA at the waypoint, so an agent can spawn executors only for
 itself. The executor holds no credential bytes and has no SA, gateway,
@@ -554,10 +527,7 @@ differ:
   only the *gateway* pod is a mesh participant — istiod stamps it with
   a SPIFFE workload cert. The agent pod opts out of ambient
   (`istio.io/dataplane-mode: none`) and carries no SPIFFE identity.
-  Fork pairs get their **own** per-fork SA — distinct from
-  the parent's — paired with narrow per-fork AuthorizationPolicies, so
-  a compromised fork cannot reach the parent's full
-  `/api/agents/<parent>/*` surface. `automountServiceAccountToken`
+  `automountServiceAccountToken`
   stays false on both pods; the gateway's SPIFFE cert is independent
   of SA-token mounts.
 - **Agent → paired gateway** is gated at the kernel by the per-pair
@@ -577,7 +547,7 @@ differ:
   api-server has verified the user JWT and agent ownership before
   forwarding) and controller pods (idle-checker busy-probe). Everything
   else, gateway pods included, is dropped; the policy selects
-  `role=agent`, so fork pods are covered too.
+  `role=agent`, so ephemeral executor pods are covered too.
 - **Gateway → api-server harness.** All agent egress (including the
   harness call) flows through the paired gateway pod's Envoy, so what
   reaches the mesh is gateway → harness. The harness Service is
@@ -585,15 +555,12 @@ differ:
   synthesises a waypoint Gateway pod in front of it. A per-Agent
   AuthorizationPolicy on the waypoint ALLOWs the gateway's SA
   principal to `/api/agents/<id>/*`; handlers can treat URL `:id`
-  as authenticated. For forks, an additional per-fork policy admits
-  the fork *gateway*'s SA only to `/api/agents/<parent>/mcp` —
-  the runtime channel stays parent-only.
+  as authenticated.
 - **Gateway → api-server ext-authz** routes through a per-Agent
   Service `<rel>-extauthz-<id>` rendered by the controller alongside
   each Agent. The AuthorizationPolicy on each Service ALLOWs only
-  the matching SA principal (plus per-fork ALLOWs that admit fork
-  SAs to the parent's Service so the parent owner's HITL rules stay
-  the gate). The destination Service is cryptographically pinned to
+  the matching SA principal. The destination Service is
+  cryptographically pinned to
   the calling Agent; the api-server derives Agent ID from the
   gRPC `:authority`.
 - **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects

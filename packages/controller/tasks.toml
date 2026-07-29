@@ -56,8 +56,17 @@ crds=deploy/helm/platform/crds
 legacy=deploy/helm/platform/files/crds # legacy location at older baselines
 config=packages/controller/crdify.yaml # downgrades description-only diffs to advisory
 status=0
+# CRDs deliberately retired from the platform. A removal here must ship with
+# an explicit in-cluster cleanup (the retired definition carries
+# helm.sh/resource-policy: keep, so Helm never deletes it itself).
+removed_ok="agent-platform.ai_forks.yaml" # #2987: person-scoped forks removed
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" "$legacy"); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
+    case " $removed_ok " in
+      *" $(basename "$f") "*)
+        echo "crd-compat: $f removed deliberately — allowed"
+        continue ;;
+    esac
     echo "crd-compat: $f shipped in $baseline but was removed" >&2
     status=1
   fi

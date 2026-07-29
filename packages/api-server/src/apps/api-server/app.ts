@@ -817,7 +817,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       resizeGate,
       owner: user.sub,
       db,
-      userDirectory,
       telegramBinding: telegramBindFlows
         ? {
             peekFlow: telegramBindFlows.peek,

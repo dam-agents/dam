@@ -51,16 +51,6 @@ export const identityLinks = pgTable(
   (table) => [primaryKey({ columns: [table.provider, table.externalUserId] })],
 );
 
-export const allowedUsers = pgTable(
-  "allowed_users",
-  {
-    agentId: text("agent_id").notNull(),
-    owner: text("owner").notNull(),
-    keycloakSub: text("keycloak_sub").notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.agentId, table.keycloakSub] })],
-);
-
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {

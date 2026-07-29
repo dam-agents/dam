@@ -10,10 +10,11 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 |------|-----------|
 | Infra State | State the Controller reconciles into running infrastructure. Stored in a ConfigMap with `spec.yaml` (api-server writer) and `status.yaml` (controller writer). |
 | Application State | State only the API Server reads and writes; the Controller never touches it. Stored in PostgreSQL. |
-| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract. |
+| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Always ReadWriteOnce — the Agent's pod is the volume's only writer. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract. |
 | Warm Pool | A controller-managed, leader-only background buffer of pre-provisioned, already-bound Spare workspace volumes, organized into per-size pools, that a newly created Agent claims at create time to skip first-start provisioning latency. Disabled by default. |
 | Spare | An unclaimed Workspace Volume in the Warm Pool — provisioned and bound, waiting to be claimed. Carries a pool label and an available marker, and deliberately **no** owning-Agent label, so the orphan-volume sweep ignores it. |
 | Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
+| Storage Migration | The controller's one-time, interrupt-safe drain of legacy shared-writable (RWX) Workspace Volumes onto ReadWriteOnce storage: force the Agent down, copy onto a fresh volume in a checksum-verified Job, re-point the Agent, delete the old volume, restore the prior run state. A no-op once no RWX volume remains; removed with the transitional window. |
 
 ## Agents (bounded context)
 
@@ -22,7 +23,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Term | Definition |
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
-| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A single ConfigMap whose `spec.yaml` (api-server writer) carries env, secret refs, allowed users, and `desiredState`, and whose `status.yaml` (controller writer) carries observed state. Optionally derived from a Template at create-time |
+| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
 | Sandbox | The user-facing name for an Agent across the redesigned UI (#892); "Agent" remains the domain/code term |
 | Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain sandboxes. The Sandboxes list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
 | Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment sandbox copies in its authoring skill from a path staged in the image |
@@ -34,7 +35,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Wake | Transitioning an Agent from hibernated to running |
 | Hard Stop | User-initiated scale-to-zero of a running Agent (the `stop-requested` annotation), freeing its Reserved compute. Sticky against background activity — background polls cannot resurrect it — and cleared only by an explicit Wake or a Schedule fire (the UI warns at stop time when schedules exist) |
 | Pause | User-initiated immediate hibernation: a Hard Stop whose stamp the api-server clears once the Agent settles Hibernated. Sticky only during the scale-down window (which is what prevents poll-resurrection mid-descent); afterwards the Agent wakes on any deliberate touch, back through the budget gate |
-| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Set on ephemeral agents (Invocation targets now; the intended home for Forks and inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
+| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Set on ephemeral agents (Invocation targets now; the intended home for inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
 | Agent Lifetime | *(proposed, PR #2816)* Optional grace period a Sweepable Agent may stay hibernated before the Agent Sweep deletes it. Default zero — deleted as soon as it hibernates. The knob that later lets an inherited channel agent linger warm (Radek's "2 days") while an Invocation target dies on hibernate. Distinct from the per-Invocation Liveness Deadline, which bounds one result, not the agent |
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
@@ -46,20 +47,10 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Term | Definition |
 |------|-----------|
 | Channel | An external communication pathway connecting users to an Agent (e.g., Slack) |
-| Channel Binding | The 1:1 linkage between a conversation surface (Slack channel, Telegram chat) and an Agent; a surface may be bound to at most one Agent globally; a Slack binding carries an access mode fixed at bind time (switching = disconnect + reconnect); Agent delete, Slack disconnect, or Telegram `/platform unbind` / owner disconnect in the UI releases it |
+| Channel Binding | The 1:1 linkage between a conversation surface (Slack channel, Telegram chat) and an Agent; a surface may be bound to at most one Agent globally; the binding itself is the authorization (see Shared Access); Agent delete, Slack disconnect, or Telegram `/platform unbind` / owner disconnect in the UI releases it |
 | Channel Worker | A long-running process that bridges an external service to an Agent |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
-| Shared Access (system Agent) | The access mode where the binding is the authorization: the Agent owner consents to a conversation surface (Slack bind-time choice; structurally every Telegram binding), and anyone the messenger admits there may drive the Agent under the Agent's own credentials — no identity link, turns attributed by messenger-native sender id |
-| Person-Scoped Access | The default Slack access mode: users link their platform identity, the per-Agent `allowedUsers` gate admits repliers, and each turn runs under the driving user's own identity — owner turns on the main pod, Foreign Replier turns as Forks |
-| Foreign Replier | A linked Slack user in an Agent's `allowedUsers` list whose identity differs from the Agent owner; on a person-scoped binding, triggers a Fork for the turn |
-
-## Forks (bounded context)
-
-| Term | Definition |
-|------|-----------|
-| Fork | An ephemeral, per-turn execution environment derived from an Agent that impersonates a foreign user for the duration of one Slack turn. Job-shaped and run-to-completion — distinct from the Agent's StatefulSet shape |
-| Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Agent owner |
-| Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
+| Shared Access | The one access model (per-person access modes are retired): the binding is the authorization — the Agent owner consents to a conversation surface, and anyone the messenger admits there may drive the Agent under the Agent's own credentials. No identity link; turns attributed by messenger-native sender id |
 
 ## Invocations (bounded context) — proposed, in-flight (PR #2816)
 
@@ -128,7 +119,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Egress Rule | A persistent allow/deny decision keyed on `(agent, host, method, path_pattern)`; matched on every ext_authz check before any user prompt |
 | Rule Verdict | `allow` or `deny` — the decision a rule encodes |
 | Rule Match | Lookup of the most-specific active rule for a given egress request; misses fall through to the ext_authz Gate's pending-approval flow |
-| L7 Promotion | Putting a rule's host onto the gateway's TLS-terminating (L7) chain so path/method/port narrowing is enforceable over HTTPS — the L4 catch-all sees only SNI. Per-agent intent on the Agent resource (`l7Hosts`), written by the api-server when such a rule exists; forks inherit the parent's promotions |
+| L7 Promotion | Putting a rule's host onto the gateway's TLS-terminating (L7) chain so path/method/port narrowing is enforceable over HTTPS — the L4 catch-all sees only SNI. Per-agent intent on the Agent resource (`l7Hosts`), written by the api-server when such a rule exists |
 
 ## Connections (bounded context) — proposed, in-flight design
 
@@ -233,7 +224,7 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 |------|-----------|
 | Budget | A per-user ceiling on concurrently Reserved compute (CPU and memory) across that user's Agents. Constrains *starting* an Agent, never *running* one — no eviction on ceiling changes |
 | Ceiling | The limit side of a Budget: the operator-set maximum Reserved compute for one user. Resolved as the user's UserBudget override, else the chart-wide default |
-| Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-turn Fork/Run pods |
+| Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-command Run pods |
 | Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/1Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
 | UserBudget | The record of one user's Ceiling override: a namespaced CR (platform namespace, like Agent) named `budget-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub (name↔owner pinned by schema validation). Absence means the chart default applies |
 | Over Budget | The parked state of an Agent whose start would push its owner's Reserved past their Ceiling: pods stay at zero, `Ready=False/OverBudget`. Parked Agents never start by themselves — a new deliberate start (Start button, opening it, a Schedule fire) retries the gate; never-hibernate Agents are the exception and auto-start when room frees. The activity window lapsing reverts it to plain hibernation |

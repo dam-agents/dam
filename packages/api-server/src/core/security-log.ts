@@ -29,7 +29,7 @@ export type SecurityCategory =
   | "authz" // authorization (what you may do)
   | "egress" // credentialed egress / ext_authz decisions
   | "approval" // HITL verdicts
-  | "authz-list" // allow-list mutations (allowedUsers, egress rules, grants)
+  | "authz-list" // authorization-list mutations (egress rules, grants)
   | "credential" // secret / token / connection lifecycle
   | "channel" // messenger inbound/outbound + identity linking
   | "resource" // agent / schedule lifecycle

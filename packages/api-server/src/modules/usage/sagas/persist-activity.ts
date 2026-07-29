@@ -75,7 +75,6 @@ export function startPersistActivitySaga(
               // externalActorId stays in the payload — the actor_sub column
               // is HMAC-pseudonymized Keycloak-sub space, not messenger ids.
               payload: {
-                ...(event.forkId ? { forkId: event.forkId } : {}),
                 ...(event.externalActorId
                   ? { externalActorId: event.externalActorId }
                   : {}),

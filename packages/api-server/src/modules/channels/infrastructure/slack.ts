@@ -1,4 +1,3 @@
-import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
@@ -19,17 +18,12 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 import {
   type AcpClient,
   type AcpClientFactory,
-  type ForkAcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import {
   EventType,
   emit as defaultEmit,
-  events$,
-  ofType,
   type DomainEvent,
-  type ForkFailed,
-  type ForkReady,
   type TurnOutcome,
 } from "../../../events.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
@@ -74,13 +68,11 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 
-const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
-
 /** Per-turn contract prepended to every relayed Slack message. Plain assistant
  *  text is never delivered — the agent reaches the channel only by calling a
  *  tool. The concrete thread/message ids are injected so the agent can echo
  *  them back; the tools also fall back to the turn's most-recent ids when they
- *  are omitted. Re-stated every turn because mention, fork, and ambient turns
+ *  are omitted. Re-stated every turn because mention and ambient turns
  *  interleave in the same sessions — the contract can't live in a session
  *  alone. The install's bot identity comes from the brand config; the agent's
  *  own name belongs to its workspace setup and is deliberately not injected. */
@@ -319,13 +311,11 @@ async function getContextMessages(
 }
 
 export interface ChannelRegistry {
-  /** The binding (if any) for a Slack channel: agent, binding owner, the
-   *  access mode (absent = person-scoped), and whether ambient mode is on
-   *  (shared bindings only; absent = off). */
+  /** The binding (if any) for a Slack channel: agent, binding owner, and
+   *  whether ambient mode is on (absent = off). */
   resolveSlackBinding(slackChannelId: string): Promise<{
     instanceName: string;
     owner: string;
-    mode?: "shared" | "person-scoped";
     ambient?: boolean;
   } | null>;
   resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
@@ -552,7 +542,6 @@ export function createSlackWorker(
   brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
-  makeForkAcpClient: ForkAcpClientFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   const brandShort = brand.short;
@@ -586,7 +575,7 @@ export function createSlackWorker(
   /** The most recent turn per agent, never cleared — the last-active-thread
    *  fallback for a proactive `reply`/`react` made outside any live turn (e.g.
    *  from a scheduled session), mirroring Telegram. Consulted only when no turn
-   *  is live or lingering. Addressed turns (mention, DM, fork) advance it when
+   *  is live or lingering. Addressed turns (mention, DM) advance it when
    *  they start; ambient read-along turns do not — most end silent, and a
    *  proactive reply must not target whatever channel message last drifted by.
    *  An ambient turn advances it only through engagement: when a `reply`/
@@ -878,7 +867,8 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
-    /** Null on shared-mode relays; the Keycloak sub on person-scoped ones. */
+    /** Always null on channel relays — no platform identity is resolved for
+     *  the sender; attribution rides `externalActorId`. */
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
@@ -1035,241 +1025,6 @@ export function createSlackWorker(
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
     }
-  }
-
-  async function beginForeignTurn(args: {
-    channel: string;
-    threadTs: string;
-    eventTs: string;
-    slackUserId: string;
-    keycloakSub: string;
-    instanceName: string;
-    text: string;
-    hasThread: boolean;
-    teamId?: string;
-    images: FetchedImage[];
-  }) {
-    if (!gateway) return;
-    const gw = gateway;
-
-    // The fork's turn is registered in `handleForkOutcome`, once the fork pod is
-    // ready and actually driving the harness — that is when its `reply`/`react`
-    // calls arrive. Registering here would make this thread a spurious reply
-    // target while the fork is still provisioning.
-
-    // A running "working…" status while the fork provisions and runs; the fork
-    // posts its own reply through the `reply` tool once it answers.
-    const presenter = createTurnPresenter(gw, {
-      channel: args.channel,
-      threadTs: args.threadTs,
-      instanceName: args.instanceName,
-    });
-    presenter.setThinking();
-
-    const prompt = await buildThreadPrompt(
-      gw,
-      {
-        instanceName: args.instanceName,
-        channel: args.channel,
-        threadTs: args.threadTs,
-        eventTs: args.eventTs,
-        text: args.text,
-        hasThread: args.hasThread,
-        images: args.images,
-      },
-      slackTurnContract({
-        replyThreadTs: args.threadTs,
-        eventTs: args.eventTs,
-        brand,
-        isDirectMessage: isDirectMessageId(args.channel),
-        ...(await turnContractContext(gw, args.channel, args.eventTs)),
-      }),
-    );
-    const replyId = args.eventTs;
-
-    const ready$ = events$().pipe(
-      ofType<ForkReady>(EventType.ForkReady),
-      filter((e) => e.replyId === replyId),
-    );
-    const failed$ = events$().pipe(
-      ofType<ForkFailed>(EventType.ForkFailed),
-      filter((e) => e.replyId === replyId),
-    );
-    merge(ready$, failed$)
-      .pipe(take(1), timeout({ first: FORK_OUTCOME_TIMEOUT_MS }))
-      .subscribe({
-        next: (outcome) => {
-          handleForkOutcome(outcome, {
-            channel: args.channel,
-            threadTs: args.threadTs,
-            eventTs: args.eventTs,
-            hasThread: args.hasThread,
-            instanceName: args.instanceName,
-            slackUserId: args.slackUserId,
-            actorSub: args.keycloakSub,
-            prompt,
-            images: args.images,
-            presenter,
-          }).catch((err) => {
-            process.stderr.write(
-              `[slack/fork] outcome handler error: ${formatError(err)}\n`,
-            );
-          });
-        },
-        error: (err) => {
-          process.stderr.write(
-            `[slack/fork] fork outcome timeout for reply ${replyId}: ${formatError(err)}\n`,
-          );
-          void presenter.clearStatus();
-          gw.postEphemeral({
-            channel: args.channel,
-            user: args.slackUserId,
-            text: "Could not run turn as you: fork provisioning timed out. Try again or contact the instance owner.",
-          }).catch((postErr) => {
-            process.stderr.write(
-              `[slack/fork] postEphemeral after timeout failed: ${formatError(postErr)}\n`,
-            );
-          });
-        },
-      });
-
-    emit({
-      type: EventType.ForeignReplyReceived,
-      replyId,
-      agentId: args.instanceName,
-      foreignSub: args.keycloakSub,
-      threadTs: args.threadTs,
-      prompt,
-      slackContext: {
-        channelId: args.channel,
-        userSlackId: args.slackUserId,
-      },
-    });
-  }
-
-  async function handleForkOutcome(
-    outcome: ForkReady | ForkFailed,
-    ctx: {
-      channel: string;
-      threadTs: string;
-      eventTs: string;
-      hasThread: boolean;
-      instanceName: string;
-      slackUserId: string;
-      actorSub: string;
-      prompt: string | ContentBlock[];
-      images: FetchedImage[];
-      presenter: TurnPresenter;
-    },
-  ) {
-    if (!gateway) return;
-    const gw = gateway;
-
-    await match(outcome)
-      .with({ type: EventType.ForkReady }, async (event) => {
-        let turnOutcome: TurnOutcome = "failure";
-        // The fork drives the harness from here; register its turn so its
-        // `reply`/`react` calls resolve to this thread (and stay distinct from
-        // any concurrent turn on the same agent).
-        const turnRef: TurnRef = {
-          channel: ctx.channel,
-          threadTs: ctx.threadTs,
-          eventTs: ctx.eventTs,
-        };
-        beginTurn(ctx.instanceName, turnRef);
-        const onImagesDropped = () =>
-          ephemeral(
-            ctx.channel,
-            ctx.slackUserId,
-            ctx.hasThread ? ctx.threadTs : undefined,
-            "This agent can't process images yet — answering text only.",
-          );
-        try {
-          const acp = makeForkAcpClient(event.podIP);
-          // The same lock main-pod turns take: fork pods share the agent's
-          // session store (same PVC), so an unserialized fork turn could mint
-          // a duplicate session for the thread key or race a prompt into a
-          // session another turn is driving.
-          await withSessionTurnLock(
-            ctx.instanceName,
-            ctx.threadTs,
-            async () => {
-              const existing = await findThreadSession(acp, ctx.threadTs);
-              // The fork replies via the `reply` tool during its turn; the
-              // response text is not posted here.
-              if (existing) {
-                await acp.sendPrompt(ctx.prompt, {
-                  resumeSessionId: existing.sessionId,
-                  onImagesDropped,
-                  onUpdate: ctx.presenter.onUpdate,
-                });
-              } else {
-                await acp.sendPrompt(ctx.prompt, {
-                  platformMeta: {
-                    type: SessionType.ChannelSlack,
-                    threadTs: ctx.threadTs,
-                  },
-                  onImagesDropped,
-                  onUpdate: ctx.presenter.onUpdate,
-                });
-              }
-            },
-          );
-          turnOutcome = "success";
-        } catch (err) {
-          process.stderr.write(
-            `[slack/fork ${event.forkId}] ACP error: ${formatError(err)}\n`,
-          );
-          await gw.postMessage({
-            channel: ctx.channel,
-            threadTs: ctx.threadTs,
-            text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
-          });
-        } finally {
-          // A fork ACP error is transport-shaped like the owner path's
-          // "acp-error": the fork pod may still be working the turn.
-          endTurn(ctx.instanceName, turnRef, {
-            harnessMayStillRun: turnOutcome === "failure",
-          });
-          await ctx.presenter.clearStatus();
-          emit({
-            type: EventType.ChannelTurnRelayed,
-            channel: "slack",
-            agentId: ctx.instanceName,
-            actorSub: ctx.actorSub,
-            outcome: turnOutcome,
-            forkId: event.forkId,
-            ...(turnOutcome === "failure" ? { reason: "acp-error" } : {}),
-          });
-        }
-      })
-      .with({ type: EventType.ForkFailed }, async (event) => {
-        await ctx.presenter.clearStatus();
-        const detail = event.detail ? ` (${event.detail})` : "";
-        try {
-          await gw.postEphemeral({
-            channel: ctx.channel,
-            user: ctx.slackUserId,
-            text: `Could not run turn as you: ${event.reason}${detail}.`,
-          });
-        } catch (err) {
-          process.stderr.write(
-            `[slack/fork] failed to notify ${ctx.slackUserId} of fork failure "${event.reason}": ${formatError(err)}\n`,
-          );
-        }
-        // Emit with forkId so the on-channel-turn-relayed saga calls
-        // closeFork — without this the failed fork orphans its k8s state.
-        emit({
-          type: EventType.ChannelTurnRelayed,
-          channel: "slack",
-          agentId: ctx.instanceName,
-          actorSub: ctx.actorSub,
-          outcome: "failure",
-          forkId: event.forkId,
-          reason: `fork-failed:${event.reason}`,
-        });
-      })
-      .exhaustive();
   }
 
   /** The fresh-session prompt: the per-turn contract, optional ambient
@@ -1474,12 +1229,6 @@ export function createSlackWorker(
       await ack({ text: "This channel isn't connected to an agent." });
       return;
     }
-    if (binding.mode !== "shared") {
-      await ack({
-        text: "Ambient mode needs a shared connection — this channel is person-scoped. Disconnect the channel and reconnect it in shared mode first.",
-      });
-      return;
-    }
     const isAmbient = binding.ambient === true;
     if (subcommand === "ambient") {
       await ack({
@@ -1637,61 +1386,22 @@ export function createSlackWorker(
       return;
     }
 
-    if (binding.mode === "shared") {
-      const images = await fetchTurnImages(event, slackUserId);
-      if (images === null) return;
-      await relaySharedTurn({
-        channel: event.channel,
-        threadTs,
-        eventTs: event.ts,
-        text: event.text,
-        hasThread: !!event.threadTs,
-        slackUserId,
-        instanceName: binding.instanceName,
-        owner: binding.owner,
-        teamId: event.teamId,
-        images,
-        // A 1:1 DM has exactly one human speaker, so labelling the prompt with
-        // their Slack mention is redundant — keep the private DM prompt clean.
-        speakerLabel: !opts.directMessage,
-      });
-      return;
-    }
-
-    const keycloakSub = await identityLinks.resolve("slack", slackUserId);
-    if (!keycloakSub) {
-      // An unlinked (unauthenticated) Slack user probing to drive an agent.
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: null,
-        actorKind: "external",
-        surface: "slack",
-        decision: "deny",
-        reason: "unlinked",
-        detail: { slackUserId, channelId: event.channel },
-      });
-      await gateway.postEphemeral({
-        channel: event.channel,
-        user: slackUserId,
-        text: `You need to link your account first. Use \`/${brandShort} login\` to get started.`,
-      });
-      return;
-    }
-
     const images = await fetchTurnImages(event, slackUserId);
     if (images === null) return;
-
-    await routeReply({
+    await relaySharedTurn({
       channel: event.channel,
       threadTs,
       eventTs: event.ts,
       text: event.text,
       hasThread: !!event.threadTs,
       slackUserId,
-      keycloakSub,
       instanceName: binding.instanceName,
+      owner: binding.owner,
       teamId: event.teamId,
       images,
+      // A 1:1 DM has exactly one human speaker, so labelling the prompt with
+      // their Slack mention is redundant — keep the private DM prompt clean.
+      speakerLabel: !opts.directMessage,
     });
   }
 
@@ -1709,8 +1419,8 @@ export function createSlackWorker(
   const handleDirectMessage = (event: SlackMentionEvent) =>
     handleInbound(event, { directMessage: true });
 
-  // Shared mode: the binding is the authorization — anyone Slack
-  // admits to the channel drives the agent under the agent's credentials.
+  // The binding is the authorization — anyone Slack admits to the channel
+  // drives the agent under the agent's credentials.
   async function relaySharedTurn(args: {
     channel: string;
     threadTs: string;
@@ -1985,7 +1695,7 @@ export function createSlackWorker(
         const binding = await channelRegistry.resolveSlackBinding(
           queue.channelId,
         );
-        if (!binding || binding.mode !== "shared" || !binding.ambient) {
+        if (!binding || !binding.ambient) {
           continue;
         }
         if (!(await isTermsAccepted(binding.owner))) {
@@ -2034,16 +1744,16 @@ export function createSlackWorker(
     }
   }
 
-  // Ambient inbound: a channel message that mentioned nobody. Only shared
-  // bindings with ambient on relay it; everything else drops silently — the
-  // sender did not address the agent, so there is nothing to explain.
+  // Ambient inbound: a channel message that mentioned nobody. Only bindings
+  // with ambient on relay it; everything else drops silently — the sender did
+  // not address the agent, so there is nothing to explain.
   async function handleChannelMessage(event: SlackChannelMessageEvent) {
     if (!gateway) return;
     const slackUserId = event.user;
     if (!slackUserId) return;
 
     const binding = await channelRegistry.resolveSlackBinding(event.channel);
-    if (!binding || binding.mode !== "shared" || !binding.ambient) return;
+    if (!binding || !binding.ambient) return;
 
     // The binding owner's ToU acceptance gates ambient turns like any shared
     // turn — but silently: an ephemeral would ping people who never asked.
@@ -2086,84 +1796,6 @@ export function createSlackWorker(
       eventTs: event.ts,
       slackUserId,
       images,
-    });
-  }
-
-  async function routeReply(args: {
-    channel: string;
-    threadTs: string;
-    eventTs: string;
-    text: string;
-    hasThread: boolean;
-    slackUserId: string;
-    keycloakSub: string;
-    instanceName: string;
-    teamId?: string;
-    images: FetchedImage[];
-  }) {
-    if (!gateway) return;
-
-    const [ownerSub, isAllowed] = await Promise.all([
-      getInstanceOwner(args.instanceName),
-      agents().isAllowedUser(args.instanceName, args.keycloakSub),
-    ]);
-    const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
-    if (!isOwner && !isAllowed) {
-      // A linked user who is neither owner nor on the allow-list tried to
-      // drive the agent.
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: args.keycloakSub,
-        actorKind: "user",
-        surface: "slack",
-        agentId: args.instanceName,
-        decision: "deny",
-        reason: "not-allowed",
-        detail: { slackUserId: args.slackUserId, channelId: args.channel },
-      });
-      await gateway.postEphemeral({
-        channel: args.channel,
-        user: args.slackUserId,
-        text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
-      });
-      return;
-    }
-    // Authorized to drive — record who and on what basis.
-    securityLog("info", "channel.authz", {
-      category: "channel",
-      actor: args.keycloakSub,
-      actorKind: "user",
-      surface: "slack",
-      agentId: args.instanceName,
-      decision: "allow",
-      detail: { basis: isOwner ? "owner" : "allowlist" },
-    });
-
-    if (!(await isTermsAccepted(args.keycloakSub))) {
-      await gateway.postEphemeral({
-        channel: args.channel,
-        user: args.slackUserId,
-        text: `Open ${uiBaseUrl} to accept the Terms of Use before sending messages.`,
-      });
-      return;
-    }
-
-    if (!isOwner) {
-      await beginForeignTurn(args);
-      return;
-    }
-
-    await relayOwnerTurn({
-      instanceName: args.instanceName,
-      channel: args.channel,
-      threadTs: args.threadTs,
-      eventTs: args.eventTs,
-      text: args.text,
-      hasThread: args.hasThread,
-      actorSub: args.keycloakSub,
-      slackUserId: args.slackUserId,
-      teamId: args.teamId,
-      images: args.images,
     });
   }
 

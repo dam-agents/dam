@@ -34,7 +34,7 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 // AgentBase is the chart-only platform policy applied verbatim to every
-// controller-rendered agent / fork agent pod. Agent ConfigMaps cannot
+// controller-rendered agent / executor pod. Agent ConfigMaps cannot
 // override these fields by design — security, scheduling, and cluster
 // integration are operator policy. Shipped via the AGENT_BASE env var.
 //
@@ -48,12 +48,19 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 type AgentBase struct {
 	// Cluster details
 	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
-	StorageClass     string   `json:"storageClass,omitempty"`
-	AccessMode       string   `json:"accessMode,omitempty"` // ReadWriteMany (default) or ReadWriteOnce
+	// StorageClass for workspace PVCs; empty = cluster default. Access mode
+	// is not configurable: workspace volumes are always ReadWriteOnce — the
+	// agent pod is the volume's only writer (#2988).
+	StorageClass string `json:"storageClass,omitempty"`
+	// Deprecated: ignored (#2988). Workspace volumes are always
+	// ReadWriteOnce. Kept only so an install that still sets
+	// controller.agent.base.accessMode in its values survives the strict
+	// config decode on upgrade; LoadFromEnv warns when it is set.
+	AccessMode string `json:"accessMode,omitempty"`
 
 	// Lifecycle
 	IdleTimeout            Duration `json:"idleTimeout,omitempty"`            // hibernate idle instances; 0 disables.
-	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // agent + fork agent only.
+	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // agent + executor pod only.
 
 	// Pod metadata
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
@@ -170,8 +177,7 @@ type WarmPool struct {
 	// AgentBase.StorageClass, whose bundled NFS class is WaitForFirstConsumer —
 	// under which a pre-created PVC would stay Pending and save nothing. The
 	// access mode is NOT configured here: a claimed spare becomes the agent's
-	// workspace PVC, so it must match AgentBase.AccessMode (RWX so
-	// per-turn fork pods can co-mount); the pool inherits that single value.
+	// workspace PVC, so it is ReadWriteOnce like every workspace volume.
 	StorageClass string `json:"storageClass,omitempty"`
 	// ReplenishInterval is how often the manager reconciles inventory toward
 	// target. Zero falls back to a built-in default.
@@ -210,4 +216,29 @@ type SkillSource struct {
 	Name   string `json:"name"`
 	GitURL string `json:"gitUrl"`
 	Path   string `json:"path,omitempty"`
+}
+
+// StorageMigration drives the one-time RWX -> RWO workspace-volume migration
+// (#2988). The controller copies every ReadWriteMany workspace PVC onto a
+// fresh ReadWriteOnce volume (checksum-verified), re-points the agent's
+// StatefulSet, and deletes the old volume — forcibly scaling the agent down
+// for the duration of its copy. Shipped via the STORAGE_MIGRATION env var
+// from `controller.storageMigration`. A no-op once no RWX workspace volume
+// remains, so leaving it enabled on a fully-migrated install costs one PVC
+// list per interval.
+type StorageMigration struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// Concurrency caps how many agents migrate at once (default 2): each
+	// migration runs a copy Job that reads the source volume in full three
+	// times (copy + two checksum passes), so an uncapped fleet migration
+	// would saturate the shared filesystem it is draining.
+	Concurrency int `json:"concurrency,omitempty"`
+	// Interval between reconcile passes. Zero falls back to a built-in
+	// default.
+	Interval Duration `json:"interval,omitempty"`
+	// JobImage runs the copy script. It must provide a POSIX sh with GNU
+	// coreutils (cp -a preserving hard links, find, md5sum) — busybox images
+	// break hard-link-heavy workspaces (pnpm stores) by inflating them past
+	// the volume size.
+	JobImage string `json:"jobImage,omitempty"`
 }

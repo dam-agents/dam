@@ -97,8 +97,19 @@ export function createRunRelay(deps: {
   runs: RunsService;
   /** agent-runtime port on the executor pod; injectable for tests. */
   executorPort?: number;
+  /**
+   * dam-run is disabled while its shared-workspace model is reworked (#2989):
+   * the executor pod co-mounted the agent's workspace concurrently with the
+   * live agent pod, which is exactly the multi-writer access RWO storage
+   * (#2988) no longer provides. The relay machinery below stays intact and
+   * tested — re-enabling is a deliberate code change here once the executor
+   * has a new way to reach the workspace, never a config knob (a knob would
+   * quietly break on multi-node clusters).
+   */
+  enabled?: boolean;
 }) {
   const executorPort = deps.executorPort ?? 8080;
+  const enabled = deps.enabled ?? false;
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const livePerAgent = new Map<string, number>();
 
@@ -110,6 +121,11 @@ export function createRunRelay(deps: {
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
+
+      if (!enabled) {
+        client.close(1008, "dam-run is temporarily disabled on this platform");
+        return;
+      }
 
       const live = livePerAgent.get(agentId) ?? 0;
       if (live >= MAX_CONCURRENT_RUNS_PER_AGENT) {

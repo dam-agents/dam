@@ -28,7 +28,6 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: ambientChannelId,
-      mode: "shared",
       ambient: true,
     });
   });
@@ -102,7 +101,6 @@ test("without ambient, an unmentioned message stays unanswered", async () => {
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: ambientChannelId,
-      mode: "shared",
     });
   });
 

@@ -81,7 +81,6 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
 		AgentBase: config.AgentBase{
-			AccessMode:             "ReadWriteMany",
 			TerminationGracePeriod: 5,
 			IdleTimeout:            config.Duration(time.Hour),
 			ContainerSecurityContext: &corev1.SecurityContext{

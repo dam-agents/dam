@@ -122,14 +122,12 @@ export function findBySlackChannelId(db: Db) {
   ): Promise<{
     agentId: string;
     owner: string;
-    mode?: "shared" | "person-scoped";
     ambient?: boolean;
   } | null> => {
     const rows = await db
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
-        mode: sql<string | null>`${channels.config}->>'mode'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
       })
       .from(channels)
@@ -145,8 +143,6 @@ export function findBySlackChannelId(db: Db) {
     return {
       agentId: row.agentId,
       owner: row.owner,
-      // Only "shared" is ever stored; anything else reads as the default.
-      ...(row.mode === "shared" ? { mode: "shared" as const } : {}),
       ...(row.ambient === "true" ? { ambient: true } : {}),
     };
   };

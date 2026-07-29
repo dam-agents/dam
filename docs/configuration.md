@@ -77,12 +77,9 @@ Platform runs a single Slack app (Socket Mode) for the entire installation. A Sl
      --set=apiServer.slackAppToken=xapp-...
    ```
 
-4. In the Platform UI, click the Slack icon on any instance, pick the access mode, and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--mode shared]`).
+4. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
-**Access mode** — chosen at bind time and fixed per binding; switching means disconnect + reconnect.
-
-- *Person-scoped* (default) — users run `/platform login` in Slack to link their account to Keycloak (unlinked users are prompted automatically); only the owner and allowed users drive the instance, each under their own credentials. Optionally configure an allowed-users list in instance settings (empty = open to all linked channel members); unauthorized users get an ephemeral rejection.
-- *Shared* — anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
+The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 
 A mention in a channel no instance is bound to gets an ephemeral rejection.
 

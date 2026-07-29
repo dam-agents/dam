@@ -21,16 +21,7 @@ Pre-upgrade clean-ups, all no-ops on a fresh install:
    converge the rest. Selector pins to the controller's labels for
    precision (managed-by + role=gateway).
 
-3. Delete in-flight fork ConfigMaps. Pre-upgrade fork pods carry
-   `serviceAccountName == parentAgentID`. Newer fork code uses a
-   per-fork SA distinct from the parent's, so any running fork pair
-   fails its mesh-gated harness/ext-authz hops after upgrade until the
-   fork is deleted and recreated. Forks are short-lived per-turn Jobs
-   (TTL 60s after completion) so the operational impact is minimal.
-   Owner-refed children (Job + Pod + Service + Envoy bootstrap CM +
-   leaf cert) cascade-delete via the fork ConfigMap.
-
-4. Delete per-agent Telegram bot-token Secrets. Telegram is a platform
+3. Delete per-agent Telegram bot-token Secrets. Telegram is a platform
    channel now (one bot, token in api-server env); the per-agent
    `platform-channel-telegram-<agentId>` Secrets are orphaned and the
    api-server no longer carries deletion code for them. Prunable one
@@ -67,10 +58,7 @@ rules:
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["list", "delete"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["list", "delete"]
-  # Step 4: label-scoped Secret sweep only, agent namespace only.
+  # Step 3: label-scoped Secret sweep only, agent namespace only.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["list", "delete"]
@@ -152,20 +140,7 @@ spec:
                 kubectl -n "$ns" delete authorizationpolicy -l 'agent-platform.ai/managed-by=platform-controller,agent-platform.ai/role=gateway' --ignore-not-found
               fi
 
-              # 3. In-flight fork ConfigMaps. Pre-current-shape fork pods
-              #    carry serviceAccountName == parentAgentID; per-fork
-              #    AuthorizationPolicies admit only the fork SA principal,
-              #    so running forks fail their mesh-gated harness/ext-authz
-              #    hops after upgrade. Deleting the fork ConfigMap cascade-
-              #    removes Job + Pod + Service + Envoy bootstrap CM + leaf
-              #    cert via owner-ref.
-              fork_count=$(kubectl -n "$ns" get configmap -l agent-platform.ai/type=agent-fork -o name 2>/dev/null | wc -l | tr -d ' ')
-              echo "migration: deleting $fork_count in-flight fork ConfigMap(s) in $ns"
-              if [ "$fork_count" != "0" ]; then
-                kubectl -n "$ns" delete configmap -l agent-platform.ai/type=agent-fork --ignore-not-found
-              fi
-
-              # 4. Per-agent Telegram bot-token Secrets, orphaned by the
+              # 3. Per-agent Telegram bot-token Secrets, orphaned by the
               #    platform-wide bot (token lives in api-server env now).
               sel='agent-platform.ai/type=channel-secret,agent-platform.ai/channel-type=telegram'
               sec_count=$(kubectl -n "$ns" get secret -l "$sel" -o name 2>/dev/null | wc -l | tr -d ' ')

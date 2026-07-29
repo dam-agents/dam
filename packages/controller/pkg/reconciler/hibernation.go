@@ -22,6 +22,15 @@ const (
 	// explicit wake or a schedule fire — background activity bumps never
 	// touch it, so a stopped agent stays stopped under open UI polls.
 	annStopRequested = "agent-platform.ai/stop-requested"
+	// Storage migration in progress (#2988), stamped by the controller's
+	// own migration manager. A non-empty value forces the pair down exactly
+	// like a hard stop — the workspace volume must be quiesced while its
+	// contents are copied and the StatefulSet re-pointed. Cleared by the
+	// manager once the agent is flipped onto its new volume.
+	annStorageMigration = "agent-platform.ai/storage-migration"
+	// Records whether the agent was running when its storage migration
+	// gated it down, so the manager can wake it back up after the flip.
+	annStorageMigrationWasRunning = "agent-platform.ai/storage-migration-was-running"
 	// Ephemeral invocation target (#2942), stamped by the api-server at
 	// create. Read by the budget gate: sweepable agents are exempt from the
 	// denied-wake memo (their driver is blocked waiting on the result, so a
@@ -41,8 +50,10 @@ const (
 // never of absent data.
 func shouldRun(annotations map[string]string, idleTimeout time.Duration, now time.Time) bool {
 	// A hard stop overrides every run signal, including disabled
-	// auto-hibernation — it is the one *negative* override in the model.
-	if annotations[annStopRequested] != "" {
+	// auto-hibernation; an in-flight storage migration (#2988) forces the
+	// pair down the same way. They are the only *negative* overrides in the
+	// model.
+	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" {
 		return false
 	}
 	if idleTimeout <= 0 {

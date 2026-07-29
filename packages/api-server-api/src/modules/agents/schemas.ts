@@ -77,7 +77,6 @@ export const agentCreateInputSchema = z
         password: z.string().min(1),
       })
       .optional(),
-    allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
     // Per-agent idle timeout override in minutes (0 = never hibernate); omit to inherit the global default.
     hibernationTimeoutMin: z.number().int().min(0).optional(),
@@ -124,7 +123,6 @@ export const agentUpdateInputSchema = z.object({
   description: z.string().optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
-  allowedUserEmails: z.array(z.email()).optional(),
   // Per-agent idle timeout override in minutes (0 = never hibernate); null clears it back to the global default.
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   // Resize (#1900). On a sleeping sandbox the new Size rides the next start
@@ -133,20 +131,12 @@ export const agentUpdateInputSchema = z.object({
   size: agentSizeSchema.optional(),
 });
 
-export const agentConnectSlackInputSchema = z
-  .object({
-    id: z.string().min(1),
-    slackChannelId: z.string().min(1),
-    // Access mode; absent = person-scoped.
-    mode: z.enum(["shared", "person-scoped"]).optional(),
-    // Ambient mode; absent = off. Unlike mode it is mutable: re-connecting
-    // with the same mode updates it in place.
-    ambient: z.boolean().optional(),
-  })
-  .refine((v) => !v.ambient || v.mode === "shared", {
-    message: "Ambient mode requires a shared binding",
-    path: ["ambient"],
-  });
+export const agentConnectSlackInputSchema = z.object({
+  id: z.string().min(1),
+  slackChannelId: z.string().min(1),
+  // Ambient mode; absent = off. Mutable: re-connecting updates it in place.
+  ambient: z.boolean().optional(),
+});
 
 export const agentListTelegramChatsInputSchema = z.object({
   agentId: z.string().min(1),
