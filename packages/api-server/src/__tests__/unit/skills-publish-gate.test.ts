@@ -13,7 +13,10 @@ const source: SkillSource = {
   canPublish: true,
 };
 
-function makeDeps(local: LocalSkill[]): {
+function makeDeps(
+  local: LocalSkill[],
+  trackedNames: string[] = [],
+): {
   deps: PublishServiceDeps;
   publish: ReturnType<typeof vi.fn>;
 } {
@@ -33,6 +36,11 @@ function makeDeps(local: LocalSkill[]): {
     resolveSource: async () => source,
     agentSkills: {
       appendPublish: vi.fn().mockResolvedValue(undefined),
+      listSkills: vi
+        .fn()
+        .mockResolvedValue(
+          trackedNames.map((name) => ({ name, source: "src-1", version: "v" })),
+        ),
     } as unknown as PublishServiceDeps["agentSkills"],
     agents,
     runtimeClient,
@@ -73,6 +81,33 @@ describe("publish gate (#2828)", () => {
       prUrl: expect.stringContaining("pr/1"),
     });
     expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it("exempts a skill tracked as installed from a Skill Source", async () => {
+    // Install overwrites the directory, so a source-installed skill always
+    // diverges from a same-named baked copy — it's the source's, not the
+    // image's, and publish-back-to-source must keep working.
+    const { deps, publish } = makeDeps(
+      [skill("websearch", "system-modified")],
+      ["websearch"],
+    );
+
+    await expect(publishSkill(deps, input)).resolves.toMatchObject({
+      prUrl: expect.stringContaining("pr/1"),
+    });
+    expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses a standalone image-name skill when other skills are tracked", async () => {
+    const { deps, publish } = makeDeps(
+      [skill("websearch", "system-modified")],
+      ["unrelated-skill"],
+    );
+
+    await expect(publishSkill(deps, input)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("lets an unknown name through to the pod's own not-found error", async () => {
