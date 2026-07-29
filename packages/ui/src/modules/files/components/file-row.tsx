@@ -97,12 +97,7 @@ export function FileRow({
             className="flex items-center gap-1.5 flex-1 min-w-0"
             style={{ opacity: isDot ? 0.6 : 1 }}
           >
-            <RowIcons
-              isDir={isDir}
-              isCollapsed={isCollapsed}
-              isDot={isDot}
-              name={name}
-            />
+            <RowIcons isDir={isDir} isCollapsed={isCollapsed} name={name} />
             <span className="truncate flex-1">{name}</span>
             <DropdownMenu onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
@@ -142,12 +137,10 @@ export function FileRow({
 function RowIcons({
   isDir,
   isCollapsed,
-  isDot,
   name,
 }: {
   isDir: boolean;
   isCollapsed: boolean;
-  isDot: boolean;
   name: string;
 }) {
   const looksLikeImage = !isDir && IMAGE_EXT.test(name);
@@ -157,8 +150,7 @@ function RowIcons({
         <span className="w-[16px] shrink-0 flex items-center justify-center">
           <DisclosureChevron
             open={!isCollapsed}
-            size={12}
-            className={isDot ? "text-text-muted" : "text-muted-foreground"}
+            className="text-muted-foreground"
           />
         </span>
       ) : (
