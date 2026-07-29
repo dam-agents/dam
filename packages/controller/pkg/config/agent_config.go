@@ -97,6 +97,21 @@ type AgentNPGateInit struct {
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
+// VMConfig configures the KubeVirt vm backend (spec.backend.type=vm).
+// Chart-only, threaded via the AGENT_VM env var from Helm `virtualization.*`.
+// Disabled ⇒ vm-backend agents fail reconcile with a clear error.
+type VMConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// ScratchSize is the emptyDisk capacity attached to every VM (serial
+	// "scratch") for the guest's docker/k3s image stores. Global knob by
+	// design — not per-VM. Default 30Gi.
+	ScratchSize string `json:"scratchSize,omitempty"`
+	// Scheduling for virt-launcher pods (KVM-capable nodes). Applied instead
+	// of AgentBase scheduling; the template's NodeSelector still merges on top.
+	NodeSelector map[string]string   `json:"nodeSelector,omitempty"`
+	Tolerations  []corev1.Toleration `json:"tolerations,omitempty"`
+}
+
 // AgentProbes — sub-field nil means "use the controller's built-in probe
 // for this pod kind" (HTTP GET /healthz on `acp`, see resources.go). A
 // non-nil sub-field replaces that probe. The `probes.enabled` master

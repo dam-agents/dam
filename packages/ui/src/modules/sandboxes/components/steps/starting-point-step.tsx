@@ -5,6 +5,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { TemplateView } from "../../../../types.js";
 import { KB_TEMPLATES } from "../../../knowledge-bases/lib/kb-templates.js";
+import { imageCatalogue } from "../../lib/image-catalogue.js";
 import {
   KINDED_HARNESS_TEMPLATE_ID,
   type StartingPoint,
@@ -23,6 +24,7 @@ interface Props {
   templates: TemplateView[];
   loading: boolean;
   registry?: RegistryControls;
+  vmFeatureEnabled: boolean;
   onPickStartingPoint: (startingPoint: StartingPoint) => void;
   onPickTemplate: (templateId: string) => void;
   onPickKbTemplate: (kbTemplateId: WizardSnapshot["kbTemplateId"]) => void;
@@ -35,6 +37,7 @@ export function StartingPointStep({
   templates,
   loading,
   registry,
+  vmFeatureEnabled,
   onPickStartingPoint,
   onPickTemplate,
   onPickKbTemplate,
@@ -118,6 +121,7 @@ export function StartingPointStep({
         templates={templates}
         loading={loading}
         registry={registry}
+        vmFeatureEnabled={vmFeatureEnabled}
         onPickTemplate={onPickTemplate}
         onPickKbTemplate={onPickKbTemplate}
         onCustomImageChange={onCustomImageChange}
@@ -133,11 +137,13 @@ function StartingPointReveal({
   templates,
   loading,
   registry,
+  vmFeatureEnabled,
   onPickTemplate,
   onPickKbTemplate,
   onCustomImageChange,
   onContinue,
 }: Omit<Props, "onPickStartingPoint">) {
+  const catalogue = imageCatalogue(templates, { vmFeatureEnabled });
   if (snapshot.startingPoint === "knowledge-base") {
     return (
       <section className="anim-in">
@@ -164,16 +170,14 @@ function StartingPointReveal({
           {loading ? (
             <ListSkeleton rows={4} rowHeight={64} />
           ) : (
-            templates
-              .filter((t) => t.category === "harness")
-              .map((template) => (
-                <HarnessCard
-                  key={template.id}
-                  template={template}
-                  selected={template.id === snapshot.templateId}
-                  onSelect={() => onPickTemplate(template.id)}
-                />
-              ))
+            catalogue.harnesses.map((template) => (
+              <HarnessCard
+                key={template.id}
+                template={template}
+                selected={template.id === snapshot.templateId}
+                onSelect={() => onPickTemplate(template.id)}
+              />
+            ))
           )}
         </CardList>
       </section>
@@ -181,7 +185,7 @@ function StartingPointReveal({
   }
 
   if (snapshot.startingPoint === "specialized") {
-    const specialized = templates.filter((t) => t.category === "preconfigured");
+    const specialized = catalogue.preconfigured;
     return (
       <section className="anim-in">
         <SectionLabel spaced>Choose an image</SectionLabel>

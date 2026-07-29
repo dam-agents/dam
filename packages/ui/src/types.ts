@@ -100,6 +100,9 @@ export interface TemplateView {
   docsUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
+  /** Backed by a KubeVirt VM rather than a pod — the image is a containerDisk,
+   *  so this is a property of the template, never a per-sandbox override. */
+  vm: boolean;
   /** The template's default Size (#1900): CPU/memory limit strings. */
   size?: { cpu?: string; memory?: string };
 }

@@ -15,6 +15,9 @@ function toView(tmpl: Template) {
     docsUrl: tmpl.spec.docsUrl,
     setupNote: tmpl.spec.setupNote,
     experimental: tmpl.spec.experimental ?? false,
+    // The wizard needs the backend to split VM-backed templates from container
+    // ones; the rest of the backend block is server-side detail.
+    vm: tmpl.spec.backend?.type === "vm",
     // The template's default Size (#1900) — seeds the create wizard's
     // sliders; absent dimensions fall to the chart default there.
     size: {

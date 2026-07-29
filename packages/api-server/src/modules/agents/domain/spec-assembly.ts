@@ -63,6 +63,7 @@ export function assembleSpecFromTemplate(
     // so the template only supplies the default when the user doesn't choose.
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
+    backend: tmplSpec.backend,
     runtimeClassName: tmplSpec.runtimeClassName,
     nodeSelector: tmplSpec.nodeSelector,
   };

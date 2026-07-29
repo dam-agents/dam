@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "5"
+    agent-platform.ai/crd-schema-generation: "6"
     controller-gen.kubebuilder.io/version: v0.21.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -74,6 +74,28 @@ spec:
                   literals in Mounts are already resolved against it at write
                   time, so the controller never sees $HOME.
                 type: string
+              backend:
+                description: |-
+                  Backend selects the isolation substrate the agent workload runs on;
+                  nil = container. Immutable after create (enforced by the api-server,
+                  the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+                  instead of the agent StatefulSet; the paired gateway is unaffected.
+                properties:
+                  type:
+                    enum:
+                    - container
+                    - vm
+                    type: string
+                  vm:
+                    description: VM carries vm-backend props; present only when type
+                      == "vm".
+                    type: object
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: 'vm block requires type: vm'
+                  rule: self.type == 'vm' || !has(self.vm)
               description:
                 description: Description is an optional human-readable description.
                 type: string
@@ -186,8 +208,9 @@ spec:
               nodeSelector:
                 additionalProperties:
                   type: string
-                description: NodeSelector overrides the chart-wide node selector;
-                  empty = inherit.
+                description: |-
+                  NodeSelector overrides the chart-wide node selector; empty = inherit.
+                  Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
                 type: object
               resources:
                 description: Resources are the agent container's resource requests
@@ -203,13 +226,15 @@ spec:
                     type: object
                 type: object
               runtimeClassName:
-                description: RuntimeClassName overrides the chart-wide runtime class;
-                  empty = inherit.
+                description: |-
+                  RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+                  Selects among *container* runtimes only — rejected on the vm backend.
                 type: string
               secretRef:
                 description: |-
                   SecretRef names a K8s Secret whose keys are envFrom-projected into the
-                  agent container (operator-supplied envs).
+                  agent container (operator-supplied envs). Container backend only —
+                  rejected on the vm backend (nothing projects it into the guest).
                 type: string
               storageSize:
                 description: StorageSize overrides the chart-wide default PVC size;
@@ -218,6 +243,12 @@ spec:
             required:
             - image
             type: object
+            x-kubernetes-validations:
+            - message: runtimeClassName selects a container runtime and is invalid
+                on the vm backend
+              rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.runtimeClassName)'
+            - message: secretRef (envFrom projection) is not supported on the vm backend
+              rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.secretRef)'
           status:
             description: |-
               AgentStatus is the observed state of an Agent. The controller is the sole

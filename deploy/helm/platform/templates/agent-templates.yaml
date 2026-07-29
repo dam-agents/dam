@@ -25,6 +25,10 @@ metadata:
 data:
   {{- range $name, $tmpl := .Values.agentTemplates }}
   {{- if and $tmpl $tmpl.enabled }}
+  {{- /* backend access must stay behind the nil guard above — a nulled
+         template entry (`agentTemplates.foo: null`) has no fields. */}}
+  {{- $isVM := and $tmpl.backend (eq ($tmpl.backend.type | default "") "vm") }}
+  {{- if or (not $isVM) $.Values.virtualization.enabled }}
   {{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
   {{ $name }}.yaml: |
     version: agent-platform.ai/v1
@@ -60,6 +64,10 @@ data:
     {{- end }}
     {{- with $tmpl.hibernationTimeout }}
     hibernationTimeout: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.backend }}
+    backend:
+      {{- toYaml . | nindent 6 }}
     {{- end }}
     {{- with $tmpl.runtimeClassName }}
     runtimeClassName: {{ . | quote }}
@@ -107,5 +115,6 @@ data:
     init: |
       {{- . | nindent 6 }}
     {{- end }}
+  {{- end }}
   {{- end }}
   {{- end }}

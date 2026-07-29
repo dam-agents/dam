@@ -60,7 +60,7 @@ export function composeInvocationsQueryForOwner(opts: {
 export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
-  k8s: Pick<K8sClient, "readPodRestart">;
+  k8s: Pick<K8sClient, "readAgentPodRestart">;
   intervalMs: number;
   batchSize: number;
 }): InvocationLivenessSweep {

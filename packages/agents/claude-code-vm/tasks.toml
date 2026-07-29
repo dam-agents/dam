@@ -1,0 +1,5 @@
+["agents:claude-code-vm:image"]
+description = "Build the claude-code-vm containerDisk (bootc → qcow2, hash-cached) from the claude-code image"
+dir = "{{config_root}}"
+depends = ["agents:claude-code:image"]
+run = "packages/agents/claude-code-vm/build.sh"

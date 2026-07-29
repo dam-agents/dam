@@ -124,6 +124,23 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
+# -- KubeVirt full-VM agent backend (`backend.type: vm` on a template): the
+# agent side reconciles to a kubevirt.io/v1 VirtualMachine instead of a
+# StatefulSet. Requires KubeVirt in the cluster (dev k3s: cluster:install
+# sets it up when this flag is on; prod: OpenShift Virtualization).
+# Off = vm-backend templates are not rendered and vm agents fail reconcile.
+virtualization:
+  enabled: false
+  # emptyDisk scratch capacity attached to every VM (serial "scratch") for the
+  # guest's docker/k3s image stores. Global knob by design; contents die with
+  # hibernation like the rest of the guest rootfs.
+  scratchGi: 30
+  # virt-launcher pod placement — KVM-capable nodes (e.g.
+  # node-role.kubernetes.io/virtualization on OpenShift). Applied instead of
+  # controller.agent.base scheduling; a template's nodeSelector merges on top.
+  nodeSelector: {}
+  tolerations: []
+
 # -- Target namespace for agent workloads (agents, templates, schedules, forks)
 agentNamespace: platform-agents
 
@@ -597,27 +614,6 @@ apiServer:
   # t.me connect links and for mention detection; when empty the api-server
   # discovers it at startup via the Bot API.
   telegramBotName: ""
-  # -- Optional VM host for the in-image `dam-vm` CLI: an operator-provisioned
-  # Incus box (packages/dam-vm/README.md). The api-server relays each agent's
-  # /vm stream there over the harness path, authenticating the hop with the
-  # mTLS client cert below and attaching the agent's identity; agents hold no
-  # credential. Leave url empty to disable (`dam-vm` then reports that no VM
-  # host is configured).
-  vmHost:
-    # e.g. "wss://203.0.113.7:8090/run". Auth is mutual TLS — no API key.
-    url: ""
-    # Client cert + key the api-server presents, issued by the same private CA
-    # that signed the VM host's server cert (openssl via `mise run
-    # dam-vm:issue-certs`, or a managed CA). This cert IS the deployment
-    # credential — the chart stores it in a Secret, not a plaintext env var.
-    # clientKey is private, so keep this values file itself protected (this
-    # project has no secret-sealing tooling — treat it like the other operator
-    # secrets, e.g. the tokens above).
-    clientCert: ""
-    clientKey: ""
-    # CA (PEM) that verifies the host's server cert. Leave empty only for a
-    # host fronted by a publicly-trusted cert.
-    caCert: ""
   # -- Activity tracking saga: when enabled, the api-server captures user
   # logins and channel turns into the `activity_events` table for the
   # usage reporting endpoints. Disable to stop all writes (the read
@@ -1134,6 +1130,23 @@ agentTemplates:
     tags: ["Anthropic"]
     image:
       repository: quay.io/dam-agents/claude-code
+      tag: ""
+    storageSize: "5Gi"
+
+  # Full-VM Claude Code: Fedora bootc guest with moby-engine (docker CLI) and
+  # k3s preinstalled — systemd, nested containers, full Kubernetes workloads
+  # inside the sandbox. Rendered only when `virtualization.enabled`; the image
+  # is a containerDisk (qcow2-in-OCI) built by packages/agents/claude-code-vm.
+  claude-code-vm:
+    enabled: true
+    displayName: "Claude Code VM"
+    description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    experimental: true
+    tags: ["Anthropic", "VM"]
+    backend:
+      type: vm
+    image:
+      repository: quay.io/dam-agents/claude-code-vm
       tag: ""
     storageSize: "5Gi"
 

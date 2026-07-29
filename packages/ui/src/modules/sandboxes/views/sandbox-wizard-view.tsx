@@ -8,6 +8,7 @@ import { useStore } from "../../../store.js";
 import type { TemplateView } from "../../../types.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
 import { useCreateExperimentSandbox } from "../../experiments/api/mutations.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useCreateKnowledgeBase } from "../../knowledge-bases/api/mutations.js";
 import { DEFAULT_KB_TEMPLATE_ID } from "../../knowledge-bases/lib/kb-templates.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -44,6 +45,7 @@ function createLabel(startingPoint: StartingPoint | null): string {
 export function SandboxWizardView() {
   const { snapshot, update, reset } = useSandboxWizard();
   const { data: templates, isLoading } = useTemplates();
+  const { data: flags } = useFeatures();
   const createAgent = useCreateAgent();
   const createKnowledgeBase = useCreateKnowledgeBase();
   const createExperimentSandbox = useCreateExperimentSandbox();
@@ -236,6 +238,7 @@ export function SandboxWizardView() {
                 }
               : undefined
           }
+          vmFeatureEnabled={flags?.["vm-sandboxes"] ?? false}
           onPickStartingPoint={(startingPoint) =>
             update(startingPointDefaults(startingPoint))
           }

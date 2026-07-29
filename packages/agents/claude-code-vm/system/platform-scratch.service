@@ -1,0 +1,13 @@
+[Unit]
+Description=Platform scratch disk for docker/k3s image stores
+DefaultDependencies=no
+After=local-fs.target
+Before=docker.service k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/platform-scratch.sh
+
+[Install]
+WantedBy=multi-user.target

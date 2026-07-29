@@ -65,6 +65,10 @@ spec:
             # agent claims instantly. Disabled by default; see controller.warmPool.
             - name: WARM_POOL
               value: {{ .Values.controller.warmPool | toJson | quote }}
+            # KubeVirt vm backend (backend.type=vm); see `virtualization` in
+            # values.yaml. scratchGi ships as a K8s quantity string.
+            - name: AGENT_VM
+              value: {{ dict "enabled" .Values.virtualization.enabled "scratchSize" (printf "%dGi" (int .Values.virtualization.scratchGi)) "nodeSelector" .Values.virtualization.nodeSelector "tolerations" .Values.virtualization.tolerations | toJson | quote }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET
@@ -105,12 +109,6 @@ spec:
             # routes for it (harness-route shape) for presigned uploads.
             - name: PLATFORM_OBJECT_STORE_AUTHORITY
               value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.apiServer.vmHost.url }}
-            # A VM host is configured (dam-vm), so agent pods keep the dam-vm
-            # tool in their instructions; the entrypoint strips it otherwise.
-            - name: AGENT_VM_ENABLED
-              value: "1"
             {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Telemetry attribution: when the bundled telemetry backend is on,

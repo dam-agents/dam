@@ -18,6 +18,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials) and the sandbox Channels section.",
   },
+  {
+    id: "vm-sandboxes",
+    label: "VM sandboxes",
+    description:
+      "Adds the “Run as a virtual machine” switch to the create-sandbox wizard, revealing images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container.",
+  },
 ];
 
 /** The hidden Features settings tab — per-user, per-feature toggles stored

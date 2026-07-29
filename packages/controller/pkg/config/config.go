@@ -44,6 +44,16 @@ type Config struct {
 	// Disabled by default.
 	WarmPool WarmPool
 
+	// VM configures the KubeVirt vm backend (spec.backend.type=vm). Threaded
+	// in via the AGENT_VM env var from Helm `virtualization.*`. Disabled by
+	// default — vm-backend agents then fail reconcile with a clear error.
+	VM VMConfig
+	// KubeAPIAddr is the in-cluster kube-apiserver authority (host:port) from
+	// the kubelet-injected KUBERNETES_SERVICE_* env — the vm backend's guest
+	// boot gate probes it as its denied target (must be unreachable before the
+	// workload starts, mirroring the pod np-gate). Empty skips that check.
+	KubeAPIAddr string
+
 	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
 	// per-user Ceiling on concurrently reserved compute (#1900), applied when
 	// a user has no UserBudget CR. Threaded in via DEFAULT_USER_CPU_BUDGET /
@@ -75,7 +85,6 @@ type Config struct {
 	LegacyAgentMemoryLimit resource.Quantity
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
-	VMEnabled                bool          // dam-vm has a VM host configured (api-server's apiServer.vmHost.url); injected as DAM_VM_ENABLED so the entrypoint keeps the dam-vm tool doc
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
 	EnvoyImage               string        // Image for the Envoy credential-injector sidecar
@@ -339,6 +348,21 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
 		}
 	}
+	if v := os.Getenv("AGENT_VM"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.VM); err != nil {
+			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
+		}
+	}
+	if cfg.VM.ScratchSize == "" {
+		cfg.VM.ScratchSize = "30Gi"
+	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
+		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
+	}
+	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
+		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
+	}
 	// Relayed from the controller's own process: whatever OTEL_* the chart (or
 	// an injector) set — the same env the controller's own SDK reads.
 	cfg.OTelEnv = collectOTelEnv()
@@ -348,7 +372,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.VMEnabled = envOrDefaultBool("AGENT_VM_ENABLED", false)
 	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome for environments
 	// that ship only the env var (e.g. tests). The chart's deployment.yaml
 	// always sets both from the same `templateDefaults.agentHome` value;

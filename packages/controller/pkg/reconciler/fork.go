@@ -85,6 +85,12 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
+	if agentSpec.IsVM() {
+		// A fork materializes the parent's image as a pod container —
+		// impossible for a vm backend's containerDisk boot image.
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed,
+			"foreign replies are not available on VM sandboxes")
+	}
 
 	// Own the Fork by its parent Agent so K8s GC reaps an in-flight fork when
 	// the Agent is deleted. Best-effort — retried on the next reconcile.

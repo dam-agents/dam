@@ -36,6 +36,15 @@ agentTemplates:
       repository: platform-claude-code
       tag: latest
 
+  # Rendered (and thus built/loaded) only when virtualization.enabled is set
+  # on the install (e.g. `mise run cluster:install -- --set=virtualization.enabled=true`).
+  # The `=` form is required — cluster:install only matches `--set=*`, so a
+  # space-separated `--set foo=bar` is silently dropped.
+  claude-code-vm:
+    image:
+      repository: platform-claude-code-vm
+      tag: latest
+
   codex:
     enabled: false
     image:

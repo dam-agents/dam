@@ -5,7 +5,7 @@ import { z } from "zod";
  *  (absent row = off). Removing one graduates it to always-on: stored rows for
  *  a dropped id are simply never read again (experiments and knowledge-bases
  *  graduated this way). */
-export const featureIdSchema = z.enum(["advanced-connections"]);
+export const featureIdSchema = z.enum(["advanced-connections", "vm-sandboxes"]);
 
 export const featureSetFlagInputSchema = z.object({
   feature: featureIdSchema,

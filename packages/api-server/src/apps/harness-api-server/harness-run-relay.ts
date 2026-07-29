@@ -39,7 +39,7 @@ const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
  * Buffer client frames (e.g. the tty's initial OP_RESIZE) until the upstream
  * leg is open, then splice the two sockets together. Attaches its message
  * listener synchronously, so frames arriving while the caller awaits are not
- * lost. Shared with the dam-vm relay.
+ * lost.
  */
 export function spliceClient(client: WebSocket) {
   const pending: [Buffer, boolean][] = [];
@@ -77,7 +77,7 @@ export function spliceClient(client: WebSocket) {
   };
 }
 
-/** Shared with the dam-vm relay — see the cadence rationale above. */
+/** See the cadence rationale above. */
 export function keepalive(sock: WebSocket) {
   let alive = true;
   sock.on("pong", () => {
@@ -155,6 +155,13 @@ export function createRunRelay(deps: {
         const identity = await resolveAgent(deps.k8s, agentId);
         if (!identity) {
           client.close(1011, "agent not found");
+          return release();
+        }
+        if (identity.vmBackend) {
+          // A Run executor materializes the agent image as a pod container —
+          // impossible for a vm backend's containerDisk. The sandbox is a
+          // whole machine; run heavy commands directly in it.
+          client.close(1008, "dam-run is not available on VM sandboxes");
           return release();
         }
         if (clientGone || spliced.overflowed()) return release();
