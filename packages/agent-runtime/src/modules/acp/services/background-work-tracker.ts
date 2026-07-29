@@ -2,18 +2,30 @@ import {
   descendantKeys,
   liveKeys,
   newDescendantsBelowBaseline,
+  processKey,
   type ProcessKey,
 } from "../domain/process-tree.js";
 import type { ProcessTable } from "../infrastructure/process-table.js";
 
 /**
- * How long one session's background work may keep its harness subprocess — and
- * with it the pod — alive. The bound is what makes the hold safe to grant
- * automatically: a leaked or wedged process (an abandoned dev server, a hung
- * job) costs a bounded amount of held compute instead of defeating hibernation
- * forever. Past the ceiling the session reaps as it does today.
+ * How long one process may keep its session — and with it the pod — alive.
+ *
+ * Off by default, because a ceiling cannot tell the case it is meant to catch
+ * from the case this whole mechanism exists to protect: work that has not
+ * finished yet and work that will never finish look identical from outside. A
+ * bound therefore buys a self-healing leak at the price of silently killing
+ * genuinely long work — the very failure of #2965, moved from seconds to hours.
+ * The platform already takes the other side of this trade for a running
+ * Experiment, whose driver stays pinned as long as it reports, however wedged it
+ * is, and leaves the decision to a human.
+ *
+ * What makes that safe is that a hold is visible and always overridable: it is
+ * logged with the process holding it, reported on the runtime's status surface,
+ * and a hard stop or pause scales the pod down regardless (both bypass the busy
+ * probe). An operator who would rather bound it can set a ceiling; past it the
+ * session reaps as it did before.
  */
-const DEFAULT_HOLD_MAX_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_HOLD_MAX_MS = 0;
 
 /**
  * How many sessions may hold at once. Each held session pins the harness's
@@ -24,7 +36,14 @@ const DEFAULT_HOLD_MAX_MS = 4 * 60 * 60 * 1000;
  */
 const DEFAULT_MAX_HELD_SESSIONS = 2;
 
-/** Reuse one snapshot across a burst of callers (status probes, reap checks). */
+/**
+ * Reuse one snapshot across a burst of *liveness* callers (status probes, reap
+ * checks). The two sampling moments — baselining a turn and collecting its work
+ * — always read fresh: they are the comparison the whole mechanism rests on, and
+ * serving both from one cached read would make a turn look like it started
+ * nothing, or a stale baseline attribute infrastructure as work. A scan is well
+ * under a millisecond, and each happens once per turn.
+ */
 const DEFAULT_SNAPSHOT_CACHE_MS = 1_000;
 
 /**
@@ -104,8 +123,8 @@ export interface BackgroundWorkTrackerDeps {
  * **Known imprecision.** A process born under this session's subprocess during
  * the turn but not really the agent's work — an MCP server connected lazily on
  * first use, or one that crashed and respawned mid-turn — reads as work. That
- * costs held compute until the process exits or the ceiling lapses; it never
- * loses work. The exact fix is upstream: the Claude Code adapter already tracks
+ * costs held compute until the process exits (or a configured ceiling lapses);
+ * it never loses work. The exact fix is upstream: the adapter already tracks
  * its live background tasks internally (from the CLI's
  * `background_tasks_changed` level signal) and forwarding that set would give an
  * authoritative release edge, making the diff unnecessary.
@@ -132,12 +151,13 @@ export function createBackgroundWorkTracker(
     snapshot: ReturnType<ProcessTable["read"]>;
   } | null = null;
 
-  function snapshot() {
+  function snapshot(opts: { fresh?: boolean } = {}) {
     const at = now();
-    if (cached && at - cached.at < snapshotCacheMs) return cached.snapshot;
-    const fresh = deps.processTable.read();
-    cached = { at, snapshot: fresh };
-    return fresh;
+    if (!opts.fresh && cached && at - cached.at < snapshotCacheMs)
+      return cached.snapshot;
+    const read = deps.processTable.read();
+    cached = { at, snapshot: read };
+    return read;
   }
 
   /** Fold anything new under the harness into `sessionId`'s hold. */
@@ -157,14 +177,29 @@ export function createBackgroundWorkTracker(
     // every long-lived infrastructure process would read as new work.
     if (!baseline || root === undefined) return;
 
-    const born = newDescendantsBelowBaseline(snapshot(), root, baseline);
+    const table = snapshot({ fresh: true });
+    const born = newDescendantsBelowBaseline(table, root, baseline);
     const at = now();
     let hold = holds.get(sessionId);
     for (const key of born) {
       hold ??= new Map();
-      if (!hold.has(key)) hold.set(key, at);
+      if (hold.has(key)) continue;
+      hold.set(key, at);
+      // Name the process, so a sandbox staying awake is explainable without
+      // shelling into it.
+      const entry = table.find((p) => processKey(p) === key);
+      deps.log?.(
+        `holding session ${sessionId} for background work: ${entry?.comm ?? "?"} (${key})`,
+      );
     }
     if (hold) holds.set(sessionId, hold);
+  }
+
+  /** Forget a session entirely: no hold, and no way to rebuild one. */
+  function release(sessionId: string): void {
+    baselines.delete(sessionId);
+    attributionUntil.delete(sessionId);
+    holds.delete(sessionId);
   }
 
   /** Drop dead processes, expired holds, and holds over the cap. */
@@ -204,7 +239,11 @@ export function createBackgroundWorkTracker(
         0,
         holds.size - maxHeldSessions,
       )) {
-        holds.delete(sessionId);
+        // Release for good: dropping the hold alone would let a collect still
+        // inside the attribution window rebuild it with fresh timestamps, making
+        // the evicted session the *youngest* and pushing the eviction onto a
+        // genuinely older session that is still working.
+        release(sessionId);
         deps.log?.(
           `background work in session ${sessionId} released — more than ${maxHeldSessions} sessions holding at once`,
         );
@@ -221,7 +260,7 @@ export function createBackgroundWorkTracker(
         baselines.delete(sessionId);
         return;
       }
-      baselines.set(sessionId, descendantKeys(snapshot(), root));
+      baselines.set(sessionId, descendantKeys(snapshot({ fresh: true }), root));
     },
 
     turnEnded(sessionId) {
@@ -242,9 +281,7 @@ export function createBackgroundWorkTracker(
     },
 
     forget(sessionId) {
-      baselines.delete(sessionId);
-      attributionUntil.delete(sessionId);
-      holds.delete(sessionId);
+      release(sessionId);
     },
 
     clear() {

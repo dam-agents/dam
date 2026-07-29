@@ -63,9 +63,11 @@ export function createProcFsProcessTable(
  * adapter.
  */
 export function parseProcStat(line: string): ProcessEntry | null {
+  const open = line.indexOf("(");
   const close = line.lastIndexOf(")");
-  if (close < 0) return null;
+  if (open < 0 || close < open) return null;
   const pid = Number(line.slice(0, line.indexOf(" ")));
+  const comm = line.slice(open + 1, close);
   const fields = line.slice(close + 2).split(" ");
   const ppid = Number(fields[1]);
   const startTicks = Number(fields[19]);
@@ -76,5 +78,5 @@ export function parseProcStat(line: string): ProcessEntry | null {
   ) {
     return null;
   }
-  return { pid, ppid, startTicks };
+  return { pid, ppid, startTicks, comm };
 }

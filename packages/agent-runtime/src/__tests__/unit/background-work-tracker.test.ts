@@ -7,11 +7,12 @@ import {
 
 const HARNESS = 100;
 
-const p = (pid: number, ppid: number, startTicks = pid): ProcessEntry => ({
-  pid,
-  ppid,
-  startTicks,
-});
+const p = (
+  pid: number,
+  ppid: number,
+  startTicks = pid,
+  comm = `proc${pid}`,
+): ProcessEntry => ({ pid, ppid, startTicks, comm });
 
 /** Pod at rest: init → runtime → harness. */
 const POD = [p(1, 0), p(10, 1), p(HARNESS, 10)];
@@ -26,9 +27,15 @@ const JOB = p(301, 300, 301);
 function setup(overrides: Partial<BackgroundWorkTrackerDeps> = {}) {
   let table: ProcessEntry[] = [...POD, CLI, MCP];
   let clock = 1_000;
+  let reads = 0;
   const logs: string[] = [];
   const tracker = createBackgroundWorkTracker({
-    processTable: { read: () => table },
+    processTable: {
+      read: () => {
+        reads += 1;
+        return table;
+      },
+    },
     harnessPid: () => HARNESS,
     snapshotCacheMs: 0,
     now: () => clock,
@@ -38,6 +45,7 @@ function setup(overrides: Partial<BackgroundWorkTrackerDeps> = {}) {
   return {
     tracker,
     logs,
+    readCount: () => reads,
     running: (...extra: ProcessEntry[]) => {
       table = [...POD, CLI, MCP, ...extra];
     },
@@ -181,17 +189,6 @@ describe("createBackgroundWorkTracker", () => {
     expect(logs.join("\n")).toContain("ceiling");
   });
 
-  it("never expires a hold when the ceiling is disabled", () => {
-    const { tracker, running, advance } = setup({ holdMaxMs: 0 });
-
-    tracker.turnStarted("s1");
-    running(JOB_SHELL, JOB);
-    tracker.turnEnded("s1");
-    advance(30 * 24 * 60 * 60 * 1000);
-
-    expect(tracker.hasLiveWork("s1")).toBe(true);
-  });
-
   it("caps concurrent holds, releasing the longest-held session first", () => {
     // Each held session pins a harness subprocess; the pod's memory limit is
     // what this protects.
@@ -255,23 +252,86 @@ describe("createBackgroundWorkTracker", () => {
     expect(tracker.heldSessions()).toEqual([]);
   });
 
-  it("reuses one snapshot across a burst of callers", () => {
-    let reads = 0;
-    const { tracker } = setup({
-      processTable: {
-        read: () => {
-          reads += 1;
-          return [...POD, CLI, MCP];
-        },
-      },
+  it("samples fresh at both turn boundaries, even inside the cache window", () => {
+    // Regression: with the production cache window, a turn that completes inside
+    // it was served the *pre-turn* snapshot at turnEnded and saw no new
+    // processes at all — the job went unattributed and died at the reap, which
+    // is the bug this whole mechanism exists to prevent.
+    const { tracker, running } = setup({ snapshotCacheMs: 1_000 });
+
+    tracker.turnStarted("s1");
+    running(JOB_SHELL, JOB); // same instant: no clock advance
+    tracker.turnEnded("s1");
+
+    expect(tracker.hasLiveWork("s1")).toBe(true);
+  });
+
+  it("keeps a cap eviction final, so it cannot bounce onto a working session", () => {
+    // Regression: eviction dropped the hold but left the baseline, so a collect
+    // still inside the attribution window rebuilt it with fresh timestamps. The
+    // evicted session became the youngest and the next pass evicted the older,
+    // genuinely working one instead.
+    const { tracker, running, advance } = setup({
+      maxHeldSessions: 1,
+      lateSpawnWindowMs: 5_000,
+    });
+
+    tracker.turnStarted("s1");
+    running(JOB_SHELL, JOB);
+    tracker.turnEnded("s1");
+
+    advance(1_000);
+    const younger = p(400, 200, 400);
+    tracker.turnStarted("s2");
+    running(JOB_SHELL, JOB, younger);
+    tracker.turnEnded("s2");
+
+    // s1 is the longest-held, so it loses — and must stay lost.
+    expect(tracker.hasLiveWork("s1")).toBe(false);
+    expect(tracker.hasLiveWork("s2")).toBe(true);
+    expect(tracker.heldSessions()).toEqual(["s2"]);
+  });
+
+  it("names the process holding a session, so the hold is diagnosable", () => {
+    const { tracker, running, logs } = setup();
+
+    tracker.turnStarted("s1");
+    running(p(300, 200, 300, "train.py"));
+    tracker.turnEnded("s1");
+
+    expect(logs.join("\n")).toContain("train.py");
+  });
+
+  it("holds indefinitely by default — a ceiling is opt-in", () => {
+    // A bound cannot tell unfinished work from work that will never finish, so
+    // the default keeps the work alive and leaves the call to a human.
+    const { tracker, running, advance } = setup();
+
+    tracker.turnStarted("s1");
+    running(JOB_SHELL, JOB);
+    tracker.turnEnded("s1");
+    advance(30 * 24 * 60 * 60 * 1000);
+
+    expect(tracker.hasLiveWork("s1")).toBe(true);
+  });
+
+  it("reuses one snapshot across a burst of liveness callers", () => {
+    // The controller polls status; a held session re-checks on a timer. Those
+    // can share one read, unlike the two sampling moments.
+    const { tracker, running, advance, readCount } = setup({
       snapshotCacheMs: 1_000,
     });
 
     tracker.turnStarted("s1");
+    running(JOB_SHELL, JOB);
     tracker.turnEnded("s1");
+
+    advance(2_000); // past the window, so the next read is genuinely due
+    const before = readCount();
+    tracker.heldSessions();
     tracker.heldSessions();
     tracker.heldSessions();
 
-    expect(reads).toBe(1);
+    expect(readCount()).toBe(before + 1);
   });
 });

@@ -139,6 +139,11 @@ const {
   stateBackend,
   envReader: envStore,
   isTerminalSessionActive: isPtySessionActive,
+  backgroundWorkHoldMaxMs:
+    config.BACKGROUND_WORK_HOLD_MAX_MINUTES === undefined
+      ? undefined
+      : config.BACKGROUND_WORK_HOLD_MAX_MINUTES * 60_000,
+  backgroundWorkMaxHeldSessions: config.BACKGROUND_WORK_MAX_HELD_SESSIONS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 

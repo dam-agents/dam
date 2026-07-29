@@ -11,6 +11,7 @@ const p = (pid: number, ppid: number, startTicks = pid): ProcessEntry => ({
   pid,
   ppid,
   startTicks,
+  comm: `proc${pid}`,
 });
 
 describe("descendantKeys", () => {

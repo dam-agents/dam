@@ -21,6 +21,8 @@ export interface ProcessEntry {
   pid: number;
   ppid: number;
   startTicks: number;
+  /** Executable name, carried for diagnostics only — never for a decision. */
+  comm: string;
 }
 
 /** Stable identity of a process across snapshots (see `ProcessEntry`). */

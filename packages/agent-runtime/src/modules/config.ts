@@ -12,6 +12,12 @@ const schema = z.object({
   // the reference for skill origin classification.
   IMAGE_WORKSPACE_DIR: z.string().default("/app/working-dir"),
   API_SERVER_URL: z.string().default(""),
+  // Background-work holds (#2965). Unset keeps the tracker's defaults: a hold
+  // lasts as long as the work does, and a couple of sessions may hold at once.
+  // Present so an install can bound a hold, or turn the tracking off, without a
+  // new image.
+  BACKGROUND_WORK_HOLD_MAX_MINUTES: z.coerce.number().optional(),
+  BACKGROUND_WORK_MAX_HELD_SESSIONS: z.coerce.number().optional(),
 });
 
 export const config = schema.parse(process.env);

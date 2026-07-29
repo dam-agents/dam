@@ -22,6 +22,10 @@ export interface ComposeAcpOptions {
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   isTerminalSessionActive?: (sessionId: string) => boolean;
+  /** Bound how long background work may hold a session awake; 0 = unbounded. */
+  backgroundWorkHoldMaxMs?: number;
+  /** Cap sessions holding at once; 0 disables background-work tracking. */
+  backgroundWorkMaxHeldSessions?: number;
   log?: (msg: string) => void;
 }
 
@@ -44,11 +48,20 @@ export function composeAcp(opts: ComposeAcpOptions): {
         env: mergedSpawnEnv(opts.envReader),
       });
       harnessPid = agent.pid;
+      // Drop the pid the moment the harness dies: the kernel may hand it to
+      // something unrelated before the respawn.
+      void agent.exited.then(() => {
+        if (harnessPid === agent.pid) harnessPid = undefined;
+      });
       return agent;
     },
     backgroundWork: createBackgroundWorkTracker({
       processTable: createProcFsProcessTable(),
       harnessPid: () => harnessPid,
+      // Operator overrides; unset keeps the tracker's own defaults (no ceiling,
+      // a small concurrent-hold cap). `0` sessions disables tracking outright.
+      holdMaxMs: opts.backgroundWorkHoldMaxMs,
+      maxHeldSessions: opts.backgroundWorkMaxHeldSessions,
       log: opts.log,
     }),
     workingDir: opts.workingDir,

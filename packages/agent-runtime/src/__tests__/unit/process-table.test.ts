@@ -20,7 +20,7 @@ function statLine(opts: {
 }
 
 describe("parseProcStat", () => {
-  it("reads pid, ppid and start time", () => {
+  it("reads pid, ppid, start time and the executable name", () => {
     const line = statLine({
       pid: 300,
       comm: "sleep",
@@ -32,6 +32,7 @@ describe("parseProcStat", () => {
       pid: 300,
       ppid: 200,
       startTicks: 9,
+      comm: "sleep",
     });
   });
 
@@ -49,6 +50,7 @@ describe("parseProcStat", () => {
       pid: 300,
       ppid: 200,
       startTicks: 9,
+      comm: "my (odd) proc",
     });
   });
 
@@ -77,5 +79,6 @@ describe("createProcFsProcessTable", () => {
     const self = entries.find((e) => e.pid === process.pid);
     expect(self).toBeDefined();
     expect(self!.ppid).toBe(process.ppid);
+    expect(self!.comm.length).toBeGreaterThan(0);
   });
 });

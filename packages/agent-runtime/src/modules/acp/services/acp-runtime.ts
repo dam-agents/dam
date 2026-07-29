@@ -616,6 +616,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      for (const t of idleReapTimers.values()) clearTimeout(t);
+      idleReapTimers.clear();
       pendingFromAgent.clear();
       // The harness took its children down with it — nothing left to hold.
       deps.backgroundWork?.clear();
