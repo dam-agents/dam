@@ -50,7 +50,10 @@ function sniffImageMimeType(bytes: Buffer): ReadableImageMimeType | null {
   if (startsWith(bytes, 0xff, 0xd8, 0xff) && bytes.length >= 10) {
     return "image/jpeg";
   }
-  if (bytes.length >= 10 && /^GIF8[79]a$/.test(bytes.toString("latin1", 0, 6))) {
+  if (
+    bytes.length >= 10 &&
+    /^GIF8[79]a$/.test(bytes.toString("latin1", 0, 6))
+  ) {
     return "image/gif";
   }
   if (

@@ -60,9 +60,10 @@ describe("inbound attachment classification", () => {
         ]),
       ),
     ).toEqual({ kind: "image", mimeType: "image/jpeg" });
-    expect(classifyInboundAttachment(Buffer.from("GIF89a\0\0"))).toEqual(
-      { kind: "image", mimeType: "image/gif" },
-    );
+    expect(classifyInboundAttachment(Buffer.from("GIF89a\0\0"))).toEqual({
+      kind: "image",
+      mimeType: "image/gif",
+    });
     expect(
       classifyInboundAttachment(
         Buffer.concat([
