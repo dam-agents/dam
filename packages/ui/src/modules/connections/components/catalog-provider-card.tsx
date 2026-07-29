@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
@@ -48,7 +49,7 @@ export function CatalogProviderCard({
   return (
     <section
       data-testid={`catalog-provider-${provider.id}`}
-      className="rounded-lg border border-border bg-card"
+      className={CARD_SURFACE}
     >
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
         <ConnectionIcon

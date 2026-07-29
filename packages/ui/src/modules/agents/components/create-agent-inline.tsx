@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
@@ -67,7 +68,7 @@ export function CreateAgentInline({ onCreated }: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+    <Card className="flex flex-col gap-4 p-4">
       <FormField label="Name" labelInset>
         <Input
           value={name}
@@ -108,6 +109,6 @@ export function CreateAgentInline({ onCreated }: Props) {
       >
         {createAgent.isPending ? "Creating…" : "Create agent"}
       </Button>
-    </div>
+    </Card>
   );
 }

@@ -2,6 +2,8 @@ import type { ApiKeyView } from "api-server-api";
 import { KeyRound, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface Props {
   apiKey: ApiKeyView;
@@ -18,7 +20,7 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
       : `${agentIds.length} agent${agentIds.length === 1 ? "" : "s"}`;
 
   return (
-    <li className="flex items-start gap-3 p-4 rounded-xl border border-border bg-card">
+    <li className={cn(CARD_SURFACE, "flex items-start gap-3 rounded-xl p-4")}>
       <KeyRound size={20} className="text-muted-foreground mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">

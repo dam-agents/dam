@@ -1,6 +1,7 @@
 import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,7 +52,10 @@ export function RichSelect<T extends string>({
           type="button"
           disabled={disabled}
           data-testid={testId}
-          className="group flex min-h-[76px] w-full items-center gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground"
+          className={cn(
+            CARD_SURFACE,
+            "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
+          )}
         >
           {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
           {selected ? (

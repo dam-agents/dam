@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { RichSelect, type RichSelectOption } from "@/components/ui/rich-select";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
@@ -70,10 +71,7 @@ export function ProviderSelect({
     onSelect(providerRef(item));
   };
 
-  if (isPending)
-    return (
-      <div className="h-[76px] rounded-lg border border-border bg-card anim-pulse" />
-    );
+  if (isPending) return <Card className="h-[76px] animate-pulse" />;
 
   const options: RichSelectOption<ProviderPresetType>[] = rows.map((row) => ({
     value: row.type,
