@@ -60,7 +60,7 @@ An epic defines the value, not a single fix, and gives enough shape that issues 
 
 ### Feature
 
-The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open.
+The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. The **User Stories** break the goal into the concrete things different users want to do and why. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open.
 
 ```markdown
 **Title:** <short, declarative>
@@ -78,6 +78,12 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 <What success looks like — the user-visible outcome, not the mechanism.>
 
+## User Stories
+
+<The value from each user's perspective, in the form "As a <role>, I want <capability> so that <benefit>." One per distinct need. For example: "As an operator, I want to see a schedule's last run status so that I can tell at a glance whether it's healthy.">
+
+- As a <role>, I want <capability> so that <benefit>.
+
 ## Scope
 
 <optional — what's included and what's not>
@@ -86,13 +92,13 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 <optional — the shape of a solution, if you have one. State it only if you show why, so others can reach the same conclusion; otherwise leave it open and let discussion get there.>
 
-## Notes
-
-<optional — constraints, research, designs, technical considerations, dependencies, out of scope>
-
 ## Open Questions
 
 <optional — decisions the team needs to make>
+
+## Additional resources
+
+<optional — links to designs, research, related issues, docs, or other supporting material>
 ```
 
 ### Task
@@ -151,7 +157,7 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 
 ### Research Task
 
-A research task defines what we need to learn and why, before committing to build. The value is the knowledge it produces.
+A research task defines what we need to learn and why, before committing to build. The value is the knowledge it produces, so it's done when it produces an answer someone can act on — not when "research happened."
 
 ```markdown
 **Title:** <short, declarative — the question, not the answer>
@@ -163,21 +169,29 @@ A research task defines what we need to learn and why, before committing to buil
 
 ## Research Goal
 
-<What we want to learn.>
+<What we want to learn, in one or two sentences.>
 
 ## Research Questions
 
-- <what this research should answer>
-
-## Sources of Insight
-
-- <how we'll gather evidence: interviews, analytics, competitive research, support data, existing research>
+- <the specific questions this research must answer>
 
 ## Users / Audience
 
 <Who or what we're learning about.>
 
-## Considerations
+## Sources of Insight
 
-<optional — constraints, assumptions, existing insights, related work>
+- <how we'll gather evidence: interviews, analytics, competitive research, support data, existing research>
+
+## Decision it informs
+
+<What choice or work this research unblocks — why we need the answer now, and what we'll do differently depending on what we find.>
+
+## Done when
+
+<The observable end state — the answer, recommendation, or artifact produced, and where it lands.>
+
+## Additional resources
+
+<optional — links to existing research, related issues, docs, or other supporting material>
 ```
