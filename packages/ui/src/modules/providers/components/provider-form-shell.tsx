@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Close } from "@carbon/icons-react";
 import type { FormEventHandler, ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -40,7 +40,7 @@ export function ProviderFormShell({
               hoverTone="neutral"
               className="self-start"
             >
-              <X size={13} />
+              <Close size={13} />
             </IconButton>
           )}
         </div>

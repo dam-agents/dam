@@ -1,5 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
-import { FlaskConical } from "lucide-react";
+import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,7 +76,7 @@ export function AgentRow({
         </p>
         {temporaryDraw && temporaryDraw.count > 0 && (
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[12px] text-muted-foreground">
-            <FlaskConical size={12} className="shrink-0 text-accent" />
+            <Chemistry size={12} className="shrink-0 text-accent" />
             <span className="truncate">
               {temporaryDraw.count} temporary sandbox
               {temporaryDraw.count === 1 ? "" : "es"} running

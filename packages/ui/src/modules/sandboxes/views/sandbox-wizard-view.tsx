@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight } from "@carbon/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";

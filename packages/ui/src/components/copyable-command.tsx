@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ export function CopyableCommand({ command }: { command: string }) {
         >
           {copyState === "copied" ? (
             <>
-              <Check size={14} /> Copied
+              <Checkmark size={14} /> Copied
             </>
           ) : (
             <>

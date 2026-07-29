@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -320,7 +320,7 @@ function OptionItem({
       className="h-auto flex-col items-start gap-0.5 py-2"
     >
       <span className="flex items-center gap-1.5 font-medium">
-        {active && <Check size={12} className="shrink-0" />}
+        {active && <Checkmark size={12} className="shrink-0" />}
         <span className={active ? "" : "pl-[18px]"}>{label}</span>
       </span>
       {detail && (

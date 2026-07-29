@@ -1,6 +1,5 @@
-import { LogoGithub } from "@carbon/icons-react";
+import { LogoGithub, Upload } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
-import { Upload } from "lucide-react";
 import { useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";

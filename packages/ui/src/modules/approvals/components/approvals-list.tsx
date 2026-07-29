@@ -1,12 +1,12 @@
-import { type ApprovalView, describeApprovalPayload } from "api-server-api";
 import {
-  Check,
-  CheckCheck,
+  Checkmark,
+  CheckmarkFilled,
+  Close,
   Globe,
-  Settings2,
-  ShieldOff,
-  X,
-} from "lucide-react";
+  Misuse,
+  SettingsAdjust,
+} from "@carbon/icons-react";
+import { type ApprovalView, describeApprovalPayload } from "api-server-api";
 import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -141,7 +141,7 @@ function ApprovalRow({
                 : "Allow this single request"
             }
           >
-            <Check size={11} /> Allow once
+            <Checkmark size={11} /> Allow once
           </Button>
           <Button
             type="button"
@@ -151,7 +151,7 @@ function ApprovalRow({
             onClick={() => approvePermanent.mutate({ id: row.id })}
             title="Allow this exact path on this host (writes a rule)"
           >
-            <CheckCheck size={11} /> Allow permanently
+            <CheckmarkFilled size={11} /> Allow permanently
           </Button>
           {showHostActions && (
             <Button
@@ -180,7 +180,7 @@ function ApprovalRow({
                 : "Deny this single request — re-prompts on the next attempt"
             }
           >
-            <X size={11} /> Dismiss
+            <Close size={11} /> Dismiss
           </Button>
           <Button
             type="button"
@@ -191,7 +191,7 @@ function ApprovalRow({
             onClick={() => denyForever.mutate({ id: row.id })}
             title="Deny this exact path on this host (writes a deny rule)"
           >
-            <ShieldOff size={11} /> Deny forever
+            <Misuse size={11} /> Deny forever
           </Button>
           {showHostActions && (
             <Button
@@ -202,7 +202,7 @@ function ApprovalRow({
               onClick={() => navigateToSandboxHome(row.agentId)}
               title="Open this sandbox's settings (connections, network access, environment)"
             >
-              <Settings2 size={11} /> Customize…
+              <SettingsAdjust size={11} /> Customize…
             </Button>
           )}
         </div>

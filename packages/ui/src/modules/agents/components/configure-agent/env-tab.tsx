@@ -1,4 +1,4 @@
-import { AlertTriangle, KeyRound, Lock } from "lucide-react";
+import { Key, Locked, WarningAlt } from "@carbon/icons-react";
 
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -79,7 +79,7 @@ export function EnvTab({
             className="flex flex-col gap-1 text-[12px]"
           >
             <div className="flex items-center gap-2 text-warning">
-              <AlertTriangle size={12} />
+              <WarningAlt size={12} />
               <span className="font-bold uppercase tracking-[0.05em] text-[10px]">
                 Shadowing inherited values
               </span>
@@ -118,7 +118,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         className={cn("shrink-0", isSystem && "text-muted-foreground")}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
-        {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
+        {isSystem ? <Locked size={12} /> : <Key size={12} />}
       </span>
       <span className="font-mono font-semibold text-foreground truncate">
         {entry.name}

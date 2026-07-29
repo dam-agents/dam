@@ -1,5 +1,5 @@
+import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
@@ -117,7 +117,7 @@ export function BobForm({
             rel="noopener noreferrer"
             className="text-primary hover:underline inline-flex items-center gap-1"
           >
-            Manage keys <ExternalLink size={11} />
+            Manage keys <Launch size={11} />
           </a>
         </>
       }

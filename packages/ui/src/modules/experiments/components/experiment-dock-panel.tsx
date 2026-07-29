@@ -1,5 +1,5 @@
+import { ChevronDown, Close } from "@carbon/icons-react";
 import type { Experiment, TraceFeed } from "api-server-api";
-import { ChevronDown, X } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -189,7 +189,7 @@ export function ExperimentDockPanel({
             title="Close"
             onClick={onClose}
           >
-            <X size={16} />
+            <Close size={16} />
           </Button>
         )}
       </div>

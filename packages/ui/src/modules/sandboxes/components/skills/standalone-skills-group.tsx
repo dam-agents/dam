@@ -1,11 +1,11 @@
-import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import {
   Download,
-  ExternalLink,
-  GitPullRequest,
-  MoreHorizontal,
+  Launch,
+  OverflowMenuHorizontal,
+  PullRequest,
   Upload,
-} from "lucide-react";
+} from "@carbon/icons-react";
+import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -142,7 +142,7 @@ export function StandaloneSkillsGroup({
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-[12px] font-medium text-info transition-opacity hover:opacity-80"
                   title={`Pull request open on ${pub.sourceName}`}
                 >
-                  <GitPullRequest size={13} /> In review · {pub.sourceName}
+                  <PullRequest size={13} /> In review · {pub.sourceName}
                 </a>
               ) : (
                 <Button
@@ -157,7 +157,7 @@ export function StandaloneSkillsGroup({
                   }
                   className="shrink-0 gap-1.5"
                 >
-                  Publish <ExternalLink size={13} />
+                  Publish <Launch size={13} />
                 </Button>
               )}
 
@@ -169,7 +169,7 @@ export function StandaloneSkillsGroup({
                     title="Skill actions"
                     className="shrink-0 text-muted-foreground"
                   >
-                    <MoreHorizontal size={18} />
+                    <OverflowMenuHorizontal size={18} />
                   </Button>
                 </DropdownMenuTrigger>
                 {/* Download and Delete have no backend yet (deferred) — shown

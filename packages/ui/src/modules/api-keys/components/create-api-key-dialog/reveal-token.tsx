@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ export function RevealToken({ plaintext, onClose }: Props) {
             className="shrink-0 text-muted-foreground"
           >
             {copyState === "copied" ? (
-              <Check size={16} aria-hidden />
+              <Checkmark size={16} aria-hidden />
             ) : (
               <Copy size={16} aria-hidden />
             )}

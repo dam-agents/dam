@@ -1,6 +1,6 @@
+import { Launch } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Skill, SkillSource } from "api-server-api";
-import { ExternalLink } from "lucide-react";
 
 import { Markdown } from "@/components/markdown";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
@@ -54,7 +54,7 @@ export function SkillRenderModal({
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
               title="View SKILL.md on GitHub"
             >
-              <ExternalLink size={15} />
+              <Launch size={15} />
             </a>
           )
         }

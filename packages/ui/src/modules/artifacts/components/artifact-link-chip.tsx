@@ -1,5 +1,5 @@
+import { Box } from "@carbon/icons-react";
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
-import { Box } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useStore } from "../../../store.js";

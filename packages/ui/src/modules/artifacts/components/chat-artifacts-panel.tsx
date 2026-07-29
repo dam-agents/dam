@@ -1,5 +1,5 @@
+import { OverflowMenuVertical } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { MoreVertical } from "lucide-react";
 import { type CSSProperties, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -133,7 +133,7 @@ function ArtifactListRow({
               className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
               title="More actions"
             >
-              <MoreVertical size={13} />
+              <OverflowMenuVertical size={13} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

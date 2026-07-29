@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Moon, Play, RefreshCw } from "lucide-react";
+import { ArrowLeft, Asleep, Play, Renew, Warning } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import type {
 
 interface OverlayCopy {
   /** Omitted for transient states, where a `Spinner` stands in for the icon. */
-  Icon?: typeof Moon;
+  Icon?: typeof Asleep;
   description: string;
 }
 
@@ -31,16 +31,16 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   },
   hibernating: { description: "The agent is going to sleep." },
   hibernated: {
-    Icon: Moon,
+    Icon: Asleep,
     description:
       "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
   },
   error: {
-    Icon: AlertCircle,
+    Icon: Warning,
     description: "The agent hit an error and isn't running.",
   },
   over_budget: {
-    Icon: AlertCircle,
+    Icon: Warning,
     description:
       "Starting this sandbox would exceed your compute budget. Pause or stop " +
       "a running sandbox to free room, then start this one again.",
@@ -149,7 +149,7 @@ export function AgentUnavailableOverlay({
       </p>
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-[13px] text-danger">
-          <AlertCircle size={14} className="shrink-0" />
+          <Warning size={14} className="shrink-0" />
           {agent.podTerminationReason}
         </p>
       )}
@@ -160,7 +160,7 @@ export function AgentUnavailableOverlay({
       )}
       {powerAction === "restart" && (
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
-          <RefreshCw size={14} /> Restart agent
+          <Renew size={14} /> Restart agent
         </Button>
       )}
     </OverlayFrame>

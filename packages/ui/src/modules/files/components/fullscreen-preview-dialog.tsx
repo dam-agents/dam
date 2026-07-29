@@ -1,4 +1,4 @@
-import { Close as X } from "@carbon/icons-react";
+import { Close } from "@carbon/icons-react";
 import { type ReactNode, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -48,7 +48,7 @@ export function FullscreenPreviewDialog({ title, onClose, children }: Props) {
           onClick={onClose}
           title="Exit fullscreen (Esc)"
         >
-          <X size={11} /> Close
+          <Close size={11} /> Close
         </Button>
       </div>
       <div className="flex-1 overflow-auto p-4">{children}</div>

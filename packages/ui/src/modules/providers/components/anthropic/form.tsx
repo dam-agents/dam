@@ -1,5 +1,5 @@
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
@@ -167,7 +167,7 @@ export function AnthropicForm({
         )}
       {!errors.value && testResult?.ok && (
         <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
-          <Check size={13} /> Credential is valid.
+          <Checkmark size={13} /> Credential is valid.
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
@@ -201,7 +201,7 @@ function QuickSetupHint() {
           title="Copy command"
         >
           {copied ? (
-            <Check size={12} className="text-success" />
+            <Checkmark size={12} className="text-success" />
           ) : (
             <Copy size={12} />
           )}

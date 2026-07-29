@@ -1,5 +1,5 @@
+import { Checkmark, Copy } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -95,7 +95,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 }}
               >
                 {copied ? (
-                  <Check size={14} className="text-success" />
+                  <Checkmark size={14} className="text-success" />
                 ) : (
                   <Copy size={14} />
                 )}

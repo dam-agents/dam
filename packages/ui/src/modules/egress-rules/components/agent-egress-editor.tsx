@@ -1,8 +1,4 @@
-import {
-  Add as Plus,
-  RotateCounterclockwise as RotateCcw,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+import { Add, RotateCounterclockwise, TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -351,7 +347,7 @@ export function AgentEgressEditor({
             disabled={!canAdd}
             variant="outline"
           >
-            <Plus size={11} /> Add rule
+            <Add size={11} /> Add rule
           </Button>
           {draftRequiresGatewayRestart && (
             <p className="basis-full text-[11px] text-warning">
@@ -511,7 +507,11 @@ function RuleRow({
           disabled={disabled}
           title={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
-          {pendingDelete ? <RotateCcw size={11} /> : <Trash2 size={11} />}
+          {pendingDelete ? (
+            <RotateCounterclockwise size={11} />
+          ) : (
+            <TrashCan size={11} />
+          )}
         </Button>
       )}
     </li>
@@ -547,7 +547,7 @@ function PendingAddRow({
         onClick={onCancel}
         title="Discard pending rule"
       >
-        <Trash2 size={11} />
+        <TrashCan size={11} />
       </Button>
     </li>
   );

@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 
+import { ErrorFilled, Terminal as TerminalIcon } from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
@@ -10,7 +11,6 @@ import {
   OP_INPUT,
   OP_OUTPUT,
 } from "api-server-api";
-import { TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -200,7 +200,7 @@ export function Terminal({
       {state === "disconnected" && (
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <XCircle size={24} className="text-danger" />
+            <ErrorFilled size={24} className="text-danger" />
             <p className="text-[14px] text-muted-foreground">
               Session disconnected
             </p>

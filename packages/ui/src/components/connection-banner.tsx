@@ -1,4 +1,4 @@
-import { WifiOff } from "lucide-react";
+import { WifiOff } from "@carbon/icons-react";
 import { useSyncExternalStore } from "react";
 
 import { Spinner } from "@/components/ui/spinner";

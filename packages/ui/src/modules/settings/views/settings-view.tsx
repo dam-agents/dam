@@ -1,9 +1,4 @@
-import {
-  Asleep as Moon,
-  Light as Sun,
-  Logout as LogOut,
-  Screen as Monitor,
-} from "@carbon/icons-react";
+import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -41,19 +36,19 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
 const themeOptions = [
   {
     value: "light" as const,
-    icon: Sun,
+    icon: Light,
     label: "Light",
     description: "Light background with dark text",
   },
   {
     value: "dark" as const,
-    icon: Moon,
+    icon: Asleep,
     label: "Dark",
     description: "Dark background with light text",
   },
   {
     value: "system" as const,
-    icon: Monitor,
+    icon: Screen,
     label: "System",
     description: "Follow your operating system setting",
   },
@@ -183,7 +178,7 @@ export function SettingsView() {
                 onClick={() => logout()}
                 className="text-foreground/80 hover:text-destructive hover:bg-destructive/10"
               >
-                <LogOut size={14} />
+                <Logout size={14} />
                 Log out
               </Button>
             </Card>

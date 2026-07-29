@@ -1,4 +1,4 @@
-import { Checkmark as Check } from "@carbon/icons-react";
+import { Checkmark } from "@carbon/icons-react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import * as React from "react";
 
@@ -21,7 +21,7 @@ function Checkbox({
       <CheckboxPrimitive.Indicator
         className={cn("flex items-center justify-center text-current")}
       >
-        <Check size={12} />
+        <Checkmark size={12} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

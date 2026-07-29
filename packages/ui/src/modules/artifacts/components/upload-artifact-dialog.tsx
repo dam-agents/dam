@@ -1,5 +1,5 @@
+import { Upload } from "@carbon/icons-react";
 import type { ArtifactFolder } from "api-server-api";
-import { Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import {

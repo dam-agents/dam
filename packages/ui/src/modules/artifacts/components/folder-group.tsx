@@ -1,11 +1,11 @@
-import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
+  Edit,
   Folder,
-  Link as LinkIcon,
-  MoreVertical,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+  Link,
+  OverflowMenuVertical,
+  TrashCan,
+} from "@carbon/icons-react";
+import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -111,7 +111,7 @@ export function FolderGroup({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" title="Folder actions">
-                  <MoreVertical size={16} />
+                  <OverflowMenuVertical size={16} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -123,11 +123,11 @@ export function FolderGroup({
                     });
                   }}
                 >
-                  <LinkIcon size={14} />
+                  <Link size={14} />
                   Copy folder link
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onEditFolder?.(folder)}>
-                  <Pencil size={14} />
+                  <Edit size={14} />
                   Edit folder
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -135,7 +135,7 @@ export function FolderGroup({
                   tone="danger"
                   onSelect={() => onDeleteFolder?.(folder)}
                 >
-                  <Trash2 size={14} />
+                  <TrashCan size={14} />
                   Delete folder
                 </DropdownMenuItem>
               </DropdownMenuContent>

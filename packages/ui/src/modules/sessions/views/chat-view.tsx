@@ -1,13 +1,14 @@
-import { ArrowDown, Settings } from "@carbon/icons-react";
-import { SessionMode } from "api-server-api";
 import {
-  AlertCircle,
+  ArrowDown,
   ArrowLeft,
-  FileText as FileIcon,
-  MoreVertical,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
+  Document,
+  OverflowMenuVertical,
+  Renew,
+  Settings,
+  TrashCan,
+  Warning,
+} from "@carbon/icons-react";
+import { SessionMode } from "api-server-api";
 import {
   type CSSProperties,
   useCallback,
@@ -486,7 +487,7 @@ export function ChatView() {
                 aria-label={surfaceCopy.actionsAria}
                 className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
-                <MoreVertical size={14} />
+                <OverflowMenuVertical size={14} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -748,7 +749,7 @@ export function ChatView() {
                                     key={i}
                                     className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2"
                                   >
-                                    <FileIcon
+                                    <Document
                                       size={14}
                                       className="text-muted-foreground shrink-0"
                                     />
@@ -950,7 +951,7 @@ function SessionErrorCard({
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
-        <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
+        <Warning size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <h3 className="text-[15px] font-bold text-foreground mb-1">
             {title}
@@ -966,7 +967,7 @@ function SessionErrorCard({
         </Button>
         {error.kind === "not-found" && (
           <Button variant="destructive" size="sm" onClick={onDelete}>
-            <Trash2 size={12} /> Delete orphaned session
+            <TrashCan size={12} /> Delete orphaned session
           </Button>
         )}
       </div>
@@ -987,7 +988,7 @@ function SendErrorCard({
       className="flex max-w-[620px] items-start gap-2.5"
       role="alert"
     >
-      <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="text-[13px] text-foreground break-words">
           <span className="font-bold text-danger">Send failed:</span> {error}
@@ -999,7 +1000,7 @@ function SendErrorCard({
             onClick={onRetry}
             className="self-start"
           >
-            <RefreshCw size={11} /> Retry
+            <Renew size={11} /> Retry
           </Button>
         )}
       </div>

@@ -1,6 +1,5 @@
-import { Filter } from "@carbon/icons-react";
+import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -188,7 +187,7 @@ export function SessionsSidebar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="xs" className="text-[14px]">
-            <Plus size={12} /> New
+            <Add size={12} /> New
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

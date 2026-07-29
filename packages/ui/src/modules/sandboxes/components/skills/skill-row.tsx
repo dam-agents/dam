@@ -1,5 +1,5 @@
+import { Compare, Renew } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
-import { GitCompare, RefreshCw } from "lucide-react";
 
 import { badgeVariants } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
@@ -69,7 +69,7 @@ export function SkillRow({
                 "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",
               )}
             >
-              <RefreshCw size={11} /> Update
+              <Renew size={11} /> Update
             </button>
           )}
           {hasDrift && compareUrl && (
@@ -80,7 +80,7 @@ export function SkillRow({
               title="View changes on GitHub"
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >
-              <GitCompare size={13} />
+              <Compare size={13} />
             </a>
           )}
         </div>

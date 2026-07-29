@@ -1,5 +1,5 @@
+import { Download, Share, TrashCan } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Download, Share2, Trash2 } from "lucide-react";
 
 import {
   DropdownMenuItem,
@@ -24,7 +24,7 @@ export function ArtifactRowMenuItems({
   return (
     <>
       <DropdownMenuItem onSelect={() => onShare(artifact)}>
-        <Share2 size={14} />
+        <Share size={14} />
         Sharing…
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void downloadArtifact(artifact.id)}>
@@ -36,7 +36,7 @@ export function ArtifactRowMenuItems({
         tone="danger"
         onSelect={() => void deleteArtifact(artifact)}
       >
-        <Trash2 size={14} />
+        <TrashCan size={14} />
         Delete
       </DropdownMenuItem>
     </>

@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Upload } from "lucide-react";
+import { Edit, TrashCan, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { DialogBody, DialogFooter } from "@/components/modal";
@@ -222,7 +222,7 @@ function StagedSkillRow({
         onClick={onStartRename}
         className="shrink-0 text-muted-foreground"
       >
-        <Pencil size={16} />
+        <Edit size={16} />
       </Button>
       <Button
         variant="ghost"
@@ -231,7 +231,7 @@ function StagedSkillRow({
         onClick={onRemove}
         className="shrink-0 text-muted-foreground"
       >
-        <Trash2 size={16} />
+        <TrashCan size={16} />
       </Button>
     </div>
   );

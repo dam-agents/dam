@@ -1,5 +1,4 @@
-import { Chat, ChevronDown, Code, Terminal } from "@carbon/icons-react";
-import { ExternalLink } from "lucide-react";
+import { Chat, ChevronDown, Code, Launch, Terminal } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { CopyableCommand } from "@/components/copyable-command";
@@ -70,7 +69,7 @@ function CliQuickstartNote() {
         rel="noreferrer"
         className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
       >
-        CLI quickstart <ExternalLink size={13} />
+        CLI quickstart <Launch size={13} />
       </a>
     </p>
   );

@@ -1,10 +1,10 @@
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import {
   ChevronDown,
   ChevronUp,
-  ExternalLink,
-  MoreHorizontal,
-} from "lucide-react";
+  Launch,
+  OverflowMenuHorizontal,
+} from "@carbon/icons-react";
+import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -184,7 +184,7 @@ export function SkillSourceCard({
                 title="Source actions"
                 className="shrink-0 text-muted-foreground"
               >
-                <MoreHorizontal size={18} />
+                <OverflowMenuHorizontal size={18} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -195,7 +195,7 @@ export function SkillSourceCard({
                 }
               >
                 <span className="flex-1">View repo</span>
-                <ExternalLink size={14} />
+                <Launch size={14} />
               </DropdownMenuItem>
               {canRemove && (
                 <DropdownMenuItem tone="danger" onSelect={onRemove}>

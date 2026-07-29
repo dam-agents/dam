@@ -1,10 +1,10 @@
+import { Chemistry } from "@carbon/icons-react";
 import type {
   ArtifactFolder,
   Experiment,
   LibraryArtifact,
 } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { FlaskConical } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -131,7 +131,7 @@ export function ExperimentsSection({
         className="flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >
         <DisclosureChevron open={expanded} className="text-muted-foreground" />
-        <FlaskConical size={16} className="shrink-0 text-muted-foreground" />
+        <Chemistry size={16} className="shrink-0 text-muted-foreground" />
         <span className="text-[14px] font-semibold text-muted-foreground">
           Experiments
         </span>

@@ -1,4 +1,4 @@
-import { MoreVertical, Trash2 } from "lucide-react";
+import { OverflowMenuVertical, TrashCan } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -86,7 +86,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" title="More actions">
-                <MoreVertical size={16} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -100,7 +100,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
                 }
                 onSelect={onDelete}
               >
-                <Trash2 size={14} />
+                <TrashCan size={14} />
                 Delete experiment
               </DropdownMenuItem>
             </DropdownMenuContent>
