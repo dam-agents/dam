@@ -41,9 +41,15 @@ try {
       .filter((task) => typeof task?.id === "string" && task.id)
       .map((task) => ({
         id: task.id,
-        // Both are advisory, and the contract truncates them anyway.
-        ...(task.description ? { description: String(task.description) } : {}),
-        ...(task.command ? { command: String(task.command) } : {}),
+        // Advisory text, clamped here as well as by the contract: a pathological
+        // command line would otherwise be the one thing able to push the body
+        // past the route's size limit, and losing the report loses the work.
+        ...(task.description
+          ? { description: String(task.description).slice(0, 200) }
+          : {}),
+        ...(task.command
+          ? { command: String(task.command).slice(0, 500) }
+          : {}),
       }));
     await fetch(
       `${runtime}/api/sessions/${encodeURIComponent(sessionId)}/background-work`,

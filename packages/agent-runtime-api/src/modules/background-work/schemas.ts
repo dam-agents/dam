@@ -1,6 +1,18 @@
 import { z } from "zod/v4";
 
 /**
+ * Advisory text: clamped, never rejected. Length here is cosmetic — a real
+ * background command runs long — and a rejection would fail the *whole* report,
+ * losing a hold and killing the work over the size of a label. Any limit that
+ * can drop a report has to be a truncation instead.
+ */
+const advisory = (max: number) =>
+  z
+    .string()
+    .transform((text) => text.slice(0, max))
+    .optional();
+
+/**
  * One piece of in-flight background work a session has left running: a job
  * started with a backgrounding tool, an async task, anything that outlives the
  * turn that started it.
@@ -8,12 +20,15 @@ import { z } from "zod/v4";
  * `id` is the reporter's own handle for the work and only has to be stable
  * within one session. The two descriptive fields exist so a sandbox that stays
  * awake can be explained to the person paying for it; neither affects any
- * decision, and both are truncated rather than trusted.
+ * decision.
  */
 export const backgroundWorkItemSchema = z.object({
-  id: z.string().min(1).max(128),
-  description: z.string().max(200).optional(),
-  command: z.string().max(500).optional(),
+  id: z
+    .string()
+    .min(1)
+    .transform((id) => id.slice(0, 128)),
+  description: advisory(200),
+  command: advisory(500),
 });
 
 /**
@@ -28,5 +43,11 @@ export const backgroundWorkItemSchema = z.object({
  * wrong. It also means a reporter never has to remember what it said before.
  */
 export const backgroundWorkReportSchema = z.object({
-  items: z.array(backgroundWorkItemSchema).max(64),
+  // Also truncated rather than capped, for the same reason: a hold is per
+  // session, so one surviving item holds it, whereas rejecting an over-long list
+  // would hold nothing at all. Excess entries cost only detail in the status
+  // payload.
+  items: z
+    .array(backgroundWorkItemSchema)
+    .transform((items) => items.slice(0, 64)),
 });
