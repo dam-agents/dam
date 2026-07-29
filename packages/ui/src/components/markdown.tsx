@@ -51,7 +51,7 @@ function FrontmatterBlock({ source }: { source: string }) {
         open={open}
         onToggle={() => setOpen((v) => !v)}
         chevronSize={12}
-        className="gap-1.5 text-text-muted hover:text-text-primary"
+        className="gap-1.5 text-text-muted hover:text-foreground"
       >
         <span className="font-mono uppercase tracking-[0.05em] text-[11px]">
           Frontmatter

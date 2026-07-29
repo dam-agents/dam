@@ -50,7 +50,7 @@ export function EgressApprovalToast({
   return (
     <div
       data-testid="egress-approval-toast"
-      className="rounded-xl border border-border-light bg-background shadow-lg p-4 flex flex-col gap-3 anim-in"
+      className="rounded-xl border border-border bg-background shadow-lg p-4 flex flex-col gap-3 anim-in"
     >
       <div className="flex flex-col gap-0.5 min-w-0">
         {foreign && (
@@ -58,7 +58,7 @@ export function EgressApprovalToast({
             {agentName}
           </span>
         )}
-        <div className="flex items-center gap-2 text-[14px] font-semibold text-text">
+        <div className="flex items-center gap-2 text-[14px] font-semibold text-foreground">
           <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
           <span className="truncate">
             {method} {host}

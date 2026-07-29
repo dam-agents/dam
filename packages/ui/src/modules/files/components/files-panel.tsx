@@ -69,7 +69,7 @@ export function FilesPanel({
       onToggle={onToggle}
       headerRight={addMenu}
       className={className}
-      headerClassName="border-t border-border-light"
+      headerClassName="border-t border-border"
       style={style}
     >
       <input

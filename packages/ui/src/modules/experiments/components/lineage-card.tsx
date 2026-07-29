@@ -28,7 +28,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border-light bg-surface">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div
         role={openable ? "button" : undefined}
         tabIndex={openable ? 0 : undefined}
@@ -36,8 +36,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
         onKeyDown={(e) => openable && e.key === "Enter" && onOpen()}
         className={cn(
           "flex items-center gap-3 px-[18px] py-4",
-          openable &&
-            "cursor-pointer transition-colors hover:bg-surface-raised",
+          openable && "cursor-pointer transition-colors hover:bg-muted",
         )}
       >
         {/* Closed reads as a plain chevron; open boxes it, so an expanded row is

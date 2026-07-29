@@ -120,7 +120,7 @@ function ScopeToggle({
     ["all", "All sessions"],
   ];
   return (
-    <div className="mb-3 flex rounded border border-border-light p-0.5">
+    <div className="mb-3 flex rounded border border-border p-0.5">
       {options.map(([value, label]) => (
         <button
           key={value}
@@ -181,7 +181,7 @@ function RecentCallsTable({ rows }: { rows: CallContext[] }) {
       </thead>
       <tbody>
         {rows.map((call) => (
-          <tr key={call.requestId} className="border-t border-border-light">
+          <tr key={call.requestId} className="border-t border-border">
             <td
               className="py-1 pr-2 font-mono text-text-muted"
               title={`${call.model}\n${call.at}`}

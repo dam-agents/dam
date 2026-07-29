@@ -212,7 +212,7 @@ export function Terminal({
       )}
       {state === "exited" && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-content">
-          <div className="flex items-center gap-2 rounded-full border border-border-light bg-surface-raised px-4 py-2 text-[12px] text-text-muted shadow-md">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-[12px] text-text-muted shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

@@ -120,7 +120,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
       >
         {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
       </span>
-      <span className="font-mono font-semibold text-text truncate">
+      <span className="font-mono font-semibold text-foreground truncate">
         {entry.name}
       </span>
       <span className="text-muted-foreground">=</span>

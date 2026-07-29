@@ -221,7 +221,7 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-text" : "text-muted-foreground"} disabled:opacity-40`}
+                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
                 title={isComputing ? "Queue" : "Send"}

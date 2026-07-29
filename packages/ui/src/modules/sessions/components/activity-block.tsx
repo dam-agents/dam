@@ -22,7 +22,7 @@ export function ActivityBlock({
   return (
     <div
       className={cn(
-        "border-l-2 border-border-light pl-3 max-w-full text-[14px] font-normal text-muted-foreground",
+        "border-l-2 border-border pl-3 max-w-full text-[14px] font-normal text-muted-foreground",
         className,
       )}
     >
@@ -31,7 +31,7 @@ export function ActivityBlock({
         className={cn(
           "flex items-center gap-1.5 max-w-full min-w-0 min-h-[27px]",
           onToggle
-            ? "cursor-pointer hover:text-text transition-colors"
+            ? "cursor-pointer hover:text-foreground transition-colors"
             : "cursor-default",
         )}
         onClick={onToggle}

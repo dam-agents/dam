@@ -76,7 +76,7 @@ export function AgentRow({
           {subtitle}
         </p>
         {temporaryDraw && temporaryDraw.count > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 border-t border-border-light pt-2 text-[12px] text-muted-foreground">
+          <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[12px] text-muted-foreground">
             <FlaskConical size={12} className="shrink-0 text-accent" />
             <span className="truncate">
               {temporaryDraw.count} temporary sandbox

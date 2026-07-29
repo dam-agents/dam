@@ -44,7 +44,7 @@ export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-surface flex flex-col anim-scale-in shadow-xl`}
+          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl`}
         >
           {children}
         </div>

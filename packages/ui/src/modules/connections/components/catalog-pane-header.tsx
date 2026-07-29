@@ -13,7 +13,7 @@ export function CatalogPaneHeader({
   onBack: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border-light px-5 py-4">
+    <div className="flex items-center gap-3 border-b border-border px-5 py-4">
       <Button
         variant="ghost"
         size="icon-sm"

@@ -96,11 +96,11 @@ function ApprovalRow({
   const showHostActions = hostLabel !== null;
 
   return (
-    <li className="border-b border-border-light px-3 py-3 flex flex-col gap-2">
+    <li className="border-b border-border px-3 py-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium text-text truncate">
+            <span className="text-[13px] font-medium text-foreground truncate">
               {title}
             </span>
             {row.status !== "pending" && (

@@ -51,7 +51,7 @@ export function ChatArtifactsPanel({
       open={open}
       onToggle={onToggle}
       className={className}
-      headerClassName="border-t border-border-light"
+      headerClassName="border-t border-border"
       style={style}
     >
       {artifacts.length === 0 ? (

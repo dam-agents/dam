@@ -131,7 +131,7 @@ export function ConnectionCatalogModal({
           }}
           variant="pill"
           orientation="vertical"
-          className="w-[200px] shrink-0 border-r border-border-light p-3"
+          className="w-[200px] shrink-0 border-r border-border p-3"
         />
         <div className="flex min-h-0 flex-1 flex-col">
           {pane.kind === "browse" && (
@@ -234,7 +234,7 @@ function CreatePane({
         layout={(fields, footer) => (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">{fields}</div>
-            <div className="flex justify-end gap-3 border-t border-border-light px-5 py-4">
+            <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
               {footer}
             </div>
           </>

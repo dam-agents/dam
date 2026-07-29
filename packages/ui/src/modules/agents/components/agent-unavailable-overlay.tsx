@@ -99,7 +99,7 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} className="text-text-muted" />
-        <h2 className="text-[18px] font-bold text-text">{name}</h2>
+        <h2 className="text-[18px] font-bold text-foreground">{name}</h2>
         <p className="max-w-105 text-[14px] text-text-secondary">
           Loading agent…
         </p>
@@ -114,7 +114,9 @@ export function AgentUnavailableOverlay({
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} className="text-text-muted" />
         <div className="flex flex-col items-center gap-2">
-          <h2 className="text-[18px] font-bold text-text">{agent.name}</h2>
+          <h2 className="text-[18px] font-bold text-foreground">
+            {agent.name}
+          </h2>
           <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-[14px] text-text-secondary">
@@ -139,7 +141,7 @@ export function AgentUnavailableOverlay({
         <Spinner size={40} className="text-text-muted" />
       )}
       <div className="flex flex-col items-center gap-2">
-        <h2 className="text-[18px] font-bold text-text">{agent.name}</h2>
+        <h2 className="text-[18px] font-bold text-foreground">{agent.name}</h2>
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-[14px] text-text-secondary">{description}</p>

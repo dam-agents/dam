@@ -231,10 +231,10 @@ function OptionGroup({
   const selected = value === null ? null : choices.find((c) => c.id === value);
   const isPage = variant === "page";
   const triggerClass = cn(
-    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-text transition-colors",
+    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-foreground transition-colors",
     isPage
       ? "h-10 border-input px-4 text-sm"
-      : "h-8 border-border-light px-3 text-[13px]",
+      : "h-8 border-border px-3 text-[13px]",
   );
   const face = (
     <>
@@ -247,7 +247,7 @@ function OptionGroup({
       className={
         isPage
           ? "mb-4 last:mb-0"
-          : "border-b border-border-light last:border-b-0 px-4 py-3"
+          : "border-b border-border last:border-b-0 px-4 py-3"
       }
     >
       <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
@@ -268,7 +268,7 @@ function OptionGroup({
               className={cn(
                 triggerClass,
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                !isPage && "hover:bg-surface-raised",
+                !isPage && "hover:bg-muted",
               )}
             >
               {face}

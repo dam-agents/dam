@@ -123,7 +123,7 @@ export function ExperimentDockPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border-light px-4">
+      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border px-4">
         {options.length > 1 && onSelect ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -197,7 +197,7 @@ export function ExperimentDockPanel({
       {!isDraft &&
         status === "failed" &&
         (feed?.experiment.error ?? experiment.error) && (
-          <p className="border-b border-border-light px-4 py-2 text-[12px] text-red-600 dark:text-red-400">
+          <p className="border-b border-border px-4 py-2 text-[12px] text-red-600 dark:text-red-400">
             {feed?.experiment.error ?? experiment.error}
           </p>
         )}
@@ -250,7 +250,7 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
 
   if (rows.length === 0) return null;
   return (
-    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
+    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Invocations</SectionLabel>
       {rows.map((row) => (
         <button
@@ -332,7 +332,7 @@ function RunArtifacts({
 
   if (runArtifacts.length === 0) return null;
   return (
-    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
+    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Run artifacts</SectionLabel>
       {runArtifacts.map((artifact) => (
         <button
