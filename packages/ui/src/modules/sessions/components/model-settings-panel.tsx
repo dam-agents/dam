@@ -172,7 +172,7 @@ export function ModelSettingsPanel({
   const note = (
     <p
       className={cn(
-        "text-[11px] leading-snug text-text-muted",
+        "text-[11px] leading-snug text-muted-foreground",
         isPage ? "pt-3" : "px-4 py-2.5",
       )}
     >
@@ -206,7 +206,7 @@ export function ModelSettingsPanel({
 
 function SavingHint() {
   return (
-    <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-text-muted">
+    <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-muted-foreground">
       <Spinner size={11} />
       Saving…
     </span>
@@ -239,7 +239,7 @@ function OptionGroup({
   const face = (
     <>
       <span className="truncate">{selected?.name ?? "Not set"}</span>
-      <ChevronDown size={14} className="shrink-0 text-text-muted" />
+      <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
     </>
   );
   return (

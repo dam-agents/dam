@@ -57,12 +57,12 @@ function OverlayFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 z-overlay flex flex-col bg-bg/95 backdrop-blur-sm">
+    <div className="absolute inset-0 z-overlay flex flex-col bg-background/95 backdrop-blur-sm">
       <Button
-        variant="link"
+        variant="ghost"
         size="inline"
         onClick={onBack}
-        className="absolute left-4 top-3 gap-1 text-[13px] font-medium text-text-secondary hover:text-accent"
+        className="absolute left-4 top-3 gap-1 text-[13px] font-medium text-muted-foreground hover:bg-transparent"
       >
         <ArrowLeft size={14} />
         Sandboxes
@@ -98,9 +98,9 @@ export function AgentUnavailableOverlay({
   if (!agent || !display) {
     return (
       <OverlayFrame onBack={onBack}>
-        <Spinner size={40} className="text-text-muted" />
+        <Spinner size={40} />
         <h2 className="text-[18px] font-bold text-foreground">{name}</h2>
-        <p className="max-w-105 text-[14px] text-text-secondary">
+        <p className="max-w-105 text-[14px] text-muted-foreground">
           Loading agent…
         </p>
       </OverlayFrame>
@@ -112,14 +112,14 @@ export function AgentUnavailableOverlay({
   if (display.state === "running") {
     return (
       <OverlayFrame onBack={onBack}>
-        <Spinner size={40} className="text-text-muted" />
+        <Spinner size={40} />
         <div className="flex flex-col items-center gap-2">
           <h2 className="text-[18px] font-bold text-foreground">
             {agent.name}
           </h2>
           <Badge variant="warning">Reconnecting</Badge>
         </div>
-        <p className="max-w-105 text-[14px] text-text-secondary">
+        <p className="max-w-105 text-[14px] text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
       </OverlayFrame>
@@ -136,15 +136,17 @@ export function AgentUnavailableOverlay({
   return (
     <OverlayFrame onBack={onBack}>
       {Icon ? (
-        <Icon size={40} className="text-text-muted" />
+        <Icon size={40} className="text-muted-foreground" />
       ) : (
-        <Spinner size={40} className="text-text-muted" />
+        <Spinner size={40} />
       )}
       <div className="flex flex-col items-center gap-2">
         <h2 className="text-[18px] font-bold text-foreground">{agent.name}</h2>
         <StatusBadge state={state} />
       </div>
-      <p className="max-w-105 text-[14px] text-text-secondary">{description}</p>
+      <p className="max-w-105 text-[14px] text-muted-foreground">
+        {description}
+      </p>
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-[13px] text-danger">
           <AlertCircle size={14} className="shrink-0" />

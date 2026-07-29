@@ -89,7 +89,7 @@ export function SessionRow({
   // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
-    ? "text-text-muted italic"
+    ? "text-muted-foreground italic"
     : unread
       ? "font-semibold text-foreground"
       : "font-normal text-foreground";

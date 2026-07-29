@@ -19,7 +19,7 @@ export function ToolChip({ chip }: { chip: T }) {
       className={chip.status === "failed" ? "text-destructive" : undefined}
       label={
         <>
-          {running && <Spinner size={12} />}
+          {running && <Spinner size={12} className="text-inherit" />}
           <span className="truncate min-w-0" title={chip.title}>
             {chip.title}
           </span>

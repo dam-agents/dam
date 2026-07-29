@@ -24,7 +24,7 @@ export function Section({
         chevronSize={12}
         className={cn(
           labelVariants(),
-          "w-full px-4 py-2.5 transition-colors bg-muted hover:text-text-secondary",
+          "w-full px-4 py-2.5 transition-colors bg-muted hover:text-foreground",
         )}
       >
         {title}

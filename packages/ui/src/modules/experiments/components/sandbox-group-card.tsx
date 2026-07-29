@@ -39,7 +39,7 @@ export function SandboxGroupCard({
         <span
           className={cn(
             "truncate text-[14px] font-semibold",
-            deleted ? "text-text-muted" : "text-foreground",
+            deleted ? "text-muted-foreground" : "text-foreground",
           )}
         >
           {group.name}
@@ -70,7 +70,7 @@ export function SandboxGroupCard({
       </div>
 
       {deleted && (
-        <p className="mb-3 px-1.5 text-[12px] text-text-muted">
+        <p className="mb-3 px-1.5 text-[12px] text-muted-foreground">
           These sandboxes were deleted; their runs and results still live in the
           artifact library.
         </p>

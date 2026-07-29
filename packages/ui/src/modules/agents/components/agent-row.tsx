@@ -84,7 +84,7 @@ export function AgentRow({
               {formatTemporaryDraw(temporaryDraw) &&
                 ` · ${formatTemporaryDraw(temporaryDraw)}`}{" "}
               ·{" "}
-              <span className="text-text-muted">
+              <span className="text-muted-foreground">
                 released when the run ends
               </span>
             </span>

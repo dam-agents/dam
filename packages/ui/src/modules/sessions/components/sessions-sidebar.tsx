@@ -226,12 +226,12 @@ export function SessionsSidebar({
     >
       <div className="flex-1 overflow-y-auto">
         {!loading && sessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No sessions yet
           </p>
         )}
         {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No sessions match the filter
           </p>
         )}
@@ -245,7 +245,7 @@ export function SessionsSidebar({
           <button
             type="button"
             onClick={focusPendingLaunch}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
             <Spinner />

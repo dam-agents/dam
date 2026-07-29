@@ -27,7 +27,7 @@ export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
             className="border-b border-border-hairline last:border-b-0"
           >
             <td
-              className={`truncate ${CELL} font-mono text-text-secondary`}
+              className={`truncate ${CELL} font-mono text-muted-foreground`}
               title={row.model}
             >
               {row.model}

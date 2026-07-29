@@ -112,7 +112,7 @@ export function FilesPanel({
               />
             )}
             {controller.rootIsLoadedEmpty && (
-              <p className="px-4 py-5 text-[12px] text-text-muted">
+              <p className="px-4 py-5 text-[12px] text-muted-foreground">
                 No files yet
               </p>
             )}

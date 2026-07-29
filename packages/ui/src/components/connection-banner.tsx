@@ -13,7 +13,7 @@ export function ConnectionBanner() {
   const offline = status === "offline";
   return (
     <div className="fixed bottom-14 left-0 right-0 z-banner flex h-11 items-center justify-center gap-2 border-t border-warning bg-warning-light px-5 text-[13px] font-semibold text-warning md:bottom-0">
-      {offline ? <WifiOff size={14} /> : <Spinner />}
+      {offline ? <WifiOff size={14} /> : <Spinner className="text-inherit" />}
       <span className="sm:hidden">
         {offline ? "Offline — retrying when back" : "Reconnecting…"}
       </span>

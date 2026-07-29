@@ -50,7 +50,9 @@ export function ApprovalsList({
   );
   if (sorted.length === 0) {
     return (
-      <p className="px-4 py-5 text-[12px] text-text-muted">{emptyLabel}</p>
+      <p className="px-4 py-5 text-[12px] text-muted-foreground">
+        {emptyLabel}
+      </p>
     );
   }
   return (
@@ -114,10 +116,12 @@ function ApprovalRow({
             )}
           </div>
           {subtitle && (
-            <p className="text-[11px] text-text-muted truncate">{subtitle}</p>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {subtitle}
+            </p>
           )}
           {density === "full" && (
-            <p className="text-[10px] text-text-muted mt-0.5 truncate">
+            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
               agent {agentName}
             </p>
           )}
@@ -204,7 +208,7 @@ function ApprovalRow({
         </div>
       )}
       {expired && row.type === "ext_authz" && (
-        <p className="text-[11px] text-text-muted">
+        <p className="text-[11px] text-muted-foreground">
           The original request already failed. Allow permanently writes a rule
           that future retries match.
         </p>

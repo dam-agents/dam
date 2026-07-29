@@ -172,7 +172,7 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {loading && <Spinner size={15} className="text-muted-foreground" />}
+          {loading && <Spinner size={15} />}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even
               while the agent is stopped. */}

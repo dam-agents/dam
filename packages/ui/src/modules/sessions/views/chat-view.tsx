@@ -462,11 +462,11 @@ export function ChatView() {
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
       >
         <Button
-          variant="link"
+          variant="ghost"
           size="inline"
           aria-label="Back to sandboxes"
           onClick={handleBack}
-          className="md:hidden gap-1 text-[13px] font-medium text-text-secondary hover:text-accent"
+          className="md:hidden gap-1 text-[13px] font-medium text-muted-foreground hover:bg-transparent"
         >
           <ArrowLeft size={14} />
         </Button>
@@ -615,8 +615,8 @@ export function ChatView() {
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
                     {loadingSession && (
-                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
-                        <Spinner size={20} className="text-accent" />
+                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-muted-foreground">
+                        <Spinner size={20} />
                         Loading session...
                       </div>
                     )}
@@ -641,11 +641,11 @@ export function ChatView() {
                       messages.length === 0 &&
                       (launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
-                          <Spinner size={22} className="mb-3 text-text-muted" />
+                          <Spinner size={22} className="mb-3" />
                           <p className="text-[16px] font-bold text-foreground mb-2">
                             Starting the run…
                           </p>
-                          <p className="text-[14px] text-text-muted">
+                          <p className="text-[14px] text-muted-foreground">
                             Waking the agent and opening the launch session —
                             this can take up to a minute. The conversation
                             appears here as soon as it&apos;s up.
@@ -656,7 +656,7 @@ export function ChatView() {
                           <p className="text-[16px] font-bold text-foreground mb-2">
                             Start a conversation
                           </p>
-                          <p className="text-[14px] text-text-muted">
+                          <p className="text-[14px] text-muted-foreground">
                             Send a message to begin a new session with this
                             agent
                           </p>
@@ -665,7 +665,7 @@ export function ChatView() {
                     {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
-                          <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border/60">
+                          <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
                             {m.parts.find((p) => p.kind === "text")?.kind ===
                             "text"
                               ? (
@@ -750,13 +750,13 @@ export function ChatView() {
                                   >
                                     <FileIcon
                                       size={14}
-                                      className="text-text-muted shrink-0"
+                                      className="text-muted-foreground shrink-0"
                                     />
-                                    <span className="text-[12px] text-text-secondary">
+                                    <span className="text-[12px] text-muted-foreground">
                                       {p.name}
                                     </span>
                                     {p.size !== undefined && (
-                                      <span className="text-[10px] text-text-muted">
+                                      <span className="text-[10px] text-muted-foreground">
                                         {p.size < 1024
                                           ? `${p.size} B`
                                           : `${(p.size / 1024).toFixed(1)} KB`}
@@ -770,7 +770,7 @@ export function ChatView() {
                               {m.streaming &&
                                 m.queued &&
                                 m.parts.length === 0 && (
-                                  <span className="text-[12px] text-text-muted italic">
+                                  <span className="text-[12px] text-muted-foreground italic">
                                     Waiting for previous prompt…
                                   </span>
                                 )}
@@ -955,7 +955,7 @@ function SessionErrorCard({
           <h3 className="text-[15px] font-bold text-foreground mb-1">
             {title}
           </h3>
-          <p className="text-[13px] text-text-secondary break-words">
+          <p className="text-[13px] text-muted-foreground break-words">
             {error.message}
           </p>
         </div>
