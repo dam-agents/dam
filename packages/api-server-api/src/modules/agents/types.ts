@@ -114,6 +114,11 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
    *  write their Postgres row first, so a list can never see an unattributed
    *  target — bind the two without a window. */
   id?: string;
+  /** Root Driver id to attribute the agent's telemetry to, service-level
+   *  only (never on the wire): a spawning Invocation stamps its root Driver
+   *  here so the target's gateway credits the Driver's spend. A wire-settable
+   *  value would forge attribution onto an agent the caller does not drive. */
+  telemetryAttributionId?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

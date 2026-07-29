@@ -36,6 +36,7 @@ function makeService(row: InvocationRow) {
     agents: {
       delete: async () => {},
     } as never,
+    driverResolution: { resolveRoot: async (id: string) => id },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
   });

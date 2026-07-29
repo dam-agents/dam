@@ -33,6 +33,9 @@ export function composeInvocationsForOwner(opts: {
     owner: opts.owner,
     repo: createInvocationsRepository(opts.db),
     agents: opts.agents,
+    driverResolution: createDriverResolution({
+      repo: createInvocationsRepository(opts.db),
+    }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     isExperimentRunning: async (experimentId, driverAgentId) => {
