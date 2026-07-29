@@ -1,6 +1,8 @@
 import { useState } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export function Section({
   title,
@@ -20,7 +22,10 @@ export function Section({
         open={open}
         onToggle={() => setOpen((o) => !o)}
         chevronSize={12}
-        className="w-full px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted hover:text-text-secondary transition-colors bg-surface-raised"
+        className={cn(
+          labelVariants(),
+          "w-full px-4 py-2.5 transition-colors bg-surface-raised hover:text-text-secondary",
+        )}
       >
         {title}
         {headerRight && <span className="ml-auto">{headerRight}</span>}

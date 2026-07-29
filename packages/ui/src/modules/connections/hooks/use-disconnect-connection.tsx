@@ -1,4 +1,5 @@
 import { Callout } from "@/components/ui/callout";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
@@ -50,9 +51,7 @@ export function useDisconnectConnection() {
         </p>
         {affected.length > 0 && (
           <Callout tone="muted" className="mt-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.6px] text-muted-foreground">
-              Affected sandboxes
-            </p>
+            <SectionLabel>Affected sandboxes</SectionLabel>
             <ul className="mt-2 list-disc pl-5 text-[14px] text-foreground/90">
               {affected.map((n) => (
                 <li key={n}>{n}</li>

@@ -250,9 +250,7 @@ function OptionGroup({
           : "border-b border-border-light last:border-b-0 px-4 py-3"
       }
     >
-      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
-        {title}
-      </div>
+      <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
       {disabled ? (
         // Static value while read-only: mounting a real trigger would still open
         // on click (Radix asChild doesn't honor a native `disabled` reliably).

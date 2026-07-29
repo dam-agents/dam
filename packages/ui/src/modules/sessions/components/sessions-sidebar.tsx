@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
@@ -236,9 +237,9 @@ export function SessionsSidebar({
         )}
         {conversationSessions.map(renderRow)}
         {(runSessions.length > 0 || launchingRun) && (
-          <p className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+          <SectionLabel className="block px-4 pb-1 pt-4">
             Experiment runs
-          </p>
+          </SectionLabel>
         )}
         {launchingRun && (
           <button

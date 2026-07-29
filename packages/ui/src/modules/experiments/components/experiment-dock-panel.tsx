@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -250,9 +251,7 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
   if (rows.length === 0) return null;
   return (
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
-      <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Invocations
-      </p>
+      <SectionLabel className="block pb-1">Invocations</SectionLabel>
       {rows.map((row) => (
         <button
           key={row.id}
@@ -334,9 +333,7 @@ function RunArtifacts({
   if (runArtifacts.length === 0) return null;
   return (
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
-      <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Run artifacts
-      </p>
+      <SectionLabel className="block pb-1">Run artifacts</SectionLabel>
       {runArtifacts.map((artifact) => (
         <button
           key={artifact.id}

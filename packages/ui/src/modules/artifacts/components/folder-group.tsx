@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
@@ -151,9 +152,9 @@ export function FolderGroup({
           ) : sections ? (
             sections.map((section) => (
               <div key={section.label}>
-                <div className="border-t border-border/60 bg-muted/40 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <SectionLabel className="block border-t border-border/60 bg-muted/40 px-4 py-1.5">
                   {section.label}
-                </div>
+                </SectionLabel>
                 {section.artifacts.map((artifact) => (
                   <ArtifactRow
                     key={artifact.id}

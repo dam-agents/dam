@@ -10,12 +10,14 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   useApplyEgressPreset,
@@ -448,10 +450,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <SectionLabel>{label}</SectionLabel>
+    <FormField label={label} disableInset className={cn("gap-1", widthClass)}>
       {children}
-    </label>
+    </FormField>
   );
 }
 

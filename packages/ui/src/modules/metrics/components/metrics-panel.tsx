@@ -1,6 +1,9 @@
 import type { CallContext, SessionRuntime } from "api-server-api";
 import { useState } from "react";
 
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+
 import { useMetricsOverview } from "../api/queries.js";
 import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
 import { ModelSpendTable } from "./model-spend-table.js";
@@ -137,9 +140,7 @@ function PanelNotice({ children }: { children: React.ReactNode }) {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mt-4 mb-2 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted first:mt-0">
-      {children}
-    </h3>
+    <h3 className={cn(labelVariants(), "mt-4 mb-2 first:mt-0")}>{children}</h3>
   );
 }
 
@@ -171,7 +172,7 @@ function RecentCallsTable({ rows }: { rows: CallContext[] }) {
   return (
     <table className="w-full border-collapse tabular-nums">
       <thead>
-        <tr className="text-[10px] uppercase tracking-wide text-text-muted">
+        <tr className={labelVariants()}>
           <th className="py-1 text-left font-medium">Time</th>
           <th className="py-1 text-right font-medium">Context</th>
           <th className="py-1 text-right font-medium">Took</th>

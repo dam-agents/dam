@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 import { FormField } from "../../../components/form-field.js";
 
@@ -42,7 +44,7 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
         open={expanded}
         onToggle={() => setOpen((v) => !v)}
         chevronSize={12}
-        className="gap-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground hover:text-foreground"
+        className={cn(labelVariants(), "gap-1.5 hover:text-foreground")}
       >
         Private registry
       </DisclosureToggle>
