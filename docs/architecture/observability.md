@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-07-24
+Last verified: 2026-07-29
 
 ## Overview
 
@@ -63,7 +63,9 @@ The platform's own services emit their operational telemetry through an in-proce
 
 Telemetry only answers *whose agents ran, and how* if each record is reliably tied to the agent that produced it — and agents run untrusted code, so the attribution cannot be taken from what the agent put in its own telemetry. It comes instead from the platform-controlled path the telemetry already travels.
 
-Every agent's egress, telemetry included, leaves through its **paired gateway pod**: the agent has no other admitted route (see [security-and-credentials](security-and-credentials.md)), and the gateway proxy's configuration is controller-rendered, not agent-writable. When the telemetry backend is enabled, that gateway proxy intercepts any agent OTLP bound for the collector and stamps a trusted `platform.agent.id` identifying the producing agent — **overwriting** anything the agent set, since the value is fixed in this gateway's own per-agent configuration. The collector then promotes that value to a `platform.agent.id` resource attribute on every signal in the request, and **drops any agent-supplied `platform.agent.id` that did not arrive from the gateway**, so a forged value can never survive.
+Every agent's egress, telemetry included, leaves through its **paired gateway pod**: the agent has no other admitted route (see [security-and-credentials](security-and-credentials.md)), and the gateway proxy's configuration is controller-rendered, not agent-writable. When the telemetry backend is enabled, that gateway proxy intercepts any agent OTLP bound for the collector and stamps a trusted `platform.agent.id` identifying the agent the telemetry is attributed to — **overwriting** anything the agent set, since the value is fixed in this gateway's own per-agent configuration. The collector then promotes that value to a `platform.agent.id` resource attribute on every signal in the request, and **drops any agent-supplied `platform.agent.id` that did not arrive from the gateway**, so a forged value can never survive.
+
+For most agents the attributed agent is the producing one. An **Invocation target** is the exception: it has no telemetry identity of its own, so its gateway is configured at spawn to stamp the id of the root Driver its Invocation chain resolves to — the same root, over the same chain, that decides its egress. Its own id travels beside it in a display-only Invocation attribute, so the target stays findable in the exploration UI and separable for per-Invocation analysis without ever being a unit of attribution. Resolution happens once, at spawn, when the chain is guaranteed to still exist; a chain that will not resolve fails the Invocation rather than producing telemetry no one owns. See [metrics — Invocation spend](metrics.md#invocation-spend) for what this buys the read path.
 
 The guarantee is **attribution, not content integrity**: an agent can still misreport its own numbers (inflate a token count), but it can only ever pollute *its own* telemetry — never make its telemetry appear under another agent or user. The owner-scoped read path resolves `platform.agent.id` to the owning user; telemetry that carries no `platform.agent.id` (the platform's own components) is not agent telemetry and is never attributed to a user. The attribute is namespaced under the permanent `platform` codename so it never collides with OpenTelemetry semantic-convention or agent-self-reported `agent.*` attributes.
 
