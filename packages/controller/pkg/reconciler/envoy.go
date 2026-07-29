@@ -679,9 +679,15 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
 // the gateway dials. Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
-func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
+//
+// `attributionID` overrides the trusted `x-platform-agent-id` telemetry stamp:
+// empty means stamp `instanceName` (the default — the gateway attributes to its
+// own instance); non-empty means stamp that id instead and additionally stamp
+// `x-platform-invocation-id` with `instanceName`. The api-server sets it for
+// Invocation targets to their root Driver (#3041). Forks pass empty.
+func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets, l7Hosts)
-	yaml, err := renderEnvoyBootstrap(instanceName, extAuthzInstanceID, cfg, chains)
+	yaml, err := renderEnvoyBootstrap(instanceName, extAuthzInstanceID, attributionID, cfg, chains)
 	if err != nil {
 		return nil, err
 	}

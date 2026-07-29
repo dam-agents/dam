@@ -428,7 +428,7 @@ func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)

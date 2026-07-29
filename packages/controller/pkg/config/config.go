@@ -140,7 +140,9 @@ type Config struct {
 	// telemetry backend is disabled; the chart sets it from
 	// `clickstack.enabled`. When set, each gateway gains a collector egress
 	// chain that stamps the trusted `x-platform-agent-id` header so the
-	// collector can attribute telemetry to the producing instance.
+	// collector can attribute telemetry to the producing instance — or, when
+	// the api-server set a per-agent attribution override, to the agent that
+	// drove it (an Invocation target credits its root Driver, #3041).
 	TelemetryCollectorHost string
 	// TelemetryCollectorPort is the collector's OTLP/HTTP port (default 4318).
 	TelemetryCollectorPort int

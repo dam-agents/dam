@@ -114,7 +114,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	// parent owner's rules for fork traffic, so the fork gateway must
 	// intercept the same hosts at L7 or the parent's path/method/port
 	// narrowing is invisible on foreign turns (#2866).
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	// Forks pass no attribution override — a fork keeps stamping its own id
+	// (out of scope for #3041; forks are being removed).
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, "", r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}

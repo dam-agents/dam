@@ -857,6 +857,12 @@ export function createAgentsService(deps: {
         spec.hibernationTimeout = minutesToDuration(
           input.hibernationTimeoutMin,
         );
+      // Invocation spawn stamps the root Driver id here so the target's
+      // gateway attributes its telemetry to the Driver (#3041). Service-only:
+      // the controller renders it into the gateway bootstrap, so it belongs in
+      // the spec, not annotations. Never wire-settable (see types.ts).
+      if (input.telemetryAttributionId !== undefined)
+        spec.telemetryAttributionId = input.telemetryAttributionId;
 
       // Single-shot create: seed grants into the spec before first render so
       // credentials ride the first snapshot and the gateway renders its chains
