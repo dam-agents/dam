@@ -79,8 +79,10 @@ if [ -f CLAUDE.md ]; then
 fi
 
 # ----------------------------------------------- leftover scaffolding marks ----
+# --exclude: a copy of this validator carries these literals in its own messages
 leftovers="$(grep -rnE '\{\{[A-Z_]+\}\}|TODO\(creator\)' \
-  --include='*.md' --include='*.sh' . 2>/dev/null | grep -v '^\./\.git/' || true)"
+  --include='*.md' --include='*.sh' --exclude='validate-definition.sh' . 2>/dev/null \
+  | grep -v '^\./\.git/' || true)"
 if [ -n "$leftovers" ]; then
   fail "unresolved placeholders / TODO(creator) markers remain:"
   printf '%s\n' "$leftovers" | sed 's/^/      /'
@@ -97,6 +99,11 @@ if [ -d scripts ]; then
   for s in scripts/*.sh; do
     [ -e "$s" ] || continue
     if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
+    # this validator carries the literal 'awk' in its own detection pattern and message —
+    # skip the awk check on a copy of itself so it never self-flags
+    case "$(basename "$s")" in
+      validate-definition.sh) pass "$s awk check skipped (validator itself)"; continue ;;
+    esac
     # comment-only lines don't count ("deliberately awk-free" headers)
     grep -vE '^[[:space:]]*#' "$s" | grep -qE '(^|[^a-zA-Z0-9_])awk([^a-zA-Z0-9_]|$)' \
       && fail "$s uses awk — not available on the pod" \
@@ -106,8 +113,8 @@ fi
 
 # ------------------------------------------------------- dead relative links ----
 dead=0
-for f in *.md docs/*.md; do
-  [ -e "$f" ] || continue
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
   links="$(grep -oE '\]\([^)]+\)' "$f" 2>/dev/null | sed -e 's/^](//' -e 's/)$//')"
   [ -n "$links" ] || continue
   dir="$(dirname "$f")"
@@ -123,8 +130,8 @@ for f in *.md docs/*.md; do
   done <<EOF
 $links
 EOF
-done
-[ "$dead" -eq 0 ] && pass "no dead relative links in *.md / docs/*.md"
+done < <(find . -name '*.md' -not -path './.git/*' -not -path './work/*' | sort)
+[ "$dead" -eq 0 ] && pass "no dead relative links in any .md file"
 
 # ----------------------------------------------------- sentinel consistency ----
 if [ -f CLAUDE.md ] && [ -f ONBOARDING.md ]; then
