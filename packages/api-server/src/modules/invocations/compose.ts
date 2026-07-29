@@ -29,13 +29,12 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
+  const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
     owner: opts.owner,
-    repo: createInvocationsRepository(opts.db),
+    repo,
     agents: opts.agents,
-    driverResolution: createDriverResolution({
-      repo: createInvocationsRepository(opts.db),
-    }),
+    driverResolution: createDriverResolution({ repo }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     isExperimentRunning: async (experimentId, driverAgentId) => {
