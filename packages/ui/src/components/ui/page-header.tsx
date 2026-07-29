@@ -38,7 +38,7 @@ export function PageHeader({
           </div>
         )}
         {description && (
-          <p className="order-2 mt-1 text-[14px] text-muted-foreground @lg:order-3 @lg:w-full">
+          <p className="order-2 mt-1 text-[14px] text-balance text-muted-foreground @lg:order-3 @lg:w-full">
             {description}
           </p>
         )}

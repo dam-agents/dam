@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-07-28
+Last verified: 2026-07-29
 
 ## Overview
 
@@ -23,7 +23,7 @@ The module has no persistence of its own: a Knowledge Base is exactly the owner'
 
 ## UI
 
-Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Creation is **not** its own form: it is the `knowledge-base` starting point on the shared [sandbox wizard](agent-lifecycle.md)'s first step, which pins the Claude Code harness, hides it, and reveals the KB Template picker; the wizard's finish dispatches to this module's create. The KB list's own "New knowledge base" button enters that wizard with the starting point pre-picked.
+Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Creation is **not** its own form: it is the `knowledge-base` starting point on the shared [sandbox wizard](agent-lifecycle.md)'s first step, which pins the Claude Code harness, hides it, and reveals the KB Template picker; the wizard's finish dispatches to this module's create. The KB list's own create button enters that wizard with the starting point pre-picked.
 
 Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, fails silently), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. The greeting mechanism is shared with experiments.
 
