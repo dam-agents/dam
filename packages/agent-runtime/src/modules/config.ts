@@ -8,6 +8,9 @@ const schema = z.object({
     .transform((v) => v === "true"),
   HOME_DIR: z.string().default("/home/agent"),
   WORK_DIR: z.string().default("/home/agent/work"),
+  // Pristine workspace copy in the image (the first-boot seed source) —
+  // the reference for skill origin classification.
+  IMAGE_WORKSPACE_DIR: z.string().default("/app/working-dir"),
   API_SERVER_URL: z.string().default(""),
 });
 

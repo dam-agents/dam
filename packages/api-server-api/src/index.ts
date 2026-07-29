@@ -343,6 +343,7 @@ export type {
   SkillCreateLocalInput,
   SkillCreateSourceInput,
   SkillInstallInput,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishRecord,
   SkillPublishResult,

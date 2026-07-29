@@ -24,10 +24,16 @@ export interface ScannedSkill {
   contentHash: string;
 }
 
+/** Provenance vs. the image's pristine workspace copy: shipped untouched,
+ *  shipped but diverged on the PVC, or created at runtime. */
+export type SkillOrigin = "system" | "system-modified" | "user";
+
 export interface LocalSkill {
   name: string;
   description: string;
   skillPath: string;
+  /** Absent on pre-provenance agent-runtimes — readers treat as `user`. */
+  origin?: SkillOrigin;
 }
 
 export interface LocalSkillFile {

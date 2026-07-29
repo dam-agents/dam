@@ -4,9 +4,11 @@ import {
   ExternalLink,
   GitPullRequest,
   MoreHorizontal,
+  Upload,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +37,28 @@ export function StandaloneSkillsPlaceholder() {
           Skills created in this sandbox appear here once it's running.
         </p>
       </div>
+    </section>
+  );
+}
+
+/** Running-agent empty state (#2828): the section keeps its header and an
+ *  authoring affordance instead of vanishing when no user skill exists yet. */
+export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SectionLabel>Created in this sandbox</SectionLabel>
+        {action}
+      </div>
+      <Callout variant="dashed">
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <Upload size={20} className="text-muted-foreground" />
+          <p className="text-[13px] text-muted-foreground">
+            No skills created in this sandbox yet. Drop a .md file here, or ask
+            the agent to author one.
+          </p>
+        </div>
+      </Callout>
     </section>
   );
 }
