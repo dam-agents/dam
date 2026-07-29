@@ -58,18 +58,24 @@ export function useSandboxSettingsSave({
 
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
-    // Path-specific adds force a pod roll; confirm up front so declining
-    // aborts before anything commits. This view stays mounted (unlike the
-    // old modal), so a mid-save abort would otherwise leave already-committed
-    // fields shown as unsaved.
-    const restartingHosts = net.pendingAdds
-      .filter((a) => a.method !== "*" || a.pathPattern !== "*")
+    // Adds that need L7 promotion (method, path, or non-443 port — mirrors
+    // needsL7Promotion server-side) force a gateway roll; confirm up front so
+    // declining aborts before anything commits. This view stays mounted
+    // (unlike the old modal), so a mid-save abort would otherwise leave
+    // already-committed fields shown as unsaved.
+    const gatewayRestartHosts = net.pendingAdds
+      .filter(
+        (a) =>
+          a.method !== "*" ||
+          a.pathPattern !== "*" ||
+          splitHostPort(a.host).port != null,
+      )
       .map((a) => a.host);
     if (
-      restartingHosts.length > 0 &&
+      gatewayRestartHosts.length > 0 &&
       !(await showConfirm(
-        `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement.`,
-        "Restart agent?",
+        `Rule changes for ${gatewayRestartHosts.length === 1 ? `"${gatewayRestartHosts[0]}"` : `${gatewayRestartHosts.length} hosts`} need a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted.`,
+        "Restart network gateway?",
         { confirmLabel: "Save & restart" },
       ))
     ) {
