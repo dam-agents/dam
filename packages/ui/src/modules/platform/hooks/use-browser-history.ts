@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useStore } from "../../../store.js";
 import {
   parseRoute,
+  type Route,
   routeToNavigationState,
   type View,
 } from "../lib/routes.js";
@@ -11,6 +12,11 @@ import {
  *  views carry their agent in `selectedAgent` and share chat's teardown. */
 const isChatView = (view: View) =>
   view === "chat" || view === "knowledge-base-chat";
+
+const isChatRoute = (
+  route: Route,
+): route is Extract<Route, { view: "chat" | "knowledge-base-chat" }> =>
+  isChatView(route.view);
 
 /**
  * The UI's only popstate listener. Entering either chat surface always resets
@@ -23,7 +29,7 @@ export function useBrowserHistory(): void {
       const route = parseRoute(window.location.pathname);
       const wasChat = isChatView(useStore.getState().view);
 
-      if (route.view === "chat" || route.view === "knowledge-base-chat") {
+      if (isChatRoute(route)) {
         useStore.getState().resetChatContext();
         useStore.setState({
           ...routeToNavigationState(route),
