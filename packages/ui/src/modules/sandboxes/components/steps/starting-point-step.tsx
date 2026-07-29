@@ -74,7 +74,7 @@ export function StartingPointStep({
             startingPoint="experiment"
             icon={FlaskConical}
             name="Experiment sandbox"
-            description="A Claude Code sandbox with the experiment authoring skill installed. It runs one goal across several variants at once and charts each result live, so you can compare them."
+            description="A Claude Code sandbox with the experiment skill preloaded. It runs one goal across several variants at once, charting each result live so you can compare them."
             selected={startingPoint === "experiment"}
             onSelect={() => onPickStartingPoint("experiment")}
           />
@@ -84,7 +84,7 @@ export function StartingPointStep({
             startingPoint="knowledge-base"
             icon={Library}
             name="Knowledge base sandbox"
-            description="A Claude Code sandbox that builds and maintains a body of knowledge you can chat with. Feed it a repo or your docs, or add to it as you go."
+            description="A Claude Code sandbox that builds and maintains a wiki. Ask questions in chat, add knowledge as you go, or point it at a repo or docs."
             selected={startingPoint === "knowledge-base"}
             onSelect={() => onPickStartingPoint("knowledge-base")}
           />
@@ -93,7 +93,7 @@ export function StartingPointStep({
           startingPoint="specialized"
           icon={Puzzle}
           name="Specialized sandbox"
-          description="An image already built for one particular task — optimizers, research harnesses, and more."
+          description="A sandbox already built for one particular task — optimizers, research harnesses, and more."
           selected={startingPoint === "specialized"}
           onSelect={() => onPickStartingPoint("specialized")}
         />
@@ -101,7 +101,7 @@ export function StartingPointStep({
           startingPoint="general-purpose"
           icon={Boxes}
           name="General-purpose sandbox"
-          description="A capable coding agent with no preset — code, research, ops, or anything else. Pick the harness to start from."
+          description="A capable agent with no preset — code, research, ops, or anything else. Pick a harness to start."
           selected={startingPoint === "general-purpose"}
           onSelect={() => onPickStartingPoint("general-purpose")}
         />
@@ -147,7 +147,7 @@ function StartingPointReveal({
   if (snapshot.startingPoint === "knowledge-base") {
     return (
       <section className="anim-in">
-        <SectionLabel spaced>Template</SectionLabel>
+        <SectionLabel spaced>Choose a template</SectionLabel>
         <CardList>
           {KB_TEMPLATES.map((template) => (
             <KbTemplateCard
