@@ -1,6 +1,5 @@
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
-  ChevronDown,
   Folder,
   Link as LinkIcon,
   MoreVertical,
@@ -12,6 +11,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,12 +80,9 @@ export function FolderGroup({
         }}
         className="group flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >
-        <ChevronDown
-          size={16}
-          className={cn(
-            "shrink-0 text-muted-foreground transition-transform",
-            collapsed && "-rotate-90",
-          )}
+        <DisclosureChevron
+          open={!collapsed}
+          className="text-muted-foreground"
         />
         {folder && (
           <Folder size={16} className="shrink-0 text-muted-foreground" />

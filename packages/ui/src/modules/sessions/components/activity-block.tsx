@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
-
-import { Caret } from "./caret";
 
 /** Left-bordered agent-activity row in the chat thread (thinking, tool runs):
  *  a label line plus optional collapsible detail. */
@@ -37,11 +36,7 @@ export function ActivityBlock({
         )}
         onClick={onToggle}
       >
-        {onToggle && (
-          <Caret
-            className={cn("transition-transform", !open && "-rotate-90")}
-          />
-        )}
+        {onToggle && <DisclosureChevron open={open ?? false} size={12} />}
         {label}
       </button>
       {open && children && <div className="mt-1">{children}</div>}

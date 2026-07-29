@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
@@ -146,14 +147,14 @@ export function BobForm({
           </div>
         )}
 
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((o) => !o)}
-        className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
+      <DisclosureToggle
+        open={advancedOpen}
+        onToggle={() => setAdvancedOpen((o) => !o)}
+        chevronSize={13}
+        className="gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
       >
-        {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         Advanced — model & tenant scoping
-      </button>
+      </DisclosureToggle>
 
       {advancedOpen && (
         <div className="grid grid-cols-1 gap-3">

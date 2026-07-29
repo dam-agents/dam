@@ -13,16 +13,15 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { Caret } from "../../sessions/components/caret.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
 import {
   type FileRowMenuAction,
@@ -156,12 +155,10 @@ function RowIcons({
     <>
       {isDir ? (
         <span className="w-[16px] shrink-0 flex items-center justify-center">
-          <Caret
-            className={cn(
-              "transition-transform",
-              isCollapsed && "-rotate-90",
-              isDot ? "text-text-muted" : "text-muted-foreground",
-            )}
+          <DisclosureChevron
+            open={!isCollapsed}
+            size={12}
+            className={isDot ? "text-text-muted" : "text-muted-foreground"}
           />
         </span>
       ) : (
