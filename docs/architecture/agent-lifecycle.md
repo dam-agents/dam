@@ -122,51 +122,25 @@ When a session goes idle — no engaged channel, no active or queued prompt, no 
 
 One further condition holds that reap back: **background work the session
 reports**. Closing a session tears down the harness's per-session subprocess, and
-a harness that supervises background jobs kills them as it shuts down — so a job
-an agent started and left running dies seconds after the last tab closes,
-silently. ACP is no help: a session emits nothing between turns, `session/close`
-is specified as safe *because* the protocol assumes nothing is running, and its
-v2 successor states outright that background activity continues while a session
-reads idle. The platform therefore asks rather than infers — a **background-work
-contract** the session reports against.
+a harness that supervises background jobs kills them as it goes, so a job an agent
+left running would die seconds after the last tab closed. ACP carries no signal to
+consult — a session emits nothing between turns, and `session/close` is specified
+to cancel any ongoing work — so the platform asks instead of inferring. A session
+reports its **complete in-flight set** to the runtime's in-pod surface, as a level
+rather than start/stop edges, and while that set is non-empty the runtime will not
+close the session and reports itself busy, so the [idle checker](#hibernate)
+cannot hibernate the pod underneath the work. An empty report ends both. Reporting
+is optional: a harness that never reports behaves exactly as it did before the
+contract. What is held is published on the runtime's status surface, so a sandbox
+that stays awake can be explained by the work holding it.
 
-The contract is one route on the runtime's in-pod surface, and its shape is the
-whole design: a report carries a session's **complete in-flight set**, and an
-empty set means "nothing of mine is running any more". Levels rather than edges,
-because a start/stop pair would need the reporter to be reliable twice — a lost
-stop keeps a session alive forever, a lost start loses work — while a level
-self-corrects on the next report in whichever direction it was wrong, and no
-reporter has to remember what it said before. While a session's set is non-empty
-the runtime will not close it, and reports itself busy so the
-[idle checker](#hibernate) cannot take the pod out from under the work; both end
-the moment a later report comes back empty. Reporting is optional, and a harness
-that never reports behaves exactly as it did before the contract existed. The
-platform publishes what is held on the runtime's status surface, so an awake
-sandbox can be explained in terms of the work holding it.
-
-Whoever reports has to *know*, which is why the harness reports and not the
-platform. Only work a harness supervises is in its own inventory: a job the agent
-detached from the harness entirely is invisible to the contract, and so is any
-harness that doesn't report at all — for those, the reap is no threat (the
-harness isn't supervising them either, so `session/close` cannot reach them) and
-hibernation remains the only killer, budgeted by the
-[per-agent timeout](#hibernate). What is reported may also be adjacent to the
-real work rather than the work itself: a loop launched detached with its progress
-watched by a supervised log tail reports the tail, and holds the session for
-that.
-
-A hold lasts as long as the work is reported, and nothing bounds it — not a
-timer, not a count. Every available bound is a worse failure than the one it
-prevents. A timer cannot tell work that has not finished yet from work that never
-will, so it only moves the silent kill later. A cap on concurrent holds can be
-enforced only by reaping a session, which destroys the work being protected, and
-it would defend a boundary the platform does not otherwise defend: an open tab
-keeps the same subprocess alive, and engaged sessions are uncapped. What keeps a
-hold honest instead is that it is never silent or final — it is logged and
-published with what it is for, and a [hard stop or pause](#hibernate) scales the
-pair down regardless — plus a switch that refuses holds outright for an install
-that wants the old behaviour. The cost is worth stating plainly: a sandbox with
-reported background work does not scale to zero until that work ends.
+Only work a harness *supervises* reaches its report, which bounds what the
+contract promises. A job the agent detached from the harness is invisible to it,
+and what is reported can be adjacent to the real work — a detached loop whose
+progress a supervised log tail watches holds the session for the tail. Nothing
+times a hold out, so a sandbox with reported work does not scale to zero until
+that work ends; a [hard stop or pause](#hibernate) reclaims it regardless, and an
+install can refuse holds outright.
 
 Terminal-mode sessions follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that reattaching while the PTY lives replays the serialized buffer. A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace (30 s, sized for a tab refresh), it is killed only once the harness has also been quiet — no output for five minutes. Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
