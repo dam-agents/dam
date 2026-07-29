@@ -1,11 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "adopt": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "76b6d1b28e701196a17bf9bca42ef36de38f0d7e495519d4e0f7fab363e38d8d"
-    },
     "adr": {
       "source": "apocohq/skills",
       "sourceType": "github",
@@ -16,57 +11,17 @@
       "sourceType": "github",
       "computedHash": "17163b8a20e2cea00079f7ed5904a338b9c91e47d8a5ee5a9312845bed6e96e9"
     },
-    "arch-review": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "c10392a6177aa629c31c69d790e25d4f4c07dcb84814ebd36702969025011181"
-    },
-    "bootstrap": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "9455bc004c16b9fbda7a2f158f19480716a56986dca17c0f8389b81ea10967c6"
-    },
-    "build-it": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "762c968bc45ec7bfc37777c6e41354e6bc7f56a43cfa03b76f3ebdd805090cff"
-    },
-    "ralph-it": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "c75f3ffd7f894ff4c0911a5240d9dd00b15fc5b40bf5372f6afadd47ff56b9f3"
-    },
     "react-ui-engineering": {
       "source": "dam-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/react-ui-engineering/SKILL.md",
       "computedHash": "b84c8dd313729a13c098067539bf08e60773adcba6479b5cac77a29861478e74"
     },
-    "review": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "1acfedd41ece21bd86e3b4fe8067f1f0dd82efb0d165ee2e1952d082948d74fd"
-    },
-    "review-work": {
-      "source": "apocohq/skills",
-      "sourceType": "github",
-      "computedHash": "0cbd00ca317e5b2d0c1953596a8fa99f68f0e9cb81318a6ca707db64a17333eb"
-    },
-    "spec": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "f014b5f744e8e1eb7c2e281297652ff5dea76694910b703801952626a5a7293b"
-    },
     "typescript-engineering": {
       "source": "dam-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/typescript-engineering/SKILL.md",
       "computedHash": "e4e1d0c8965b2f88ebd8ac98d3ba40f3a100c362311b4fd05f3d67a6e5f9a98d"
-    },
-    "upgrade": {
-      "source": "tomkis/typescript-engineering",
-      "sourceType": "github",
-      "computedHash": "7ef9af8655423649cef3f18770245d598eaa3743317c798951c91082f9b97637"
     },
     "write-a-prd": {
       "source": "apocohq/skills",
