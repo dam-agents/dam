@@ -2,6 +2,7 @@ import { OverflowMenuVertical, TrashCan } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +29,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <Card className="overflow-hidden">
       <div
         role={openable ? "button" : undefined}
         tabIndex={openable ? 0 : undefined}
@@ -115,6 +116,6 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           name={lineage.name}
         />
       )}
-    </div>
+    </Card>
   );
 }
