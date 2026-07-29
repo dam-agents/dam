@@ -63,8 +63,7 @@ export function SandboxWizardView() {
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
   );
-  const isCustomImage =
-    !snapshot.templateId && snapshot.customImage.trim().length > 0;
+  const isCustomImage = snapshot.startingPoint === "custom";
 
   const imageLabel = useMemo(() => {
     // The image is pinned and hidden on these paths — name the kind instead.
