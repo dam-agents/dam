@@ -7,4 +7,10 @@ export interface AgentProcess {
   onLine(handler: (line: string) => void): void;
   kill(): void;
   exited: Promise<void>;
+  /**
+   * OS pid, when the implementation has one. It roots the search for processes
+   * the harness spawned — see services/background-work-tracker.ts. Absent for
+   * in-process fakes, which simply get no background-work tracking.
+   */
+  pid?: number;
 }

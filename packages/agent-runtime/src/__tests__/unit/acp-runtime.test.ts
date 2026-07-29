@@ -6,6 +6,7 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
+import type { BackgroundWorkTracker } from "../../modules/acp/services/background-work-tracker.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -97,6 +98,30 @@ function makeFakeChannel(): FakeChannel {
     sent,
     closes,
     isOpen: () => open,
+  };
+}
+
+/**
+ * Stands in for the process-watching tracker: `live` decides whether a session
+ * is holding, `calls` records the wiring the runtime is responsible for.
+ */
+function makeFakeTracker() {
+  const calls: string[] = [];
+  let live = false;
+  const tracker: BackgroundWorkTracker = {
+    turnStarted: (sessionId) => calls.push(`turnStarted:${sessionId}`),
+    turnEnded: (sessionId) => calls.push(`turnEnded:${sessionId}`),
+    hasLiveWork: () => live,
+    heldSessions: () => (live ? [SID] : []),
+    forget: (sessionId) => calls.push(`forget:${sessionId}`),
+    clear: () => calls.push("clear"),
+  };
+  return {
+    tracker,
+    calls,
+    set live(value: boolean) {
+      live = value;
+    },
   };
 }
 
@@ -1068,6 +1093,98 @@ describe("createAcpRuntime", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("holds an idle session open while background work it started is still running", () => {
+    // #2965: closing the tab reaps the session seconds later, and the harness
+    // kills the background job it was supervising — the work dies silently.
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const tracker = makeFakeTracker();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        backgroundWork: tracker.tracker,
+        backgroundWorkRecheckMs: 1_000,
+      });
+
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+      c.pushMessage(promptRequest(2));
+      const promptOut = outboundId(fa.sent[1]);
+      fa.pushLine(agentPromptResponse(promptOut));
+
+      // The turn started a job that is still running when the viewer leaves.
+      tracker.live = true;
+      c.remoteClose();
+
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+      // The pod must not hibernate under the work either.
+      expect(runtime.status().idle).toBe(false);
+      expect(runtime.status().backgroundWorkSessions).toEqual([SID]);
+
+      // Still running at the next check → still held.
+      vi.advanceTimersByTime(1_000);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // Job exits → the session reaps on the following check.
+      tracker.live = false;
+      vi.advanceTimersByTime(1_000);
+      const closes = fa.sent.filter((f: any) => f.method === "session/close");
+      expect(closes).toHaveLength(1);
+      expect((closes[0] as any).params).toEqual({ sessionId: SID });
+      expect(runtime.status().idle).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports the turn boundaries the tracker baselines against", () => {
+    // The tracker tells the turn's own processes from the harness's machinery by
+    // diffing these two moments; a mis-wire silently disables the hold.
+    const fa = makeFakeAgent();
+    const tracker = makeFakeTracker();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: tracker.tracker,
+    });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+
+    c.pushMessage(promptRequest(2));
+    expect(tracker.calls).toEqual([`turnStarted:${SID}`]);
+
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[1])));
+    expect(tracker.calls).toEqual([`turnStarted:${SID}`, `turnEnded:${SID}`]);
+  });
+
+  it("drops tracked work when the session is torn down, since it dies with the subprocess", () => {
+    const fa = makeFakeAgent();
+    const tracker = makeFakeTracker();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: tracker.tracker,
+    });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    runtime.resetSession(SID);
+
+    expect(tracker.calls).toContain(`forget:${SID}`);
   });
 
   it("does not close a session with pending permission requests", () => {

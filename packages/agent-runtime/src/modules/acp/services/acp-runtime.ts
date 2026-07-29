@@ -16,6 +16,7 @@ import {
   type SessionMetaEntry,
   type SessionMetadataStore,
 } from "../infrastructure/session-metadata-store.js";
+import type { BackgroundWorkTracker } from "./background-work-tracker.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
@@ -44,8 +45,22 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
  */
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
+/**
+ * How long to wait before re-testing a session whose reap was deferred because
+ * the agent left background work running. Short enough that the pod idles down
+ * promptly once the work exits, long enough that the check costs nothing.
+ */
+const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
+
 export interface AcpRuntimeStatus {
   idle: boolean;
+  /**
+   * Sessions kept alive because background work an agent started is still
+   * running. Non-empty forces `idle` false, so the controller's busy probe
+   * won't hibernate the pod out from under the work; reported so an
+   * unexpectedly awake sandbox is explainable rather than mysterious.
+   */
+  backgroundWorkSessions: string[];
 }
 
 export interface AcpRuntime {
@@ -95,6 +110,14 @@ export interface AcpRuntimeDeps {
   logBytesCap?: number;
   /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
+  /**
+   * Keeps a session (and the pod) alive while background work an agent started
+   * in it is still running. Omitted — as in most tests — the runtime reaps
+   * purely on session refcount, as it did before #2965.
+   */
+  backgroundWork?: BackgroundWorkTracker;
+  /** Override the deferred-reap recheck interval — exposed for tests. */
+  backgroundWorkRecheckMs?: number;
   /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
   isTerminalSessionActive?: (sessionId: string) => boolean;
 }
@@ -218,6 +241,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const envForceRecycleMs =
     deps.envForceRecycleMs ?? DEFAULT_ENV_FORCE_RECYCLE_MS;
   const idleReapDelayMs = deps.idleReapDelayMs ?? 0;
+  const backgroundWorkRecheckMs =
+    deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
   // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
@@ -281,6 +306,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Per-session debounced idle-reap timers (see maybeCloseIdleSession). */
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Sessions whose reap is on hold for background work — logged once, not per recheck. */
+  const backgroundWorkDeferred = new Set<string>();
 
   // ── Session log ──
 
@@ -590,6 +617,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
       pendingFromAgent.clear();
+      // The harness took its children down with it — nothing left to hold.
+      deps.backgroundWork?.clear();
+      backgroundWorkDeferred.clear();
     });
     return a;
   }
@@ -640,6 +670,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     pendingFromAgent.clear();
     activePromptBySession.clear();
     promptQueueBySession.clear();
+    deps.backgroundWork?.clear();
+    backgroundWorkDeferred.clear();
     // Detach before kill so the old process's exit handler no-ops.
     agent = null;
     old.kill();
@@ -729,6 +761,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    // The subprocess is going away, so anything it was still running goes with
+    // it — the hold has nothing left to protect.
+    deps.backgroundWork?.forget(sessionId);
+    backgroundWorkDeferred.delete(sessionId);
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
       clearTimeout(reap);
@@ -760,6 +796,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
     }
+    // Closing the session kills the harness's subprocess, and with it any
+    // background job the agent started and left running — the work dies
+    // seconds after the last tab closes, silently. Defer while it runs; the
+    // tracker's own ceiling and hold cap keep that from lasting forever.
+    if (deps.backgroundWork?.hasLiveWork(sessionId)) {
+      if (!backgroundWorkDeferred.has(sessionId)) {
+        backgroundWorkDeferred.add(sessionId);
+        deps.log?.(
+          `session ${sessionId} left background work running — holding it open`,
+        );
+      }
+      idleReapTimers.set(
+        sessionId,
+        setTimeout(
+          () => reapIdleSessionNow(sessionId),
+          backgroundWorkRecheckMs,
+        ),
+      );
+      return;
+    }
+    if (backgroundWorkDeferred.delete(sessionId))
+      deps.log?.(`background work in session ${sessionId} is done`);
 
     tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
@@ -815,6 +873,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       channel: entry.channel,
       originalId: entry.originalId,
     });
+    // Baseline the harness's processes before the turn can spawn any: whatever
+    // appears from here on is the turn's doing.
+    deps.backgroundWork?.turnStarted(sessionId);
     a.send(entry.frame);
   }
 
@@ -1035,6 +1096,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const active = activePromptBySession.get(sid);
           if (active && active.outboundId === outboundId) {
             activePromptBySession.delete(sid);
+            // Anything new under the harness is work this turn left running.
+            deps.backgroundWork?.turnEnded(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
             // Turn boundary — apply a deferred env change if nothing's in flight.
             maybeRecycleForEnv();
@@ -1352,11 +1415,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       let queued = 0;
       for (const q of promptQueueBySession.values()) queued += q.length;
+      const backgroundWorkSessions = deps.backgroundWork?.heldSessions() ?? [];
       return {
         idle:
           activePromptBySession.size === 0 &&
           pendingFromAgent.size === 0 &&
-          queued === 0,
+          queued === 0 &&
+          backgroundWorkSessions.length === 0,
+        backgroundWorkSessions,
       };
     },
 
@@ -1394,6 +1460,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       orphanTimers.clear();
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
+      deps.backgroundWork?.clear();
+      backgroundWorkDeferred.clear();
       clearEnvForceTimer();
       if (warmTimer) clearTimeout(warmTimer);
       warmWaiters.clear();

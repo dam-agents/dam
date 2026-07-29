@@ -4,11 +4,13 @@ import {
   type RuntimeEnvReader,
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
+import { createProcFsProcessTable } from "./infrastructure/process-table.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
 import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
+import { createBackgroundWorkTracker } from "./services/background-work-tracker.js";
 import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
@@ -29,14 +31,26 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessionMetadata: SessionMetadataStore;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
+  // The live harness's pid roots background-work tracking. Held here rather
+  // than inside the runtime so the runtime never deals in pids: it asks the
+  // tracker about sessions, and the tracker asks the OS about processes.
+  let harnessPid: number | undefined;
   const runtime = createAcpRuntime({
     // Env read fresh per spawn; process.env wins (user env > placeholders).
-    spawnAgent: () =>
-      createChildAgentProcess({
+    spawnAgent: () => {
+      const agent = createChildAgentProcess({
         command: opts.command,
         workingDir: opts.workingDir,
         env: mergedSpawnEnv(opts.envReader),
-      }),
+      });
+      harnessPid = agent.pid;
+      return agent;
+    },
+    backgroundWork: createBackgroundWorkTracker({
+      processTable: createProcFsProcessTable(),
+      harnessPid: () => harnessPid,
+      log: opts.log,
+    }),
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,

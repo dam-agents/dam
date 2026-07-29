@@ -443,8 +443,12 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/status") {
+    const acp = acpRuntime.status();
     const status = {
-      idle: acpRuntime.status().idle && ptySlots.size === 0,
+      idle: acp.idle && ptySlots.size === 0,
+      // Reported for diagnosis only — the controller reads `idle`, which
+      // already accounts for these.
+      backgroundWorkSessions: acp.backgroundWorkSessions,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
