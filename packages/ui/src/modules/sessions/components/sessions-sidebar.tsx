@@ -259,18 +259,24 @@ export function SessionsSidebar({
   );
 }
 
-/** Placeholder rows while the session list first loads, matching SessionRow's
- *  layout so the list doesn't flash empty before the agent answers. */
+/** Placeholder rows while the session list first loads. Mirrors SessionRow's
+ *  height and its two lines — title, then a smaller timestamp — so the list
+ *  doesn't flash empty before the agent answers. The text-size spans set the
+ *  same line boxes as the real rows, so the row height matches exactly. */
 function SessionListSkeleton() {
   return (
     <div aria-hidden>
       {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center gap-2 border-b border-border-light px-4 py-3"
+          className="flex flex-col gap-0.5 border-b border-border-light px-4 py-3"
         >
-          <span className="h-2 w-2 shrink-0 rounded-full bg-muted animate-pulse" />
-          <span className="h-3 w-1/2 rounded bg-muted animate-pulse" />
+          <span className="text-[13px]">
+            <span className="inline-block h-3 w-1/2 rounded bg-muted align-middle animate-pulse" />
+          </span>
+          <span className="text-[11px]">
+            <span className="inline-block h-2.5 w-1/4 rounded bg-muted align-middle animate-pulse" />
+          </span>
         </div>
       ))}
     </div>
