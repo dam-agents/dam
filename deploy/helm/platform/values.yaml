@@ -1062,7 +1062,7 @@ controller:
   # leaves each agent on the volume it started from. Watch the controller log
   # through the first drain; `concurrency: 1` makes that easy to follow.
   storageMigration:
-    enabled: true
+    enabled: false
     # -- Storage class migrated workspaces land on: the DESTINATION of the
     # migration. Empty (default) = the cluster's default class, i.e. ordinary
     # storage, which is the point of the exercise.
