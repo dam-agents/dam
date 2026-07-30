@@ -23,11 +23,7 @@ export function EmptyStateCard({
     <Callout inset className="bg-card">
       <div className="flex flex-col items-center gap-4 py-6">
         <p className="text-sm text-foreground/80">{message}</p>
-        <Button
-          variant="outline"
-          onClick={onAction}
-          data-testid={actionTestId}
-        >
+        <Button variant="outline" onClick={onAction} data-testid={actionTestId}>
           <Add size={16} />
           {actionLabel}
         </Button>

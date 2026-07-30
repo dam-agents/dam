@@ -112,4 +112,3 @@ function AmbientRow({
     </div>
   );
 }
-
