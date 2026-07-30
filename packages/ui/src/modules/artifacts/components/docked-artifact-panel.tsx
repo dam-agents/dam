@@ -65,7 +65,7 @@ export function DockedArtifactPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <span
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={artifact?.title}

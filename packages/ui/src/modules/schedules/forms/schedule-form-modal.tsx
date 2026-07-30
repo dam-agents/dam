@@ -119,7 +119,7 @@ export function ScheduleFormModal({
         <DialogBody className="flex flex-col gap-4">
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
-              className="h-[40px]"
+              className="h-10"
               variant={errors.name ? "invalid" : undefined}
               placeholder={`eg. "Daily brief"`}
               {...register("name")}
@@ -128,7 +128,7 @@ export function ScheduleFormModal({
 
           <div className="flex flex-col gap-2">
             <SectionLabel>Run</SectionLabel>
-            <Select className="h-[40px]" {...register("kind")}>
+            <Select className="h-10" {...register("kind")}>
               {RUN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -140,7 +140,7 @@ export function ScheduleFormModal({
           {values.kind === "daily" && (
             <div className="flex flex-col gap-2">
               <SectionLabel>Time</SectionLabel>
-              <Select className="h-[40px]" {...register("time")}>
+              <Select className="h-10" {...register("time")}>
                 {timeOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -157,7 +157,7 @@ export function ScheduleFormModal({
                 <Input
                   type="number"
                   min={1}
-                  className="h-[40px] w-[80px]"
+                  className="h-10 w-[80px]"
                   variant={errors.interval ? "invalid" : undefined}
                   {...register("interval")}
                 />
@@ -207,7 +207,7 @@ export function ScheduleFormModal({
             <div className="flex flex-col gap-2">
               <SectionLabel>RRULE</SectionLabel>
               <Input
-                className="h-[40px] font-mono text-xs"
+                className="h-10 font-mono text-xs"
                 variant={cadence.error ? "invalid" : undefined}
                 placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
                 {...register("customRRule")}

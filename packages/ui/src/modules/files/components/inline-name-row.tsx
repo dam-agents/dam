@@ -27,7 +27,7 @@ export function InlineNameRow({
       className="flex items-center gap-1.5 py-[5px] text-xs"
       style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
     >
-      <span className="w-[16px] shrink-0" />
+      <span className="w-4 shrink-0" />
       {kind === "dir" ? (
         <Folder size={16} className="shrink-0" />
       ) : (

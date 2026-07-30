@@ -65,7 +65,7 @@ export function CatalogConnectionRow({
               // Height and text size match the sibling "Add to sandbox" button.
               <Badge
                 variant="muted"
-                className="h-[32px] shrink-0 gap-1.5 px-3 text-sm text-foreground"
+                className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"
               >
                 <Checkmark size={16} className="text-success" />
                 In this sandbox
@@ -73,7 +73,7 @@ export function CatalogConnectionRow({
             ) : (
               <Button
                 variant="outline"
-                className="h-[32px] shrink-0 px-3 text-sm font-normal"
+                className="h-8 shrink-0 px-3 text-sm font-normal"
                 onClick={() => grant.onToggle(true)}
                 data-testid={`catalog-add-${connection.id}`}
               >

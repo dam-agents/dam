@@ -57,7 +57,7 @@ export function PermissionStatusLine() {
     : undefined;
   if (!current) return null;
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-[44px] text-sm anim-in">
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-11 text-sm anim-in">
       <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
@@ -72,7 +72,7 @@ export function PermissionStatusLine() {
 /** A resolved verdict, rendered in the transcript where the user decided it. */
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   return (
-    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-[44px] text-sm anim-in">
+    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-11 text-sm anim-in">
       {verdict.allowed ? (
         <Checkmark size={16} className="text-success shrink-0" />
       ) : (

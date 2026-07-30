@@ -805,7 +805,7 @@ export function ChatView() {
                 )}
               </div>
 
-              <div className="pb-[16px]">
+              <div className="pb-4">
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

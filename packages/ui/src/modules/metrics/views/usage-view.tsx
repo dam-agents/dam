@@ -165,7 +165,7 @@ function UsageSkeleton() {
     <div className="space-y-10">
       <section>
         <SectionLabel spaced>Total spend</SectionLabel>
-        <div className="h-[48px] w-40 animate-pulse rounded bg-muted" />
+        <div className="h-12 w-40 animate-pulse rounded bg-muted" />
       </section>
       <section>
         <SectionLabel spaced>Spend by day</SectionLabel>

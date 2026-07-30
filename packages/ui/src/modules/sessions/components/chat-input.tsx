@@ -181,7 +181,7 @@ export function ChatInput({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="shrink-0 mb-[9px] h-[40px] w-[40px] text-muted-foreground hover:text-primary disabled:opacity-40"
+              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
               disabled={loadingSession}
               title="Attach file"
@@ -204,7 +204,7 @@ export function ChatInput({
                 variant="ghost"
                 tone="danger"
                 size="icon-sm"
-                className="shrink-0 mb-[9px] h-[40px] w-[40px]"
+                className="shrink-0 mb-[9px] h-10 w-10"
                 onClick={onStop}
                 title="Stop"
               >
@@ -215,7 +215,7 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+                className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
                 title={isComputing ? "Queue" : "Send"}

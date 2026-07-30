@@ -106,7 +106,7 @@ function ArtifactListRow({
       }}
       title={artifact.title}
       className={cn(
-        "group flex h-[32px] w-full cursor-pointer items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+        "group flex h-8 w-full cursor-pointer items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
       )}
     >

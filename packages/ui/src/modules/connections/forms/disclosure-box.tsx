@@ -59,7 +59,7 @@ export function DisclosureBox({
         open={open}
         onToggle={toggle}
         testId={testId}
-        className="h-[44px] w-full px-4 text-sm font-medium text-foreground"
+        className="h-11 w-full px-4 text-sm font-medium text-foreground"
       >
         {title}
       </DisclosureToggle>

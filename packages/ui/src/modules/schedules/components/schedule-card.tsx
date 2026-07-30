@@ -108,7 +108,7 @@ export function ScheduleCard({
 
         <Button
           variant="outline"
-          className="h-[32px] px-3 text-sm font-normal"
+          className="h-8 px-3 text-sm font-normal"
           onClick={onViewResults}
         >
           <Launch size={14} /> View results

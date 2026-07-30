@@ -86,7 +86,7 @@ export function FileRow({
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center h-[32px] text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
+          className={`group relative flex items-center h-8 text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)
@@ -147,14 +147,14 @@ function RowIcons({
   return (
     <>
       {isDir ? (
-        <span className="w-[16px] shrink-0 flex items-center justify-center">
+        <span className="w-4 shrink-0 flex items-center justify-center">
           <DisclosureChevron
             open={!isCollapsed}
             className="text-muted-foreground"
           />
         </span>
       ) : (
-        <span className="w-[16px] shrink-0" />
+        <span className="w-4 shrink-0" />
       )}
       {isDir ? (
         <Folder size={16} className="shrink-0" />

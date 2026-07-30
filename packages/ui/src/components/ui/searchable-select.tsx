@@ -106,7 +106,7 @@ export function SearchableSelect({
         aria-controls={listId}
         aria-invalid={invalid || undefined}
         className={cn(
-          "flex h-[40px] w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm",
+          "flex h-10 w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm",
           invalid ? "border-destructive" : "border-input",
           className,
         )}
@@ -132,7 +132,7 @@ export function SearchableSelect({
               aria-activedescendant={
                 filtered[highlight] ? optionId(highlight) : undefined
               }
-              className="h-[32px] w-full rounded border border-input bg-background px-2 text-sm outline-hidden"
+              className="h-8 w-full rounded border border-input bg-background px-2 text-sm outline-hidden"
             />
           </div>
           <ul

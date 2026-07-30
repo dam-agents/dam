@@ -73,7 +73,7 @@ export function SlackChannelModal({
             hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
           >
             <Input
-              className="h-[40px]"
+              className="h-10"
               variant={errors.channelId ? "invalid" : undefined}
               aria-invalid={!!errors.channelId}
               placeholder="C0…"
@@ -242,7 +242,7 @@ function AllowedUsers({
       <div className="flex gap-2">
         <Input
           type="email"
-          className="h-[32px] flex-1"
+          className="h-8 flex-1"
           value={userInput}
           placeholder="user@example.com"
           onChange={(e) => setUserInput(e.target.value)}
@@ -253,7 +253,7 @@ function AllowedUsers({
         <Button
           type="button"
           variant="outline"
-          className="h-[32px] px-3 text-sm font-normal"
+          className="h-8 px-3 text-sm font-normal"
           onClick={addUser}
           disabled={!userInput.trim()}
         >
