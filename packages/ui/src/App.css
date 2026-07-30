@@ -40,6 +40,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-placeholder: var(--placeholder);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border-ui: var(--border-ui);
@@ -121,6 +122,7 @@
   --secondary-foreground: #161616;
   --muted: #f2f4f8;
   --muted-foreground: #4d5358;
+  --placeholder: #94989b;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border-ui: #dde1e6;
@@ -163,6 +165,7 @@
   --secondary-foreground: #fafaf9;
   --muted: #262626;
   --muted-foreground: #a8a29e;
+  --placeholder: #6e6a68;
   --destructive: #f87171;
   --destructive-foreground: #161616;
   --border-ui: #393939;
