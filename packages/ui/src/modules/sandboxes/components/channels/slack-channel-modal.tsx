@@ -2,12 +2,11 @@ import { Controller } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
@@ -33,6 +32,7 @@ export function SlackChannelModal({
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
         <DialogHeader
           title={editing ? "Edit Slack channel" : "Connect a Slack channel"}
+          onClose={onClose}
         />
 
         <DialogBody className="flex flex-col gap-4">
@@ -61,23 +61,13 @@ export function SlackChannelModal({
           />
         </DialogBody>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            data-testid="slack-save"
-          >
-            {isSubmitting ? "Saving…" : editing ? "Save" : "Connect"}
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          onCancel={onClose}
+          label={editing ? "Save" : "Connect"}
+          pendingLabel="Saving…"
+          pending={isSubmitting}
+          testId="slack-save"
+        />
       </form>
     </Modal>
   );

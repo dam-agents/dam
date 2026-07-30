@@ -1,8 +1,6 @@
-import { DialogBody, DialogFooter } from "@/components/modal";
-import { Button } from "@/components/ui/button";
+import { DialogActions, DialogBody } from "@/components/modal";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import {
   type GithubSourceForm,
@@ -65,18 +63,14 @@ export function GithubSourceTab({
         </div>
       </DialogBody>
 
-      <DialogFooter className="border-t border-border">
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          className={cn(!isValid && "opacity-50")}
-          disabled={!isValid || isSubmitting}
-        >
-          {isSubmitting ? "Adding…" : "Add source"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        className="border-t border-border"
+        onCancel={onClose}
+        label="Add source"
+        pendingLabel="Adding…"
+        pending={isSubmitting}
+        disabled={!isValid}
+      />
     </form>
   );
 }

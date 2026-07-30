@@ -2,15 +2,14 @@ import { AGENT_SCOPES, CREDENTIAL_SCOPES, type Scope } from "api-server-api";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
 } from "../../../../components/modal.js";
 import { useCreateApiKey } from "../../api/mutations.js";
@@ -84,7 +83,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     // Body/Footer sit directly in the Modal's flex column — otherwise the form
     // wrapper breaks the column and the scrollable body, overflowing the panel.
     <form onSubmit={handleSubmit} className="contents">
-      <DialogHeader title="Create API key" />
+      <DialogHeader title="Create API key" onClose={onCancel} />
       <DialogBody>
         <div className="mb-4">
           <FormField label="Name">
@@ -137,14 +136,13 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
           />
         )}
       </DialogBody>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={submitDisabled}>
-          {createApiKey.isPending ? "Creating…" : "Create"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onCancel}
+        label="Create"
+        pendingLabel="Creating…"
+        pending={createApiKey.isPending}
+        disabled={submitDisabled}
+      />
     </form>
   );
 }

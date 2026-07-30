@@ -125,9 +125,12 @@ export function DialogHeader({
               onClick={onClose}
               aria-label="Close"
               data-testid={closeTestId}
-              className="shrink-0 text-muted-foreground"
+              /* Pulled out of the header's padding so it sits 16px off the
+                 panel corner at both breakpoints, rather than lining up with
+                 the title. */
+              className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
             >
-              <Close size={18} />
+              <Close size={16} />
             </Button>
           )}
         </div>
@@ -168,6 +171,56 @@ export function DialogFooter({ children, className }: DialogRegionProps) {
     >
       {children}
     </div>
+  );
+}
+
+interface DialogActionsProps {
+  onCancel: () => void;
+  cancelLabel?: string;
+  label: string;
+  /** Replaces `label` while `pending`; falls back to `label`. */
+  pendingLabel?: string;
+  pending?: boolean;
+  disabled?: boolean;
+  destructive?: boolean;
+  /** Omit inside a `<form>` so the button submits it; pass to drive the action
+   *  from a handler instead. */
+  onSubmit?: () => void;
+  testId?: string;
+  className?: string;
+}
+
+/** The dismiss + confirm pair a dialog ends with. Cancel is always an outline
+ *  button and always `type="button"`, so it can't submit the form it sits in,
+ *  and it stays enabled while the confirm is pending so the dialog is always
+ *  escapable. */
+export function DialogActions({
+  onCancel,
+  cancelLabel = "Cancel",
+  label,
+  pendingLabel,
+  pending = false,
+  disabled = false,
+  destructive = false,
+  onSubmit,
+  testId,
+  className,
+}: DialogActionsProps) {
+  return (
+    <DialogFooter className={className}>
+      <Button type="button" variant="outline" onClick={onCancel}>
+        {cancelLabel}
+      </Button>
+      <Button
+        type={onSubmit ? "button" : "submit"}
+        variant={destructive ? "destructive" : "default"}
+        onClick={onSubmit}
+        disabled={disabled || pending}
+        data-testid={testId}
+      >
+        {pending ? (pendingLabel ?? label) : label}
+      </Button>
+    </DialogFooter>
   );
 }
 
