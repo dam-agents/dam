@@ -584,6 +584,18 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 copy_verify() {
   src="$1"; dst="$2"
   echo "migrate: $src -> $dst"
+  # Preflight: an entry its OWNER cannot read is unreadable to every uid on
+  # a root-squashing share — no copier can move it. Fail fast with the exact
+  # list (the fix is chmod u+rX on the source) instead of a mid-copy error.
+  # Dangling symlinks are excluded: -readable follows links, and a dangling
+  # link is legitimate workspace content that cp -a recreates fine.
+  unreadable="$(cd "$src" && find . ! -type l ! -readable | head -20)"
+  if [ -n "$unreadable" ]; then
+    echo "migration blocked: owner-unreadable entries on the source (list may be truncated):"
+    echo "$unreadable"
+    exit 1
+  fi
+  echo "source size: $(du -sh "$src" | cut -f1)"
   # The target arrives EMPTY: the root init container wipes it before every
   # attempt (restartPolicy Never makes each attempt a fresh pod, so the init
   # re-runs). The cleanup cannot live here — the agent uid can neither
