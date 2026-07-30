@@ -584,17 +584,24 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 copy_verify() {
   src="$1"; dst="$2"
   echo "migrate: $src -> $dst"
-  # Fresh copy per attempt keeps retries deterministic.
-  find "$dst" -mindepth 1 -delete
+  # The target arrives EMPTY: the root init container wipes it before every
+  # attempt (restartPolicy Never makes each attempt a fresh pod, so the init
+  # re-runs). The cleanup cannot live here — the agent uid can neither
+  # descend into a root-owned lost+found (ext4 block volumes) nor delete
+  # inside the read-only dirs (0500/0555: Go module caches, site-packages)
+  # that a prior attempt's cp -a faithfully reproduced.
   # GNU cp -a: permissions, ownership, times, symlinks, AND hard links —
   # hard-link-heavy stores (pnpm) must not inflate past the volume size.
   cp -a "$src/." "$dst/"
   sync
-  # Two-pass verification against the quiesced source: the file inventory
-  # (files + symlinks), then content checksums. The old volume is deleted
-  # at flip on the strength of this comparison.
-  (cd "$src" && find . \( -type f -o -type l \) | LC_ALL=C sort) > /tmp/src.list
-  (cd "$dst" && find . \( -type f -o -type l \) | LC_ALL=C sort) > /tmp/dst.list
+  # Two-pass verification against the quiesced source: the inventory
+  # (files, symlinks, and directories — so a missing empty dir is caught),
+  # then content checksums. md5 is deliberate: this is integrity checking
+  # of our own quiesced copy, not defense against an adversary crafting
+  # collisions — and it is the fastest digest coreutils ships. The old
+  # volume is deleted at flip on the strength of this comparison.
+  (cd "$src" && find . \( -type f -o -type l -o -type d \) | LC_ALL=C sort) > /tmp/src.list
+  (cd "$dst" && find . \( -type f -o -type l -o -type d \) | LC_ALL=C sort) > /tmp/dst.list
   cmp /tmp/src.list /tmp/dst.list
   (cd "$src" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum) > /tmp/src.sum
   (cd "$dst" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum) > /tmp/dst.sum
@@ -635,14 +642,20 @@ copy_verify() {
 	}
 	root := int64(0)
 	var dstMounts []corev1.VolumeMount
-	var chown strings.Builder
-	chown.WriteString("set -eu\n")
+	var prep strings.Builder
+	prep.WriteString("set -eu\n")
 	for _, mnt := range mounts {
 		if mnt.ReadOnly {
 			continue
 		}
 		dstMounts = append(dstMounts, mnt)
-		fmt.Fprintf(&chown, "chown %d:%d %s\n", uid, uid, mnt.MountPath)
+		// Root does the wipe: a retry's target holds the prior attempt's
+		// tree — including faithfully-copied read-only directories — and
+		// ext4 block volumes ship a root-owned lost+found; both are
+		// undeletable as the agent uid. Then hand the empty root to the
+		// agent uid so the copy can preserve its attributes.
+		fmt.Fprintf(&prep, "find %s -mindepth 1 -delete\n", mnt.MountPath)
+		fmt.Fprintf(&prep, "chown %d:%d %s\n", uid, uid, mnt.MountPath)
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -668,7 +681,11 @@ copy_verify() {
 					},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy:                corev1.RestartPolicyOnFailure,
+					// Never, not OnFailure: an in-place container restart
+					// would skip the init containers, and every attempt
+					// needs the root init's wipe first. With Never each
+					// retry is a fresh pod (BackoffLimit still bounds them).
+					RestartPolicy:                corev1.RestartPolicyNever,
 					AutomountServiceAccountToken: ptrBool(false),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser:  &uid,
@@ -684,7 +701,7 @@ copy_verify() {
 						// share — is not even mounted here.
 						Name:            "prep-target",
 						Image:           cfg.StorageMigration.JobImage,
-						Command:         []string{"sh", "-c", chown.String()},
+						Command:         []string{"sh", "-c", prep.String()},
 						VolumeMounts:    dstMounts,
 						SecurityContext: &corev1.SecurityContext{RunAsUser: &root, RunAsGroup: &root},
 					}},

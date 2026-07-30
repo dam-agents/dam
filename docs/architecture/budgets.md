@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-07-27
+Last verified: 2026-07-30
 
 ## Overview
 

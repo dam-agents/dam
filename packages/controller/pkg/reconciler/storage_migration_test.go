@@ -169,6 +169,15 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.Equal(t, int64(0), *prep.SecurityContext.RunAsUser)
 	require.Len(t, prep.VolumeMounts, 1, "prep mounts targets only, never the source")
 	assert.Equal(t, "dst-0", prep.VolumeMounts[0].Name)
+	// Root owns the per-attempt wipe: the agent uid cannot delete inside
+	// read-only dirs (0500 caches) or a root-owned lost+found on ext4.
+	require.Len(t, prep.Command, 3)
+	assert.Contains(t, prep.Command[2], "find /mnt/dst-0 -mindepth 1 -delete")
+	assert.NotContains(t, job.Spec.Template.Spec.Containers[0].Command[2], "-delete",
+		"the copy container must not clean up — it lacks the permissions on retries")
+	// Never, not OnFailure: in-place container restarts skip init containers,
+	// and every attempt needs the wipe to run first.
+	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
