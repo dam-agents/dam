@@ -1,4 +1,4 @@
-import { Key, Locked, WarningAlt } from "@carbon/icons-react";
+import { Locked, Password, WarningAlt } from "@carbon/icons-react";
 
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -118,7 +118,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         className={cn("shrink-0", isSystem && "text-muted-foreground")}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
-        {isSystem ? <Locked size={12} /> : <Key size={12} />}
+        {isSystem ? <Locked size={12} /> : <Password size={12} />}
       </span>
       <span className="font-mono font-semibold text-foreground truncate">
         {entry.name}

@@ -1,4 +1,4 @@
-import { Key } from "@carbon/icons-react";
+import { Password } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 import { useState } from "react";
 
@@ -55,7 +55,7 @@ export function ApiKeysList() {
       {!isLoading && !isError && keys && keys.length === 0 && (
         <Callout variant="dashed" className="bg-card">
           <div className="flex flex-col items-center gap-3 py-4">
-            <Key size={32} className="text-muted-foreground" />
+            <Password size={32} className="text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               No API keys yet. Create one to authenticate the CLI without a
               browser.

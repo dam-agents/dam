@@ -1,4 +1,4 @@
-import { Key, TrashCan } from "@carbon/icons-react";
+import { Password, TrashCan } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
 
   return (
     <li className={cn(CARD_SURFACE, "flex items-start gap-3 rounded-xl p-4")}>
-      <Key size={20} className="text-muted-foreground mt-0.5 shrink-0" />
+      <Password size={20} className="text-muted-foreground mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold truncate">{name}</span>
