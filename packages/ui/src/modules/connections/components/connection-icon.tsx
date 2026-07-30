@@ -1,4 +1,4 @@
-import { BareMetalServer, Link,Password } from "@carbon/icons-react";
+import { BareMetalServer, Link, Password } from "@carbon/icons-react";
 
 import { GithubIcon } from "@/components/brand-icons";
 
