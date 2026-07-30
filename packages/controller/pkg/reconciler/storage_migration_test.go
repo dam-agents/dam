@@ -204,8 +204,8 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	runnable := cmds.String()
 	// Every source touch is dropped to the agent identity.
 	assert.Contains(t, runnable, `AS_AGENT="setpriv --reuid=${AGENT_UID} --regid=${AGENT_GID} --clear-groups"`)
-	assert.Contains(t, runnable, `$AS_AGENT bash /tmp/srcside.sh "$src" walk`)
-	assert.Contains(t, runnable, `$AS_AGENT bash /tmp/srcside.sh "$src" sums`)
+	assert.Contains(t, runnable, `$AS_AGENT bash "$W"/srcside.sh "$src" walk`)
+	assert.Contains(t, runnable, `$AS_AGENT bash "$W"/srcside.sh "$src" sums`)
 	assert.Contains(t, runnable, `$AS_AGENT tar -C "$src"`)
 	// The writer preserves ownership exactly — and the verification
 	// therefore compares the uid column instead of excusing it.
