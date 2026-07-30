@@ -17,6 +17,8 @@ import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { useSessionCosts } from "../../metrics/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -99,6 +101,15 @@ export function SessionsSidebar({
     [visibleSessions],
   );
 
+  // Per-session cost chips are an experimental surface: fetched (and shown)
+  // only while the Session costs feature flag is on. A missing map — flag
+  // off, metrics backend disabled, or no telemetry yet — just hides them.
+  const { data: features } = useFeatures();
+  const { data: sessionCosts } = useSessionCosts(
+    selectedAgent,
+    features?.["session-costs"] ?? false,
+  );
+
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
@@ -148,6 +159,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);

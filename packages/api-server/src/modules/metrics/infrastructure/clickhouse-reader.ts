@@ -184,21 +184,68 @@ export function createClickhouseReader(
     },
 
     async runtimeBySession(agentIds, window) {
+      // Roll each session up under the ROOT session of its trace family, so a
+      // child harness run (subshell `claude -p`, dam-run) counts inside the
+      // session that spawned it instead of appearing as its own orphan row —
+      // the same fold the session *filter* applies, moved into the grouping.
+      // `trace_root` names each trace's root as the session whose row on that
+      // trace is earliest (the parent's turn makes its first LLM call before
+      // any child it spawns exists); `session_root` then gives every session
+      // the root of its earliest trace, which folds grandchildren too since
+      // TRACEPARENT propagates the same trace all the way down. The CTEs use
+      // the session-UNfiltered predicate: a session's root doesn't depend on
+      // which session the caller is looking at, and both stay gated on the
+      // owner allowlist so the fold never reaches across owners. A session
+      // with no traced rows misses the LEFT JOIN and keeps its own id.
+      const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
-        `SELECT
-           LogAttributes['session.id'] AS sessionId,
-           ResourceAttributes['platform.agent.id'] AS agentId,
+        `WITH trace_root AS (
+           SELECT TraceId,
+                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
+           FROM otel_logs
+           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+           GROUP BY TraceId
+         ),
+         session_root AS (
+           SELECT sid, argMin(rootSid, firstAt) AS rootSid
+           FROM (
+             SELECT LogAttributes['session.id'] AS sid,
+                    TraceId,
+                    min(Timestamp) AS firstAt
+             FROM otel_logs
+             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+             GROUP BY sid, TraceId
+           ) AS st
+           INNER JOIN trace_root USING (TraceId)
+           GROUP BY sid
+         )
+         SELECT
+           coalesce(nullIf(rootSid, ''), sid) AS sessionId,
+           agentId,
            count() AS calls,
-           sum(${IN("'duration_ms'")}) AS totalDurationMs,
-           sum(${TOK_IN}) AS inputTokens,
-           sum(${IN("'output_tokens'")}) AS outputTokens,
-           sum(${TOK_CACHE_R}) AS cacheReadTokens,
-           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd,
-           min(Timestamp) AS firstAt,
-           max(Timestamp) AS lastAt
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
+           sum(durationMs) AS totalDurationMs,
+           sum(rowInputTokens) AS inputTokens,
+           sum(rowOutputTokens) AS outputTokens,
+           sum(rowCacheReadTokens) AS cacheReadTokens,
+           sum(rowCacheCreationTokens) AS cacheCreationTokens,
+           sum(rowCostUsd) AS costUsd,
+           min(ts) AS firstAt,
+           max(ts) AS lastAt
+         FROM (
+           SELECT
+             LogAttributes['session.id'] AS sid,
+             ResourceAttributes['platform.agent.id'] AS agentId,
+             ${IN("'duration_ms'")} AS durationMs,
+             ${TOK_IN} AS rowInputTokens,
+             ${IN("'output_tokens'")} AS rowOutputTokens,
+             ${TOK_CACHE_R} AS rowCacheReadTokens,
+             ${TOK_CACHE_C} AS rowCacheCreationTokens,
+             ${COST_USD} AS rowCostUsd,
+             Timestamp AS ts
+           FROM otel_logs
+           WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
+         ) AS calls_rows
+         LEFT JOIN session_root USING (sid)
          GROUP BY sessionId, agentId
          ORDER BY lastAt DESC`,
         windowParams(agentIds, window),

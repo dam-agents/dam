@@ -14,6 +14,26 @@ export function useSpendBreakdown(from: string, to: string, timeZone: string) {
   });
 }
 
+/** Per-session cost lookup for the sessions sidebar, keyed by ACP session id.
+ *  One read per agent — child harness runs are already folded into their root
+ *  session server-side, so a row's cost covers everything the session drove.
+ *  Disabled while the Session costs feature is off or no agent is selected;
+ *  a disabled metrics backend just yields no map (`retry: false`, no toast). */
+export function useSessionCosts(agentId: string | null, enabled: boolean) {
+  return useQuery({
+    ...trpc.metrics.overview.queryOptions(
+      // `limit` bounds only the per-call rows this lookup ignores — keep the
+      // payload minimal.
+      agentId && enabled ? { agentId, limit: 1 } : skipToken,
+    ),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+    select: (data) =>
+      new Map(data.runtimeBySession.map((r) => [r.sessionId, r])),
+  });
+}
+
 /** Metrics overview for one agent. Disabled while no agent is selected. */
 export function useMetricsOverview(
   agentId: string | null,
