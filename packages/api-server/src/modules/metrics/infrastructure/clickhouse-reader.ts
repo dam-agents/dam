@@ -184,19 +184,10 @@ export function createClickhouseReader(
     },
 
     async runtimeBySession(agentIds, window) {
-      // Roll each session up under the ROOT session of its trace family, so a
-      // child harness run (subshell `claude -p`, dam-run) counts inside the
-      // session that spawned it instead of appearing as its own orphan row —
-      // the same fold the session *filter* applies, moved into the grouping.
-      // `trace_root` names each trace's root as the session whose row on that
-      // trace is earliest (the parent's turn makes its first LLM call before
-      // any child it spawns exists); `session_root` then gives every session
-      // the root of its earliest trace, which folds grandchildren too since
-      // TRACEPARENT propagates the same trace all the way down. The CTEs use
-      // the session-UNfiltered predicate: a session's root doesn't depend on
-      // which session the caller is looking at, and both stay gated on the
-      // owner allowlist so the fold never reaches across owners. A session
-      // with no traced rows misses the LEFT JOIN and keeps its own id.
+      // Group each session under the root of its trace family (root = the
+      // earliest session on a shared trace), so child harness runs count
+      // inside the session that spawned them. The CTEs stay session-unfiltered
+      // but owner-gated; a session with no traced rows keeps its own id.
       const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
         `WITH trace_root AS (

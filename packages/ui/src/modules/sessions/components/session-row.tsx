@@ -35,8 +35,6 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
-  /** LLM spend of this session (child runs folded in). Absent while the
-   *  Session costs feature is off or metrics have no row for the session. */
   cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;

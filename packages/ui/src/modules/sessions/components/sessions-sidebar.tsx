@@ -101,9 +101,6 @@ export function SessionsSidebar({
     [visibleSessions],
   );
 
-  // Per-session cost chips are an experimental surface: fetched (and shown)
-  // only while the Session costs feature flag is on. A missing map — flag
-  // off, metrics backend disabled, or no telemetry yet — just hides them.
   const { data: features } = useFeatures();
   const { data: sessionCosts } = useSessionCosts(
     selectedAgent,
