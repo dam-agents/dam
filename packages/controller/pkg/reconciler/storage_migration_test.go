@@ -265,14 +265,18 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// and never descends, so there is nothing to prune.)
 	assert.NotContains(t, runnable, `find . -mindepth 1 ! -path`,
 		"a DEEP find with path exclusion but no -prune dies descending into a 0700 lost+found")
-	assert.Equal(t, 4, strings.Count(runnable, "-path ./lost+found -prune")+strings.Count(runnable, `-path "$dst/lost+found" -prune`),
-		"src walk, dst walk, sums, and the setgid strip all prune the root lost+found")
+	assert.Equal(t, 3, strings.Count(runnable, "-path ./lost+found -prune"),
+		"src walk, dst walk, and sums all prune the root lost+found")
 	// fsGroup marks the target root setgid and mkdir inherits it beneath
-	// tar; the copy strips the inherited bit from directories and re-applies
-	// the (rare) genuinely-recorded ones from the source walk, so the
-	// metadata pass measures fidelity rather than a mount artifact.
-	assert.Contains(t, runnable, "chmod g-s")
-	assert.Contains(t, runnable, `chmod g+s "$dst/$p"`)
+	// tar (nondeterministically — tar's delayed restore clears it on some
+	// dirs and not others), so the bit is masked out of the DIRECTORY mode
+	// comparison on both sides rather than normalized on disk: group
+	// identity is outside the workspace contract, same as the gid
+	// exclusion. File modes stay strict, and the filesystem is not touched.
+	assert.Contains(t, runnable, "dirmask()")
+	assert.Contains(t, runnable, "| dirmask | LC_ALL=C sort > /tmp/src.meta")
+	assert.Contains(t, runnable, "| dirmask | LC_ALL=C sort > /tmp/dst.meta")
+	assert.NotContains(t, runnable, "chmod g-s", "the comparison relaxes; the filesystem is never mutated for it")
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)

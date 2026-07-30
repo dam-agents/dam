@@ -937,7 +937,21 @@ copy_verify() {
   # The same walk is the verification baseline — cut drops the readability
   # flag (and the uid column when ownership is being normalized), and the
   # sort happens after the cut so both sides order identically.
-  cut -d'|' -f${META_CUT} /tmp/src.walk | LC_ALL=C sort > /tmp/src.meta
+  #
+  # dirmask strips the setgid bit from DIRECTORY modes on both sides
+  # before comparing. fsGroup marks the target volume root setgid (that is
+  # how the volume group reaches new entries) and every directory the copy
+  # creates inherits the bit at mkdir time, underneath tar — so target
+  # dirs read 2xxx where the source says xxx on every real CSI block
+  # target (invisible on hostPath dev classes, which skip fsGroup).
+  # Group identity is already outside the workspace contract — gid is
+  # excluded from this comparison for the same reason — and setgid on a
+  # directory governs nothing but group inheritance, so the bit is masked
+  # rather than the filesystem mutated: the migrated tree deliberately
+  # KEEPS inheriting the volume group for files the agent creates later,
+  # since agent pods set no fsGroup of their own. File modes stay strict.
+  dirmask() { awk -F'|' 'BEGIN{OFS="|"} $1=="d" && length($2)==4 {d=substr($2,1,1); if (d%4>=2) { d-=2; $2=(d==0) ? substr($2,2) : d substr($2,2) } } {print}'; }
+  cut -d'|' -f${META_CUT} /tmp/src.walk | dirmask | LC_ALL=C sort > /tmp/src.meta
 
   # Per-attempt wipe so retries are deterministic. Restoring u+rwX first is
   # what makes it possible as the owner: a prior attempt faithfully
@@ -980,26 +994,6 @@ copy_verify() {
   # so comparing it against the source root would fail spuriously).
   touch "$dst/.migration-writable" && rm -f "$dst/.migration-writable"
 
-  # fsGroup marks the target ROOT setgid (that is how the volume group
-  # carries into new entries), and every directory the copy creates
-  # INHERITS that bit at mkdir time — underneath tar, which never
-  # re-chmods because the mode it passed to mkdir was already the recorded
-  # one. Left alone, every target directory reads 2xxx where the source
-  # says xxx and the metadata pass (correctly) refuses the copy. Strip the
-  # inherited bit from directories, then re-apply it to the rare ones
-  # whose SOURCE mode genuinely records it, so the comparison measures
-  # fidelity rather than a mount artifact. The root itself keeps the
-  # kubelet's bit: it is excluded from the comparison, and future
-  # top-level writes by the agent should keep inheriting the group.
-  # (Invisible on hostPath-backed dev classes, which skip fsGroup — this
-  # only manifests on real CSI block targets.)
-  # -prune, not ! -path: find must not even DESCEND into the root-owned
-  # lost+found (permission denied would abort the script). Anchored to the
-  # root so a workspace's own nested lost+found is still processed.
-  find "$dst" -mindepth 1 \( -path "$dst/lost+found" -prune \) -o \( -type d -exec chmod g-s {} + \)
-  awk -F'|' '$2=="d" && length($3)==4 && substr($3,1,1)~/[2367]/ {print $5}' /tmp/src.walk \
-    | while IFS= read -r p; do chmod g+s "$dst/$p"; done
-
   # Two-pass verification against the quiesced source; the old volume is
   # deleted at flip on the strength of these comparisons, so both fail
   # closed on any difference.
@@ -1011,7 +1005,7 @@ copy_verify() {
   # identity is not part of the workspace contract), the volume root itself,
   # and lost+found.
   (cd "$dst" && find . -mindepth 1 \( -path ./lost+found -prune \) -o -printf "d|%y|%m|%U|%p|%l\n") \
-    | cut -d'|' -f${META_CUT} | LC_ALL=C sort > /tmp/dst.meta
+    | cut -d'|' -f${META_CUT} | dirmask | LC_ALL=C sort > /tmp/dst.meta
   cmp /tmp/src.meta /tmp/dst.meta
   phase "verified metadata"
 
