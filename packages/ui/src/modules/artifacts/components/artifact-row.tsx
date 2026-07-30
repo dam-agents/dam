@@ -14,8 +14,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCopy } from "@/hooks/use-copy";
 import { timeAgo } from "@/lib/format-time";
-import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";

@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";

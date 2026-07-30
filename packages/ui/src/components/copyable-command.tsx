@@ -1,7 +1,7 @@
 import { Checkmark, Copy } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 
 /** A one-line shell command with a Copy button. The command scrolls
  *  horizontally rather than wrapping so it always reads as a single line. */

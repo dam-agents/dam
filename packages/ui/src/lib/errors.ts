@@ -14,7 +14,7 @@ export function getErrorMessage(e: unknown, fallback?: string): string {
     const m = (e as { message: unknown }).message;
     if (typeof m === "string" && m) return m;
   }
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error && e.message) return e.message;
   if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
     return e.reason || `Connection closed (code ${e.code})`;
   }
