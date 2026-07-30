@@ -261,14 +261,11 @@ type StorageMigration struct {
 	// size of their own, which a smaller request is silently rounded up to
 	// anyway.
 	MinTargetSize string `json:"minTargetSize,omitempty"`
-	// AllowOwnershipRemap lets the copy proceed when the source workspace
-	// holds entries owned by a uid other than the agent's. The copy is
-	// unprivileged (chown is unavailable under a restricted SCC and on a
-	// Kata sandbox's virtiofs), so those entries are recreated owned by the
-	// agent uid — a deliberate normalization, not a faithful copy, which is
-	// why it is opt-in. Default false: such entries are reported and block
-	// the migration, so an operator decides rather than discovering the
-	// remap later.
+	// AllowOwnershipRemap is deprecated and ignored: the copy preserves
+	// ownership exactly now that the writer side runs privileged on the
+	// target (readable foreign-owned entries copy faithfully instead of
+	// requiring remap consent). Kept so strict config decoding accepts
+	// values files from the release that introduced it.
 	AllowOwnershipRemap bool `json:"allowOwnershipRemap,omitempty"`
 	// JobImage runs the copy script. It must provide bash, GNU tar and GNU
 	// coreutils (find -printf, md5sum): the copy relies on tar's hard-link

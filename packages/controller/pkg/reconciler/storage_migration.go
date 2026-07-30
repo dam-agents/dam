@@ -86,6 +86,9 @@ const (
 	// migrationFallbackGID pairs with migrationFallbackUID when the chart
 	// pins no group; the platform images run 65532:65532.
 	migrationFallbackGID = int64(65532)
+	// migrationServiceAccount is the Job's dedicated identity — the target
+	// of the ops-managed SCC grant on OpenShift. Ensured by the manager.
+	migrationServiceAccount = "platform-migration"
 	// migrationChecksumParallelism is how many md5sum workers read the tree
 	// at once. Small-file verification over a network filesystem is bound by
 	// per-file round-trips, not bandwidth or CPU, so concurrency buys close
@@ -234,6 +237,35 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 	}
 }
 
+// ensureServiceAccount creates the copy Job's dedicated identity if it is
+// missing. Idempotent, called only while there is work to admit. The SA
+// carries no role bindings and its token is never mounted — it exists so an
+// OpenShift install can scope the runs-as-root SCC grant to exactly this
+// workload (an ops-side, out-of-band binding, like every cluster-scoped
+// security object).
+func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) {
+	_, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
+	if err == nil || !errors.IsNotFound(err) {
+		if err != nil {
+			slog.Warn("storage migration: checking service account failed", "error", err)
+		}
+		return
+	}
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      migrationServiceAccount,
+			Namespace: m.config.Namespace,
+			Labels:    map[string]string{"agent-platform.ai/managed-by": "platform-controller"},
+		},
+		AutomountServiceAccountToken: ptrBool(false),
+	}
+	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
+		slog.Warn("storage migration: creating service account failed", "error", err)
+		return
+	}
+	slog.Info("storage migration: service account ensured", "name", migrationServiceAccount)
+}
+
 // Reconcile advances every in-flight migration one step and admits new
 // agents up to the concurrency cap. Exported for tests; RunLoop drives it.
 func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
@@ -308,6 +340,10 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+
+	if len(names) > 0 {
+		m.ensureServiceAccount(ctx)
+	}
 
 	slots := m.concurrency() - len(inFlight)
 	for _, name := range names {
@@ -832,9 +868,10 @@ func jobFailed(job *batchv1.Job) bool {
 // (source read-only, target read-write) pair, running a copy + two-pass
 // checksum verification per pair.
 //
-// The copy runs as the AGENT's uid, unprivileged and needing no
-// capabilities: an agent's workspace is single-owner by construction
-// (everything in it is written as the agent user), so the agent uid can
+// The copy runs with SPLIT IDENTITY. Everything that touches the SOURCE
+// runs as the AGENT's uid (dropped into via setpriv): the source may live
+// on a root-squashing share, where uid 0 is remapped to nobody server-side
+// and is the weakest identity on the mount, while the agent uid can
 // read every file — including 0600 files and
 // 0700 dirs — even on shared-filesystem classes that squash root, where a
 // root-running copy would EACCES on the first private file. Ownership on
@@ -853,9 +890,9 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
 	var script strings.Builder
-	// The copy runs as the agent's own uid AND gid, resolved from the chart's
-	// container security context — the identity the agent itself runs with,
-	// so what the copy creates is what the agent can use.
+	// The reader identity: the agent's own uid and gid from the chart's
+	// container security context — the one identity a root-squashing source
+	// share always honors for the workspace it owns.
 	uid, gid := migrationFallbackUID, migrationFallbackGID
 	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
 		if sc.RunAsUser != nil {
@@ -865,152 +902,145 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 			gid = *sc.RunAsGroup
 		}
 	}
-
-	// The walk always emits flag|type|mode|uid|path|link; what the comparison
-	// KEEPS is a cut of that. Normalizing ownership (opt-in) means the
-	// target's uids legitimately differ from the source's, so the uid column
-	// drops out — everything else stays verified either way.
-	metaCut := "2-"
-	if cfg.StorageMigration.AllowOwnershipRemap {
-		metaCut = "2,3,5,6"
-	}
-	fmt.Fprintf(&script, "set -euo pipefail\nAGENT_UID=%d\nALLOW_OWNERSHIP_REMAP=%s\nMETA_CUT=%s\nPAR=%d\n",
-		uid, map[bool]string{true: "1", false: "0"}[cfg.StorageMigration.AllowOwnershipRemap], metaCut, migrationChecksumParallelism)
+	fmt.Fprintf(&script, "set -euo pipefail\nAGENT_UID=%d\nAGENT_GID=%d\nPAR=%d\n",
+		uid, gid, migrationChecksumParallelism)
 	script.WriteString(`
 T0=$(date +%s)
 phase() { echo "phase: $1 (+$(( $(date +%s) - T0 ))s)"; }
+
+# SPLIT IDENTITY, one rule: whoever touches the SOURCE is the agent,
+# whoever touches the TARGET is root. The source may live on a
+# root-squashing share, where uid 0 is remapped to nobody server-side and
+# is the weakest identity on the mount (root got EACCES on the agent's own
+# 0600 files in production); the agent uid reads everything it owns. The
+# target is a local block filesystem, where root's ownership of the fresh
+# volume root, exact ownership restore, and wiping a prior attempt's
+# read-only residue all just work. No fsGroup is involved anywhere, so the
+# volume root carries no setgid bit and the kernel inherits nothing:
+# modes land exactly as tar records them.
+AS_AGENT="setpriv --reuid=${AGENT_UID} --regid=${AGENT_GID} --clear-groups"
+
+# Both identities share one private scratch dir (root-created, sticky,
+# world-writable): the agent-side workers and the root-side collectors
+# never collide with anything pre-existing, and Linux protected_regular
+# never refuses a redirect over a file the other identity created.
+W=$(mktemp -d)
+chmod 1777 "$W"
+
+# Source-side pipelines run under $AS_AGENT via this helper script (a
+# fresh process cannot inherit shell functions).
+cat > "$W"/srcside.sh <<'EOS'
+set -euo pipefail
+src="$1"; what="$2"; PAR="$3"; W="$4"
+case "$what" in
+walk)
+  # One deep walk of the source; every source-side check derives from it.
+  # -prune, not ! -path: exclusion by path still DESCENDS, and a 0700
+  # root-owned lost+found aborts the walk with permission denied. The r/x
+  # prefix records readability by THIS uid — the identity that will read
+  # the data.
+  cd "$src" && find . -mindepth 1 \( -path ./lost+found -prune \) -o \
+     \( \( -readable -printf "r|%y|%m|%U|%p|%l\n" \) -o -printf "x|%y|%m|%U|%p|%l\n" \) ;;
+sums)
+  # Content checksums, read in parallel: small-file verification is
+  # latency-bound, so workers overlap round-trips. Each worker batch
+  # appends to its own file — a shared stdout tears lines once a batch
+  # exceeds one atomic pipe write. md5 is integrity checking of our own
+  # quiesced copy, not defense against crafted collisions.
+  cd "$src" && rm -f "$W"/sums.src.*
+  find . \( -path ./lost+found -prune \) -o -type f -print0 \
+    | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.src.$$"' _
+  cat "$W"/sums.src.* 2>/dev/null ;;
+esac
+EOS
 
 copy_verify() {
   src="$1"; dst="$2"
   echo "migrate: $src -> $dst"
 
-  # ONE walk of the source, and every check below is derived from its output.
-  # This is the difference between minutes and hours: a workspace is
-  # small-file-heavy (a pnpm store is 100k+ entries), every stat is a network
-  # round-trip AND an IOP against a capped share, so each extra walk costs
-  # the whole tree again. The source is quiesced, so one walk is also
-  # sufficient — nothing can change under us.
-  #
-  # The readability flag rides the same pass: find evaluates -readable per
-  # entry and the alternation picks the prefix. The inner group is what keeps
-  # the -o from swallowing the -mindepth/-path filters.
-  (cd "$src" && find . -mindepth 1 ! -path './lost+found*' \
-     \( \( -readable -printf "r|%y|%m|%U|%p|%l\n" \) -o -printf "x|%y|%m|%U|%p|%l\n" \) \
-   ) > /tmp/src.walk
-  entries=$(wc -l < /tmp/src.walk)
+  $AS_AGENT bash "$W"/srcside.sh "$src" walk "$PAR" "$W" > "$W"/src.walk
+  entries=$(wc -l < "$W"/src.walk)
   phase "walked source: $entries entries"
 
-  # Unreadable to its own OWNER is unreadable to every uid on a
-  # root-squashing share — no copier can move it, so fail with the paths
-  # rather than a mid-copy error. Symlinks are exempt: -readable follows the
-  # link, and a dangling link is legitimate content the copy recreates.
-  # The 20-line cap lives INSIDE awk: piping through head under pipefail
-  # means awk dies of SIGPIPE once head exits, and set -e then kills the
-  # script before the diagnostic prints — a cryptic 141 instead of paths.
-  unreadable="$(awk -F'|' '$1=="x" && $2!="l" && n<20 {print $5; n++}' /tmp/src.walk)"
+  # The walk is line-based with | separators: a path containing either
+  # character cannot be represented and would corrupt every check derived
+  # from the walk. Refuse it by name — rename on the source is the remedy.
+  # Field count is exact: flag|type|mode|uid|path|link.
+  malformed="$(awk -F'|' 'NF!=6 && n<20 {print; n++}' "$W"/src.walk)"
+  if [ -n "$malformed" ]; then
+    echo "migration blocked: source paths contain | or newline, which the inventory cannot represent (rename them; list may be truncated):"
+    echo "$malformed"
+    exit 1
+  fi
+
+  # An entry the READER cannot open is unmovable: on a squashing share no
+  # identity in this pod can read it — not the agent, and root least of
+  # all. This subsumes the old foreign-owner gate: a READABLE root-owned
+  # stray now copies faithfully (the writer preserves ownership exactly),
+  # and an unreadable one is caught here with its path. Dangling symlinks
+  # are exempt: -readable follows links, and the copy recreates them fine.
+  unreadable="$(awk -F'|' '$1=="x" && $2!="l" && n<20 {print $5; n++}' "$W"/src.walk)"
   if [ -n "$unreadable" ]; then
-    echo "migration blocked: owner-unreadable entries on the source (list may be truncated):"
+    echo "migration blocked: entries the agent uid cannot read on the source (chmod u+rX them; list may be truncated):"
     echo "$unreadable"
     exit 1
   fi
 
-  # Ownership: an unprivileged copy recreates entries as the agent uid, so it
-  # is only faithful while the workspace is single-owner — which it is by
-  # construction. Anything else is reported rather than silently re-owned.
-  foreign="$(awk -F'|' -v u="${AGENT_UID}" '$4!=u && n<20 {print $5; n++}' /tmp/src.walk)"
-  if [ -n "$foreign" ]; then
-    if [ "${ALLOW_OWNERSHIP_REMAP}" = "1" ]; then
-      echo "note: re-owning these source entries to uid ${AGENT_UID} (allowOwnershipRemap; list may be truncated):"
-      echo "$foreign"
-    else
-      echo "migration blocked: source entries owned by another uid, which an unprivileged copy cannot reproduce (list may be truncated):"
-      echo "$foreign"
-      echo "remedy: chown them to uid ${AGENT_UID} on the source, or set controller.storageMigration.allowOwnershipRemap=true to accept the normalization"
-      exit 1
-    fi
-  fi
+  # Verification baseline at FULL fidelity — the uid column is compared,
+  # not excused, because the root writer preserves ownership exactly.
+  cut -d'|' -f2- "$W"/src.walk | LC_ALL=C sort > "$W"/src.meta
+  # Source checksums before the copy: the source is quiesced, so before
+  # and after are indistinguishable, and this keeps every source read
+  # under the squash-safe identity.
+  $AS_AGENT bash "$W"/srcside.sh "$src" sums "$PAR" "$W" | LC_ALL=C sort > "$W"/src.sum
+  phase "hashed source"
 
-  # The same walk is the verification baseline — cut drops the readability
-  # flag (and the uid column when ownership is being normalized), and the
-  # sort happens after the cut so both sides order identically.
-  cut -d'|' -f${META_CUT} /tmp/src.walk | LC_ALL=C sort > /tmp/src.meta
-
-  # Per-attempt wipe so retries are deterministic. Restoring u+rwX first is
-  # what makes it possible as the owner: a prior attempt faithfully
-  # reproduced the workspace's read-only directories (0500/0555 — Go module
-  # caches, site-packages), and removing an entry needs write+execute on its
-  # parent. LOST+FOUND is skipped: a fresh ext4 volume's own artifact,
-  # root-owned and not ours to delete — the verification excludes it too.
-  # Symlinks are excluded from the mode restore: chmod dereferences a
-  # top-level link argument, and a DANGLING one (legitimate content) would
-  # error out and wedge every retry. rm -rf removes links themselves fine.
-  find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found ! -type l -exec chmod -R u+rwX {} +
+  # Wipe as root: a prior attempt's read-only directories are plain rm.
+  # lost+found stays — a fresh ext4 volume's own artifact, excluded from
+  # verification on both sides.
   find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
   phase "wiped target"
 
-  # Archive the source's CONTENTS, never the source directory itself. An
-  # archive containing "./" carries the source root's mode, and tar applies
-  # it to the target root on extraction — which fails as EPERM, because the
-  # target root belongs to the provisioner (fsGroup makes it writable to us,
-  # it does not make us its owner). --no-overwrite-dir does not save us:
-  # tar's delayed directory restore still stats and chmods that member at
-  # the end of extraction. Feeding tar the top-level entries sidesteps it
-  # entirely — the root is never a member, so its metadata is never touched.
-  # One tar process still sees the whole tree, so hard links are preserved
-  # (a hard-link-heavy pnpm store must not inflate past the volume size);
-  # -p keeps every mode including setuid, --sparse keeps sparse files
-  # sparse, and ownership needs no preserving because the workspace has a
-  # single owner and we are it.
   if [ "$entries" -gt 0 ]; then
-    (cd "$src" && find . -mindepth 1 -maxdepth 1 ! -path './lost+found*' -print0) \
-      | tar -C "$src" --sparse --null -T - -cf - \
-      | tar -C "$dst" -xpf - --no-overwrite-dir
+    # Reader as the agent (squash-safe), writer as root: exact modes
+    # including setuid, exact OWNERSHIP (--same-owner --numeric-owner —
+    # readable foreign-uid strays land as themselves), hard links (a
+    # hard-link-heavy pnpm store must not inflate past the volume size),
+    # and sparseness. The "." member restores the volume root's own mode,
+    # owner, and times — a root writer may apply all of it.
+    $AS_AGENT tar -C "$src" --sparse -cf - . | tar -C "$dst" -xpf - --same-owner --numeric-owner
     sync
   else
     echo "source is empty; nothing to copy"
   fi
   phase "copied"
 
-  # The target root must be writable by the agent — the property the copy
-  # cannot assert for itself (its mode belongs to the provisioner/fsGroup,
-  # so comparing it against the source root would fail spuriously).
-  touch "$dst/.migration-writable" && rm -f "$dst/.migration-writable"
+  # The volume ROOT belongs to the mount infrastructure, not the
+  # workspace: shape it exactly the way the agent pods' fsGroup +
+  # OnRootMismatch expect (agent-owned, agent group, setgid, group-rwx),
+  # so the first post-migration mount passes the kubelet's root check and
+  # the interior — verified byte-exact below — is never rewritten by a
+  # recursive ownership pass. The root is excluded from the entry walks;
+  # everything inside is compared strictly.
+  chown "${AGENT_UID}:${AGENT_GID}" "$dst"
+  chmod 2770 "$dst"
 
-  # Two-pass verification against the quiesced source; the old volume is
-  # deleted at flip on the strength of these comparisons, so both fail
-  # closed on any difference.
-  #
-  # Pass 1 — metadata: type, mode, owner uid, path and symlink target for
-  # every entry. A mode that failed to carry over blocks the migration just
-  # like corrupt content would. Deliberate exclusions: gid (agent images run
-  # uid:0 while an fsGroup-managed target assigns its own gid — group
-  # identity is not part of the workspace contract), the volume root itself,
-  # and lost+found.
-  (cd "$dst" && find . -mindepth 1 ! -path './lost+found*' -printf "d|%y|%m|%U|%p|%l\n") \
-    | cut -d'|' -f${META_CUT} | LC_ALL=C sort > /tmp/dst.meta
-  cmp /tmp/src.meta /tmp/dst.meta
+  # The AGENT must be able to use the volume it wakes up on.
+  $AS_AGENT touch "$dst/.migration-writable"
+  rm -f "$dst/.migration-writable"
+
+  # Two-pass verification; the old volume is deleted at flip on the
+  # strength of these comparisons, so both fail closed on any difference.
+  (cd "$dst" && find . -mindepth 1 \( -path ./lost+found -prune \) -o -printf "%y|%m|%U|%p|%l\n") \
+    | LC_ALL=C sort > "$W"/dst.meta
+  cmp "$W"/src.meta "$W"/dst.meta
   phase "verified metadata"
 
-  # Pass 2 — content checksums, read in parallel: this is latency-bound, not
-  # CPU-bound, so workers overlap round-trips instead of queueing behind each
-  # other. Output is sorted after collection because workers finish out of
-  # order. md5 is deliberate: integrity checking of our own quiesced copy,
-  # not defense against crafted collisions — and the fastest digest coreutils
-  # ships.
-  # Each worker batch writes its own file: with a shared stdout, a batch
-  # whose output exceeds one atomic pipe write (long node_modules paths
-  # easily do) can interleave mid-line with another worker, and a torn line
-  # is a spurious verification failure. O_APPEND to distinct files by PID
-  # cannot tear.
-  sums() {
-    rm -f /tmp/sums.*
-    (cd "$1" && find . -type f ! -path './lost+found*' -print0 \
-       | xargs -0 -r -P"${PAR}" -n64 sh -c 'md5sum "$@" >> "/tmp/sums.$$"' _)
-    cat /tmp/sums.* 2>/dev/null | LC_ALL=C sort
-  }
-  sums "$src" > /tmp/src.sum
-  sums "$dst" > /tmp/dst.sum
-  cmp /tmp/src.sum /tmp/dst.sum
+  rm -f "$W"/sums.dst.*
+  (cd "$dst" && find . \( -path ./lost+found -prune \) -o -type f -print0 \
+     | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.dst.$$"' _)
+  cat "$W"/sums.dst.* 2>/dev/null | LC_ALL=C sort > "$W"/dst.sum
+  cmp "$W"/src.sum "$W"/dst.sum
   phase "verified content"
   echo "verified (content + metadata): $src -> $dst"
 }
@@ -1042,6 +1072,7 @@ copy_verify() {
 	backoff := int32(2)
 	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
+	rootUID := int64(0)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            migrationJobName(agentName),
@@ -1066,24 +1097,29 @@ copy_verify() {
 					},
 				},
 				Spec: corev1.PodSpec{
-					// Never, not OnFailure: an in-place container restart
-					// would skip the init containers, and every attempt
-					// needs the root init's wipe first. With Never each
-					// retry is a fresh pod (BackoffLimit still bounds them).
-					RestartPolicy:                corev1.RestartPolicyNever,
+					// Never, not OnFailure: each retry must be a fresh pod
+					// so every attempt starts from the same script state
+					// (BackoffLimit still bounds them).
+					RestartPolicy: corev1.RestartPolicyNever,
+					// Dedicated identity so the pod-runs-as-root grant is
+					// scoped to exactly this Job. On OpenShift, ops binds an
+					// SCC permitting uid 0 (e.g. anyuid) to THIS service
+					// account, out of band like all cluster-scoped security
+					// objects; forgetting that rejects the pod at admission,
+					// loudly, rather than failing anything subtly. The token
+					// is not mounted — the pod talks to no API.
+					ServiceAccountName:           migrationServiceAccount,
 					AutomountServiceAccountToken: ptrBool(false),
+					// Root, with split identity inside (see the script): the
+					// process starts as root for the target side and drops
+					// to the agent uid via setpriv for every source read —
+					// a root-squashing source share never honors uid 0. No
+					// fsGroup: the writer owns the target root outright, and
+					// its absence is what keeps the volume root free of the
+					// setgid bit the kernel would otherwise propagate into
+					// every directory the copy creates.
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser:  &uid,
-						RunAsGroup: &gid,
-						// fsGroup is the AGENT's group, and that is
-						// load-bearing beyond this Job: the kubelet chowns a
-						// fresh volume's root to it and adds group-write, and
-						// that chown persists on the filesystem. Agent pods
-						// set no fsGroup of their own, so this is what leaves
-						// the migrated root writable to the agent afterwards.
-						// (hostPath-backed classes skip fsGroup; their roots
-						// are world-writable already.)
-						FSGroup: &gid,
+						RunAsUser: &rootUID,
 					},
 					Containers: []corev1.Container{{
 						Name:         "copy",

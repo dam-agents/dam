@@ -175,31 +175,26 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	require.NotNil(t, job.Spec.ActiveDeadlineSeconds)
 	assert.Greater(t, *job.Spec.ActiveDeadlineSeconds, int64(0),
 		"a non-terminal Job (unschedulable pod, stuck pull) must eventually fail rather than gate the agent forever")
-	// The copy runs as the agent uid, never root: a single-owner workspace is
-	// fully readable to its own uid even on root-squashing shared
-	// filesystems, where squashed root would EACCES on 0600/0700 entries.
+	// SPLIT IDENTITY: the pod runs as root for the target side (owns the
+	// fresh volume root, restores exact ownership, wipes read-only retry
+	// residue) and drops to the agent uid via setpriv for every source
+	// read — a root-squashing source share never honors uid 0. No fsGroup
+	// anywhere: its absence is what keeps the volume root free of the
+	// setgid bit the kernel would otherwise propagate into every directory
+	// the copy creates.
 	psc := job.Spec.Template.Spec.SecurityContext
 	require.NotNil(t, psc)
 	require.NotNil(t, psc.RunAsUser)
-	assert.Equal(t, int64(65532), *psc.RunAsUser)
-	// The copy runs as the agent's own uid AND gid, so what it creates is
-	// what the agent can use.
-	require.NotNil(t, psc.RunAsGroup)
-	assert.Equal(t, int64(65532), *psc.RunAsGroup)
-	require.NotNil(t, psc.FSGroup)
-	// fsGroup must be the AGENT's group: the kubelet's chown of the volume
-	// root persists on the filesystem, and agent pods set no fsGroup of
-	// their own — this is what leaves the migrated root writable to them.
-	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup is the agent's group, so the root stays writable after the flip")
+	assert.Equal(t, int64(0), *psc.RunAsUser)
+	assert.Nil(t, psc.FSGroup, "no fsGroup: no setgid root, no kernel inheritance, and root needs no group grant")
+	// The root grant is scoped to a dedicated identity so the OpenShift SCC
+	// binding (ops-managed, out of band) covers exactly this workload.
+	assert.Equal(t, migrationServiceAccount, job.Spec.Template.Spec.ServiceAccountName)
+	require.NotNil(t, job.Spec.Template.Spec.AutomountServiceAccountToken)
+	assert.False(t, *job.Spec.Template.Spec.AutomountServiceAccountToken)
 
-	// Nothing in the migration may need privilege: OpenShift's restricted SCC
-	// strips CAP_CHOWN/CAP_DAC_OVERRIDE and Kata's virtiofs refuses guest
-	// chown, so a root step (even just to chown a target root) is a
-	// portability trap. The copy is unprivileged end to end.
-	assert.Empty(t, job.Spec.Template.Spec.InitContainers,
-		"no privileged init container — the agent uid owns the workspace and may chmod it")
 	copyScript := job.Spec.Template.Spec.Containers[0].Command[2]
-	// Assert on the commands, not the prose that explains why they are absent.
+	// Assert on the commands, not the prose that explains them.
 	var cmds strings.Builder
 	for _, line := range strings.Split(copyScript, "\n") {
 		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") {
@@ -207,59 +202,36 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 		}
 	}
 	runnable := cmds.String()
-	// No chown may be INVOKED (an echo naming it in a remedy hint is fine):
-	// chown is unavailable under a restricted SCC and on Kata virtiofs.
-	assert.NotRegexp(t, `(?m)^chown |-exec chown|; chown `, runnable,
-		"the copy must never invoke chown")
-	// The verification must gate on metadata (mode + owner), not content
-	// alone — the source is never deleted when permissions failed to carry
-	// over.
+	// Every source touch is dropped to the agent identity.
+	assert.Contains(t, runnable, `AS_AGENT="setpriv --reuid=${AGENT_UID} --regid=${AGENT_GID} --clear-groups"`)
+	assert.Contains(t, runnable, `$AS_AGENT bash "$W"/srcside.sh "$src" walk`)
+	assert.Contains(t, runnable, `$AS_AGENT bash "$W"/srcside.sh "$src" sums`)
+	assert.Contains(t, runnable, `$AS_AGENT tar -C "$src"`)
+	// The writer preserves ownership exactly — and the verification
+	// therefore compares the uid column instead of excusing it.
+	assert.Contains(t, runnable, "--same-owner --numeric-owner")
 	assert.Contains(t, runnable, `%y|%m|%U|%p|%l`)
-	// Cost control: a workspace is small-file-heavy and every stat is a
-	// network round-trip, so the source must be walked ONCE — readability,
-	// ownership and the verification baseline all derive from that one pass.
-	// (Two walks total: source, then target for the comparison.)
-	// Exactly one DEEP walk of the source — readability, ownership and the
-	// verification baseline all derive from that single pass. (The archive's
-	// file list is a second find, but -maxdepth 1: one readdir of the top
-	// level, not a tree walk, so it costs nothing on a 200k-entry tree.)
-	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 ! -path`),
-		"the source tree is walked ONCE")
-	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 -maxdepth 1`),
-		"the archive's file list is a shallow listing, not a second tree walk")
-	assert.NotContains(t, runnable, "du -sh", "a size log line is not worth a full metadata walk")
-	// Checksums are latency-bound, so they read in parallel.
-	assert.Contains(t, runnable, "-P\"${PAR}\"")
-	// Parallel workers write private files: a shared stdout tears lines when
-	// a batch exceeds one atomic pipe write (long node_modules paths do),
-	// and a torn line is a spurious verification failure.
-	assert.Contains(t, runnable, `>> "/tmp/sums.$$"`)
-	// The wipe's chmod must skip symlinks: chmod dereferences a top-level
-	// link argument, and a dangling one would wedge every retry.
-	assert.Contains(t, runnable, "! -name lost+found ! -type l -exec chmod")
-	// Diagnostics must not flow through `| head` under pipefail: awk dies of
-	// SIGPIPE and set -e kills the script before the paths print.
-	assert.NotContains(t, runnable, "| head")
-	// The archive must contain the source's CONTENTS, never "./" itself:
-	// a "./" member carries the source root's mode, which tar then applies
-	// to the target root — EPERM, since the root belongs to the provisioner.
-	assert.Contains(t, runnable, "-mindepth 1 -maxdepth 1 ! -path './lost+found*' -print0")
-	assert.Contains(t, runnable, "--null -T -")
-	assert.NotRegexp(t, `tar -C "\$src" [^|]*-cf - \.`, runnable,
-		"archiving the directory itself is what made tar chmod the target root")
-	// tar with --no-overwrite-dir, not cp -a src/. dst/: cp would apply the
-	// source root's ownership/timestamps to the target root, which no
-	// unprivileged process can do.
-	assert.Contains(t, runnable, "--no-overwrite-dir")
-	assert.NotContains(t, runnable, "cp -a")
-	// A fresh ext4 CSI target ships a root-owned lost+found the source has
-	// not got: it must be excluded from the wipe and from verification, or
-	// every real block-backed migration fails on a phantom difference.
-	assert.Contains(t, runnable, "! -name lost+found", "excluded from the wipe")
-	// The glob must cover lost+found's CONTENTS too, not just the directory
-	// entry: an fsck-populated lost+found would otherwise show up as a
-	// phantom difference (or as foreign-owned files) and block the migration.
-	assert.Contains(t, runnable, `! -path './lost+found*'`, "excluded from verification, contents included")
+	assert.NotContains(t, runnable, "ALLOW_OWNERSHIP_REMAP", "ownership is preserved, not remapped — the knob is dead")
+	// Root wipes the target: no chmod dance for read-only retry residue.
+	assert.Contains(t, runnable, "! -name lost+found -exec rm -rf {} +")
+	assert.NotContains(t, runnable, "chmod -R u+rwX", "root needs no permission repair to wipe")
+	// Deep finds -prune the root lost+found (a path exclusion still
+	// descends and dies on a 0700 root-owned one): source walk, source
+	// sums, target walk, target sums.
+	assert.Equal(t, 4, strings.Count(runnable, "-path ./lost+found -prune"))
+	assert.NotContains(t, runnable, "find . -mindepth 1 ! -path")
+	// The volume ROOT is mount infrastructure: the writer shapes it to
+	// exactly what the agent pods' fsGroup + OnRootMismatch expect, so the
+	// first post-migration mount skips the kubelet's recursive ownership
+	// pass and the byte-exact interior is never rewritten.
+	assert.Contains(t, runnable, `chown "${AGENT_UID}:${AGENT_GID}" "$dst"`)
+	assert.Contains(t, runnable, `chmod 2770 "$dst"`)
+	// Checksums parallel, per-worker private files (shared stdout tears).
+	assert.Contains(t, runnable, `sums.src.$$`)
+	assert.Contains(t, runnable, `sums.dst.$$`)
+	// Paths the line-based inventory cannot represent are refused by name.
+	assert.Contains(t, runnable, `awk -F'|' 'NF!=6`)
+
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
@@ -718,4 +690,19 @@ func TestStorageMigration_ReusesMatchingTarget(t *testing.T) {
 	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.NotNil(t, job, "job survives across ticks while the copy runs")
+}
+
+// The copy Job's root grant is scoped to a dedicated ServiceAccount the
+// manager ensures itself; on OpenShift, ops binds the uid-0 SCC to exactly
+// this identity, out of band. No token is ever mounted.
+func TestStorageMigration_EnsuresDedicatedServiceAccount(t *testing.T) {
+	agent := agentCR()
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
+
+	m.Reconcile(context.Background())
+
+	sa, err := client.CoreV1().ServiceAccounts("test-agents").Get(context.Background(), migrationServiceAccount, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, sa.AutomountServiceAccountToken)
+	assert.False(t, *sa.AutomountServiceAccountToken)
 }
