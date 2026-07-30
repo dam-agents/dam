@@ -26,6 +26,7 @@ func migrationConfig() *config.Config {
 			TerminationGracePeriod: 5,
 			ContainerSecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+				RunAsUser:    ptrInt64(65532),
 			},
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
@@ -138,8 +139,26 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.Equal(t, "home-agent", target.Labels[LabelMount])
 	assert.Empty(t, target.Labels[LabelAgent], "a half-copied target must not carry the agent label")
 
+	require.Len(t, target.OwnerReferences, 1)
+	assert.Equal(t, "my-agent", target.OwnerReferences[0].Name,
+		"target is GC'd with the Agent if it is deleted mid-migration")
+
 	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
+	require.Len(t, job.OwnerReferences, 1)
+	assert.Equal(t, "my-agent", job.OwnerReferences[0].Name)
+	require.NotNil(t, job.Spec.ActiveDeadlineSeconds)
+	assert.Greater(t, *job.Spec.ActiveDeadlineSeconds, int64(0),
+		"a non-terminal Job (unschedulable pod, stuck pull) must eventually fail rather than gate the agent forever")
+	// The copy runs as the agent uid, never root: a single-owner workspace is
+	// fully readable to its own uid even on root-squashing shared
+	// filesystems, where squashed root would EACCES on 0600/0700 entries.
+	psc := job.Spec.Template.Spec.SecurityContext
+	require.NotNil(t, psc)
+	require.NotNil(t, psc.RunAsUser)
+	assert.Equal(t, int64(65532), *psc.RunAsUser)
+	require.NotNil(t, psc.FSGroup)
+	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup makes the fresh target volume writable to the agent uid")
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
@@ -359,3 +378,5 @@ func renderedAgentSTS(name string) *appsv1.StatefulSet {
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
 	}
 }
+
+func ptrInt64(v int64) *int64 { return &v }

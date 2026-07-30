@@ -1047,6 +1047,10 @@ controller:
     # -- Image for the copy Job. Needs POSIX sh + GNU coreutils (cp -a that
     # preserves hard links, find, md5sum) — busybox-based images inflate
     # hard-link-heavy workspaces (pnpm stores) past the volume size.
+    # The Job runs as the agent uid (from controller.agent.base
+    # containerSecurityContext.runAsUser), never root, so it works on
+    # root-squashing shared-filesystem classes: a workspace is single-owner
+    # by construction, and its own uid can read everything in it.
     jobImage: mirror.gcr.io/library/debian:stable-slim
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar.

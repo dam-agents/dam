@@ -73,6 +73,15 @@ const (
 	// and recreated, so a persistently failing copy (e.g. target class
 	// misprovisioned) retries slowly instead of hot-looping.
 	migrationJobRetryAfter = 10 * time.Minute
+	// migrationJobDeadline fails a copy Job whose pod never reaches a
+	// terminal state (unschedulable, image pull stuck) — without it the
+	// gated agent would stay down forever with nothing retrying. Sized for
+	// a large workspace on a slow shared-filesystem tier: the copy reads
+	// the source three times (copy + two verification passes).
+	migrationJobDeadline = 4 * time.Hour
+	// migrationFallbackUID runs the copy when the chart doesn't pin the
+	// agent container's uid. Matches the platform images' agent user.
+	migrationFallbackUID = int64(65532)
 )
 
 // StorageMigrationManager runs the migration loop. Leader-only, like the
@@ -271,8 +280,12 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 		return nil // scale-down in progress; next tick
 	}
 
-	// Step 3 — ensure a target PVC per RWX source, and the copy Job.
+	// Step 3 — ensure a target PVC per RWX source, and the copy Job. Both
+	// carry an owner reference to the Agent CR so a mid-migration agent
+	// deletion garbage-collects them instead of leaking a half-filled
+	// volume nothing labels.
 	if len(rwxPVCs) > 0 {
+		ownerRef := agentOwnerRef(agent)
 		pairs := make([]migrationPair, 0, len(rwxPVCs))
 		for _, old := range rwxPVCs {
 			mount := old.Labels[LabelMount]
@@ -281,7 +294,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 				// PVC-name prefix by the `<mount>-<agent>-0` convention.
 				mount = strings.TrimSuffix(old.Name, "-"+name+"-0")
 			}
-			target, err := m.ensureTargetPVC(ctx, name, mount, &old)
+			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef)
 			if err != nil {
 				return err
 			}
@@ -290,7 +303,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 
 		job, err := m.client.BatchV1().Jobs(m.config.Namespace).Get(ctx, migrationJobName(name), metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			desired := buildMigrationJob(name, pairs, m.config)
+			desired := buildMigrationJob(name, pairs, m.config, ownerRef)
 			if _, err := m.client.BatchV1().Jobs(m.config.Namespace).Create(ctx, desired, metav1.CreateOptions{}); err != nil {
 				return fmt.Errorf("creating copy job: %w", err)
 			}
@@ -314,7 +327,11 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 			prop := metav1.DeletePropagationBackground
 			return m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop})
 		default:
-			return nil // copy in progress; next tick
+			// Copy in flight — say so every tick, so an operator watching a
+			// gated agent can tell "working" from "stuck" at a glance.
+			slog.Info("storage migration: copy in progress", "agent", name,
+				"job", job.Name, "age", m.now().Sub(job.CreationTimestamp.Time).Round(time.Second).String())
+			return nil
 		}
 	}
 
@@ -334,7 +351,7 @@ type migrationPair struct {
 // Size follows the source's request; class is the agents' configured class
 // (empty = cluster default, WaitForFirstConsumer binding lands it on the
 // copy Job's node).
-func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim) (string, error) {
+func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference) (string, error) {
 	targetName := migrationTargetName(old.Name)
 	_, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
 	if err == nil {
@@ -359,8 +376,9 @@ func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName
 	}
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      targetName,
-			Namespace: m.config.Namespace,
+			Name:            targetName,
+			Namespace:       m.config.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 			Labels: map[string]string{
 				// LabelPool + LabelMount now, LabelAgent at flip — the
 				// claim-recovery contract (see file comment). The pool label
@@ -540,13 +558,20 @@ func jobFailed(job *batchv1.Job) bool {
 
 // buildMigrationJob renders the copy Job: one pod mounting every
 // (source read-only, target read-write) pair, running a copy + two-pass
-// checksum verification per pair. Runs as root — it must read every file
-// whatever uid owns it and preserve ownership on the copy — in a pod that
-// carries no serviceaccount token, no agent labels (so the pod-IP resolver,
-// NetworkPolicies, and the idle checker never see it), and the agents'
-// scheduling policy (tolerations/selectors), which is also what lands the
-// WaitForFirstConsumer target volume on a node agents can run on.
-func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Config) *batchv1.Job {
+// checksum verification per pair.
+//
+// The pod runs as the AGENT's uid, not root: an agent's workspace is
+// single-owner by construction (everything in it is written as the agent
+// user), so the agent uid can read every file — including 0600 files and
+// 0700 dirs — even on shared-filesystem classes that squash root, where a
+// root-running copy would EACCES on the first private file. Ownership on
+// the target is preserved by construction (the creator is the same uid);
+// fsGroup makes the fresh volume's root writable. The pod carries no
+// serviceaccount token and no agent labels (so the pod-IP resolver,
+// NetworkPolicies, and the idle checker never see it), and inherits the
+// agents' scheduling policy (tolerations/selectors), which is also what
+// lands the WaitForFirstConsumer target volume on a node agents can run on.
+func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Config, ownerRef metav1.OwnerReference) *batchv1.Job {
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
 	var script strings.Builder
@@ -598,11 +623,16 @@ copy_verify() {
 
 	backoff := int32(2)
 	ttl := int32(600)
-	root := int64(0)
+	deadline := int64(migrationJobDeadline.Seconds())
+	uid := migrationFallbackUID
+	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil && sc.RunAsUser != nil {
+		uid = *sc.RunAsUser
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      migrationJobName(agentName),
-			Namespace: cfg.Namespace,
+			Name:            migrationJobName(agentName),
+			Namespace:       cfg.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 			Labels: map[string]string{
 				LabelMigrationFor:              agentName,
 				"agent-platform.ai/managed-by": "platform-controller",
@@ -611,6 +641,7 @@ copy_verify() {
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
 			TTLSecondsAfterFinished: &ttl,
+			ActiveDeadlineSeconds:   &deadline,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -624,7 +655,13 @@ copy_verify() {
 					RestartPolicy:                corev1.RestartPolicyOnFailure,
 					AutomountServiceAccountToken: ptrBool(false),
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser: &root,
+						RunAsUser:  &uid,
+						RunAsGroup: &uid,
+						// fsGroup has the kubelet make the fresh target
+						// volume group-writable on mount; shared-filesystem
+						// sources skip fsGroup application, and ours mounts
+						// read-only anyway.
+						FSGroup: &uid,
 					},
 					Containers: []corev1.Container{{
 						Name:         "copy",
