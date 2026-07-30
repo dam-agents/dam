@@ -1,6 +1,8 @@
+import { Compare, Renew } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
-import { GitCompare, RefreshCw } from "lucide-react";
 
+import { badgeVariants } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -62,9 +64,12 @@ export function SkillRow({
               onClick={onUpdate}
               disabled={disabled}
               title="Upstream changed since install — update to the latest version"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-info-light px-2 py-0.5 text-[11px] font-medium text-info transition-opacity hover:opacity-80 disabled:opacity-50"
+              className={cn(
+                badgeVariants({ variant: "info", size: "sm" }),
+                "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",
+              )}
             >
-              <RefreshCw size={11} /> Update
+              <Renew size={11} /> Update
             </button>
           )}
           {hasDrift && compareUrl && (
@@ -75,7 +80,7 @@ export function SkillRow({
               title="View changes on GitHub"
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >
-              <GitCompare size={13} />
+              <Compare size={13} />
             </a>
           )}
         </div>
@@ -88,9 +93,7 @@ export function SkillRow({
           </p>
         )}
       </div>
-      {busy && (
-        <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-border border-t-foreground" />
-      )}
+      {busy && <Spinner />}
       <Switch
         checked={installed}
         onCheckedChange={onToggle}

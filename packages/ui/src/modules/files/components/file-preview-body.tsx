@@ -1,3 +1,5 @@
+import { SectionLabel } from "@/components/ui/section-label";
+
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
 import type { FileContent } from "../api/queries.js";
@@ -113,9 +115,7 @@ export function FilePreviewBody({
     return (
       <div>
         <div className="mb-2 flex items-baseline gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-            Binary file — hex dump
-          </p>
+          <SectionLabel>Binary file — hex dump</SectionLabel>
           {mime && (
             <p className="text-[11px] font-mono text-muted-foreground">
               {mime}

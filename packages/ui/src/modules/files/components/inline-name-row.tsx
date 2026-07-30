@@ -1,4 +1,4 @@
-import { FileText, Folder } from "lucide-react";
+import { Document, Folder } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,7 @@ export function InlineNameRow({
       {kind === "dir" ? (
         <Folder size={16} className="shrink-0" />
       ) : (
-        <FileText size={16} className="shrink-0" />
+        <Document size={16} className="shrink-0" />
       )}
       <InlineNameInput
         initial={initial}

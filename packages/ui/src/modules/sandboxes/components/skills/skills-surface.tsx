@@ -1,3 +1,4 @@
+import { Add, Upload } from "@carbon/icons-react";
 import type {
   LocalSkill,
   Skill,
@@ -5,7 +6,6 @@ import type {
   SkillSource,
   SkillsState,
 } from "api-server-api";
-import { Plus, Upload } from "lucide-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -148,7 +148,7 @@ export function SkillsSurface({
       size="sm"
       onClick={() => setModal({ tab: "github", files: [] })}
     >
-      <Plus size={14} /> Add source
+      <Add size={14} /> Add source
     </Button>
   );
 

@@ -1,14 +1,14 @@
+import { Chemistry } from "@carbon/icons-react";
 import type {
   ArtifactFolder,
   Experiment,
   LibraryArtifact,
 } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { ChevronDown, FlaskConical } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
@@ -130,14 +130,8 @@ export function ExperimentsSection({
         }}
         className="flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >
-        <ChevronDown
-          size={16}
-          className={cn(
-            "shrink-0 text-muted-foreground transition-transform",
-            !expanded && "-rotate-90",
-          )}
-        />
-        <FlaskConical size={16} className="shrink-0 text-muted-foreground" />
+        <DisclosureChevron open={expanded} className="text-muted-foreground" />
+        <Chemistry size={16} className="shrink-0 text-muted-foreground" />
         <span className="text-[14px] font-semibold text-muted-foreground">
           Experiments
         </span>

@@ -1,6 +1,10 @@
+import { Close } from "@carbon/icons-react";
 import type { ReactNode, RefObject } from "react";
 import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface ModalProps {
   widthClass?: string;
@@ -40,7 +44,7 @@ export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-surface flex flex-col anim-scale-in shadow-xl`}
+          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl`}
         >
           {children}
         </div>
@@ -59,17 +63,77 @@ interface DialogRegionProps {
   className?: string;
 }
 
-/** Top region of a dialog. Holds the title (and optionally a subtitle or
- *  a small form field). Tighter horizontal padding on mobile. Picks up
- *  the `aria-labelledby` id from `ModalContext` so the parent `Modal` can
- *  point to it without callers wiring ids manually. */
-export function DialogHeader({ children, className }: DialogRegionProps) {
+interface DialogHeaderProps {
+  children?: ReactNode;
+  className?: string;
+  title?: ReactNode;
+  /** Sits beside the title, outside the `<h2>` so it stays out of the dialog's
+   *  accessible name. */
+  titleAccessory?: ReactNode;
+  subtitle?: ReactNode;
+  /** Omit for dialogs that exit through the footer. */
+  onClose?: () => void;
+  closeTestId?: string;
+  truncateTitle?: boolean;
+}
+
+/** Top region of a dialog. Picks up the `aria-labelledby` id from
+ *  `ModalContext` so callers don't wire ids manually — it lands on the `<h2>`
+ *  when there is a `title`, otherwise on the region itself. */
+export function DialogHeader({
+  title,
+  titleAccessory,
+  subtitle,
+  onClose,
+  closeTestId,
+  truncateTitle,
+  children,
+  className,
+}: DialogHeaderProps) {
   const { labelId } = useContext(ModalContext);
   return (
     <div
-      id={labelId}
-      className={`px-5 md:px-7 pt-5 md:pt-7 pb-4 border-border-light ${className ?? ""}`}
+      id={title ? undefined : labelId}
+      className={cn("px-5 pt-5 pb-4 md:px-7 md:pt-7", className)}
     >
+      {(title || subtitle || onClose) && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title && (
+              <div className="flex items-center gap-2">
+                <h2
+                  id={labelId}
+                  className={cn(
+                    "text-[16px] font-semibold text-foreground",
+                    truncateTitle && "truncate",
+                  )}
+                >
+                  {title}
+                </h2>
+                {titleAccessory}
+              </div>
+            )}
+            {subtitle && (
+              <p className="mt-0.5 text-[14px] text-muted-foreground">
+                {subtitle}
+              </p>
+            )}
+          </div>
+          {onClose && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              aria-label="Close"
+              data-testid={closeTestId}
+              className="shrink-0 text-muted-foreground"
+            >
+              <Close size={18} />
+            </Button>
+          )}
+        </div>
+      )}
       {children}
     </div>
   );

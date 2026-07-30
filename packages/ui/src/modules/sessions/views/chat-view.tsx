@@ -1,14 +1,14 @@
-import { ArrowDown, Settings } from "@carbon/icons-react";
-import { SessionMode } from "api-server-api";
 import {
-  AlertCircle,
+  ArrowDown,
   ArrowLeft,
-  FileText as FileIcon,
-  Loader2,
-  MoreVertical,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
+  Document,
+  OverflowMenuVertical,
+  Renew,
+  Settings,
+  TrashCan,
+  Warning,
+} from "@carbon/icons-react";
+import { SessionMode } from "api-server-api";
 import {
   type CSSProperties,
   useCallback,
@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -459,20 +460,23 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {/* Header spans the full width; on mobile it belongs to the chat screen only */}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border-light shrink-0 relative z-content`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
       >
-        <button
-          className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+        <Button
+          variant="ghost"
+          size="inline"
+          aria-label="Back to sandboxes"
           onClick={handleBack}
+          className="md:hidden gap-1 text-[13px] font-medium text-muted-foreground hover:bg-transparent"
         >
           <ArrowLeft size={14} />
-        </button>
+        </Button>
         <div className="group flex items-center gap-3 min-w-0">
           <span
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
           />
-          <h1 className="text-[14px] font-bold text-text truncate">
+          <h1 className="text-[14px] font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
           <DropdownMenu>
@@ -483,7 +487,7 @@ export function ChatView() {
                 aria-label={surfaceCopy.actionsAria}
                 className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
-                <MoreVertical size={14} />
+                <OverflowMenuVertical size={14} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -517,7 +521,7 @@ export function ChatView() {
         {/* Left: Sessions + Files sections */}
         <div
           style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border-light overflow-hidden relative z-content ${
+          className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
@@ -612,8 +616,8 @@ export function ChatView() {
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
                     {loadingSession && (
-                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-text-muted">
-                        <span className="w-5 h-5 rounded-full border-2 border-border-light border-t-accent anim-spin" />
+                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-muted-foreground">
+                        <Spinner size={20} />
                         Loading session...
                       </div>
                     )}
@@ -638,14 +642,11 @@ export function ChatView() {
                       messages.length === 0 &&
                       (launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
-                          <Loader2
-                            size={22}
-                            className="mx-auto mb-3 animate-spin text-text-muted"
-                          />
-                          <p className="text-[16px] font-bold text-text mb-2">
+                          <Spinner size={22} className="mb-3" />
+                          <p className="text-[16px] font-bold text-foreground mb-2">
                             Starting the run…
                           </p>
-                          <p className="text-[14px] text-text-muted">
+                          <p className="text-[14px] text-muted-foreground">
                             Waking the agent and opening the launch session —
                             this can take up to a minute. The conversation
                             appears here as soon as it&apos;s up.
@@ -653,10 +654,10 @@ export function ChatView() {
                         </div>
                       ) : (
                         <div className="py-24 text-center">
-                          <p className="text-[16px] font-bold text-text mb-2">
+                          <p className="text-[16px] font-bold text-foreground mb-2">
                             Start a conversation
                           </p>
-                          <p className="text-[14px] text-text-muted">
+                          <p className="text-[14px] text-muted-foreground">
                             Send a message to begin a new session with this
                             agent
                           </p>
@@ -665,7 +666,7 @@ export function ChatView() {
                     {messages.map((m, mi) =>
                       m.notice ? (
                         <div key={m.id} className="flex justify-center anim-in">
-                          <span className="text-[11px] italic text-text-muted px-3 py-1 border-t border-b border-border-light/60">
+                          <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
                             {m.parts.find((p) => p.kind === "text")?.kind ===
                             "text"
                               ? (
@@ -703,7 +704,7 @@ export function ChatView() {
                             <div
                               className={
                                 m.role === "user"
-                                  ? "flex flex-col gap-2 rounded-xl border border-border-light bg-surface px-4 py-3 text-[14px] text-text"
+                                  ? "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[14px] text-foreground"
                                   : "flex flex-col gap-4 w-full max-w-full"
                               }
                             >
@@ -739,24 +740,24 @@ export function ChatView() {
                                     key={i}
                                     src={`data:${p.mimeType};base64,${p.data}`}
                                     alt="image"
-                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border-light object-contain"
+                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border object-contain"
                                   />
                                 ) : p.kind === "verdict" ? (
                                   <PermissionVerdictLine key={i} verdict={p} />
                                 ) : p.kind === "file" ? (
                                   <div
                                     key={i}
-                                    className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2"
+                                    className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2"
                                   >
-                                    <FileIcon
+                                    <Document
                                       size={14}
-                                      className="text-text-muted shrink-0"
+                                      className="text-muted-foreground shrink-0"
                                     />
-                                    <span className="text-[12px] text-text-secondary">
+                                    <span className="text-[12px] text-muted-foreground">
                                       {p.name}
                                     </span>
                                     {p.size !== undefined && (
-                                      <span className="text-[10px] text-text-muted">
+                                      <span className="text-[10px] text-muted-foreground">
                                         {p.size < 1024
                                           ? `${p.size} B`
                                           : `${(p.size / 1024).toFixed(1)} KB`}
@@ -770,7 +771,7 @@ export function ChatView() {
                               {m.streaming &&
                                 m.queued &&
                                 m.parts.length === 0 && (
-                                  <span className="text-[12px] text-text-muted italic">
+                                  <span className="text-[12px] text-muted-foreground italic">
                                     Waiting for previous prompt…
                                   </span>
                                 )}
@@ -796,7 +797,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border-light bg-background px-3 text-[14px] font-normal text-text shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-[14px] font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
@@ -819,7 +820,7 @@ export function ChatView() {
                         type="button"
                         onClick={handleConfigureSandbox}
                         title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
+                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
                       >
                         {harnessCurrent.model}
                         <Settings size={12} />
@@ -865,7 +866,7 @@ export function ChatView() {
                 rightW !== null
                   ? "md:shrink-0 md:w-[var(--file-w)]"
                   : "md:flex-1 md:basis-0 md:min-w-0",
-                "md:border-l md:border-border-light",
+                "md:border-l md:border-border",
               )}
             >
               {openFilePath ? (
@@ -950,10 +951,12 @@ function SessionErrorCard({
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
-        <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
+        <Warning size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] font-bold text-text mb-1">{title}</h3>
-          <p className="text-[13px] text-text-secondary break-words">
+          <h3 className="text-[15px] font-bold text-foreground mb-1">
+            {title}
+          </h3>
+          <p className="text-[13px] text-muted-foreground break-words">
             {error.message}
           </p>
         </div>
@@ -964,7 +967,7 @@ function SessionErrorCard({
         </Button>
         {error.kind === "not-found" && (
           <Button variant="destructive" size="sm" onClick={onDelete}>
-            <Trash2 size={12} /> Delete orphaned session
+            <TrashCan size={12} /> Delete orphaned session
           </Button>
         )}
       </div>
@@ -985,9 +988,9 @@ function SendErrorCard({
       className="flex max-w-[620px] items-start gap-2.5"
       role="alert"
     >
-      <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="text-[13px] text-text break-words">
+        <div className="text-[13px] text-foreground break-words">
           <span className="font-bold text-danger">Send failed:</span> {error}
         </div>
         {onRetry && (
@@ -997,7 +1000,7 @@ function SendErrorCard({
             onClick={onRetry}
             className="self-start"
           >
-            <RefreshCw size={11} /> Retry
+            <Renew size={11} /> Retry
           </Button>
         )}
       </div>

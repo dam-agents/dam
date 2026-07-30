@@ -1,4 +1,4 @@
-import { Add as Plus, Close as X } from "@carbon/icons-react";
+import { Add, Close } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +91,7 @@ export function KeyValueEditor({
               className="shrink-0 text-muted-foreground"
               title="Remove"
             >
-              <X size={13} />
+              <Close size={13} />
             </Button>
           </div>
         );
@@ -104,7 +104,7 @@ export function KeyValueEditor({
         disabled={disabled}
         className="self-start"
       >
-        <Plus size={12} /> {addLabel}
+        <Add size={12} /> {addLabel}
       </Button>
     </div>
   );

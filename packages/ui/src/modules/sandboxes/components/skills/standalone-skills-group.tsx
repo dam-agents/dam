@@ -1,14 +1,16 @@
-import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import {
   Download,
-  ExternalLink,
-  GitPullRequest,
-  MoreHorizontal,
+  Launch,
+  OverflowMenuHorizontal,
+  PullRequest,
   Upload,
-} from "lucide-react";
+} from "@carbon/icons-react";
+import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,12 +115,7 @@ export function StandaloneSkillsGroup({
         <SectionLabel>Created in this sandbox</SectionLabel>
         {action}
       </div>
-      <div
-        className={cn(
-          "rounded-lg border border-border",
-          readOnly ? "bg-muted" : "bg-card",
-        )}
-      >
+      <Card className={cn(readOnly && "bg-muted")}>
         {skills.map((skill, i) => {
           const pub = published.get(skill.name);
           return (
@@ -151,11 +148,12 @@ export function StandaloneSkillsGroup({
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-[12px] font-medium text-info transition-opacity hover:opacity-80"
                   title={`Pull request open on ${pub.sourceName}`}
                 >
-                  <GitPullRequest size={13} /> In review · {pub.sourceName}
+                  <PullRequest size={13} /> In review · {pub.sourceName}
                 </a>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="xs"
                   disabled={!canPublish}
                   onClick={() => onPublish(skill)}
                   title={
@@ -163,21 +161,22 @@ export function StandaloneSkillsGroup({
                       ? "Publish this skill as a pull request"
                       : "Add a GitHub source first to publish there"
                   }
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  className="shrink-0 gap-1.5"
                 >
-                  Publish <ExternalLink size={13} />
-                </button>
+                  Publish <Launch size={13} />
+                </Button>
               )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     title="Skill actions"
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="shrink-0 text-muted-foreground"
                   >
-                    <MoreHorizontal size={18} />
-                  </button>
+                    <OverflowMenuHorizontal size={18} />
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem onSelect={() => onDownload(skill)}>
@@ -195,7 +194,7 @@ export function StandaloneSkillsGroup({
             </div>
           );
         })}
-      </div>
+      </Card>
     </section>
   );
 }

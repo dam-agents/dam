@@ -1,6 +1,6 @@
+import { Launch } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Skill, SkillSource } from "api-server-api";
-import { ExternalLink, X } from "lucide-react";
 
 import { Markdown } from "@/components/markdown";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
@@ -41,39 +41,30 @@ export function SkillRenderModal({
 
   return (
     <Modal widthClass="w-[720px]">
-      <DialogHeader className="flex items-start justify-between gap-3 border-b border-border">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-[17px] font-semibold text-foreground">
-              {skill.name}
-            </h2>
-            {link && (
-              <a
-                href={link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                title="View SKILL.md on GitHub"
-              >
-                <ExternalLink size={15} />
-              </a>
-            )}
-          </div>
-          {skill.description && (
-            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
-              {skill.description}
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Close"
-        >
-          <X size={18} />
-        </button>
-      </DialogHeader>
+      <DialogHeader
+        className="border-b border-border"
+        title={skill.name}
+        truncateTitle
+        titleAccessory={
+          link && (
+            <a
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+              title="View SKILL.md on GitHub"
+            >
+              <Launch size={15} />
+            </a>
+          )
+        }
+        subtitle={
+          skill.description && (
+            <span className="block truncate">{skill.description}</span>
+          )
+        }
+        onClose={onClose}
+      />
 
       <DialogBody>
         {isPending ? (

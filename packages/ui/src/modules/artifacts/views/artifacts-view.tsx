@@ -1,6 +1,6 @@
+import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";

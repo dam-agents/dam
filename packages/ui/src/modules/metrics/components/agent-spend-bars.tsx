@@ -23,7 +23,7 @@ function AgentSpendRow({ row, max }: { row: SpendByAgent; max: number }) {
           style={{ width: row.costUsd > 0 ? `max(${pct}%, 8px)` : "0px" }}
         />
       </div>
-      <span className="w-20 shrink-0 text-left font-mono font-semibold tabular-nums text-text">
+      <span className="w-20 shrink-0 text-left font-mono font-semibold tabular-nums text-foreground">
         {formatUsd(row.costUsd)}
       </span>
     </div>

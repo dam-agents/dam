@@ -1,5 +1,5 @@
+import { Code, Download, Launch, Maximize, View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Code, Download, ExternalLink, Eye, Maximize2 } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -60,7 +60,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   return (
     <>
       <Modal widthClass="w-[860px]">
-        <DialogHeader>{artifact.title}</DialogHeader>
+        <DialogHeader title={artifact.title} />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
             <span className="truncate">{artifact.fileName}</span>
@@ -79,7 +79,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                   size="xs"
                   onClick={() => setShowSource((s) => !s)}
                 >
-                  {showSource ? <Eye size={14} /> : <Code size={14} />}
+                  {showSource ? <View size={14} /> : <Code size={14} />}
                   {showSource ? "Preview" : "Source"}
                 </Button>
                 {!showSource && (
@@ -89,7 +89,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                     title="Fullscreen"
                     onClick={() => setFullscreen(true)}
                   >
-                    <Maximize2 size={16} />
+                    <Maximize size={16} />
                   </Button>
                 )}
               </>
@@ -128,7 +128,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
           {artifact.shareUrl && (
             <Button variant="outline" asChild>
               <a href={artifact.shareUrl} target="_blank" rel="noreferrer">
-                <ExternalLink size={16} />
+                <Launch size={16} />
                 Open share page
               </a>
             </Button>

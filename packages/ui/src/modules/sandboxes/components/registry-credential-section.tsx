@@ -1,7 +1,9 @@
-import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 import { FormField } from "../../../components/form-field.js";
 
@@ -33,21 +35,19 @@ interface Props {
 export function RegistryCredentialSection({ value, onChange, partial }: Props) {
   const [open, setOpen] = useState(false);
   const expanded = open || partial;
-  const Icon = expanded ? ChevronDown : ChevronRight;
   const set = (key: keyof RegistryCredential, next: string) =>
     onChange({ ...value, [key]: next });
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={expanded}
-        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground hover:text-foreground"
+      <DisclosureToggle
+        open={expanded}
+        onToggle={() => setOpen((v) => !v)}
+        chevronSize={12}
+        className={cn(labelVariants(), "gap-1.5 hover:text-foreground")}
       >
-        <Icon size={12} />
         Private registry
-      </button>
+      </DisclosureToggle>
       {expanded && (
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-[12px] text-muted-foreground">

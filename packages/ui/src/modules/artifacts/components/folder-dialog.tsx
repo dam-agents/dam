@@ -36,7 +36,7 @@ export function FolderDialog({ folder, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader>{folder ? "Edit folder" : "New folder"}</DialogHeader>
+      <DialogHeader title={folder ? "Edit folder" : "New folder"} />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">

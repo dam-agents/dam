@@ -1,17 +1,17 @@
-import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
-  ChevronDown,
+  Edit,
   Folder,
-  Link as LinkIcon,
-  MoreVertical,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+  Link,
+  OverflowMenuVertical,
+  TrashCan,
+} from "@carbon/icons-react";
+import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
@@ -80,12 +81,9 @@ export function FolderGroup({
         }}
         className="group flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >
-        <ChevronDown
-          size={16}
-          className={cn(
-            "shrink-0 text-muted-foreground transition-transform",
-            collapsed && "-rotate-90",
-          )}
+        <DisclosureChevron
+          open={!collapsed}
+          className="text-muted-foreground"
         />
         {folder && (
           <Folder size={16} className="shrink-0 text-muted-foreground" />
@@ -113,7 +111,7 @@ export function FolderGroup({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" title="Folder actions">
-                  <MoreVertical size={16} />
+                  <OverflowMenuVertical size={16} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -125,11 +123,11 @@ export function FolderGroup({
                     });
                   }}
                 >
-                  <LinkIcon size={14} />
+                  <Link size={14} />
                   Copy folder link
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onEditFolder?.(folder)}>
-                  <Pencil size={14} />
+                  <Edit size={14} />
                   Edit folder
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -137,7 +135,7 @@ export function FolderGroup({
                   tone="danger"
                   onSelect={() => onDeleteFolder?.(folder)}
                 >
-                  <Trash2 size={14} />
+                  <TrashCan size={14} />
                   Delete folder
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -154,9 +152,9 @@ export function FolderGroup({
           ) : sections ? (
             sections.map((section) => (
               <div key={section.label}>
-                <div className="border-t border-border/60 bg-muted/40 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <SectionLabel className="block border-t border-border/60 bg-muted/40 px-4 py-1.5">
                   {section.label}
-                </div>
+                </SectionLabel>
                 {section.artifacts.map((artifact) => (
                   <ArtifactRow
                     key={artifact.id}

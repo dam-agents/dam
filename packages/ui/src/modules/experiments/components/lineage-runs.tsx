@@ -28,7 +28,7 @@ export function LineageRuns({
   );
   if (!experiments)
     return (
-      <p className="border-t border-border-light py-3.5 pl-12 pr-[18px] text-[13px] text-muted-foreground">
+      <p className="border-t border-border py-3.5 pl-12 pr-[18px] text-[13px] text-muted-foreground">
         Loading runs…
       </p>
     );
@@ -40,7 +40,7 @@ export function LineageRuns({
   const runs = lineage.filter((e) => e.status !== "draft");
   const shown = runs.slice(0, EXPANDED_RUNS_MAX);
   return (
-    <div className="border-t border-border-light">
+    <div className="border-t border-border">
       {runs.length === 0 && (
         <p className="py-3.5 pl-12 pr-[18px] text-[13px] text-muted-foreground">
           No runs yet — open the chat and start one from the draft panel.
@@ -114,7 +114,7 @@ function RunRow({
     .map((id) => ({ id, title: artifactTitles.get(id) }))
     .filter((a): a is { id: string; title: string } => a.title !== undefined);
   return (
-    <div className="border-t border-border-light py-3.5 pl-12 pr-[18px] first:border-t-0">
+    <div className="border-t border-border py-3.5 pl-12 pr-[18px] first:border-t-0">
       {/* Fixed-width columns so Run #, status, timestamp and the invocation area
           line up across every row of the lineage. */}
       <div className="flex items-center gap-3.5 text-[13px]">
@@ -152,7 +152,7 @@ function RunRow({
               type="button"
               onClick={() => onOpenArtifact(artifact.id)}
               title={artifact.title}
-              className="max-w-[220px] truncate rounded-md border border-border-light bg-muted/40 px-2 py-0.5 text-[11px] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              className="max-w-[220px] truncate rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
             >
               {artifact.title}
             </button>

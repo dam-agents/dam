@@ -1,5 +1,5 @@
+import { Globe } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
-import { Globe } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 

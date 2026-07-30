@@ -1,5 +1,5 @@
+import { Upload } from "@carbon/icons-react";
 import type { ArtifactFolder } from "api-server-api";
-import { Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import {
@@ -60,7 +60,7 @@ export function UploadArtifactDialog({
 
   return (
     <Modal>
-      <DialogHeader>Upload artifact</DialogHeader>
+      <DialogHeader title="Upload artifact" />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <input

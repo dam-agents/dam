@@ -1,4 +1,3 @@
-import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 import ReactMarkdown, {
   type Components,
@@ -6,6 +5,8 @@ import ReactMarkdown, {
 } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+
+import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import {
   ARTIFACT_LINK_PREFIX,
@@ -44,21 +45,20 @@ function isRelativePath(href: string) {
 
 function FrontmatterBlock({ source }: { source: string }) {
   const [open, setOpen] = useState(false);
-  const Icon = open ? ChevronDown : ChevronRight;
   return (
     <div className="not-prose mb-3 text-[12px]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-text-muted hover:text-text-primary"
+      <DisclosureToggle
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        chevronSize={12}
+        className="gap-1.5 text-muted-foreground hover:text-foreground"
       >
-        <Icon size={12} />
         <span className="font-mono uppercase tracking-[0.05em] text-[11px]">
           Frontmatter
         </span>
-      </button>
+      </DisclosureToggle>
       {open && (
-        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre-wrap overflow-x-auto">
+        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-muted-foreground whitespace-pre-wrap overflow-x-auto">
           {source}
         </pre>
       )}

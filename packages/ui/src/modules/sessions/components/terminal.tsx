@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 
+import { ErrorFilled, Terminal as TerminalIcon } from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
@@ -10,10 +11,10 @@ import {
   OP_INPUT,
   OP_OUTPUT,
 } from "api-server-api";
-import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
 
@@ -189,18 +190,18 @@ export function Terminal({
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">
       {state === "connecting" && (
-        <div className="absolute inset-0 z-content flex items-center justify-center bg-bg/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 text-[14px] text-text-muted">
-            <Loader2 size={18} className="animate-spin" />
+        <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-[14px] text-muted-foreground">
+            <Spinner size={18} />
             Connecting terminal...
           </div>
         </div>
       )}
       {state === "disconnected" && (
-        <div className="absolute inset-0 z-content flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <XCircle size={24} className="text-danger" />
-            <p className="text-[14px] text-text-secondary">
+            <ErrorFilled size={24} className="text-danger" />
+            <p className="text-[14px] text-muted-foreground">
               Session disconnected
             </p>
             <Button variant="outline" onClick={handleReconnect}>
@@ -211,7 +212,7 @@ export function Terminal({
       )}
       {state === "exited" && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-content">
-          <div className="flex items-center gap-2 rounded-full border border-border-light bg-surface-raised px-4 py-2 text-[12px] text-text-muted shadow-md">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-[12px] text-muted-foreground shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

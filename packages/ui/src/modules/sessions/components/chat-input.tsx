@@ -1,10 +1,4 @@
-import {
-  Add,
-  Close as X,
-  Document as FileIcon,
-  SendAltFilled as SendIcon,
-  Stop as Square,
-} from "@carbon/icons-react";
+import { Add, Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -196,7 +190,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -214,19 +208,19 @@ export function ChatInput({
                 onClick={onStop}
                 title="Stop"
               >
-                <Square size={16} />
+                <Stop size={16} />
               </Button>
             )}
             {showSend && (
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-text" : "text-muted-foreground"} disabled:opacity-40`}
+                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
                 title={isComputing ? "Queue" : "Send"}
               >
-                <SendIcon size={16} />
+                <SendAltFilled size={16} />
               </Button>
             )}
           </div>
@@ -253,7 +247,7 @@ function AttachmentChip({
         />
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
-          <FileIcon size={14} className="text-muted-foreground shrink-0" />
+          <Document size={14} className="text-muted-foreground shrink-0" />
           <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
             {attachment.name}
           </span>
@@ -265,7 +259,7 @@ function AttachmentChip({
         onClick={onRemove}
         className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
       >
-        <X size={10} />
+        <Close size={10} />
       </Button>
     </div>
   );

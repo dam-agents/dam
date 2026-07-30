@@ -1,7 +1,9 @@
-import { MoreVertical, Trash2 } from "lucide-react";
+import { OverflowMenuVertical, TrashCan } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +30,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border-light bg-surface">
+    <Card className="overflow-hidden">
       <div
         role={openable ? "button" : undefined}
         tabIndex={openable ? 0 : undefined}
@@ -36,8 +38,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
         onKeyDown={(e) => openable && e.key === "Enter" && onOpen()}
         className={cn(
           "flex items-center gap-3 px-[18px] py-4",
-          openable &&
-            "cursor-pointer transition-colors hover:bg-surface-raised",
+          openable && "cursor-pointer transition-colors hover:bg-muted",
         )}
       >
         {/* Closed reads as a plain chevron; open boxes it, so an expanded row is
@@ -55,15 +56,10 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
             expanded ? "size-7 border border-border" : "size-5",
           )}
         >
-          <span
-            className={cn(
-              "text-[20px] leading-none transition-transform",
-              expanded ? "rotate-90 text-foreground" : "text-muted-foreground",
-            )}
-            aria-hidden
-          >
-            ›
-          </span>
+          <DisclosureChevron
+            open={expanded}
+            className={expanded ? "text-foreground" : "text-muted-foreground"}
+          />
         </button>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
@@ -87,7 +83,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" title="More actions">
-                <MoreVertical size={16} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -101,7 +97,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
                 }
                 onSelect={onDelete}
               >
-                <Trash2 size={14} />
+                <TrashCan size={14} />
                 Delete experiment
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -116,6 +112,6 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           name={lineage.name}
         />
       )}
-    </div>
+    </Card>
   );
 }

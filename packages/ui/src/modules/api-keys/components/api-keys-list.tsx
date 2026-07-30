@@ -1,5 +1,5 @@
+import { Key } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
-import { KeyRound } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,7 @@ export function ApiKeysList() {
       {!isLoading && !isError && keys && keys.length === 0 && (
         <Callout variant="dashed" className="bg-card">
           <div className="flex flex-col items-center gap-3 py-4">
-            <KeyRound size={32} className="text-muted-foreground" />
+            <Key size={32} className="text-muted-foreground" />
             <p className="text-[13px] text-muted-foreground">
               No API keys yet. Create one to authenticate the CLI without a
               browser.

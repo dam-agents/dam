@@ -1,6 +1,5 @@
-import { Filter } from "@carbon/icons-react";
+import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -186,7 +187,7 @@ export function SessionsSidebar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="xs" className="text-[14px]">
-            <Plus size={12} /> New
+            <Add size={12} /> New
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -224,29 +225,29 @@ export function SessionsSidebar({
     >
       <div className="flex-1 overflow-y-auto">
         {!loading && sessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No sessions yet
           </p>
         )}
         {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No sessions match the filter
           </p>
         )}
         {conversationSessions.map(renderRow)}
         {(runSessions.length > 0 || launchingRun) && (
-          <p className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+          <SectionLabel className="block px-4 pb-1 pt-4">
             Experiment runs
-          </p>
+          </SectionLabel>
         )}
         {launchingRun && (
           <button
             type="button"
             onClick={focusPendingLaunch}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
-            <Loader2 size={14} className="shrink-0 animate-spin" />
+            <Spinner />
             <span className="min-w-0 flex-1 truncate">
               Starting run — waking the agent…
             </span>

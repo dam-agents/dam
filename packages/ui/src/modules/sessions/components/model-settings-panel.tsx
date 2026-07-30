@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { queryClient } from "../../../query-client.js";
@@ -171,7 +172,7 @@ export function ModelSettingsPanel({
   const note = (
     <p
       className={cn(
-        "text-[11px] leading-snug text-text-muted",
+        "text-[11px] leading-snug text-muted-foreground",
         isPage ? "pt-3" : "px-4 py-2.5",
       )}
     >
@@ -205,8 +206,8 @@ export function ModelSettingsPanel({
 
 function SavingHint() {
   return (
-    <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-text-muted">
-      <Loader2 size={11} className="animate-spin" />
+    <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-muted-foreground">
+      <Spinner size={11} />
       Saving…
     </span>
   );
@@ -230,15 +231,15 @@ function OptionGroup({
   const selected = value === null ? null : choices.find((c) => c.id === value);
   const isPage = variant === "page";
   const triggerClass = cn(
-    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-text transition-colors",
+    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-foreground transition-colors",
     isPage
       ? "h-10 border-input px-4 text-sm"
-      : "h-8 border-border-light px-3 text-[13px]",
+      : "h-8 border-border px-3 text-[13px]",
   );
   const face = (
     <>
       <span className="truncate">{selected?.name ?? "Not set"}</span>
-      <ChevronDown size={14} className="shrink-0 text-text-muted" />
+      <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
     </>
   );
   return (
@@ -246,12 +247,10 @@ function OptionGroup({
       className={
         isPage
           ? "mb-4 last:mb-0"
-          : "border-b border-border-light last:border-b-0 px-4 py-3"
+          : "border-b border-border last:border-b-0 px-4 py-3"
       }
     >
-      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
-        {title}
-      </div>
+      <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
       {disabled ? (
         // Static value while read-only: mounting a real trigger would still open
         // on click (Radix asChild doesn't honor a native `disabled` reliably).
@@ -269,7 +268,7 @@ function OptionGroup({
               className={cn(
                 triggerClass,
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                !isPage && "hover:bg-surface-raised",
+                !isPage && "hover:bg-muted",
               )}
             >
               {face}
@@ -321,7 +320,7 @@ function OptionItem({
       className="h-auto flex-col items-start gap-0.5 py-2"
     >
       <span className="flex items-center gap-1.5 font-medium">
-        {active && <Check size={12} className="shrink-0" />}
+        {active && <Checkmark size={12} className="shrink-0" />}
         <span className={active ? "" : "pl-[18px]"}>{label}</span>
       </span>
       {detail && (

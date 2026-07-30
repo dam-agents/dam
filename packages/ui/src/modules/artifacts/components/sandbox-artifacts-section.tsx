@@ -1,5 +1,5 @@
+import { Information } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Info } from "lucide-react";
 import { useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -33,7 +33,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         size="sm"
         className="mb-4 flex items-start gap-2.5 text-[13px] text-muted-foreground"
       >
-        <Info size={16} className="mt-0.5 shrink-0 text-accent" />
+        <Information size={16} className="mt-0.5 shrink-0 text-accent" />
         <span>
           Agents publish through the built-in platform MCP tools —{" "}
           <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">

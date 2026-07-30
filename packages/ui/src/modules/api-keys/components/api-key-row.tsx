@@ -1,7 +1,9 @@
+import { Key, TrashCan } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
-import { KeyRound, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface Props {
   apiKey: ApiKeyView;
@@ -18,8 +20,8 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
       : `${agentIds.length} agent${agentIds.length === 1 ? "" : "s"}`;
 
   return (
-    <li className="flex items-start gap-3 p-4 rounded-xl border border-border bg-card">
-      <KeyRound size={20} className="text-muted-foreground mt-0.5 shrink-0" />
+    <li className={cn(CARD_SURFACE, "flex items-start gap-3 rounded-xl p-4")}>
+      <Key size={20} className="text-muted-foreground mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <span className="text-[14px] font-semibold truncate">{name}</span>
@@ -48,7 +50,7 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
         className="shrink-0 text-muted-foreground"
         title="Revoke"
       >
-        <Trash2 size={14} />
+        <TrashCan size={14} />
       </Button>
     </li>
   );

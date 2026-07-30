@@ -238,7 +238,7 @@ export function McpCreatePane({
           </DisclosureBox>
         </div>
       </div>
-      <div className="flex justify-end gap-3 border-t border-border-light px-5 py-4">
+      <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
         <Button variant="outline" onClick={onBack} disabled={pending}>
           Cancel
         </Button>

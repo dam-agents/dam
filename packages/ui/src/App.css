@@ -7,19 +7,11 @@
 
 @theme {
   /* ── Color tokens (resolved via CSS vars set in :root / .dark) ── */
-  --color-bg: var(--c-bg);
-  --color-surface: var(--c-surface);
-  --color-surface-raised: var(--c-surface-raised);
   --color-border: var(--border-ui);
-  --color-border-light: var(--c-border-light);
   --color-border-hairline: var(--c-border-hairline);
-  --color-text: var(--c-text);
-  --color-text-secondary: var(--c-text-secondary);
-  --color-text-muted: var(--c-text-muted);
   --color-accent: var(--c-accent);
   --color-accent-hover: var(--c-accent-hover);
   --color-accent-light: var(--c-accent-light);
-  --color-accent-glow: var(--c-accent-glow);
   --color-success: var(--c-success);
   --color-success-light: var(--c-success-light);
   --color-warning: var(--c-warning);
@@ -48,8 +40,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent-alt: var(--accent-alt);
-  --color-accent-alt-foreground: var(--accent-alt-foreground);
+  --color-placeholder: var(--placeholder);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border-ui: var(--border-ui);
@@ -100,19 +91,10 @@
 
 /* ── Light theme (default) ── */
 :root {
-  --c-bg: #fafaf9;
-  --c-surface: #ffffff;
-  --c-surface-raised: #f5f5f4;
-  --c-border: #292524;
-  --c-border-light: #dde1e6;
   --c-border-hairline: #ecedf0;
-  --c-text: #121619;
-  --c-text-secondary: #57534e;
-  --c-text-muted: #a8a29e;
-  --c-accent: #1d6be1;
-  --c-accent-hover: #1556b8;
-  --c-accent-light: #eaf2fe;
-  --c-accent-glow: rgba(29, 107, 225, 0.15);
+  --c-accent: #0f62fe;
+  --c-accent-hover: #0353e9;
+  --c-accent-light: #edf5ff;
   --c-success: #24a148;
   --c-success-light: #defbe6;
   --c-warning: #ff832b;
@@ -140,8 +122,7 @@
   --secondary-foreground: #161616;
   --muted: #f2f4f8;
   --muted-foreground: #4d5358;
-  --accent-alt: #eaf2fe;
-  --accent-alt-foreground: #1556b8;
+  --placeholder: #94989b;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border-ui: #dde1e6;
@@ -151,19 +132,10 @@
 
 /* ── Dark theme ── */
 .dark {
-  --c-bg: #0c0a09;
-  --c-surface: #161616;
-  --c-surface-raised: #262626;
-  --c-border: #78716c;
-  --c-border-light: #393939;
   --c-border-hairline: #2a2a2a;
-  --c-text: #fafaf9;
-  --c-text-secondary: #d6d3d1;
-  --c-text-muted: #78716c;
-  --c-accent: #3c92fd;
-  --c-accent-hover: #2f88fd;
+  --c-accent: #4589ff;
+  --c-accent-hover: #78a9ff;
   --c-accent-light: #0f1f3a;
-  --c-accent-glow: rgba(60, 146, 253, 0.2);
   --c-success: #34d399;
   --c-success-light: #0f2a1f;
   --c-warning: #fbbf24;
@@ -173,7 +145,7 @@
   --c-info: #60a5fa;
   --c-info-light: #0f1f3a;
   --c-callout-bg: #0f1f3a;
-  --c-callout-border: #3c92fd;
+  --c-callout-border: #4589ff;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
   color-scheme: dark;
@@ -193,24 +165,12 @@
   --secondary-foreground: #fafaf9;
   --muted: #262626;
   --muted-foreground: #a8a29e;
-  --accent-alt: #0f1f3a;
-  --accent-alt-foreground: #3c92fd;
+  --placeholder: #6e6a68;
   --destructive: #f87171;
   --destructive-foreground: #161616;
   --border-ui: #393939;
   --input: #393939;
   --ring: #ffffff;
-}
-
-/* ── Dark-mode card elevation ──
-   Card surfaces (`--card`) share the same value as `--background` in dark
-   mode, so the default downward dark shadow is invisible and borderless
-   cards melt into the page. Give the Card a soft light lift so it reads as
-   raised without a border. Scoped to `[data-slot="card"]` so the shared
-   shadow utilities on bordered overlays (modal, tooltip, sonner, popovers,
-   menus) keep their own styling instead of picking up a white halo. */
-.dark [data-slot="card"] {
-  box-shadow: 0 2px 5px 0 rgb(255 255 255 / 0.12);
 }
 
 @layer base {
@@ -225,8 +185,8 @@
   body,
   #root {
     height: 100%;
-    background: var(--c-bg);
-    color: var(--c-text);
+    background: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 15px;
     line-height: 1.55;
@@ -236,7 +196,7 @@
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--c-border-light) transparent;
+    scrollbar-color: var(--border-ui) transparent;
   }
   button,
   [role="button"],
@@ -285,20 +245,6 @@
   }
   50% {
     opacity: 0;
-  }
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
   }
 }
 @keyframes slide {
@@ -363,12 +309,6 @@
 .anim-blink {
   animation: blink 1s step-end infinite;
 }
-.anim-spin {
-  animation: spin 0.7s linear infinite;
-}
-.anim-pulse {
-  animation: pulse 1.4s ease-in-out infinite;
-}
 .anim-slide {
   animation: slide 1s ease-in-out infinite;
 }
@@ -416,7 +356,7 @@
 .blob-2 {
   width: 400px;
   height: 400px;
-  background: #2f88fd;
+  background: var(--c-accent-hover);
   opacity: 0.06;
   bottom: -80px;
   left: -60px;
@@ -425,7 +365,7 @@
 .blob-3 {
   width: 300px;
   height: 300px;
-  background: #3c92fd;
+  background: var(--c-accent);
   opacity: 0.07;
   top: 40%;
   right: 20%;
@@ -445,7 +385,7 @@
 .prose {
   font-size: 15px;
   line-height: 1.72;
-  color: var(--c-text);
+  color: var(--foreground);
 }
 .prose p {
   margin: 0 0 0.65em;
@@ -473,7 +413,7 @@
   font-weight: 700;
 }
 .prose em {
-  color: var(--c-text-secondary);
+  color: var(--muted-foreground);
 }
 .prose a {
   color: var(--c-accent);
@@ -486,14 +426,14 @@
 .prose code {
   font-family: var(--font-mono);
   font-size: 0.86em;
-  background: var(--c-surface-raised);
-  border: 2px solid var(--c-border-light);
+  background: var(--muted);
+  border: 1px solid var(--border-ui);
   border-radius: 6px;
   padding: 0.1em 0.36em;
   color: var(--c-accent-hover);
 }
 .prose pre {
-  background: var(--c-surface-raised) !important;
+  background: var(--muted) !important;
   border: 1px solid var(--border-ui);
   border-radius: 12px;
   padding: 1em 1.15em;
@@ -507,7 +447,7 @@
   border-radius: 0;
   font-size: 0.84em;
   line-height: 1.6;
-  color: var(--c-text);
+  color: var(--foreground);
   box-shadow: none;
 }
 .prose ul,
@@ -530,11 +470,11 @@
   margin: 0.65em 0;
   background: var(--c-accent-light);
   border-radius: 0 8px 8px 0;
-  color: var(--c-text-secondary);
+  color: var(--muted-foreground);
 }
 .prose hr {
   border: none;
-  border-top: 2px solid var(--c-border-light);
+  border-top: 1px solid var(--border-ui);
   margin: 1.2em 0;
 }
 .prose table {
@@ -548,19 +488,19 @@
   overflow: hidden;
 }
 .prose th {
-  background: var(--c-surface-raised);
+  background: var(--muted);
   padding: 0.55em 0.85em;
   text-align: left;
   font-weight: 700;
   font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--c-text-muted);
-  border-bottom: 2px solid var(--c-border);
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border-ui);
 }
 .prose td {
   padding: 0.55em 0.85em;
-  border-bottom: 1px solid var(--c-border-light);
+  border-bottom: 1px solid var(--border-ui);
 }
 .prose tr:last-child td {
   border-bottom: none;
@@ -573,5 +513,5 @@
   margin-right: 0.4em;
 }
 .prose .hljs {
-  background: var(--c-surface-raised) !important;
+  background: var(--muted) !important;
 }

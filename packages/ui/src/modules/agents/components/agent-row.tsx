@@ -1,5 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
-import { FlaskConical } from "lucide-react";
+import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,7 +54,9 @@ export function AgentRow({
     <Card
       data-testid="agent-row"
       onClick={onSelect}
-      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-shadow hover:not-has-[button:hover]:shadow-md"
+      // The guard keeps the card flat while a nested action is hovered, so the
+      // two hover states don't stack.
+      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -74,15 +75,15 @@ export function AgentRow({
           {subtitle}
         </p>
         {temporaryDraw && temporaryDraw.count > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 border-t border-border-light pt-2 text-[12px] text-muted-foreground">
-            <FlaskConical size={12} className="shrink-0 text-accent" />
+          <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[12px] text-muted-foreground">
+            <Chemistry size={12} className="shrink-0 text-accent" />
             <span className="truncate">
               {temporaryDraw.count} temporary sandbox
               {temporaryDraw.count === 1 ? "" : "es"} running
               {formatTemporaryDraw(temporaryDraw) &&
                 ` · ${formatTemporaryDraw(temporaryDraw)}`}{" "}
               ·{" "}
-              <span className="text-text-muted">
+              <span className="text-muted-foreground">
                 released when the run ends
               </span>
             </span>

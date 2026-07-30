@@ -1,10 +1,4 @@
-import {
-  Close as X,
-  Download,
-  Edit as Pencil,
-  Maximize,
-  Save,
-} from "@carbon/icons-react";
+import { Close, Download, Edit, Maximize, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -188,9 +182,9 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-4 h-[48px] border-b border-border-light shrink-0">
+      <div className="flex items-center gap-2 px-4 h-[48px] border-b border-border shrink-0">
         <TruncateStart
-          className="text-[14px] font-medium text-text flex-1"
+          className="text-[14px] font-medium text-foreground flex-1"
           title={path}
         >
           {pathLabel}
@@ -204,7 +198,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               onClick={cancelEdit}
               title="Cancel"
             >
-              <X size={14} /> Cancel
+              <Close size={14} /> Cancel
             </Button>
             <Button
               variant="outline"
@@ -227,7 +221,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 onClick={() => setEditMode(true)}
                 title="Edit file"
               >
-                <Pencil size={14} /> Edit
+                <Edit size={14} /> Edit
               </Button>
             )}
             {!tooLarge && (
@@ -285,7 +279,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           onClick={onClose}
           title="Close"
         >
-          <X size={16} />
+          <Close size={16} />
         </Button>
       </div>
       <div

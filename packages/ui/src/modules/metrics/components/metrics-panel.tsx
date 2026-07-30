@@ -1,6 +1,9 @@
 import type { CallContext, SessionRuntime } from "api-server-api";
 import { useState } from "react";
 
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+
 import { useMetricsOverview } from "../api/queries.js";
 import { formatDurationMs, formatTokens, formatUsd } from "../lib/format.js";
 import { ModelSpendTable } from "./model-spend-table.js";
@@ -117,12 +120,12 @@ function ScopeToggle({
     ["all", "All sessions"],
   ];
   return (
-    <div className="mb-3 flex rounded border border-border-light p-0.5">
+    <div className="mb-3 flex rounded border border-border p-0.5">
       {options.map(([value, label]) => (
         <button
           key={value}
           onClick={() => onChange(value)}
-          className={`flex-1 rounded px-2 py-1 text-[11px] font-semibold transition-colors ${scope === value ? "bg-accent-light text-accent" : "text-text-muted hover:text-text-secondary"}`}
+          className={`flex-1 rounded px-2 py-1 text-[11px] font-semibold transition-colors ${scope === value ? "bg-accent-light text-accent" : "text-muted-foreground hover:text-foreground"}`}
         >
           {label}
         </button>
@@ -132,14 +135,12 @@ function ScopeToggle({
 }
 
 function PanelNotice({ children }: { children: React.ReactNode }) {
-  return <p className="py-2 text-[12px] text-text-muted">{children}</p>;
+  return <p className="py-2 text-[12px] text-muted-foreground">{children}</p>;
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mt-4 mb-2 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted first:mt-0">
-      {children}
-    </h3>
+    <h3 className={cn(labelVariants(), "mt-4 mb-2 first:mt-0")}>{children}</h3>
   );
 }
 
@@ -157,8 +158,8 @@ function SessionStats({ session }: { session: SessionRuntime }) {
     <dl className="space-y-1">
       {stats.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-2">
-          <dt className="text-text-muted">{label}</dt>
-          <dd className="font-mono tabular-nums text-text-secondary">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-mono tabular-nums text-muted-foreground">
             {value}
           </dd>
         </div>
@@ -171,7 +172,7 @@ function RecentCallsTable({ rows }: { rows: CallContext[] }) {
   return (
     <table className="w-full border-collapse tabular-nums">
       <thead>
-        <tr className="text-[10px] uppercase tracking-wide text-text-muted">
+        <tr className={labelVariants()}>
           <th className="py-1 text-left font-medium">Time</th>
           <th className="py-1 text-right font-medium">Context</th>
           <th className="py-1 text-right font-medium">Took</th>
@@ -180,9 +181,9 @@ function RecentCallsTable({ rows }: { rows: CallContext[] }) {
       </thead>
       <tbody>
         {rows.map((call) => (
-          <tr key={call.requestId} className="border-t border-border-light">
+          <tr key={call.requestId} className="border-t border-border">
             <td
-              className="py-1 pr-2 font-mono text-text-muted"
+              className="py-1 pr-2 font-mono text-muted-foreground"
               title={`${call.model}\n${call.at}`}
             >
               {new Date(call.at).toLocaleTimeString()}

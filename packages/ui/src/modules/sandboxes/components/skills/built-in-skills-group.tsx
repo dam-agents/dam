@@ -1,6 +1,7 @@
 import type { LocalSkill } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +13,7 @@ export function BuiltInSkillsGroup({ skills }: { skills: LocalSkill[] }) {
       <div className="mb-3">
         <SectionLabel>Included with sandbox image</SectionLabel>
       </div>
-      <div className="rounded-lg border border-border bg-card">
+      <Card>
         {skills.map((skill, i) => (
           <BuiltInSkillRow
             key={`${skill.skillPath}::${skill.name}`}
@@ -20,7 +21,7 @@ export function BuiltInSkillsGroup({ skills }: { skills: LocalSkill[] }) {
             withDivider={i > 0}
           />
         ))}
-      </div>
+      </Card>
     </section>
   );
 }

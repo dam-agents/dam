@@ -1,8 +1,4 @@
-import {
-  Add as Plus,
-  RotateCounterclockwise as RotateCcw,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+import { Add, RotateCounterclockwise, TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -10,12 +6,14 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   useApplyEgressPreset,
@@ -349,7 +347,7 @@ export function AgentEgressEditor({
             disabled={!canAdd}
             variant="outline"
           >
-            <Plus size={11} /> Add rule
+            <Add size={11} /> Add rule
           </Button>
           {draftRequiresGatewayRestart && (
             <p className="basis-full text-[11px] text-warning">
@@ -448,10 +446,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <SectionLabel>{label}</SectionLabel>
+    <FormField label={label} disableInset className={cn("gap-1", widthClass)}>
       {children}
-    </label>
+    </FormField>
   );
 }
 
@@ -510,7 +507,11 @@ function RuleRow({
           disabled={disabled}
           title={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
-          {pendingDelete ? <RotateCcw size={11} /> : <Trash2 size={11} />}
+          {pendingDelete ? (
+            <RotateCounterclockwise size={11} />
+          ) : (
+            <TrashCan size={11} />
+          )}
         </Button>
       )}
     </li>
@@ -546,7 +547,7 @@ function PendingAddRow({
         onClick={onCancel}
         title="Discard pending rule"
       >
-        <Trash2 size={11} />
+        <TrashCan size={11} />
       </Button>
     </li>
   );

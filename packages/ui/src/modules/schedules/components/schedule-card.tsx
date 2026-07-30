@@ -7,6 +7,7 @@ import {
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,7 +81,7 @@ export function ScheduleCard({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <Card>
       <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold text-foreground">
@@ -169,6 +170,6 @@ export function ScheduleCard({
       </button>
 
       {isExpanded && <ScheduleDetails schedule={schedule} />}
-    </div>
+    </Card>
   );
 }

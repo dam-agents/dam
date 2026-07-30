@@ -1,9 +1,9 @@
 import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
+import { CardButton } from "@/components/ui/card-button";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
@@ -144,21 +144,15 @@ export function NetworkPresetRow({
   onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <CardButton
       onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        "w-full rounded-lg border px-4 py-3 text-left transition-colors",
-        selected
-          ? "border-foreground bg-card"
-          : "border-border bg-card hover:bg-muted/30",
-      )}
+      selected={selected}
+      className="w-full px-4 py-3"
     >
       <p className="text-[16px] font-medium text-foreground leading-[1.2]">
         {label}
       </p>
       <p className="text-[14px] text-muted-foreground">{help}</p>
-    </button>
+    </CardButton>
   );
 }

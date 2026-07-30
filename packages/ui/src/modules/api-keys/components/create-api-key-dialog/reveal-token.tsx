@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,7 @@ export function RevealToken({ plaintext, onClose }: Props) {
 
   return (
     <>
-      <DialogHeader>
-        <h2 className="text-[18px] font-bold">Save this token now</h2>
-      </DialogHeader>
+      <DialogHeader title="Save this token now" />
       <DialogBody>
         <p className="text-[13px] text-muted-foreground mb-4">
           This is the only time the token will be shown. If you lose it, revoke
@@ -58,7 +56,7 @@ export function RevealToken({ plaintext, onClose }: Props) {
             className="shrink-0 text-muted-foreground"
           >
             {copyState === "copied" ? (
-              <Check size={16} aria-hidden />
+              <Checkmark size={16} aria-hidden />
             ) : (
               <Copy size={16} aria-hidden />
             )}

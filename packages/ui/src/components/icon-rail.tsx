@@ -2,7 +2,7 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
-  Email as Inbox,
+  Email,
   Folders,
   Home,
   Settings,
@@ -72,8 +72,8 @@ export function IconRail({
     navigate: () => setView("artifacts"),
   };
   const inbox: Destination = {
-    label: "Inbox",
-    icon: Inbox,
+    label: "Email",
+    icon: Email,
     active: view === "inbox",
     badge: pendingCount,
     navigate: () => setView("inbox"),
@@ -110,7 +110,7 @@ export function IconRail({
           <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
-        {/* Inbox is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
+        {/* Email is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
         <div className="flex flex-col items-center gap-1 mb-2">
           <RailItem {...inbox} />
           <RailItem {...settings} />

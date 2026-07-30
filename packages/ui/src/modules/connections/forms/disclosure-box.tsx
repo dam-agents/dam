@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -28,21 +28,21 @@ export function DisclosureBox({
   children,
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const Chevron = open ? ChevronDown : ChevronRight;
+  const toggle = () => setOpen((v) => !v);
 
   if (variant === "section") {
     return (
       <Callout>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          data-testid={testId}
-          className="flex w-full items-center gap-1.5 text-left"
+        <DisclosureToggle
+          open={open}
+          onToggle={toggle}
+          testId={testId}
+          chevronSize={14}
+          chevronClassName="text-muted-foreground"
+          className="w-full gap-1.5"
         >
-          <Chevron size={14} className="text-muted-foreground" />
           <SectionLabel>{title}</SectionLabel>
-        </button>
+        </DisclosureToggle>
         {description && (
           <div className="mt-1.5 pl-5 text-[13px] text-muted-foreground">
             {description}
@@ -55,16 +55,14 @@ export function DisclosureBox({
 
   return (
     <div className="rounded-lg border border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        data-testid={testId}
-        className="flex h-[44px] w-full items-center gap-2 px-4 text-[14px] font-medium text-foreground"
+      <DisclosureToggle
+        open={open}
+        onToggle={toggle}
+        testId={testId}
+        className="h-[44px] w-full px-4 text-[14px] font-medium text-foreground"
       >
-        <Chevron size={16} />
         {title}
-      </button>
+      </DisclosureToggle>
       {open && (
         <div className={cn("border-t border-border px-4 py-4", bodyClassName)}>
           {children}

@@ -61,7 +61,7 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
     <div className="flex gap-3">
       {/* Y-axis labels, one per gridline, vertically aligned to the plot. */}
       <div
-        className={`flex flex-col justify-between text-right font-mono text-[12px] tabular-nums text-text-muted ${CHART_HEIGHT_CLASS}`}
+        className={`flex flex-col justify-between text-right font-mono text-[12px] tabular-nums text-muted-foreground ${CHART_HEIGHT_CLASS}`}
       >
         {ticks.map((t) => (
           <span key={t} className="leading-none">
@@ -84,7 +84,7 @@ export function SpendByDayChart({ days }: { days: SpendByDay[] }) {
             ))}
           </div>
         </div>
-        <div className="mt-3 flex gap-1 font-mono text-[10px] tabular-nums text-text-muted">
+        <div className="mt-3 flex gap-1 font-mono text-[10px] tabular-nums text-muted-foreground">
           {days.map((d) => {
             const dayNum = Number(d.day.slice(8, 10));
             return (

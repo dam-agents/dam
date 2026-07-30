@@ -1,6 +1,7 @@
 import { Time } from "@carbon/icons-react";
 
 import { Callout } from "@/components/ui/callout";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
 import {
@@ -38,9 +39,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
     <div className="border-t border-border p-4">
       {task && (
         <>
-          <p className="text-[12px] font-medium uppercase tracking-[0.03em] text-muted-foreground">
-            Task
-          </p>
+          <SectionLabel>Task</SectionLabel>
           <p className="mt-1 mb-4 text-[13px] whitespace-pre-wrap text-foreground">
             {task}
           </p>

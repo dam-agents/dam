@@ -1,7 +1,7 @@
 import { Play } from "@carbon/icons-react";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import {
@@ -45,7 +45,7 @@ export function WakeToEditButton({
       // transitions from stopped to starting.
       <span className="flex h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground">
         Agent is starting…
-        <Loader2 size={14} className="animate-spin" />
+        <Spinner />
       </span>
     );
   return (

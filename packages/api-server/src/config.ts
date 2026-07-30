@@ -358,13 +358,13 @@ export function loadConfig(): Config {
       title: process.env.BRAND_TITLE ?? "",
       theme: {
         light: {
-          accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#1D6BE1",
-          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER ?? "#1556B8",
-          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT ?? "#eaf2fe",
+          accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#0F62FE",
+          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER ?? "#0353E9",
+          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT ?? "#edf5ff",
         },
         dark: {
-          accent: process.env.BRAND_THEME_DARK_ACCENT ?? "#3C92FD",
-          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER ?? "#2F88FD",
+          accent: process.env.BRAND_THEME_DARK_ACCENT ?? "#4589FF",
+          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER ?? "#78A9FF",
           accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },

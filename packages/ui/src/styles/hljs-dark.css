@@ -82,5 +82,5 @@
   background-color: #67060c;
 }
 .dark .prose .hljs {
-  background: var(--c-surface-raised) !important;
+  background: var(--muted) !important;
 }

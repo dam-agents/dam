@@ -66,12 +66,12 @@ function StepItem({
         "rounded-md px-3 py-2 text-left text-[15px] transition-colors",
         state === "active" && "bg-muted font-medium text-foreground",
         state === "visited" && "text-foreground hover:bg-muted/60",
-        state === "upcoming" && "cursor-default text-text-muted",
+        state === "upcoming" && "cursor-default text-muted-foreground",
       )}
     >
       {label}
       {annotation && (
-        <span className="ml-1 hidden font-normal text-text-muted md:inline">
+        <span className="ml-1 hidden font-normal text-muted-foreground md:inline">
           ({annotation})
         </span>
       )}
