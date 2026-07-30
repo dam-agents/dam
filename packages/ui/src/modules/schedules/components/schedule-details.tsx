@@ -2,13 +2,10 @@ import { Time } from "@carbon/icons-react";
 
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
+import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import {
-  formatRunTime,
-  lastRunStatus,
-  relativeFromNow,
-} from "../lib/schedule-format.js";
+import { formatRunTime, lastRunStatus } from "../lib/schedule-format.js";
 
 function DetailCard({
   label,
@@ -32,7 +29,7 @@ function DetailCard({
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const { task, timezone, sessionMode, enabled, status } = schedule;
   const nextRun =
-    enabled && status?.nextRun ? relativeFromNow(status.nextRun) : "Paused";
+    enabled && status?.nextRun ? timeUntil(status.nextRun) : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
 
   return (
@@ -49,7 +46,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
         <DetailCard label="Next run">
           <span
             className="inline-flex items-center gap-1"
-            title={status?.nextRun && new Date(status.nextRun).toLocaleString()}
+            title={status?.nextRun && formatDateTime(status.nextRun)}
           >
             <Time size={12} /> {nextRun}
           </span>

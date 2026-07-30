@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
@@ -23,10 +24,7 @@ import {
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
-import {
-  relativeFromNow,
-  scheduleCadenceText,
-} from "../lib/schedule-format.js";
+import { scheduleCadenceText } from "../lib/schedule-format.js";
 import { ScheduleDetails } from "./schedule-details.js";
 
 const NOT_EDITABLE_HINT =
@@ -56,7 +54,7 @@ export function ScheduleCard({
   const canEdit = type === "rrule" && createdBy !== "agent";
   const cadence = scheduleCadenceText(schedule);
   const nextRunHint =
-    enabled && status?.nextRun ? relativeFromNow(status.nextRun) : null;
+    enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
 
   const handleDelete = async () => {
     if (
@@ -96,7 +94,7 @@ export function ScheduleCard({
                   className="inline-flex items-center gap-1 whitespace-nowrap"
                   title={
                     status?.nextRun &&
-                    `Next run: ${new Date(status.nextRun).toLocaleString()}`
+                    `Next run: ${formatDateTime(status.nextRun)}`
                   }
                 >
                   <Time size={12} /> {nextRunHint}

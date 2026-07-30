@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { getErrorMessage } from "@/lib/errors";
 
 import { useCreateArtifact } from "../api/mutations.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
@@ -53,7 +54,7 @@ export function UploadArtifactDialog({
         { onSuccess: onClose, onSettled: () => setUploading(false) },
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(getErrorMessage(err, "Upload failed"));
       setUploading(false);
     }
   };

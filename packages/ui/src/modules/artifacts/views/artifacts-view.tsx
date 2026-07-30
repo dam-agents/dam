@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { formatBytes } from "@/lib/format-size";
 
 import { api } from "../../../api.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -20,7 +21,6 @@ import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
-import { formatBytes } from "../lib/format.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];

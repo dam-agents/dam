@@ -1,3 +1,4 @@
+import { getErrorMessage } from "./errors.js";
 import { emitToast } from "./toast.js";
 
 /**
@@ -18,8 +19,7 @@ export async function runAction<T>(
   try {
     return await fn();
   } catch (err: unknown) {
-    const msg = err instanceof Error && err.message ? err.message : fallback;
-    emitToast({ kind: "error", message: msg });
+    emitToast({ kind: "error", message: getErrorMessage(err, fallback) });
     return ACTION_FAILED;
   }
 }

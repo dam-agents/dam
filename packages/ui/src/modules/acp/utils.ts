@@ -1,3 +1,5 @@
+import { getErrorMessage } from "@/lib/errors";
+
 import type { Attachment } from "../../types.js";
 import { uploadMessageAttachment } from "../files/api/queries.js";
 
@@ -45,39 +47,13 @@ export async function buildPromptBlocks(
         });
       } catch (err) {
         throw new Error(
-          `Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`,
+          `Upload failed for "${a.name}": ${getErrorMessage(err, "unknown")}`,
         );
       }
     }
   }
   if (text) blocks.push({ type: "text", text });
   return blocks;
-}
-
-/**
- * Read a human-readable message off any error shape we may see here. The
- * promise that `prompt`/`loadSession` returns can reject with:
- *  - an `Error` / `DOMException` — has `.message`
- *  - the raw JSON-RPC error `{ code, message, data }` — has `.message`
- *  - a WebSocket `CloseEvent` on connection drop — no message; use `code`/`reason`
- *  - a WebSocket `Event` from `onerror` — browsers omit useful details here
- *
- * The fallback `String(e)` on an Event yields `[object Event]`, which is what
- * users were seeing on disconnect.
- */
-export function extractErrorMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) {
-    const m = (e as { message: unknown }).message;
-    if (typeof m === "string" && m) return m;
-  }
-  if (e instanceof Error) return e.message;
-  if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
-    return e.reason || `Connection closed (code ${e.code})`;
-  }
-  if (typeof Event !== "undefined" && e instanceof Event) {
-    return "Connection error";
-  }
-  return String(e);
 }
 
 /**
@@ -95,7 +71,7 @@ export function classifyResumeError(
     if (anyE.data?.code === "NOT_FOUND") return "not-found";
     if (e instanceof DOMException) return "connection";
   }
-  const msg = extractErrorMessage(e);
+  const msg = getErrorMessage(e);
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";

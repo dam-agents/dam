@@ -2,6 +2,7 @@ import type { Experiment } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -125,7 +126,7 @@ function RunRow({
           <ExperimentStatusBadge status={run.status} />
         </span>
         <span className="w-[150px] shrink-0 text-[12.5px] text-muted-foreground">
-          {new Date(startedAt).toLocaleString(undefined, {
+          {formatDateTime(startedAt, {
             month: "short",
             day: "numeric",
             hour: "2-digit",

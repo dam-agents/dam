@@ -1,6 +1,8 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useRef } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
@@ -8,7 +10,7 @@ import {
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
-import { buildPromptBlocks, extractErrorMessage } from "../../acp/utils.js";
+import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/queries.js";
 
 const DELIVERY_TIMEOUT_MS = 60_000;
@@ -170,7 +172,7 @@ export function useAcpPrompt(
         if (hidden) {
           dropBubble();
         } else {
-          const errMsg = extractErrorMessage(err);
+          const errMsg = getErrorMessage(err);
           setMessages((p) =>
             p.map((m) =>
               m.id === aId

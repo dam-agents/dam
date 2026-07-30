@@ -1,3 +1,5 @@
+import { getErrorMessage } from "@/lib/errors";
+
 import { authFetch } from "../../../auth.js";
 import { emitToast } from "../../../lib/toast.js";
 
@@ -27,7 +29,7 @@ export async function openUsageReport(): Promise<void> {
   } catch (err) {
     emitToast({
       kind: "error",
-      message: err instanceof Error ? err.message : String(err),
+      message: getErrorMessage(err),
     });
   }
 }

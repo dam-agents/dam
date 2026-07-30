@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
+import { formatDate } from "@/lib/format-time";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
@@ -49,7 +50,7 @@ function fillMonthDays(
 export function UsageView() {
   const [month, setMonth] = useState(() => monthStart(new Date(), 0));
   const isCurrentMonth = month >= monthStart(new Date(), 0);
-  const monthLabel = month.toLocaleDateString(undefined, {
+  const monthLabel = formatDate(month, {
     month: "long",
     year: "numeric",
   });

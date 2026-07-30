@@ -1,6 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { formatDateTime } from "@/lib/format-time";
 
 import type { Schedule, SessionView } from "../../../types.js";
 import { useScheduleSessions } from "../api/queries.js";
@@ -12,9 +13,7 @@ interface RowProps {
 
 function ResultRow({ session, onOpen }: RowProps) {
   const summary = session.title || session.sessionId.slice(0, 12);
-  const when = new Date(
-    session.updatedAt ?? session.createdAt,
-  ).toLocaleString();
+  const when = formatDateTime(session.updatedAt ?? session.createdAt);
   return (
     <button
       type="button"

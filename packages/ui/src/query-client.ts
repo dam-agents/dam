@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
+import { getErrorMessage } from "./lib/errors.js";
 import { emitToast } from "./lib/toast.js";
 import { isTermsStale } from "./modules/terms/lib/on-terms-stale.js";
 
@@ -60,8 +61,7 @@ export const queryClient = new QueryClient({
         if (mutation.meta?.suppressErrorToast) return;
         if (getApiHealthSnapshot() === "reconnecting" || isTermsStale()) return;
         const title = mutation.meta?.errorToast;
-        const detail =
-          error instanceof Error && error.message ? error.message : "";
+        const detail = getErrorMessage(error, "");
         const message =
           title && detail
             ? `${title}: ${detail}`
