@@ -223,6 +223,7 @@ export function SessionsSidebar({
       style={style}
     >
       <div className="flex-1 overflow-y-auto">
+        {loading && <SessionListSkeleton />}
         {!loading && sessions.length === 0 && (
           <p className="px-4 py-5 text-[12px] text-text-muted">
             No sessions yet
@@ -255,5 +256,23 @@ export function SessionsSidebar({
         {runSessions.map(renderRow)}
       </div>
     </SidebarSection>
+  );
+}
+
+/** Placeholder rows while the session list first loads, matching SessionRow's
+ *  layout so the list doesn't flash empty before the agent answers. */
+function SessionListSkeleton() {
+  return (
+    <div aria-hidden>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-2 border-b border-border-light px-4 py-3"
+        >
+          <span className="h-2 w-2 shrink-0 rounded-full bg-muted animate-pulse" />
+          <span className="h-3 w-1/2 rounded bg-muted animate-pulse" />
+        </div>
+      ))}
+    </div>
   );
 }

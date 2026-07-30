@@ -2,6 +2,7 @@ import type { Experiment } from "api-server-api";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import { useAgentExperimentsLive } from "../api/queries.js";
 
@@ -45,7 +46,13 @@ export function useDockedExperiment(agentId: string | null): {
     }),
     [sessionFilter],
   );
+  // Same gate as the sidebar observer of this shared query: a waking pod isn't
+  // reachable over ACP yet, and this hook runs on chat open before the sidebar
+  // renders — without the gate it fetches the session list into a booting pod
+  // and toasts "Couldn't refresh session list" on the startup screen.
+  const runState = useAgentRunState(agentId);
   const { data: sessions } = useAcpSessions(agentId, listInclude, {
+    enabled: runState === "running",
     activeSessionId: sessionId,
   });
   const sessionExperimentId =
