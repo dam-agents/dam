@@ -83,7 +83,6 @@ export function SlackChannelModal({
   );
 }
 
-
 function AmbientRow({
   checked,
   onChange,
