@@ -238,9 +238,18 @@ type StorageMigration struct {
 	// Interval between reconcile passes. Zero falls back to a built-in
 	// default.
 	Interval Duration `json:"interval,omitempty"`
-	// JobImage runs the copy script. It must provide a POSIX sh with GNU
-	// coreutils (cp -a preserving hard links, find, md5sum) — busybox images
-	// break hard-link-heavy workspaces (pnpm stores) by inflating them past
-	// the volume size.
+	// AllowOwnershipRemap lets the copy proceed when the source workspace
+	// holds entries owned by a uid other than the agent's. The copy is
+	// unprivileged (chown is unavailable under a restricted SCC and on a
+	// Kata sandbox's virtiofs), so those entries are recreated owned by the
+	// agent uid — a deliberate normalization, not a faithful copy, which is
+	// why it is opt-in. Default false: such entries are reported and block
+	// the migration, so an operator decides rather than discovering the
+	// remap later.
+	AllowOwnershipRemap bool `json:"allowOwnershipRemap,omitempty"`
+	// JobImage runs the copy script. It must provide bash, GNU tar and GNU
+	// coreutils (find -printf, md5sum): the copy relies on tar's hard-link
+	// and sparse handling — a hard-link-heavy store (pnpm) would otherwise
+	// inflate past the volume size — and the verification on find -printf.
 	JobImage string `json:"jobImage,omitempty"`
 }
