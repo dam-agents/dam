@@ -132,6 +132,9 @@ function harness() {
         ],
       });
     },
+    async startOnly() {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+    },
     async mentionWithoutSeededFile() {
       await worker.start("agent-1", {} as StoredChannelConfig);
       await gw.fireMention({
@@ -299,6 +302,38 @@ describe("slack inbound images", () => {
       mimeType: "image/png",
       data: bytes.toString("base64"),
     });
+  });
+
+  it("names the permissions the install lacks, and what they cost, at startup", async () => {
+    // A withheld permission has no symptom of its own — the capability just
+    // behaves as though it were broken and the agent looks wrong. This is the
+    // one place that says so out loud (#3008).
+    const h = harness();
+    h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
+    await h.startOnly();
+
+    const report = h
+      .logs()
+      .find((l) => String(l.msg).startsWith("slack.permissions.missing"));
+    expect(report).toBeDefined();
+    expect(String(report!.msg)).toContain("files:read");
+    expect(String(report!.msg)).toContain("reading images people attach");
+    expect(String(report!.msg)).toContain("Reinstall the app");
+    // Granted ones are not named, and neither is a capability that works.
+    expect(String(report!.msg)).not.toContain("chat:write");
+  });
+
+  it("stays silent at startup when the granted permissions are unknown", async () => {
+    // An unprobed or unreachable app must not be reported as missing anything.
+    const h = harness();
+    h.gw.setGrantedScopes(null);
+    await h.startOnly();
+
+    expect(
+      h
+        .logs()
+        .some((l) => String(l.msg).startsWith("slack.permissions.missing")),
+    ).toBe(false);
   });
 
   it("leaves a genuine non-image attachment alone", async () => {

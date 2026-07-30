@@ -579,6 +579,50 @@ async function canReadReactions(gw: SlackGateway): Promise<boolean> {
   return !scopes || scopes.has("reactions:read");
 }
 
+/** What each scope the Slack features rely on actually buys, in the words an
+ *  operator would use to describe the capability going missing. Declared here
+ *  rather than read from the app manifest because the manifest describes a
+ *  *fresh* install: a scope added to it later never reaches a workspace that
+ *  installed earlier — the app keeps the scopes it was installed with — so the
+ *  two drift apart silently, and this is the side that knows what the running
+ *  features need. */
+const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
+  { scope: "app_mentions:read", backs: "answering mentions" },
+  { scope: "chat:write", backs: "posting replies" },
+  { scope: "files:read", backs: "reading images people attach" },
+  { scope: "files:write", backs: "sending files into a channel" },
+  { scope: "channels:history", backs: "reading channel history for context" },
+  { scope: "im:history", backs: "answering direct messages" },
+  { scope: "reactions:write", backs: "the agent's own emoji reactions" },
+  { scope: "users:read", backs: "telling the agent who people are" },
+  { scope: "reactions:read", backs: "reading the reactions on a message" },
+  { scope: "channels:read", backs: "posting outside the bound channel" },
+];
+
+/** Say once, at startup, which granted permissions are missing and what stops
+ *  working without them. A withheld scope otherwise has no symptom of its own:
+ *  the capability simply behaves as though it were broken, and the agent is the
+ *  one that looks wrong. Nothing here changes behaviour — an unknown or
+ *  unreachable probe stays silent rather than guessing at a gap. */
+async function reportMissingPermissions(gw: SlackGateway): Promise<void> {
+  const scopes = await grantedScopes(gw);
+  if (!scopes) return;
+  const missing = SCOPE_CAPABILITIES.filter((c) => !scopes.has(c.scope));
+  if (missing.length === 0) return;
+  getLogger().warn(
+    {
+      missing: missing.map((m) => m.scope),
+      affects: missing.map((m) => m.backs),
+    },
+    `slack.permissions.missing: the Slack app lacks ${missing
+      .map((m) => `${m.scope} (${m.backs})`)
+      .join(
+        ", ",
+      )}. Reinstall the app to grant them — an app already installed ` +
+      `keeps the permissions it was installed with.`,
+  );
+}
+
 /** The two Slack-dependent turn-contract inputs, resolved together. The scope
  *  probe is cached for the gateway's lifetime, but the permalink is a live
  *  `chat.getPermalink` round trip on the relay's critical path — so they run in
@@ -2280,6 +2324,7 @@ export function createSlackWorker(
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
+      await reportMissingPermissions(gw);
       return gateway;
     } finally {
       gatewayStarting = null;
