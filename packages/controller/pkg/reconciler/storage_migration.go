@@ -560,14 +560,19 @@ func jobFailed(job *batchv1.Job) bool {
 // (source read-only, target read-write) pair, running a copy + two-pass
 // checksum verification per pair.
 //
-// The pod runs as the AGENT's uid, not root: an agent's workspace is
+// The copy runs as the AGENT's uid, not root: an agent's workspace is
 // single-owner by construction (everything in it is written as the agent
 // user), so the agent uid can read every file — including 0600 files and
 // 0700 dirs — even on shared-filesystem classes that squash root, where a
 // root-running copy would EACCES on the first private file. Ownership on
-// the target is preserved by construction (the creator is the same uid);
-// fsGroup makes the fresh volume's root writable. The pod carries no
-// serviceaccount token and no agent labels (so the pod-IP resolver,
+// the target is preserved by construction (the creator is the same uid).
+// One preparation step does need root: a fresh target volume's root
+// directory belongs to root (and fsGroup is skipped on hostPath-backed
+// classes like local-path), so `cp -a` preserving the root's timestamps
+// would EPERM as the agent uid. A root init container chowns the EMPTY
+// target root to the agent uid — it mounts only targets, never the
+// source, so a squashing source share never sees uid 0. The pod carries
+// no serviceaccount token and no agent labels (so the pod-IP resolver,
 // NetworkPolicies, and the idle checker never see it), and inherits the
 // agents' scheduling policy (tolerations/selectors), which is also what
 // lands the WaitForFirstConsumer target volume on a node agents can run on.
@@ -628,6 +633,17 @@ copy_verify() {
 	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil && sc.RunAsUser != nil {
 		uid = *sc.RunAsUser
 	}
+	root := int64(0)
+	var dstMounts []corev1.VolumeMount
+	var chown strings.Builder
+	chown.WriteString("set -eu\n")
+	for _, mnt := range mounts {
+		if mnt.ReadOnly {
+			continue
+		}
+		dstMounts = append(dstMounts, mnt)
+		fmt.Fprintf(&chown, "chown %d:%d %s\n", uid, uid, mnt.MountPath)
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            migrationJobName(agentName),
@@ -657,12 +673,21 @@ copy_verify() {
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser:  &uid,
 						RunAsGroup: &uid,
-						// fsGroup has the kubelet make the fresh target
-						// volume group-writable on mount; shared-filesystem
-						// sources skip fsGroup application, and ours mounts
-						// read-only anyway.
+						// fsGroup covers CSI block backends; hostPath-backed
+						// classes (local-path) skip it, which is what the
+						// chown init container below is for.
 						FSGroup: &uid,
 					},
+					InitContainers: []corev1.Container{{
+						// Root touches ONLY the empty targets (see the file
+						// comment): the source — possibly a root-squashing
+						// share — is not even mounted here.
+						Name:            "prep-target",
+						Image:           cfg.StorageMigration.JobImage,
+						Command:         []string{"sh", "-c", chown.String()},
+						VolumeMounts:    dstMounts,
+						SecurityContext: &corev1.SecurityContext{RunAsUser: &root, RunAsGroup: &root},
+					}},
 					Containers: []corev1.Container{{
 						Name:         "copy",
 						Image:        cfg.StorageMigration.JobImage,

@@ -159,6 +159,16 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.Equal(t, int64(65532), *psc.RunAsUser)
 	require.NotNil(t, psc.FSGroup)
 	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup makes the fresh target volume writable to the agent uid")
+	// A root init container chowns the EMPTY target root to the agent uid
+	// (cp -a must preserve the root dir's attributes, and fsGroup is skipped
+	// on hostPath-backed classes). It must never mount the source — a
+	// squashing share must never see uid 0.
+	require.Len(t, job.Spec.Template.Spec.InitContainers, 1)
+	prep := job.Spec.Template.Spec.InitContainers[0]
+	require.NotNil(t, prep.SecurityContext.RunAsUser)
+	assert.Equal(t, int64(0), *prep.SecurityContext.RunAsUser)
+	require.Len(t, prep.VolumeMounts, 1, "prep mounts targets only, never the source")
+	assert.Equal(t, "dst-0", prep.VolumeMounts[0].Name)
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
