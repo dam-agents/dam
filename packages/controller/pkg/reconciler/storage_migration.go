@@ -606,19 +606,28 @@ copy_verify() {
   # hard-link-heavy stores (pnpm) must not inflate past the volume size.
   cp -a "$src/." "$dst/"
   sync
-  # Two-pass verification against the quiesced source: the inventory
-  # (files, symlinks, and directories — so a missing empty dir is caught),
-  # then content checksums. md5 is deliberate: this is integrity checking
-  # of our own quiesced copy, not defense against an adversary crafting
-  # collisions — and it is the fastest digest coreutils ships. The old
-  # volume is deleted at flip on the strength of this comparison.
-  (cd "$src" && find . \( -type f -o -type l -o -type d \) | LC_ALL=C sort) > /tmp/src.list
-  (cd "$dst" && find . \( -type f -o -type l -o -type d \) | LC_ALL=C sort) > /tmp/dst.list
-  cmp /tmp/src.list /tmp/dst.list
+  # Two-pass verification against the quiesced source; the old volume is
+  # deleted at flip on the strength of these comparisons, so both fail
+  # closed on any difference.
+  #
+  # Pass 1 — metadata: type, mode, owner uid, path, and symlink target for
+  # every entry. A mode or owner that failed to carry over blocks the
+  # migration just like corrupt content would. Two deliberate exclusions:
+  # gid (agent images run uid:0; group identity is not part of the
+  # workspace contract) and the volume ROOT's ownership (the target root
+  # is chowned to the agent uid by design; old roots predate the
+  # single-owner model) — the root's MODE is still compared below.
+  (cd "$src" && find . -mindepth 1 -printf "%y|%m|%U|%p|%l\n" | LC_ALL=C sort) > /tmp/src.meta
+  (cd "$dst" && find . -mindepth 1 -printf "%y|%m|%U|%p|%l\n" | LC_ALL=C sort) > /tmp/dst.meta
+  cmp /tmp/src.meta /tmp/dst.meta
+  [ "$(stat -c %a "$src")" = "$(stat -c %a "$dst")" ]
+  # Pass 2 — content checksums. md5 is deliberate: this is integrity
+  # checking of our own quiesced copy, not defense against an adversary
+  # crafting collisions — and it is the fastest digest coreutils ships.
   (cd "$src" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum) > /tmp/src.sum
   (cd "$dst" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum) > /tmp/dst.sum
   cmp /tmp/src.sum /tmp/dst.sum
-  echo "verified: $src -> $dst"
+  echo "verified (content + metadata): $src -> $dst"
 }
 `)
 	for i, pair := range pairs {
@@ -700,8 +709,14 @@ copy_verify() {
 					RestartPolicy:                corev1.RestartPolicyNever,
 					AutomountServiceAccountToken: ptrBool(false),
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser:  &uid,
-						RunAsGroup: &uid,
+						RunAsUser: &uid,
+						// Group 0, matching the agent images' own uid:0
+						// convention: with the process gid equal to the
+						// files' gid, cp -a preserves ownership completely —
+						// and GNU cp strips setuid/setgid bits from any file
+						// whose ownership it FAILS to preserve, which the
+						// metadata verification would then reject.
+						RunAsGroup: &root,
 						// fsGroup covers CSI block backends; hostPath-backed
 						// classes (local-path) skip it, which is what the
 						// chown init container below is for.

@@ -157,6 +157,15 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	require.NotNil(t, psc)
 	require.NotNil(t, psc.RunAsUser)
 	assert.Equal(t, int64(65532), *psc.RunAsUser)
+	// Group 0 matches the agent images' uid:0 convention so cp preserves
+	// ownership completely (a failed ownership preserve strips suid bits,
+	// which the metadata verification would reject).
+	require.NotNil(t, psc.RunAsGroup)
+	assert.Equal(t, int64(0), *psc.RunAsGroup)
+	// The verification must gate on metadata (mode + owner), not content
+	// alone — the source is never deleted when permissions failed to
+	// carry over.
+	assert.Contains(t, job.Spec.Template.Spec.Containers[0].Command[2], `%y|%m|%U|%p|%l`)
 	require.NotNil(t, psc.FSGroup)
 	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup makes the fresh target volume writable to the agent uid")
 	// A root init container chowns the EMPTY target root to the agent uid
