@@ -690,7 +690,7 @@ export function ChatView() {
                           </span>
                           {m.error ? (
                             <SendErrorCard
-                              error={m.error.message}
+                              rawError={m.error.message}
                               onRetry={
                                 m.error.retryWith
                                   ? () =>
@@ -977,13 +977,13 @@ function SessionErrorCard({
 }
 
 function SendErrorCard({
-  error,
+  rawError,
   onRetry,
 }: {
-  error: string;
+  rawError: string;
   onRetry?: () => void;
 }) {
-  const { message, hint } = describeSendError(error);
+  const { message, hint } = describeSendError(rawError);
   return (
     <Callout
       tone="danger"

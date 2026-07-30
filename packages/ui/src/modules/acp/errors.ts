@@ -62,15 +62,15 @@ export interface SendErrorDescription {
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   [
-    /\b402\b|payment.required|insufficient.credits|credit balance|billing|quota exceeded|out of credits/i,
+    /\b402\b|payment[\s_-]?required|insufficient[\s_-]?credits|credit balance|quota exceeded|out of credits/i,
     "The model backend refused the request for billing reasons — the inference account is out of credits or over quota. Topping up or raising the quota on the provider account should restore sends.",
   ],
   [
-    /\b401\b|authentication_error|unauthenticated|invalid (api|x-api).key|unauthorized/i,
+    /\b401\b|authentication_error|unauthenticated|invalid (api|x-api)[\s_-]?key|unauthorized/i,
     "The model backend rejected the credential. Check that the API/OAuth secret is correct and linked to this agent (Agents → select agent → Secrets).",
   ],
   [
-    /\b429\b|rate.limit/i,
+    /\b429\b|rate[\s_-]?limit/i,
     "The model backend is rate-limiting requests. Wait a moment and retry.",
   ],
 ];
@@ -83,7 +83,13 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
  */
 export function describeSendError(raw: string): SendErrorDescription {
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
-    if (pattern.test(raw)) return { message: raw, hint };
+    if (!pattern.test(raw)) continue;
+    // agent-runtime already prefixes authentication_error frames with its own
+    // remediation text (rewriteAuthError's AUTH_HINT) — when the message
+    // already tells the user to check the credential secret, don't render a
+    // second near-identical instruction underneath.
+    if (/credential secret/i.test(raw)) return { message: raw };
+    return { message: raw, hint };
   }
   if (/^internal error\.?$/i.test(raw.trim())) {
     return {
