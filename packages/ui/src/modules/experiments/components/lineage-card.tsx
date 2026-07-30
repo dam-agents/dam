@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,15 +56,10 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
             expanded ? "size-7 border border-border" : "size-5",
           )}
         >
-          <span
-            className={cn(
-              "text-[20px] leading-none transition-transform",
-              expanded ? "rotate-90 text-foreground" : "text-muted-foreground",
-            )}
-            aria-hidden
-          >
-            ›
-          </span>
+          <DisclosureChevron
+            open={expanded}
+            className={expanded ? "text-foreground" : "text-muted-foreground"}
+          />
         </button>
 
         <div className="flex min-w-0 flex-col gap-[3px]">

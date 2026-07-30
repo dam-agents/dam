@@ -35,7 +35,7 @@ interface Props {
   appId: string;
   /** Alt text — usually the app's display name. */
   alt: string;
-  /** Pixel size; matches Lucide's default 16. */
+  /** Pixel size. */
   size?: number;
 }
 

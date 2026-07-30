@@ -7,7 +7,7 @@
  * rebuild — `helm upgrade` flips the values and the next page load picks
  * them up.
  *
- * Theme colors are applied via `applyBrandTheme()` as CSS custom properties
+ * Theme colors are applied via `applyBrand()` as CSS custom properties
  * on `<html>` so light/dark themes already wired through `App.css` keep
  * working unchanged.
  */
