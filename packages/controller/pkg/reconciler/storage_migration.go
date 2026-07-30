@@ -633,10 +633,10 @@ func jobFailed(job *batchv1.Job) bool {
 // (source read-only, target read-write) pair, running a copy + two-pass
 // checksum verification per pair.
 //
-// The copy runs as the AGENT's uid, unprivileged, and needs no capabilities:
-// an agent's workspace is
-// single-owner by construction (everything in it is written as the agent
-// user), so the agent uid can read every file — including 0600 files and
+// The copy runs as the AGENT's uid, unprivileged and needing no
+// capabilities: an agent's workspace is single-owner by construction
+// (everything in it is written as the agent user), so the agent uid can
+// read every file — including 0600 files and
 // 0700 dirs — even on shared-filesystem classes that squash root, where a
 // root-running copy would EACCES on the first private file. Ownership on
 // the target is preserved by construction (the creator is the same uid).
@@ -705,7 +705,7 @@ copy_verify() {
   # controller.storageMigration.allowOwnershipRemap to accept the
   # normalization. Privilege is not an option here: a restricted SCC strips
   # CAP_CHOWN and Kata virtiofs refuses guest chown outright.
-  foreign="$(cd "$src" && find . ! -uid ${AGENT_UID} ! -path ./lost+found | head -20)"
+  foreign="$(cd "$src" && find . ! -uid ${AGENT_UID} ! -path './lost+found*' | head -20)"
   if [ -n "$foreign" ]; then
     if [ "${ALLOW_OWNERSHIP_REMAP}" = "1" ]; then
       echo "note: re-owning these source entries to uid ${AGENT_UID} (allowOwnershipRemap; list may be truncated):"
@@ -753,14 +753,14 @@ copy_verify() {
   # uid:0, while an fsGroup-managed target assigns its own gid — group
   # identity is not part of the workspace contract), the volume root itself,
   # and lost+found.
-  meta() { (cd "$1" && find . -mindepth 1 ! -path ./lost+found -printf "${META_FMT}\n" | LC_ALL=C sort); }
+  meta() { (cd "$1" && find . -mindepth 1 ! -path './lost+found*' -printf "${META_FMT}\n" | LC_ALL=C sort); }
   meta "$src" > /tmp/src.meta
   meta "$dst" > /tmp/dst.meta
   cmp /tmp/src.meta /tmp/dst.meta
   # Pass 2 — content checksums. md5 is deliberate: this is integrity
   # checking of our own quiesced copy, not defense against an adversary
   # crafting collisions — and it is the fastest digest coreutils ships.
-  sums() { (cd "$1" && find . -type f ! -path ./lost+found/\* -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum); }
+  sums() { (cd "$1" && find . -type f ! -path './lost+found*' -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum); }
   sums "$src" > /tmp/src.sum
   sums "$dst" > /tmp/dst.sum
   cmp /tmp/src.sum /tmp/dst.sum

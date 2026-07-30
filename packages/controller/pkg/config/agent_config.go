@@ -247,9 +247,9 @@ type StorageMigration struct {
 	// the migration, so an operator decides rather than discovering the
 	// remap later.
 	AllowOwnershipRemap bool `json:"allowOwnershipRemap,omitempty"`
-	// JobImage runs the copy script. It must provide a POSIX sh with GNU
-	// coreutils (cp -a preserving hard links, find, md5sum) — busybox images
-	// break hard-link-heavy workspaces (pnpm stores) by inflating them past
-	// the volume size.
+	// JobImage runs the copy script. It must provide bash, GNU tar and GNU
+	// coreutils (find -printf, md5sum): the copy relies on tar's hard-link
+	// and sparse handling — a hard-link-heavy store (pnpm) would otherwise
+	// inflate past the volume size — and the verification on find -printf.
 	JobImage string `json:"jobImage,omitempty"`
 }

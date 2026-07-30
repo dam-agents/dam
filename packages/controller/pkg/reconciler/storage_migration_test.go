@@ -196,8 +196,11 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// A fresh ext4 CSI target ships a root-owned lost+found the source has
 	// not got: it must be excluded from the wipe and from verification, or
 	// every real block-backed migration fails on a phantom difference.
-	assert.Contains(t, runnable, "! -name lost+found")
-	assert.Contains(t, runnable, "! -path ./lost+found")
+	assert.Contains(t, runnable, "! -name lost+found", "excluded from the wipe")
+	// The glob must cover lost+found's CONTENTS too, not just the directory
+	// entry: an fsck-populated lost+found would otherwise show up as a
+	// phantom difference (or as foreign-owned files) and block the migration.
+	assert.Contains(t, runnable, `! -path './lost+found*'`, "excluded from verification, contents included")
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)

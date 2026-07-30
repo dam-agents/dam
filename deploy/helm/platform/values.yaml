@@ -1038,15 +1038,15 @@ controller:
   # available until the controller stops logging migrations, then decommission
   # it.
   #
-  # DISABLED by default: draining a fleet is an operator decision, and the
-  # copy's success depends on the install's storage semantics (root squash,
-  # ext4 artifacts, a Kata runtime class). Enable it deliberately — ideally
-  # with `concurrency: 1` for the first agent — and watch the controller log.
-  # Turning it back off is safe at any point: the manager releases every agent
-  # it had gated, bins the half-copied targets, and leaves each agent on the
-  # volume it started from.
+  # Enabled by default: the fleet drains itself on upgrade with no owner
+  # action, which is the point. Turning it off is safe at any point and is the
+  # escape hatch if an install's storage semantics (root squash, foreign file
+  # ownership, an unexpected class) stall the copy — a disabled manager
+  # releases every agent it had gated, bins the half-copied targets, and
+  # leaves each agent on the volume it started from. Watch the controller log
+  # through the first drain; `concurrency: 1` makes that easy to follow.
   storageMigration:
-    enabled: false
+    enabled: true
     # -- How many agents migrate at once. Each migration reads its source
     # volume in full three times (copy + two verification passes); this cap
     # is the trade between fleet drain time and read pressure on the shared
