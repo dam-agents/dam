@@ -904,6 +904,18 @@ copy_verify() {
   entries=$(wc -l < /tmp/src.walk)
   phase "walked source: $entries entries"
 
+  # The walk is line-based with | separators: a path containing either
+  # character cannot be represented and would corrupt every check derived
+  # from the walk (before this guard, a newline in a filename surfaced as
+  # a baffling foreign-owner block). Refuse it by name instead — rename on
+  # the source is the remedy. Field count is exact: flag|type|mode|uid|path|link.
+  malformed="$(awk -F'|' 'NF!=6 && n<20 {print; n++}' /tmp/src.walk)"
+  if [ -n "$malformed" ]; then
+    echo "migration blocked: source paths contain | or newline, which the inventory cannot represent (rename them; list may be truncated):"
+    echo "$malformed"
+    exit 1
+  fi
+
   # Unreadable to its own OWNER is unreadable to every uid on a
   # root-squashing share — no copier can move it, so fail with the paths
   # rather than a mid-copy error. Symlinks are exempt: -readable follows the
@@ -937,21 +949,7 @@ copy_verify() {
   # The same walk is the verification baseline — cut drops the readability
   # flag (and the uid column when ownership is being normalized), and the
   # sort happens after the cut so both sides order identically.
-  #
-  # dirmask strips the setgid bit from DIRECTORY modes on both sides
-  # before comparing. fsGroup marks the target volume root setgid (that is
-  # how the volume group reaches new entries) and every directory the copy
-  # creates inherits the bit at mkdir time, underneath tar — so target
-  # dirs read 2xxx where the source says xxx on every real CSI block
-  # target (invisible on hostPath dev classes, which skip fsGroup).
-  # Group identity is already outside the workspace contract — gid is
-  # excluded from this comparison for the same reason — and setgid on a
-  # directory governs nothing but group inheritance, so the bit is masked
-  # rather than the filesystem mutated: the migrated tree deliberately
-  # KEEPS inheriting the volume group for files the agent creates later,
-  # since agent pods set no fsGroup of their own. File modes stay strict.
-  dirmask() { awk -F'|' 'BEGIN{OFS="|"} $1=="d" && length($2)==4 {d=substr($2,1,1); if (d%4>=2) { d-=2; $2=(d==0) ? substr($2,2) : d substr($2,2) } } {print}'; }
-  cut -d'|' -f${META_CUT} /tmp/src.walk | dirmask | LC_ALL=C sort > /tmp/src.meta
+  cut -d'|' -f${META_CUT} /tmp/src.walk | LC_ALL=C sort > /tmp/src.meta
 
   # Per-attempt wipe so retries are deterministic. Restoring u+rwX first is
   # what makes it possible as the owner: a prior attempt faithfully
@@ -994,6 +992,24 @@ copy_verify() {
   # so comparing it against the source root would fail spuriously).
   touch "$dst/.migration-writable" && rm -f "$dst/.migration-writable"
 
+  # Directories are re-stamped with their EXACT recorded modes from the
+  # walk. fsGroup marks the target volume root setgid (that is how the
+  # volume group reaches new entries) and the kernel propagates the bit to
+  # every directory the copy creates, underneath tar — which re-chmods
+  # only the directories it happens to revisit (--delay-directory-restore
+  # does not change that; measured). Rather than masking the bit out of
+  # the verification, the copy is made faithful: one chmod per directory,
+  # and the comparison below stays byte-strict for every entry.
+  # The 00 prefix is load-bearing: GNU chmod PRESERVES setuid/setgid on
+  # directories for numeric modes under five digits — "chmod 700" keeps an
+  # inherited bit, "chmod 00700" clears it (and "002755" still sets a
+  # genuinely recorded one).
+  awk -F'|' '$2=="d" {print $3 "|" $5}' /tmp/src.walk > /tmp/src.dirs
+  while IFS='|' read -r mode path; do
+    chmod "00$mode" "$dst/$path"
+  done < /tmp/src.dirs
+  phase "restored dir modes: $(wc -l < /tmp/src.dirs)"
+
   # Two-pass verification against the quiesced source; the old volume is
   # deleted at flip on the strength of these comparisons, so both fail
   # closed on any difference.
@@ -1005,7 +1021,7 @@ copy_verify() {
   # identity is not part of the workspace contract), the volume root itself,
   # and lost+found.
   (cd "$dst" && find . -mindepth 1 \( -path ./lost+found -prune \) -o -printf "d|%y|%m|%U|%p|%l\n") \
-    | cut -d'|' -f${META_CUT} | dirmask | LC_ALL=C sort > /tmp/dst.meta
+    | cut -d'|' -f${META_CUT} | LC_ALL=C sort > /tmp/dst.meta
   cmp /tmp/src.meta /tmp/dst.meta
   phase "verified metadata"
 
