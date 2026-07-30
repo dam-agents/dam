@@ -420,7 +420,7 @@ async function buildClientCredentials(
 // Accepts the private key as raw PEM (real or `\n`-escaped newlines) or its
 // base64 encoding — so it survives a single-line paste or a JSON/env value —
 // and validates it up front for a clear error before the synchronous mint.
-function normalizePrivateKeyPem(raw: string): string {
+export function normalizePrivateKeyPem(raw: string): string {
   const trimmed = raw.trim();
   // Restore escaped newlines (a PEM pasted from a JSON/env value) or decode a
   // base64-wrapped PEM; a final trim keeps the stored form canonical whichever

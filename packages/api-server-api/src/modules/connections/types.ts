@@ -220,6 +220,12 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
+  // Replaces the connection's stored credential in place, preserving its
+  // identity and every agent grant. What `value` means follows the connection's
+  // auth kind: the injected value (header), the client secret
+  // (client-credentials), or the PEM private key (github-app). The minting kinds
+  // validate synchronously — an invalid secret fails the update with the
+  // provider's rejection and leaves the connection as it was.
   update(id: string, value: string): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;

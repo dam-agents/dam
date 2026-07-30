@@ -236,4 +236,41 @@ describe("github-app connection create", () => {
       "raw.githubusercontent.com",
     ]);
   });
+
+  it("rotates the private key, normalizing a flattened PEM paste", async () => {
+    const { svc, rows, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+    const created = rows.get(id)!;
+    if (created.auth.kind !== "github-app") throw new Error("kind");
+    rows.set(id, {
+      ...created,
+      auth: { ...created.auth, refreshFailedAt: 1700000000 },
+    });
+
+    const { privateKey: rotatedPem } = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    });
+    // How a PEM arrives from a JSON/env value — the update has to restore the
+    // newlines before the key can sign anything.
+    await svc.update(id, rotatedPem.replaceAll("\n", "\\n"));
+
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth.refreshFailedAt).toBeUndefined();
+    expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("leaves the connection untouched when the new key is unusable", async () => {
+    const { svc, rows, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+    const authBefore = rows.get(id)!.auth;
+
+    await expect(svc.update(id, "not-a-key")).rejects.toThrow(/PEM-encoded/);
+
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
+    expect(rows.get(id)!.auth).toEqual(authBefore);
+  });
 });

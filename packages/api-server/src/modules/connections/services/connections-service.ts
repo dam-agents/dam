@@ -20,7 +20,11 @@ import {
   inheritsFamily,
   templateToView,
 } from "../domain/connection-template.js";
-import { buildConnection } from "../domain/build-connection.js";
+import {
+  buildConnection,
+  normalizePrivateKeyPem,
+} from "../domain/build-connection.js";
+import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
 import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
@@ -144,6 +148,87 @@ export function createConnectionsService(deps: {
     };
   }
 
+  // Every credential rotation is one merge onto the connection's single
+  // per-Connection Secret plus, for the minting kinds, an auth update carrying
+  // the fresh horizon. Identity, contributions, and grants are never touched.
+
+  async function rotateHeaderValue(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "header" }>,
+    value: string,
+  ): Promise<void> {
+    await deps.secretStore.putFields(auth.valueRef, {
+      value,
+      ...buildConnectionSdsFields(conn.contributions, value),
+    });
+  }
+
+  async function rotateClientSecret(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "client-credentials" }>,
+    clientSecret: string,
+  ): Promise<void> {
+    const minted = await rejectIfInvalid(() =>
+      mintClientCredentialsToken(deps.oauthEngine, {
+        connectionRef: `connection:${conn.id}:${conn.templateId}`,
+        auth,
+        clientSecret,
+      }),
+    );
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      [auth.clientSecretRef.field]: clientSecret,
+      access_token: minted.accessToken,
+      ...buildConnectionSdsFields(conn.contributions, minted.accessToken),
+    });
+    await deps.repo.updateAuth(conn.id, {
+      ...withoutRefreshFailureMarker(auth),
+      expiresAt: minted.expiresAt,
+    });
+  }
+
+  async function rotatePrivateKey(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "github-app" }>,
+    rawPrivateKey: string,
+  ): Promise<void> {
+    const rotated = await rejectIfInvalid(async () => {
+      const privateKeyPem = normalizePrivateKeyPem(rawPrivateKey);
+      const minted = await mintGitHubAppToken(deps.githubAppEngine, {
+        connectionRef: `connection:${conn.id}:${conn.templateId}`,
+        auth,
+        privateKeyPem,
+      });
+      return { privateKeyPem, minted };
+    });
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      [auth.privateKeyRef.field]: rotated.privateKeyPem,
+      access_token: rotated.minted.accessToken,
+      ...buildConnectionSdsFields(
+        conn.contributions,
+        rotated.minted.accessToken,
+      ),
+    });
+    await deps.repo.updateAuth(conn.id, {
+      ...withoutRefreshFailureMarker(auth),
+      expiresAt: rotated.minted.expiresAt,
+    });
+  }
+
+  // A minting credential is validated by using it: nothing is written until the
+  // provider accepts it, and its own rejection is the most useful message the
+  // user can get, so it rides through as the BAD_REQUEST.
+  async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
+    try {
+      return await mint();
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          err instanceof Error ? err.message : "The credential was rejected.",
+      });
+    }
+  }
+
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
@@ -180,18 +265,29 @@ export function createConnectionsService(deps: {
     async update(id: string, value: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
-      if (conn.auth.kind !== "header") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Only header-credential connections support value update",
-        });
-      }
 
-      const sdsFields = buildConnectionSdsFields(conn.contributions, value);
-      await deps.secretStore.putFields(conn.auth.valueRef, {
-        value,
-        ...sdsFields,
-      });
+      switch (conn.auth.kind) {
+        case "header":
+          await rotateHeaderValue(conn, conn.auth, value);
+          break;
+        case "client-credentials":
+          await rotateClientSecret(conn, conn.auth, value);
+          break;
+        case "github-app":
+          await rotatePrivateKey(conn, conn.auth, value);
+          break;
+        case "oauth":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "This connection recovers by re-authenticating, not by pasting a credential.",
+          });
+        case "none":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This connection stores no credential to update.",
+          });
+      }
 
       securityLog("info", "connection.update", {
         category: "credential",
