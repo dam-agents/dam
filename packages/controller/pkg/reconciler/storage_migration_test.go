@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,7 +35,8 @@ func migrationConfig() *config.Config {
 			StorageSize: "10Gi",
 		},
 		StorageMigration: config.StorageMigration{
-			Enabled:  true,
+			Enabled: true, // the chart default is off; tests drive it on
+
 			JobImage: "mirror.gcr.io/library/debian:stable-slim",
 		},
 	}
@@ -157,36 +159,45 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	require.NotNil(t, psc)
 	require.NotNil(t, psc.RunAsUser)
 	assert.Equal(t, int64(65532), *psc.RunAsUser)
-	// Group 0 matches the agent images' uid:0 convention so cp preserves
-	// ownership completely (a failed ownership preserve strips suid bits,
-	// which the metadata verification would reject).
+	// Group 0 matches the agent images' uid:0 convention, so what the copy
+	// creates carries the identity the agent itself runs with.
 	require.NotNil(t, psc.RunAsGroup)
 	assert.Equal(t, int64(0), *psc.RunAsGroup)
-	// The verification must gate on metadata (mode + owner), not content
-	// alone — the source is never deleted when permissions failed to
-	// carry over.
-	assert.Contains(t, job.Spec.Template.Spec.Containers[0].Command[2], `%y|%m|%U|%p|%l`)
 	require.NotNil(t, psc.FSGroup)
 	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup makes the fresh target volume writable to the agent uid")
-	// A root init container chowns the EMPTY target root to the agent uid
-	// (cp -a must preserve the root dir's attributes, and fsGroup is skipped
-	// on hostPath-backed classes). It must never mount the source — a
-	// squashing share must never see uid 0.
-	require.Len(t, job.Spec.Template.Spec.InitContainers, 1)
-	prep := job.Spec.Template.Spec.InitContainers[0]
-	require.NotNil(t, prep.SecurityContext.RunAsUser)
-	assert.Equal(t, int64(0), *prep.SecurityContext.RunAsUser)
-	require.Len(t, prep.VolumeMounts, 1, "prep mounts targets only, never the source")
-	assert.Equal(t, "dst-0", prep.VolumeMounts[0].Name)
-	// Root owns the per-attempt wipe: the agent uid cannot delete inside
-	// read-only dirs (0500 caches) or a root-owned lost+found on ext4.
-	require.Len(t, prep.Command, 3)
-	assert.Contains(t, prep.Command[2], "find /mnt/dst-0 -mindepth 1 -delete")
-	assert.NotContains(t, job.Spec.Template.Spec.Containers[0].Command[2], "-delete",
-		"the copy container must not clean up — it lacks the permissions on retries")
-	// Never, not OnFailure: in-place container restarts skip init containers,
-	// and every attempt needs the wipe to run first.
-	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
+	// Nothing in the migration may need privilege: OpenShift's restricted SCC
+	// strips CAP_CHOWN/CAP_DAC_OVERRIDE and Kata's virtiofs refuses guest
+	// chown, so a root step (even just to chown a target root) is a
+	// portability trap. The copy is unprivileged end to end.
+	assert.Empty(t, job.Spec.Template.Spec.InitContainers,
+		"no privileged init container — the agent uid owns the workspace and may chmod it")
+	copyScript := job.Spec.Template.Spec.Containers[0].Command[2]
+	// Assert on the commands, not the prose that explains why they are absent.
+	var cmds strings.Builder
+	for _, line := range strings.Split(copyScript, "\n") {
+		if t := strings.TrimSpace(line); !strings.HasPrefix(t, "#") {
+			cmds.WriteString(t + "\n")
+		}
+	}
+	runnable := cmds.String()
+	// No chown may be INVOKED (an echo naming it in a remedy hint is fine):
+	// chown is unavailable under a restricted SCC and on Kata virtiofs.
+	assert.NotRegexp(t, `(?m)^chown |-exec chown|; chown `, runnable,
+		"the copy must never invoke chown")
+	// The verification must gate on metadata (mode + owner), not content
+	// alone — the source is never deleted when permissions failed to carry
+	// over.
+	assert.Contains(t, runnable, `%y|%m|%U|%p|%l`)
+	// tar with --no-overwrite-dir, not cp -a src/. dst/: cp would apply the
+	// source root's ownership/timestamps to the target root, which no
+	// unprivileged process can do.
+	assert.Contains(t, runnable, "--no-overwrite-dir")
+	assert.NotContains(t, runnable, "cp -a")
+	// A fresh ext4 CSI target ships a root-owned lost+found the source has
+	// not got: it must be excluded from the wipe and from verification, or
+	// every real block-backed migration fails on a phantom difference.
+	assert.Contains(t, runnable, "! -name lost+found")
+	assert.Contains(t, runnable, "! -path ./lost+found")
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
@@ -408,3 +419,44 @@ func renderedAgentSTS(name string) *appsv1.StatefulSet {
 }
 
 func ptrInt64(v int64) *int64 { return &v }
+
+// Turning the migration off must not strand the agents it had already gated:
+// the gate is a negative override only this manager clears, so a disabled
+// manager releases them, bins the half-copied targets, and leaves each agent
+// on the volume it never left.
+func TestStorageMigration_DisabledReleasesGatedAgents(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{
+		annStorageMigration:           "migrating",
+		annStorageMigrationWasRunning: "true",
+	}
+	target := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mig-home-agent-my-agent-0", Namespace: "test-agents",
+			Labels: map[string]string{
+				LabelPool: migrationPoolValue, LabelMount: "home-agent",
+				LabelMigrationFor: "my-agent",
+			},
+		},
+	}
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		Name: "mig-my-agent", Namespace: "test-agents",
+		Labels: map[string]string{LabelMigrationFor: "my-agent"},
+	}}
+	source := rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent")
+	m, client := migrationManager(t, agent, source, target, job)
+	m.config.StorageMigration.Enabled = false
+
+	m.RunLoop(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "the gate must be lifted so the agent can run again")
+	assert.NotEmpty(t, ann[annLastActivity], "an agent that was running is woken back up")
+
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err, "the source volume is untouched — nothing was copied, nothing is deleted")
+	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	assert.Error(t, err, "the half-copied target is binned")
+	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
+	assert.Error(t, err, "the abandoned copy job is binned")
+}

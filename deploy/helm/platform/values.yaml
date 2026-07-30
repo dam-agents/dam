@@ -1031,13 +1031,22 @@ controller:
   # -- One-time RWX -> RWO workspace-volume migration (#2988). For every agent
   # whose workspace PVC is still ReadWriteMany the controller forces the agent
   # down, copies the volume onto a fresh ReadWriteOnce PVC in a Job
-  # (checksum-verified), re-points the StatefulSet, deletes the old volume,
-  # and restores the agent's prior run state. Interrupt-safe and resumable; a
-  # no-op once no RWX workspace volume remains. Keep the old storage backend
-  # (e.g. nfsProvisioner, or your managed shared filesystem) available until
-  # the controller stops logging migrations, then decommission it.
+  # (content- and metadata-verified), re-points the StatefulSet, deletes the
+  # old volume, and restores the agent's prior run state. Interrupt-safe and
+  # resumable; a no-op once no RWX workspace volume remains. Keep the old
+  # storage backend (e.g. nfsProvisioner, or your managed shared filesystem)
+  # available until the controller stops logging migrations, then decommission
+  # it.
+  #
+  # DISABLED by default: draining a fleet is an operator decision, and the
+  # copy's success depends on the install's storage semantics (root squash,
+  # ext4 artifacts, a Kata runtime class). Enable it deliberately — ideally
+  # with `concurrency: 1` for the first agent — and watch the controller log.
+  # Turning it back off is safe at any point: the manager releases every agent
+  # it had gated, bins the half-copied targets, and leaves each agent on the
+  # volume it started from.
   storageMigration:
-    enabled: true
+    enabled: false
     # -- How many agents migrate at once. Each migration reads its source
     # volume in full three times (copy + two verification passes); this cap
     # is the trade between fleet drain time and read pressure on the shared
@@ -1045,13 +1054,22 @@ controller:
     concurrency: 10
     # -- Reconcile pass interval.
     interval: "30s"
-    # -- Image for the copy Job. Needs POSIX sh + GNU coreutils (cp -a that
-    # preserves hard links, find, md5sum) — busybox-based images inflate
-    # hard-link-heavy workspaces (pnpm stores) past the volume size.
-    # The Job runs as the agent uid (from controller.agent.base
-    # containerSecurityContext.runAsUser), never root, so it works on
-    # root-squashing shared-filesystem classes: a workspace is single-owner
-    # by construction, and its own uid can read everything in it.
+    # -- Accept ownership normalization when the source workspace holds
+    # entries owned by a uid other than the agent's (root-written residue
+    # from an older release, a squashed-root `nobody` file). The copy is
+    # unprivileged, so it recreates them as the agent uid rather than
+    # preserving the original owner. Default false: such entries are
+    # reported with their paths and block that agent's migration, so the
+    # decision is yours — chown them on the source, or set this.
+    allowOwnershipRemap: false
+    # -- Image for the copy Job. Needs bash, GNU tar and GNU coreutils
+    # (find -printf, md5sum) — busybox-based images lack the flags the copy
+    # and its verification rely on.
+    # The Job is unprivileged: it runs as the agent uid (from
+    # controller.agent.base containerSecurityContext.runAsUser) and needs no
+    # capabilities, so it works under a restricted SCC and on root-squashing
+    # shared-filesystem classes alike. It also deliberately does NOT inherit
+    # the agents' runtimeClassName: it runs platform tooling, not agent code.
     jobImage: mirror.gcr.io/library/debian:stable-slim
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar.
