@@ -894,7 +894,11 @@ copy_verify() {
   # The readability flag rides the same pass: find evaluates -readable per
   # entry and the alternation picks the prefix. The inner group is what keeps
   # the -o from swallowing the -mindepth/-path filters.
-  (cd "$src" && find . -mindepth 1 ! -path './lost+found*' \
+  # -prune on the root lost+found, never ! -path: exclusion by path still
+  # DESCENDS into the directory, and a 0700 root-owned one aborts the walk
+  # with permission denied. Anchored (./lost+found, no glob) so a nested
+  # one the workspace legitimately owns is still inventoried.
+  (cd "$src" && find . -mindepth 1 \( -path ./lost+found -prune \) -o \
      \( \( -readable -printf "r|%y|%m|%U|%p|%l\n" \) -o -printf "x|%y|%m|%U|%p|%l\n" \) \
    ) > /tmp/src.walk
   entries=$(wc -l < /tmp/src.walk)
@@ -976,6 +980,26 @@ copy_verify() {
   # so comparing it against the source root would fail spuriously).
   touch "$dst/.migration-writable" && rm -f "$dst/.migration-writable"
 
+  # fsGroup marks the target ROOT setgid (that is how the volume group
+  # carries into new entries), and every directory the copy creates
+  # INHERITS that bit at mkdir time — underneath tar, which never
+  # re-chmods because the mode it passed to mkdir was already the recorded
+  # one. Left alone, every target directory reads 2xxx where the source
+  # says xxx and the metadata pass (correctly) refuses the copy. Strip the
+  # inherited bit from directories, then re-apply it to the rare ones
+  # whose SOURCE mode genuinely records it, so the comparison measures
+  # fidelity rather than a mount artifact. The root itself keeps the
+  # kubelet's bit: it is excluded from the comparison, and future
+  # top-level writes by the agent should keep inheriting the group.
+  # (Invisible on hostPath-backed dev classes, which skip fsGroup — this
+  # only manifests on real CSI block targets.)
+  # -prune, not ! -path: find must not even DESCEND into the root-owned
+  # lost+found (permission denied would abort the script). Anchored to the
+  # root so a workspace's own nested lost+found is still processed.
+  find "$dst" -mindepth 1 \( -path "$dst/lost+found" -prune \) -o \( -type d -exec chmod g-s {} + \)
+  awk -F'|' '$2=="d" && length($3)==4 && substr($3,1,1)~/[2367]/ {print $5}' /tmp/src.walk \
+    | while IFS= read -r p; do chmod g+s "$dst/$p"; done
+
   # Two-pass verification against the quiesced source; the old volume is
   # deleted at flip on the strength of these comparisons, so both fail
   # closed on any difference.
@@ -986,7 +1010,7 @@ copy_verify() {
   # uid:0 while an fsGroup-managed target assigns its own gid — group
   # identity is not part of the workspace contract), the volume root itself,
   # and lost+found.
-  (cd "$dst" && find . -mindepth 1 ! -path './lost+found*' -printf "d|%y|%m|%U|%p|%l\n") \
+  (cd "$dst" && find . -mindepth 1 \( -path ./lost+found -prune \) -o -printf "d|%y|%m|%U|%p|%l\n") \
     | cut -d'|' -f${META_CUT} | LC_ALL=C sort > /tmp/dst.meta
   cmp /tmp/src.meta /tmp/dst.meta
   phase "verified metadata"
@@ -1004,7 +1028,7 @@ copy_verify() {
   # cannot tear.
   sums() {
     rm -f /tmp/sums.*
-    (cd "$1" && find . -type f ! -path './lost+found*' -print0 \
+    (cd "$1" && find . \( -path ./lost+found -prune \) -o -type f -print0 \
        | xargs -0 -r -P"${PAR}" -n64 sh -c 'md5sum "$@" >> "/tmp/sums.$$"' _)
     cat /tmp/sums.* 2>/dev/null | LC_ALL=C sort
   }

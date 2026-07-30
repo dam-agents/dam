@@ -223,7 +223,7 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// verification baseline all derive from that single pass. (The archive's
 	// file list is a second find, but -maxdepth 1: one readdir of the top
 	// level, not a tree walk, so it costs nothing on a 200k-entry tree.)
-	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 ! -path`),
+	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 \( -path`),
 		"the source tree is walked ONCE")
 	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 -maxdepth 1`),
 		"the archive's file list is a shallow listing, not a second tree walk")
@@ -256,10 +256,23 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// not got: it must be excluded from the wipe and from verification, or
 	// every real block-backed migration fails on a phantom difference.
 	assert.Contains(t, runnable, "! -name lost+found", "excluded from the wipe")
-	// The glob must cover lost+found's CONTENTS too, not just the directory
-	// entry: an fsck-populated lost+found would otherwise show up as a
-	// phantom difference (or as foreign-owned files) and block the migration.
-	assert.Contains(t, runnable, `! -path './lost+found*'`, "excluded from verification, contents included")
+	// Deep finds must -prune it, never merely exclude by path: exclusion
+	// still DESCENDS into the 0700 root-owned directory, and the resulting
+	// permission-denied aborts the whole walk under set -e. Proven by
+	// executing the script against a fixture with a real root-owned
+	// lost+found (the sandbox rehearsal this time includes one on purpose).
+	// (The tar file-listing keeps the plain exclusion — it is -maxdepth 1
+	// and never descends, so there is nothing to prune.)
+	assert.NotContains(t, runnable, `find . -mindepth 1 ! -path`,
+		"a DEEP find with path exclusion but no -prune dies descending into a 0700 lost+found")
+	assert.Equal(t, 4, strings.Count(runnable, "-path ./lost+found -prune")+strings.Count(runnable, `-path "$dst/lost+found" -prune`),
+		"src walk, dst walk, sums, and the setgid strip all prune the root lost+found")
+	// fsGroup marks the target root setgid and mkdir inherits it beneath
+	// tar; the copy strips the inherited bit from directories and re-applies
+	// the (rare) genuinely-recorded ones from the source walk, so the
+	// metadata pass measures fidelity rather than a mount artifact.
+	assert.Contains(t, runnable, "chmod g-s")
+	assert.Contains(t, runnable, `chmod g+s "$dst/$p"`)
 	require.Len(t, job.Spec.Template.Spec.Volumes, 2)
 	src := job.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "home-agent-my-agent-0", src.PersistentVolumeClaim.ClaimName)
