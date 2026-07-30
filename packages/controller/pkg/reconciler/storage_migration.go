@@ -93,17 +93,22 @@ type StorageMigrationManager struct {
 	config  *config.Config
 	now     func() time.Time
 	// skippedVM de-dupes the vm-backend warning so it logs once per agent
-	// per process, not once per tick.
-	skippedVM map[string]bool
+	// per process, not once per tick. warnedSameClass and loggedReason do the
+	// same for the misconfigured-target refusal and the per-agent reason.
+	skippedVM       map[string]bool
+	warnedSameClass map[string]bool
+	loggedReason    map[string]bool
 }
 
 func NewStorageMigrationManager(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *StorageMigrationManager {
 	return &StorageMigrationManager{
-		client:    client,
-		dynamic:   dyn,
-		config:    cfg,
-		now:       time.Now,
-		skippedVM: map[string]bool{},
+		client:          client,
+		dynamic:         dyn,
+		config:          cfg,
+		now:             time.Now,
+		skippedVM:       map[string]bool{},
+		warnedSameClass: map[string]bool{},
+		loggedReason:    map[string]bool{},
 	}
 }
 
@@ -164,12 +169,18 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 		slog.Warn("storage migration: listing agents to release gates failed", "error", err)
 		return
 	}
+	// "Source still present" — by the same rule Reconcile admits work with,
+	// so a workspace pending only a storage-class move is recognised as an
+	// un-flipped source rather than mistaken for a completed migration.
+	targetClass, _ := m.resolveTargetClass(ctx)
+	allowSame := m.config.StorageMigration.AllowSameStorageClass
 	rwx := map[string]bool{}
 	if pvcs, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent,
 	}); err == nil {
-		for _, p := range pvcs.Items {
-			if isRWX(p.Spec.AccessModes) {
+		for i := range pvcs.Items {
+			p := pvcs.Items[i]
+			if _, needed := migrationReason(&p, targetClass, allowSame); needed {
 				rwx[p.Labels[LabelAgent]] = true
 			}
 		}
@@ -224,15 +235,35 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		return
 	}
 
-	// Agents that still own an RWX workspace volume, plus agents already
-	// gated (annotation set) whose source volume may already be stripped —
-	// the union is the resumable work list.
+	targetClass, explicitClass := m.resolveTargetClass(ctx)
+	allowSame := m.config.StorageMigration.AllowSameStorageClass
+
+	// Agents whose workspace volume is on the wrong access mode or the wrong
+	// storage class, plus agents already gated (annotation set) whose source
+	// may already be stripped — the union is the resumable work list.
 	rwxByAgent := map[string][]corev1.PersistentVolumeClaim{}
-	for _, p := range pvcs.Items {
-		if !isRWX(p.Spec.AccessModes) {
+	for i := range pvcs.Items {
+		p := pvcs.Items[i]
+		reason, needed := migrationReason(&p, targetClass, allowSame)
+		agent := p.Labels[LabelAgent]
+		if !needed {
+			// Distinguish "nothing to do" from "refused": a shared-writable
+			// volume already sitting on the target class means the target is
+			// the shared filesystem itself, which the migration exists to
+			// leave. Say so, once per agent per process.
+			if isRWX(p.Spec.AccessModes) && !m.warnedSameClass[agent] {
+				m.warnedSameClass[agent] = true
+				slog.Warn("storage migration: refusing to migrate onto the volume's own storage class — the access mode would change but the backend would not",
+					"agent", agent, "pvc", p.Name, "class", targetClass,
+					"remedy", "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended")
+			}
 			continue
 		}
-		agent := p.Labels[LabelAgent]
+		if !m.loggedReason[agent] {
+			m.loggedReason[agent] = true
+			slog.Info("storage migration: workspace needs migrating", "agent", agent, "pvc", p.Name,
+				"reason", reason, "target", map[bool]string{true: targetClass, false: targetClass + " (cluster default)"}[explicitClass])
+		}
 		rwxByAgent[agent] = append(rwxByAgent[agent], p)
 	}
 
@@ -296,6 +327,63 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 			slog.Warn("storage migration: agent migration step failed", "agent", name, "error", err)
 		}
 	}
+}
+
+// resolveTargetClass returns the storage class migrated workspaces land on,
+// and whether the chart named it explicitly. Empty-and-inexplicit means the
+// cluster default: the target PVC then omits storageClassName so ordinary
+// default storage applies, while the resolved NAME is still needed to tell a
+// workspace that has already arrived from one that has not.
+//
+// Deliberately independent of AgentBase.StorageClass: on an install that has
+// not migrated yet, that value still names the shared filesystem being
+// drained, so inheriting it would copy every byte to reach the same backend.
+func (m *StorageMigrationManager) resolveTargetClass(ctx context.Context) (name string, explicit bool) {
+	if c := m.config.StorageMigration.TargetStorageClass; c != "" {
+		return c, true
+	}
+	classes, err := m.client.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		// Without the default class's name the class comparison can't run;
+		// the RWX rule still does, so the drain degrades rather than stops.
+		slog.Warn("storage migration: cannot resolve the cluster default storage class; migrating on access mode only", "error", err)
+		return "", false
+	}
+	for _, sc := range classes.Items {
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+			return sc.Name, false
+		}
+	}
+	slog.Warn("storage migration: no default storage class found; migrating on access mode only")
+	return "", false
+}
+
+// migrationReason says why a workspace needs migrating, or "" if it does not.
+// Two triggers: a shared-writable access mode, and sitting on the wrong
+// storage class — the second is what moves a workspace that was already
+// flipped to ReadWriteOnce but left on the shared filesystem.
+func migrationReason(pvc *corev1.PersistentVolumeClaim, targetClass string, allowSame bool) (string, bool) {
+	srcClass := ""
+	if pvc.Spec.StorageClassName != nil {
+		srcClass = *pvc.Spec.StorageClassName
+	}
+	sameClass := targetClass != "" && srcClass == targetClass
+	if isRWX(pvc.Spec.AccessModes) {
+		if sameClass && !allowSame {
+			// Refuse rather than drain a fleet to no purpose: the operator
+			// has pointed the migration at the very filesystem it exists to
+			// leave. Changing the access mode alone buys nothing.
+			return "", false
+		}
+		return "shared-writable access mode", true
+	}
+	// Already single-writer: only the destination is left to fix. A volume
+	// with no class at all is left alone — it is statically provisioned, and
+	// "converge it onto the default class" is not a call this should make.
+	if targetClass != "" && srcClass != "" && srcClass != targetClass {
+		return "storage class " + srcClass + " is not the migration target " + targetClass, true
+	}
+	return "", false
 }
 
 func isRWX(modes []corev1.PersistentVolumeAccessMode) bool {
@@ -444,7 +532,11 @@ func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName
 			Requests: corev1.ResourceList{corev1.ResourceStorage: size},
 		},
 	}
-	if sc := m.config.AgentBase.StorageClass; sc != "" {
+	// The migration's own destination — NOT AgentBase.StorageClass, which on
+	// an unmigrated install still names the shared filesystem being drained.
+	// Left unset when the chart names no class, so the cluster default
+	// applies exactly as it would for any ordinary PVC.
+	if sc := m.config.StorageMigration.TargetStorageClass; sc != "" {
 		spec.StorageClassName = &sc
 	}
 	pvc := &corev1.PersistentVolumeClaim{

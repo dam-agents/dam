@@ -238,6 +238,21 @@ type StorageMigration struct {
 	// Interval between reconcile passes. Zero falls back to a built-in
 	// default.
 	Interval Duration `json:"interval,omitempty"`
+	// TargetStorageClass is the class migrated workspaces land on. Empty
+	// (the default) means the CLUSTER DEFAULT class — deliberately NOT
+	// AgentBase.StorageClass, which on a pre-migration install still names
+	// the shared filesystem being drained: inheriting it would move a
+	// workspace from RWX to RWO on the same NFS backend, changing the access
+	// mode and nothing else. The migration exists to leave that backend, so
+	// its destination is configured independently and defaults to ordinary
+	// cluster-default storage.
+	TargetStorageClass string `json:"targetStorageClass,omitempty"`
+	// AllowSameStorageClass permits a migration whose target class is the
+	// class the workspace already sits on. Default false: that combination is
+	// almost always a misconfiguration — it force-restarts every agent and
+	// copies every byte to arrive at the same backend — so it is refused with
+	// a loud log naming the remedy.
+	AllowSameStorageClass bool `json:"allowSameStorageClass,omitempty"`
 	// AllowOwnershipRemap lets the copy proceed when the source workspace
 	// holds entries owned by a uid other than the agent's. The copy is
 	// unprivileged (chown is unavailable under a restricted SCC and on a

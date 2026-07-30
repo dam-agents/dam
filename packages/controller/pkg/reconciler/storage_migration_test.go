@@ -16,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
+	storagev1 "k8s.io/api/storage/v1"
+
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
@@ -56,6 +58,27 @@ func rwxPVC(name, agent, mount string) *corev1.PersistentVolumeClaim {
 			},
 		},
 	}
+}
+
+// defaultBlockClass stands in for the ordinary cluster-default class a
+// migration should land on (an IBM install's block class, k3s's local-path).
+func defaultBlockClass() *storagev1.StorageClass {
+	return &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{
+		Name:        "block-default",
+		Annotations: map[string]string{"storageclass.kubernetes.io/is-default-class": "true"},
+	}}
+}
+
+// fileClass is the shared filesystem an install is migrating OFF.
+func fileClass() *storagev1.StorageClass {
+	return &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "ibmc-vpc-file-500-iops-agent"}}
+}
+
+func classedPVC(name, agent, mount, class string, mode corev1.PersistentVolumeAccessMode) *corev1.PersistentVolumeClaim {
+	p := rwxPVC(name, agent, mount)
+	p.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{mode}
+	p.Spec.StorageClassName = &class
+	return p
 }
 
 func migrationManager(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object) (*StorageMigrationManager, *fake.Clientset) {
@@ -462,4 +485,79 @@ func TestStorageMigration_DisabledReleasesGatedAgents(t *testing.T) {
 	assert.Error(t, err, "the half-copied target is binned")
 	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
 	assert.Error(t, err, "the abandoned copy job is binned")
+}
+
+// The destination is the migration's own knob, never AgentBase.StorageClass:
+// on an unmigrated install that still names the shared filesystem, so
+// inheriting it would copy every byte to reach the same NFS backend. Unset
+// means the cluster default, so the target PVC carries no class at all.
+func TestStorageMigration_TargetLandsOnClusterDefaultNotAgentClass(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	m, client := migrationManager(t, agent,
+		classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteMany),
+		defaultBlockClass(), fileClass())
+	m.config.AgentBase.StorageClass = "ibmc-vpc-file-500-iops-agent" // what new agents get today
+
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, target.Spec.StorageClassName,
+		"no class means the cluster default — the agents' own class is the filesystem being drained")
+}
+
+// A workspace already flipped to ReadWriteOnce but left on the shared
+// filesystem is exactly what the first broken drain produced. The access mode
+// no longer flags it, so the storage class must.
+func TestStorageMigration_MigratesWrongClassEvenWhenAlreadyRWO(t *testing.T) {
+	agent := agentCR()
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteOnce)
+	m, _ := migrationManager(t, agent, src, defaultBlockClass(), fileClass())
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Equal(t, "migrating", ann[annStorageMigration],
+		"an RWO volume stranded on the shared filesystem must still be drained")
+}
+
+// ...and once it has arrived on the target class it is left alone, so the
+// drain converges instead of looping.
+func TestStorageMigration_LeavesWorkspacesOnTheTargetClassAlone(t *testing.T) {
+	agent := agentCR()
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "block-default", corev1.ReadWriteOnce)
+	m, client := migrationManager(t, agent, src, defaultBlockClass())
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "already migrated — nothing to do")
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
+}
+
+// Pointing the migration at the volume's own class is refused, not obeyed: it
+// would force-restart every agent and copy every byte to reach the same
+// backend. This is the failure the first production drain actually hit.
+func TestStorageMigration_RefusesTargetEqualToSourceClass(t *testing.T) {
+	agent := agentCR()
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteMany)
+	m, client := migrationManager(t, agent, src, fileClass())
+	m.config.StorageMigration.TargetStorageClass = "ibmc-vpc-file-500-iops-agent"
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "the agent must not be gated for a pointless migration")
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items, "and no bytes copied")
+
+	// Deliberate override still works, for an install that means it.
+	m.config.StorageMigration.AllowSameStorageClass = true
+	m.Reconcile(context.Background())
+	ann = getAgentAnnotations(t, m, "my-agent")
+	assert.Equal(t, "migrating", ann[annStorageMigration])
 }
