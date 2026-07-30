@@ -3,6 +3,7 @@ import type { ApiKeyView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
+import { formatDate } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -33,11 +34,10 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
           {scopes.join(", ")} · {binding}
         </div>
         <div className="text-[11px] text-muted-foreground mt-0.5">
-          created {new Date(createdAt).toLocaleDateString()}
-          {expiresAt &&
-            ` · expires ${new Date(expiresAt).toLocaleDateString()}`}
+          created {formatDate(createdAt)}
+          {expiresAt && ` · expires ${formatDate(expiresAt)}`}
           {lastUsedAt
-            ? ` · last used ${new Date(lastUsedAt).toLocaleDateString()}`
+            ? ` · last used ${formatDate(lastUsedAt)}`
             : " · never used"}
         </div>
       </div>

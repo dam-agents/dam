@@ -2,6 +2,7 @@ import type { CallContext, SessionRuntime } from "api-server-api";
 import { useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
+import { formatTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useMetricsOverview } from "../api/queries.js";
@@ -186,7 +187,7 @@ function RecentCallsTable({ rows }: { rows: CallContext[] }) {
               className="py-1 pr-2 font-mono text-muted-foreground"
               title={`${call.model}\n${call.at}`}
             >
-              {new Date(call.at).toLocaleTimeString()}
+              {formatTime(call.at)}
             </td>
             <td className="py-1 pl-2 text-right font-mono">
               {formatTokens(call.contextTokens)}

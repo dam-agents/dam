@@ -1,3 +1,5 @@
+import { getErrorMessage } from "@/lib/errors";
+
 import type { Attachment } from "../../types.js";
 import { uploadMessageAttachment } from "../files/api/queries.js";
 
@@ -45,7 +47,7 @@ export async function buildPromptBlocks(
         });
       } catch (err) {
         throw new Error(
-          `Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`,
+          `Upload failed for "${a.name}": ${getErrorMessage(err, "unknown")}`,
         );
       }
     }

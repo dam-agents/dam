@@ -6,6 +6,7 @@ import { Controller, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
+import { useCopy } from "@/lib/use-copy";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
@@ -180,12 +181,8 @@ export function AnthropicForm({
 }
 
 function QuickSetupHint() {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText("claude setup-token");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { copy: copyText, copied } = useCopy();
+  const copy = () => void copyText("claude setup-token");
   return (
     <div className="text-sm text-foreground/80">
       Run{" "}

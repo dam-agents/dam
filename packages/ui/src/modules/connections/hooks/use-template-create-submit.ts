@@ -4,6 +4,7 @@ import type {
 } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
 import { emitToast } from "@/lib/toast";
 
 import { api } from "../../../api.js";
@@ -176,7 +177,7 @@ export function useTemplateCreateSubmit({
         pendingIdRef.current = null;
         setAuthorizing(false);
         void discardPending(created.id);
-        fail(err instanceof Error ? err.message : String(err));
+        fail(getErrorMessage(err));
       }
       return;
     }

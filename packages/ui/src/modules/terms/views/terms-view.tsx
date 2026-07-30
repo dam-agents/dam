@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { formatDate } from "@/lib/format-time";
 
 import { Markdown } from "../../../components/markdown.js";
 import { takeReturnPath } from "../../../lib/return-path.js";
@@ -77,8 +78,7 @@ function TermsMeta({
       Version <code>{version}</code>
       {isCurrent && accepted && (
         <>
-          {" · "}Accepted on{" "}
-          {new Date(accepted.acceptedAt).toLocaleDateString()}
+          {" · "}Accepted on {formatDate(accepted.acceptedAt)}
         </>
       )}
     </div>
