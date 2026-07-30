@@ -66,7 +66,7 @@ export function StartingPointStep({
       />
 
       {!kindedHarnessInstalled && (
-        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-[13px] text-warning">
+        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
           Experiment and knowledge-base sandboxes need the{" "}
           <span className="font-mono">{KINDED_HARNESS_TEMPLATE_ID}</span> agent
           image, which is not installed on this platform. Ask your operator to
@@ -195,14 +195,14 @@ function StartingPointReveal({
     return (
       <section className="anim-in">
         <SectionLabel spaced>Choose an image</SectionLabel>
-        <p className="mb-3 text-[14px] text-muted-foreground">
+        <p className="mb-3 text-sm text-muted-foreground">
           Each boots its own sandbox, already set up for its task. Early and
           evolving.
         </p>
         {loading ? (
           <ListSkeleton rows={3} rowHeight={64} />
         ) : specialized.length === 0 ? (
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No specialized images are installed on this platform.
           </p>
         ) : (

@@ -72,8 +72,8 @@ function SectionNavItem({
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
     >
-      <span className="text-[14px] font-medium text-foreground">{title}</span>
-      <span className="truncate text-[13px] text-muted-foreground">
+      <span className="text-sm font-medium text-foreground">{title}</span>
+      <span className="truncate text-sm text-muted-foreground">
         {summary ?? "—"}
       </span>
     </button>

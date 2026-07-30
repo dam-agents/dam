@@ -82,9 +82,7 @@ export function UploadArtifactDialog({
           </Button>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-foreground">
-              Title
-            </span>
+            <span className="text-sm font-medium text-foreground">Title</span>
             <Input
               size="sm"
               placeholder="Shown in the library and on the share page"
@@ -94,9 +92,7 @@ export function UploadArtifactDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-foreground">
-              Folder
-            </span>
+            <span className="text-sm font-medium text-foreground">Folder</span>
             <Select
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
@@ -110,8 +106,8 @@ export function UploadArtifactDialog({
             </Select>
           </div>
 
-          {error && <p className="text-[13px] text-danger">{error}</p>}
-          <p className="text-[12px] text-muted-foreground">
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <p className="text-xs text-muted-foreground">
             The artifact stays private until you share it. HTML, JSX, markdown,
             and code render on the share page; anything else is downloadable.
           </p>

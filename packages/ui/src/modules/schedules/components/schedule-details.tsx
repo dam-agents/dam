@@ -19,10 +19,8 @@ function DetailCard({
 }) {
   return (
     <Callout size="sm">
-      <p className="text-[12px] text-muted-foreground">{label}</p>
-      <div className="mt-1 text-[13px] font-medium text-foreground">
-        {children}
-      </div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="mt-1 text-sm font-medium text-foreground">{children}</div>
     </Callout>
   );
 }
@@ -40,7 +38,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
       {task && (
         <>
           <SectionLabel>Task</SectionLabel>
-          <p className="mt-1 mb-4 text-[13px] whitespace-pre-wrap text-foreground">
+          <p className="mt-1 mb-4 text-sm whitespace-pre-wrap text-foreground">
             {task}
           </p>
         </>

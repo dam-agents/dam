@@ -67,7 +67,7 @@ export function DockedArtifactPanel() {
     <div className="flex h-full flex-col">
       <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border px-4">
         <span
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={artifact?.title}
         >
           {artifact?.title ?? "Artifact"}
@@ -122,7 +122,7 @@ export function DockedArtifactPanel() {
 
       <div className="min-h-0 flex-1">
         {!artifact ? (
-          <p className="py-6 text-center text-[13px] text-muted-foreground">
+          <p className="py-6 text-center text-sm text-muted-foreground">
             Artifact not found — it may have been deleted.
           </p>
         ) : showFrame ? (
@@ -137,7 +137,7 @@ export function DockedArtifactPanel() {
               postData={feedPostForShown}
             />
           ) : (
-            <p className="py-6 text-center text-[13px] text-muted-foreground">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               {preview.isLoading ? "Loading preview…" : "No preview available."}
             </p>
           )

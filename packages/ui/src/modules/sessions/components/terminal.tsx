@@ -191,7 +191,7 @@ export function Terminal({
     <div className="flex flex-1 flex-col min-h-0 relative">
       {state === "connecting" && (
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 text-[14px] text-muted-foreground">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Spinner size={18} />
             Connecting terminal...
           </div>
@@ -201,7 +201,7 @@ export function Terminal({
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
             <ErrorFilled size={24} className="text-danger" />
-            <p className="text-[14px] text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Session disconnected
             </p>
             <Button variant="outline" onClick={handleReconnect}>
@@ -212,7 +212,7 @@ export function Terminal({
       )}
       {state === "exited" && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-content">
-          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-[12px] text-muted-foreground shadow-md">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-xs text-muted-foreground shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

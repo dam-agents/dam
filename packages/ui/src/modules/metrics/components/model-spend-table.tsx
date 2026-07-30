@@ -20,7 +20,7 @@ export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
           <th className={`w-[20%] ${CELL} text-right font-medium`}>Cost</th>
         </tr>
       </thead>
-      <tbody className="text-[13px]">
+      <tbody className="text-sm">
         {rows.map((row) => (
           <tr
             key={row.model}

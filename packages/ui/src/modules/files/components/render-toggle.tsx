@@ -24,7 +24,7 @@ export function RenderToggle({
     <Button
       variant="outline"
       size="xs"
-      className="text-[14px]"
+      className="text-sm"
       onClick={onToggle}
       title={rendered ? rawTitle : renderTitle}
     >

@@ -157,7 +157,7 @@ function AccessModePicker({
         )}
       />
       {locked && (
-        <p id="slack-mode-locked" className="text-[13px] text-muted-foreground">
+        <p id="slack-mode-locked" className="text-sm text-muted-foreground">
           The mode is fixed per binding — disconnect and reconnect to change it.
         </p>
       )}
@@ -175,10 +175,10 @@ function AmbientRow({
   return (
     <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
       <span className="flex flex-col gap-0.5">
-        <span className="text-[14px] font-medium text-foreground">
+        <span className="text-sm font-medium text-foreground">
           Ambient mode
         </span>
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           The agent reads along in the channel and may chime in without being
           mentioned when it can clearly help. The channel is notified when this
           changes, and it can be turned off anytime — here or with the in-chat
@@ -214,7 +214,7 @@ function AllowedUsers({
     <div className="flex flex-col gap-2">
       <SectionLabel>Allowed users</SectionLabel>
       {fields.length === 0 && (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Unrestricted — any linked Slack user can interact.
         </p>
       )}
@@ -223,7 +223,7 @@ function AllowedUsers({
           key={field.id}
           className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5"
         >
-          <span className="flex-1 truncate font-mono text-[13px] text-foreground">
+          <span className="flex-1 truncate font-mono text-sm text-foreground">
             {field.email}
           </span>
           <Button
@@ -253,7 +253,7 @@ function AllowedUsers({
         <Button
           type="button"
           variant="outline"
-          className="h-[32px] px-3 text-[14px] font-normal"
+          className="h-[32px] px-3 text-sm font-normal"
           onClick={addUser}
           disabled={!userInput.trim()}
         >

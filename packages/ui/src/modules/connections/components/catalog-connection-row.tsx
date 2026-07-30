@@ -55,9 +55,7 @@ export function CatalogConnectionRow({
               <ConnectionStatusBadge status={connection.status} />
             )}
           </div>
-          <p className="truncate text-[14px] text-muted-foreground">
-            {subtitle}
-          </p>
+          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
           <GithubAppInstallLink connection={connection} />
@@ -67,7 +65,7 @@ export function CatalogConnectionRow({
               // Height and text size match the sibling "Add to sandbox" button.
               <Badge
                 variant="muted"
-                className="h-[32px] shrink-0 gap-1.5 px-3 text-[14px] text-foreground"
+                className="h-[32px] shrink-0 gap-1.5 px-3 text-sm text-foreground"
               >
                 <Checkmark size={16} className="text-success" />
                 In this sandbox
@@ -75,7 +73,7 @@ export function CatalogConnectionRow({
             ) : (
               <Button
                 variant="outline"
-                className="h-[32px] shrink-0 px-3 text-[14px] font-normal"
+                className="h-[32px] shrink-0 px-3 text-sm font-normal"
                 onClick={() => grant.onToggle(true)}
                 data-testid={`catalog-add-${connection.id}`}
               >

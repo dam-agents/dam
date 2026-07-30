@@ -132,14 +132,14 @@ export function ExperimentsSection({
       >
         <DisclosureChevron open={expanded} className="text-muted-foreground" />
         <Chemistry size={16} className="shrink-0 text-muted-foreground" />
-        <span className="text-[14px] font-semibold text-muted-foreground">
+        <span className="text-sm font-semibold text-muted-foreground">
           Experiments
         </span>
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {folders.length} experiment{folders.length === 1 ? "" : "s"} · {total}{" "}
           artifact{total === 1 ? "" : "s"}
         </span>
-        <span className="ml-auto hidden text-[12px] text-muted-foreground/70 sm:block">
+        <span className="ml-auto hidden text-xs text-muted-foreground/70 sm:block">
           scripts, dashboards and run results published by your agents
         </span>
       </div>

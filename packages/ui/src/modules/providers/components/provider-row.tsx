@@ -41,7 +41,7 @@ export function ProviderRow({
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
-        <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
+        <span className="shrink-0 text-sm font-normal text-muted-foreground">
           Connect
         </span>
       </CardButton>
@@ -91,10 +91,10 @@ function ProviderText({
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
-        <p className="text-[16px] font-medium text-foreground">{name}</p>
+        <p className="text-base font-medium text-foreground">{name}</p>
         {connected && <Badge variant="success">Connected</Badge>}
       </div>
-      <p className="text-[14px] text-muted-foreground">{description}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

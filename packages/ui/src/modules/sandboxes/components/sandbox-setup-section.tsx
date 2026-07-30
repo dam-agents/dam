@@ -97,7 +97,7 @@ export function SandboxSetupSection({ f }: Props) {
             disabled={f.saving}
           />
         </Inset>
-        <p className="mt-3 text-[12px] text-muted-foreground">
+        <p className="mt-3 text-xs text-muted-foreground">
           Changing the provider swaps this sandbox's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
           break the agent and may need a restart.

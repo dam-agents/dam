@@ -12,10 +12,10 @@ export function StepHeader({ step, title, subtitle }: Props) {
   return (
     <div className="mb-8">
       <SectionLabel>Step {step} of 3</SectionLabel>
-      <h1 className="mt-2 text-[24px] font-semibold tracking-[-0.5px] text-foreground">
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.5px] text-foreground">
         {title}
       </h1>
-      <p className="mt-1 text-[14px] text-muted-foreground">{subtitle}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
     </div>
   );
 }

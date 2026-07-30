@@ -87,7 +87,7 @@ export function ScheduleCard({
           <p className="truncate text-[15px] font-semibold text-foreground">
             {name}
           </p>
-          <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
+          <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
             {cadence && <span className="truncate">{cadence}</span>}
             {nextRunHint && (
               <>
@@ -108,7 +108,7 @@ export function ScheduleCard({
 
         <Button
           variant="outline"
-          className="h-[32px] px-3 text-[13px] font-normal"
+          className="h-[32px] px-3 text-sm font-normal"
           onClick={onViewResults}
         >
           <Launch size={14} /> View results
@@ -156,7 +156,7 @@ export function ScheduleCard({
       <button
         type="button"
         onClick={onToggleExpanded}
-        className="flex w-full items-center gap-1 border-t border-border px-4 py-2.5 text-[13px] font-medium text-foreground hover:bg-muted"
+        className="flex w-full items-center gap-1 border-t border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
       >
         {isExpanded ? (
           <>

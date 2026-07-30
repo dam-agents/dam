@@ -52,10 +52,10 @@ export function FeaturesTab() {
             )}
           >
             <span>
-              <span className="block text-[14px] font-medium text-foreground">
+              <span className="block text-sm font-medium text-foreground">
                 {row.label}
               </span>
-              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+              <span className="mt-0.5 block text-sm text-muted-foreground">
                 {row.description}
               </span>
             </span>

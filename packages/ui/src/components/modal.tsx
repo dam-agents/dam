@@ -104,7 +104,7 @@ export function DialogHeader({
                 <h2
                   id={labelId}
                   className={cn(
-                    "text-[16px] font-semibold text-foreground",
+                    "text-base font-semibold text-foreground",
                     truncateTitle && "truncate",
                   )}
                 >
@@ -114,9 +114,7 @@ export function DialogHeader({
               </div>
             )}
             {subtitle && (
-              <p className="mt-0.5 text-[14px] text-muted-foreground">
-                {subtitle}
-              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
             )}
           </div>
           {onClose && (

@@ -30,11 +30,11 @@ export function BindAgentRow({
         highlighted ? "border-foreground" : "border-border",
       )}
     >
-      <span className="text-[14px] font-semibold text-foreground">
+      <span className="text-sm font-semibold text-foreground">
         {pending ? `Connecting ${agent.name}…` : agent.name}
       </span>
       {agent.description && (
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {agent.description}
         </span>
       )}

@@ -87,9 +87,7 @@ export function ProviderSelect({
       <Badge variant="success">Connected</Badge>
     ) : undefined,
     trailing: itemByType.has(row.type) ? undefined : (
-      <span className="shrink-0 text-[13px] text-muted-foreground">
-        Connect
-      </span>
+      <span className="shrink-0 text-sm text-muted-foreground">Connect</span>
     ),
     testId: `provider-option-${row.type}`,
   }));

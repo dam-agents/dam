@@ -27,7 +27,7 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
           <WakeToEditButton agentId={agentId} comingUp={comingUp} />
         </div>
         <Callout inset>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Start the agent to load and edit its model settings.
           </p>
         </Callout>

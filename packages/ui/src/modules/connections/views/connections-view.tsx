@@ -26,7 +26,7 @@ export function ConnectionsView() {
   const newButton = (
     <Button
       variant="outline"
-      className="h-[32px] px-3 text-[14px] font-normal"
+      className="h-[32px] px-3 text-sm font-normal"
       onClick={() => setCatalogOpen(true)}
       data-testid="open-connection-catalog"
     >
@@ -67,7 +67,7 @@ export function ConnectionsView() {
           <SectionLabel spaced>My connections</SectionLabel>
           <Inset className={CARD_SURFACE}>
             <div className="flex flex-col items-center gap-4 py-10">
-              <p className="text-[14px] text-foreground/80">
+              <p className="text-sm text-foreground/80">
                 No connections set up yet.
               </p>
               {newButton}

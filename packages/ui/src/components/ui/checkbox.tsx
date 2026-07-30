@@ -11,9 +11,7 @@ function Checkbox({
   return (
     <CheckboxPrimitive.Root
       className={cn(
-        // Fixed px, not rem: the root font-size is 15px, so rem sizes put the
-        // glyph on half device pixels and overflow the bordered box.
-        "peer flex size-[16px] shrink-0 items-center justify-center rounded-sm border border-primary ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+        "peer flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
         className,
       )}
       {...props}

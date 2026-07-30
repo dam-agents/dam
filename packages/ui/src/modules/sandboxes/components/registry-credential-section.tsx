@@ -50,7 +50,7 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
       </DisclosureToggle>
       {expanded && (
         <div className="mt-3 flex flex-col gap-3">
-          <p className="text-[12px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Credentials to pull this image from a private registry. Stored with
             the sandbox and used only by the cluster to pull the image — never
             exposed to the agent.
@@ -78,7 +78,7 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
             />
           </FormField>
           {partial && (
-            <p className="text-[12px] text-destructive">
+            <p className="text-xs text-destructive">
               Enter server, username, and password — or clear all three to skip.
             </p>
           )}

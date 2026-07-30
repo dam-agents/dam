@@ -50,7 +50,7 @@ export function EnvTab({
   const warnings = shadowWarnings(envVars, inherited);
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-[12px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Variables added here are sent directly to the agent as plaintext. Use
         them only for non-sensitive stubs and config — never secrets, which
         belong in Connections. Changes apply to this agent; restart it to pick
@@ -76,7 +76,7 @@ export function EnvTab({
           <Callout
             tone="warning"
             size="sm"
-            className="flex flex-col gap-1 text-[12px]"
+            className="flex flex-col gap-1 text-xs"
           >
             <div className="flex items-center gap-2 text-warning">
               <WarningAlt size={12} />
@@ -113,7 +113,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         ? entry.source.secretName
         : entry.source.appLabel;
   return (
-    <div className="group flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px]">
+    <div className="group flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
       <span
         className={cn("shrink-0", isSystem && "text-muted-foreground")}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
@@ -131,7 +131,7 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         {entry.value}
       </span>
       {!isSystem && (
-        <span className="text-[12px] text-muted-foreground truncate max-w-[160px]">
+        <span className="text-xs text-muted-foreground truncate max-w-[160px]">
           {sourceName}
         </span>
       )}

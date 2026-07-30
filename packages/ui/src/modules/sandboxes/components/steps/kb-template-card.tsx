@@ -16,12 +16,10 @@ export function KbTemplateCard({ template, selected, onSelect }: Props) {
       selected={selected}
       className="w-full px-4 py-3"
     >
-      <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+      <p className="text-base font-medium text-foreground leading-[1.2]">
         {template.name}
       </p>
-      <p className="text-[14px] text-muted-foreground">
-        {template.description}
-      </p>
+      <p className="text-sm text-muted-foreground">{template.description}</p>
     </CardButton>
   );
 }

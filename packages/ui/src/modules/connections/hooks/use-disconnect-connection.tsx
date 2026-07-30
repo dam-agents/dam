@@ -52,7 +52,7 @@ export function useDisconnectConnection() {
         {affected.length > 0 && (
           <Callout tone="muted" className="mt-4">
             <SectionLabel>Affected sandboxes</SectionLabel>
-            <ul className="mt-2 list-disc pl-5 text-[14px] text-foreground/90">
+            <ul className="mt-2 list-disc pl-5 text-sm text-foreground/90">
               {affected.map((n) => (
                 <li key={n}>{n}</li>
               ))}

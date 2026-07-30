@@ -8,7 +8,7 @@ export function CardContent({ template }: { template: TemplateView }) {
     <>
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex items-center gap-2">
-          <p className="text-[16px] font-semibold text-foreground">
+          <p className="text-base font-semibold text-foreground">
             {template.name}
           </p>
           {template.experimental && (
@@ -20,9 +20,7 @@ export function CardContent({ template }: { template: TemplateView }) {
         <CardTags tags={template.tags} />
       </div>
       {template.description && (
-        <p className="text-[14px] text-muted-foreground">
-          {template.description}
-        </p>
+        <p className="text-sm text-muted-foreground">{template.description}</p>
       )}
     </>
   );

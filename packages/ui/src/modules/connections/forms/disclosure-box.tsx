@@ -44,7 +44,7 @@ export function DisclosureBox({
           <SectionLabel>{title}</SectionLabel>
         </DisclosureToggle>
         {description && (
-          <div className="mt-1.5 pl-5 text-[13px] text-muted-foreground">
+          <div className="mt-1.5 pl-5 text-sm text-muted-foreground">
             {description}
           </div>
         )}
@@ -59,7 +59,7 @@ export function DisclosureBox({
         open={open}
         onToggle={toggle}
         testId={testId}
-        className="h-[44px] w-full px-4 text-[14px] font-medium text-foreground"
+        className="h-[44px] w-full px-4 text-sm font-medium text-foreground"
       >
         {title}
       </DisclosureToggle>

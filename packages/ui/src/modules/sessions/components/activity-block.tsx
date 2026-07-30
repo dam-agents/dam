@@ -22,7 +22,7 @@ export function ActivityBlock({
   return (
     <div
       className={cn(
-        "border-l-2 border-border pl-3 max-w-full text-[14px] font-normal text-muted-foreground",
+        "border-l-2 border-border pl-3 max-w-full text-sm font-normal text-muted-foreground",
         className,
       )}
     >

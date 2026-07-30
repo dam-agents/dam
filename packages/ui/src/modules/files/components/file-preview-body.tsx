@@ -105,7 +105,7 @@ export function FilePreviewBody({
   // binary:true and content:"" so the hex-dump path would render an empty buffer.
   if (tooLarge) {
     return (
-      <div className="py-12 text-center text-[13px] text-muted-foreground">
+      <div className="py-12 text-center text-sm text-muted-foreground">
         <p>File too large to preview</p>
         <p className="mt-1 text-[11px]">Files over 10 MB cannot be displayed</p>
       </div>

@@ -47,7 +47,7 @@ function BuiltInSkillRow({
         </p>
         <p
           className={cn(
-            "truncate text-[13px] text-muted-foreground",
+            "truncate text-sm text-muted-foreground",
             !skill.description && "italic",
           )}
         >

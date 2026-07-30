@@ -13,12 +13,12 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
   return (
     <section className="mb-8">
       <SectionLabel spaced>Channels</SectionLabel>
-      <p className="-mt-1 mb-4 text-[14px] text-muted-foreground">
+      <p className="-mt-1 mb-4 text-sm text-muted-foreground">
         Connect this sandbox to messenger surfaces (Slack channels, Telegram
         chats).
       </p>
       {!available.slack && !available.telegram ? (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           No channels are configured for this installation.
         </p>
       ) : (

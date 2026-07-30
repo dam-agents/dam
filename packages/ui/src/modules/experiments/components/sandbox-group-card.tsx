@@ -38,7 +38,7 @@ export function SandboxGroupCard({
       >
         <span
           className={cn(
-            "truncate text-[14px] font-semibold",
+            "truncate text-sm font-semibold",
             deleted ? "text-muted-foreground" : "text-foreground",
           )}
         >
@@ -70,14 +70,14 @@ export function SandboxGroupCard({
       </div>
 
       {deleted && (
-        <p className="mb-3 px-1.5 text-[12px] text-muted-foreground">
+        <p className="mb-3 px-1.5 text-xs text-muted-foreground">
           These sandboxes were deleted; their runs and results still live in the
           artifact library.
         </p>
       )}
 
       {count === 0 ? (
-        <p className="px-1.5 text-[13px] text-muted-foreground">
+        <p className="px-1.5 text-sm text-muted-foreground">
           No experiments yet — open the sandbox chat and ask the agent to set
           one up.
         </p>

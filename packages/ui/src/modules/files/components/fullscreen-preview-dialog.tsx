@@ -36,7 +36,7 @@ export function FullscreenPreviewDialog({ title, onClose, children }: Props) {
     >
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
         <span
-          className="text-[12px] font-mono text-foreground/80 truncate flex-1"
+          className="text-xs font-mono text-foreground/80 truncate flex-1"
           title={title}
         >
           {title}

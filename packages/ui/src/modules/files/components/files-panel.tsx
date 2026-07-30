@@ -44,7 +44,7 @@ export function FilesPanel({
         <Button
           variant="outline"
           size="xs"
-          className="text-[14px]"
+          className="text-sm"
           disabled={controller.isUploading}
           title={controller.isUploading ? "Upload in progress…" : "Add"}
         >
@@ -118,7 +118,7 @@ export function FilesPanel({
               />
             )}
             {controller.rootIsLoadedEmpty && (
-              <p className="px-4 py-5 text-[12px] text-muted-foreground">
+              <p className="px-4 py-5 text-xs text-muted-foreground">
                 No files yet
               </p>
             )}
@@ -127,7 +127,7 @@ export function FilesPanel({
         )}
         {controller.showPanelOverlay && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
-            <div className="text-[12px] font-semibold text-accent">
+            <div className="text-xs font-semibold text-accent">
               Drop files to upload to /home/agent
             </div>
           </div>

@@ -25,7 +25,7 @@ export function WorkloadCard({
             href={template.docsUrl}
             target="_blank"
             rel="noreferrer"
-            className="pointer-events-auto inline-block w-fit text-[14px] text-muted-foreground underline underline-offset-2 hover:text-primary"
+            className="pointer-events-auto inline-block w-fit text-sm text-muted-foreground underline underline-offset-2 hover:text-primary"
           >
             Learn more
           </a>

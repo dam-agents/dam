@@ -132,10 +132,10 @@ export function SettingsView() {
                         )}
                       />
                       <span>
-                        <span className="block text-[16px] font-medium leading-[1.2] text-foreground">
+                        <span className="block text-base font-medium leading-[1.2] text-foreground">
                           {label}
                         </span>
-                        <span className="mt-1 block text-[14px] text-muted-foreground">
+                        <span className="mt-1 block text-sm text-muted-foreground">
                           {description}
                         </span>
                       </span>
@@ -158,20 +158,18 @@ export function SettingsView() {
 
             <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
                 {(user?.profile.preferred_username ??
                   user?.profile.sub ??
                   "?")[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[14px] font-medium text-foreground truncate">
+                <div className="text-sm font-medium text-foreground truncate">
                   {user?.profile.preferred_username ??
                     user?.profile.sub ??
                     "Unknown"}
                 </div>
-                <div className="text-[12px] text-muted-foreground">
-                  Signed in
-                </div>
+                <div className="text-xs text-muted-foreground">Signed in</div>
               </div>
               <Button
                 variant="ghost"
@@ -192,7 +190,7 @@ export function SettingsView() {
             {appVersion && (
               <div
                 onClick={onVersionTap}
-                className="mt-6 text-[12px] text-muted-foreground break-all select-none"
+                className="mt-6 text-xs text-muted-foreground break-all select-none"
               >
                 Version {appVersion}
               </div>
