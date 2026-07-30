@@ -230,6 +230,16 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.NotContains(t, runnable, "du -sh", "a size log line is not worth a full metadata walk")
 	// Checksums are latency-bound, so they read in parallel.
 	assert.Contains(t, runnable, "-P\"${PAR}\"")
+	// Parallel workers write private files: a shared stdout tears lines when
+	// a batch exceeds one atomic pipe write (long node_modules paths do),
+	// and a torn line is a spurious verification failure.
+	assert.Contains(t, runnable, `>> "/tmp/sums.$$"`)
+	// The wipe's chmod must skip symlinks: chmod dereferences a top-level
+	// link argument, and a dangling one would wedge every retry.
+	assert.Contains(t, runnable, "! -name lost+found ! -type l -exec chmod")
+	// Diagnostics must not flow through `| head` under pipefail: awk dies of
+	// SIGPIPE and set -e kills the script before the paths print.
+	assert.NotContains(t, runnable, "| head")
 	// The archive must contain the source's CONTENTS, never "./" itself:
 	// a "./" member carries the source root's mode, which tar then applies
 	// to the target root — EPERM, since the root belongs to the provisioner.
@@ -619,4 +629,93 @@ func TestStorageMigration_TargetSizeFloorNeverShrinks(t *testing.T) {
 	require.NoError(t, err)
 	got := target.Spec.Resources.Requests[corev1.ResourceStorage]
 	assert.Equal(t, "7Gi", got.String(), "a floor below the source's request changes nothing")
+}
+
+// The wrong-class incident left targets on the shared-filesystem class
+// behind. Reusing one would copy every byte straight back onto the backend
+// being drained — a corrected targetStorageClass must discard and re-provision
+// them, and must take the copy Job (which mounts the stale target) with it.
+func TestStorageMigration_DiscardsStaleTargetOnWrongClass(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	stale := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mig-home-agent-my-agent-0", Namespace: "test-agents",
+			Labels: map[string]string{
+				LabelPool: migrationPoolValue, LabelMount: "home-agent",
+				LabelMigrationFor: "my-agent",
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: ptrString("ibmc-vpc-file-500-iops-agent"),
+		},
+	}
+	staleJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"}}
+	m, client := migrationManager(t, agent,
+		classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteMany),
+		stale, staleJob, fileClass())
+	m.config.StorageMigration.TargetStorageClass = "block-target"
+
+	m.Reconcile(context.Background()) // discards the stale pair
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.Error(t, err, "the wrong-class target is binned")
+	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
+	require.Error(t, err, "the Job mounting it goes first, or pvc-protection pins the PVC")
+
+	m.Reconcile(context.Background()) // recreates on the configured destination
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, target.Spec.StorageClassName)
+	assert.Equal(t, "block-target", *target.Spec.StorageClassName)
+}
+
+// The inverse guard: a target that already carries LabelAgent is the agent's
+// LIVE volume (flip has run). Class mismatch or not, it must never be deleted
+// — a stalled migration beats a deleted volume, every time.
+func TestStorageMigration_NeverDeletesClaimedTarget(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	claimed := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mig-home-agent-my-agent-0", Namespace: "test-agents",
+			Labels: map[string]string{
+				LabelAgent: "my-agent", LabelPool: migrationPoolValue, LabelMount: "home-agent",
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: ptrString("ibmc-vpc-file-500-iops-agent"),
+		},
+	}
+	m, client := migrationManager(t, agent,
+		classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteMany),
+		claimed, fileClass())
+	m.config.StorageMigration.TargetStorageClass = "block-target"
+
+	m.Reconcile(context.Background())
+
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	assert.NoError(t, err, "a claimed volume survives no matter what the config says")
+}
+
+// A matching target is reused, not churned — the discard guard must not turn
+// every tick into delete-and-recreate.
+func TestStorageMigration_ReusesMatchingTarget(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	m, client := migrationManager(t, agent,
+		classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteMany),
+		fileClass())
+	m.config.StorageMigration.TargetStorageClass = "block-target"
+
+	m.Reconcile(context.Background())
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "block-target", *target.Spec.StorageClassName)
+	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotNil(t, job, "job survives across ticks while the copy runs")
 }

@@ -10,6 +10,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -106,6 +107,7 @@ type StorageMigrationManager struct {
 	skippedVM       map[string]bool
 	warnedSameClass map[string]bool
 	loggedReason    map[string]bool
+	warnedResolve   bool
 }
 
 func NewStorageMigrationManager(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *StorageMigrationManager {
@@ -331,7 +333,7 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 			}
 			slots--
 		}
-		if err := m.migrateAgent(ctx, agent, rwxByAgent[name]); err != nil {
+		if err := m.migrateAgent(ctx, agent, rwxByAgent[name], targetClass); err != nil {
 			slog.Warn("storage migration: agent migration step failed", "agent", name, "error", err)
 		}
 	}
@@ -354,16 +356,42 @@ func (m *StorageMigrationManager) resolveTargetClass(ctx context.Context) (name 
 	if err != nil {
 		// Without the default class's name the class comparison can't run;
 		// the RWX rule still does, so the drain degrades rather than stops.
-		slog.Warn("storage migration: cannot resolve the cluster default storage class; migrating on access mode only", "error", err)
+		m.warnResolveOnce("storage migration: cannot resolve the cluster default storage class; migrating on access mode only", err)
 		return "", false
 	}
-	for _, sc := range classes.Items {
-		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
-			return sc.Name, false
+	// Same tie-break as the DefaultStorageClass admission plugin: with
+	// several classes annotated default, the NEWEST wins. Diverging from
+	// admission here would discard-and-recreate targets forever — admission
+	// stamps one class, this comparison expects another.
+	var picked *storagev1.StorageClass
+	for i := range classes.Items {
+		sc := &classes.Items[i]
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] != "true" {
+			continue
+		}
+		if picked == nil || sc.CreationTimestamp.After(picked.CreationTimestamp.Time) {
+			picked = sc
 		}
 	}
-	slog.Warn("storage migration: no default storage class found; migrating on access mode only")
+	if picked != nil {
+		return picked.Name, false
+	}
+	m.warnResolveOnce("storage migration: no default storage class found; migrating on access mode only", nil)
 	return "", false
+}
+
+// warnResolveOnce keeps the per-tick resolution warnings from repeating every
+// 30s for the lifetime of a misconfigured install.
+func (m *StorageMigrationManager) warnResolveOnce(msg string, err error) {
+	if m.warnedResolve {
+		return
+	}
+	m.warnedResolve = true
+	if err != nil {
+		slog.Warn(msg, "error", err)
+		return
+	}
+	slog.Warn(msg)
 }
 
 // migrationReason says why a workspace needs migrating, or "" if it does not.
@@ -392,6 +420,32 @@ func migrationReason(pvc *corev1.PersistentVolumeClaim, targetClass string, allo
 		return "storage class " + srcClass + " is not the migration target " + targetClass, true
 	}
 	return "", false
+}
+
+// targetReusable says whether an existing, unclaimed migration target may
+// receive this configuration's copy. Class must match the resolved
+// destination (unknown destination — lookup failed — accepts anything rather
+// than churn), and the size must meet the configured floor so a floor added
+// after a failed attempt takes effect on the retry.
+func (m *StorageMigrationManager) targetReusable(existing *corev1.PersistentVolumeClaim, targetClass string) bool {
+	if targetClass != "" && ptrClassString(existing.Spec.StorageClassName) != targetClass {
+		return false
+	}
+	if floor := m.config.StorageMigration.MinTargetSize; floor != "" {
+		if q, err := resource.ParseQuantity(floor); err == nil {
+			if size := existing.Spec.Resources.Requests[corev1.ResourceStorage]; size.Cmp(q) < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func ptrClassString(sc *string) string {
+	if sc == nil {
+		return ""
+	}
+	return *sc
 }
 
 func isRWX(modes []corev1.PersistentVolumeAccessMode) bool {
@@ -423,7 +477,7 @@ func migrationJobName(agentName string) string {
 
 // migrateAgent advances one agent's migration by one step. Every step is
 // idempotent; the caller re-invokes each tick until nothing is left to do.
-func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1.Agent, rwxPVCs []corev1.PersistentVolumeClaim) error {
+func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1.Agent, rwxPVCs []corev1.PersistentVolumeClaim, targetClass string) error {
 	name := agent.Name
 
 	// Step 1 — gate the agent down. The annotation is a shouldRun negative
@@ -463,7 +517,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 				// PVC-name prefix by the `<mount>-<agent>-0` convention.
 				mount = strings.TrimSuffix(old.Name, "-"+name+"-0")
 			}
-			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef)
+			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef, targetClass)
 			if err != nil {
 				return err
 			}
@@ -520,11 +574,44 @@ type migrationPair struct {
 // Size follows the source's request; class is the agents' configured class
 // (empty = cluster default, WaitForFirstConsumer binding lands it on the
 // copy Job's node).
-func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference) (string, error) {
+func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference, targetClass string) (string, error) {
 	targetName := migrationTargetName(old.Name)
-	_, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
+	existing, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
 	if err == nil {
-		return targetName, nil
+		// A pre-existing target is only reusable if it is where THIS
+		// configuration wants the data to land. The wrong-class incident
+		// left exactly the counterexample behind: targets provisioned on
+		// the shared-filesystem class by the old inherit-the-agents'-class
+		// bug — reusing one would copy every byte straight back onto the
+		// backend being drained, silently defeating a corrected config.
+		if existing.DeletionTimestamp != nil {
+			return "", fmt.Errorf("stale migration target %s is still terminating; retrying next tick", targetName)
+		}
+		if m.targetReusable(existing, targetClass) {
+			return targetName, nil
+		}
+		// Refuse to touch anything claimed: LabelAgent appears on the
+		// target only at flip, when it becomes the agent's LIVE volume.
+		// An unclaimed target is garbage by construction — but if this
+		// ever disagrees, erring on "migration stalls" beats "volume
+		// deleted".
+		if existing.Labels[LabelAgent] != "" {
+			return "", fmt.Errorf("target %s does not match the configured destination but is already claimed; refusing to replace it", targetName)
+		}
+		slog.Warn("storage migration: discarding stale target provisioned for a different destination",
+			"agent", agentName, "pvc", targetName,
+			"have", ptrClassString(existing.Spec.StorageClassName), "want", targetClass)
+		// The copy Job (if any) mounts the stale target by name; it must go
+		// first or pvc-protection pins the PVC until the pod exits anyway.
+		prop := metav1.DeletePropagationBackground
+		if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, migrationJobName(agentName),
+			metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !errors.IsNotFound(err) {
+			return "", err
+		}
+		if err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Delete(ctx, targetName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("discarded stale migration target %s; recreating next tick", targetName)
 	}
 	if !errors.IsNotFound(err) {
 		return "", err
@@ -817,7 +904,10 @@ copy_verify() {
   # root-squashing share — no copier can move it, so fail with the paths
   # rather than a mid-copy error. Symlinks are exempt: -readable follows the
   # link, and a dangling link is legitimate content the copy recreates.
-  unreadable="$(awk -F'|' '$1=="x" && $2!="l" {print $5}' /tmp/src.walk | head -20)"
+  # The 20-line cap lives INSIDE awk: piping through head under pipefail
+  # means awk dies of SIGPIPE once head exits, and set -e then kills the
+  # script before the diagnostic prints — a cryptic 141 instead of paths.
+  unreadable="$(awk -F'|' '$1=="x" && $2!="l" && n<20 {print $5; n++}' /tmp/src.walk)"
   if [ -n "$unreadable" ]; then
     echo "migration blocked: owner-unreadable entries on the source (list may be truncated):"
     echo "$unreadable"
@@ -827,7 +917,7 @@ copy_verify() {
   # Ownership: an unprivileged copy recreates entries as the agent uid, so it
   # is only faithful while the workspace is single-owner — which it is by
   # construction. Anything else is reported rather than silently re-owned.
-  foreign="$(awk -F'|' -v u="${AGENT_UID}" '$4!=u {print $5}' /tmp/src.walk | head -20)"
+  foreign="$(awk -F'|' -v u="${AGENT_UID}" '$4!=u && n<20 {print $5; n++}' /tmp/src.walk)"
   if [ -n "$foreign" ]; then
     if [ "${ALLOW_OWNERSHIP_REMAP}" = "1" ]; then
       echo "note: re-owning these source entries to uid ${AGENT_UID} (allowOwnershipRemap; list may be truncated):"
@@ -851,7 +941,10 @@ copy_verify() {
   # caches, site-packages), and removing an entry needs write+execute on its
   # parent. LOST+FOUND is skipped: a fresh ext4 volume's own artifact,
   # root-owned and not ours to delete — the verification excludes it too.
-  find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec chmod -R u+rwX {} +
+  # Symlinks are excluded from the mode restore: chmod dereferences a
+  # top-level link argument, and a DANGLING one (legitimate content) would
+  # error out and wedge every retry. rm -rf removes links themselves fine.
+  find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found ! -type l -exec chmod -R u+rwX {} +
   find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
   phase "wiped target"
 
@@ -904,8 +997,17 @@ copy_verify() {
   # order. md5 is deliberate: integrity checking of our own quiesced copy,
   # not defense against crafted collisions — and the fastest digest coreutils
   # ships.
-  sums() { (cd "$1" && find . -type f ! -path './lost+found*' -print0 \
-              | xargs -0 -r -P"${PAR}" -n64 md5sum) | LC_ALL=C sort; }
+  # Each worker batch writes its own file: with a shared stdout, a batch
+  # whose output exceeds one atomic pipe write (long node_modules paths
+  # easily do) can interleave mid-line with another worker, and a torn line
+  # is a spurious verification failure. O_APPEND to distinct files by PID
+  # cannot tear.
+  sums() {
+    rm -f /tmp/sums.*
+    (cd "$1" && find . -type f ! -path './lost+found*' -print0 \
+       | xargs -0 -r -P"${PAR}" -n64 sh -c 'md5sum "$@" >> "/tmp/sums.$$"' _)
+    cat /tmp/sums.* 2>/dev/null | LC_ALL=C sort
+  }
   sums "$src" > /tmp/src.sum
   sums "$dst" > /tmp/dst.sum
   cmp /tmp/src.sum /tmp/dst.sum
