@@ -45,12 +45,19 @@ export function formatTimestamp(iso: string): string {
 
 type DateInput = string | number | Date;
 
+/** null for an unparseable value, so the wrappers can fail soft to "—" rather
+ *  than render "Invalid Date" — they're now the single funnel for every date. */
+function toDate(value: DateInput): Date | null {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** `toLocaleDateString` without an inline `new Date(...)`; options pass through. */
 export function formatDate(
   value: DateInput,
   options?: Intl.DateTimeFormatOptions,
 ): string {
-  return new Date(value).toLocaleDateString(undefined, options);
+  return toDate(value)?.toLocaleDateString(undefined, options) ?? "—";
 }
 
 /** `toLocaleString` (date + time) without an inline `new Date(...)`. */
@@ -58,7 +65,7 @@ export function formatDateTime(
   value: DateInput,
   options?: Intl.DateTimeFormatOptions,
 ): string {
-  return new Date(value).toLocaleString(undefined, options);
+  return toDate(value)?.toLocaleString(undefined, options) ?? "—";
 }
 
 /** `toLocaleTimeString` without an inline `new Date(...)`. */
@@ -66,5 +73,5 @@ export function formatTime(
   value: DateInput,
   options?: Intl.DateTimeFormatOptions,
 ): string {
-  return new Date(value).toLocaleTimeString(undefined, options);
+  return toDate(value)?.toLocaleTimeString(undefined, options) ?? "—";
 }

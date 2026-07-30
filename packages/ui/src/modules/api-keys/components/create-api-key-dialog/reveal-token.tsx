@@ -1,7 +1,7 @@
 import { Checkmark, Copy } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 
 import {
   DialogBody,

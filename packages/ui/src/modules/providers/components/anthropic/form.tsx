@@ -6,7 +6,7 @@ import { Controller, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
