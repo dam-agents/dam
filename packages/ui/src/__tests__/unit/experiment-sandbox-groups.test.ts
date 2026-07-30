@@ -20,7 +20,6 @@ const agent = (id: string, kind?: AgentView["kind"]): AgentView => ({
   state: "running",
   contributionFailures: [],
   channels: [],
-  allowedUserEmails: [],
   spawnedBy: null,
   ...(kind ? { kind } : {}),
 });

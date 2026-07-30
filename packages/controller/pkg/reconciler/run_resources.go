@@ -20,7 +20,7 @@ const (
 // *already-running* gateway — `parentGatewayIP` is the parent gateway Service's
 // ClusterIP — so it needs no gateway/cert/SA/AuthorizationPolicy of its own; its
 // own egress NetworkPolicy admits it to that gateway. Credentials reach it the
-// same way forks get them: placeholder env (here) + on-wire injection at the
+// same way the long-lived pair gets them: placeholder env (here) + on-wire injection at the
 // shared gateway.
 func BuildRunExecutorPod(
 	runName string,

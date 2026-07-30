@@ -16,32 +16,19 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 
-function renderHuman(
-  channels: readonly ChannelConfig[],
-  allowedUserEmails: readonly string[],
-): string {
-  const channelsBlock =
-    channels.length === 0
-      ? "No channels connected.\n"
-      : renderTable([
-          ["TYPE", "IDENTIFIER", "MODE"],
-          ...channels.map((c) =>
-            // Telegram has no readable identifier — the bot token is write-only.
-            // Telegram is structurally shared-only.
-            c.type === ChannelType.Slack
-              ? [
-                  "slack",
-                  c.slackChannelId,
-                  c.ambient ? "shared (ambient)" : (c.mode ?? "person-scoped"),
-                ]
-              : ["telegram", "—", "shared"],
-          ),
-        ]);
-  const allowed =
-    allowedUserEmails.length === 0
-      ? "  (unrestricted)\n"
-      : `${allowedUserEmails.map((e) => `  ${e}`).join("\n")}\n`;
-  return `${channelsBlock}\nAllowed users:\n${allowed}`;
+function renderHuman(channels: readonly ChannelConfig[]): string {
+  return channels.length === 0
+    ? "No channels connected.\n"
+    : renderTable([
+        ["TYPE", "IDENTIFIER", "AMBIENT"],
+        ...channels.map((c) =>
+          // Telegram has no readable identifier — the bot token is write-only.
+          // Ambient is Slack-only.
+          c.type === ChannelType.Slack
+            ? ["slack", c.slackChannelId, c.ambient ? "on" : "off"]
+            : ["telegram", "—", "—"],
+        ),
+      ]);
 }
 
 export function buildListCommand(deps: {
@@ -50,16 +37,13 @@ export function buildListCommand(deps: {
   createAgentService: (host: string) => AgentService;
 }): Command {
   return new Command("list")
-    .description("List an Agent's connected channels and its Slack allow-list")
+    .description("List an Agent's connected channels")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option(
-      "--json",
-      "emit { channels, allowedUserEmails } as JSON instead of the default tables",
-    )
+    .option("--json", "emit { channels } as JSON instead of the default table")
     .addHelpText(
       "after",
       "\nExamples:\n" +
@@ -76,7 +60,7 @@ export function buildListCommand(deps: {
       });
 
       // The resolver returns the full AgentView, which already carries
-      // `channels` and `allowedUserEmails` — no second read needed.
+      // `channels` — no second read needed.
       const resolver = createAgentResolver({
         agentService: deps.createAgentService(host),
       });
@@ -86,17 +70,14 @@ export function buildListCommand(deps: {
         process.exit(exitCodeForResolveError(resolved.error));
       }
 
-      const { channels, allowedUserEmails } = resolved.value;
+      const { channels } = resolved.value;
 
       if (opts.json) {
         return writeStdoutAndExit(
-          `${JSON.stringify({ channels, allowedUserEmails })}\n`,
+          `${JSON.stringify({ channels })}\n`,
           EXIT_SUCCESS,
         );
       }
-      return writeStdoutAndExit(
-        renderHuman(channels, allowedUserEmails),
-        EXIT_SUCCESS,
-      );
+      return writeStdoutAndExit(renderHuman(channels), EXIT_SUCCESS);
     });
 }

@@ -226,10 +226,6 @@ export function createApi(namespace: string) {
   kc.loadFromDefault();
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
-    // Injected into the fork orchestrator so it stays unit-testable
-    // with a fake. The agents K8sClient builds its own CustomObjectsApi
-    // internally — it's faked in tests, so it needs no injected client.
-    customObjects: kc.makeApiClient(k8s.CustomObjectsApi),
     namespace,
   };
 }

@@ -77,23 +77,17 @@ func (p bootstrapParams) attributionOverridden() bool {
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
 //
-// `instanceID` is this gateway's *own* instance (agent or fork name); it is
-// emitted as the bounded `platform.gateway.id` attribute on the gateway's own
-// telemetry, and — absent an attribution override — is the value stamped into
-// the trusted `x-platform-agent-id` telemetry header.
-// `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials. For long-lived pairs the two are equal; for forks
-// `extAuthzInstanceID` is the *parent* instance's ID — fork pods run as their
-// *own* per-fork SA, but the parent owner's HITL rules should gate fork
-// egress, so the fork's gateway dials the parent's per-instance ext-authz
-// Service (admitted via `BuildForkExtAuthzAuthorizationPolicy`).
+// `instanceID` is this gateway's own instance (the agent name); it is emitted
+// as the bounded `platform.gateway.id` attribute on the gateway's own
+// telemetry, names the per-instance ext-authz Service the gateway dials, and —
+// absent an attribution override — is the value stamped into the trusted
+// `x-platform-agent-id` telemetry header.
 // `attributionID` overrides the trusted `x-platform-agent-id` stamp: empty
 // means stamp `instanceID` (own-instance attribution); non-empty means stamp
 // that id instead and additionally stamp `x-platform-invocation-id` with
 // `instanceID`, so an Invocation target's spend credits its root Driver while
-// the child row stays distinguishable (#3041). Forks pass empty — a fork's
-// telemetry always attributes to the fork itself.
-func renderEnvoyBootstrap(instanceID, extAuthzInstanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
+// the child row stays distinguishable (#3041).
+func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
 	// Envoy's per-call timeout sits ahead of the application-level hold so a
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
@@ -137,7 +131,7 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID, attributionID string, 
 		ObjectStoreHost:        cfg.ObjectStoreHost,
 		ObjectStorePort:        cfg.ObjectStorePort,
 		HealthPath:             platformGatewayHealthPath,
-		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
+		ExtAuthzHost:           cfg.ExtAuthzHostFor(instanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 		Telemetry:              telemetry,

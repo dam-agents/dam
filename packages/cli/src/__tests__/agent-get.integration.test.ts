@@ -153,7 +153,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     overBudget: false,
     contributionFailures: [],
     channels: [],
-    allowedUserEmails: [],
     ...overrides,
   };
 }
@@ -193,7 +192,6 @@ describe("dam agent get (integration)", () => {
         image: "registry.example.com/claude-code:latest",
         description: "My prod environment",
       },
-      allowedUserEmails: ["alice@example.com", "bob@example.com"],
     });
     const fixture = await startFixture({
       get: async (id) => (id === "agent-42" ? agent : null),
@@ -216,9 +214,6 @@ describe("dam agent get (integration)", () => {
       );
       expect(r.stdout).toMatch(/^STATE:\s+running$/m);
       expect(r.stdout).toMatch(/^DESCRIPTION:\s+My prod environment$/m);
-      expect(r.stdout).toMatch(
-        /^ALLOWED:\s+alice@example\.com, bob@example\.com$/m,
-      );
     } finally {
       await fixture.close();
     }

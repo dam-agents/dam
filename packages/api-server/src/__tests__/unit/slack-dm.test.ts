@@ -27,7 +27,6 @@ beforeEach(() => {
 type Binding = {
   instanceName: string;
   owner: string;
-  mode?: "shared" | "person-scoped";
 } | null;
 
 function harness(opts: { binding: Binding }) {
@@ -45,7 +44,6 @@ function harness(opts: { binding: Binding }) {
   };
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -68,7 +66,6 @@ function harness(opts: { binding: Binding }) {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     (e) => events.push(e),
   );
 
@@ -114,15 +111,14 @@ function harness(opts: { binding: Binding }) {
   };
 }
 
-const sharedDm: Binding = {
+const boundDm: Binding = {
   instanceName: "agent-1",
   owner: OWNER,
-  mode: "shared",
 };
 
 describe("slack 1:1 DM", () => {
   it("relays a plain DM message (no @mention) when the DM is bound", async () => {
-    const h = harness({ binding: sharedDm });
+    const h = harness({ binding: boundDm });
     await h.directMessage("hello privately");
 
     expect(h.turnEvents()).toHaveLength(1);
@@ -134,7 +130,7 @@ describe("slack 1:1 DM", () => {
   });
 
   it("does not speaker-label the prompt — a 1:1 DM has a single human", async () => {
-    const h = harness({ binding: sharedDm });
+    const h = harness({ binding: boundDm });
     await h.directMessage("hello privately");
 
     expect(h.prompts).toHaveLength(1);
@@ -144,7 +140,7 @@ describe("slack 1:1 DM", () => {
   });
 
   it("logs a basis:'place' allow keyed on the DM conversation", async () => {
-    const h = harness({ binding: sharedDm });
+    const h = harness({ binding: boundDm });
     await h.directMessage("hello privately", "D-42");
 
     const allows = h
@@ -172,7 +168,7 @@ describe("slack 1:1 DM", () => {
   it("drops an app_mention duplicate in a DM (message.im is the source of truth)", async () => {
     // A DM @mention can arrive on both paths; message.im owns it, so the
     // mention path must be a no-op to avoid processing the turn twice.
-    const h = harness({ binding: sharedDm });
+    const h = harness({ binding: boundDm });
     await h.start();
     await h.gw.fireMention({
       user: USER,
@@ -189,7 +185,7 @@ describe("slack 1:1 DM", () => {
 
 describe("slack group DM (mpim)", () => {
   it("relays a bound group-DM mention, speaker-labelled (multi-speaker)", async () => {
-    const h = harness({ binding: sharedDm });
+    const h = harness({ binding: boundDm });
     await h.groupMention("hey <@BOT> help");
 
     expect(h.turnEvents()[0]?.outcome).toBe("success");

@@ -8,14 +8,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func TestBuildEnvoyLeafCertificate_NoSecrets_NotAlwaysIssue_ReturnsNil(t *testing.T) {
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
-	assert.Nil(t, cert, "no credential Secrets and not alwaysIssue (fork): nothing to MITM, no leaf")
-}
-
-func TestBuildEnvoyLeafCertificate_NoSecrets_AlwaysIssue_PlaceholderSAN(t *testing.T) {
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, true)
-	require.NotNil(t, cert, "alwaysIssue (long-lived agent): leaf exists so the ca-cert mount is stable")
+func TestBuildEnvoyLeafCertificate_NoSecrets_PlaceholderSAN(t *testing.T) {
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
+	require.NotNil(t, cert, "leaf exists even with no hosts so the ca-cert mount is stable")
 	assert.Equal(t, "my-instance-envoy-tls", cert.Spec.SecretName)
 	// Placeholder SAN so cert-manager mints the leaf; never presented.
 	assert.Equal(t, []string{"my-instance.mitm-placeholder.invalid"}, cert.Spec.DNSNames)
@@ -23,9 +18,8 @@ func TestBuildEnvoyLeafCertificate_NoSecrets_AlwaysIssue_PlaceholderSAN(t *testi
 
 func TestBuildEnvoyLeafCertificate_L7HostsExtendSANs(t *testing.T) {
 	// A promoted host (#2865) must land on the leaf SAN list — the chain
-	// terminates TLS for it — including for a fork with no credential
-	// Secrets (alwaysIssue=false must now issue).
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil, []string{"api.github.com"}, false)
+	// terminates TLS for it — even with no credential Secrets.
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil, []string{"api.github.com"})
 	require.NotNil(t, cert)
 	assert.Equal(t, []string{"api.github.com"}, cert.Spec.DNSNames)
 }
@@ -36,7 +30,7 @@ func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 		credSecret("platform-cred-aaa", "a.example.com"),
 		credSecret("platform-cred-dup", "a.example.com"), // same host as -aaa
 	}
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, false)
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
 
 	assert.Equal(t, "my-instance-envoy-tls", cert.Name)
@@ -48,14 +42,13 @@ func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 	assert.Equal(t, []string{"a.example.com", "b.example.com"}, cert.Spec.DNSNames)
 }
 
-func TestBuildEnvoyLeafCertificate_TelemetryHostInSAN_ZeroSecretsFork(t *testing.T) {
+func TestBuildEnvoyLeafCertificate_TelemetryHostInSAN_ZeroSecrets(t *testing.T) {
 	cfg := *testConfig
 	cfg.TelemetryCollectorHost = "platform-clickstack-collector.default.svc.cluster.local"
-	// Fork (alwaysIssue=false) with no credential Secrets: telemetry alone
-	// makes the leaf non-nil and puts the collector host in the SAN, so the
-	// gateway can MITM-terminate the agent's OTLP to it.
-	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
-	require.NotNil(t, cert, "telemetry-on fork with no Secrets must still issue a leaf for the collector SNI")
+	// No credential Secrets: telemetry alone puts the collector host in the
+	// SAN, so the gateway can MITM-terminate the agent's OTLP to it.
+	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), nil, nil)
+	require.NotNil(t, cert, "telemetry-on with no Secrets must still issue a leaf for the collector SNI")
 	assert.Equal(t, []string{"platform-clickstack-collector.default.svc.cluster.local"}, cert.Spec.DNSNames)
 }
 
@@ -66,7 +59,7 @@ func TestBuildEnvoyLeafCertificate_TelemetryHostDedupedWithChainHost(t *testing.
 		credSecret("platform-cred-aaa", "a.example.com"),
 		credSecret("platform-cred-bbb", "b.example.com"),
 	}
-	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil, false)
+	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
 	// Collector host already present via the credentialed chain — not duplicated.
 	assert.Equal(t, []string{"a.example.com", "b.example.com"}, cert.Spec.DNSNames)
@@ -77,7 +70,7 @@ func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 	cfg.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 
-	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil, false)
+	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
 
 	assert.Equal(t, "platform-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
@@ -87,7 +80,7 @@ func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 
 func TestBuildEnvoyLeafCertificate_OwnerReferences(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, false)
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NotNil(t, cert)
 
 	require.Len(t, cert.OwnerReferences, 1)

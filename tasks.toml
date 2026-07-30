@@ -177,14 +177,13 @@ else
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
-# 1. Delete agents + forks (now custom resources) so the controller
+# 1. Delete agents (custom resources) so the controller
 # stops reconciling them, plus the remaining durable ConfigMaps, then sweep the
 # StatefulSets/pods it owns and the PVCs k8s retains (StatefulSet
 # volumeClaimTemplates are never GC'd with their owner). Templates are
 # helm-managed — leave them.
 echo "Deleting agents in platform-agents..."
 "${KCTL[@]}" -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
-"${KCTL[@]}" -n platform-agents delete forks.agent-platform.ai --all --ignore-not-found
 "${KCTL[@]}" -n platform-agents delete configmap \
   -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' \
   --ignore-not-found

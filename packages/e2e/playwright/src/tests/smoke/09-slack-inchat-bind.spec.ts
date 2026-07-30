@@ -22,11 +22,10 @@ test("in-chat bind/unbind slash-command behavior", async () => {
   const api = createApiClient(token);
   const agentId = await waitForAgentRunning(api, agentName);
 
-  await test.step("owner binds a channel in shared mode (starts the gateway)", async () => {
+  await test.step("owner binds a channel (starts the gateway)", async () => {
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: inchatChannelId,
-      mode: "shared",
     });
   });
 

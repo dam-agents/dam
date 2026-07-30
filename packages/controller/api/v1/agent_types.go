@@ -78,7 +78,7 @@ type AgentSpec struct {
 	// ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
 	// kubelet uses to pull the agent image from a private registry. Unlike
 	// SecretRef it is never projected into the agent container — only the
-	// kubelet consumes it at pod creation, so a foreign-replier fork can pull
+	// kubelet consumes it at pod creation, so an ephemeral executor pod can pull
 	// with it without ever seeing it. When set it takes precedence over the
 	// install-wide default pull secret, which is retained as a fallback.
 	// +optional
@@ -99,7 +99,7 @@ type AgentSpec struct {
 	// rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
 	// Written by the api-server when such a rule exists for this agent;
 	// per-agent grain so a rule on one agent never reshapes a sibling's
-	// gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+	// gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
 	// stays the egress policy authority for foreign turns).
 	//
 	// The item pattern is a hard boundary: each entry is interpolated into

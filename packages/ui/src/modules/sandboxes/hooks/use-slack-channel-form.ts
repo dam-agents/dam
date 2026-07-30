@@ -6,20 +6,16 @@ import type { AgentView } from "../../../types.js";
 import {
   useConnectSlack,
   useDisconnectSlack,
-  useUpdateAgent,
 } from "../../agents/api/mutations.js";
 
 type SlackChannel = Extract<AgentView["channels"][number], { type: "slack" }>;
 
 export const slackChannelFormSchema = z.object({
   channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
-  mode: z.enum(["person-scoped", "shared"]),
   ambient: z.boolean(),
-  users: z.array(z.object({ email: z.string() })),
 });
 
 export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
-export type SlackAccessMode = SlackChannelFormValues["mode"];
 
 export function findSlackChannel(
   agent: AgentView | undefined,
@@ -33,47 +29,30 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
 
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
-  const updateAgent = useUpdateAgent();
 
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema),
     defaultValues: {
       channelId: slackChannel?.slackChannelId ?? "",
-      mode: slackChannel?.mode ?? "person-scoped",
       ambient: slackChannel?.ambient ?? false,
-      users: agent.allowedUserEmails.map((email) => ({ email })),
     },
   });
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    const { channelId, mode, ambient } = values;
-    const emails = values.users.map((u) => u.email);
-    const usersChanged =
-      emails.length !== agent.allowedUserEmails.length ||
-      emails.some((email, i) => email !== agent.allowedUserEmails[i]);
-    if (mode === "person-scoped" && usersChanged) {
-      await updateAgent.mutateAsync({
-        id: agent.id,
-        allowedUserEmails: emails,
-      });
-    }
+  const onSubmit = form.handleSubmit(async ({ channelId, ambient }) => {
     const connectPayload = {
       id: agent.id,
       slackChannelId: channelId,
-      ...(mode === "shared" ? { mode } : {}),
-      ...(mode === "shared" && ambient ? { ambient: true } : {}),
+      ...(ambient ? { ambient: true } : {}),
     };
     if (!slackChannel) {
       await connectSlack.mutateAsync(connectPayload);
     } else if (channelId !== slackChannel.slackChannelId) {
-      // The mode is fixed per binding, so a channel change is a rebind.
+      // A channel change is a rebind: disconnect first so the old channel
+      // gets a clean unbind before the new one is connected.
       await disconnectSlack.mutateAsync({ id: agent.id });
       await connectSlack.mutateAsync(connectPayload);
-    } else if (
-      mode === "shared" &&
-      ambient !== (slackChannel.ambient ?? false)
-    ) {
-      // Ambient is mutable (unlike mode): a same-mode re-connect updates
+    } else if (ambient !== (slackChannel.ambient ?? false)) {
+      // Ambient is the one mutable toggle: a same-channel re-connect updates
       // the existing binding in place.
       await connectSlack.mutateAsync(connectPayload);
     }

@@ -11,11 +11,9 @@ import type {
   SendPromptOpts,
 } from "../../core/acp-client.js";
 import {
-  emit as emitGlobal,
   EventType,
   type ChannelTurnRelayed,
   type DomainEvent,
-  type ForeignReplyReceived,
 } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
@@ -41,11 +39,8 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function harness(opts: {
   sendPrompt?: SendPromptFn;
-  forkSendPrompt?: SendPromptFn;
   listSessions?: AcpClient["listSessions"];
   ensureReady?: AgentsService["ensureReady"];
-  isAllowedUser?: boolean;
-  linkedSub?: string | null;
   /** Currently-bound channel; a function so a test can rebind mid-turn. */
   boundChannel?: () => string;
 }) {
@@ -56,21 +51,15 @@ function harness(opts: {
     sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
     triggerSession: () => Promise.reject(new Error("unused")),
   };
-  const forkAcp: AcpClient = {
-    listSessions: async () => [],
-    sendPrompt: opts.forkSendPrompt ?? scripted([], "fork answer"),
-    triggerSession: () => Promise.reject(new Error("unused")),
-  };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
-    isAllowedUser: async () => opts.isAllowedUser ?? false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
     () => acp,
     () => gw,
     () => agents,
-    { resolve: async () => opts.linkedSub ?? OWNER } as never,
+    { resolve: async () => OWNER } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
     new Map(),
     async () => OWNER,
@@ -86,7 +75,6 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => forkAcp,
     (e) => events.push(e),
   );
 
@@ -195,74 +183,6 @@ describe("slack turn presentation — owner turns", () => {
       ),
     ).toBe(true);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
-  });
-});
-
-describe("slack turn presentation — foreign fork turns", () => {
-  it("shows and clears a status, without auto-posting the fork reply", async () => {
-    const h = harness({
-      isAllowedUser: true,
-      linkedSub: "kc|member-2",
-      forkSendPrompt: scripted([], "fork answer"),
-    });
-    await h.mention({ user: "U-STRANGER" });
-
-    const foreign = h.events.find(
-      (e): e is ForeignReplyReceived =>
-        e.type === EventType.ForeignReplyReceived,
-    );
-    expect(foreign).toBeDefined();
-
-    emitGlobal({
-      type: EventType.ForkReady,
-      forkId: "fork-1",
-      replyId: foreign!.replyId,
-      podIP: "10.0.0.5",
-    });
-    await tick();
-
-    const recs = h.records();
-    // No automatic ack reaction; the working status is the only thing the
-    // platform posts on the fork's behalf, and it clears at the end.
-    expect(recs.some((r) => r.kind === "reaction")).toBe(false);
-    expect(recs.some((r) => r.kind === "status")).toBe(true);
-    expect(recs.some((r) => r.kind === "message")).toBe(false);
-    expect(recs.filter((r) => r.kind === "status").at(-1)).toMatchObject({
-      status: "",
-    });
-    const turn = h.turnEvents()[0]!;
-    expect(turn.outcome).toBe("success");
-    expect(turn.forkId).toBe("fork-1");
-  });
-
-  it("clears status when the fork fails", async () => {
-    const h = harness({
-      isAllowedUser: true,
-      linkedSub: "kc|member-2",
-    });
-    await h.mention({ user: "U-STRANGER" });
-
-    const foreign = h.events.find(
-      (e): e is ForeignReplyReceived =>
-        e.type === EventType.ForeignReplyReceived,
-    );
-    emitGlobal({
-      type: EventType.ForkFailed,
-      forkId: "fork-1",
-      replyId: foreign!.replyId,
-      reason: "PodNotReady",
-    });
-    await tick();
-
-    const recs = h.records();
-    expect(recs.filter((r) => r.kind === "status").at(-1)).toMatchObject({
-      status: "",
-    });
-    expect(
-      recs.some(
-        (r) => r.kind === "ephemeral" && r.text.includes("PodNotReady"),
-      ),
-    ).toBe(true);
   });
 });
 
@@ -797,64 +717,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
 
     expect(sessions).toHaveLength(1);
     expect(resumed).toEqual(["s-1"]);
-  });
-
-  it("serializes fork turns per thread session — forks share the agent's session store", async () => {
-    const forkGates: Array<() => void> = [];
-    let forkCalls = 0;
-    const h = harness({
-      isAllowedUser: true,
-      linkedSub: "kc|member-2",
-      forkSendPrompt: async () => {
-        forkCalls++;
-        await new Promise<void>((r) => forkGates.push(r));
-        return "fork answer";
-      },
-    });
-    await h.start();
-    // Two foreign replies in the same thread, each provisioning a fork.
-    await h.gw.fireMention({
-      user: "U-S1",
-      channel: "C1",
-      ts: "1.1",
-      text: "first foreign reply",
-      teamId: "T-e2e",
-    });
-    await h.gw.fireMention({
-      user: "U-S2",
-      channel: "C1",
-      ts: "1.2",
-      threadTs: "1.1",
-      text: "second foreign reply",
-      teamId: "T-e2e",
-    });
-    const foreigns = h.events.filter(
-      (e): e is ForeignReplyReceived =>
-        e.type === EventType.ForeignReplyReceived,
-    );
-    expect(foreigns).toHaveLength(2);
-    emitGlobal({
-      type: EventType.ForkReady,
-      forkId: "fork-1",
-      replyId: foreigns[0]!.replyId,
-      podIP: "10.0.0.5",
-    });
-    emitGlobal({
-      type: EventType.ForkReady,
-      forkId: "fork-2",
-      replyId: foreigns[1]!.replyId,
-      podIP: "10.0.0.6",
-    });
-    for (let i = 0; i < 20; i++) await tick();
-    // Fork pods mount the same session store as the main pod, so the second
-    // fork must wait for the first instead of racing the session match.
-    expect(forkCalls).toBe(1);
-
-    forkGates[0]!();
-    for (let i = 0; i < 200 && forkCalls < 2; i++) await tick();
-    expect(forkCalls).toBe(2);
-    forkGates[1]!();
-    await tick();
   });
 
   it("an id-less reply resolved from a turn posts into that turn's channel, not the newly bound one", async () => {

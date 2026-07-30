@@ -16,7 +16,6 @@ function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
     image: "img:1",
     state: "starting",
     channels: [],
-    allowedUserEmails: [],
     ...overrides,
   };
 }
@@ -29,7 +28,6 @@ function makeService(
     get: vi.fn(async () => getResult()),
     deleteAgent: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
-    updateAllowedUserEmails: vi.fn(async () => ok(makeAgent())),
   };
 }
 

@@ -276,8 +276,6 @@ async function withAcpConnection<T>(
 /** Builds an AcpClient for a resolved agent instance. Bound at the composition
  *  root with the turn ceiling baked in, then injected into the channel workers. */
 export type AcpClientFactory = (instanceName: string) => AcpClient;
-/** Builds an AcpClient for a fork pod addressed by IP. */
-export type ForkAcpClientFactory = (podIP: string) => AcpClient;
 
 export function createAcpClient(opts: {
   namespace: string;
@@ -286,16 +284,6 @@ export function createAcpClient(opts: {
 }): AcpClient {
   return createAcpClientForUrl(
     `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
-    opts.turnCeilingMs ?? DEFAULT_TURN_CEILING_MS,
-  );
-}
-
-export function createForkAcpClient(opts: {
-  podIP: string;
-  turnCeilingMs?: number;
-}): AcpClient {
-  return createAcpClientForUrl(
-    `ws://${opts.podIP}:8080/api/acp`,
     opts.turnCeilingMs ?? DEFAULT_TURN_CEILING_MS,
   );
 }

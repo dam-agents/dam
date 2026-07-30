@@ -17,5 +17,4 @@ export interface AgentView {
   state: AgentState;
   error?: string;
   channels: ChannelConfig[];
-  allowedUserEmails: string[];
 }

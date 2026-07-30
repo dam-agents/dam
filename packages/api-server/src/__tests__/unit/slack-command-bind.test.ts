@@ -16,7 +16,6 @@ configureLogger({ level: "error", write: () => {} });
 type Binding = {
   instanceName: string;
   owner: string;
-  mode?: "shared" | "person-scoped";
 } | null;
 
 function harness(opts: {
@@ -37,7 +36,6 @@ function harness(opts: {
   } as unknown as AcpClient;
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -62,7 +60,6 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     (e) => events.push(e),
   );
 
@@ -81,7 +78,6 @@ function harness(opts: {
 const bound: Binding = {
   instanceName: "agent-1",
   owner: OWNER,
-  mode: "shared",
 };
 
 describe("slack /bind command", () => {
@@ -137,7 +133,7 @@ describe("slack /unbind command", () => {
 
   it("lets the agent owner unbind even when they aren't the binder", async () => {
     const h = harness({
-      binding: { instanceName: "agent-1", owner: "kc|binder", mode: "shared" },
+      binding: { instanceName: "agent-1", owner: "kc|binder" },
       linkedSub: "kc|owner-2",
       agentOwner: "kc|owner-2",
     });
