@@ -182,12 +182,16 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	require.NotNil(t, psc)
 	require.NotNil(t, psc.RunAsUser)
 	assert.Equal(t, int64(65532), *psc.RunAsUser)
-	// Group 0 matches the agent images' uid:0 convention, so what the copy
-	// creates carries the identity the agent itself runs with.
+	// The copy runs as the agent's own uid AND gid, so what it creates is
+	// what the agent can use.
 	require.NotNil(t, psc.RunAsGroup)
-	assert.Equal(t, int64(0), *psc.RunAsGroup)
+	assert.Equal(t, int64(65532), *psc.RunAsGroup)
 	require.NotNil(t, psc.FSGroup)
-	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup makes the fresh target volume writable to the agent uid")
+	// fsGroup must be the AGENT's group: the kubelet's chown of the volume
+	// root persists on the filesystem, and agent pods set no fsGroup of
+	// their own — this is what leaves the migrated root writable to them.
+	assert.Equal(t, int64(65532), *psc.FSGroup, "fsGroup is the agent's group, so the root stays writable after the flip")
+
 	// Nothing in the migration may need privilege: OpenShift's restricted SCC
 	// strips CAP_CHOWN/CAP_DAC_OVERRIDE and Kata's virtiofs refuses guest
 	// chown, so a root step (even just to chown a target root) is a
@@ -215,13 +219,24 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// network round-trip, so the source must be walked ONCE — readability,
 	// ownership and the verification baseline all derive from that one pass.
 	// (Two walks total: source, then target for the comparison.)
-	// (The one source walk carries two -printf actions — the readability
-	// alternation — so count walks, not actions.)
-	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find`),
-		"the source is walked ONCE: readability, ownership and the verification baseline all derive from that pass")
+	// Exactly one DEEP walk of the source — readability, ownership and the
+	// verification baseline all derive from that single pass. (The archive's
+	// file list is a second find, but -maxdepth 1: one readdir of the top
+	// level, not a tree walk, so it costs nothing on a 200k-entry tree.)
+	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 ! -path`),
+		"the source tree is walked ONCE")
+	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find . -mindepth 1 -maxdepth 1`),
+		"the archive's file list is a shallow listing, not a second tree walk")
 	assert.NotContains(t, runnable, "du -sh", "a size log line is not worth a full metadata walk")
 	// Checksums are latency-bound, so they read in parallel.
 	assert.Contains(t, runnable, "-P\"${PAR}\"")
+	// The archive must contain the source's CONTENTS, never "./" itself:
+	// a "./" member carries the source root's mode, which tar then applies
+	// to the target root — EPERM, since the root belongs to the provisioner.
+	assert.Contains(t, runnable, "-mindepth 1 -maxdepth 1 ! -path './lost+found*' -print0")
+	assert.Contains(t, runnable, "--null -T -")
+	assert.NotRegexp(t, `tar -C "\$src" [^|]*-cf - \.`, runnable,
+		"archiving the directory itself is what made tar chmod the target root")
 	// tar with --no-overwrite-dir, not cp -a src/. dst/: cp would apply the
 	// source root's ownership/timestamps to the target root, which no
 	// unprivileged process can do.
