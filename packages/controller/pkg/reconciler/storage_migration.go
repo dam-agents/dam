@@ -243,13 +243,13 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 // OpenShift install can scope the runs-as-root SCC grant to exactly this
 // workload (an ops-side, out-of-band binding, like every cluster-scoped
 // security object).
-func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) {
+func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) error {
 	_, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
-	if err == nil || !errors.IsNotFound(err) {
-		if err != nil {
-			slog.Warn("storage migration: checking service account failed", "error", err)
-		}
-		return
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return fmt.Errorf("checking migration service account: %w", err)
 	}
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -260,10 +260,10 @@ func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) {
 		AutomountServiceAccountToken: ptrBool(false),
 	}
 	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
-		slog.Warn("storage migration: creating service account failed", "error", err)
-		return
+		return fmt.Errorf("creating migration service account: %w", err)
 	}
 	slog.Info("storage migration: service account ensured", "name", migrationServiceAccount)
+	return nil
 }
 
 // Reconcile advances every in-flight migration one step and admits new
@@ -342,7 +342,14 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 	sort.Strings(names)
 
 	if len(names) > 0 {
-		m.ensureServiceAccount(ctx)
+		// Without the SA the Job would be admitted but its pods would never
+		// schedule (ServiceAccount not found) -- a quiet 4h stall behind the
+		// deadline. Fail the pass instead: nothing is gated or created this
+		// tick, and the next tick retries.
+		if err := m.ensureServiceAccount(ctx); err != nil {
+			slog.Warn("storage migration: skipping pass, service account unavailable", "error", err)
+			return
+		}
 	}
 
 	slots := m.concurrency() - len(inFlight)
@@ -925,7 +932,8 @@ AS_AGENT="setpriv --reuid=${AGENT_UID} --regid=${AGENT_GID} --clear-groups"
 # never collide with anything pre-existing, and Linux protected_regular
 # never refuses a redirect over a file the other identity created.
 W=$(mktemp -d)
-chmod 1777 "$W"
+chgrp "${AGENT_GID}" "$W"
+chmod 0770 "$W"
 
 # Source-side pipelines run under $AS_AGENT via this helper script (a
 # fresh process cannot inherit shell functions).
@@ -950,7 +958,7 @@ sums)
   cd "$src" && rm -f "$W"/sums.src.*
   find . \( -path ./lost+found -prune \) -o -type f -print0 \
     | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.src.$$"' _
-  cat "$W"/sums.src.* 2>/dev/null ;;
+  cat "$W"/sums.src.* 2>/dev/null || true ;;
 esac
 EOS
 
@@ -999,6 +1007,17 @@ copy_verify() {
   # lost+found stays — a fresh ext4 volume's own artifact, excluded from
   # verification on both sides.
   find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
+  # Neutralize the ROOT itself on every attempt: a previous attempt's
+  # success-shaping (or the kubelet, on installs that ever ran fsGroup on
+  # the Job) may have left it setgid, and extracting under a setgid root
+  # lets the kernel stamp the bit into every 0700-style directory tar
+  # creates -- turning one transient failure into a permanently failing
+  # retry loop. chmod 00755, five digits: GNU chmod PRESERVES dir setgid
+  # for numeric modes under five digits ("755" and "0755" both keep it).
+  # Agent ownership here is also what lets the agent-identity write test
+  # below pass before the success-shaping runs.
+  chown "${AGENT_UID}:${AGENT_GID}" "$dst"
+  chmod 00755 "$dst"
   phase "wiped target"
 
   if [ "$entries" -gt 0 ]; then
@@ -1008,22 +1027,18 @@ copy_verify() {
     # hard-link-heavy pnpm store must not inflate past the volume size),
     # and sparseness. The "." member restores the volume root's own mode,
     # owner, and times — a root writer may apply all of it.
-    $AS_AGENT tar -C "$src" --sparse -cf - . | tar -C "$dst" -xpf - --same-owner --numeric-owner
+    # --exclude=./lost+found: the archive walks everything including a
+    # source ext4 root-owned 0700 lost+found, which the agent-identity
+    # reader cannot open -- and the inventory walk prunes it, so the
+    # unreadable gate never names it either. Anchored (leading ./), so a
+    # nested lost+found the workspace owns still copies, matching the
+    # walks. The "." member itself stays in the archive.
+    $AS_AGENT tar -C "$src" --sparse --exclude=./lost+found -cf - . | tar -C "$dst" -xpf - --same-owner --numeric-owner
     sync
   else
     echo "source is empty; nothing to copy"
   fi
   phase "copied"
-
-  # The volume ROOT belongs to the mount infrastructure, not the
-  # workspace: shape it exactly the way the agent pods' fsGroup +
-  # OnRootMismatch expect (agent-owned, agent group, setgid, group-rwx),
-  # so the first post-migration mount passes the kubelet's root check and
-  # the interior — verified byte-exact below — is never rewritten by a
-  # recursive ownership pass. The root is excluded from the entry walks;
-  # everything inside is compared strictly.
-  chown "${AGENT_UID}:${AGENT_GID}" "$dst"
-  chmod 2770 "$dst"
 
   # The AGENT must be able to use the volume it wakes up on.
   $AS_AGENT touch "$dst/.migration-writable"
@@ -1039,9 +1054,17 @@ copy_verify() {
   rm -f "$W"/sums.dst.*
   (cd "$dst" && find . \( -path ./lost+found -prune \) -o -type f -print0 \
      | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.dst.$$"' _)
-  cat "$W"/sums.dst.* 2>/dev/null | LC_ALL=C sort > "$W"/dst.sum
+  { cat "$W"/sums.dst.* 2>/dev/null || true; } | LC_ALL=C sort > "$W"/dst.sum
   cmp "$W"/src.sum "$W"/dst.sum
   phase "verified content"
+
+  # Success-shaping, strictly LAST: only a fully verified copy gets the
+  # root signature the agent pods fsGroup + OnRootMismatch expect (agent
+  # group, setgid, group-rwx), so the first post-migration mount skips
+  # the kubelet recursive ownership pass. A failed attempt never reaches
+  # this line, and the wipe above re-neutralizes the root anyway --
+  # extraction always happens under a setgid-free root.
+  chmod 2770 "$dst"
   echo "verified (content + metadata): $src -> $dst"
 }
 `)
