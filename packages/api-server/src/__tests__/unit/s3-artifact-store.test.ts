@@ -36,16 +36,16 @@ function signerClient(endpoint: string): S3Client {
 
 function makeStore(
   send: ReturnType<typeof vi.fn>,
-  opts?: { downloadSigner?: S3Client | null },
+  opts?: { browserSigner?: S3Client | null },
 ) {
   return createS3ArtifactStore({
     client: stubClient(send),
     bucket: "artifacts",
-    uploadSigner: signerClient("http://agents-view:8333"),
-    downloadSigner:
-      opts?.downloadSigner === undefined
+    agentSigner: signerClient("http://agents-view:8333"),
+    browserSigner:
+      opts?.browserSigner === undefined
         ? signerClient("http://public-view:8333")
-        : opts.downloadSigner,
+        : opts.browserSigner,
   });
 }
 
@@ -154,24 +154,43 @@ describe("createS3ArtifactStore", () => {
     expect(parsed.searchParams.get("x-amz-checksum-crc32")).toBeNull();
   });
 
-  it("presignDownload signs a GET with attachment disposition against the public authority", async () => {
+  it("presignDownload signs a GET with attachment disposition against the audience's authority", async () => {
     const store = makeStore(vi.fn());
-    const url = await store.presignDownload("exp/agent/u/c.bin", {
+    const browser = await store.presignDownload("exp/agent/u/c.bin", {
       filename: "c.bin",
       expiresSeconds: 60,
+      audience: "browser",
     });
-    const parsed = new URL(url!);
-    expect(parsed.host).toBe("public-view:8333");
-    expect(parsed.searchParams.get("response-content-disposition")).toBe(
+    const parsedBrowser = new URL(browser!);
+    expect(parsedBrowser.host).toBe("public-view:8333");
+    expect(parsedBrowser.searchParams.get("response-content-disposition")).toBe(
       'attachment; filename="c.bin"',
     );
+
+    const agent = await store.presignDownload("exp/agent/u/c.bin", {
+      filename: "c.bin",
+      expiresSeconds: 900,
+      audience: "agent",
+    });
+    expect(new URL(agent!).host).toBe("agents-view:8333");
   });
 
-  it("presignDownload returns null with no browser-reachable endpoint", async () => {
-    const store = makeStore(vi.fn(), { downloadSigner: null });
+  it("presignDownload for browsers returns null with no browser-reachable endpoint; agents are unaffected", async () => {
+    const store = makeStore(vi.fn(), { browserSigner: null });
     expect(
-      await store.presignDownload("k", { filename: "k", expiresSeconds: 60 }),
+      await store.presignDownload("k", {
+        filename: "k",
+        expiresSeconds: 60,
+        audience: "browser",
+      }),
     ).toBeNull();
+    expect(
+      await store.presignDownload("k", {
+        filename: "k",
+        expiresSeconds: 900,
+        audience: "agent",
+      }),
+    ).toBeTruthy();
   });
 });
 

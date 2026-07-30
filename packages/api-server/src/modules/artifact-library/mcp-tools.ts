@@ -6,6 +6,7 @@ import {
   type LibraryArtifact,
 } from "api-server-api";
 
+import { securityLog } from "../../core/security-log.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
 /** Internal link the platform UI renders as an inline preview chip that
@@ -164,6 +165,44 @@ export function registerArtifactLibraryTools(
   );
 
   server.tool(
+    "create_artifact_download_url",
+    "PREFERRED way to get an artifact's bytes INTO your sandbox when your runtime can make outbound HTTP requests (e.g. curl) — works for any artifact in the owner's library, text or binary, any size. Returns a short-lived presigned URL: GET it and save the response to a file. Pass `version` to fetch a past version. (For small text artifacts get_artifact already returns the source inline.)",
+    {
+      id: z.string().min(1),
+      version: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Version to download; omit for the current one."),
+    },
+    ({ id, version }) =>
+      run(async () => {
+        const ticket = await lib.createAgentDownloadUrl(id, version);
+        // Mirrors the browser download route's audit line — a presigned link
+        // is a bearer capability to the bytes.
+        securityLog("info", "artifact_library.download", {
+          category: "resource",
+          actor: deps.agentId,
+          actorKind: "agent",
+          surface: "mcp",
+          agentId: deps.agentId,
+          target: id,
+          result: "success",
+          detail: {
+            mode: "direct",
+            version: ticket.version,
+            sizeBytes: ticket.sizeBytes,
+          },
+        });
+        return json({
+          ...ticket,
+          instructions: `GET the URL and save the body, e.g.: curl -fL -o '${ticket.fileName}' '${ticket.url}' — the link expires in ${ticket.expiresSeconds}s.`,
+        });
+      }),
+  );
+
+  server.tool(
     "list_artifacts",
     "List artifacts in the owner's library (metadata only). Filter by folder or search by title/file name.",
     {
@@ -187,7 +226,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "get_artifact",
-    "Get an artifact's metadata and (for text kinds) its full source content.",
+    "Get an artifact's metadata and (for text kinds) its full source content. For binary or large artifacts use create_artifact_download_url instead.",
     {
       id: z.string().min(1),
       version: z.number().int().positive().optional(),
@@ -205,7 +244,7 @@ export function registerArtifactLibraryTools(
               : undefined,
           contentOmitted:
             !content || content.binary || content.tooLarge
-              ? "binary or too large — use the UI or a download link"
+              ? "binary or too large — call create_artifact_download_url to fetch the bytes into your sandbox"
               : undefined,
         });
       }),

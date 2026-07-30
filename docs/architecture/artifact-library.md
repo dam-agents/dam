@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-27
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -92,7 +92,7 @@ warrants it; it lives in the api-server today because the planned
 agent-calling bridge for interactive artifacts needs the relay machinery
 that already lives there.
 
-## Publishing paths
+## Publishing and download paths
 
 ```mermaid
 flowchart LR
@@ -100,7 +100,7 @@ flowchart LR
   browser[browser] -->|tRPC + upload route| api-server
   api-server -->|metadata| postgres[(postgres)]
   api-server <-->|blobs + presigned links| store[(object store)]
-  harness -->|direct PUT via gateway| store
+  harness -->|direct PUT/GET via gateway| store
   visitor[external visitor] -->|share host| api-server
 ```
 
@@ -115,6 +115,11 @@ flowchart LR
   own staging namespace reads as unknown. Attribution is the mesh-verified
   agent identity — a harness cannot publish as another agent, and the
   owner-scoped service means it can only ever touch its owner's library.
+  Reads mirror this: small text content returns inline, and a download tool
+  mints a short-lived presigned link — signed for the same agent-dialed
+  store authority — that the harness GETs straight into its sandbox (any
+  kind or size, current or a past version), so work products published from
+  one sandbox are consumable in another without transiting the conversation.
 - **Users** publish from the Artifacts page in the UI: bytes go through an
   authenticated upload route on the app origin (avoiding browser↔store CORS),
   then the same create call. Downloads answer with a presigned direct link

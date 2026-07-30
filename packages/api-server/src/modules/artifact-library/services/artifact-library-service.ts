@@ -20,6 +20,7 @@ import {
   DEFAULT_CONTENT_TYPE,
   defaultFileName,
   detectKind,
+  downloadFileName,
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateId, generateSlug } from "../domain/share-crypto.js";
@@ -39,6 +40,19 @@ const LIST_LIMIT = 500;
 /** In-app preview ceiling — mirrors the file viewer's 10 MB cap. */
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
+/** Short-lived direct-download link for the agent surface — the mirror of the
+ *  contract's ArtifactUploadTicket, but server-internal: browsers download
+ *  through the authenticated app-origin route instead. */
+export interface ArtifactAgentDownloadTicket {
+  url: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  /** The version the link serves — the head version when none was asked. */
+  version: number;
+  expiresSeconds: number;
+}
+
 /** Server-internal surface on top of the contract: the download route and the
  *  MCP layer need the storage ref resolution the tRPC router never sees. */
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
@@ -55,7 +69,16 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     fileName: string;
     contentType: string;
     sizeBytes: number;
+    version: number;
   } | null>;
+  /** Mint a short-lived direct-download link signed for the agent-dialed
+   *  store authority (direct transfer — the bytes go store → sandbox without
+   *  transiting the conversation). Fails when no object store is
+   *  configured. */
+  createAgentDownloadUrl(
+    id: string,
+    version?: number,
+  ): Promise<ArtifactAgentDownloadTicket>;
 }
 
 export interface ArtifactLibraryDeps {
@@ -443,6 +466,7 @@ export function createArtifactLibraryService(
           fileName: row.fileName,
           contentType: row.contentType,
           sizeBytes: row.sizeBytes,
+          version: row.version,
         };
       }
       const past = await repo.getVersion(id, version);
@@ -452,6 +476,36 @@ export function createArtifactLibraryService(
         fileName: row.fileName,
         contentType: past.contentType,
         sizeBytes: past.sizeBytes,
+        version: past.version,
+      };
+    },
+
+    async createAgentDownloadUrl(id, version) {
+      const ref = await this.resolveContentRef(id, version);
+      if (!ref)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "artifact or version not found",
+        });
+      const fileName = downloadFileName(ref.fileName);
+      const link = await artifacts.createAgentDownloadUrl(
+        ref.storageRef,
+        fileName,
+      );
+      if (!link) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No object store is configured — the artifact library requires one.",
+        });
+      }
+      return {
+        url: link.url,
+        fileName,
+        contentType: ref.contentType,
+        sizeBytes: ref.sizeBytes,
+        version: ref.version,
+        expiresSeconds: link.expiresSeconds,
       };
     },
   };

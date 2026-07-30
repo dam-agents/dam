@@ -3,6 +3,7 @@ import type { UserIdentity } from "api-server-api";
 
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
+import { downloadFileName } from "./domain/artifact-kind.js";
 import { stagingKey } from "./domain/storage-key.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
@@ -10,11 +11,6 @@ export interface ArtifactLibraryRoutesDeps {
   /** Owner-scoped library service, bound to the request's user. */
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   artifacts: ArtifactService;
-}
-
-function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/[\r\n"\\]/g, "").trim();
-  return cleaned.length > 0 ? cleaned : "artifact";
 }
 
 /** Non-tRPC library routes on the authenticated app origin: binary upload
@@ -79,7 +75,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       );
     if (!ref) return c.json({ error: "not found" }, 404);
 
-    const filename = sanitizeFilename(ref.fileName);
+    const filename = downloadFileName(ref.fileName);
     // Direct link as JSON rather than a 302 — the UI fetches with a bearer
     // token and a cross-origin redirect inside fetch() would be CORS-blocked.
     const directUrl = await deps.artifacts.createDownloadUrl(

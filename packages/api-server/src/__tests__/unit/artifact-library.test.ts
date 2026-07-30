@@ -313,6 +313,91 @@ describe("library service — getPreviewHtml", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Agent download tickets — the direct-transfer path in reverse.
+
+describe("library service — createAgentDownloadUrl", () => {
+  async function serviceOver(
+    rows: ArtifactRow[],
+    opts?: {
+      getVersion?: ArtifactLibraryRepository["getVersion"];
+      link?: { url: string; expiresSeconds: number } | null;
+      minted?: Array<{ key: string; filename: string }>;
+    },
+  ) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      repo: {
+        ...fakeRepo(rows),
+        ...(opts?.getVersion ? { getVersion: opts.getVersion } : {}),
+      },
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: {
+        createAgentDownloadUrl: (key: string, filename: string) => {
+          opts?.minted?.push({ key, filename });
+          return Promise.resolve(
+            opts?.link === undefined
+              ? { url: "https://store/get", expiresSeconds: 900 }
+              : opts.link,
+          );
+        },
+      } as never,
+    });
+  }
+
+  it("mints a ticket for the head version with a header-safe file name", async () => {
+    const minted: Array<{ key: string; filename: string }> = [];
+    const service = await serviceOver(
+      [artifactRow({ fileName: 'evil"name\n.html', sizeBytes: 7 })],
+      { minted },
+    );
+    await expect(service.createAgentDownloadUrl("a1")).resolves.toEqual({
+      url: "https://store/get",
+      fileName: "evilname.html",
+      contentType: "text/html",
+      sizeBytes: 7,
+      version: 1,
+      expiresSeconds: 900,
+    });
+    expect(minted).toEqual([
+      { key: "library/o1/a1/v1/t.html", filename: "evilname.html" },
+    ]);
+  });
+
+  it("resolves a past version's blob; an unknown version reads as not-found", async () => {
+    const service = await serviceOver([artifactRow({ version: 2 })], {
+      getVersion: (id, version) =>
+        Promise.resolve(
+          id === "a1" && version === 1
+            ? {
+                artifactId: "a1",
+                version: 1,
+                storageRef: "library/o1/a1/v1/old.html",
+                contentType: "text/html",
+                sizeBytes: 3,
+                createdAt: new Date(),
+              }
+            : null,
+        ),
+    });
+    await expect(
+      service.createAgentDownloadUrl("a1", 1),
+    ).resolves.toMatchObject({ version: 1, sizeBytes: 3 });
+    await expect(service.createAgentDownloadUrl("a1", 9)).rejects.toThrow(
+      /not found/,
+    );
+  });
+
+  it("fails closed when no object store is configured", async () => {
+    const service = await serviceOver([artifactRow({})], { link: null });
+    await expect(service.createAgentDownloadUrl("a1")).rejects.toThrow(
+      /No object store is configured/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Owner scoping — the service must pass its bound owner into every repo call,
 // so a service composed for one user can never touch another user's rows.
 
@@ -337,6 +422,9 @@ describe("library service — owner scoping", () => {
     await expect(service.list()).resolves.toEqual([]);
     await expect(service.resolveContentRef("a1")).resolves.toBeNull();
     await expect(service.getContent("a1")).resolves.toBeNull();
+    await expect(service.createAgentDownloadUrl("a1")).rejects.toThrow(
+      /not found/,
+    );
   });
 
   it("cannot mutate, share, or delete another owner's artifact", async () => {

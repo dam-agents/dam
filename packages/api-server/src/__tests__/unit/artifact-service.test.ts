@@ -100,4 +100,26 @@ describe("artifact service — direct-transfer links", () => {
     const none = createArtifactService({ store: stubStore(), maxBytes: MAX });
     expect(await none.createUploadUrl("k")).toBeNull();
   });
+
+  it("createAgentDownloadUrl signs for the agent audience with the long TTL", async () => {
+    const presignDownload = vi.fn().mockResolvedValue("https://store/get/k");
+    const service = createArtifactService({
+      store: stubStore({ presignDownload }),
+      maxBytes: MAX,
+    });
+
+    const download = await service.createAgentDownloadUrl("k", "data.csv");
+    expect(download?.url).toBe("https://store/get/k");
+    expect(presignDownload).toHaveBeenCalledWith("k", {
+      filename: "data.csv",
+      expiresSeconds: download!.expiresSeconds,
+      audience: "agent",
+    });
+    // Agents may run other tool calls between minting and fetching — the
+    // browser's fetch-immediately TTL would be too tight.
+    expect(download!.expiresSeconds).toBeGreaterThan(60);
+
+    const none = createArtifactService({ store: stubStore(), maxBytes: MAX });
+    expect(await none.createAgentDownloadUrl("k", "data.csv")).toBeNull();
+  });
 });
