@@ -1015,13 +1015,19 @@ copy_verify() {
   fi
   phase "copied"
 
+  # The volume ROOT belongs to the mount infrastructure, not the
+  # workspace: shape it exactly the way the agent pods' fsGroup +
+  # OnRootMismatch expect (agent-owned, agent group, setgid, group-rwx),
+  # so the first post-migration mount passes the kubelet's root check and
+  # the interior — verified byte-exact below — is never rewritten by a
+  # recursive ownership pass. The root is excluded from the entry walks;
+  # everything inside is compared strictly.
+  chown "${AGENT_UID}:${AGENT_GID}" "$dst"
+  chmod 2770 "$dst"
+
   # The AGENT must be able to use the volume it wakes up on.
   $AS_AGENT touch "$dst/.migration-writable"
   rm -f "$dst/.migration-writable"
-
-  # Root-entry fidelity (the volume roots are excluded from the entry
-  # walks below): mode and owner must have carried over.
-  [ "$($AS_AGENT stat -c '%a %u' "$src")" = "$(stat -c '%a %u' "$dst")" ]
 
   # Two-pass verification; the old volume is deleted at flip on the
   # strength of these comparisons, so both fail closed on any difference.

@@ -867,6 +867,19 @@ controller:
         runAsUser: 65532
         runAsGroup: 65532
         runAsNonRoot: true
+        # fsGroup makes a freshly provisioned block volume writable to the
+        # agent: the kubelet chowns the volume root to this group and marks
+        # it setgid at mount -- the standard mechanism for non-root pods on
+        # RWO storage (file/NFS classes and hostPath ignore it). Without it
+        # a new agent's init dies on a root-owned volume root.
+        # OnRootMismatch confines that to the FIRST mount: a volume whose
+        # root already matches is left entirely alone, so neither a large
+        # workspace on wake nor a freshly MIGRATED volume (whose root the
+        # copy Job shapes to match, and whose interior is verified
+        # byte-exact) is ever rewritten. On OpenShift the agents' SCC must
+        # permit fsGroup 65532.
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
       containerSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532

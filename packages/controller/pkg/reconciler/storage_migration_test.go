@@ -220,9 +220,12 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// sums, target walk, target sums.
 	assert.Equal(t, 4, strings.Count(runnable, "-path ./lost+found -prune"))
 	assert.NotContains(t, runnable, "find . -mindepth 1 ! -path")
-	// The volume root itself is verified for mode+owner fidelity — the
-	// root writer restores it from the "." archive member.
-	assert.Contains(t, runnable, `stat -c '%a %u'`)
+	// The volume ROOT is mount infrastructure: the writer shapes it to
+	// exactly what the agent pods' fsGroup + OnRootMismatch expect, so the
+	// first post-migration mount skips the kubelet's recursive ownership
+	// pass and the byte-exact interior is never rewritten.
+	assert.Contains(t, runnable, `chown "${AGENT_UID}:${AGENT_GID}" "$dst"`)
+	assert.Contains(t, runnable, `chmod 2770 "$dst"`)
 	// Checksums parallel, per-worker private files (shared stdout tears).
 	assert.Contains(t, runnable, `sums.src.$$`)
 	assert.Contains(t, runnable, `sums.dst.$$`)
