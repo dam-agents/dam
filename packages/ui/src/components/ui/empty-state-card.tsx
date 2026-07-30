@@ -25,7 +25,6 @@ export function EmptyStateCard({
         <p className="text-sm text-foreground/80">{message}</p>
         <Button
           variant="outline"
-          className="h-10 text-sm"
           onClick={onAction}
           data-testid={actionTestId}
         >

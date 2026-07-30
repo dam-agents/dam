@@ -33,7 +33,9 @@
 
   /* Type scale in absolute pixels, each step paired with its leading. Body
      sizes share the app's 1.55 leading; display sizes tighten as they grow.
-     Leading is unitless so nested text at another size scales with it. */
+     Leading is unitless so nested text at another size scales with it.
+     These six steps are the whole scale — Tailwind's other steps keep their own
+     rem sizes and leading, so reach for text-2xl rather than text-xl. */
   --text-xs: 12px;
   --text-xs--line-height: 1.55;
   --text-sm: 14px;
