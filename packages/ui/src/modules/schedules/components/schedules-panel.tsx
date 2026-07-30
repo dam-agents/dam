@@ -50,7 +50,7 @@ export function SchedulesPanel({
             <SectionLabel>Schedules</SectionLabel>
             <Button
               variant="outline"
-              className="h-[32px] px-3 text-[14px] font-normal"
+              className="h-8 px-3 text-sm font-normal"
               onClick={() => setForm({ mode: "create" })}
             >
               <Add size={16} />

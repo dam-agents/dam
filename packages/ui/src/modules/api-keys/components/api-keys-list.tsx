@@ -1,4 +1,4 @@
-import { Key } from "@carbon/icons-react";
+import { Password } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 import { useState } from "react";
 
@@ -38,16 +38,14 @@ export function ApiKeysList() {
         }
       />
 
-      {isLoading && (
-        <p className="text-[13px] text-muted-foreground">Loading…</p>
-      )}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       {isError && (
         <Callout tone="danger">
-          <p className="text-[13px] text-danger font-semibold mb-1">
+          <p className="text-sm text-danger font-semibold mb-1">
             Couldn't load API keys
           </p>
-          <p className="text-[12px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             The server returned an error. Try again or check your network
             connection.
           </p>
@@ -57,8 +55,8 @@ export function ApiKeysList() {
       {!isLoading && !isError && keys && keys.length === 0 && (
         <Callout variant="dashed" className="bg-card">
           <div className="flex flex-col items-center gap-3 py-4">
-            <Key size={32} className="text-muted-foreground" />
-            <p className="text-[13px] text-muted-foreground">
+            <Password size={32} className="text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
               No API keys yet. Create one to authenticate the CLI without a
               browser.
             </p>

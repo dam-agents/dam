@@ -101,7 +101,7 @@ function PanelBody({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 text-[12px]">
+    <div className="flex-1 overflow-y-auto px-4 py-3 text-xs">
       {toggle}
       {children}
     </div>
@@ -135,7 +135,7 @@ function ScopeToggle({
 }
 
 function PanelNotice({ children }: { children: React.ReactNode }) {
-  return <p className="py-2 text-[12px] text-muted-foreground">{children}</p>;
+  return <p className="py-2 text-xs text-muted-foreground">{children}</p>;
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {

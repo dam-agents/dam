@@ -30,11 +30,11 @@ export function HibernationTimeoutField({
           data-testid="hibernation-timeout-input"
           {...register}
         />
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {value === 0 ? "Never hibernates" : "minutes of inactivity"}
         </span>
       </div>
-      <p className="mt-2 text-[13px] text-muted-foreground">
+      <p className="mt-2 text-sm text-muted-foreground">
         Idle minutes before the sandbox hibernates to free resources (it wakes
         on the next message). <strong>0</strong> = never — for background work
         that runs with no open session.

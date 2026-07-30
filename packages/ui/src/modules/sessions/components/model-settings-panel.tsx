@@ -234,7 +234,7 @@ function OptionGroup({
     "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-foreground transition-colors",
     isPage
       ? "h-10 border-input px-4 text-sm"
-      : "h-8 border-border px-3 text-[13px]",
+      : "h-8 border-border px-3 text-sm",
   );
   const face = (
     <>

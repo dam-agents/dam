@@ -50,7 +50,7 @@ export function KeyValueEditor({
   return (
     <div className="flex flex-col gap-2">
       {value.length === 0 && emptyMessage && (
-        <p className="text-[12px] text-muted-foreground">{emptyMessage}</p>
+        <p className="text-xs text-muted-foreground">{emptyMessage}</p>
       )}
       {value.map((row, i) => {
         const invalid = row.key.length > 0 && !isValidEnvName(row.key);

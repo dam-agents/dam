@@ -142,7 +142,7 @@ export function BobForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">
+          <div className="text-xs font-medium text-destructive">
             {errors.value.message}
           </div>
         )}
@@ -151,7 +151,7 @@ export function BobForm({
         open={advancedOpen}
         onToggle={() => setAdvancedOpen((o) => !o)}
         chevronSize={13}
-        className="gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
+        className="gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
       >
         Advanced — model & tenant scoping
       </DisclosureToggle>
@@ -227,7 +227,7 @@ function PinField({
         data-lpignore="true"
         placeholder={placeholder}
         list={list}
-        className="font-mono text-[13px]"
+        className="font-mono text-sm"
         {...register}
       />
     </FormField>

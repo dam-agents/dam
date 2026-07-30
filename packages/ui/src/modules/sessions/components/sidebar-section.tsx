@@ -32,7 +32,7 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-[44px] shrink-0 border-border",
+          "flex items-center gap-1 pl-3 pr-2 h-11 shrink-0 border-border",
           open && "border-b",
           headerClassName,
         )}
@@ -42,7 +42,7 @@ export function SidebarSection({
           open={open}
           onToggle={onToggle}
           chevronClassName="text-muted-foreground"
-          className="min-w-0 flex-1 text-[14px] font-medium text-foreground transition-colors"
+          className="min-w-0 flex-1 text-sm font-medium text-foreground transition-colors"
         >
           <span className="truncate">{title}</span>
         </DisclosureToggle>

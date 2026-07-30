@@ -32,11 +32,11 @@ const tabTrigger = cva(
       {
         variant: "underline",
         size: "default",
-        className: "px-1 py-3 text-[14px]",
+        className: "px-1 py-3 text-sm",
       },
-      { variant: "underline", size: "sm", className: "h-10 px-4 text-[13px]" },
-      { variant: "pill", size: "default", className: "h-11 px-4 text-[14px]" },
-      { variant: "pill", size: "sm", className: "px-3 py-2 text-[14px]" },
+      { variant: "underline", size: "sm", className: "h-10 px-4 text-sm" },
+      { variant: "pill", size: "default", className: "h-11 px-4 text-sm" },
+      { variant: "pill", size: "sm", className: "px-3 py-2 text-sm" },
       {
         variant: "underline",
         active: true,

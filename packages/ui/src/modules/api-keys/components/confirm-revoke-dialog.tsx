@@ -26,13 +26,13 @@ export function ConfirmRevokeDialog({
     <Modal>
       <DialogHeader title="Revoke API key?" />
       <DialogBody>
-        <p className="text-[13px] text-muted-foreground mb-2">
+        <p className="text-sm text-muted-foreground mb-2">
           The key{" "}
           <span className="font-semibold text-foreground">{apiKey.name}</span> (
-          <code className="text-[12px]">{apiKey.id}</code>) will stop working
+          <code className="text-xs">{apiKey.id}</code>) will stop working
           immediately on every running CLI and integration that uses it.
         </p>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           This cannot be undone — to restore access, create a new key.
         </p>
       </DialogBody>

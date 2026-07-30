@@ -55,7 +55,7 @@ export function ChatArtifactsPanel({
       style={style}
     >
       {artifacts.length === 0 ? (
-        <p className="px-4 py-5 text-[12px] text-muted-foreground">
+        <p className="px-4 py-5 text-xs text-muted-foreground">
           No artifacts yet
         </p>
       ) : (
@@ -106,7 +106,7 @@ function ArtifactListRow({
       }}
       title={artifact.title}
       className={cn(
-        "group flex h-[32px] w-full cursor-pointer items-center gap-2 px-3 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted",
+        "group flex h-8 w-full cursor-pointer items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
       )}
     >

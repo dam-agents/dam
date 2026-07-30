@@ -25,8 +25,8 @@ export function ProviderFormShell({
       <div className="flex items-start gap-3">
         <CardIcon provider={provider} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="text-[18px] font-bold text-foreground">{title}</div>
-          <div className="mt-1 text-[14px] text-muted-foreground">
+          <div className="text-lg font-bold text-foreground">{title}</div>
+          <div className="mt-1 text-sm text-muted-foreground">
             {description}
           </div>
         </div>

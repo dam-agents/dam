@@ -92,7 +92,7 @@ export function PublishSkillModal({
           <div className="flex flex-col gap-1.5">
             <SectionLabel>Description</SectionLabel>
             <Textarea
-              className="min-h-[96px] resize-y text-[13px]"
+              className="min-h-[96px] resize-y text-sm"
               rows={4}
               {...register("body")}
             />

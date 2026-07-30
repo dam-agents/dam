@@ -44,7 +44,7 @@ function SourceError({
 }) {
   const { message, cta } = parsePlatformCta(error);
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-[13px] text-danger">
+    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-sm text-danger">
       <span className="flex-1">{message}</span>
       {cta ? (
         <a
@@ -162,12 +162,12 @@ export function SkillSourceCard({
               {source.name}
             </p>
             {loaded && !error && (
-              <span className="shrink-0 text-[13px] text-muted-foreground">
+              <span className="shrink-0 text-sm text-muted-foreground">
                 {enabled.length} of {list.length} on
               </span>
             )}
           </div>
-          <p className="truncate text-[13px] text-muted-foreground">
+          <p className="truncate text-sm text-muted-foreground">
             {repoLabel(source)}
           </p>
         </div>
@@ -212,7 +212,7 @@ export function SkillSourceCard({
         <SourceError error={error} onManageConnections={onManageConnections} />
       )}
       {loaded && !error && list.length === 0 && (
-        <p className="border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
+        <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
           No skills in this source.
         </p>
       )}
@@ -252,7 +252,7 @@ export function SkillSourceCard({
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
-          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {expanded ? "Hide available" : "Expand all"}
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}

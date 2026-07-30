@@ -91,10 +91,10 @@ export function SetupStep({
       {setupNote && (
         <section className="mb-8">
           <Callout tone="info" inset>
-            <p className="text-[14px] font-semibold text-foreground">
+            <p className="text-sm font-semibold text-foreground">
               {setupNote.title}
             </p>
-            <p className="mt-1 text-[14px] text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               {setupNote.body}
             </p>
           </Callout>
@@ -149,10 +149,10 @@ export function NetworkPresetRow({
       selected={selected}
       className="w-full px-4 py-3"
     >
-      <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+      <p className="text-base font-medium text-foreground leading-[1.2]">
         {label}
       </p>
-      <p className="text-[14px] text-muted-foreground">{help}</p>
+      <p className="text-sm text-muted-foreground">{help}</p>
     </CardButton>
   );
 }

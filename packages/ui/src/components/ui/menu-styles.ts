@@ -11,7 +11,7 @@ export const menuContentClassName =
 export const menuSeparatorClassName = "my-1 h-px bg-border";
 
 export const menuItemVariants = cva(
-  "flex h-9 w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 text-[14px] outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+  "flex h-9 w-full cursor-pointer select-none items-center gap-2 rounded-md px-3 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
   {
     variants: {
       tone: {

@@ -35,7 +35,7 @@ export function StandaloneSkillsPlaceholder() {
         <SectionLabel>Created in this sandbox</SectionLabel>
       </div>
       <div className="rounded-lg border border-border bg-muted px-4 py-6">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Skills created in this sandbox appear here once it's running.
         </p>
       </div>
@@ -55,7 +55,7 @@ export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
       <Callout variant="dashed">
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           <Upload size={20} className="text-muted-foreground" />
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No skills created in this sandbox yet. Drop a .md file here, or ask
             the agent to author one.
           </p>
@@ -132,7 +132,7 @@ export function StandaloneSkillsGroup({
                 </p>
                 <p
                   className={cn(
-                    "truncate text-[13px] text-muted-foreground",
+                    "truncate text-sm text-muted-foreground",
                     !skill.description && "italic",
                   )}
                 >
@@ -145,7 +145,7 @@ export function StandaloneSkillsGroup({
                   href={pub.prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-[12px] font-medium text-info transition-opacity hover:opacity-80"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
                   title={`Pull request open on ${pub.sourceName}`}
                 >
                   <PullRequest size={13} /> In review · {pub.sourceName}

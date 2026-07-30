@@ -123,13 +123,13 @@ export function ExperimentDockPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         {options.length > 1 && onSelect ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-[13px] font-medium text-foreground hover:text-foreground/80"
+                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-sm font-medium text-foreground hover:text-foreground/80"
                 title="Switch experiment"
               >
                 <span className="min-w-0 truncate">
@@ -160,7 +160,7 @@ export function ExperimentDockPanel({
           </DropdownMenu>
         ) : (
           <span
-            className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+            className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
             title={experiment.name}
           >
             {experiment.name}
@@ -197,7 +197,7 @@ export function ExperimentDockPanel({
       {!isDraft &&
         status === "failed" &&
         (feed?.experiment.error ?? experiment.error) && (
-          <p className="border-b border-border px-4 py-2 text-[12px] text-red-600 dark:text-red-400">
+          <p className="border-b border-border px-4 py-2 text-xs text-red-600 dark:text-red-400">
             {feed?.experiment.error ?? experiment.error}
           </p>
         )}
@@ -259,7 +259,7 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
           disabled={row.agentName === null}
           onClick={() => selectAgent(row.id)}
           className={cn(
-            "flex w-full items-center gap-2 py-0.5 text-left text-[13px]",
+            "flex w-full items-center gap-2 py-0.5 text-left text-sm",
             row.agentName === null
               ? "cursor-default text-muted-foreground"
               : "text-foreground/90 hover:text-foreground hover:underline",
@@ -339,7 +339,7 @@ function RunArtifacts({
           key={artifact.id}
           type="button"
           onClick={() => setOpenArtifactId(artifact.id)}
-          className="block w-full truncate py-0.5 text-left text-[13px] text-foreground/90 hover:text-foreground hover:underline"
+          className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
           title={artifact.title}
         >
           {artifact.title}

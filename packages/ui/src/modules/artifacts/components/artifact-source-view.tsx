@@ -45,6 +45,6 @@ export function ArtifactSourceView({
 
 function Note({ text }: { text: string }) {
   return (
-    <p className="py-6 text-center text-[13px] text-muted-foreground">{text}</p>
+    <p className="py-6 text-center text-sm text-muted-foreground">{text}</p>
   );
 }

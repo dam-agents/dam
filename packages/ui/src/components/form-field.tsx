@@ -40,9 +40,7 @@ export function FormField({
       <div className={cn(!disableInset && !labelInset && FIELD_INSET)}>
         {children}
       </div>
-      {hint && (
-        <span className="text-[12px] text-muted-foreground">{hint}</span>
-      )}
+      {hint && <span className="text-sm text-muted-foreground">{hint}</span>}
       <FormError message={error} />
     </label>
   );

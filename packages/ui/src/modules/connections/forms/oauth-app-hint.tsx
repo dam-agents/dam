@@ -25,7 +25,7 @@ export function OAuthAppHint({
 
   return (
     <Callout tone="muted" className="flex flex-col gap-2">
-      <p className="text-[12px] text-foreground/80">
+      <p className="text-xs text-foreground/80">
         Register an OAuth app at the provider, then paste its client credentials
         below.
         {setupUrl && (

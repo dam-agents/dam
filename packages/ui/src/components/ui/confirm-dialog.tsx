@@ -78,7 +78,7 @@ export function ConfirmDialog({
             // asChild renders a div — the message can carry block elements
             // (lists, boxes), which are invalid inside the default <p>.
             <AlertDialogDescription asChild>
-              <div className="pt-1 text-[14px] text-muted-foreground">
+              <div className="pt-1 text-sm text-muted-foreground">
                 {description}
               </div>
             </AlertDialogDescription>

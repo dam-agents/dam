@@ -14,8 +14,8 @@ const selectVariants = cva(
       },
       size: {
         default: "h-10 pl-4 py-2 text-sm",
-        sm: "h-8 pl-3 text-[12px]",
-        xs: "h-7 pl-3 text-[12px]",
+        sm: "h-8 pl-3 text-xs",
+        xs: "h-7 pl-3 text-xs",
       },
     },
     defaultVariants: {

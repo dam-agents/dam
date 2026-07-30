@@ -207,7 +207,7 @@ export function SandboxWizardView() {
             variant="link"
             size="inline"
             onClick={() => update({ step: 1 })}
-            className="whitespace-normal text-left text-[13px] text-destructive underline"
+            className="whitespace-normal text-left text-sm text-destructive underline"
           >
             Finish the private-registry credentials on step 1
           </Button>

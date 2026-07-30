@@ -101,7 +101,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
 
         <div className="mb-4">
           <SectionLabel className="mb-1 block">Scopes</SectionLabel>
-          <p className="text-[12px] text-muted-foreground mb-2">
+          <p className="text-xs text-muted-foreground mb-2">
             Pick the narrowest scope that satisfies your use case. An
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.
@@ -171,8 +171,8 @@ function ScopeOption({ scope, checked, onToggle }: ScopeOptionProps) {
         className="mt-1"
       />
       <span className="flex-1">
-        <code className="text-[13px] font-semibold">{scope}</code>
-        <span className="text-[12px] text-muted-foreground block">
+        <code className="text-sm font-semibold">{scope}</code>
+        <span className="text-xs text-muted-foreground block">
           {scopeDescription(scope)}
         </span>
       </span>

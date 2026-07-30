@@ -33,11 +33,11 @@ export function KnowledgeBaseConfigView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "not-found" ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Knowledge base not found.
           </p>
         ) : f.status === "no-agent" ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No knowledge base selected.
           </p>
         ) : null}
@@ -120,7 +120,7 @@ export function KnowledgeBaseConfigView() {
         {f.wildcardHostInScope && (
           <span
             role="alert"
-            className="inline-flex items-center gap-1.5 text-[12px] text-warning"
+            className="inline-flex items-center gap-1.5 text-xs text-warning"
             title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
           >
             <span aria-hidden="true">⚠</span>

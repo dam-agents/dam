@@ -35,14 +35,10 @@ export function SandboxHomeView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
-          <p className="text-[13px] text-muted-foreground">
-            No sandbox selected.
-          </p>
+          <p className="text-sm text-muted-foreground">No sandbox selected.</p>
         )}
         {f.status === "not-found" && (
-          <p className="text-[13px] text-muted-foreground">
-            Sandbox not found.
-          </p>
+          <p className="text-sm text-muted-foreground">Sandbox not found.</p>
         )}
       </div>
     );
@@ -55,7 +51,7 @@ export function SandboxHomeView() {
       {f.wildcardHostInScope && (
         <span
           role="alert"
-          className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
+          className="mr-auto inline-flex items-center gap-1.5 text-xs text-warning"
           title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
         >
           <span aria-hidden="true">⚠</span>

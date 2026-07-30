@@ -73,7 +73,7 @@ export function HighlightedCode({
 
   if (html) {
     return (
-      <pre className="text-[12px] leading-[1.65] font-mono text-foreground whitespace-pre tab-[2]">
+      <pre className="text-xs leading-[1.65] font-mono text-foreground whitespace-pre tab-[2]">
         <code
           className="hljs"
           style={{ background: "transparent" }}
@@ -84,7 +84,7 @@ export function HighlightedCode({
   }
 
   return (
-    <pre className="text-[12px] leading-[1.65] font-mono text-foreground whitespace-pre tab-[2]">
+    <pre className="text-xs leading-[1.65] font-mono text-foreground whitespace-pre tab-[2]">
       {code}
     </pre>
   );

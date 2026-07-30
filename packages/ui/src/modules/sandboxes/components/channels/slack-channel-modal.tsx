@@ -43,7 +43,7 @@ export function SlackChannelModal({
             hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
           >
             <Input
-              className="h-[40px]"
+              className="h-10"
               variant={errors.channelId ? "invalid" : undefined}
               aria-invalid={!!errors.channelId}
               placeholder="C0…"
@@ -93,10 +93,10 @@ function AmbientRow({
   return (
     <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
       <span className="flex flex-col gap-0.5">
-        <span className="text-[14px] font-medium text-foreground">
+        <span className="text-sm font-medium text-foreground">
           Ambient mode
         </span>
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           The agent reads along in the channel and may chime in without being
           mentioned when it can clearly help. The channel is notified when this
           changes, and it can be turned off anytime — here or with the in-chat

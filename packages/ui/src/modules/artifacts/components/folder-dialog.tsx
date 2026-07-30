@@ -40,9 +40,7 @@ export function FolderDialog({ folder, onClose }: Props) {
       <DialogBody>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-foreground">
-              Name
-            </span>
+            <span className="text-sm font-medium text-foreground">Name</span>
             <Input
               size="sm"
               value={name}
