@@ -1028,8 +1028,11 @@ controller:
     #  - size: "5Gi"
     #    target: 2
 
-  # -- One-time RWX -> RWO workspace-volume migration (#2988). For every agent
-  # whose workspace PVC is still ReadWriteMany the controller forces the agent
+  # -- One-time workspace-volume migration onto ordinary single-writer storage
+  # (#2988). A workspace is migrated when it is still ReadWriteMany, OR when it
+  # sits on a storage class other than `targetStorageClass` below — the second
+  # trigger is what moves a volume that was flipped to ReadWriteOnce but left
+  # on the shared filesystem. The controller forces the agent
   # down, copies the volume onto a fresh ReadWriteOnce PVC in a Job
   # (content- and metadata-verified), re-points the StatefulSet, deletes the
   # old volume, and restores the agent's prior run state. Interrupt-safe and
@@ -1047,10 +1050,37 @@ controller:
   # through the first drain; `concurrency: 1` makes that easy to follow.
   storageMigration:
     enabled: true
-    # -- How many agents migrate at once. Each migration reads its source
-    # volume in full three times (copy + two verification passes); this cap
-    # is the trade between fleet drain time and read pressure on the shared
-    # filesystem being drained — lower it if the filer struggles.
+    # -- Storage class migrated workspaces land on: the DESTINATION of the
+    # migration. Empty (default) = the cluster's default class, i.e. ordinary
+    # storage, which is the point of the exercise.
+    #
+    # Deliberately NOT `controller.agent.base.storageClass`: on an install
+    # that has not migrated yet, that field still names the shared filesystem
+    # being drained, so inheriting it would force-restart every agent and copy
+    # every byte only to arrive back on NFS with a different access mode. Set
+    # this to the block class agents should end on, or leave it empty for the
+    # cluster default — and fix `agent.base.storageClass` (and
+    # `warmPool.storageClass`) too, or newly-created agents keep landing on
+    # the old backend.
+    targetStorageClass: ""
+    # -- Permit a migration whose target class is the class the workspace is
+    # already on. Refused by default: it changes the access mode and nothing
+    # else, at the cost of a forced restart and a full copy per agent.
+    allowSameStorageClass: false
+    # -- Floor for a migrated volume's size; empty keeps the source's request.
+    # Set this when the target class prices IOPS PER GIGABYTE (IBM's block
+    # tiers do): a faithfully-sized 1Gi volume then inherits a 1Gi share of
+    # IOPS, and a copy that is bound by per-file operations crawls. Such
+    # classes usually have a minimum volume size anyway, which a smaller
+    # request is silently rounded up to. "10Gi" suits IBM VPC block.
+    minTargetSize: ""
+    # -- How many agents migrate at once. Each migration walks its source
+    # once and reads it twice (copy + checksum), so this cap is the trade
+    # between fleet drain time and pressure on the shared filesystem being
+    # drained — lower it if the filer struggles. Duration is driven by FILE
+    # COUNT, not bytes: every entry is a round-trip and, on an IOPS-capped
+    # class, an IOP. The copy Job logs `phase:` lines with elapsed seconds so
+    # a slow drain can be attributed rather than guessed at.
     concurrency: 10
     # -- Reconcile pass interval.
     interval: "30s"
