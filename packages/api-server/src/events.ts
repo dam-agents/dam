@@ -17,10 +17,6 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
-  ForkReady = "ForkReady",
-  ForkFailed = "ForkFailed",
-  ForkCompleted = "ForkCompleted",
-  ForeignReplyReceived = "ForeignReplyReceived",
   ChannelTurnRelayed = "ChannelTurnRelayed",
   ScheduleFired = "ScheduleFired",
   ConnectionCreated = "ConnectionCreated",
@@ -71,53 +67,11 @@ export type SlackConnected = {
   type: EventType.SlackConnected;
   agentId: string;
   slackChannelId: string;
-  /** Access mode; absent = person-scoped. */
-  mode?: "shared";
 };
 
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
-};
-
-export type ForkFailureReason =
-  | "CredentialMintFailed"
-  | "OrchestrationFailed"
-  | "PodNotReady"
-  | "Timeout";
-
-export type ForkReady = {
-  type: EventType.ForkReady;
-  forkId: string;
-  replyId: string;
-  podIP: string;
-};
-
-export type ForkFailed = {
-  type: EventType.ForkFailed;
-  forkId: string;
-  replyId: string;
-  reason: ForkFailureReason;
-  detail?: string;
-};
-
-export type ForkCompleted = {
-  type: EventType.ForkCompleted;
-  forkId: string;
-};
-
-export type ForeignReplyReceived = {
-  type: EventType.ForeignReplyReceived;
-  replyId: string;
-  agentId: string;
-  foreignSub: string;
-  threadTs: string;
-  sessionId?: string;
-  prompt: string | ContentBlock[];
-  slackContext: {
-    channelId: string;
-    userSlackId: string;
-  };
 };
 
 export type ChannelTurnRelayed = {
@@ -134,11 +88,9 @@ export type ChannelTurnRelayed = {
    *  failure, post-back failure). Drives the success/failure breakouts in the
    *  channel-turn views. */
   outcome: TurnOutcome;
-  forkId?: string;
   /** Low-cardinality failure classifier (e.g.
-   *  "wake-timeout:agent-pod-failed:ImagePullFailure",
-   *  "fork-failed:PodNotReady", "acp-error"); absent on success. Makes
-   *  failed turns diagnosable from the audit trail. */
+   *  "wake-timeout:agent-pod-failed:ImagePullFailure", "acp-error"); absent
+   *  on success. Makes failed turns diagnosable from the audit trail. */
   reason?: string;
 };
 
@@ -206,10 +158,6 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
-  | ForkReady
-  | ForkFailed
-  | ForkCompleted
-  | ForeignReplyReceived
   | ChannelTurnRelayed
   | ScheduleFired
   | ConnectionCreated

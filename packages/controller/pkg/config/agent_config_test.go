@@ -18,7 +18,6 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 	in := AgentBase{
 		ImagePullSecrets:       []string{"regcred"},
 		StorageClass:           "platform-rwx",
-		AccessMode:             "ReadWriteMany",
 		IdleTimeout:            Duration(3600 * 1_000_000_000), // 1h
 		TerminationGracePeriod: 5,
 		RuntimeClassName:       "kata",
@@ -33,7 +32,6 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.Equal(t, in.ImagePullSecrets, out.ImagePullSecrets)
 	assert.Equal(t, "platform-rwx", out.StorageClass)
-	assert.Equal(t, "ReadWriteMany", out.AccessMode)
 	assert.Equal(t, "1h0m0s", out.IdleTimeout.AsDuration().String())
 	assert.Equal(t, int64(5), out.TerminationGracePeriod)
 	assert.Equal(t, "kata", out.RuntimeClassName)

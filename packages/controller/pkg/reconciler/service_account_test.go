@@ -26,8 +26,7 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 }
 
 // The SA name is whatever the caller passes — long-lived pairs
-// pass the instance name, forks pass the fork name (forks have their own
-// per-fork SA, see authorization_policy.go). This test pins the
+// pass the instance name. This test pins the
 // contract: name == argument, no implicit transformation.
 func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	for _, id := range []string{"abc", "instance-with-dashes", "x"} {

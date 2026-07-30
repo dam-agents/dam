@@ -71,7 +71,7 @@ The guarantee is **attribution, not content integrity**: an agent can still misr
 
 ## Persistence
 
-The telemetry store is a **fourth durable substrate** beyond the three in [persistence](persistence.md) (Postgres, the Agent/Fork custom resources, the per-Agent PVC), and it sits outside that platform/agent split — neither the agent nor the controller touches it. Both the telemetry data and the UI's app-state persist on operator-managed volumes that survive pod restarts and a chart uninstall; losing those volumes loses telemetry history and nothing else depends on them for correctness. When the subsystem is disabled, none of it exists.
+The telemetry store is a **fourth durable substrate** beyond the three in [persistence](persistence.md) (Postgres, the Agent/Run custom resources, the per-Agent PVC), and it sits outside that platform/agent split — neither the agent nor the controller touches it. Both the telemetry data and the UI's app-state persist on operator-managed volumes that survive pod restarts and a chart uninstall; losing those volumes loses telemetry history and nothing else depends on them for correctness. When the subsystem is disabled, none of it exists.
 
 ## Relationship to logging and usage-tracking
 

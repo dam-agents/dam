@@ -28,7 +28,7 @@ const npGateUser int64 = 65532
 // Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff.
 //
 // Returns nil when the feature is off or inputs aren't ready; the instance and
-// fork reconcilers requeue until the gateway ClusterIP is assigned, so this
+// reconcilers requeue until the gateway ClusterIP is assigned, so this
 // never sees an empty IP at steady state.
 func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgGate := cfg.AgentBase.NPGateInit

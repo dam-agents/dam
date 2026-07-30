@@ -33,7 +33,7 @@ oauth_config:
   scopes:
     bot:
       - commands
-      # Posting replies, plus the working status shown on mention/fork turns
+      # Posting replies, plus the working status shown on mention turns
       # (assistant.threads.setStatus) — both covered by chat:write. The status
       # degrades to nothing where the workspace can't show it.
       - chat:write

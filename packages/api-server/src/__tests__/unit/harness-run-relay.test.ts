@@ -51,8 +51,11 @@ async function relayServer(deps: {
   k8s: K8sClient;
   runs: RunsService;
   executorPort: number;
+  enabled?: boolean;
 }): Promise<Server> {
-  const relay = createRunRelay(deps);
+  // The machinery stays tested while dam-run is disabled in production
+  // (#2989) — tests opt in explicitly.
+  const relay = createRunRelay({ enabled: true, ...deps });
   const server = createServer();
   server.on("upgrade", (req, socket, head) =>
     relay.handleUpgrade(req, socket, head, "a1"),
@@ -108,6 +111,37 @@ describe("harness-run-relay", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("hi");
     await vi.waitFor(() => expect(deleted).toContain("run-happy"));
+  });
+
+  it("refuses every dial with a clear close reason while disabled (the production default)", async () => {
+    const runs: RunsService = {
+      newRunId: () => {
+        throw new Error("no run may be minted while disabled");
+      },
+      create: async () => {
+        throw new Error("no Run CR may be created while disabled");
+      },
+      waitReady: () => new Promise<string>(() => {}),
+      delete: async () => {},
+      listRunIds: async () => [],
+    };
+    const k8s = {} as unknown as K8sClient;
+    // No `enabled` — createRunRelay defaults to disabled, exactly like the
+    // composition root.
+    const relay = createRunRelay({ k8s, runs, executorPort: 1 });
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "a1"),
+    );
+    server.listen(0);
+    await once(server, "listening");
+    cleanups.push(() => server.close());
+
+    const port = (server.address() as AddressInfo).port;
+    const client = new WebSocket(`ws://127.0.0.1:${port}/api/agents/a1/run`);
+    const [code, reason] = (await once(client, "close")) as [number, Buffer];
+    expect(code).toBe(1008);
+    expect(reason.toString()).toContain("temporarily disabled");
   });
 
   it("releases the run when the client disconnects during agent resolution", async () => {

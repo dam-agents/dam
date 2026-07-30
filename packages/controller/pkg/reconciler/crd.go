@@ -12,17 +12,15 @@ import (
 )
 
 // GVRs / GVKs for the reconciled custom resources: the durable Agent plus the
-// ephemeral Fork and Run, each watched by its own informer and worker.
+// ephemeral Run, each watched by its own informer and worker.
 var (
 	AgentsGVR = apiv1.GroupVersion.WithResource("agents")
-	ForksGVR  = apiv1.GroupVersion.WithResource("forks")
 	RunsGVR   = apiv1.GroupVersion.WithResource("runs")
 	// UserBudgetsGVR is read live at each budget check (no informer):
 	// 0→1 transitions are rare and a live read keeps enforcement unlagged.
 	UserBudgetsGVR = apiv1.GroupVersion.WithResource("userbudgets")
 
 	agentGVK = apiv1.GroupVersion.WithKind("Agent")
-	forkGVK  = apiv1.GroupVersion.WithKind("Fork")
 	runGVK   = apiv1.GroupVersion.WithKind("Run")
 )
 
@@ -62,7 +60,7 @@ func agentOwnerRef(agent *apiv1.Agent) metav1.OwnerReference {
 	return *metav1.NewControllerRef(agent, agentGVK)
 }
 
-// agentLister adapts the dynamic informer's cache to AgentGetter so the fork
+// agentLister adapts the dynamic informer's cache to AgentGetter so the agent
 // resolver reads agents from the shared cache rather than hitting the API.
 type agentLister struct {
 	lister cache.GenericLister
@@ -81,25 +79,6 @@ func (g agentLister) Get(name string) (*apiv1.Agent, error) {
 		return nil, err
 	}
 	return FromCacheObject[apiv1.Agent](obj)
-}
-
-// forkToUnstructured is the inverse, used to seed/apply Fork objects.
-func forkToUnstructured(fork *apiv1.Fork) (*unstructured.Unstructured, error) {
-	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(fork)
-	if err != nil {
-		return nil, fmt.Errorf("converting Fork to unstructured: %w", err)
-	}
-	u := &unstructured.Unstructured{Object: raw}
-	u.SetAPIVersion(apiv1.GroupVersion.String())
-	u.SetKind("Fork")
-	return u, nil
-}
-
-// forkOwnerRef builds the controller owner reference to a Fork CR. Children the
-// reconciler renders in the agent namespace carry this so K8s GC cascade-deletes
-// them with the Fork.
-func forkOwnerRef(fork *apiv1.Fork) metav1.OwnerReference {
-	return *metav1.NewControllerRef(fork, forkGVK)
 }
 
 // runOwnerRef builds the controller owner reference to a Run CR. Children the

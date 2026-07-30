@@ -6,11 +6,9 @@ import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fa
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
-  emit as emitGlobal,
   EventType,
   type ChannelTurnRelayed,
   type DomainEvent,
-  type ForeignReplyReceived,
 } from "../../events.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
@@ -27,14 +25,10 @@ beforeEach(() => {
 type Binding = {
   instanceName: string;
   owner: string;
-  mode?: "shared" | "person-scoped";
 } | null;
 
 function harness(opts: {
   binding: Binding;
-  /** identityLinks.resolve result — null = unlinked Slack user. */
-  linkedSub?: string | null;
-  isAllowedUser?: boolean;
   termsAccepted?: (sub: string) => boolean;
 }) {
   const gw = createFakeSlackGateway();
@@ -50,14 +44,13 @@ function harness(opts: {
   };
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => opts.isAllowedUser ?? false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
     () => acp,
     () => gw,
     () => agents,
-    { resolve: async () => opts.linkedSub ?? null } as never,
+    { resolve: async () => null } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
     new Map(),
     async () => OWNER,
@@ -67,7 +60,6 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
-    () => acp,
     (e) => events.push(e),
   );
 
@@ -94,15 +86,14 @@ function harness(opts: {
   };
 }
 
-const shared: Binding = {
+const bound: Binding = {
   instanceName: "agent-1",
   owner: OWNER,
-  mode: "shared",
 };
 
-describe("slack shared-mode access", () => {
-  it("shared: relays a mention from an arbitrary channel member — no login, no allow-list", async () => {
-    const h = harness({ binding: shared });
+describe("slack shared-channel access", () => {
+  it("relays a mention from an arbitrary channel member — no login, no allow-list", async () => {
+    const h = harness({ binding: bound });
     await h.mention(STRANGER);
 
     // The turn is relayed and succeeds — no login prompt, no allow-list block.
@@ -113,8 +104,8 @@ describe("slack shared-mode access", () => {
     expect(joined).not.toContain("don't have access");
   });
 
-  it("shared: attributes the turn by Slack identity, not a platform sub", async () => {
-    const h = harness({ binding: shared });
+  it("attributes the turn by Slack identity, not a platform sub", async () => {
+    const h = harness({ binding: bound });
     await h.mention(STRANGER);
 
     expect(h.turnEvents()).toHaveLength(1);
@@ -134,9 +125,9 @@ describe("slack shared-mode access", () => {
     expect(h.turnEvents()).toHaveLength(0);
   });
 
-  it("shared: blocks the turn until the BINDING owner accepts the Terms of Use", async () => {
+  it("blocks the turn until the BINDING owner accepts the Terms of Use", async () => {
     const h = harness({
-      binding: shared,
+      binding: bound,
       termsAccepted: (sub) => sub !== OWNER,
     });
     await h.mention(STRANGER);
@@ -147,75 +138,16 @@ describe("slack shared-mode access", () => {
     expect(h.turnEvents()).toHaveLength(0);
   });
 
-  it("shared: labels the prompt with the speaker's Slack id", async () => {
-    const h = harness({ binding: shared });
+  it("labels the prompt with the speaker's Slack id", async () => {
+    const h = harness({ binding: bound });
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
     expect(String(h.prompts[0])).toContain("<@U-STRANGER>: ");
   });
 
-  it("mode absent: an unlinked stranger gets the login deny (person-scoped default)", async () => {
-    const h = harness({
-      binding: { instanceName: "agent-1", owner: OWNER },
-    });
-    await h.mention(STRANGER);
-
-    expect(h.texts().join("\n")).toContain("/dam login");
-    expect(h.turnEvents()).toHaveLength(0);
-    expect(h.prompts).toHaveLength(0);
-  });
-
-  it("explicit 'person-scoped' behaves identically to absent", async () => {
-    const h = harness({
-      binding: { instanceName: "agent-1", owner: OWNER, mode: "person-scoped" },
-    });
-    await h.mention(STRANGER);
-
-    expect(h.texts().join("\n")).toContain("/dam login");
-    expect(h.turnEvents()).toHaveLength(0);
-    expect(h.prompts).toHaveLength(0);
-  });
-
-  it("person-scoped: a linked, allow-listed non-owner takes the foreign fork path", async () => {
-    const h = harness({
-      binding: { instanceName: "agent-1", owner: OWNER },
-      linkedSub: "kc|member-2",
-      isAllowedUser: true,
-    });
-    await h.mention(STRANGER);
-
-    const foreign = h.events.filter(
-      (e): e is ForeignReplyReceived =>
-        e.type === EventType.ForeignReplyReceived,
-    );
-    expect(foreign).toHaveLength(1);
-    expect(foreign[0]!.foreignSub).toBe("kc|member-2");
-    expect(foreign[0]!.agentId).toBe("agent-1");
-    expect(foreign[0]!.slackContext).toEqual({
-      channelId: "C1",
-      userSlackId: STRANGER,
-    });
-    // The owner relay never ran.
-    expect(h.prompts).toHaveLength(0);
-
-    // Settle the fork subscription and confirm the outcome wiring.
-    emitGlobal({
-      type: EventType.ForkFailed,
-      forkId: "fork-1",
-      replyId: foreign[0]!.replyId,
-      reason: "PodNotReady",
-    });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(h.turnEvents()).toHaveLength(1);
-    const turn = h.turnEvents()[0]!;
-    expect(turn.actorSub).toBe("kc|member-2");
-    expect(turn.forkId).toBe("fork-1");
-    expect(turn.reason).toBe("fork-failed:PodNotReady");
-  });
-
-  it("shared: logs a basis:'place' allow entry in the security audit trail", async () => {
-    const h = harness({ binding: shared });
+  it("logs a basis:'place' allow entry in the security audit trail", async () => {
+    const h = harness({ binding: bound });
     await h.mention(STRANGER);
 
     const allows = h

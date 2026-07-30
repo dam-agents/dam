@@ -97,56 +97,9 @@ func TestBuildGatewayService(t *testing.T) {
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
 
-// TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
-// removed — pair-key NetworkPolicies are gone, replaced by per-instance
-// mesh AuthorizationPolicies (covered in authorization_policy_test.go).
-
-// --- Fork gateway ---
-
-func TestBuildForkGatewayPod_Labels(t *testing.T) {
-	pod := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, configMapOwnerRef(testForkOwnerCM), nil, nil)
-	assert.Equal(t, "fork-abc-gateway", pod.Name)
-	// Instance label points at the PARENT instance — ext_authz identity
-	// flows through this label, and forks inherit the parent's egress
-	// rules.
-	assert.Equal(t, "parent-instance", pod.Labels["agent-platform.ai/agent"])
-	// Pair key is the fork name — the fork pair is structurally isolated
-	// from the parent instance pair.
-	assert.Equal(t, "fork-abc", pod.Labels["agent-platform.ai/pair"])
-	assert.Equal(t, "gateway", pod.Labels["agent-platform.ai/role"])
-
-	require.Len(t, pod.OwnerReferences, 1)
-	assert.Equal(t, "fork-abc", pod.OwnerReferences[0].Name)
-
-	require.NotNil(t, pod.Spec.AutomountServiceAccountToken)
-	assert.False(t, *pod.Spec.AutomountServiceAccountToken)
-}
-
-func TestBuildForkGatewayPod_ParentL7HostsMountLeafTLS(t *testing.T) {
-	// The parent's spec.l7Hosts flow into the fork gateway (#2866): the
-	// leaf TLS volume must mount even with zero replier credential
-	// Secrets, because the promoted chain terminates TLS. Fork pods are
-	// created per turn, so a new parent rule is picked up on the next
-	// turn without any roll trigger.
-	promoted := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, configMapOwnerRef(testForkOwnerCM), nil, []string{"api.github.com"})
-
-	hasLeaf := func(pod *corev1.Pod) bool {
-		for _, v := range pod.Spec.Volumes {
-			if v.Name == envoyLeafTLSVolume {
-				return true
-			}
-		}
-		return false
-	}
-	assert.True(t, hasLeaf(promoted))
-}
-
-func TestBuildForkGatewayService(t *testing.T) {
-	svc := BuildForkGatewayService("fork-abc", testConfig, configMapOwnerRef(testOwnerCM))
-	assert.Equal(t, "fork-abc-gateway", svc.Name)
-	assert.Equal(t, "fork-abc", svc.Spec.Selector["agent-platform.ai/pair"])
-	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
-}
+// TestBuildGatewayNetworkPolicy removed — pair-key NetworkPolicies are gone,
+// replaced by per-instance mesh AuthorizationPolicies (covered in
+// authorization_policy_test.go).
 
 // TestLabelContract pins the on-the-wire label keys and values that
 // NetworkPolicy selectors and the api-server's pod-IP resolver depend on.

@@ -43,7 +43,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
               {slackChannel.slackChannelId}
             </p>
             <p className="truncate text-[14px] text-muted-foreground">
-              {bindingSubtitle(slackChannel, agent.allowedUserEmails)}
+              {slackChannel.ambient ? "Ambient on" : "Ambient off"}
             </p>
           </div>
           <DropdownMenu>
@@ -94,15 +94,4 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
       )}
     </ChannelCard>
   );
-}
-
-function bindingSubtitle(
-  channel: NonNullable<ReturnType<typeof findSlackChannel>>,
-  allowedUserEmails: string[],
-): string {
-  if (channel.mode === "shared")
-    return channel.ambient ? "Shared · ambient" : "Shared";
-  return allowedUserEmails.length > 0
-    ? `Person-scoped · ${allowedUserEmails.length} allowed user${allowedUserEmails.length === 1 ? "" : "s"}`
-    : "Person-scoped · unrestricted";
 }

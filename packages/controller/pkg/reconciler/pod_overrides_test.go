@@ -58,7 +58,6 @@ func fullAgentBase() config.AgentBase {
 		ContainerSecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
-		AccessMode:             "ReadWriteMany",
 		TerminationGracePeriod: 5,
 	}
 }

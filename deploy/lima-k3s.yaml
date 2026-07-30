@@ -32,10 +32,6 @@ provision:
     script: |
       #!/bin/sh
       set -e
-      echo "[platform-provision] Installing nfs-common (required for platform-rwx NFS mounts)..."
-      DEBIAN_FRONTEND=noninteractive apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
-      echo "[platform-provision] mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
       # Bound kubelet container-log usage at ~30 MiB per pod so a chatty/looping
       # pod can't fill the dev VM disk (issue #244). cluster:install also
       # ensures this file exists on existing VMs.

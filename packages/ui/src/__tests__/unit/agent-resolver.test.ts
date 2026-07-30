@@ -22,7 +22,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   state,
   contributionFailures: [],
   channels: [],
-  allowedUserEmails: [],
   spawnedBy: null,
 });
 

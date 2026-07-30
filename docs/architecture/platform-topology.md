@@ -1,10 +1,10 @@
 # Platform topology
 
-Last verified: 2026-07-24
+Last verified: 2026-07-30
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent and Fork custom resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. Agent pods are stateless and ephemeral — durable state lives on per-agent persistent volumes, which is what makes the hibernate/wake cycle (scale to zero, scale back up) safe. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent and Run custom resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. Agent pods are stateless and ephemeral — durable state lives on per-agent persistent volumes, which is what makes the hibernate/wake cycle (scale to zero, scale back up) safe. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
 ## Diagram
 
@@ -34,7 +34,7 @@ flowchart LR
 
 ### controller
 
-A stateless Go reconciler built on client-go. It watches the `Agent` and `Fork` custom resources (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
+A stateless Go reconciler built on client-go. It watches the `Agent` and `Run` custom resources (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
 
 ### api-server
 
@@ -104,7 +104,6 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 | Kind | Purpose |
 |---|---|
 | `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
-| `Fork` | Forked run: parent agent ref + overrides |
 | `Run` | Ephemeral single-command executor backing the in-pod `dam-run` CLI: parent agent ref only. One per invocation, reconciled to a bare executor pod. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).

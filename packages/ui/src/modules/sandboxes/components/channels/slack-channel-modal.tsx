@@ -1,7 +1,4 @@
-import { Add, Close } from "@carbon/icons-react";
-import { useState } from "react";
-import type { Control } from "react-hook-form";
-import { Controller, useFieldArray, useWatch } from "react-hook-form";
+import { Controller } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -12,36 +9,10 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../../types.js";
-import type {
-  SlackAccessMode,
-  SlackChannelFormValues,
-} from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
-
-const MODE_OPTIONS: {
-  value: SlackAccessMode;
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: "person-scoped",
-    label: "Person-scoped",
-    description:
-      "Each user links their own account; only the owner and allowed users drive the agent, each under their own credentials.",
-  },
-  {
-    value: "shared",
-    label: "Shared (system agent)",
-    description:
-      "Anyone in the channel drives the agent under the agent's credentials — no login. Turns are attributed by Slack user id, and your Terms-of-Use acceptance covers every turn.",
-  },
-];
 
 export function SlackChannelModal({
   agent,
@@ -56,7 +27,6 @@ export function SlackChannelModal({
     control,
     formState: { errors, isSubmitting },
   } = form;
-  const mode = useWatch({ control, name: "mode" });
 
   return (
     <Modal>
@@ -82,19 +52,13 @@ export function SlackChannelModal({
             />
           </FormField>
 
-          <AccessModePicker control={control} locked={editing} />
-
-          {mode === "shared" && (
-            <Controller
-              control={control}
-              name="ambient"
-              render={({ field }) => (
-                <AmbientRow checked={field.value} onChange={field.onChange} />
-              )}
-            />
-          )}
-
-          {mode === "person-scoped" && <AllowedUsers control={control} />}
+          <Controller
+            control={control}
+            name="ambient"
+            render={({ field }) => (
+              <AmbientRow checked={field.value} onChange={field.onChange} />
+            )}
+          />
         </DialogBody>
 
         <DialogFooter>
@@ -116,52 +80,6 @@ export function SlackChannelModal({
         </DialogFooter>
       </form>
     </Modal>
-  );
-}
-
-function AccessModePicker({
-  control,
-  locked,
-}: {
-  control: Control<SlackChannelFormValues>;
-  locked: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <SectionLabel>Access mode</SectionLabel>
-      <Controller
-        control={control}
-        name="mode"
-        render={({ field }) => (
-          <RadioGroup
-            aria-label="Access mode"
-            value={field.value}
-            onValueChange={field.onChange}
-            onBlur={field.onBlur}
-          >
-            {MODE_OPTIONS.map((opt) => (
-              <RadioGroupItem
-                key={opt.value}
-                value={opt.value}
-                label={opt.label}
-                description={opt.description}
-                disabled={locked}
-                aria-describedby={locked ? "slack-mode-locked" : undefined}
-                className={cn(
-                  "rounded-md border border-border bg-background px-3 py-2.5",
-                  locked ? "opacity-60" : "cursor-pointer",
-                )}
-              />
-            ))}
-          </RadioGroup>
-        )}
-      />
-      {locked && (
-        <p id="slack-mode-locked" className="text-[13px] text-muted-foreground">
-          The mode is fixed per binding — disconnect and reconnect to change it.
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -191,76 +109,6 @@ function AmbientRow({
         onCheckedChange={onChange}
         label="Ambient mode"
       />
-    </div>
-  );
-}
-
-function AllowedUsers({
-  control,
-}: {
-  control: Control<SlackChannelFormValues>;
-}) {
-  const { fields, append, remove } = useFieldArray({ control, name: "users" });
-  const [userInput, setUserInput] = useState("");
-
-  const addUser = () => {
-    const email = userInput.trim();
-    if (!email || fields.some((f) => f.email === email)) return;
-    append({ email });
-    setUserInput("");
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <SectionLabel>Allowed users</SectionLabel>
-      {fields.length === 0 && (
-        <p className="text-[13px] text-muted-foreground">
-          Unrestricted — any linked Slack user can interact.
-        </p>
-      )}
-      {fields.map((field, index) => (
-        <div
-          key={field.id}
-          className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5"
-        >
-          <span className="flex-1 truncate font-mono text-[13px] text-foreground">
-            {field.email}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            tone="danger"
-            size="icon-xs"
-            aria-label={`Remove ${field.email}`}
-            onClick={() => remove(index)}
-            className="shrink-0"
-          >
-            <Close size={14} />
-          </Button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        <Input
-          type="email"
-          className="h-[32px] flex-1"
-          value={userInput}
-          placeholder="user@example.com"
-          onChange={(e) => setUserInput(e.target.value)}
-          onKeyDown={(e) =>
-            e.key === "Enter" && (e.preventDefault(), addUser())
-          }
-        />
-        <Button
-          type="button"
-          variant="outline"
-          className="h-[32px] px-3 text-[14px] font-normal"
-          onClick={addUser}
-          disabled={!userInput.trim()}
-        >
-          <Add size={16} />
-          Add
-        </Button>
-      </div>
     </div>
   );
 }
