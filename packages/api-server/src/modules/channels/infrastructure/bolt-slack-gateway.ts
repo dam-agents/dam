@@ -24,26 +24,6 @@ export interface BoltSlackGatewayDeps {
   commandName: string;
 }
 
-/** Hops a file download may follow before we call it a loop. Slack normally
- *  needs one (the private URL to its signed location). */
-const MAX_DOWNLOAD_REDIRECTS = 5;
-
-/** Whether a download hop may carry the bot token: Slack's own hosts, over TLS
- *  only. Anywhere else the token would be handed to a third party (or sent in
- *  the clear), and a signed URL does not need it. */
-export function sendsBotToken(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:") return false;
-  return (
-    parsed.hostname === "slack.com" || parsed.hostname.endsWith(".slack.com")
-  );
-}
-
 export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
@@ -285,34 +265,14 @@ export function createBoltSlackGateway(
     },
 
     async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
-      // Slack's file URLs can redirect, and `fetch` strips Authorization when
-      // a redirect crosses origins. Since Slack answers an unauthenticated
-      // file request with a 200 and a sign-in page rather than an error, a
-      // followed redirect silently yields markup where the image should be —
-      // which the harness then fails to decode (#3008). So walk the hops
-      // ourselves and re-attach the token on each Slack-owned https hop; a
-      // pre-signed URL elsewhere carries its own credentials in the query.
-      let url = urlPrivate;
-      for (let hop = 0; ; hop++) {
-        const res = await fetch(url, {
-          redirect: "manual",
-          headers: sendsBotToken(url)
-            ? { Authorization: `Bearer ${deps.botToken}` }
-            : {},
-        });
-        if (res.status < 300 || res.status >= 400) {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.arrayBuffer();
-        }
-        const location = res.headers.get("location");
-        if (!location) {
-          throw new Error(`HTTP ${res.status} with no redirect target`);
-        }
-        if (hop >= MAX_DOWNLOAD_REDIRECTS) {
-          throw new Error(`too many redirects (${hop + 1})`);
-        }
-        url = new URL(location, url).toString();
-      }
+      // A 2xx here does not mean the bytes are the file: Slack answers a
+      // request it won't serve with a 200 and a sign-in page. The caller
+      // classifies what actually arrived rather than trusting the status.
+      const res = await fetch(urlPrivate, {
+        headers: { Authorization: `Bearer ${deps.botToken}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.arrayBuffer();
     },
 
     async listBotChannels(): Promise<SlackChannelInfo[]> {

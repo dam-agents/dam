@@ -260,7 +260,9 @@ async function unreadableImageCopy(
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
 ): Promise<string> {
   if (attachment.kind === "unreadable") {
-    return `it is ${attachment.description}. The agent reads PNG, JPEG, GIF and WebP images.`;
+    return attachment.retryable
+      ? `it is ${attachment.description}, so the upload arrived incomplete. Try resending.`
+      : `it is ${attachment.description}. The agent reads PNG, JPEG, GIF and WebP images.`;
   }
   const scopes = await grantedScopes(gw);
   return scopes && !scopes.has("files:read")
@@ -272,13 +274,24 @@ async function unreadableImageCopy(
         "this conversation — check that it is still installed and can read files.";
 }
 
+/** Whether an attachment is worth downloading and letting the bytes judge.
+ *  Slack's `mimetype` decides that much, but it is the uploading client's claim,
+ *  not a fact — so a generic or absent label with an image extension is taken
+ *  seriously too, rather than dropping a real screenshot unread on the strength
+ *  of a bad label. Anything else (a PDF, a spreadsheet) is still left alone. */
+const GENERIC_MIME_TYPES = ["application/octet-stream", "binary/octet-stream"];
+
+function mayBeImageAttachment(f: SlackImageFile): boolean {
+  if (f.mimetype?.startsWith("image/")) return true;
+  if (f.mimetype && !GENERIC_MIME_TYPES.includes(f.mimetype)) return false;
+  return /\.(png|jpe?g|gif|webp)$/i.test(f.name ?? "");
+}
+
 async function fetchSlackImages(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
 ): Promise<FetchImagesResult> {
-  const imageFiles = (files ?? []).filter((f) =>
-    f.mimetype?.startsWith("image/"),
-  );
+  const imageFiles = (files ?? []).filter(mayBeImageAttachment);
   const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
   if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
     return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
@@ -291,10 +304,9 @@ async function fetchSlackImages(
     for (const f of imageFiles) {
       try {
         const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
-        // Slack's own label is a hint, not a fact: a download can return a
-        // page instead of the file, and `image/*` covers formats no harness
-        // decodes. Trust the bytes — and their sniffed type, so a mislabelled
-        // upload still reaches the agent.
+        // A 2xx download is not proof it returned the file, and `image/*`
+        // covers formats no harness decodes. Trust the bytes — and their
+        // sniffed type, so a mislabelled upload still reaches the agent.
         const attachment = classifyInboundAttachment(bytes);
         if (attachment.kind !== "image") {
           getLogger().warn(
@@ -331,6 +343,22 @@ async function fetchSlackImages(
   } finally {
     release();
   }
+}
+
+/** The accepted images for a turn, plus a line naming any attachment that was
+ *  withheld. The note goes into the prompt, not just the sender's notice: an
+ *  agent that is asked about a picture it never received would otherwise answer
+ *  blind, which reads as a worse failure than saying it couldn't see the file. */
+type TurnImages = { images: FetchedImage[]; withheldNote: string };
+
+function renderWithheldNote(failures: FetchedFailure[]): string {
+  if (failures.length === 0) return "";
+  const list = failures.map((f) => `${f.name} (${f.reason})`).join("; ");
+  return (
+    `\n\nAn attachment on this message could not be read and was not ` +
+    `included: ${list} Say so plainly if the question depends on seeing it — ` +
+    `do not guess at its contents.`
+  );
 }
 
 function renderTurnFiles(images: FetchedImage[]): string {
@@ -1624,7 +1652,7 @@ export function createSlackWorker(
   async function fetchTurnImages(
     event: SlackMentionEvent,
     slackUserId: string,
-  ): Promise<FetchedImage[] | null> {
+  ): Promise<TurnImages | null> {
     if (!gateway) return null;
     const fetchResult = await fetchSlackImages(gateway, event.files);
     if (fetchResult.kind === "cap_exceeded") {
@@ -1647,7 +1675,7 @@ export function createSlackWorker(
         `Couldn't use attached image '${f.name}': ${f.reason}`,
       );
     }
-    return images;
+    return { images, withheldNote: renderWithheldNote(failures) };
   }
 
   /** Copy for an inbound message that hit an unbound conversation. Channels
@@ -1690,19 +1718,19 @@ export function createSlackWorker(
     }
 
     if (binding.mode === "shared") {
-      const images = await fetchTurnImages(event, slackUserId);
-      if (images === null) return;
+      const fetched = await fetchTurnImages(event, slackUserId);
+      if (fetched === null) return;
       await relaySharedTurn({
         channel: event.channel,
         threadTs,
         eventTs: event.ts,
-        text: event.text,
+        text: event.text + fetched.withheldNote,
         hasThread: !!event.threadTs,
         slackUserId,
         instanceName: binding.instanceName,
         owner: binding.owner,
         teamId: event.teamId,
-        images,
+        images: fetched.images,
         // A 1:1 DM has exactly one human speaker, so labelling the prompt with
         // their Slack mention is redundant — keep the private DM prompt clean.
         speakerLabel: !opts.directMessage,
@@ -1730,20 +1758,20 @@ export function createSlackWorker(
       return;
     }
 
-    const images = await fetchTurnImages(event, slackUserId);
-    if (images === null) return;
+    const fetched = await fetchTurnImages(event, slackUserId);
+    if (fetched === null) return;
 
     await routeReply({
       channel: event.channel,
       threadTs,
       eventTs: event.ts,
-      text: event.text,
+      text: event.text + fetched.withheldNote,
       hasThread: !!event.threadTs,
       slackUserId,
       keycloakSub,
       instanceName: binding.instanceName,
       teamId: event.teamId,
-      images,
+      images: fetched.images,
     });
   }
 
@@ -2108,9 +2136,12 @@ export function createSlackWorker(
     }
 
     // Images ride along when they fit; ambient turns never post error
-    // ephemerals, so oversized or unfetchable attachments just drop.
+    // ephemerals, so oversized or unfetchable attachments just drop — but the
+    // agent is still told, in the prompt, that one was withheld.
     const fetchResult = await fetchSlackImages(gateway, event.files);
     const images = fetchResult.kind === "ok" ? fetchResult.images : [];
+    const withheldNote =
+      fetchResult.kind === "ok" ? renderWithheldNote(fetchResult.failures) : "";
 
     securityLog("info", "channel.authz", {
       category: "channel",
@@ -2132,7 +2163,7 @@ export function createSlackWorker(
     // racing concurrent prompts into the shared session. A thread reply keys on
     // its own thread_ts (the same session a mention there resumes); top-level
     // flow keys on the channel's rolling ambient session.
-    const text = `<@${slackUserId}>: ${event.text}`;
+    const text = `<@${slackUserId}>: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
       eventTs: event.ts,

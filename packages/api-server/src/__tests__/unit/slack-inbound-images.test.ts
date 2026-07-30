@@ -247,4 +247,72 @@ describe("slack inbound images", () => {
     expect(h.prompts).toHaveLength(1);
     expect(String(h.prompts[0])).toContain("what does this say?");
   });
+
+  it("tells the agent an attachment was withheld, so it does not answer blind", async () => {
+    // The sender's notice is invisible to the agent. Without this the agent is
+    // asked about a picture it never received and guesses (#3008).
+    const h = harness();
+    await h.mentionWithFile({ bytes: Buffer.from("<html>nope</html>") });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("could not be read");
+    expect(prompt).toContain("screenshot.png");
+    expect(prompt).toContain("do not guess");
+  });
+
+  it("blames the format, not the permission, for an SVG that arrived intact", async () => {
+    // Slack labels .svg uploads image/svg+xml, so they pass the label gate. An
+    // SVG's `<?xml` prologue looks like the sign-in page a scope problem
+    // returns — telling the sender to reinstall the app would send them after
+    // a permission that is already granted.
+    const h = harness();
+    h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
+    await h.mentionWithFile({
+      bytes: Buffer.from(
+        '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>',
+      ),
+      mimetype: "image/svg+xml",
+      name: "diagram.svg",
+    });
+
+    const notices = h.notices();
+    expect(notices).toContain("diagram.svg");
+    expect(notices).toContain("an SVG image");
+    expect(notices).toContain("PNG, JPEG, GIF and WebP");
+    expect(notices).not.toContain("files:read");
+    expect(notices).not.toContain("web page");
+  });
+
+  it("still reads a screenshot whose label is a generic blob", async () => {
+    // Some clients upload without a usable mimetype. Selecting attachments by
+    // label alone would drop a real screenshot before anything looked at it.
+    const h = harness();
+    const bytes = png();
+    await h.mentionWithFile({
+      bytes,
+      mimetype: "application/octet-stream",
+      name: "Screenshot_20260730-000443.png",
+    });
+
+    expect(h.imageBlocks()[0]).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+      data: bytes.toString("base64"),
+    });
+  });
+
+  it("leaves a genuine non-image attachment alone", async () => {
+    // Documents are a separate, still-open gap: they are not downloaded at all,
+    // so widening the label gate must not start rejecting them noisily.
+    const h = harness();
+    await h.mentionWithFile({
+      bytes: Buffer.from("%PDF-1.7"),
+      mimetype: "application/pdf",
+      name: "spec.pdf",
+    });
+
+    expect(h.imageBlocks()).toHaveLength(0);
+    expect(h.notices()).not.toContain("Couldn't use");
+    expect(String(h.prompts[0])).not.toContain("could not be read");
+  });
 });
