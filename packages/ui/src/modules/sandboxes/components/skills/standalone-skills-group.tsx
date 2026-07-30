@@ -80,9 +80,9 @@ function latestPublishByName(
 /**
  * "Created in this sandbox" — Standalone Local Skills authored in place or
  * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
- * "In review" pill once it has a publish record). The kebab's Download/Delete
- * are shown disabled — no download/delete-local backend yet (deferred). There
- * is no install toggle: standalone skills are simply present on disk.
+ * "In review" pill once it has a publish record), and the kebab downloads or
+ * deletes it. There is no install toggle: standalone skills are simply present
+ * on disk.
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -90,6 +90,8 @@ export function StandaloneSkillsGroup({
   publishes,
   canPublish,
   onPublish,
+  onDownload,
+  onDelete,
   action,
 }: {
   skills: LocalSkill[];
@@ -98,6 +100,10 @@ export function StandaloneSkillsGroup({
   /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: (skill: LocalSkill) => void;
+  onDownload: (skill: LocalSkill) => void;
+  /** The row's latest publish record is passed along so the confirm dialog can
+   *  mention the PR without re-deriving it in the parent. */
+  onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   /** Header-right slot (e.g. the "+ Add source" button). */
   action?: ReactNode;
 }) {
@@ -172,14 +178,15 @@ export function StandaloneSkillsGroup({
                     <OverflowMenuHorizontal size={18} />
                   </Button>
                 </DropdownMenuTrigger>
-                {/* Download and Delete have no backend yet (deferred) — shown
-                    disabled so the affordance is visible without dead actions. */}
                 <DropdownMenuContent>
-                  <DropdownMenuItem disabled>
+                  <DropdownMenuItem onSelect={() => onDownload(skill)}>
                     <Download size={14} />
                     <span className="flex-1">Download skill</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem tone="danger" disabled>
+                  <DropdownMenuItem
+                    tone="danger"
+                    onSelect={() => onDelete(skill, pub)}
+                  >
                     Delete skill
                   </DropdownMenuItem>
                 </DropdownMenuContent>

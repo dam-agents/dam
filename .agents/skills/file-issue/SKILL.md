@@ -8,13 +8,15 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Draft a GitHub issue and file it after the user approves. For the content shape — the issue types (epic, story, task, bug), style, and the per-type templates — follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → decide type → research → dedupe → draft → approve → file) on top of those guidelines.
+Draft a GitHub issue and file it after the user approves. For the content shape — the issue types (epic, feature, task, bug, research task), style, and the per-type templates — follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → decide type → research → dedupe → draft → approve → file) on top of those guidelines.
 
 ## Workflow
 
 1. **Understand the request thoroughly.** Read the user's prompt carefully — multiple times if it's long or ambiguous. Identify what problem they're describing, who it affects, and what outcome they want. Restate it back in one or two sentences to confirm shared understanding. Ask follow-ups for anything that would change the shape of the issue (scope, who it affects, dependencies on other work). Do not start drafting until you genuinely understand the ask.
 
-   Then let the user decide the type: every issue is an **epic**, **story**, **task**, or **bug** (see the guidelines doc). State which type you read the ask as and why, and let the user confirm or override — the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
+   Because **Context leads every template** — why this matters, what led here — make sure you actually have it. If the user's ask doesn't convey that context, ask them for it before drafting. A ticket without real context is the main thing this step exists to prevent.
+
+   Then let the user decide the type: every issue is an **epic**, **feature**, **task**, **bug**, or **research task** (see the guidelines doc). State which type you read the ask as and why, and let the user confirm or override — the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
 
 2. **Research the codebase thoroughly.** Do real investigation of the current state — read relevant files, trace how the feature works today, understand the user-visible behavior end-to-end. The goal is to describe the status quo *accurately*, not superficially. A shallow understanding produces a vague ticket.
 
@@ -28,7 +30,7 @@ Draft a GitHub issue and file it after the user approves. For the content shape 
 
    Use multiple keyword variations drawn from the user's request. If you find a plausible duplicate or closely-related issue, surface it to the user with a one-line summary and ask how to proceed — options include: add a comment to the existing issue, file a new one anyway with a cross-link, or close the request as already-tracked. Do not silently file a duplicate.
 
-4. **For a story, task, or bug: consider an epic.** Fetch the epics from the project board and check whether one clearly fits:
+4. **For any non-epic type: consider an epic.** Fetch the epics from the project board and check whether one clearly fits:
 
    ```sh
    gh project item-list 1 --owner dam-agents --limit 3000 --format json \

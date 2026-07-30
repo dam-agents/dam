@@ -103,6 +103,8 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Publish | Lifting a Local Skill to a GitHub repository as a new branch + PR via the REST API |
 | Scan | Enumerating Scanned Skills in a Source |
 | Write Local | Materializing user-supplied Markdown as a standalone Local Skill (one skill per file); rejects name collisions with existing Local Skills |
+| Delete Local | Removing a standalone Local Skill's directory from every Skill Path; a name that resolves to no directory is a no-op |
+| Read Local | Reading every file in a Local Skill's directory, size-capped per file and per skill; returns the resolved directory basename with the files |
 
 ## Approvals (bounded context)
 
