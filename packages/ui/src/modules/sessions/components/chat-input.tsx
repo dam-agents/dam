@@ -190,7 +190,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
