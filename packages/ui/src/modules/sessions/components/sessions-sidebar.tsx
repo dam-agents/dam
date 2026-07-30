@@ -15,7 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
@@ -23,6 +23,7 @@ import {
   SESSION_CATEGORY_LABELS,
   sessionCategory,
 } from "../lib/session-category.js";
+import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
 
@@ -64,9 +65,9 @@ export function SessionsSidebar({
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
-  const agentRunState = useAgentRunState(selectedAgent);
+  const agentOperable = useIsAgentOperable(selectedAgent);
   const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
-    enabled: agentRunState === "running",
+    enabled: agentOperable,
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = data ?? EMPTY;
@@ -224,6 +225,7 @@ export function SessionsSidebar({
       style={style}
     >
       <div className="flex-1 overflow-y-auto">
+        {loading && <SessionListSkeleton />}
         {!loading && sessions.length === 0 && (
           <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No sessions yet
