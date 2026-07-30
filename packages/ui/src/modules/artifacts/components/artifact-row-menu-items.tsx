@@ -1,4 +1,3 @@
-import { Download, Share, TrashCan } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 
 import {
@@ -24,11 +23,9 @@ export function ArtifactRowMenuItems({
   return (
     <>
       <DropdownMenuItem onSelect={() => onShare(artifact)}>
-        <Share size={14} />
-        Sharing…
+        Share
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void downloadArtifact(artifact.id)}>
-        <Download size={14} />
         Download
       </DropdownMenuItem>
       <DropdownMenuSeparator />
@@ -36,8 +33,7 @@ export function ArtifactRowMenuItems({
         tone="danger"
         onSelect={() => void deleteArtifact(artifact)}
       >
-        <TrashCan size={14} />
-        Delete
+        Delete artifact
       </DropdownMenuItem>
     </>
   );
