@@ -82,6 +82,9 @@ const (
 	// migrationFallbackUID runs the copy when the chart doesn't pin the
 	// agent container's uid. Matches the platform images' agent user.
 	migrationFallbackUID = int64(65532)
+	// migrationFallbackGID pairs with migrationFallbackUID when the chart
+	// pins no group; the platform images run 65532:65532.
+	migrationFallbackGID = int64(65532)
 	// migrationChecksumParallelism is how many md5sum workers read the tree
 	// at once. Small-file verification over a network filesystem is bound by
 	// per-file round-trips, not bandwidth or CPU, so concurrency buys close
@@ -763,13 +766,18 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
 	var script strings.Builder
-	// The copy runs as the agent uid — resolved from the chart's container
-	// security context, which is the identity the agent itself runs with.
-	uid := migrationFallbackUID
-	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil && sc.RunAsUser != nil {
-		uid = *sc.RunAsUser
+	// The copy runs as the agent's own uid AND gid, resolved from the chart's
+	// container security context — the identity the agent itself runs with,
+	// so what the copy creates is what the agent can use.
+	uid, gid := migrationFallbackUID, migrationFallbackGID
+	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
+		if sc.RunAsUser != nil {
+			uid = *sc.RunAsUser
+		}
+		if sc.RunAsGroup != nil {
+			gid = *sc.RunAsGroup
+		}
 	}
-	gid := int64(0)
 
 	// The walk always emits flag|type|mode|uid|path|link; what the comparison
 	// KEEPS is a cut of that. Normalizing ownership (opt-in) means the
@@ -847,16 +855,27 @@ copy_verify() {
   find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
   phase "wiped target"
 
-  # tar, not "cp -a src/. dst/": cp applies the SOURCE ROOT's ownership and
-  # timestamps to the TARGET ROOT, which no unprivileged process can do (the
-  # root belongs to the provisioner; fsGroup, not us, makes it writable).
-  # --no-overwrite-dir leaves the target root's own metadata alone; -p keeps
-  # every mode including setuid; tar preserves hard links natively (a
-  # hard-link-heavy pnpm store must not inflate past the volume size) and
-  # --sparse keeps sparse files sparse. Ownership needs no preserving: the
-  # workspace has a single owner and we are it.
-  tar -C "$src" --sparse -cf - . | tar -C "$dst" -xpf - --no-overwrite-dir
-  sync
+  # Archive the source's CONTENTS, never the source directory itself. An
+  # archive containing "./" carries the source root's mode, and tar applies
+  # it to the target root on extraction — which fails as EPERM, because the
+  # target root belongs to the provisioner (fsGroup makes it writable to us,
+  # it does not make us its owner). --no-overwrite-dir does not save us:
+  # tar's delayed directory restore still stats and chmods that member at
+  # the end of extraction. Feeding tar the top-level entries sidesteps it
+  # entirely — the root is never a member, so its metadata is never touched.
+  # One tar process still sees the whole tree, so hard links are preserved
+  # (a hard-link-heavy pnpm store must not inflate past the volume size);
+  # -p keeps every mode including setuid, --sparse keeps sparse files
+  # sparse, and ownership needs no preserving because the workspace has a
+  # single owner and we are it.
+  if [ "$entries" -gt 0 ]; then
+    (cd "$src" && find . -mindepth 1 -maxdepth 1 ! -path './lost+found*' -print0) \
+      | tar -C "$src" --sparse --null -T - -cf - \
+      | tar -C "$dst" -xpf - --no-overwrite-dir
+    sync
+  else
+    echo "source is empty; nothing to copy"
+  fi
   phase "copied"
 
   # The target root must be writable by the agent — the property the copy
@@ -952,15 +971,17 @@ copy_verify() {
 					RestartPolicy:                corev1.RestartPolicyNever,
 					AutomountServiceAccountToken: ptrBool(false),
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser: &uid,
-						// Group 0, matching the agent images' own uid:0
-						// convention, so anything the copy creates carries
-						// the identity the agent itself runs with.
+						RunAsUser:  &uid,
 						RunAsGroup: &gid,
-						// fsGroup covers CSI block backends; hostPath-backed
-						// classes (local-path) skip it, which is what the
-						// chown init container below is for.
-						FSGroup: &uid,
+						// fsGroup is the AGENT's group, and that is
+						// load-bearing beyond this Job: the kubelet chowns a
+						// fresh volume's root to it and adds group-write, and
+						// that chown persists on the filesystem. Agent pods
+						// set no fsGroup of their own, so this is what leaves
+						// the migrated root writable to the agent afterwards.
+						// (hostPath-backed classes skip fsGroup; their roots
+						// are world-writable already.)
+						FSGroup: &gid,
 					},
 					Containers: []corev1.Container{{
 						Name:         "copy",
