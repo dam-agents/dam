@@ -101,6 +101,22 @@ describe("artifact service — direct-transfer links", () => {
     expect(await none.createUploadUrl("k")).toBeNull();
   });
 
+  it("createDownloadUrl signs for the browser audience", async () => {
+    const presignDownload = vi.fn().mockResolvedValue("https://store/get/k");
+    const service = createArtifactService({
+      store: stubStore({ presignDownload }),
+      maxBytes: MAX,
+    });
+
+    expect(await service.createDownloadUrl("k", "a.csv")).toBe(
+      "https://store/get/k",
+    );
+    expect(presignDownload).toHaveBeenCalledWith(
+      "k",
+      expect.objectContaining({ filename: "a.csv", audience: "browser" }),
+    );
+  });
+
   it("createAgentDownloadUrl signs for the agent audience with the long TTL", async () => {
     const presignDownload = vi.fn().mockResolvedValue("https://store/get/k");
     const service = createArtifactService({

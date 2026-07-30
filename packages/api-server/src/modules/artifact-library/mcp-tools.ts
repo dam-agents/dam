@@ -31,6 +31,14 @@ function errorResult(text: string): ToolContent {
   return { content: [{ type: "text", text }], isError: true };
 }
 
+/** For rendering a file name into an example shell command only — the real
+ *  name travels as a field. Restricted to a shell-safe subset so an artifact
+ *  named by another publisher can never break out of the example's quoting. */
+function shellSafeFileName(name: string): string {
+  const safe = name.replace(/[^A-Za-z0-9._-]/g, "_");
+  return safe.length > 0 ? safe : "artifact";
+}
+
 async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
   try {
     return await fn();
@@ -197,7 +205,7 @@ export function registerArtifactLibraryTools(
         });
         return json({
           ...ticket,
-          instructions: `GET the URL and save the body, e.g.: curl -fL -o '${ticket.fileName}' '${ticket.url}' — the link expires in ${ticket.expiresSeconds}s.`,
+          instructions: `GET the URL and save the body, e.g.: curl -fL -o '${shellSafeFileName(ticket.fileName)}' '${ticket.url}' — the link expires in ${ticket.expiresSeconds}s.`,
         });
       }),
   );
