@@ -2,7 +2,7 @@ import type { Experiment } from "api-server-api";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import { useAgentExperimentsLive } from "../api/queries.js";
 
@@ -46,13 +46,15 @@ export function useDockedExperiment(agentId: string | null): {
     }),
     [sessionFilter],
   );
-  // Same gate as the sidebar observer of this shared query: a waking pod isn't
-  // reachable over ACP yet, and this hook runs on chat open before the sidebar
-  // renders — without the gate it fetches the session list into a booting pod
-  // and toasts "Couldn't refresh session list" on the startup screen.
-  const runState = useAgentRunState(agentId);
+  // Shares the session-list query key with the sidebar and greeting observers,
+  // and React Query fires the query if ANY observer enables it — so all three
+  // gate on the same operability check (the canonical gate for pod-touching
+  // reads). Without it, this hook — which runs on chat open before the sidebar
+  // renders — fetches into a booting or restarting pod and toasts
+  // "Couldn't refresh session list".
+  const operable = useIsAgentOperable(agentId);
   const { data: sessions } = useAcpSessions(agentId, listInclude, {
-    enabled: runState === "running",
+    enabled: operable,
     activeSessionId: sessionId,
   });
   const sessionExperimentId =

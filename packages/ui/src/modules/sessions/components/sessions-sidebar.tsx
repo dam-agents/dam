@@ -14,7 +14,7 @@ import {
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
@@ -64,9 +64,9 @@ export function SessionsSidebar({
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
-  const agentRunState = useAgentRunState(selectedAgent);
+  const agentOperable = useIsAgentOperable(selectedAgent);
   const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
-    enabled: agentRunState === "running",
+    enabled: agentOperable,
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = data ?? EMPTY;
