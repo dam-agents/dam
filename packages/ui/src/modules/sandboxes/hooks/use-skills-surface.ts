@@ -4,6 +4,7 @@ import type {
   SkillPublishRecord,
   SkillRef,
   SkillSource,
+  SkillsState,
 } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
@@ -11,6 +12,7 @@ import { api } from "../../../api.js";
 import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
+import { saveSkillFiles } from "../lib/skill-download.js";
 
 /** Row identity shared by the surface and its child components. */
 export const skillKey = (source: string, name: string) => `${source}::${name}`;
@@ -59,6 +61,11 @@ export interface SkillsSurface {
   ) => Promise<
     { ok: true } | { ok: false; conflictNames: string[]; message: string }
   >;
+  /** Delete a standalone skill from the sandbox. Returns whether it was
+   *  removed; the mutation's result is the authoritative remaining list. */
+  deleteStandalone: (skill: LocalSkill) => Promise<boolean>;
+  /** Download a standalone skill's files (a lone SKILL.md as .md, else a .zip). */
+  downloadStandalone: (skill: LocalSkill) => Promise<void>;
   /** Delete a Skill Source; returns whether it was removed. */
   removeSource: (id: string) => Promise<boolean>;
   /** Re-scan a source: refresh its scan cache, then re-list. The card shows a
@@ -79,11 +86,13 @@ export function useSkillsSurface(
   opts: {
     readOnly: boolean;
     isError: boolean;
-    /** Mirrors the installed set to the nav summary's query cache. Stable. */
-    onInstalledChange?: (installed: SkillRef[]) => void;
+    /** Mirrors the whole reconciled state to the nav summary's query cache —
+     *  not just `installed`, or the summary goes stale on every standalone
+     *  add/delete. Stable. */
+    onStateChange?: (state: SkillsState) => void;
   },
 ): SkillsSurface {
-  const { readOnly, isError, onInstalledChange } = opts;
+  const { readOnly, isError, onStateChange } = opts;
 
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
@@ -103,8 +112,12 @@ export function useSkillsSurface(
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
-    onInstalledChange?.(installed);
-  }, [installed, onInstalledChange]);
+    // Gate on stateLoaded: before the first `skills.state` resolves all three
+    // arrays are empty placeholders, and publishing those would blank a summary
+    // the sidebar's own one-shot fetch already populated.
+    if (!stateLoaded) return;
+    onStateChange?.({ installed, standalone, instancePublishes: publishes });
+  }, [stateLoaded, installed, standalone, publishes, onStateChange]);
 
   const loadSkills = useCallback(
     async (sourceId: string) => {
@@ -315,6 +328,36 @@ export function useSkillsSurface(
     [agentId],
   );
 
+  const deleteStandalone = useCallback(
+    async (skill: LocalSkill) => {
+      if (!agentId) return false;
+      const result = await runAction(
+        () => api.skills.deleteLocal.mutate({ agentId, name: skill.name }),
+        `Failed to delete ${skill.name}`,
+      );
+      if (result === ACTION_FAILED) return false;
+      setStandalone(result);
+      emitToast({ kind: "success", message: `Deleted ${skill.name}` });
+      return true;
+    },
+    [agentId],
+  );
+
+  const downloadStandalone = useCallback(
+    async (skill: LocalSkill) => {
+      if (!agentId) return;
+      // runAction already toasts failures, including the pod's
+      // PAYLOAD_TOO_LARGE for a skill over the 5 MB cap. No success toast —
+      // the browser's download is the feedback.
+      const result = await runAction(
+        () => api.skills.readLocal.query({ agentId, name: skill.name }),
+        `Failed to download ${skill.name}`,
+      );
+      if (result !== ACTION_FAILED) saveSkillFiles(result);
+    },
+    [agentId],
+  );
+
   const removeSource = useCallback(async (id: string) => {
     const result = await runAction(
       () => api.skills.sources.delete.mutate({ id }),
@@ -424,6 +467,8 @@ export function useSkillsSurface(
     update,
     createSource,
     createLocalSkills,
+    deleteStandalone,
+    downloadStandalone,
     removeSource,
     refreshSource,
     publish,

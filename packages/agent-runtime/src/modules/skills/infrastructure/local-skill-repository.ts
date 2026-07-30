@@ -31,12 +31,25 @@ export interface LocalSkillRepository {
     pristinePaths?: SkillPath[],
   ) => Promise<LocalSkill[]>;
   /** Read every file in a skill's directory, enforcing the per-file and
-   *  per-skill caps. Errors with `SkillNotFound` when no skillPath contains
-   *  the named skill, `PayloadTooLarge` on cap breach. */
+   *  per-skill caps. Returns the resolved directory basename alongside the
+   *  files, so a caller can name a download from the on-disk identity rather
+   *  than re-slugging the display name. Errors with `SkillNotFound` when no
+   *  skillPath contains the named skill, `PayloadTooLarge` on cap breach. */
   readLocal: (
     name: SkillName,
     skillPaths: SkillPath[],
-  ) => Promise<Result<{ files: LocalSkillFile[] }, SkillsDomainError>>;
+  ) => Promise<
+    Result<{ dir: string; files: LocalSkillFile[] }, SkillsDomainError>
+  >;
+  /** Resolve a Local Skill's directory from the name a caller holds. Tries
+   *  `<skillPath>/<name>` first — the on-disk identity, which install and the
+   *  driver pass — then matches a directory's frontmatter `name:`, which is
+   *  what listLocal reports and therefore what the UI sends. First match wins
+   *  in skillPath order, mirroring listLocal's dedupe. */
+  resolveLocalSkillDir: (
+    name: SkillName,
+    skillPaths: SkillPath[],
+  ) => Promise<{ absDir: string; dir: SkillName } | null>;
   /** Mirror `srcDir`'s contents into `<skillPath>/<name>/` for every path,
    *  overwriting any prior installation. Returns the deterministic content
    *  hash of the first installed dir (all targets get identical contents). */
@@ -105,6 +118,7 @@ export function createLocalSkillRepository(): LocalSkillRepository {
     listLocal: (skillPaths, pristinePaths) =>
       list(skillPaths, pristinePaths, pristineHashes),
     readLocal: read,
+    resolveLocalSkillDir,
     writeFromDir: write,
     writeLocalSkill,
     existsInAnyPath,
@@ -118,13 +132,19 @@ export function createLocalSkillRepository(): LocalSkillRepository {
   };
 }
 
-async function list(
+interface LocalSkillEntry extends LocalSkill {
+  /** The dirent basename — the skill's on-disk identity, which diverges from
+   *  `name` whenever frontmatter supplies one. */
+  dir: SkillName;
+}
+
+/** Walk every skillPath in order, first-wins by directory name. Unsorted, so
+ *  the caller sees skillPath precedence; `list` sorts for the wire. */
+async function listEntries(
   skillPaths: SkillPath[],
-  pristinePaths: SkillPath[] | undefined,
-  pristineHashes: Map<string, Promise<string | null>>,
-): Promise<LocalSkill[]> {
+): Promise<LocalSkillEntry[]> {
   const seen = new Set<string>();
-  const out: LocalSkill[] = [];
+  const out: LocalSkillEntry[] = [];
 
   for (const skillPath of skillPaths) {
     let entries: import("node:fs").Dirent[];
@@ -156,16 +176,10 @@ async function list(
           name: fm.name?.trim() || ent.name,
           description: fm.description?.trim() || "",
           skillPath,
-          ...(pristinePaths !== undefined
-            ? {
-                origin: await classifyOrigin(
-                  ent.name,
-                  path.join(skillPath, ent.name),
-                  pristinePaths,
-                  pristineHashes,
-                ),
-              }
-            : {}),
+          // A dirent basename can carry no `/` and is never `.`/`..`, and
+          // dot-prefixed entries are skipped above — so it satisfies
+          // makeSkillName by construction.
+          dir: ent.name as SkillName,
         });
       } finally {
         await fd.close();
@@ -173,7 +187,57 @@ async function list(
     }
   }
 
+  return out;
+}
+
+async function list(
+  skillPaths: SkillPath[],
+  pristinePaths: SkillPath[] | undefined,
+  pristineHashes: Map<string, Promise<string | null>>,
+): Promise<LocalSkill[]> {
+  const out: LocalSkill[] = [];
+  for (const { dir, name, description, skillPath } of await listEntries(
+    skillPaths,
+  )) {
+    out.push({
+      name,
+      description,
+      skillPath,
+      ...(pristinePaths !== undefined
+        ? {
+            origin: await classifyOrigin(
+              dir,
+              path.join(skillPath, dir),
+              pristinePaths,
+              pristineHashes,
+            ),
+          }
+        : {}),
+    });
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function resolveLocalSkillDir(
+  name: SkillName,
+  skillPaths: SkillPath[],
+): Promise<{ absDir: string; dir: SkillName } | null> {
+  // Exact directory first, deliberately: a caller holding a directory name
+  // whose frontmatter `name:` differs would otherwise resolve to the wrong
+  // skill (or nothing).
+  for (const base of skillPaths) {
+    const absDir = path.join(base, name);
+    try {
+      await fs.access(path.join(absDir, "SKILL.md"));
+      return { absDir, dir: name };
+    } catch {}
+  }
+  for (const ent of await listEntries(skillPaths)) {
+    if (ent.name === name) {
+      return { absDir: path.join(ent.skillPath, ent.dir), dir: ent.dir };
+    }
+  }
+  return null;
 }
 
 /** Identity is the directory basename (what install/dedupe key on); the
@@ -230,9 +294,12 @@ async function hashSkillDirIfPresent(absDir: string): Promise<string | null> {
 async function read(
   name: SkillName,
   skillPaths: SkillPath[],
-): Promise<Result<{ files: LocalSkillFile[] }, SkillsDomainError>> {
-  const root = await findLocalSkillDir(name, skillPaths);
-  if (!root) return err({ kind: "SkillNotFound", name, skillPaths });
+): Promise<
+  Result<{ dir: string; files: LocalSkillFile[] }, SkillsDomainError>
+> {
+  const resolved = await resolveLocalSkillDir(name, skillPaths);
+  if (!resolved) return err({ kind: "SkillNotFound", name, skillPaths });
+  const root = resolved.absDir;
 
   const absFiles = (await walkFiles(root)).sort();
   const out: LocalSkillFile[] = [];
@@ -267,7 +334,7 @@ async function read(
     }
   }
 
-  return ok({ files: out });
+  return ok({ dir: resolved.dir, files: out });
 }
 
 async function write(
@@ -464,20 +531,6 @@ async function hashSkillDir(absDir: string): Promise<string> {
     h.update(Buffer.from([0]));
   }
   return h.digest("hex");
-}
-
-async function findLocalSkillDir(
-  name: SkillName,
-  skillPaths: SkillPath[],
-): Promise<string | null> {
-  for (const base of skillPaths) {
-    const candidate = path.join(base, name);
-    try {
-      await fs.access(path.join(candidate, "SKILL.md"));
-      return candidate;
-    } catch {}
-  }
-  return null;
 }
 
 async function assertNoSymlinks(root: string): Promise<void> {

@@ -3,10 +3,13 @@ import type {
   localSkillSchema,
   skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
+  skillDeleteLocalInputSchema,
   skillInstallInputSchema,
+  skillLocalFilesSchema,
   skillPublishInputSchema,
   skillPublishRecordSchema,
   skillPublishResultSchema,
+  skillReadLocalInputSchema,
   skillRefSchema,
   skillSchema,
   skillSourceSchema,
@@ -25,6 +28,12 @@ export type SkillCreateSourceInput = z.infer<
 >;
 
 export type SkillCreateLocalInput = z.infer<typeof skillCreateLocalInputSchema>;
+
+export type SkillDeleteLocalInput = z.infer<typeof skillDeleteLocalInputSchema>;
+
+export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
+
+export type SkillLocalFiles = z.infer<typeof skillLocalFilesSchema>;
 
 export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 
@@ -52,6 +61,10 @@ export interface SkillsService {
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
   createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
+  /** Returns the remaining standalone list, so the UI renders from an
+   *  authoritative result rather than guessing (mirrors `uninstall`). */
+  deleteLocal: (input: SkillDeleteLocalInput) => Promise<LocalSkill[]>;
+  readLocal: (input: SkillReadLocalInput) => Promise<SkillLocalFiles>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;
   getState: (agentId: string) => Promise<SkillsState>;
   publish: (input: SkillPublishInput) => Promise<SkillPublishResult>;

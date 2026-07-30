@@ -1,4 +1,10 @@
-import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
+import type {
+  LocalSkill,
+  Skill,
+  SkillPublishRecord,
+  SkillSource,
+  SkillsState,
+} from "api-server-api";
 import { Plus, Upload } from "lucide-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
@@ -37,7 +43,7 @@ export function SkillsSurface({
   agentState,
   readOnly,
   comingUp,
-  onInstalledChange,
+  onStateChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -45,7 +51,7 @@ export function SkillsSurface({
   /** Agent is coming up (starting) — still read-only, but rendered a touch
    *  less dimmed than a full stop to signal it's on its way. */
   comingUp?: boolean;
-  onInstalledChange?: (installed: SkillRef[]) => void;
+  onStateChange?: (state: SkillsState) => void;
 }) {
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
@@ -75,10 +81,12 @@ export function SkillsSurface({
     update,
     createSource,
     createLocalSkills,
+    deleteStandalone,
+    downloadStandalone,
     removeSource,
     refreshSource,
     publish,
-  } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
+  } = useSkillsSurface(agentId, { readOnly, isError, onStateChange });
 
   const publishableSources = sources.filter((s) => s.canPublish);
 
@@ -89,6 +97,38 @@ export function SkillsSurface({
   const builtIn = standalone.filter(
     (s) => s.origin === "system" || s.origin === "system-modified",
   );
+
+  const deleteWithConfirm = async (
+    skill: LocalSkill,
+    pub?: SkillPublishRecord,
+  ) => {
+    // State-neutral wording about the PR: the "In review" pill is never
+    // refreshed against GitHub, so we can't claim the PR is still open (#3019).
+    const ok = await showConfirm(
+      <>
+        This skill will be removed from the sandbox.
+        {pub && (
+          // Leading space joins this onto the sentence above: JSX drops the
+          // newline whitespace that would otherwise separate them.
+          <>
+            {" The "}
+            <a
+              href={pub.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              pull request
+            </a>{" "}
+            you published to {pub.sourceName} isn't withdrawn.
+          </>
+        )}
+      </>,
+      `Delete ${skill.name}?`,
+      { kind: "destructive", confirmLabel: "Delete skill" },
+    );
+    if (ok) await deleteStandalone(skill);
+  };
 
   const removeWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
@@ -180,6 +220,8 @@ export function SkillsSurface({
               publishes={publishes}
               canPublish={publishableSources.length > 0}
               onPublish={setPublishFor}
+              onDownload={(skill) => void downloadStandalone(skill)}
+              onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
               action={addSourceButton}
             />
           ) : readOnly ? (

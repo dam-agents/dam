@@ -5,9 +5,12 @@ import type {
   Skill,
   SkillCreateLocalInput,
   SkillCreateSourceInput,
+  SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
   SkillPublishInput,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,
@@ -27,6 +30,7 @@ import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
+  AgentRuntimeClientError,
   AgentRuntimeConflictError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
@@ -221,6 +225,28 @@ async function resolveSourcePathByGitUrl(
   const seeds = deps.seedSources.map(seedToSkillSource);
   const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
   return merged.find((s) => s.gitUrl === gitUrl)?.path;
+}
+
+/** Re-throw a pod client-error verdict with its own code and message, so a
+ *  missing skill answers 404 and a cap breach 413 rather than a 500. Anything
+ *  else passes through untouched (and stays a server fault). */
+function asPodVerdict(err: unknown): unknown {
+  if (err instanceof AgentRuntimeClientError) {
+    return new TRPCError({ code: err.code, message: err.podMessage });
+  }
+  return err;
+}
+
+/** On-disk Local Skills minus anything tracked as installed-from-remote (by
+ *  name) — the same subtraction getState performs for its `standalone` view. */
+async function standaloneFor(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  tracked: SkillRef[],
+): Promise<LocalSkill[]> {
+  const all = await deps.runtimeClient.listLocal(agentId);
+  const trackedNames = new Set(tracked.map((s) => s.name));
+  return all.filter((s) => !trackedNames.has(s.name));
 }
 
 function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
@@ -498,6 +524,53 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       return created;
     },
 
+    async deleteLocal(input: SkillDeleteLocalInput): Promise<LocalSkill[]> {
+      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      const tracked = await deps.agentSkillsRepo.listSkills(input.agentId);
+      // deleteLocal is the standalone-only path: the UI never offers it for a
+      // tracked skill, and letting it through would wipe an install while
+      // leaving a row for the next `state` read to reap as a ghost.
+      if (tracked.some((s) => s.name === input.name)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `skill ${JSON.stringify(input.name)} is installed from a source; uninstall it instead`,
+        });
+      }
+      try {
+        await deps.runtimeClient.deleteLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
+      // Removing user-authored content from the agent's PV must be answerable
+      // post-incident (parity with skill.create_local).
+      securityLog("info", "skill.delete_local", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: "local",
+        result: "success",
+        detail: { name: input.name },
+      });
+      // No agent_skills write, no outbox bump, and agent_skill_publishes rows
+      // are left intact: a publish record logs something that really happened
+      // and is reaped only by the AgentDeleted cleanup saga.
+      return standaloneFor(deps, input.agentId, tracked);
+    },
+
+    async readLocal(input: SkillReadLocalInput): Promise<SkillLocalFiles> {
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      // A thin passthrough by design: the size caps and the not-found verdict
+      // are pod-side. No security log — the Files panel already serves
+      // arbitrary pod file content unlogged, so a skill read is strictly less.
+      try {
+        return await deps.runtimeClient.readLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
+    },
+
     async publish(input: SkillPublishInput): Promise<SkillPublishResult> {
       const result = await runPublishSkill(
         {
@@ -533,14 +606,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
       if (computeAgentState(infra) !== "running") return [];
-      const all = await deps.runtimeClient.listLocal(agentId);
-      // Subtract anything already tracked as installed-from-remote (by directory
-      // name). Matches behavior that the remote-installed entry is the canonical
-      // one when names collide.
-      const tracked = new Set(
-        (await deps.agentSkillsRepo.listSkills(agentId)).map((s) => s.name),
-      );
-      return all.filter((s) => !tracked.has(s.name));
+      const tracked = await deps.agentSkillsRepo.listSkills(agentId);
+      return standaloneFor(deps, agentId, tracked);
     },
 
     /**

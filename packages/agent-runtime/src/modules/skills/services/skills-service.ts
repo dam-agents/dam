@@ -1,4 +1,5 @@
 import type {
+  SkillDeleteLocalInput,
   SkillInstallInput,
   SkillPublishInput,
   SkillReadLocalInput,
@@ -57,6 +58,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
     listLocal: () => doListLocal(deps),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
     writeLocal: (input: SkillWriteLocalInput) =>
       runWriteLocal(deps, deps.skillPaths, input),
     scan: (input: SkillScanInput) => runScan(deps, input),
@@ -100,6 +102,23 @@ async function doReadLocal(
   const name = makeSkillName(input.name);
   if (!name.ok) return name;
   return deps.repo.readLocal(name.value, deps.skillPaths);
+}
+
+async function doDeleteLocal(
+  deps: SkillsServiceDeps,
+  input: SkillDeleteLocalInput,
+) {
+  const name = makeSkillName(input.name);
+  if (!name.ok) return name;
+  const resolved = await deps.repo.resolveLocalSkillDir(
+    name.value,
+    deps.skillPaths,
+  );
+  // Nothing on disk to remove — a delete whose target is already gone is
+  // satisfied, not an error (a double-click must not fail the second time).
+  if (!resolved) return ok(undefined);
+  await deps.repo.remove(resolved.dir, deps.skillPaths);
+  return ok(undefined);
 }
 
 async function doPublish(deps: SkillsServiceDeps, input: SkillPublishInput) {

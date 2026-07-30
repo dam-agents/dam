@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, t } from "../../trpc.js";
 import {
+  skillDeleteLocalInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
   skillScanInputSchema,
@@ -109,5 +110,12 @@ export const skillsRouter = t.router({
       const result = await ctx.skills.writeLocal(input);
       if (!result.ok) throw toTrpcError(result.error);
       return { skills: result.value };
+    }),
+
+  deleteLocal: protectedProcedure
+    .input(skillDeleteLocalInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.skills.deleteLocal(input);
+      if (!result.ok) throw toTrpcError(result.error);
     }),
 });
