@@ -253,6 +253,14 @@ type StorageMigration struct {
 	// copies every byte to arrive at the same backend — so it is refused with
 	// a loud log naming the remedy.
 	AllowSameStorageClass bool `json:"allowSameStorageClass,omitempty"`
+	// MinTargetSize floors the size of a migrated workspace volume. Empty
+	// (the default) keeps the source's request verbatim. Set it where the
+	// target class prices IOPS PER GIGABYTE — IBM's block tiers do — because
+	// there a faithfully-sized 1Gi volume also inherits a 1Gi share of IOPS
+	// and the copy crawls; such classes also tend to have a minimum volume
+	// size of their own, which a smaller request is silently rounded up to
+	// anyway.
+	MinTargetSize string `json:"minTargetSize,omitempty"`
 	// AllowOwnershipRemap lets the copy proceed when the source workspace
 	// holds entries owned by a uid other than the agent's. The copy is
 	// unprivileged (chown is unavailable under a restricted SCC and on a

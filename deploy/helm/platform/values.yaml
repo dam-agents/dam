@@ -1067,10 +1067,20 @@ controller:
     # already on. Refused by default: it changes the access mode and nothing
     # else, at the cost of a forced restart and a full copy per agent.
     allowSameStorageClass: false
-    # -- How many agents migrate at once. Each migration reads its source
-    # volume in full three times (copy + two verification passes); this cap
-    # is the trade between fleet drain time and read pressure on the shared
-    # filesystem being drained — lower it if the filer struggles.
+    # -- Floor for a migrated volume's size; empty keeps the source's request.
+    # Set this when the target class prices IOPS PER GIGABYTE (IBM's block
+    # tiers do): a faithfully-sized 1Gi volume then inherits a 1Gi share of
+    # IOPS, and a copy that is bound by per-file operations crawls. Such
+    # classes usually have a minimum volume size anyway, which a smaller
+    # request is silently rounded up to. "10Gi" suits IBM VPC block.
+    minTargetSize: ""
+    # -- How many agents migrate at once. Each migration walks its source
+    # once and reads it twice (copy + checksum), so this cap is the trade
+    # between fleet drain time and pressure on the shared filesystem being
+    # drained — lower it if the filer struggles. Duration is driven by FILE
+    # COUNT, not bytes: every entry is a round-trip and, on an IOPS-capped
+    # class, an IOP. The copy Job logs `phase:` lines with elapsed seconds so
+    # a slow drain can be attributed rather than guessed at.
     concurrency: 10
     # -- Reconcile pass interval.
     interval: "30s"

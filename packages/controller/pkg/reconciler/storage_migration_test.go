@@ -211,6 +211,17 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	// alone — the source is never deleted when permissions failed to carry
 	// over.
 	assert.Contains(t, runnable, `%y|%m|%U|%p|%l`)
+	// Cost control: a workspace is small-file-heavy and every stat is a
+	// network round-trip, so the source must be walked ONCE — readability,
+	// ownership and the verification baseline all derive from that one pass.
+	// (Two walks total: source, then target for the comparison.)
+	// (The one source walk carries two -printf actions — the readability
+	// alternation — so count walks, not actions.)
+	assert.Equal(t, 1, strings.Count(runnable, `cd "$src" && find`),
+		"the source is walked ONCE: readability, ownership and the verification baseline all derive from that pass")
+	assert.NotContains(t, runnable, "du -sh", "a size log line is not worth a full metadata walk")
+	// Checksums are latency-bound, so they read in parallel.
+	assert.Contains(t, runnable, "-P\"${PAR}\"")
 	// tar with --no-overwrite-dir, not cp -a src/. dst/: cp would apply the
 	// source root's ownership/timestamps to the target root, which no
 	// unprivileged process can do.
@@ -560,4 +571,37 @@ func TestStorageMigration_RefusesTargetEqualToSourceClass(t *testing.T) {
 	m.Reconcile(context.Background())
 	ann = getAgentAnnotations(t, m, "my-agent")
 	assert.Equal(t, "migrating", ann[annStorageMigration])
+}
+
+// A target class that prices IOPS per gigabyte throttles a small volume to
+// nothing, which is how a 1 GiB workspace took an hour to copy. The floor is
+// opt-in — without it the source's request is honoured verbatim.
+func TestStorageMigration_TargetSizeFloor(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	small := rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent")
+	small.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
+	m, client := migrationManager(t, agent, small)
+	m.config.StorageMigration.MinTargetSize = "10Gi"
+
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	got := target.Spec.Resources.Requests[corev1.ResourceStorage]
+	assert.Equal(t, "10Gi", got.String(), "raised to the floor")
+}
+
+func TestStorageMigration_TargetSizeFloorNeverShrinks(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent")) // 7Gi
+	m.config.StorageMigration.MinTargetSize = "5Gi"
+
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	got := target.Spec.Resources.Requests[corev1.ResourceStorage]
+	assert.Equal(t, "7Gi", got.String(), "a floor below the source's request changes nothing")
 }
