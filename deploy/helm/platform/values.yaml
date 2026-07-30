@@ -1039,9 +1039,10 @@ controller:
   storageMigration:
     enabled: true
     # -- How many agents migrate at once. Each migration reads its source
-    # volume in full three times (copy + two verification passes), so keep
-    # this low to avoid saturating the storage being drained.
-    concurrency: 2
+    # volume in full three times (copy + two verification passes); this cap
+    # is the trade between fleet drain time and read pressure on the shared
+    # filesystem being drained — lower it if the filer struggles.
+    concurrency: 10
     # -- Reconcile pass interval.
     interval: "30s"
     # -- Image for the copy Job. Needs POSIX sh + GNU coreutils (cp -a that

@@ -68,7 +68,7 @@ const (
 	migrationPoolValue = "storage-migration"
 
 	defaultMigrationInterval    = 30 * time.Second
-	defaultMigrationConcurrency = 2
+	defaultMigrationConcurrency = 10
 	// migrationJobRetryAfter bounds how fast a failed copy Job is deleted
 	// and recreated, so a persistently failing copy (e.g. target class
 	// misprovisioned) retries slowly instead of hot-looping.

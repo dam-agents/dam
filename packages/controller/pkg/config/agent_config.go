@@ -228,10 +228,12 @@ type SkillSource struct {
 // list per interval.
 type StorageMigration struct {
 	Enabled bool `json:"enabled,omitempty"`
-	// Concurrency caps how many agents migrate at once (default 2): each
-	// migration runs a copy Job that reads the source volume in full three
-	// times (copy + two checksum passes), so an uncapped fleet migration
-	// would saturate the shared filesystem it is draining.
+	// Concurrency caps how many agents migrate at once (default 10). Each
+	// migration reads its source volume in full three times (copy + two
+	// verification passes), so the cap is what stands between a fleet
+	// drain and saturating the shared filesystem being drained — lower it
+	// if the filer's read throughput suffers, raise it if the fleet's
+	// total drain time matters more.
 	Concurrency int `json:"concurrency,omitempty"`
 	// Interval between reconcile passes. Zero falls back to a built-in
 	// default.
