@@ -1084,22 +1084,27 @@ controller:
     concurrency: 10
     # -- Reconcile pass interval.
     interval: "30s"
-    # -- Accept ownership normalization when the source workspace holds
-    # entries owned by a uid other than the agent's (root-written residue
-    # from an older release, a squashed-root `nobody` file). The copy is
-    # unprivileged, so it recreates them as the agent uid rather than
-    # preserving the original owner. Default false: such entries are
-    # reported with their paths and block that agent's migration, so the
-    # decision is yours — chown them on the source, or set this.
+    # -- Deprecated, ignored: the copy preserves ownership exactly (the
+    # writer side runs privileged on the target), so no remap consent is
+    # needed. Kept so existing values files keep parsing.
     allowOwnershipRemap: false
-    # -- Image for the copy Job. Needs bash, GNU tar and GNU coreutils
-    # (find -printf, md5sum) — busybox-based images lack the flags the copy
-    # and its verification rely on.
-    # The Job is unprivileged: it runs as the agent uid (from
-    # controller.agent.base containerSecurityContext.runAsUser) and needs no
-    # capabilities, so it works under a restricted SCC and on root-squashing
-    # shared-filesystem classes alike. It also deliberately does NOT inherit
-    # the agents' runtimeClassName: it runs platform tooling, not agent code.
+    # -- Image for the copy Job. Needs bash, GNU tar, GNU coreutils
+    # (find -printf, md5sum) and util-linux (setpriv) — the stock
+    # debian-slim default has all of them.
+    #
+    # The Job runs AS ROOT with split identity inside: every source read is
+    # dropped to the agent uid via setpriv (a root-squashing source share
+    # never honors uid 0), while the target side uses root to own the fresh
+    # volume root, restore exact ownership, and wipe retry residue. On
+    # OpenShift this requires binding an SCC that permits uid 0 (e.g.
+    # anyuid) to the `platform-migration` ServiceAccount in the agents
+    # namespace — an ops-side grant, out of band like all cluster-scoped
+    # security objects:
+    #   oc adm policy add-scc-to-user anyuid -z platform-migration -n <agents-ns>
+    # Without it, the copy pod is rejected at admission, loudly, and the
+    # gated agent waits. The Job never mounts a token, joins no mesh, and
+    # deliberately does not inherit the agents' runtimeClassName (Kata
+    # virtiofs refuses guest chown regardless of uid).
     jobImage: mirror.gcr.io/library/debian:stable-slim
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar.
