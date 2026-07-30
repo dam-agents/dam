@@ -1,27 +1,12 @@
 import { Checkmark, Copy } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-
-type CopyState = "idle" | "copied" | "failed";
+import { useCopy } from "@/lib/use-copy";
 
 /** A one-line shell command with a Copy button. The command scrolls
  *  horizontally rather than wrapping so it always reads as a single line. */
 export function CopyableCommand({ command }: { command: string }) {
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopyState("copied");
-      setTimeout(() => setCopyState("idle"), 2000);
-    } catch {
-      // clipboard API rejects in non-secure contexts / when copy is blocked;
-      // surface it so the user selects and copies manually.
-      setCopyState("failed");
-      setTimeout(() => setCopyState("idle"), 3000);
-    }
-  }
+  const { copy, state: copyState } = useCopy();
 
   return (
     <div>
@@ -34,7 +19,7 @@ export function CopyableCommand({ command }: { command: string }) {
           type="button"
           variant="outline"
           size="sm"
-          onClick={handleCopy}
+          onClick={() => void copy(command)}
           className="shrink-0"
         >
           {copyState === "copied" ? (

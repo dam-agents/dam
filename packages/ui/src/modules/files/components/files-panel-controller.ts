@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
@@ -213,10 +215,7 @@ export function useFilesPanelController({
             void downloadFileAt(selectedAgent, path).catch((err) =>
               emitToast({
                 kind: "error",
-                message:
-                  err instanceof Error
-                    ? `${err.message}: ${path}`
-                    : `Couldn't download ${path}`,
+                message: `${getErrorMessage(err, "Couldn't download")}: ${path}`,
               }),
             );
           }

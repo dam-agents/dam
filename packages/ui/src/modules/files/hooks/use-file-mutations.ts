@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { getErrorMessage } from "../../../lib/errors.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, importBundle } from "../api/import-bundle.js";
@@ -50,10 +51,6 @@ function isConflictError(err: unknown): boolean {
   return err instanceof Error && /conflict|already exists/i.test(err.message);
 }
 
-function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
-
 function sanitizeUploadName(name: string): string {
   return name.replace(/\\/g, "/").split("/").filter(Boolean).join("/") || name;
 }
@@ -99,7 +96,7 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: errorMessage(err, "Create failed"),
+          message: getErrorMessage(err, "Create failed"),
         });
       }
     },
@@ -127,7 +124,10 @@ export function useFileMutations(agentId: string | null) {
         await tryRename(false);
       } catch (err) {
         if (!isConflictError(err)) {
-          emitToast({ kind: "error", message: errorMessage(err, failLabel) });
+          emitToast({
+            kind: "error",
+            message: getErrorMessage(err, failLabel),
+          });
           return;
         }
         if (sourceKind === "dir") {
@@ -147,7 +147,7 @@ export function useFileMutations(agentId: string | null) {
         } catch (err2) {
           emitToast({
             kind: "error",
-            message: errorMessage(err2, failLabel),
+            message: getErrorMessage(err2, failLabel),
           });
         }
       }
@@ -199,7 +199,7 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: errorMessage(err, "Delete failed"),
+          message: getErrorMessage(err, "Delete failed"),
         });
       }
     },
@@ -270,7 +270,7 @@ export function useFileMutations(agentId: string | null) {
           } catch (err) {
             emitToast({
               kind: "error",
-              message: errorMessage(err, `Upload failed: ${path}`),
+              message: getErrorMessage(err, `Upload failed: ${path}`),
             });
           }
         }
@@ -291,7 +291,7 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: errorMessage(err, "Import failed"),
+          message: getErrorMessage(err, "Import failed"),
         });
       }
     },

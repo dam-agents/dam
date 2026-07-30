@@ -20,10 +20,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
-import { formatSessionTimestamp } from "../lib/format-session-timestamp.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -148,7 +148,7 @@ export function SessionRow({
           {slackKind
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
-          {formatSessionTimestamp(s.updatedAt ?? s.createdAt)}
+          {formatTimestamp(s.updatedAt ?? s.createdAt)}
           {cost && (
             <span
               className="tabular-nums"

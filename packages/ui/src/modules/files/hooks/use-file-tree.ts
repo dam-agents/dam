@@ -1,5 +1,7 @@
 import { useCallback } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { fetchFileContent } from "../api/queries.js";
@@ -50,10 +52,7 @@ export function useFileTree(selectedAgent: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message:
-            err instanceof Error && err.message
-              ? err.message
-              : `Couldn't open ${path}`,
+          message: getErrorMessage(err, `Couldn't open ${path}`),
         });
       }
     },
