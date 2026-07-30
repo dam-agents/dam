@@ -135,6 +135,32 @@ function toFolder(row: FolderRow & { artifactCount: number }): ArtifactFolder {
   };
 }
 
+/** An artifact's file name and kind are settled at create and describe *every*
+ *  version: the versions table snapshots bytes (ref, type, size), never a name,
+ *  and the viewer renders each version through the artifact's kind. Letting
+ *  either move would retroactively relabel versions already published — an
+ *  older revision would download under a name it never had, or render through
+ *  the wrong renderer. A revision that is genuinely a different file is a
+ *  different work product: it belongs in its own artifact, with its own share
+ *  link. Editing the human-facing label is what `title` is for. */
+function requireStableIdentity(
+  row: ArtifactRow,
+  input: ArtifactUpdateInput,
+): void {
+  if (input.kind !== undefined && input.kind !== row.kind) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `this artifact is ${row.kind} and an artifact's format cannot change; publish a new artifact for ${input.kind} content`,
+    });
+  }
+  if (input.fileName !== undefined && input.fileName !== row.fileName) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `this artifact's file is "${row.fileName}" and cannot be renamed; edit its title instead, or publish a new artifact for "${input.fileName}"`,
+    });
+  }
+}
+
 function expiresAtFrom(expiresInHours: number | null | undefined): Date | null {
   if (expiresInHours == null) return null;
   return new Date(Date.now() + expiresInHours * 3600_000);
@@ -157,6 +183,42 @@ export function createArtifactLibraryService(
     if (!row)
       throw new TRPCError({ code: "NOT_FOUND", message: "artifact not found" });
     return row;
+  }
+
+  /** Resolve the stored blob behind an artifact — the head row's own ref, or a
+   *  snapshot from its version history. Name and kind always come from the head
+   *  row: both are settled at create (see requireStableIdentity), so they
+   *  describe every version. */
+  async function resolveRef(
+    id: string,
+    version?: number,
+  ): Promise<{
+    storageRef: string;
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    version: number;
+  } | null> {
+    const row = await repo.getArtifact(id, owner);
+    if (!row) return null;
+    if (version === undefined || version === row.version) {
+      return {
+        storageRef: row.storageRef,
+        fileName: row.fileName,
+        contentType: row.contentType,
+        sizeBytes: row.sizeBytes,
+        version: row.version,
+      };
+    }
+    const past = await repo.getVersion(id, version);
+    if (!past) return null;
+    return {
+      storageRef: past.storageRef,
+      fileName: row.fileName,
+      contentType: past.contentType,
+      sizeBytes: past.sizeBytes,
+      version: past.version,
+    };
   }
 
   /** Resolve the incoming bytes: inline utf-8 content is stored by us at
@@ -215,7 +277,7 @@ export function createArtifactLibraryService(
     },
 
     async getContent(id, version) {
-      const ref = await this.resolveContentRef(id, version);
+      const ref = await resolveRef(id, version);
       if (!ref) return null;
       const row = await repo.getArtifact(id, owner);
       const kind = (row?.kind ?? "binary") as ArtifactKind;
@@ -247,7 +309,7 @@ export function createArtifactLibraryService(
     async getPreviewHtml(id, version) {
       const row = await repo.getArtifact(id, owner);
       if (!row || row.kind === "binary") return null;
-      const ref = await this.resolveContentRef(id, version);
+      const ref = await resolveRef(id, version);
       if (!ref || ref.sizeBytes > PREVIEW_MAX_BYTES) return null;
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
@@ -320,22 +382,17 @@ export function createArtifactLibraryService(
     async update(id, input: ArtifactUpdateInput) {
       const row = await requireArtifact(id);
       if (input.folderId != null) await requireOwnedFolder(input.folderId);
+      requireStableIdentity(row, input);
 
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.title !== undefined) patch.title = input.title;
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
-        const contentBuffer =
-          input.content != null
-            ? Buffer.from(input.content, "utf8")
-            : undefined;
-        const kind = detectKind({
-          explicit: input.kind,
-          fileName: input.fileName ?? row.fileName,
-          content: contentBuffer,
-        });
-        const fileName = input.fileName ?? row.fileName;
+        // Name and format belong to the artifact, not to this revision — never
+        // re-detected from the incoming bytes.
+        const kind = row.kind as ArtifactKind;
+        const fileName = row.fileName;
         const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
         const nextVersion = row.version + 1;
         const key = versionKey(owner, id, nextVersion, fileName);
@@ -349,8 +406,6 @@ export function createArtifactLibraryService(
         patch.storageRef = stored.storageRef;
         patch.sizeBytes = stored.sizeBytes;
         patch.contentType = stored.contentType;
-        patch.fileName = fileName;
-        patch.kind = kind;
         // Snapshot the outgoing current version and advance the head row in
         // one transaction.
         const advanced = await repo.advanceVersion(
@@ -367,11 +422,8 @@ export function createArtifactLibraryService(
         );
         if (!advanced) throw new TRPCError({ code: "NOT_FOUND" });
         return toLibraryArtifact(advanced, shareBaseUrl);
-      } else {
-        if (input.fileName !== undefined) patch.fileName = input.fileName;
-        if (input.kind !== undefined) patch.kind = input.kind;
-        if (input.contentType !== undefined)
-          patch.contentType = input.contentType;
+      } else if (input.contentType !== undefined) {
+        patch.contentType = input.contentType;
       }
 
       const updated = await repo.updateArtifact(id, owner, patch);
@@ -457,31 +509,10 @@ export function createArtifactLibraryService(
       return shared > 0 ? folderShareUrlFor(shareBaseUrl, folder.slug) : null;
     },
 
-    async resolveContentRef(id, version) {
-      const row = await repo.getArtifact(id, owner);
-      if (!row) return null;
-      if (version === undefined || version === row.version) {
-        return {
-          storageRef: row.storageRef,
-          fileName: row.fileName,
-          contentType: row.contentType,
-          sizeBytes: row.sizeBytes,
-          version: row.version,
-        };
-      }
-      const past = await repo.getVersion(id, version);
-      if (!past) return null;
-      return {
-        storageRef: past.storageRef,
-        fileName: row.fileName,
-        contentType: past.contentType,
-        sizeBytes: past.sizeBytes,
-        version: past.version,
-      };
-    },
+    resolveContentRef: resolveRef,
 
     async createAgentDownloadUrl(id, version) {
-      const ref = await this.resolveContentRef(id, version);
+      const ref = await resolveRef(id, version);
       if (!ref)
         throw new TRPCError({
           code: "NOT_FOUND",

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-07-29
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -9,7 +9,7 @@ Platform persists state on four durable substrates, split cleanly between the pl
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned. The bundled instance runs under three roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
-- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
+- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
 - **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Runs), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:

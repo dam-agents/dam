@@ -101,6 +101,9 @@ export function createArtifactService(deps: {
       });
     },
 
+    // No size policy on either download path: the blob was capped when it was
+    // stored, so a cap here could only reject bytes the platform already
+    // accepted.
     async createAgentDownloadUrl(key, filename) {
       const url = await deps.store.presignDownload(key, {
         filename,

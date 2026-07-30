@@ -13,6 +13,13 @@ uploads), and outlives both the sandbox and the agent that produced it.
 Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through.
 
+An artifact's **file name and kind are settled when it is created** and
+describe every version: the history snapshots bytes, never a name, and each
+version renders through the artifact's kind and downloads under its name.
+Letting either move would retroactively relabel revisions already published,
+so a revision that is genuinely a different file belongs in its own artifact
+with its own share link — the editable human-facing label is the **title**.
+
 The design is a port of a proven external tool (the "slop" artifact vault)
 onto platform rails: content bytes live in the S3-compatible object store
 ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing

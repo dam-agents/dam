@@ -43,7 +43,12 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
           <code className="rounded bg-muted px-1 py-px font-mono text-xs text-foreground">
             create_artifact_upload_url
           </code>{" "}
-          for direct-to-storage uploads. No extra credentials needed in the
+          for direct-to-storage uploads. They read artifacts back the same way,
+          with{" "}
+          <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">
+            create_artifact_download_url
+          </code>{" "}
+          to pull any file into the sandbox. No extra credentials needed in the
           sandbox.
         </span>
       </Callout>

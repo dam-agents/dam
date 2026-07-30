@@ -313,6 +313,89 @@ describe("library service — getPreviewHtml", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Name and format are settled at create — they describe every version, so the
+// head row stays a truthful label for the bytes of older versions.
+
+describe("library service — stable identity across versions", () => {
+  async function serviceOver(
+    rows: ArtifactRow[],
+    keys: string[] = [],
+  ): Promise<
+    Awaited<
+      ReturnType<
+        typeof import("../../modules/artifact-library/services/artifact-library-service.js").createArtifactLibraryService
+      >
+    >
+  > {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      repo: {
+        ...fakeRepo(rows),
+        advanceVersion: (id, owner, _snapshot, patch) => {
+          const row = rows.find((a) => a.id === id && a.owner === owner);
+          if (!row) return Promise.resolve(null);
+          Object.assign(row, patch);
+          return Promise.resolve(row);
+        },
+      },
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: {
+        put: (input: { key: string }) => {
+          keys.push(input.key);
+          return Promise.resolve();
+        },
+      } as never,
+    });
+  }
+
+  it("refuses to rename or re-type an artifact, writing nothing", async () => {
+    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
+    const service = await serviceOver(rows);
+
+    await expect(service.update("a1", { kind: "html" })).rejects.toThrow(
+      /format cannot change/,
+    );
+    await expect(
+      service.update("a1", { fileName: "report.html" }),
+    ).rejects.toThrow(/cannot be renamed/);
+    expect(rows[0]!.kind).toBe("markdown");
+    expect(rows[0]!.fileName).toBe("report.md");
+  });
+
+  it("accepts the unchanged name and type, so an echoing client still works", async () => {
+    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
+    const service = await serviceOver(rows);
+
+    await expect(
+      service.update("a1", {
+        title: "Renamed title",
+        fileName: "report.md",
+        kind: "markdown",
+      }),
+    ).resolves.toMatchObject({ title: "Renamed title" });
+  });
+
+  it("holds name and kind steady when a new version's bytes sniff differently", async () => {
+    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
+    const keys: string[] = [];
+    const service = await serviceOver(rows, keys);
+
+    // Content detectKind would call html, plus a name the caller would prefer:
+    // the artifact stays markdown/report.md and the new blob key follows it.
+    await expect(
+      service.update("a1", { content: "<!DOCTYPE html><html></html>" }),
+    ).resolves.toMatchObject({
+      kind: "markdown",
+      fileName: "report.md",
+      version: 2,
+    });
+    expect(keys).toEqual(["library/o1/a1/v2/report.md"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Agent download tickets — the direct-transfer path in reverse.
 
 describe("library service — createAgentDownloadUrl", () => {

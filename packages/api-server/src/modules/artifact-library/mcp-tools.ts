@@ -31,12 +31,12 @@ function errorResult(text: string): ToolContent {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-/** For rendering a file name into an example shell command only — the real
- *  name travels as a field. Restricted to a shell-safe subset so an artifact
- *  named by another publisher can never break out of the example's quoting. */
-function shellSafeFileName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]/g, "_");
-  return safe.length > 0 ? safe : "artifact";
+/** Quote a value for a single-quoted POSIX shell argument: end the quote,
+ *  emit an escaped quote, reopen. Keeps the name exact — spaces, accents and
+ *  `$` included — while making it impossible for an artifact named by another
+ *  publisher to break out of the example command's quoting. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
@@ -186,9 +186,26 @@ export function registerArtifactLibraryTools(
     },
     ({ id, version }) =>
       run(async () => {
-        const ticket = await lib.createAgentDownloadUrl(id, version);
-        // Mirrors the browser download route's audit line — a presigned link
-        // is a bearer capability to the bytes.
+        // A presigned link is a bearer capability to the bytes, so both
+        // outcomes are audited: logging only the successes would make a refused
+        // mint (an id the owner does not have) invisible in the trail.
+        let ticket;
+        try {
+          ticket = await lib.createAgentDownloadUrl(id, version);
+        } catch (err) {
+          securityLog("info", "artifact_library.download", {
+            category: "resource",
+            actor: deps.agentId,
+            actorKind: "agent",
+            surface: "mcp",
+            agentId: deps.agentId,
+            target: id,
+            result: "failure",
+            reason: err instanceof Error ? err.message : String(err),
+            detail: { mode: "direct", ...(version ? { version } : {}) },
+          });
+          throw err;
+        }
         securityLog("info", "artifact_library.download", {
           category: "resource",
           actor: deps.agentId,
@@ -205,7 +222,7 @@ export function registerArtifactLibraryTools(
         });
         return json({
           ...ticket,
-          instructions: `GET the URL and save the body, e.g.: curl -fL -o '${shellSafeFileName(ticket.fileName)}' '${ticket.url}' — the link expires in ${ticket.expiresSeconds}s.`,
+          instructions: `GET the URL and save the body, e.g.: curl -fL -o ${shellQuote(ticket.fileName)} ${shellQuote(ticket.url)} — the link expires in ${ticket.expiresSeconds}s.`,
         });
       }),
   );
@@ -260,24 +277,20 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's file name and type are settled at creation and describe every version — they cannot be changed here, so a revision that is a different file needs its own create_artifact call. Retitling is always fine.",
     {
       id: z.string().min(1),
       title: z.string().min(1).max(300).optional(),
       content: z.string().optional(),
       upload_ref: z.string().optional(),
-      file_name: z.string().optional(),
-      type: artifactKindSchema.optional(),
       folder_id: folderIdInput,
     },
-    ({ id, title, content, upload_ref, file_name, type, folder_id }) =>
+    ({ id, title, content, upload_ref, folder_id }) =>
       run(async () => {
         const artifact = await lib.update(id, {
           title,
           content,
           uploadRef: upload_ref,
-          fileName: file_name,
-          kind: type,
           folderId: folder_id === "" ? null : folder_id,
         });
         return json(withInternalLink(artifact));
