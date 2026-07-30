@@ -22,6 +22,7 @@ import {
   SESSION_CATEGORY_LABELS,
   sessionCategory,
 } from "../lib/session-category.js";
+import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
 
@@ -256,29 +257,5 @@ export function SessionsSidebar({
         {runSessions.map(renderRow)}
       </div>
     </SidebarSection>
-  );
-}
-
-/** Placeholder rows while the session list first loads. Mirrors SessionRow's
- *  height and its two lines — title, then a smaller timestamp — so the list
- *  doesn't flash empty before the agent answers. The text-size spans set the
- *  same line boxes as the real rows, so the row height matches exactly. */
-function SessionListSkeleton() {
-  return (
-    <div aria-hidden>
-      {Array.from({ length: 3 }).map((_, i) => (
-        <div
-          key={i}
-          className="flex flex-col gap-0.5 border-b border-border-light px-4 py-3"
-        >
-          <span className="text-[13px]">
-            <span className="inline-block h-3 w-1/2 rounded bg-muted align-middle animate-pulse" />
-          </span>
-          <span className="text-[11px]">
-            <span className="inline-block h-2.5 w-1/4 rounded bg-muted align-middle animate-pulse" />
-          </span>
-        </div>
-      ))}
-    </div>
   );
 }
