@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	storagev1 "k8s.io/api/storage/v1"
 
@@ -214,6 +216,22 @@ func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	assert.NotContains(t, runnable, "ALLOW_OWNERSHIP_REMAP", "ownership is preserved, not remapped — the knob is dead")
 	// Root wipes the target: no chmod dance for read-only retry residue.
 	assert.Contains(t, runnable, "! -name lost+found -exec rm -rf {} +")
+	// Every attempt neutralizes the root BEFORE extracting: a prior
+	// attempt's success-shaping left it setgid, and extracting under a
+	// setgid root stamps the bit into every 0700-style dir tar creates —
+	// one transient failure would otherwise fail every retry forever.
+	// Five digits: GNU chmod preserves dir setgid for shorter numerics.
+	assert.Contains(t, runnable, `chmod 00755 "$dst"`)
+	// ...and the 2770 success-shaping runs strictly AFTER verification.
+	assert.Greater(t, strings.Index(runnable, `chmod 2770 "$dst"`), strings.Index(runnable, `cmp "$W"/src.sum "$W"/dst.sum`),
+		"only a fully verified copy gets the kubelet root signature")
+	// The archive excludes the SOURCE's own root lost+found: the reader
+	// cannot open a root-owned 0700 one, and the inventory walk prunes it
+	// so the unreadable gate would never name it.
+	assert.Contains(t, runnable, `--exclude=./lost+found -cf - .`)
+	// Scratch dir is scoped to the two known identities, not world-writable.
+	assert.Contains(t, runnable, `chmod 0770 "$W"`)
+	assert.NotContains(t, runnable, "chmod 1777")
 	assert.NotContains(t, runnable, "chmod -R u+rwX", "root needs no permission repair to wipe")
 	// Deep finds -prune the root lost+found (a path exclusion still
 	// descends and dies on a 0700 root-owned one): source walk, source
@@ -705,4 +723,24 @@ func TestStorageMigration_EnsuresDedicatedServiceAccount(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sa.AutomountServiceAccountToken)
 	assert.False(t, *sa.AutomountServiceAccountToken)
+}
+
+// A missing/uncreatable ServiceAccount must fail the pass BEFORE anything is
+// gated: the Job would otherwise be admitted and its pods would sit in
+// "ServiceAccount not found" until the 4h deadline — a quiet stall where the
+// operator expects a loud one.
+func TestStorageMigration_ServiceAccountFailureBlocksThePass(t *testing.T) {
+	agent := agentCR()
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
+	client.PrependReactor("create", "serviceaccounts", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("rbac says no")
+	})
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "nothing is gated while the SA cannot exist")
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
 }
