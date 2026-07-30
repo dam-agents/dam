@@ -49,14 +49,12 @@ export function AgentBindingField({
       >
         <RadioGroupItem
           value="all"
-          size="sm"
           label="All agents"
           description="Every agent you own, now and in the future."
           className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
         />
         <RadioGroupItem
           value="specific"
-          size="sm"
           label="Specific agents"
           description="Only the agents you pick below."
           disabled={lockedToAll}
