@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type CopyState = "idle" | "copied" | "failed";
 
+/** How long the copied/failed feedback lingers before resetting to idle. */
+const RESET_MS = 2000;
+
 /**
  * One clipboard-copy state machine for the whole UI. `copy` takes a string, or
  * an async producer for a value resolved at click time (e.g. a share URL fetched
- * on demand) — a null/empty result or a write failure lands in "failed". The
- * state resets to "idle" after `timeoutMs`. Sites render whatever feedback they
- * like off `state`/`copied`; the async and error handling live here.
+ * on demand) — a null/empty result or a write failure lands in "failed". Sites
+ * render whatever feedback they like off `state`/`copied`; the async and error
+ * handling live here.
  */
-export function useCopy({ timeoutMs = 2000 }: { timeoutMs?: number } = {}): {
+export function useCopy(): {
   copy: (value: string | (() => Promise<string | null>)) => Promise<void>;
   state: CopyState;
   copied: boolean;
@@ -33,9 +36,9 @@ export function useCopy({ timeoutMs = 2000 }: { timeoutMs?: number } = {}): {
       } catch {
         setState("failed");
       }
-      timer.current = setTimeout(() => setState("idle"), timeoutMs);
+      timer.current = setTimeout(() => setState("idle"), RESET_MS);
     },
-    [timeoutMs],
+    [],
   );
 
   return { copy, state, copied: state === "copied" };

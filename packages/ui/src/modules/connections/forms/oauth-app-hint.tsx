@@ -2,7 +2,7 @@ import { Checkmark, Copy, Launch } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 
 /** Bring-your-own-OAuth-app instructions: provider setup link plus the exact
  *  redirect URI to register. */

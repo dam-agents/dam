@@ -72,6 +72,11 @@ describe("getErrorMessage", () => {
     expect(getErrorMessage("oops", "Upload failed")).toBe("Upload failed");
     expect(getErrorMessage(undefined, "Save failed")).toBe("Save failed");
   });
+  test("an empty-message Error falls back rather than returning ''", () => {
+    expect(getErrorMessage(new Error(""), "Delete failed")).toBe(
+      "Delete failed",
+    );
+  });
   test("no fallback stringifies the unknown", () => {
     expect(getErrorMessage("bare string")).toBe("bare string");
   });

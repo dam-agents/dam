@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/hooks/use-copy";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
 
