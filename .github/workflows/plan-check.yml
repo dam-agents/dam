@@ -1,6 +1,6 @@
 name: Plan check
 
-# docs/plan/<feature>/ is a working artifact of plan-feature-v2: it starts the
+# docs/plan/<feature>/ is a working artifact of plan-feature: it starts the
 # feature branch and must be deleted before the feature merges. This check is
 # red while the plan is on the branch and flips green once the cleanup commit
 # lands — make it a required status check so a plan can never reach main.
@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           files=$(git ls-files -- docs/plan)
           if [ -n "$files" ]; then
-            echo "::error::docs/plan/ must be deleted before merge (plan-feature-v2 working artifact):"
+            echo "::error::docs/plan/ must be deleted before merge (plan-feature working artifact):"
             printf '%s\n' "$files"
             exit 1
           fi
