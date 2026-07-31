@@ -224,7 +224,8 @@ Run it (after Step 1 resolved `$base` and a model id):
 export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"
 skydiscover-run task/initial.py task/evaluator.py \
   --search "$SKYDISCOVER_SEARCH" \
-  -i 10 -m <model-id> --api-base "$base/v1" -o output
+  -i 10 -m <model-id> --api-base "$base/v1" \
+  -o "$SKYDISCOVER_OUTPUT_ROOT/sin-approx/output"
 ```
 
 `combined_score` rises toward 1.0 as the MSE falls; pull the winner from

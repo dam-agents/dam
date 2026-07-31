@@ -69,7 +69,9 @@ SKYDISCOVER_VERSION=0.1.0 mise run agents:skydiscover:image
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
 `platform-skydiscover:latest` but keeps them `enabled: false`; flip one to
-`true` to show it in the local catalog.
+`true` to show it in the local catalog. `cluster:install`/`cluster:build-agent`
+resolve the build from the image repository basename, so both presets build
+(and load) the one skydiscover image.
 
 ## CI / publishing
 
