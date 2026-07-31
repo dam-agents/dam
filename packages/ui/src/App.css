@@ -450,6 +450,13 @@
   color: var(--foreground);
   box-shadow: none;
 }
+.prose .code-block {
+  position: relative;
+  margin: 0.65em 0;
+}
+.prose .code-block pre {
+  margin: 0;
+}
 .prose ul,
 .prose ol {
   padding-left: 1.4em;

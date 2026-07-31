@@ -6,6 +6,7 @@ import ReactMarkdown, {
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
+import { MarkdownCodeBlock } from "@/components/markdown-code-block";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import {
@@ -80,6 +81,7 @@ export function Markdown({
 
   const components = useMemo<Components>(
     () => ({
+      pre: MarkdownCodeBlock,
       a({ href, children }) {
         // Internal artifact links (platform://artifacts/<id>) render as a
         // preview chip that opens the docked artifact panel.
