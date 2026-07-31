@@ -8,6 +8,7 @@ import { emitToast } from "@/lib/toast";
 import { useAppConnections } from "../api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
+import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 import {
   CATALOG_TAB_LABEL,
@@ -24,6 +25,7 @@ import {
   CatalogProviderCard,
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
+import { ConnectionUpdateCredentialDialog } from "./connection-update-credential-dialog.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
@@ -48,6 +50,7 @@ export function ConnectionCatalogModal({
 }: Props) {
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
+  const maintenance = useConnectionMaintenance();
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
@@ -110,6 +113,17 @@ export function ConnectionCatalogModal({
     );
   };
 
+  if (maintenance.updating) {
+    // The credential dialog replaces the catalogue while open — stacking two
+    // modals would trap focus in whichever mounted last.
+    return (
+      <ConnectionUpdateCredentialDialog
+        connection={maintenance.updating}
+        onClose={maintenance.closeUpdate}
+      />
+    );
+  }
+
   return (
     <Modal widthClass="w-[860px] max-w-full h-[85vh]">
       <DialogHeader
@@ -145,6 +159,7 @@ export function ConnectionCatalogModal({
                   onNew={() => openNew(group)}
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
+                  maintenance={maintenance.rowActions}
                 />
               ))}
             </div>

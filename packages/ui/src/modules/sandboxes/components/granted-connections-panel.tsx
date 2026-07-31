@@ -7,6 +7,8 @@ import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
+import { ConnectionUpdateCredentialDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 
 interface Props {
@@ -30,6 +32,8 @@ export function GrantedConnectionsPanel({
   onOpenCatalog,
   inset = true,
 }: Props) {
+  const maintenance = useConnectionMaintenance();
+
   if (groups.length === 0)
     return (
       <>
@@ -70,9 +74,16 @@ export function GrantedConnectionsPanel({
               actionHidden: true,
             })}
             onManage={onOpenCatalog}
+            maintenance={maintenance.rowActions}
           />
         ))}
       </Wrap>
+      {maintenance.updating && (
+        <ConnectionUpdateCredentialDialog
+          connection={maintenance.updating}
+          onClose={maintenance.closeUpdate}
+        />
+      )}
     </>
   );
 }

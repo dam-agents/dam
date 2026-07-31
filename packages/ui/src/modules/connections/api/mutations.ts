@@ -12,7 +12,10 @@ export function useCreateConnection() {
   });
 }
 
-export function useUpdateConnection() {
+// `silent` for callers that render the failure inline — a rejected credential is
+// feedback about what was just typed, so a global toast would be the wrong place
+// to read it.
+export function useUpdateConnection(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.update.mutationOptions(),
     meta: {
@@ -20,7 +23,9 @@ export function useUpdateConnection() {
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
       ],
-      errorToast: "Couldn't update connection",
+      ...(opts?.silent
+        ? { suppressErrorToast: true }
+        : { errorToast: "Couldn't update connection" }),
     },
   });
 }

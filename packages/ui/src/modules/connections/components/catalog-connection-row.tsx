@@ -20,6 +20,17 @@ export interface RowGrantControls {
   actionHidden?: boolean;
 }
 
+/** Credential maintenance for one row. Exactly one of the two callbacks is set
+ *  — the caller decides from the auth kind, so the row stays unaware of it. */
+export interface RowMaintenanceActions {
+  /** Re-run login/consent (OAuth connections). */
+  onReauthenticate?: () => void;
+  /** Paste a replacement secret (stored-credential connections). */
+  onUpdateCredential?: () => void;
+  /** A consent popup for this row is already open. */
+  busy?: boolean;
+}
+
 interface Props {
   connection: ConnectionView;
   subtitle: string;
@@ -30,6 +41,8 @@ interface Props {
   /** ⋮ → "Delete this connection" (settings and the catalogue only). */
   onDelete?: () => void;
   deleting?: boolean;
+  /** ⋮ → credential maintenance, plus the inline fix on an expired row. */
+  maintenance?: RowMaintenanceActions;
 }
 
 export function CatalogConnectionRow({
@@ -39,7 +52,20 @@ export function CatalogConnectionRow({
   onManage,
   onDelete,
   deleting = false,
+  maintenance,
 }: Props) {
+  const reauthLabel =
+    connection.status === "pending" ? "Authorize" : "Re-authenticate";
+  // An expired row carries its own fix, so recovery is one click from the
+  // failure rather than a hunt through the ⋮ menu.
+  const inlineFix =
+    connection.status !== "expired"
+      ? undefined
+      : maintenance?.onReauthenticate
+        ? { label: reauthLabel, run: maintenance.onReauthenticate }
+        : maintenance?.onUpdateCredential
+          ? { label: "Update credential", run: maintenance.onUpdateCredential }
+          : undefined;
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
@@ -59,6 +85,17 @@ export function CatalogConnectionRow({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
           <GithubAppInstallLink connection={connection} />
+          {inlineFix && (
+            <Button
+              variant="outline"
+              className="h-8 shrink-0 px-3 text-sm font-normal"
+              disabled={maintenance?.busy}
+              onClick={inlineFix.run}
+              data-testid={`catalog-fix-${connection.id}`}
+            >
+              {inlineFix.label}
+            </Button>
+          )}
           {grant &&
             !grant.actionHidden &&
             (grant.granted ? (
@@ -94,6 +131,23 @@ export function CatalogConnectionRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            {maintenance?.onReauthenticate && (
+              <DropdownMenuItem
+                disabled={maintenance.busy}
+                onSelect={maintenance.onReauthenticate}
+                data-testid={`catalog-reauth-${connection.id}`}
+              >
+                {reauthLabel}
+              </DropdownMenuItem>
+            )}
+            {maintenance?.onUpdateCredential && (
+              <DropdownMenuItem
+                onSelect={maintenance.onUpdateCredential}
+                data-testid={`catalog-update-credential-${connection.id}`}
+              >
+                Update credential
+              </DropdownMenuItem>
+            )}
             {grant?.granted && (
               <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
                 Remove from this sandbox
