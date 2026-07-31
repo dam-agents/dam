@@ -9,13 +9,22 @@ import {
   toReturnPath,
 } from "../../lib/return-path.js";
 
-function fakeStore(): ReturnPathStore & { snapshot(): Record<string, string> } {
+interface FakeStore extends ReturnPathStore {
+  isEmpty(): boolean;
+  /** Stand-in for a tampered-with sessionStorage, whose slot names the module owns. */
+  tamper(value: string): void;
+}
+
+function fakeStore(): FakeStore {
   const entries = new Map<string, string>();
   return {
     getItem: (key) => entries.get(key) ?? null,
     setItem: (key, value) => void entries.set(key, value),
     removeItem: (key) => void entries.delete(key),
-    snapshot: () => Object.fromEntries(entries),
+    isEmpty: () => entries.size === 0,
+    tamper: (value) => {
+      for (const key of entries.keys()) entries.set(key, value);
+    },
   };
 }
 
@@ -90,13 +99,10 @@ describe("remember/take round-trip", () => {
       const store = fakeStore();
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       rememberReturnPath(which, BIND_LINK, store);
-      store.setItem(
-        Object.keys(store.snapshot())[0]!,
-        "https://evil.example/steal",
-      );
+      store.tamper("https://evil.example/steal");
       expect(takeReturnPath(which, store)).toBe("/");
       expect(warn).toHaveBeenCalled();
-      expect(store.snapshot()).toEqual({});
+      expect(store.isEmpty()).toBe(true);
       warn.mockRestore();
     },
   );
