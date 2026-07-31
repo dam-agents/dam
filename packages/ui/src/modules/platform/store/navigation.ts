@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 
+import { isSafeReturnPath } from "../../../lib/return-path.js";
 import type { PlatformStore } from "../../../store.js";
 import {
   clearSnapshot,
@@ -32,6 +33,10 @@ export interface NavigationSlice {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
+  /** Re-derive the route from the URL. Interstitials — the login roundtrip and
+   *  the Terms gate — rewrite it after this slice was initialized, so the app
+   *  calls this once they have settled and before the first render. */
+  hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
   /** `startingPoint` pre-selects step 1, so a per-kind "New …" button lands in
    *  the shared wizard pointed at that kind. */
@@ -61,8 +66,8 @@ function initialPath(): string {
   const saved = sessionStorage.getItem("platform-return-view");
   if (!saved) return pathname;
   sessionStorage.removeItem("platform-return-view");
-  if (!saved.startsWith("/")) {
-    console.warn("[navigation] ignoring non-path platform-return-view:", saved);
+  if (!isSafeReturnPath(saved)) {
+    console.warn("[navigation] ignoring unusable platform-return-view:", saved);
     return pathname;
   }
   if (pathname !== saved) {
@@ -84,6 +89,9 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
+  // Route fields only — chat's `selectedAgent` stays owned by the popstate hook.
+  hydrateRoute: () =>
+    set(routeToNavigationState(parseRoute(window.location.pathname))),
   setView: (v) => {
     history.pushState(null, "", routeToPath({ view: v }));
     set(routeToNavigationState({ view: v }));
