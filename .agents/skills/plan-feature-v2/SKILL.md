@@ -2,9 +2,9 @@
 name: plan-feature-v2
 description: >
   Turn a GitHub issue into an implementation plan under docs/plan/<feature>/: a feature spec
-  decomposed into self-contained, independently-shippable sub-issues. Use when the user wants to
-  plan a feature, decompose a GitHub issue into sub-issues, or produce an implementation plan from
-  an issue.
+  decomposed into context-window-sized sub-issues, committed as the first commit of the feature
+  branch with a draft PR. Use only when the user explicitly asks for plan-feature-v2 or the v2
+  planning flow — unlike plan-feature (v1), the plan is committed to git, not left untracked.
 ---
 
 <what-to-do>
@@ -17,6 +17,12 @@ for the implementation phase, not permanent docs — but they live in git: plann
 creating the feature branch, committing the plan as its **first commit**, and opening a **draft
 PR** (step 4). The plan never merges: the `Plan check` CI job fails while `docs/plan/` exists,
 so the PR stays blocked until the cleanup commit deletes the folder.
+
+The implementation phase completes this flow. The implementer (typically `/implement-feature`)
+resumes on the branch this skill created — the branch already exists, so it must not create one —
+and must land a commit deleting `docs/plan/<feature-slug>/` before the PR is marked ready. Where
+`implement-feature` treats cleanup as optional, under a v2 plan it is mandatory: the `Plan check`
+gate keeps the PR unmergeable until the folder is gone.
 
 A sub-issue is "self-contained" in the sense that **README + that sub-issue together** give a
 fresh agent (plus the linked issue) everything needed to implement the slice cold. Shared
@@ -97,9 +103,13 @@ sub-issue, so the PR shows implementation progress as slices land.
 If the user asks for plan changes after reading the files, amend the commit and force-push —
 safe while the branch carries only the plan commit.
 
-</what-to-do>
+### 5. Report
 
-<supporting-info>
+Print the branch name, the draft PR link, where the plan lives, and a one-paragraph summary of
+the sub-issues and their order. Remind the user the plan is the branch's first commit and will
+be removed before the feature ships, and that `/implement-feature` is the next step.
+
+## PR body template
 
 ```markdown
 <Overview: what's being built and why, product-level, from the README's Goal. No file paths,
@@ -113,11 +123,9 @@ Closes #NNN
 - [ ] 02 — <title>
 ```
 
-### 5. Report
+</what-to-do>
 
-Print the branch name, the draft PR link, where the plan lives, and a one-paragraph summary of
-the sub-issues and their order. Remind the user the plan is the branch's first commit and will
-be removed before the feature ships, and that `/implement-feature` is the next step.
+<supporting-info>
 
 ## README.md template
 

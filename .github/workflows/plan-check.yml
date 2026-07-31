@@ -23,9 +23,10 @@ jobs:
       - name: Fail if docs/plan exists
         run: |
           set -euo pipefail
-          if git ls-files -- docs/plan | grep -q .; then
+          files=$(git ls-files -- docs/plan)
+          if [ -n "$files" ]; then
             echo "::error::docs/plan/ must be deleted before merge (plan-feature-v2 working artifact):"
-            git ls-files -- docs/plan
+            printf '%s\n' "$files"
             exit 1
           fi
           echo "No plan files present."
