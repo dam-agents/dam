@@ -102,7 +102,7 @@ export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
-export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,
@@ -342,10 +342,14 @@ export type {
   Skill,
   SkillCreateLocalInput,
   SkillCreateSourceInput,
+  SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishRecord,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,

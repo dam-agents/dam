@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
+import { routeToPath } from "../../../platform/lib/routes.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { WizardSnapshot } from "../../lib/wizard-snapshot.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
@@ -56,7 +57,7 @@ export function ConnectionsStep({ snapshot, update }: Props) {
         <ConnectionCatalogModal
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggle }}
-          oauthReturnView="/sandboxes/new"
+          oauthReturnView={routeToPath({ view: "sandbox-new" })}
         />
       )}
     </div>

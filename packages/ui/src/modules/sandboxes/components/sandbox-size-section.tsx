@@ -80,7 +80,7 @@ export function SandboxSizeSection({
   return (
     <section className="mb-8">
       <SectionLabel>Size</SectionLabel>
-      <p className="mb-3 text-[13px] text-muted-foreground">
+      <p className="mb-3 text-sm text-muted-foreground">
         How much compute this sandbox can use while running. It counts against
         your budget only while the sandbox is up.
       </p>
@@ -109,10 +109,10 @@ export function SandboxSizeSection({
         />
       </div>
       {restartNote && (
-        <p className="mt-3 text-[13px] text-muted-foreground">{restartNote}</p>
+        <p className="mt-3 text-sm text-muted-foreground">{restartNote}</p>
       )}
       {!disabled && (cpuOver || memoryOver) && freeCpu !== null && (
-        <p className="mt-3 text-[13px] text-warning">
+        <p className="mt-3 text-sm text-warning">
           This size is larger than the room currently free on your budget (
           {formatCores(Math.max(freeCpu, 0))} cores /{" "}
           {formatMiAsMemory(Math.max(freeMemoryMi ?? 0, 0))}). The sandbox will
@@ -148,7 +148,7 @@ function SizeSlider({
 }: SizeSliderProps) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[13px]">
+      <div className="mb-1 flex items-center justify-between text-sm">
         <span className="text-foreground">{label}</span>
         <span
           className={

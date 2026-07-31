@@ -1,12 +1,16 @@
-import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import {
   Download,
-  ExternalLink,
-  GitPullRequest,
-  MoreHorizontal,
-} from "lucide-react";
+  Launch,
+  OverflowMenuHorizontal,
+  PullRequest,
+  Upload,
+} from "@carbon/icons-react";
+import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,10 +35,32 @@ export function StandaloneSkillsPlaceholder() {
         <SectionLabel>Created in this sandbox</SectionLabel>
       </div>
       <div className="rounded-lg border border-border bg-muted px-4 py-6">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Skills created in this sandbox appear here once it's running.
         </p>
       </div>
+    </section>
+  );
+}
+
+/** Running-agent empty state (#2828): the section keeps its header and an
+ *  authoring affordance instead of vanishing when no user skill exists yet. */
+export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SectionLabel>Created in this sandbox</SectionLabel>
+        {action}
+      </div>
+      <Callout variant="dashed">
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <Upload size={20} className="text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            No skills created in this sandbox yet. Drop a .md file here, or ask
+            the agent to author one.
+          </p>
+        </div>
+      </Callout>
     </section>
   );
 }
@@ -54,9 +80,9 @@ function latestPublishByName(
 /**
  * "Created in this sandbox" — Standalone Local Skills authored in place or
  * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
- * "In review" pill once it has a publish record). The kebab's Download/Delete
- * are shown disabled — no download/delete-local backend yet (deferred). There
- * is no install toggle: standalone skills are simply present on disk.
+ * "In review" pill once it has a publish record), and the kebab downloads or
+ * deletes it. There is no install toggle: standalone skills are simply present
+ * on disk.
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -64,6 +90,8 @@ export function StandaloneSkillsGroup({
   publishes,
   canPublish,
   onPublish,
+  onDownload,
+  onDelete,
   action,
 }: {
   skills: LocalSkill[];
@@ -72,6 +100,10 @@ export function StandaloneSkillsGroup({
   /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: (skill: LocalSkill) => void;
+  onDownload: (skill: LocalSkill) => void;
+  /** The row's latest publish record is passed along so the confirm dialog can
+   *  mention the PR without re-deriving it in the parent. */
+  onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   /** Header-right slot (e.g. the "+ Add source" button). */
   action?: ReactNode;
 }) {
@@ -83,12 +115,7 @@ export function StandaloneSkillsGroup({
         <SectionLabel>Created in this sandbox</SectionLabel>
         {action}
       </div>
-      <div
-        className={cn(
-          "rounded-lg border border-border",
-          readOnly ? "bg-muted" : "bg-card",
-        )}
-      >
+      <Card className={cn(readOnly && "bg-muted")}>
         {skills.map((skill, i) => {
           const pub = published.get(skill.name);
           return (
@@ -105,7 +132,7 @@ export function StandaloneSkillsGroup({
                 </p>
                 <p
                   className={cn(
-                    "truncate text-[13px] text-muted-foreground",
+                    "truncate text-sm text-muted-foreground",
                     !skill.description && "italic",
                   )}
                 >
@@ -118,14 +145,15 @@ export function StandaloneSkillsGroup({
                   href={pub.prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-[12px] font-medium text-info transition-opacity hover:opacity-80"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
                   title={`Pull request open on ${pub.sourceName}`}
                 >
-                  <GitPullRequest size={13} /> In review · {pub.sourceName}
+                  <PullRequest size={13} /> In review · {pub.sourceName}
                 </a>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="xs"
                   disabled={!canPublish}
                   onClick={() => onPublish(skill)}
                   title={
@@ -133,30 +161,32 @@ export function StandaloneSkillsGroup({
                       ? "Publish this skill as a pull request"
                       : "Add a GitHub source first to publish there"
                   }
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  className="shrink-0 gap-1.5"
                 >
-                  Publish <ExternalLink size={13} />
-                </button>
+                  Publish <Launch size={13} />
+                </Button>
               )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     title="Skill actions"
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="shrink-0 text-muted-foreground"
                   >
-                    <MoreHorizontal size={18} />
-                  </button>
+                    <OverflowMenuHorizontal size={18} />
+                  </Button>
                 </DropdownMenuTrigger>
-                {/* Download and Delete have no backend yet (deferred) — shown
-                    disabled so the affordance is visible without dead actions. */}
                 <DropdownMenuContent>
-                  <DropdownMenuItem disabled>
+                  <DropdownMenuItem onSelect={() => onDownload(skill)}>
                     <Download size={14} />
                     <span className="flex-1">Download skill</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem tone="danger" disabled>
+                  <DropdownMenuItem
+                    tone="danger"
+                    onSelect={() => onDelete(skill, pub)}
+                  >
                     Delete skill
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -164,7 +194,7 @@ export function StandaloneSkillsGroup({
             </div>
           );
         })}
-      </div>
+      </Card>
     </section>
   );
 }

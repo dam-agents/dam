@@ -9,19 +9,30 @@ import {
   startingPointDefaults,
 } from "../../sandboxes/lib/wizard-snapshot.js";
 import {
-  pathToState,
+  parseRoute,
+  routeToNavigationState,
+  routeToPath,
   type SandboxSection,
   type SettingsTab,
   type View,
-  viewToPath,
 } from "../lib/routes.js";
+
+/** Views whose route carries no parameters — the only ones `setView` can reach. */
+type ParameterlessView =
+  | "list"
+  | "inbox"
+  | "terms"
+  | "artifacts"
+  | "experiments"
+  | "knowledge-bases"
+  | "sandbox-new";
 
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
-  setView: (v: View) => void;
+  setView: (v: ParameterlessView) => void;
   /** `startingPoint` pre-selects step 1, so a per-kind "New …" button lands in
    *  the shared wizard pointed at that kind. */
   navigateToCreateSandbox: (startingPoint?: StartingPoint) => void;
@@ -34,52 +45,48 @@ export interface NavigationSlice {
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
 
+/**
+ * Resolve the path to hydrate from exactly once, so the `replaceState` side
+ * effect below cannot race initializers that re-read `window.location`.
+ */
+function initialPath(): string {
+  const { pathname } = window.location;
+  // The Telegram/Slack bind pages are entered via an external redirect
+  // carrying a one-shot ?flow= param — a stale OAuth return-view must not
+  // replace them.
+  const { view } = parseRoute(pathname);
+  if (view === "telegram-bind" || view === "slack-bind") return pathname;
+
+  // Holds the path to restore after an OAuth roundtrip (e.g. /settings/connections).
+  const saved = sessionStorage.getItem("platform-return-view");
+  if (!saved) return pathname;
+  sessionStorage.removeItem("platform-return-view");
+  if (!saved.startsWith("/")) {
+    console.warn("[navigation] ignoring non-path platform-return-view:", saved);
+    return pathname;
+  }
+  if (pathname !== saved) {
+    history.replaceState(
+      null,
+      "",
+      saved + window.location.search + window.location.hash,
+    );
+  }
+  // Route on the path segment alone: a query or hash riding along in the
+  // saved value would otherwise be captured as part of an id or tab.
+  return saved.split(/[?#]/)[0]!;
+}
+
 export const createNavigationSlice: StateCreator<
   PlatformStore,
   [],
   [],
   NavigationSlice
 > = (set) => ({
-  view: (() => {
-    // The Telegram/Slack bind pages are entered via an external redirect
-    // carrying a one-shot ?flow= param — a stale OAuth return-view must not
-    // replace them.
-    if (
-      window.location.pathname === "/telegram/bind" ||
-      window.location.pathname === "/slack/bind"
-    )
-      return pathToState(window.location.pathname).view;
-    // Holds the path to restore after an OAuth roundtrip (e.g. /settings/connections).
-    const saved = sessionStorage.getItem("platform-return-view");
-    if (saved) {
-      sessionStorage.removeItem("platform-return-view");
-      if (saved.startsWith("/")) {
-        if (window.location.pathname !== saved) {
-          history.replaceState(
-            null,
-            "",
-            saved + window.location.search + window.location.hash,
-          );
-        }
-        return pathToState(saved).view;
-      }
-      console.warn(
-        "[navigation] ignoring non-path platform-return-view:",
-        saved,
-      );
-    }
-    return pathToState(window.location.pathname).view;
-  })(),
-  agentId: pathToState(window.location.pathname).agentId ?? null,
-  settingsTab: pathToState(window.location.pathname).settingsTab ?? "account",
-  sandboxSection:
-    pathToState(window.location.pathname).sandboxSection ?? "setup",
+  ...routeToNavigationState(parseRoute(initialPath())),
   setView: (v) => {
-    history.pushState(null, "", viewToPath(v));
-    // viewToPath(v) without a tab is /settings, so keep the tab in sync.
-    if (v === "settings")
-      set({ view: v, agentId: null, settingsTab: "account" });
-    else set({ view: v, agentId: null });
+    history.pushState(null, "", routeToPath({ view: v }));
+    set(routeToNavigationState({ view: v }));
   },
   navigateToCreateSandbox: (startingPoint) => {
     // Seeded into the snapshot, not the route — where every other pick lives.
@@ -92,39 +99,35 @@ export const createNavigationSlice: StateCreator<
     } else {
       clearSnapshot();
     }
-    history.pushState(null, "", viewToPath("sandbox-new"));
+    history.pushState(null, "", routeToPath({ view: "sandbox-new" }));
     set({ view: "sandbox-new", agentId: null });
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";
-    history.pushState(
-      null,
-      "",
-      viewToPath("settings", null, null, settingsTab),
-    );
+    history.pushState(null, "", routeToPath({ view: "settings", settingsTab }));
     set({ view: "settings", settingsTab, agentId: null });
   },
   navigateToSandboxHome: (agentId, section = "setup") => {
     history.pushState(
       null,
       "",
-      viewToPath("sandbox-home", null, agentId, null, section),
+      routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
     set({ view: "sandbox-home", agentId, sandboxSection: section });
   },
   navigateToExperiments: () => {
-    history.pushState(null, "", viewToPath("experiments"));
+    history.pushState(null, "", routeToPath({ view: "experiments" }));
     set({ view: "experiments", agentId: null });
   },
   navigateToKnowledgeBases: () => {
-    history.pushState(null, "", viewToPath("knowledge-bases"));
+    history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));
     set({ view: "knowledge-bases", agentId: null });
   },
   navigateToKnowledgeBaseConfig: (agentId) => {
     history.pushState(
       null,
       "",
-      viewToPath("knowledge-base-config", null, agentId),
+      routeToPath({ view: "knowledge-base-config", agentId }),
     );
     // The settings form keys off `agentId`; chat keeps `selectedAgent`. Set
     // both so returning to the KB chat keeps the same agent selected.

@@ -133,14 +133,19 @@ export function createClickhouseReader(
     },
 
     async spendByAgent(agentIds, window) {
-      // Group on the trusted, gateway-stamped agent id. The display name is
-      // read from the telemetry itself — argMax picks the latest
-      // `platform.agent.name` seen in range — so a since-deleted agent still
+      // Group on the trusted, gateway-stamped agent id — now the root Driver's
+      // id for Invocation targets, so delegated work is attributed to the
+      // Driver. The display name is read from the telemetry itself — argMaxIf
+      // picks the latest `platform.agent.name` among the agent's OWN rows,
+      // excluding child rows (those carrying a `platform.invocation.id`) whose
+      // name belongs to the target, not the Driver the row is attributed to.
+      // This keeps a heavy delegator's bar labelled with its own name instead
+      // of the newest target's `invocation-<hex>`. A since-deleted agent still
       // shows its last known name. The name is display-only; the id is the key.
       const r = await rows(
         `SELECT
            ResourceAttributes['platform.agent.id'] AS agentId,
-           argMax(ResourceAttributes['platform.agent.name'], Timestamp) AS agentName,
+           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName,
            sum(${COST_USD}) AS costUsd
          FROM otel_logs
          WHERE ${ownedApiRequests(window)}

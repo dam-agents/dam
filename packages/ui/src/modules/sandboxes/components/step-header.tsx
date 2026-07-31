@@ -1,3 +1,5 @@
+import { SectionLabel } from "@/components/ui/section-label";
+
 import type { WizardStep } from "../lib/wizard-snapshot.js";
 
 interface Props {
@@ -9,13 +11,11 @@ interface Props {
 export function StepHeader({ step, title, subtitle }: Props) {
   return (
     <div className="mb-8">
-      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-        Step {step} of 3
-      </p>
-      <h1 className="mt-2 text-[24px] font-semibold tracking-[-0.5px] text-foreground">
+      <SectionLabel>Step {step} of 3</SectionLabel>
+      <h1 className="mt-2 text-2xl font-semibold tracking-[-0.5px] text-foreground">
         {title}
       </h1>
-      <p className="mt-1 text-[14px] text-muted-foreground">{subtitle}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
     </div>
   );
 }

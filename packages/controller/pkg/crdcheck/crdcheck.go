@@ -26,7 +26,6 @@ var crdGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version:
 func Assert(ctx context.Context, client dynamic.Interface) error {
 	required := map[string]int{
 		"agents." + apiv1.GroupVersion.Group:      apiv1.AgentSchemaGeneration,
-		"forks." + apiv1.GroupVersion.Group:       apiv1.ForkSchemaGeneration,
 		"runs." + apiv1.GroupVersion.Group:        apiv1.RunSchemaGeneration,
 		"userbudgets." + apiv1.GroupVersion.Group: apiv1.UserBudgetSchemaGeneration,
 	}

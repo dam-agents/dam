@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
 import { Inset } from "@/components/ui/inset";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -25,7 +26,7 @@ export function ConnectionsView() {
   const newButton = (
     <Button
       variant="outline"
-      className="h-[32px] px-3 text-[14px] font-normal"
+      className="h-8 px-3 text-sm font-normal"
       onClick={() => setCatalogOpen(true)}
       data-testid="open-connection-catalog"
     >
@@ -64,9 +65,9 @@ export function ConnectionsView() {
       ) : (
         <>
           <SectionLabel spaced>My connections</SectionLabel>
-          <Inset className="rounded-lg border border-border bg-card">
+          <Inset className={CARD_SURFACE}>
             <div className="flex flex-col items-center gap-4 py-10">
-              <p className="text-[14px] text-foreground/80">
+              <p className="text-sm text-foreground/80">
                 No connections set up yet.
               </p>
               {newButton}

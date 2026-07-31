@@ -1,7 +1,9 @@
 import type { FeatureId } from "api-server-api";
 
+import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 import { useFeatures, useSetFeature } from "../api/queries.js";
 
@@ -44,13 +46,16 @@ export function FeaturesTab() {
         {FEATURE_ROWS.map((row) => (
           <label
             key={row.id}
-            className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
+            className={cn(
+              CARD_SURFACE,
+              "flex cursor-pointer items-start justify-between gap-4 p-4",
+            )}
           >
             <span>
-              <span className="block text-[14px] font-medium text-foreground">
+              <span className="block text-sm font-medium text-foreground">
                 {row.label}
               </span>
-              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+              <span className="mt-0.5 block text-sm text-muted-foreground">
                 {row.description}
               </span>
             </span>

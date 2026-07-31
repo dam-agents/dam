@@ -128,11 +128,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the
   // harness port; we materialise an ephemeral Run pod and relay its /api/exec
   // stdio. WebSocket upgrades on the harness port are wired manually (the Hono
-  // node server doesn't handle them).
+  // node server doesn't handle them). Disabled while the executor's
+  // shared-workspace model is reworked for RWO storage (#2989) — the relay
+  // refuses every dial with a clear close reason; the machinery stays dormant.
   const runs = createRunsService(k8sClient);
   const runRelay = createRunRelay({
     k8s: k8sClient,
     runs,
+    enabled: false,
   });
   const server = serve(
     { fetch: app.fetch, port: config.harnessServerPort },

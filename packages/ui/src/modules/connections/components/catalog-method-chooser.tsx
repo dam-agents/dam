@@ -1,6 +1,8 @@
 import { ArrowRight } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 
+import { CardButton } from "@/components/ui/card-button";
+
 import { templateMethodCopy } from "../lib/catalog-providers.js";
 
 interface Props {
@@ -31,21 +33,18 @@ function MethodCard({
 }) {
   const { title, description } = templateMethodCopy(template);
   return (
-    <button
-      type="button"
+    <CardButton
       onClick={onPick}
       data-testid={`catalog-method-${template.id}`}
-      className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+      className="flex items-center gap-4 p-4"
     >
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-medium text-foreground">{title}</p>
         {description && (
-          <p className="mt-1 text-[14px] text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
       <ArrowRight size={16} className="shrink-0 text-muted-foreground" />
-    </button>
+    </CardButton>
   );
 }

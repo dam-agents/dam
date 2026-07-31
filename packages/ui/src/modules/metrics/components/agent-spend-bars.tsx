@@ -10,7 +10,7 @@ function AgentSpendRow({ row, max }: { row: SpendByAgent; max: number }) {
   // tiny value is still visible; zero-cost rows stay empty.
   const pct = max > 0 ? (row.costUsd / max) * 100 : 0;
   return (
-    <div className="flex items-center gap-4 text-[14px]">
+    <div className="flex items-center gap-4 text-sm">
       <span
         className="w-[140px] shrink-0 truncate text-right text-foreground/80"
         title={label}
@@ -23,7 +23,7 @@ function AgentSpendRow({ row, max }: { row: SpendByAgent; max: number }) {
           style={{ width: row.costUsd > 0 ? `max(${pct}%, 8px)` : "0px" }}
         />
       </div>
-      <span className="w-20 shrink-0 text-left font-mono font-semibold tabular-nums text-text">
+      <span className="w-20 shrink-0 text-left font-mono font-semibold tabular-nums text-foreground">
         {formatUsd(row.costUsd)}
       </span>
     </div>

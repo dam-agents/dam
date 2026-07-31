@@ -103,7 +103,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -112,7 +112,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("envoyBootstrap")
 	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, true); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -318,12 +318,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("agentStatefulSet")
 
-	// Hard stop (#1900): the one exception to "scale-down is the idle
-	// checker's job" — user intent scales the pair to zero now, bypassing
-	// the busy probe (a hard stop may interrupt work by design). Idempotent
-	// on resync; any later explicit wake or schedule fire clears the
-	// annotation and the pair goes back through the budget gate above.
-	if agent.Annotations[annStopRequested] != "" {
+	// Hard stop (#1900) and storage migration (#2988): the exceptions to
+	// "scale-down is the idle checker's job" — user intent (or the
+	// migration's need for a quiesced volume) scales the pair to zero now,
+	// bypassing the busy probe (both may interrupt work by design).
+	// Idempotent on resync; a stop clears on explicit wake or schedule
+	// fire, a migration gate clears when the manager flips the volume.
+	if agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != "" {
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
@@ -498,8 +499,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
 	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
-	// We clean them up explicitly here. (In-flight forks are owner-refed to
-	// the Agent CR, so K8s GC reaps them — see ensureForkOwnerReference.)
+	// We clean them up explicitly here. (In-flight Runs are owner-refed to
+	// the Agent CR, so K8s GC reaps them.)
 	r.deletePVCs(ctx, name)
 
 	r.clearDeniedWake(name)

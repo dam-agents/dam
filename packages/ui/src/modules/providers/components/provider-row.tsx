@@ -2,6 +2,8 @@ import { OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CardButton } from "@/components/ui/card-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,22 +35,21 @@ export function ProviderRow({
 
   if (!connected) {
     return (
-      <button
-        type="button"
+      <CardButton
         onClick={onConnect}
-        className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-start gap-3 p-4"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
-        <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
+        <span className="shrink-0 text-sm font-normal text-muted-foreground">
           Connect
         </span>
-      </button>
+      </CardButton>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-border bg-card pr-2 transition-colors">
+    <Card className="flex items-center gap-1 pr-2 transition-colors">
       <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} connected />
@@ -70,14 +71,12 @@ export function ProviderRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+    </Card>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return (
-    <div className="h-[76px] rounded-lg border border-border bg-card anim-pulse" />
-  );
+  return <Card className="h-[76px] animate-pulse" />;
 };
 
 function ProviderText({
@@ -92,10 +91,10 @@ function ProviderText({
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
-        <p className="text-[16px] font-medium text-foreground">{name}</p>
+        <p className="text-base font-medium text-foreground">{name}</p>
         {connected && <Badge variant="success">Connected</Badge>}
       </div>
-      <p className="text-[14px] text-muted-foreground">{description}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

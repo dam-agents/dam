@@ -11,6 +11,8 @@ import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
+import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
+import { parseRoute } from "./modules/platform/lib/routes.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
@@ -19,11 +21,15 @@ import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
-import { pathToState, useStore } from "./store.js";
+import { useStore } from "./store.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
+
+  // Must stay above the early returns: the terms/bind views render without
+  // MainApp, and back/forward has to keep working there too.
+  useBrowserHistory();
 
   // Apply theme on mount + listen for system preference changes
   useEffect(() => {
@@ -57,7 +63,7 @@ function MainApp() {
     // The sandbox-creation wizard owns its own OAuth-return handling so it can
     // rehydrate the in-progress sandbox before the params are stripped.
     const path = window.location.pathname;
-    if (path === "/sandboxes/new") return;
+    if (parseRoute(path).view === "sandbox-new") return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -75,41 +81,6 @@ function MainApp() {
         message: "Connection authorized.",
       });
     }
-  }, []);
-
-  // Browser back/forward
-  useEffect(() => {
-    const enterChat = (agentId: string) => {
-      useStore.getState().resetChatContext();
-      useStore.setState({ selectedAgent: agentId, view: "chat" });
-    };
-    const leaveChat = () => {
-      useStore.getState().resetChatContext();
-      useStore.setState({ selectedAgent: null, view: "list" });
-    };
-    const onPopState = () => {
-      const state = pathToState(window.location.pathname);
-      if (state.view === "chat") return enterChat(state.agent!);
-      if (state.view === "knowledge-base-chat") {
-        useStore.getState().resetChatContext();
-        useStore.setState({
-          selectedAgent: state.agent!,
-          view: "knowledge-base-chat",
-        });
-        return;
-      }
-      // Unknown paths resolve to "list"; leaveChat also tears down chat context.
-      if (state.view === "list") return leaveChat();
-      useStore.setState({
-        view: state.view,
-        agentId: state.agentId ?? null,
-        settingsTab: state.settingsTab ?? "account",
-        sandboxSection: state.sandboxSection ?? "setup",
-      });
-    };
-    onPopState();
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar

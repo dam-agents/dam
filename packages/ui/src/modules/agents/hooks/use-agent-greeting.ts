@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import type { SendPromptOptions } from "../../sessions/hooks/use-acp-prompt.js";
-import { useAgentRunState } from "../api/queries.js";
+import { useIsAgentOperable } from "../api/queries.js";
 
 export interface AgentGreetingOptions {
   agentId: string | null;
@@ -24,20 +24,20 @@ export interface AgentGreetingOptions {
 
 /** Send a kinded agent's onboarding command once, on the user's behalf, so a
  *  fresh sandbox opens with the agent greeting them instead of an empty chat.
- *  Only ever on an agent with no sessions at all, and only while it's running so
- *  it neither hits a booting pod nor toasts a session-list error.
+ *  Only ever on an agent with no sessions at all, and only while it's operable
+ *  so it neither hits a booting pod nor toasts a session-list error.
  *
  *  Shared by Knowledge Bases and Experiments; they differ in the command and
  *  whether they can prove their setup finished. */
 export function useAgentGreeting(opts: AgentGreetingOptions) {
   const { agentId, active, idle, command, setupReady, sendPrompt } = opts;
   const greetedForAgentRef = useRef<string | null>(null);
-  const runState = useAgentRunState(agentId);
+  const operable = useIsAgentOperable(agentId);
   const armed =
     active &&
     idle &&
     agentId !== null &&
-    runState === "running" &&
+    operable &&
     greetedForAgentRef.current !== agentId;
 
   const { data: sessions } = useAcpSessions(

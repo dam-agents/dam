@@ -65,6 +65,10 @@ export const localSkillSchema = z.object({
   name: z.string(),
   description: z.string(),
   skillPath: z.string(),
+  /** Provenance vs. the image's pristine copy: shipped untouched, shipped
+   *  but diverged, or created at runtime. Absent on pre-provenance pods —
+   *  treat as `user`. */
+  origin: z.enum(["system", "system-modified", "user"]).optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful
@@ -163,6 +167,33 @@ export const skillListLocalInputSchema = z.object({
 
 export const skillStateInputSchema = z.object({
   agentId: z.string().min(1),
+});
+
+/** Remove a standalone Local Skill's directory from every Skill Path on the
+ *  pod. `name` is what `state`/`listLocal` reported, which is the frontmatter
+ *  display name — the pod resolves it to a directory. */
+export const skillDeleteLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
+export const skillReadLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
+/** Every file in a Local Skill's directory, plus the resolved directory
+ *  basename so the browser names the download from the on-disk identity. Caps
+ *  are enforced pod-side; `base64` marks a file whose content is binary. */
+export const skillLocalFilesSchema = z.object({
+  dir: z.string(),
+  files: z.array(
+    z.object({
+      relPath: z.string(),
+      content: z.string(),
+      base64: z.literal(true).optional(),
+    }),
+  ),
 });
 
 export const skillPublishInputSchema = z.object({

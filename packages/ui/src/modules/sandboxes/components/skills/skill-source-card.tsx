@@ -1,19 +1,21 @@
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import {
   ChevronDown,
   ChevronUp,
-  ExternalLink,
-  Loader2,
-  MoreHorizontal,
-} from "lucide-react";
+  Launch,
+  OverflowMenuHorizontal,
+} from "@carbon/icons-react";
+import type { Skill, SkillRef, SkillSource } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
 import { cn } from "@/lib/utils";
@@ -42,7 +44,7 @@ function SourceError({
 }) {
   const { message, cta } = parsePlatformCta(error);
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-[13px] text-danger">
+    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-sm text-danger">
       <span className="flex-1">{message}</span>
       {cta ? (
         <a
@@ -55,13 +57,14 @@ function SourceError({
         </a>
       ) : (
         onManageConnections && (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={onManageConnections}
-            className="shrink-0 font-semibold underline hover:opacity-80"
+            className="shrink-0 font-semibold text-current underline hover:opacity-80"
           >
             Manage connections
-          </button>
+          </Button>
         )
       )}
     </div>
@@ -151,12 +154,7 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border",
-        readOnly ? "bg-muted" : "bg-card",
-      )}
-    >
+    <Card className={cn(readOnly && "bg-muted")}>
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -164,31 +162,30 @@ export function SkillSourceCard({
               {source.name}
             </p>
             {loaded && !error && (
-              <span className="shrink-0 text-[13px] text-muted-foreground">
+              <span className="shrink-0 text-sm text-muted-foreground">
                 {enabled.length} of {list.length} on
               </span>
             )}
           </div>
-          <p className="truncate text-[13px] text-muted-foreground">
+          <p className="truncate text-sm text-muted-foreground">
             {repoLabel(source)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {loading && (
-            <Loader2 size={15} className="animate-spin text-muted-foreground" />
-          )}
+          {loading && <Spinner size={15} />}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even
               while the agent is stopped. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 title="Source actions"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="shrink-0 text-muted-foreground"
               >
-                <MoreHorizontal size={18} />
-              </button>
+                <OverflowMenuHorizontal size={18} />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
@@ -198,7 +195,7 @@ export function SkillSourceCard({
                 }
               >
                 <span className="flex-1">View repo</span>
-                <ExternalLink size={14} />
+                <Launch size={14} />
               </DropdownMenuItem>
               {canRemove && (
                 <DropdownMenuItem tone="danger" onSelect={onRemove}>
@@ -215,7 +212,7 @@ export function SkillSourceCard({
         <SourceError error={error} onManageConnections={onManageConnections} />
       )}
       {loaded && !error && list.length === 0 && (
-        <p className="border-t border-border px-4 py-3 text-[13px] text-muted-foreground">
+        <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
           No skills in this source.
         </p>
       )}
@@ -255,12 +252,12 @@ export function SkillSourceCard({
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
-          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {expanded ? "Hide available" : "Expand all"}
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}
-    </div>
+    </Card>
   );
 }

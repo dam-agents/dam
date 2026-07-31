@@ -3,7 +3,7 @@ Ingress gate for agent pods: only the api-server (ACP/tRPC relay) and the
 controller (idle-checker busy-probe) may dial the agent port. agent-runtime
 serves unauthenticated on the assumption that this policy is the auth
 boundary (packages/agent-runtime/src/server.ts). Kubelet probes are
-node-originated and unaffected. Role-scoped to `agent`, so fork pods are
+node-originated and unaffected. Role-scoped to `agent`, so executor pods are
 covered and gateway pods are untouched.
 */}}
 apiVersion: networking.k8s.io/v1

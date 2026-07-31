@@ -1,8 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
-
-import { Caret } from "./caret";
 
 // Height behavior (fixed / fill / collapsed) is driven by the parent via className/style.
 export function SidebarSection({
@@ -33,25 +32,20 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-[44px] shrink-0 border-border-light",
+          "flex items-center gap-1 pl-3 pr-2 h-11 shrink-0 border-border",
           open && "border-b",
           headerClassName,
         )}
       >
         {headerLeft}
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex items-center gap-2 min-w-0 flex-1 text-[14px] font-medium text-text transition-colors"
+        <DisclosureToggle
+          open={open}
+          onToggle={onToggle}
+          chevronClassName="text-muted-foreground"
+          className="min-w-0 flex-1 text-sm font-medium text-foreground transition-colors"
         >
-          <Caret
-            className={cn(
-              "text-muted-foreground transition-transform",
-              !open && "-rotate-90",
-            )}
-          />
           <span className="truncate">{title}</span>
-        </button>
+        </DisclosureToggle>
         {headerRight}
       </div>
       {/* Stays mounted while collapsed so the parent-driven height change

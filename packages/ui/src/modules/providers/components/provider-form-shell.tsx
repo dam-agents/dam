@@ -1,7 +1,5 @@
-import { X } from "lucide-react";
+import { Close } from "@carbon/icons-react";
 import type { FormEventHandler, ReactNode } from "react";
-
-import { Card } from "@/components/ui/card";
 
 import type { ProviderPresetType } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
@@ -23,29 +21,27 @@ export function ProviderFormShell({
   children: ReactNode;
 }) {
   return (
-    <Card className="anim-in">
-      <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6">
-        <div className="flex items-center gap-3">
-          <CardIcon provider={provider} size="lg" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[18px] font-bold text-foreground">{title}</div>
-            <div className="text-[14px] text-muted-foreground">
-              {description}
-            </div>
+    <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6">
+      <div className="flex items-start gap-3">
+        <CardIcon provider={provider} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-bold text-foreground">{title}</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {description}
           </div>
-          {onCancel && (
-            <IconButton
-              onClick={onCancel}
-              title="Cancel"
-              hoverTone="neutral"
-              className="self-start"
-            >
-              <X size={13} />
-            </IconButton>
-          )}
         </div>
-        {children}
-      </form>
-    </Card>
+        {onCancel && (
+          <IconButton
+            onClick={onCancel}
+            title="Cancel"
+            hoverTone="neutral"
+            className="-mt-2 -mr-2 shrink-0"
+          >
+            <Close size={16} />
+          </IconButton>
+        )}
+      </div>
+      {children}
+    </form>
   );
 }

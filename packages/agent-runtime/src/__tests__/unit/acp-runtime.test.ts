@@ -6,6 +6,7 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
+import type { BackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -97,6 +98,30 @@ function makeFakeChannel(): FakeChannel {
     sent,
     closes,
     isOpen: () => open,
+  };
+}
+
+/**
+ * Stands in for the registry sessions report their background work to: `live`
+ * decides whether a session is holding, `calls` records the wiring the runtime
+ * is responsible for.
+ */
+function makeFakeRegistry() {
+  const calls: string[] = [];
+  let live = false;
+  const registry: BackgroundWorkRegistry = {
+    report: (sessionId) => calls.push(`report:${sessionId}`),
+    hasWork: () => live,
+    held: () => (live ? [{ sessionId: SID, items: [{ id: "t1" }] }] : []),
+    forget: (sessionId) => calls.push(`forget:${sessionId}`),
+    clear: () => calls.push("clear"),
+  };
+  return {
+    registry,
+    calls,
+    set live(value: boolean) {
+      live = value;
+    },
   };
 }
 
@@ -1068,6 +1093,77 @@ describe("createAcpRuntime", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("holds an idle session open while background work it started is still running", () => {
+    // #2965: closing the tab reaps the session seconds later, and the harness
+    // kills the background job it was supervising — the work dies silently.
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const tracker = makeFakeRegistry();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        backgroundWork: tracker.registry,
+        backgroundWorkRecheckMs: 1_000,
+      });
+
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+      c.pushMessage(promptRequest(2));
+      const promptOut = outboundId(fa.sent[1]);
+      fa.pushLine(agentPromptResponse(promptOut));
+
+      // The turn started a job that is still running when the viewer leaves.
+      tracker.live = true;
+      c.remoteClose();
+
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+      // The pod must not hibernate under the work either.
+      expect(runtime.status().idle).toBe(false);
+      expect(runtime.status().backgroundWork).toEqual([
+        { sessionId: SID, items: [{ id: "t1" }] },
+      ]);
+
+      // Still running at the next check → still held.
+      vi.advanceTimersByTime(1_000);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // Job exits → the session reaps on the following check.
+      tracker.live = false;
+      vi.advanceTimersByTime(1_000);
+      const closes = fa.sent.filter((f: any) => f.method === "session/close");
+      expect(closes).toHaveLength(1);
+      expect((closes[0] as any).params).toEqual({ sessionId: SID });
+      expect(runtime.status().idle).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops reported work when the session is torn down, since it dies with the subprocess", () => {
+    const fa = makeFakeAgent();
+    const tracker = makeFakeRegistry();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: tracker.registry,
+    });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    runtime.resetSession(SID);
+
+    expect(tracker.calls).toContain(`forget:${SID}`);
   });
 
   it("does not close a session with pending permission requests", () => {

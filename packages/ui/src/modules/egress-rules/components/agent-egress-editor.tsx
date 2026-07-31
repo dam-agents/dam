@@ -1,8 +1,4 @@
-import {
-  Add as Plus,
-  RotateCounterclockwise as RotateCcw,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+import { Add, RotateCounterclockwise, TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -10,12 +6,14 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   useApplyEgressPreset,
@@ -240,7 +238,7 @@ export function AgentEgressEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[14px] text-muted-foreground max-w-prose">
+      <p className="text-sm text-muted-foreground max-w-prose">
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
@@ -274,7 +272,7 @@ export function AgentEgressEditor({
             Apply
           </Button>
         )}
-        <p className="basis-full text-[14px] text-muted-foreground">
+        <p className="basis-full text-sm text-muted-foreground">
           {stagedMode
             ? presetPending
               ? `Save will replace existing preset rules with "${staged.preset}". Manual and connection-derived rules are preserved.`
@@ -349,7 +347,7 @@ export function AgentEgressEditor({
             disabled={!canAdd}
             variant="outline"
           >
-            <Plus size={11} /> Add rule
+            <Add size={11} /> Add rule
           </Button>
           {draftRequiresGatewayRestart && (
             <p className="basis-full text-[11px] text-warning">
@@ -361,13 +359,11 @@ export function AgentEgressEditor({
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
-            loading…
-          </p>
+          <p className="px-4 py-5 text-xs text-muted-foreground">loading…</p>
         ) : serverRules.length === 0 &&
           stagedAddCount === 0 &&
           previewRows.length === 0 ? (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No rules yet. Every outbound request will surface in the inbox.
           </p>
         ) : (
@@ -448,10 +444,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <SectionLabel>{label}</SectionLabel>
+    <FormField label={label} disableInset className={cn("gap-1", widthClass)}>
       {children}
-    </label>
+    </FormField>
   );
 }
 
@@ -484,7 +479,7 @@ function RuleRow({
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
     <li
-      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}
+      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-xs ${dim}`}
     >
       <VerdictBadge verdict={rule.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
@@ -510,7 +505,11 @@ function RuleRow({
           disabled={disabled}
           title={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
-          {pendingDelete ? <RotateCcw size={11} /> : <Trash2 size={11} />}
+          {pendingDelete ? (
+            <RotateCounterclockwise size={11} />
+          ) : (
+            <TrashCan size={11} />
+          )}
         </Button>
       )}
     </li>
@@ -525,7 +524,7 @@ function PendingAddRow({
   onCancel: () => void;
 }) {
   return (
-    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/10">
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/10">
       <VerdictBadge verdict={add.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {add.method}
@@ -546,7 +545,7 @@ function PendingAddRow({
         onClick={onCancel}
         title="Discard pending rule"
       >
-        <Trash2 size={11} />
+        <TrashCan size={11} />
       </Button>
     </li>
   );
@@ -592,7 +591,7 @@ function buildPresetPreviewRows(
 
 function PreviewPresetRow({ row }: { row: PreviewRow }) {
   return (
-    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/5">
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/5">
       <VerdictBadge verdict="allow" />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {row.method}

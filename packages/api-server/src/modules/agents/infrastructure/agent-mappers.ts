@@ -222,7 +222,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
 export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
-  allowedUserEmails: string[],
   contributionFailures: DriverFailure[],
   globalIdleTimeoutMin: number,
   preparingWorkspace = false,
@@ -245,7 +244,6 @@ export function assembleAgent(
     podTerminationReason: infra.podTerminationReason,
     contributionFailures,
     channels,
-    allowedUserEmails,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,
   };

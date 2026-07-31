@@ -11,14 +11,17 @@ import {
   skillContentSchema,
   skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
+  skillDeleteLocalInputSchema,
   skillDeleteSourceInputSchema,
   skillGetContentInputSchema,
   skillInstallInputSchema,
   skillListInputSchema,
   skillListLocalInputSchema,
   skillListSourcesInputSchema,
+  skillLocalFilesSchema,
   skillPublishInputSchema,
   skillPublishResultSchema,
+  skillReadLocalInputSchema,
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
@@ -90,12 +93,28 @@ export const skillsRouter = t.router({
     .output(z.array(localSkillSchema))
     .mutation(({ ctx, input }) => ctx.skills.createLocal(input)),
 
+  // Ownership is enforced inside the service via ensureAgentReachable →
+  // owner-scoped agentsRepo.get, same as createLocal.
+  deleteLocal: manageAgentsProcedure
+    .input(skillDeleteLocalInputSchema)
+    .output(z.array(localSkillSchema))
+    .mutation(({ ctx, input }) => ctx.skills.deleteLocal(input)),
+
   listLocal: readAgentProcedure
     .input(skillListLocalInputSchema)
     .output(z.array(localSkillSchema))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.skills.listLocal(input.agentId);
+    }),
+
+  // A read, so readAgentProcedure rather than manageAgentsProcedure.
+  readLocal: readAgentProcedure
+    .input(skillReadLocalInputSchema)
+    .output(skillLocalFilesSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.skills.readLocal(input);
     }),
 
   state: readAgentProcedure

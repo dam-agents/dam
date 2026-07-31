@@ -10,7 +10,6 @@ import {
   type ExperimentsSlice,
 } from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import { pathToState } from "./modules/platform/lib/routes.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -61,6 +60,3 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
-
-// Reuse the path parser for browser back/forward hydration
-export { pathToState };

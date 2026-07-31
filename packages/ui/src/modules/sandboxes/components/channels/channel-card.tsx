@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { CARD_SURFACE } from "@/components/ui/card";
+
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 
 export function ChannelCard({
@@ -14,10 +16,7 @@ export function ChannelCard({
   children: ReactNode;
 }) {
   return (
-    <section
-      data-testid={`channel-card-${iconSlug}`}
-      className="rounded-lg border border-border bg-card"
-    >
+    <section data-testid={`channel-card-${iconSlug}`} className={CARD_SURFACE}>
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
         <ConnectionIcon
           iconSlug={iconSlug}

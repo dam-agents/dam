@@ -1,5 +1,11 @@
+import {
+  Box,
+  Link,
+  OverflowMenuVertical,
+  Time,
+  View,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Box, Clock, Eye, Link as LinkIcon, MoreVertical } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -61,14 +67,14 @@ export function ArtifactRow({
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-[14px] font-medium text-foreground">
+        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
           {artifact.title}
         </span>
-        <span className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+        <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
           {artifact.version > 1 && <VersionBadge version={artifact.version} />}
           <span className="inline-flex items-center gap-1">
-            <Eye size={12} />
+            <View size={12} />
             {artifact.viewCount}
           </span>
           {expiry.state !== "never" && (
@@ -79,7 +85,7 @@ export function ArtifactRow({
                 expiry.state === "active" && expiry.soon && "text-warning",
               )}
             >
-              <Clock size={12} />
+              <Time size={12} />
               {expiry.label}
             </span>
           )}
@@ -99,7 +105,7 @@ export function ArtifactRow({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" title="More actions">
-                <MoreVertical size={16} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -161,7 +167,7 @@ function ShareLinkButton({
         setTimeout(() => setCopied(false), 1200);
       }}
     >
-      <LinkIcon size={16} className={cn(copied && "text-success")} />
+      <Link size={16} className={cn(copied && "text-success")} />
     </Button>
   );
 }

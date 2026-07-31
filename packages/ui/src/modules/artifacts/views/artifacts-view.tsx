@@ -1,6 +1,6 @@
+import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -185,7 +185,7 @@ export function ArtifactsView() {
       )}
 
       {artifacts.length > 0 && (
-        <p className="mt-5 text-[13px] text-muted-foreground">
+        <p className="mt-5 text-sm text-muted-foreground">
           {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"} ·{" "}
           {formatBytes(totalBytes)} stored
         </p>

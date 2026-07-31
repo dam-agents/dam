@@ -1,4 +1,4 @@
-import { Box } from "lucide-react";
+import { Box } from "@carbon/icons-react";
 
 import type { ProviderPresetType, TemplateView } from "../../../../types.js";
 import { CardIcon } from "../../../providers/components/card-icon.js";

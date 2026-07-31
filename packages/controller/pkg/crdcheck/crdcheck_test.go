@@ -31,7 +31,6 @@ func allCRDs(generation int) []runtime.Object {
 	ann := map[string]interface{}{apiv1.SchemaGenerationAnnotation: strconv.Itoa(generation)}
 	return []runtime.Object{
 		crd("agents."+apiv1.GroupVersion.Group, ann),
-		crd("forks."+apiv1.GroupVersion.Group, ann),
 		crd("runs."+apiv1.GroupVersion.Group, ann),
 		crd("userbudgets."+apiv1.GroupVersion.Group, ann),
 	}
@@ -63,7 +62,6 @@ func TestAssertFailsOnStaleSchema(t *testing.T) {
 func TestAssertTreatsMissingAnnotationAsStale(t *testing.T) {
 	objs := []runtime.Object{
 		crd("agents."+apiv1.GroupVersion.Group, nil),
-		crd("forks."+apiv1.GroupVersion.Group, nil),
 		crd("runs."+apiv1.GroupVersion.Group, nil),
 		crd("userbudgets."+apiv1.GroupVersion.Group, nil),
 	}

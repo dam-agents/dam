@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight } from "@carbon/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { useCreateExperimentSandbox } from "../../experiments/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useCreateKnowledgeBase } from "../../knowledge-bases/api/mutations.js";
 import { DEFAULT_KB_TEMPLATE_ID } from "../../knowledge-bases/lib/kb-templates.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import {
   EMPTY_REGISTRY_CREDENTIAL,
@@ -62,8 +63,7 @@ export function SandboxWizardView() {
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
   );
-  const isCustomImage =
-    !snapshot.templateId && snapshot.customImage.trim().length > 0;
+  const isCustomImage = snapshot.startingPoint === "custom";
 
   const imageLabel = useMemo(() => {
     // The image is pinned and hidden on these paths — name the kind instead.
@@ -90,7 +90,7 @@ export function SandboxWizardView() {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
     if (!result) return;
-    window.history.replaceState({}, "", "/sandboxes/new");
+    window.history.replaceState({}, "", routeToPath({ view: "sandbox-new" }));
     const connectionId = params.get("connection");
     if (result === "success" && connectionId) {
       const saved = loadSnapshot();
@@ -202,13 +202,14 @@ export function SandboxWizardView() {
     ) : (
       <>
         {registryPartial && (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={() => update({ step: 1 })}
-            className="text-[13px] text-destructive underline underline-offset-2"
+            className="whitespace-normal text-left text-sm text-destructive underline"
           >
             Finish the private-registry credentials on step 1
-          </button>
+          </Button>
         )}
         <Button onClick={finish} disabled={creating || registryPartial}>
           {creating ? "Creating…" : createLabel(snapshot.startingPoint)}

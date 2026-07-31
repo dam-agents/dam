@@ -55,10 +55,10 @@ export function ExperimentsListView() {
 
       {initialLoaded && groups.length === 0 && (
         <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-          <h2 className="text-[16px] font-semibold text-foreground">
+          <h2 className="text-base font-semibold text-foreground">
             No experiments yet
           </h2>
-          <p className="max-w-[520px] text-[14px] text-muted-foreground">
+          <p className="max-w-[520px] text-sm text-muted-foreground">
             An experiment runs one goal across several variants at once and
             charts each result live, so you can compare them. Create an
             experiment sandbox and its agent will help you design the first one.
@@ -82,16 +82,17 @@ export function ExperimentsListView() {
       </div>
 
       {initialLoaded && groups.length > 0 && (
-        <p className="mt-6 text-[13px] text-muted-foreground">
+        <p className="mt-6 text-sm text-muted-foreground">
           Deleting a sandbox doesn&apos;t delete its experiments — the runs and
           their published results stay in the{" "}
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={() => setView("artifacts")}
-            className="text-accent hover:underline"
+            className="text-accent"
           >
             artifact library
-          </button>
+          </Button>
           .
         </p>
       )}

@@ -10,7 +10,6 @@ import {
   createAgentsRepository,
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
-  createKeycloakUserDirectory,
   backfillUserEnv,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
@@ -27,12 +26,7 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import {
-  createAcpClient,
-  createForkAcpClient,
-  type AcpClientFactory,
-  type ForkAcpClientFactory,
-} from "./core/acp-client.js";
+import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -70,16 +64,10 @@ import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
-import {
-  composeForksModule,
-  startOnForeignReplySaga,
-  startOnChannelTurnRelayedSaga,
-} from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
-import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
@@ -141,7 +129,7 @@ configureLogger({
 });
 getLogger().info("api-server starting");
 
-const { api, customObjects } = createApi(config.namespace);
+const { api } = createApi(config.namespace);
 const dbTls = {
   ca: config.databaseCaCertPath
     ? readFileSync(config.databaseCaCertPath, "utf8")
@@ -323,15 +311,6 @@ const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
 );
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
-const { forks } = composeForksModule({
-  orchestrator: createK8sForkOrchestrator({
-    customObjects,
-    namespace: config.namespace,
-  }),
-});
-
-const onForeignReplySub = startOnForeignReplySaga(forks);
-const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
 const usage = composeUsageModule({
   db,
   subPseudonymizer,
@@ -355,13 +334,6 @@ usage.start();
 const audit = composeAuditModule();
 audit.start();
 
-const userDirectory = createKeycloakUserDirectory({
-  keycloakUrl: config.keycloakUrl,
-  keycloakRealm: config.keycloakRealm,
-  clientId: config.keycloakApiClientId,
-  clientSecret: config.keycloakApiClientSecret,
-});
-
 const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
@@ -372,7 +344,6 @@ const { agents: systemAgents } = composeAgentsModule({
   },
   owner: undefined,
   db,
-  userDirectory,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
@@ -414,7 +385,6 @@ const channelRegistry: ChannelRegistry = {
     return {
       instanceName: row.agentId,
       owner: row.owner,
-      ...(row.mode ? { mode: row.mode } : {}),
       ...(row.ambient ? { ambient: true } : {}),
     };
   },
@@ -446,8 +416,6 @@ const makeAcpClient: AcpClientFactory = (instanceName) =>
     instanceName,
     turnCeilingMs: acpTurnCeilingMs,
   });
-const makeForkAcpClient: ForkAcpClientFactory = (podIP) =>
-  createForkAcpClient({ podIP, turnCeilingMs: acpTurnCeilingMs });
 
 const slackWorker = slackGatewayFactory
   ? createSlackWorker(
@@ -470,7 +438,6 @@ const slackWorker = slackGatewayFactory
       { name: config.brand.name, short: config.brand.short },
       isTermsAccepted,
       config.uiBaseUrl,
-      makeForkAcpClient,
     )
   : undefined;
 
@@ -766,7 +733,6 @@ const harnessAgentsServiceFor = (owner: string) => {
     },
     owner,
     db,
-    userDirectory,
     readTemplateSpec: harnessReadTemplateSpec,
     presetSeeder,
     cleanupHooks: agentCleanupHooks,
@@ -801,7 +767,7 @@ invocationLivenessSweep.start();
 // Agent Sweep (#2816): generic GC that deletes any Sweepable agent once it
 // hibernates (after its Lifetime grace, if any). Keyed off Agent state, never
 // the Invocations table — the backstop for Invocation targets and the home for
-// future Sweepable agents (Forks, inherited channel agents). Owner-agnostic:
+// future Sweepable agents (e.g. inherited channel agents). Owner-agnostic:
 // lists all agents, resolves an owner-scoped service per agent to delete.
 const agentSweep = createAgentSweep({
   listAgents: () => agentsRepo.list(),
@@ -887,8 +853,6 @@ async function shutdown() {
   if (l7BackfillRetry) clearTimeout(l7BackfillRetry);
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
-  onForeignReplySub.unsubscribe();
-  onChannelTurnRelayedSub.unsubscribe();
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();

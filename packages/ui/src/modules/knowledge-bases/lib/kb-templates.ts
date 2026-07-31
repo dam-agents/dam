@@ -14,13 +14,13 @@ export const KB_TEMPLATES: readonly KbTemplate[] = [
     id: "llm-wiki",
     name: "LLM Wiki",
     description:
-      "Installs the LLM Wiki toolkit and keeps an interlinked, self-maintaining knowledge wiki as you feed it sources.",
+      "Structured wiki with a knowledge graph, from the llm-wiki toolkit.",
   },
   {
     id: "plain-wiki",
     name: "Plain Wiki",
     description:
-      "No toolkit — the agent reads your files as knowledge and keeps what it learns as plain markdown notes. Works offline.",
+      "Lightweight — the agent asks for files and organizes them for you. Works offline.",
   },
 ];
 

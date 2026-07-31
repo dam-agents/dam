@@ -4,6 +4,7 @@ import { useStore } from "../../../store.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import { SandboxHomeHeader } from "../components/sandbox-home-header.js";
@@ -34,14 +35,10 @@ export function SandboxHomeView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
-          <p className="text-[13px] text-muted-foreground">
-            No sandbox selected.
-          </p>
+          <p className="text-sm text-muted-foreground">No sandbox selected.</p>
         )}
         {f.status === "not-found" && (
-          <p className="text-[13px] text-muted-foreground">
-            Sandbox not found.
-          </p>
+          <p className="text-sm text-muted-foreground">Sandbox not found.</p>
         )}
       </div>
     );
@@ -54,7 +51,7 @@ export function SandboxHomeView() {
       {f.wildcardHostInScope && (
         <span
           role="alert"
-          className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
+          className="mr-auto inline-flex items-center gap-1.5 text-xs text-warning"
           title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
         >
           <span aria-hidden="true">⚠</span>
@@ -94,7 +91,11 @@ export function SandboxHomeView() {
       ) : (
         <ConnectionsSection
           agentId={agent.id}
-          oauthReturnView={`/sandboxes/${agent.id}/connections`}
+          oauthReturnView={routeToPath({
+            view: "sandbox-home",
+            agentId: agent.id,
+            sandboxSection: "connections",
+          })}
           inset
         />
       )}

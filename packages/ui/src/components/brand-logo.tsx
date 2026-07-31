@@ -11,7 +11,7 @@ export function BrandLogo({ className, ...props }: SVGProps<SVGSVGElement>) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label={getBrand().name}
-      className={cn("h-[32px] w-[32px] text-foreground", className)}
+      className={cn("h-8 w-8 text-foreground", className)}
       {...props}
     >
       <path

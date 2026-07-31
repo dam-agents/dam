@@ -1,5 +1,5 @@
+import { Information } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { Info } from "lucide-react";
 import { useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -24,23 +24,23 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   return (
     <section className="mb-8">
       <SectionLabel spaced>Artifacts</SectionLabel>
-      <p className="mb-3 text-[14px] text-muted-foreground">
+      <p className="mb-3 text-sm text-muted-foreground">
         Pages and files this agent has published to your artifact library.
       </p>
 
       <Callout
         tone="info"
         size="sm"
-        className="mb-4 flex items-start gap-2.5 text-[13px] text-muted-foreground"
+        className="mb-4 flex items-start gap-2.5 text-sm text-muted-foreground"
       >
-        <Info size={16} className="mt-0.5 shrink-0 text-accent" />
+        <Information size={16} className="mt-0.5 shrink-0 text-accent" />
         <span>
           Agents publish through the built-in platform MCP tools —{" "}
-          <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">
+          <code className="rounded bg-muted px-1 py-px font-mono text-xs text-foreground">
             create_artifact
           </code>{" "}
           for inline content,{" "}
-          <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">
+          <code className="rounded bg-muted px-1 py-px font-mono text-xs text-foreground">
             create_artifact_upload_url
           </code>{" "}
           for direct-to-storage uploads. No extra credentials needed in the
@@ -49,10 +49,10 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
       </Callout>
 
       {isLoading ? (
-        <p className="text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : artifacts.length === 0 ? (
         <Card className="px-5 py-8 text-center">
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Nothing published yet — ask the agent to share its work as an
             artifact.
           </p>

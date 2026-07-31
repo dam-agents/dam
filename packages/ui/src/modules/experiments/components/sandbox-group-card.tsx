@@ -32,14 +32,14 @@ export function SandboxGroupCard({
         // The hairline under the header is what scopes the group now that the
         // container box is gone.
         className={cn(
-          "group/head mb-3 flex w-full items-center gap-2.5 border-b border-border-light px-1.5 pb-3 pt-1.5 text-left",
+          "group/head mb-3 flex w-full items-center gap-2.5 border-b border-border px-1.5 pb-3 pt-1.5 text-left",
           !deleted && "cursor-pointer transition-colors hover:bg-info-light",
         )}
       >
         <span
           className={cn(
-            "truncate text-[14px] font-semibold",
-            deleted ? "text-text-muted" : "text-foreground",
+            "truncate text-sm font-semibold",
+            deleted ? "text-muted-foreground" : "text-foreground",
           )}
         >
           {group.name}
@@ -70,14 +70,14 @@ export function SandboxGroupCard({
       </div>
 
       {deleted && (
-        <p className="mb-3 px-1.5 text-[12px] text-text-muted">
+        <p className="mb-3 px-1.5 text-xs text-muted-foreground">
           These sandboxes were deleted; their runs and results still live in the
           artifact library.
         </p>
       )}
 
       {count === 0 ? (
-        <p className="px-1.5 text-[13px] text-muted-foreground">
+        <p className="px-1.5 text-sm text-muted-foreground">
           No experiments yet — open the sandbox chat and ask the agent to set
           one up.
         </p>

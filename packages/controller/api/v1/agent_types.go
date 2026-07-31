@@ -78,7 +78,7 @@ type AgentSpec struct {
 	// ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
 	// kubelet uses to pull the agent image from a private registry. Unlike
 	// SecretRef it is never projected into the agent container — only the
-	// kubelet consumes it at pod creation, so a foreign-replier fork can pull
+	// kubelet consumes it at pod creation, so an ephemeral executor pod can pull
 	// with it without ever seeing it. When set it takes precedence over the
 	// install-wide default pull secret, which is retained as a fallback.
 	// +optional
@@ -99,7 +99,7 @@ type AgentSpec struct {
 	// rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
 	// Written by the api-server when such a rule exists for this agent;
 	// per-agent grain so a rule on one agent never reshapes a sibling's
-	// gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+	// gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
 	// stays the egress policy authority for foreign turns).
 	//
 	// The item pattern is a hard boundary: each entry is interpolated into
@@ -113,6 +113,18 @@ type AgentSpec struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	// +kubebuilder:validation:items:Pattern=`^(\*\.)?([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$`
 	L7Hosts []string `json:"l7Hosts,omitempty"`
+
+	// TelemetryAttributionID is the agent id stamped as the trusted telemetry
+	// attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+	// by the api-server for Invocation targets to their root Driver, so a
+	// target's spend credits the agent that drove it rather than the
+	// short-lived target. When set, the gateway also stamps
+	// `x-platform-invocation-id` with this agent's own id, keeping child rows
+	// distinguishable after their attribution is merged. Never user-settable —
+	// a user-supplied value would forge attribution onto an agent the caller
+	// does not drive; it is service-only input, like the pre-minted id.
+	// +optional
+	TelemetryAttributionID string `json:"telemetryAttributionId,omitempty"`
 }
 
 // Backend is a discriminated union selecting the agent's isolation substrate
@@ -214,7 +226,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=6
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=7
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

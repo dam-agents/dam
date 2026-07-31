@@ -1,4 +1,4 @@
-import { Checkmark as Check } from "@carbon/icons-react";
+import { Checkmark } from "@carbon/icons-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import type { VariantProps } from "class-variance-authority";
 import * as React from "react";
@@ -68,7 +68,7 @@ function DropdownMenuCheckboxItem({
       {/* Mirrors the shared Checkbox primitive's box styling */}
       <span className="absolute left-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary group-data-[state=checked]:bg-primary group-data-[state=checked]:text-primary-foreground">
         <DropdownMenuPrimitive.ItemIndicator className="flex items-center justify-center text-current">
-          <Check className="h-4 w-4" />
+          <Checkmark className="h-4 w-4" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}

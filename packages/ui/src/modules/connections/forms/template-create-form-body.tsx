@@ -170,7 +170,7 @@ export function TemplateCreateFormBody({
       )}
 
       {template.inputs.length === 0 && (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No additional inputs — preconfigured.
         </p>
       )}

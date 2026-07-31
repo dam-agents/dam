@@ -12,6 +12,7 @@ export {
   AttenuationError,
   ExperimentNotRunningError,
   InvalidSchemaError,
+  UnresolvableDriverError,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,

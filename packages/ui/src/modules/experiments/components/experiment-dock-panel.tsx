@@ -1,5 +1,5 @@
+import { ChevronDown, Close } from "@carbon/icons-react";
 import type { Experiment, TraceFeed } from "api-server-api";
-import { ChevronDown, Loader2, X } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -110,7 +112,7 @@ export function ExperimentDockPanel({
     >
       {launching ? (
         <>
-          <Loader2 size={14} className="animate-spin" />
+          <Spinner />
           Starting…
         </>
       ) : (
@@ -121,13 +123,13 @@ export function ExperimentDockPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border-light px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         {options.length > 1 && onSelect ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-[13px] font-medium text-foreground hover:text-foreground/80"
+                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-sm font-medium text-foreground hover:text-foreground/80"
                 title="Switch experiment"
               >
                 <span className="min-w-0 truncate">
@@ -158,7 +160,7 @@ export function ExperimentDockPanel({
           </DropdownMenu>
         ) : (
           <span
-            className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+            className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
             title={experiment.name}
           >
             {experiment.name}
@@ -187,7 +189,7 @@ export function ExperimentDockPanel({
             title="Close"
             onClick={onClose}
           >
-            <X size={16} />
+            <Close size={16} />
           </Button>
         )}
       </div>
@@ -195,7 +197,7 @@ export function ExperimentDockPanel({
       {!isDraft &&
         status === "failed" &&
         (feed?.experiment.error ?? experiment.error) && (
-          <p className="border-b border-border-light px-4 py-2 text-[12px] text-red-600 dark:text-red-400">
+          <p className="border-b border-border px-4 py-2 text-xs text-red-600 dark:text-red-400">
             {feed?.experiment.error ?? experiment.error}
           </p>
         )}
@@ -248,10 +250,8 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
 
   if (rows.length === 0) return null;
   return (
-    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
-      <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Invocations
-      </p>
+    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
+      <SectionLabel className="block pb-1">Invocations</SectionLabel>
       {rows.map((row) => (
         <button
           key={row.id}
@@ -259,7 +259,7 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
           disabled={row.agentName === null}
           onClick={() => selectAgent(row.id)}
           className={cn(
-            "flex w-full items-center gap-2 py-0.5 text-left text-[13px]",
+            "flex w-full items-center gap-2 py-0.5 text-left text-sm",
             row.agentName === null
               ? "cursor-default text-muted-foreground"
               : "text-foreground/90 hover:text-foreground hover:underline",
@@ -332,16 +332,14 @@ function RunArtifacts({
 
   if (runArtifacts.length === 0) return null;
   return (
-    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border-light px-4 py-2">
-      <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Run artifacts
-      </p>
+    <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
+      <SectionLabel className="block pb-1">Run artifacts</SectionLabel>
       {runArtifacts.map((artifact) => (
         <button
           key={artifact.id}
           type="button"
           onClick={() => setOpenArtifactId(artifact.id)}
-          className="block w-full truncate py-0.5 text-left text-[13px] text-foreground/90 hover:text-foreground hover:underline"
+          className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
           title={artifact.title}
         >
           {artifact.title}

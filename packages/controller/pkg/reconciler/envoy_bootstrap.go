@@ -56,26 +56,38 @@ type bootstrapParams struct {
 	TelemetryCollectorHost string
 	TelemetryCollectorPort int
 	InstanceID             string
-	AnyUpgrades            bool
-	OTel                   envoyOTelView
+	// AttributionID is the id stamped into the trusted `x-platform-agent-id`
+	// telemetry header. It defaults to InstanceID (the gateway attributes to
+	// its own instance); the api-server sets an override for Invocation targets
+	// so their spend credits the root Driver. When it differs from InstanceID,
+	// the collector chain additionally stamps `x-platform-invocation-id` with
+	// InstanceID so the merged child row stays distinguishable (#3041).
+	AttributionID string
+	AnyUpgrades   bool
+	OTel          envoyOTelView
+}
+
+// attributionOverridden reports whether a telemetry attribution override is in
+// effect — i.e. the trusted `x-platform-agent-id` stamp is some other agent's
+// id, not this gateway's own instance.
+func (p bootstrapParams) attributionOverridden() bool {
+	return p.AttributionID != "" && p.AttributionID != p.InstanceID
 }
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
 //
-// `instanceID` is this gateway's *own* instance (agent or fork name); it is
-// the value stamped into the trusted `x-platform-agent-id` telemetry header
-// and emitted as the bounded `platform.gateway.id` attribute on the gateway's
-// own telemetry.
-// `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials. For long-lived pairs the two are equal; for forks
-// `extAuthzInstanceID` is the *parent* instance's ID — fork pods run as their
-// *own* per-fork SA, but the parent owner's HITL rules should gate fork
-// egress, so the fork's gateway dials the parent's per-instance ext-authz
-// Service (admitted via `BuildForkExtAuthzAuthorizationPolicy`). The telemetry
-// header, by contrast, must carry the fork's own `instanceID` so its telemetry
-// attributes to the fork, not the parent.
-func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
+// `instanceID` is this gateway's own instance (the agent name); it is emitted
+// as the bounded `platform.gateway.id` attribute on the gateway's own
+// telemetry, names the per-instance ext-authz Service the gateway dials, and —
+// absent an attribution override — is the value stamped into the trusted
+// `x-platform-agent-id` telemetry header.
+// `attributionID` overrides the trusted `x-platform-agent-id` stamp: empty
+// means stamp `instanceID` (own-instance attribution); non-empty means stamp
+// that id instead and additionally stamp `x-platform-invocation-id` with
+// `instanceID`, so an Invocation target's spend credits its root Driver while
+// the child row stays distinguishable (#3041).
+func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
 	// Envoy's per-call timeout sits ahead of the application-level hold so a
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
@@ -119,13 +131,14 @@ func renderEnvoyBootstrap(instanceID, extAuthzInstanceID string, cfg *config.Con
 		ObjectStoreHost:        cfg.ObjectStoreHost,
 		ObjectStorePort:        cfg.ObjectStorePort,
 		HealthPath:             platformGatewayHealthPath,
-		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
+		ExtAuthzHost:           cfg.ExtAuthzHostFor(instanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 		Telemetry:              telemetry,
 		TelemetryCollectorHost: cfg.TelemetryCollectorHost,
 		TelemetryCollectorPort: cfg.TelemetryCollectorPort,
 		InstanceID:             instanceID,
+		AttributionID:          attributionID,
 		AnyUpgrades:            anyUpgrades,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}
@@ -475,7 +488,50 @@ func buildChainForwardRoute(c envoyHostChain) ev {
 // collector SNI and stamp the trusted x-platform-agent-id header, OVERWRITING
 // anything the agent set. No ext_authz (platform-internal) and no credential
 // injection.
+//
+// The stamped attribution id is p.AttributionID when an override is in effect
+// (an Invocation target crediting its root Driver), else this gateway's own
+// p.InstanceID. When overriding, we additionally stamp x-platform-invocation-id
+// with the own id so the merged child row stays distinguishable; when NOT
+// overriding, we strip any agent-supplied x-platform-invocation-id, since that
+// header is only sometimes added and an agent must not be able to smuggle a
+// forged one past the gateway (the agent-id header is always overwritten, so it
+// needs no such strip).
 func buildCollectorChain(p bootstrapParams) ev {
+	attributionID := p.AttributionID
+	if attributionID == "" {
+		attributionID = p.InstanceID
+	}
+	headersToAdd := []any{
+		// Trusted, unforgeable identity: OVERWRITE replaces any
+		// agent-supplied value.
+		ev{
+			"header":        ev{"key": "x-platform-agent-id", "value": attributionID},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		},
+	}
+	route := ev{
+		"match": ev{"prefix": "/"},
+		"route": ev{
+			"cluster":              "otel_collector",
+			"host_rewrite_literal": p.TelemetryCollectorHost,
+			"timeout":              "0s",
+		},
+	}
+	if p.attributionOverridden() {
+		// Stamp this target's own id as the invocation id so its merged
+		// row stays distinguishable from the Driver's direct rows.
+		headersToAdd = append(headersToAdd, ev{
+			"header":        ev{"key": "x-platform-invocation-id", "value": p.InstanceID},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		})
+	} else {
+		// No override: an agent must not forge an invocation id. This
+		// header is only ever added by the gateway, so drop anything the
+		// agent set before it reaches the collector.
+		route["request_headers_to_remove"] = []any{"x-platform-invocation-id"}
+	}
+	route["request_headers_to_add"] = headersToAdd
 	hcm := ev{
 		"@type":        "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 		"stat_prefix":  "terminate_otel_collector",
@@ -486,24 +542,7 @@ func buildCollectorChain(p bootstrapParams) ev {
 				ev{
 					"name":    "default",
 					"domains": []any{"*"},
-					"routes": []any{
-						ev{
-							"match": ev{"prefix": "/"},
-							"route": ev{
-								"cluster":              "otel_collector",
-								"host_rewrite_literal": p.TelemetryCollectorHost,
-								"timeout":              "0s",
-							},
-							"request_headers_to_add": []any{
-								// Trusted, unforgeable identity: OVERWRITE
-								// replaces any agent-supplied value.
-								ev{
-									"header":        ev{"key": "x-platform-agent-id", "value": p.InstanceID},
-									"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
-								},
-							},
-						},
-					},
+					"routes":  []any{route},
 				},
 			},
 		},

@@ -13,7 +13,7 @@ export function WorkingDots({
 }) {
   const dot = cn(
     "rounded-full bg-current",
-    size === "md" ? "w-[5px] h-[5px]" : "w-[4px] h-[4px]",
+    size === "md" ? "w-[5px] h-[5px]" : "w-1 h-1",
   );
   return (
     <span

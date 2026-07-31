@@ -1,5 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
+import { CARD_SURFACE } from "@/components/ui/card";
+
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type { RowGrantControls } from "./catalog-connection-row.js";
@@ -32,7 +34,7 @@ export function ConnectionGroupCard({
   return (
     <section
       data-testid={`connection-group-${provider.id}`}
-      className="rounded-lg border border-border bg-card"
+      className={CARD_SURFACE}
     >
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
         <ConnectionIcon
@@ -45,7 +47,7 @@ export function ConnectionGroupCard({
           {provider.title}
         </h3>
         {showCount && (
-          <span className="text-[14px] text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {connections.length} connection{connections.length === 1 ? "" : "s"}
           </span>
         )}

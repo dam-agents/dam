@@ -2,6 +2,7 @@ import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { CARD_SURFACE } from "@/components/ui/card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
@@ -36,7 +37,7 @@ export function CatalogProviderCard({
   const newButton = templates.length > 0 && (
     <Button
       variant="outline"
-      className="h-[32px] px-3 text-[14px] font-normal"
+      className="h-8 px-3 text-sm font-normal"
       onClick={onNew}
       data-testid={`catalog-new-${provider.id}`}
     >
@@ -48,7 +49,7 @@ export function CatalogProviderCard({
   return (
     <section
       data-testid={`catalog-provider-${provider.id}`}
-      className="rounded-lg border border-border bg-card"
+      className={CARD_SURFACE}
     >
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
         <ConnectionIcon
@@ -88,7 +89,7 @@ export function CatalogProviderCard({
         </>
       ) : (
         <div className="flex flex-col items-start gap-3 px-4 py-4">
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No connections set up yet.
           </p>
           {newButton}

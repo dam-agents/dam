@@ -20,7 +20,7 @@ const slowReconcileThreshold = 2 * time.Second
 // off), so a trace shows the same breakdown.
 type reconcileTimer struct {
 	ctx   context.Context
-	kind  string // "agent" | "fork"
+	kind  string // "agent" | "run"
 	name  string
 	span  trace.Span
 	start time.Time

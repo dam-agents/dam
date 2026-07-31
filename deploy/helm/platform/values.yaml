@@ -21,12 +21,12 @@ brand:
   # change requires no UI rebuild.
   theme:
     light:
-      accent: "#1D6BE1"
-      accentHover: "#1556B8"
-      accentLight: "#eaf2fe"
+      accent: "#0F62FE"
+      accentHover: "#0353E9"
+      accentLight: "#edf5ff"
     dark:
-      accent: "#3C92FD"
-      accentHover: "#2F88FD"
+      accent: "#4589FF"
+      accentHover: "#78A9FF"
       accentLight: "#0f1f3a"
   # Optional SVG override for the brand icon. The api-server serves it at
   # `/api/brand/icon.svg` and rasterizes on demand for the favicon, PWA
@@ -103,7 +103,7 @@ commonAnnotations: {}
 commonPodAnnotations: {}
 
 # -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
-# postgres, redis) AND controller-managed agent / fork pods. Set
+# postgres, redis) AND controller-managed agent / executor pods. Set
 # `enabled: false` to drop all readiness/liveness/startup probes — escape
 # hatch for clusters where the kubelet's probe behavior is causing churn
 # (false-positive restarts, slow rollouts). Plumbed into the controller via
@@ -141,7 +141,7 @@ virtualization:
   nodeSelector: {}
   tolerations: []
 
-# -- Target namespace for agent workloads (agents, templates, schedules, forks)
+# -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents
 
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
@@ -482,13 +482,6 @@ keycloak:
     username: null
     password: null
 
-  # -- Second test user for e2e foreign-user (fork) scenarios.
-  # DISABLED by default — only the e2e overlay (values-e2e.yaml) enables it.
-  testUser2:
-    enabled: false
-    username: null
-    password: null
-
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""
@@ -642,7 +635,7 @@ apiServer:
   approvalHoldSeconds: 1800
 
   # -- Absolute per-turn ceiling (seconds) for the ACP sendPrompt path
-  # (Slack/Telegram/forks). Turn liveness is a ws ping/pong signal, so a
+  # (Slack/Telegram). Turn liveness is a ws ping/pong signal, so a
   # silent-but-alive turn stays connected; this only caps a wedged agent.
   # Must be >= approvalHoldSeconds so a turn blocked on an egress approval
   # outlives the hold. Default 1 hour.
@@ -670,7 +663,7 @@ apiServer:
 
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
-  # pods carrying `agent-platform.ai/agent` (agent + fork pods) in agentNamespace.
+  # pods carrying `agent-platform.ai/agent` (agent + executor pods) in agentNamespace.
   # The HTTP port stays open so the UI / ingress controller can reach it;
   # JWT auth at the application layer protects that one. Disable in
   # environments without NetworkPolicy support (e.g. some bare clusters).
@@ -826,7 +819,7 @@ controller:
 
   # -- Agent pod configuration. Three layers, applied at reconcile time:
   #   1. `base`             — chart-only platform policy, applied verbatim
-  #                           to every agent + fork agent pod.
+  #                           to every agent + executor pod.
   #   2. `templateDefaults` — chart-wide fallbacks for fields a template
   #                           can override (template wins when set).
   #   3. agentTemplates.*   — per-template values (further down).
@@ -837,11 +830,12 @@ controller:
     base:
       # Cluster details (immutable per-agent)
       imagePullSecrets: [] # must exist in agentNamespace
-      # storageClass must support ReadWriteMany so per-turn fork pods can
-      # mount /home/agent concurrently with the long-lived pod. Empty =
-      # cluster default. Set to "platform-rwx" for the bundled NFS provisioner.
+      # storageClass for workspace volumes; empty = cluster default. Any
+      # ordinary RWO-capable class works — workspace volumes are always
+      # ReadWriteOnce (#2988), the agent pod is the volume's only writer.
+      # (accessMode is retired: a value still set here is ignored with a
+      # startup warning.)
       storageClass: ""
-      accessMode: ReadWriteMany # ReadWriteOnce for single-node dev
 
       # Lifecycle
       idleTimeout: "1h" # hibernate idle agents; "0s" disables
@@ -873,6 +867,19 @@ controller:
         runAsUser: 65532
         runAsGroup: 65532
         runAsNonRoot: true
+        # fsGroup makes a freshly provisioned block volume writable to the
+        # agent: the kubelet chowns the volume root to this group and marks
+        # it setgid at mount -- the standard mechanism for non-root pods on
+        # RWO storage (file/NFS classes and hostPath ignore it). Without it
+        # a new agent's init dies on a root-owned volume root.
+        # OnRootMismatch confines that to the FIRST mount: a volume whose
+        # root already matches is left entirely alone, so neither a large
+        # workspace on wake nor a freshly MIGRATED volume (whose root the
+        # copy Job shapes to match, and whose interior is verified
+        # byte-exact) is ever rewritten. On OpenShift the agents' SCC must
+        # permit fsGroup 65532.
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
       containerSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532
@@ -1014,10 +1021,9 @@ controller:
     enabled: false
     # -- StorageClass for spare PVCs. MUST be an Immediate-binding class
     # (volumeBindingMode: Immediate) so a spare provisions the instant it is
-    # created and sits ready. The bundled NFS class (platform-rwx) is
-    # WaitForFirstConsumer and will NOT pre-warm — enable
-    # nfsProvisioner.warmPoolClass for an Immediate variant, or point this at a
-    # cloud RWX class (EFS/Filestore/Azure Files) configured for Immediate.
+    # created and sits ready — a WaitForFirstConsumer class (most clusters'
+    # default) will NOT pre-warm, since a spare would sit Pending until
+    # mounted. Point this at an Immediate RWO-capable class.
     storageClass: ""
     # -- How often the manager reconciles inventory toward target.
     replenishInterval: "30s"
@@ -1034,6 +1040,85 @@ controller:
     #    target: 3
     #  - size: "5Gi"
     #    target: 2
+
+  # -- One-time workspace-volume migration onto ordinary single-writer storage
+  # (#2988). A workspace is migrated when it is still ReadWriteMany, OR when it
+  # sits on a storage class other than `targetStorageClass` below — the second
+  # trigger is what moves a volume that was flipped to ReadWriteOnce but left
+  # on the shared filesystem. The controller forces the agent
+  # down, copies the volume onto a fresh ReadWriteOnce PVC in a Job
+  # (content- and metadata-verified), re-points the StatefulSet, deletes the
+  # old volume, and restores the agent's prior run state. Interrupt-safe and
+  # resumable; a no-op once no RWX workspace volume remains. Keep the old
+  # storage backend (e.g. nfsProvisioner, or your managed shared filesystem)
+  # available until the controller stops logging migrations, then decommission
+  # it.
+  #
+  # Enabled by default: the fleet drains itself on upgrade with no owner
+  # action, which is the point. Turning it off is safe at any point and is the
+  # escape hatch if an install's storage semantics (root squash, foreign file
+  # ownership, an unexpected class) stall the copy — a disabled manager
+  # releases every agent it had gated, bins the half-copied targets, and
+  # leaves each agent on the volume it started from. Watch the controller log
+  # through the first drain; `concurrency: 1` makes that easy to follow.
+  storageMigration:
+    enabled: false
+    # -- Storage class migrated workspaces land on: the DESTINATION of the
+    # migration. Empty (default) = the cluster's default class, i.e. ordinary
+    # storage, which is the point of the exercise.
+    #
+    # Deliberately NOT `controller.agent.base.storageClass`: on an install
+    # that has not migrated yet, that field still names the shared filesystem
+    # being drained, so inheriting it would force-restart every agent and copy
+    # every byte only to arrive back on NFS with a different access mode. Set
+    # this to the block class agents should end on, or leave it empty for the
+    # cluster default — and fix `agent.base.storageClass` (and
+    # `warmPool.storageClass`) too, or newly-created agents keep landing on
+    # the old backend.
+    targetStorageClass: ""
+    # -- Permit a migration whose target class is the class the workspace is
+    # already on. Refused by default: it changes the access mode and nothing
+    # else, at the cost of a forced restart and a full copy per agent.
+    allowSameStorageClass: false
+    # -- Floor for a migrated volume's size; empty keeps the source's request.
+    # Set this when the target class prices IOPS PER GIGABYTE (IBM's block
+    # tiers do): a faithfully-sized 1Gi volume then inherits a 1Gi share of
+    # IOPS, and a copy that is bound by per-file operations crawls. Such
+    # classes usually have a minimum volume size anyway, which a smaller
+    # request is silently rounded up to. "10Gi" suits IBM VPC block.
+    minTargetSize: ""
+    # -- How many agents migrate at once. Each migration walks its source
+    # once and reads it twice (copy + checksum), so this cap is the trade
+    # between fleet drain time and pressure on the shared filesystem being
+    # drained — lower it if the filer struggles. Duration is driven by FILE
+    # COUNT, not bytes: every entry is a round-trip and, on an IOPS-capped
+    # class, an IOP. The copy Job logs `phase:` lines with elapsed seconds so
+    # a slow drain can be attributed rather than guessed at.
+    concurrency: 10
+    # -- Reconcile pass interval.
+    interval: "30s"
+    # -- Deprecated, ignored: the copy preserves ownership exactly (the
+    # writer side runs privileged on the target), so no remap consent is
+    # needed. Kept so existing values files keep parsing.
+    allowOwnershipRemap: false
+    # -- Image for the copy Job. Needs bash, GNU tar, GNU coreutils
+    # (find -printf, md5sum) and util-linux (setpriv) — the stock
+    # debian-slim default has all of them.
+    #
+    # The Job runs AS ROOT with split identity inside: every source read is
+    # dropped to the agent uid via setpriv (a root-squashing source share
+    # never honors uid 0), while the target side uses root to own the fresh
+    # volume root, restore exact ownership, and wipe retry residue. On
+    # OpenShift this requires binding an SCC that permits uid 0 (e.g.
+    # anyuid) to the `platform-migration` ServiceAccount in the agents
+    # namespace — an ops-side grant, out of band like all cluster-scoped
+    # security objects:
+    #   oc adm policy add-scc-to-user anyuid -z platform-migration -n <agents-ns>
+    # Without it, the copy pod is rejected at admission, loudly, and the
+    # gated agent waits. The Job never mounts a token, joins no mesh, and
+    # deliberately does not inherit the agents' runtimeClassName (Kata
+    # virtiofs refuses guest chown regardless of uid).
+    jobImage: mirror.gcr.io/library/debian:stable-slim
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
@@ -1368,13 +1453,14 @@ gitRepos:
     description: "Monitor and validate links to guard against broken or malicious URLs"
     compatibleTemplates: [claude-code, bob]
 
-# -- Opt-in in-cluster NFS server + external provisioner. Provides an RWX
-# StorageClass for dev clusters whose default provisioner is RWO-only.
-# Production deployments should leave this disabled and point
-# `controller.agent.base.storageClass` at a cloud-native RWX class (EFS,
-# Filestore, Azure Files). The bundled nfs-ganesha image is archived upstream
-# and breaks on btrfs-backed exports — set `controller.agent.base.accessMode:
-# ReadWriteOnce` instead on btrfs hosts.
+# -- DEPRECATED in-cluster NFS server + external provisioner (#2988). Nothing
+# needs shared-writable storage any more: workspace volumes are ReadWriteOnce
+# and the storage migration (controller.storageMigration) drains existing RWX
+# volumes. Keep this enabled on an install whose agent volumes still live on
+# it, ONLY until the migration completes (no RWX PVC left in the agent
+# namespace) — then disable it. The whole block is removed in a future
+# release. The bundled nfs-ganesha image is archived upstream and breaks on
+# btrfs-backed exports.
 nfsProvisioner:
   enabled: false
   # Break-glass annotations for admission controllers (e.g. StackRox) since

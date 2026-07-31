@@ -2,6 +2,7 @@ import type { Experiment } from "api-server-api";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useAcpSessions } from "../../sessions/api/queries.js";
 import { useAgentExperimentsLive } from "../api/queries.js";
 
@@ -45,7 +46,15 @@ export function useDockedExperiment(agentId: string | null): {
     }),
     [sessionFilter],
   );
+  // Shares the session-list query key with the sidebar and greeting observers,
+  // and React Query fires the query if ANY observer enables it — so all three
+  // gate on the same operability check (the canonical gate for pod-touching
+  // reads). Without it, this hook — which runs on chat open before the sidebar
+  // renders — fetches into a booting or restarting pod and toasts
+  // "Couldn't refresh session list".
+  const operable = useIsAgentOperable(agentId);
   const { data: sessions } = useAcpSessions(agentId, listInclude, {
+    enabled: operable,
     activeSessionId: sessionId,
   });
   const sessionExperimentId =

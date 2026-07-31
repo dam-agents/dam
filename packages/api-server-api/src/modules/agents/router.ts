@@ -52,7 +52,6 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     podTerminationReason: agent.podTerminationReason,
     contributionFailures: agent.contributionFailures,
     channels: agent.channels,
-    allowedUserEmails: agent.allowedUserEmails,
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,
   };
@@ -177,7 +176,6 @@ export const agentsRouter = t.router({
       const res = await ctx.agents.connectSlack(
         input.id,
         input.slackChannelId,
-        input.mode,
         input.ambient,
       );
       if (res.ok) return toAgentView(res.value);
@@ -188,14 +186,6 @@ export const agentsRouter = t.router({
           throw new TRPCError({
             code: "CONFLICT",
             message: "Slack channel already bound",
-          });
-        case "ModeChangeRequiresRebind":
-          // PRECONDITION_FAILED so CLI/UI relay this message verbatim instead
-          // of collapsing it into the already-bound CONFLICT copy.
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message:
-              "Access mode is fixed per binding — disconnect the channel first",
           });
       }
     }),

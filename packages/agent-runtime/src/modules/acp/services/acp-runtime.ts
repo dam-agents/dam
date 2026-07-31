@@ -16,6 +16,10 @@ import {
   type SessionMetaEntry,
   type SessionMetadataStore,
 } from "../infrastructure/session-metadata-store.js";
+import type {
+  BackgroundWorkRegistry,
+  HeldSession,
+} from "./background-work-registry.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
@@ -44,8 +48,23 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
  */
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
+/**
+ * How long to wait before re-testing a session whose reap was deferred because
+ * the agent left background work running. Short enough that the pod idles down
+ * promptly once the work exits, long enough that the check costs nothing.
+ */
+const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
+
 export interface AcpRuntimeStatus {
   idle: boolean;
+  /**
+   * Sessions kept alive because they report background work still running.
+   * Non-empty forces `idle` false, so the controller's busy probe won't
+   * hibernate the pod out from under the work; published with what each session
+   * is holding for, so an unexpectedly awake sandbox is explainable rather than
+   * mysterious.
+   */
+  backgroundWork: HeldSession[];
 }
 
 export interface AcpRuntime {
@@ -95,6 +114,14 @@ export interface AcpRuntimeDeps {
   logBytesCap?: number;
   /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
+  /**
+   * Holds the background work sessions report, so a session with work still
+   * running is neither closed nor counted as idle. Omitted — as in most tests —
+   * the runtime reaps purely on session refcount, as it did before #2965.
+   */
+  backgroundWork?: BackgroundWorkRegistry;
+  /** Override the deferred-reap recheck interval — exposed for tests. */
+  backgroundWorkRecheckMs?: number;
   /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
   isTerminalSessionActive?: (sessionId: string) => boolean;
 }
@@ -218,6 +245,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const envForceRecycleMs =
     deps.envForceRecycleMs ?? DEFAULT_ENV_FORCE_RECYCLE_MS;
   const idleReapDelayMs = deps.idleReapDelayMs ?? 0;
+  const backgroundWorkRecheckMs =
+    deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
   // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
@@ -589,7 +618,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      for (const t of idleReapTimers.values()) clearTimeout(t);
+      idleReapTimers.clear();
       pendingFromAgent.clear();
+      // The harness took its children down with it — nothing left to hold.
+      deps.backgroundWork?.clear();
     });
     return a;
   }
@@ -640,6 +673,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     pendingFromAgent.clear();
     activePromptBySession.clear();
     promptQueueBySession.clear();
+    deps.backgroundWork?.clear();
     // Detach before kill so the old process's exit handler no-ops.
     agent = null;
     old.kill();
@@ -729,6 +763,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    // The subprocess is going away, so anything it was still running goes with
+    // it — the hold has nothing left to protect.
+    deps.backgroundWork?.forget(sessionId);
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
       clearTimeout(reap);
@@ -759,6 +796,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (bootstrapBySession.has(sessionId)) return;
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
+    }
+    // Closing the session tears down the harness's subprocess, and a harness
+    // that supervises background jobs kills them as it goes — so the work dies
+    // seconds after the last tab closes, silently. Wait while the session
+    // reports work still running; the release arrives as a later report, so
+    // re-check rather than closing.
+    if (deps.backgroundWork?.hasWork(sessionId)) {
+      idleReapTimers.set(
+        sessionId,
+        setTimeout(
+          () => reapIdleSessionNow(sessionId),
+          backgroundWorkRecheckMs,
+        ),
+      );
+      return;
     }
 
     tearDownSession(sessionId);
@@ -1352,11 +1404,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       let queued = 0;
       for (const q of promptQueueBySession.values()) queued += q.length;
+      const backgroundWork = deps.backgroundWork?.held() ?? [];
       return {
         idle:
           activePromptBySession.size === 0 &&
           pendingFromAgent.size === 0 &&
-          queued === 0,
+          queued === 0 &&
+          backgroundWork.length === 0,
+        backgroundWork,
       };
     },
 
@@ -1394,6 +1449,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       orphanTimers.clear();
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
+      deps.backgroundWork?.clear();
       clearEnvForceTimer();
       if (warmTimer) clearTimeout(warmTimer);
       warmWaiters.clear();

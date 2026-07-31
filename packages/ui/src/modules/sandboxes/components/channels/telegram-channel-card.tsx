@@ -19,7 +19,7 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
     <ChannelCard iconSlug="telegram" title="Telegram">
       <div className="flex flex-col gap-3 px-4 py-4">
         <ConnectedChats agentId={agentId} />
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Add{" "}
           {handle ? (
             <a
@@ -48,16 +48,12 @@ function ConnectedChats({ agentId }: { agentId: string }) {
 
   if (chats.isPending)
     return (
-      <p className="text-[13px] text-muted-foreground">
-        Loading connected chats…
-      </p>
+      <p className="text-sm text-muted-foreground">Loading connected chats…</p>
     );
   if (chats.isError || !chats.data) return null;
   if (chats.data.chats.length === 0)
     return (
-      <p className="text-[14px] text-muted-foreground">
-        No chats connected yet.
-      </p>
+      <p className="text-sm text-muted-foreground">No chats connected yet.</p>
     );
 
   return (
@@ -67,7 +63,7 @@ function ConnectedChats({ agentId }: { agentId: string }) {
           key={chat.conversationId}
           className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5"
         >
-          <span className="flex-1 truncate text-[14px] text-foreground">
+          <span className="flex-1 truncate text-sm text-foreground">
             {chat.title}
           </span>
           <Button

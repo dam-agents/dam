@@ -1,5 +1,5 @@
+import { Box } from "@carbon/icons-react";
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
-import { Box } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useStore } from "../../../store.js";
@@ -42,7 +42,7 @@ export function ArtifactLinkChip({
         setOpenArtifactId(artifactId === openArtifactId ? null : artifactId)
       }
       title={artifact ? `Preview “${artifact.title}”` : "Preview artifact"}
-      className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-[13px] font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
+      className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-sm font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
     >
       {artifact ? (
         <ArtifactKindBadge kind={artifact.kind} />

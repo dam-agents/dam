@@ -50,21 +50,21 @@ export function EgressApprovalToast({
   return (
     <div
       data-testid="egress-approval-toast"
-      className="rounded-xl border border-border-light bg-background shadow-lg p-4 flex flex-col gap-3 anim-in"
+      className="rounded-xl border border-border bg-background shadow-lg p-4 flex flex-col gap-3 anim-in"
     >
       <div className="flex flex-col gap-0.5 min-w-0">
         {foreign && (
-          <span className="pl-4 text-[12px] text-muted-foreground truncate">
+          <span className="pl-4 text-xs text-muted-foreground truncate">
             {agentName}
           </span>
         )}
-        <div className="flex items-center gap-2 text-[14px] font-semibold text-text">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
           <span className="truncate">
             {method} {host}
           </span>
         </div>
-        <span className="pl-4 text-[14px] text-muted-foreground truncate">
+        <span className="pl-4 text-sm text-muted-foreground truncate">
           {path}
         </span>
       </div>
@@ -72,7 +72,7 @@ export function EgressApprovalToast({
         <Button
           variant="outline"
           size="sm"
-          className="h-[26px] bg-background text-[14px] font-medium"
+          className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight || !live}
           onClick={() => approveOnce.mutate({ id: row.id })}
           title={
@@ -86,7 +86,7 @@ export function EgressApprovalToast({
         <Button
           variant="outline"
           size="sm"
-          className="h-[26px] bg-background text-[14px] font-medium"
+          className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight}
           onClick={() => approvePermanent.mutate({ id: row.id })}
         >
@@ -95,7 +95,7 @@ export function EgressApprovalToast({
         <Button
           variant="outline"
           size="sm"
-          className="h-[26px] bg-background text-[14px] font-medium"
+          className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight}
           onClick={() => approveHost.mutate({ id: row.id })}
         >
@@ -106,7 +106,7 @@ export function EgressApprovalToast({
         <Button
           variant="ghost"
           size="sm"
-          className="h-[26px] text-[14px] font-medium"
+          className="h-[26px] text-sm font-medium"
           disabled={inflight || !live}
           onClick={() => dismiss.mutate({ id: row.id })}
           title={
@@ -120,7 +120,7 @@ export function EgressApprovalToast({
         <Button
           variant="ghost"
           size="sm"
-          className="h-[26px] text-[14px] font-medium"
+          className="h-[26px] text-sm font-medium"
           disabled={inflight}
           onClick={() => denyForever.mutate({ id: row.id })}
           title="Deny this exact path on this host (writes a deny rule)"
@@ -130,7 +130,7 @@ export function EgressApprovalToast({
         <Button
           variant="ghost"
           size="sm"
-          className="h-[26px] text-[14px] font-medium"
+          className="h-[26px] text-sm font-medium"
           disabled={inflight}
           onClick={() => navigateToSandboxHome(row.agentId)}
           title="Open this sandbox's settings"

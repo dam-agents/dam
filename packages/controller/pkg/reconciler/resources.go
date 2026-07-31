@@ -35,11 +35,10 @@ func portInt32(p int) int32 {
 // agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
 //
 // Pair scope is *per orchestration unit*, not per agent: long-lived agents
-// use the agent name as the pair key, but forks use the fork name (each
-// fork has its own paired gateway, the parent's gateway is not shared).
+// use the agent name as the pair key.
 // The `LabelAgent` label still identifies the parent agent for ext_authz /
 // pod-IP resolver purposes — for long-lived pods it equals the pair key,
-// for fork pods it points at the parent agent so traffic resolves under
+// for Run executor pods it points at the parent agent so traffic resolves under
 // the parent's egress rules.
 const (
 	// LabelAgent points at the durable Agent ConfigMap. After Instance was
@@ -76,7 +75,7 @@ const (
 const annRollRev = "agent-platform.ai/roll-rev"
 
 // agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
-// The agent/fork reconcilers requeue until the gateway ClusterIP is
+// The reconcilers requeue until the gateway ClusterIP is
 // assigned, so this never sees an empty IP at steady state.
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
@@ -111,7 +110,6 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
-		// Forks deliberately do NOT receive this env — see fork_resources.go.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 }
@@ -209,7 +207,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		if m.Persist {
 			storageSize := effectiveMountSize(m, agentSpec, defaults)
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
@@ -465,7 +463,7 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 }
 
 // applyPoolClaims swaps the named mounts from a volumeClaimTemplate to an
-// explicit pod Volume referencing the claimed PVC by name (the shape forks use).
+// explicit pod Volume referencing the claimed PVC by name (the shape Run executors use).
 // The container's volumeMount already targets the mount name. No-op for an empty
 // map, so unclaimed agents render exactly as before.
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {

@@ -1,5 +1,6 @@
-import { Renew as Loader } from "@carbon/icons-react";
 import { useState } from "react";
+
+import { Spinner } from "@/components/ui/spinner";
 
 import type { ToolChip as T } from "../../../types.js";
 import { ActivityBlock } from "./activity-block.js";
@@ -18,7 +19,7 @@ export function ToolChip({ chip }: { chip: T }) {
       className={chip.status === "failed" ? "text-destructive" : undefined}
       label={
         <>
-          {running && <Loader size={12} className="anim-spin shrink-0" />}
+          {running && <Spinner size={12} className="text-inherit" />}
           <span className="truncate min-w-0" title={chip.title}>
             {chip.title}
           </span>

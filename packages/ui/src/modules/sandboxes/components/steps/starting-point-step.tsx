@@ -1,4 +1,10 @@
-import { Boxes, FlaskConical, Library, Puzzle, Terminal } from "lucide-react";
+import {
+  Book,
+  Chemistry,
+  Cube,
+  Extensions,
+  Terminal,
+} from "@carbon/icons-react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -60,7 +66,7 @@ export function StartingPointStep({
       />
 
       {!kindedHarnessInstalled && (
-        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-[13px] text-warning">
+        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
           Experiment and knowledge-base sandboxes need the{" "}
           <span className="font-mono">{KINDED_HARNESS_TEMPLATE_ID}</span> agent
           image, which is not installed on this platform. Ask your operator to
@@ -72,9 +78,9 @@ export function StartingPointStep({
         {kindedHarnessInstalled && (
           <StartingPointRow
             startingPoint="experiment"
-            icon={FlaskConical}
+            icon={Chemistry}
             name="Experiment sandbox"
-            description="A Claude Code sandbox with the experiment authoring skill installed. It runs one goal across several variants at once and charts each result live, so you can compare them."
+            description="A Claude Code sandbox with the experiment skill preloaded. It runs one goal across several variants at once, charting each result live so you can compare them."
             selected={startingPoint === "experiment"}
             onSelect={() => onPickStartingPoint("experiment")}
           />
@@ -82,26 +88,26 @@ export function StartingPointStep({
         {kindedHarnessInstalled && (
           <StartingPointRow
             startingPoint="knowledge-base"
-            icon={Library}
+            icon={Book}
             name="Knowledge base sandbox"
-            description="A Claude Code sandbox that builds and maintains a body of knowledge you can chat with. Feed it a repo or your docs, or add to it as you go."
+            description="A Claude Code sandbox that builds and maintains a wiki. Ask questions in chat, add knowledge as you go, or point it at a repo or docs."
             selected={startingPoint === "knowledge-base"}
             onSelect={() => onPickStartingPoint("knowledge-base")}
           />
         )}
         <StartingPointRow
           startingPoint="specialized"
-          icon={Puzzle}
+          icon={Extensions}
           name="Specialized sandbox"
-          description="An image already built for one particular task — optimizers, research harnesses, and more."
+          description="A sandbox already built for one particular task — optimizers, research harnesses, and more."
           selected={startingPoint === "specialized"}
           onSelect={() => onPickStartingPoint("specialized")}
         />
         <StartingPointRow
           startingPoint="general-purpose"
-          icon={Boxes}
+          icon={Cube}
           name="General-purpose sandbox"
-          description="A capable coding agent with no preset — code, research, ops, or anything else. Pick the harness to start from."
+          description="A capable agent with no preset — code, research, ops, or anything else. Pick a harness to start."
           selected={startingPoint === "general-purpose"}
           onSelect={() => onPickStartingPoint("general-purpose")}
         />
@@ -147,7 +153,7 @@ function StartingPointReveal({
   if (snapshot.startingPoint === "knowledge-base") {
     return (
       <section className="anim-in">
-        <SectionLabel spaced>Template</SectionLabel>
+        <SectionLabel spaced>Choose a template</SectionLabel>
         <CardList>
           {KB_TEMPLATES.map((template) => (
             <KbTemplateCard
@@ -189,14 +195,14 @@ function StartingPointReveal({
     return (
       <section className="anim-in">
         <SectionLabel spaced>Choose an image</SectionLabel>
-        <p className="mb-3 text-[14px] text-muted-foreground">
+        <p className="mb-3 text-sm text-muted-foreground">
           Each boots its own sandbox, already set up for its task. Early and
           evolving.
         </p>
         {loading ? (
           <ListSkeleton rows={3} rowHeight={64} />
         ) : specialized.length === 0 ? (
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No specialized images are installed on this platform.
           </p>
         ) : (

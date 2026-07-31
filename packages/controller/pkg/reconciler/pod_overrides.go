@@ -34,7 +34,7 @@ func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
 }
 
 // applyAgentBaseScheduling stamps chart-level scheduling fields onto agent
-// and fork-agent pods. Only non-zero values apply.
+// and Run executor pods. Only non-zero values apply.
 func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	if len(base.NodeSelector) > 0 {
 		spec.NodeSelector = base.NodeSelector

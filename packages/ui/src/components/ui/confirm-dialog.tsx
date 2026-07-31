@@ -1,8 +1,4 @@
-import {
-  TrashCan,
-  Warning as WarningIcon,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { TrashCan, Warning, WarningAlt } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import {
@@ -73,7 +69,7 @@ export function ConfirmDialog({
               {destructive ? (
                 <WarningAlt className="h-4 w-4 text-destructive" />
               ) : (
-                <WarningIcon className="h-4 w-4 text-primary" />
+                <Warning className="h-4 w-4 text-primary" />
               )}
             </div>
             <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -82,7 +78,7 @@ export function ConfirmDialog({
             // asChild renders a div — the message can carry block elements
             // (lists, boxes), which are invalid inside the default <p>.
             <AlertDialogDescription asChild>
-              <div className="pt-1 text-[14px] text-muted-foreground">
+              <div className="pt-1 text-sm text-muted-foreground">
                 {description}
               </div>
             </AlertDialogDescription>

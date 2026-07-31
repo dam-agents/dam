@@ -1,6 +1,7 @@
 import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,7 +52,10 @@ export function RichSelect<T extends string>({
           type="button"
           disabled={disabled}
           data-testid={testId}
-          className="group flex min-h-[76px] w-full items-center gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground"
+          className={cn(
+            CARD_SURFACE,
+            "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
+          )}
         >
           {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
           {selected ? (
@@ -59,13 +63,13 @@ export function RichSelect<T extends string>({
               {selected.triggerIcon ?? selected.icon}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2.5">
-                  <p className="truncate text-[16px] font-medium text-foreground">
+                  <p className="truncate text-base font-medium text-foreground">
                     {selected.title}
                   </p>
                   {selected.triggerBadge}
                 </div>
                 {selected.description && (
-                  <p className="truncate text-[14px] text-muted-foreground">
+                  <p className="truncate text-sm text-muted-foreground">
                     {selected.description}
                   </p>
                 )}
@@ -104,13 +108,13 @@ export function RichSelect<T extends string>({
             {option.icon}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <p className="truncate text-[14px] font-medium text-foreground">
+                <p className="truncate text-sm font-medium text-foreground">
                   {option.title}
                 </p>
                 {option.badge}
               </div>
               {option.description && (
-                <p className="truncate text-[13px] text-muted-foreground">
+                <p className="truncate text-sm text-muted-foreground">
                   {option.description}
                 </p>
               )}

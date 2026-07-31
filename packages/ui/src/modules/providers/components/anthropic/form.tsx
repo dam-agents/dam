@@ -1,10 +1,11 @@
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { type TabDef, Tabs } from "@/components/ui/tabs";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
@@ -13,6 +14,11 @@ import {
   type AnthropicCredentialValues,
 } from "./credential-schema.js";
 import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
+
+const MODE_TABS: readonly TabDef<Mode>[] = MODE_KEYS.map((mode) => ({
+  value: mode,
+  label: MODES[mode].label,
+}));
 
 export function AnthropicForm({
   variant,
@@ -108,8 +114,8 @@ export function AnthropicForm({
       onCancel={onCancel}
     >
       {lockMode ? (
-        <div className="flex items-center gap-1 border-b">
-          <span className="h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] border-primary text-primary flex items-center">
+        <div className="flex items-center gap-4 border-b border-border">
+          <span className="-mb-px flex h-10 items-center border-b-2 border-foreground px-4 text-sm font-medium text-foreground">
             {MODES[initialMode].label}
           </span>
         </div>
@@ -155,17 +161,17 @@ export function AnthropicForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">
+          <div className="text-xs font-medium text-destructive">
             {errors.value.message}
           </div>
         )}
       {!errors.value && testResult?.ok && (
-        <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
-          <Check size={13} /> Credential is valid.
+        <div className="text-xs font-medium text-success flex items-center gap-1.5">
+          <Checkmark size={13} /> Credential is valid.
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-[12px] font-medium text-destructive">
+        <div className="text-xs font-medium text-destructive">
           {testResult.message}
         </div>
       )}
@@ -181,7 +187,7 @@ function QuickSetupHint() {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="text-[13px] text-foreground/80">
+    <div className="text-sm text-foreground/80">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
         <code className="font-mono font-semibold text-primary">
@@ -195,7 +201,7 @@ function QuickSetupHint() {
           title="Copy command"
         >
           {copied ? (
-            <Check size={12} className="text-success" />
+            <Checkmark size={12} className="text-success" />
           ) : (
             <Copy size={12} />
           )}
@@ -214,24 +220,12 @@ function ModeToggle({
   onChange: (m: Mode) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b">
-      {MODE_KEYS.map((m) => {
-        const active = mode === m;
-        return (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onChange(m)}
-            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] transition-colors ${
-              active
-                ? "text-primary border-primary"
-                : "text-muted-foreground border-transparent hover:text-foreground"
-            }`}
-          >
-            {MODES[m].label}
-          </button>
-        );
-      })}
-    </div>
+    <Tabs
+      ariaLabel="Credential mode"
+      tabs={MODE_TABS}
+      value={mode}
+      onValueChange={onChange}
+      size="sm"
+    />
   );
 }

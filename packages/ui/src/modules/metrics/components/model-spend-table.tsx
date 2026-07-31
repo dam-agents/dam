@@ -1,5 +1,8 @@
 import type { TokenSpendByModel } from "api-server-api";
 
+import { labelVariants } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+
 import { formatTokens, formatUsd, formatUsdCell } from "../lib/format.js";
 
 // Shared cell padding — every header and body cell uses the same box so the
@@ -10,21 +13,21 @@ export function ModelSpendTable({ rows }: { rows: TokenSpendByModel[] }) {
   return (
     <table className="w-full table-fixed border-collapse tabular-nums">
       <thead>
-        <tr className="border-b border-border-hairline text-[11px] uppercase tracking-wide text-text-muted">
+        <tr className={cn(labelVariants(), "border-b border-border-hairline")}>
           <th className={`w-[40%] ${CELL} text-left font-medium`}>Model</th>
           <th className={`w-[20%] ${CELL} text-right font-medium`}>In</th>
           <th className={`w-[20%] ${CELL} text-right font-medium`}>Out</th>
           <th className={`w-[20%] ${CELL} text-right font-medium`}>Cost</th>
         </tr>
       </thead>
-      <tbody className="text-[13px]">
+      <tbody className="text-sm">
         {rows.map((row) => (
           <tr
             key={row.model}
             className="border-b border-border-hairline last:border-b-0"
           >
             <td
-              className={`truncate ${CELL} font-mono text-text-secondary`}
+              className={`truncate ${CELL} font-mono text-muted-foreground`}
               title={row.model}
             >
               {row.model}

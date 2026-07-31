@@ -42,8 +42,8 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
             <p className="truncate text-[15px] text-foreground">
               {slackChannel.slackChannelId}
             </p>
-            <p className="truncate text-[14px] text-muted-foreground">
-              {bindingSubtitle(slackChannel, agent.allowedUserEmails)}
+            <p className="truncate text-sm text-muted-foreground">
+              {slackChannel.ambient ? "Ambient on" : "Ambient off"}
             </p>
           </div>
           <DropdownMenu>
@@ -73,13 +73,13 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3 px-4 py-4">
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No channel connected yet. Mentions of the bot in the connected
             channel drive this sandbox.
           </p>
           <Button
             variant="outline"
-            className="h-[32px] px-3 text-[14px] font-normal"
+            className="h-8 px-3 text-sm font-normal"
             onClick={() => setModalOpen(true)}
             disabled={!agent}
             data-testid="slack-connect"
@@ -94,15 +94,4 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
       )}
     </ChannelCard>
   );
-}
-
-function bindingSubtitle(
-  channel: NonNullable<ReturnType<typeof findSlackChannel>>,
-  allowedUserEmails: string[],
-): string {
-  if (channel.mode === "shared")
-    return channel.ambient ? "Shared · ambient" : "Shared";
-  return allowedUserEmails.length > 0
-    ? `Person-scoped · ${allowedUserEmails.length} allowed user${allowedUserEmails.length === 1 ? "" : "s"}`
-    : "Person-scoped · unrestricted";
 }

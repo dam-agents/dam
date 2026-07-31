@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pathToState, viewToPath } from "../../modules/platform/lib/routes.js";
+import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 import {
   bindErrorCopy,
   callbackErrorCopy,
@@ -43,7 +43,7 @@ describe("slack bind flow helpers", () => {
 
 describe("slack bind route", () => {
   it("round-trips /slack/bind", () => {
-    expect(pathToState("/slack/bind")).toEqual({ view: "slack-bind" });
-    expect(viewToPath("slack-bind")).toBe("/slack/bind");
+    expect(parseRoute("/slack/bind")).toEqual({ view: "slack-bind" });
+    expect(routeToPath({ view: "slack-bind" })).toBe("/slack/bind");
   });
 });

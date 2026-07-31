@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -83,9 +84,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     // Body/Footer sit directly in the Modal's flex column — otherwise the form
     // wrapper breaks the column and the scrollable body, overflowing the panel.
     <form onSubmit={handleSubmit} className="contents">
-      <DialogHeader>
-        <h2 className="text-[18px] font-bold">Create API key</h2>
-      </DialogHeader>
+      <DialogHeader title="Create API key" />
       <DialogBody>
         <div className="mb-4">
           <FormField label="Name">
@@ -102,7 +101,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
 
         <div className="mb-4">
           <SectionLabel className="mb-1 block">Scopes</SectionLabel>
-          <p className="text-[12px] text-muted-foreground mb-2">
+          <p className="text-xs text-muted-foreground mb-2">
             Pick the narrowest scope that satisfies your use case. An
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.
@@ -157,20 +156,26 @@ interface ScopeOptionProps {
 }
 
 function ScopeOption({ scope, checked, onToggle }: ScopeOptionProps) {
+  const id = `api-key-scope-${scope}`;
   return (
-    <label className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 cursor-pointer">
-      <input
-        type="checkbox"
+    // The whole row is the label, so its padding and hover area are also the
+    // click target.
+    <label
+      htmlFor={id}
+      className="flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 cursor-pointer"
+    >
+      <Checkbox
+        id={id}
         checked={checked}
-        onChange={onToggle}
+        onCheckedChange={onToggle}
         className="mt-1"
       />
-      <div className="flex-1">
-        <code className="text-[13px] font-semibold">{scope}</code>
-        <span className="text-[12px] text-muted-foreground block">
+      <span className="flex-1">
+        <code className="text-sm font-semibold">{scope}</code>
+        <span className="text-xs text-muted-foreground block">
           {scopeDescription(scope)}
         </span>
-      </div>
+      </span>
     </label>
   );
 }

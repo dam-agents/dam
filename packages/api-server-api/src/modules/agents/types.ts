@@ -25,10 +25,8 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
-  /** Access mode of the binding; absent = person-scoped. */
-  mode?: "shared" | "person-scoped";
-  /** Ambient mode (shared bindings only): the agent reads along in the
-   *  channel and may chime in without being mentioned; absent = off. */
+  /** Ambient mode: the agent reads along in the channel and may chime in
+   *  without being mentioned; absent = off. */
   ambient?: boolean;
 }
 
@@ -88,9 +86,6 @@ export interface Agent {
   contributionFailures: { kind: string; message: string }[];
   /** External communication pathways bound to this agent. */
   channels: ChannelConfig[];
-  /** Emails of users (other than the owner) allowed to message this agent
-   *  from a connected channel. */
-  allowedUserEmails: string[];
   /** Agent Kind: which first-class surface owns this agent (a Knowledge Base
    *  is an Agent + this marker). Absent on plain sandboxes. */
   kind?: AgentKind;
@@ -114,6 +109,11 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
    *  write their Postgres row first, so a list can never see an unattributed
    *  target — bind the two without a window. */
   id?: string;
+  /** Root Driver id to attribute the agent's telemetry to, service-level
+   *  only (never on the wire): a spawning Invocation stamps its root Driver
+   *  here so the target's gateway credits the Driver's spend. A wire-settable
+   *  value would forge attribution onto an agent the caller does not drive. */
+  telemetryAttributionId?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
@@ -132,9 +132,7 @@ export type UpgradeAgentResult =
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
-  | { type: "ChannelAlreadyBound" }
-  /** Mode is fixed per binding: switching requires disconnect + reconnect. */
-  | { type: "ModeChangeRequiresRebind" };
+  | { type: "ChannelAlreadyBound" };
 
 export type ConnectSlackResult =
   | { ok: true; value: Agent }
@@ -222,7 +220,6 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
-    mode?: "shared" | "person-scoped",
     ambient?: boolean,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Agent | null>;
@@ -246,5 +243,4 @@ export interface AgentsService {
     agentId: string,
     conversationId: string,
   ) => Promise<UnbindTelegramChatResult>;
-  isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

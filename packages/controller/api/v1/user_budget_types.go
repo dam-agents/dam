@@ -9,7 +9,7 @@ import (
 // that user's scaled-up Agents may use concurrently, as the sum of their
 // Sizes — `spec.resources.limits` (#1900), which hard-cap consumption. The
 // uniform per-agent gateway overhead is deliberately excluded from the sum;
-// per-turn Fork/Run pods are not counted. Users without a UserBudget get the
+// per-command Run pods are not counted. Users without a UserBudget get the
 // chart-wide default ceiling (`controller.userBudgets`). Operators write
 // these; the controller enforces them at the 0→1 scale transition and the
 // api-server reads them for display.

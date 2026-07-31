@@ -55,7 +55,7 @@ export function ResizeHandle({
         onMouseDown={onMouseDown}
         className="group relative z-raised -mt-[3px] -mb-[2px] h-[5px] shrink-0 cursor-row-resize flex items-center"
       >
-        <div className="h-[2px] w-full bg-transparent group-hover:bg-text group-active:bg-text transition-colors" />
+        <div className="h-[2px] w-full bg-transparent group-hover:bg-foreground group-active:bg-foreground transition-colors" />
       </div>
     );
   }
@@ -68,7 +68,7 @@ export function ResizeHandle({
         side === "left" ? "-ml-[3px]" : "-mr-[3px]",
       )}
     >
-      <div className="w-[2px] h-full bg-transparent group-hover:bg-text group-active:bg-text transition-colors" />
+      <div className="w-[2px] h-full bg-transparent group-hover:bg-foreground group-active:bg-foreground transition-colors" />
     </div>
   );
 }
