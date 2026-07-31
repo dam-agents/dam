@@ -2,8 +2,8 @@ apiVersion: v2
 name: platform
 description: ADK — Secure Agent Execution Platform
 type: application
-version: 0.2.12-rc2
-appVersion: "0.2.12-rc2"
+version: 0.2.12
+appVersion: "0.2.12"
 dependencies:
   # Agent-telemetry backend; gated by clickstack.enabled (default off). Operators + CRDs
   # install out-of-band (deploy/tasks.toml). See docs/architecture/observability.md.
