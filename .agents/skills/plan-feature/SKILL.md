@@ -44,7 +44,9 @@ in the codebase.
 
 **If the context falls short, stop.** Don't gather it yourself — tell the user you don't have
 enough context to decompose, list what's missing or undecided, and let them supply it or
-discuss it first. Proceed to step 2 only when the context is sufficient.
+discuss it first. Offer `/grill-me` as one way to close the gaps — a grilling session working
+through the open questions — but leave the choice to the user. Proceed to step 2 only when the
+context is sufficient.
 
 ### 2. Decompose and get sign-off
 
