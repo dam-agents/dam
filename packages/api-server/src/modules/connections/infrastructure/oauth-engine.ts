@@ -36,6 +36,11 @@ export class OAuthTokenEndpointError extends Error {
   }
 }
 
+// RFC 6749 delimits the `scope` response field with spaces; GitHub uses commas.
+function parseScopeList(raw: string | undefined): string[] {
+  return raw?.split(/[\s,]+/).filter(Boolean) ?? [];
+}
+
 // A non-2xx body often still carries the machine-readable code — JSON for most
 // providers, form-encoded for a few. Best-effort: an unparseable body leaves
 // the classification to the HTTP status alone.
@@ -62,6 +67,9 @@ export interface TokenSet {
   refreshToken?: string;
   /** Unix seconds. Absent when the provider didn't return `expires_in`. */
   expiresAt?: number;
+  /** What the provider says it actually granted (a user can decline scopes at
+   *  consent). Absent when the response carried no `scope`. */
+  scopes?: string[];
 }
 
 export interface OAuthEngine {
@@ -154,6 +162,7 @@ export function createOAuthEngine(
         expires_in: parsed.get("expires_in")
           ? Number(parsed.get("expires_in"))
           : undefined,
+        scope: parsed.get("scope") ?? undefined,
         error: parsed.get("error") ?? undefined,
         error_description: parsed.get("error_description") ?? undefined,
       };
@@ -179,6 +188,8 @@ export function createOAuthEngine(
     if (data.refresh_token) tokens.refreshToken = data.refresh_token;
     if (data.expires_in)
       tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
+    const grantedScopes = parseScopeList(data.scope);
+    if (grantedScopes.length > 0) tokens.scopes = grantedScopes;
     return tokens;
   }
 

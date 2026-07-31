@@ -11,6 +11,7 @@ import type {
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
+import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
 import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
 import { upsertGitconfigContribution } from "../domain/gitconfig-contribution.js";
 import { resolveGitHubIdentity } from "../infrastructure/github-identity.js";
@@ -107,12 +108,21 @@ export function createOAuthFlowService(deps: {
       }
       await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
 
+      // An already-connected OAuth connection is being re-authenticated: same
+      // identity, same grants, fresh tokens.
+      const isReauth =
+        conn.auth.kind === "oauth" && conn.auth.connectedAt !== undefined;
+
       if (conn.auth.kind === "oauth") {
         // Completion marker for status derivation — written on every
-        // successful exchange, even when the provider returns no expiry.
+        // successful exchange, even when the provider returns no expiry. The
+        // recorded scopes are what the provider says it granted (a user can
+        // decline scopes at consent); a provider that stays silent is assumed
+        // to have granted what this consent requested.
         const updatedAuth: ConnectionAuthConfig = {
-          ...conn.auth,
+          ...withoutRefreshFailureMarker(conn.auth),
           connectedAt: Math.floor(Date.now() / 1000),
+          scopes: tokens.scopes ?? pending.provider.scopes ?? conn.auth.scopes,
           ...(tokens.expiresAt !== undefined
             ? { expiresAt: tokens.expiresAt }
             : {}),
@@ -134,14 +144,20 @@ export function createOAuthFlowService(deps: {
           hasRefresh: Boolean(
             tokens.refreshToken && pending.ctx.refreshTokenRef,
           ),
+          reauth: isReauth,
         },
       });
-      emit({
-        type: EventType.ConnectionCreated,
-        actorSub: pending.ctx.ownerId,
-        connectionKey: conn.id,
-        kind: template?.category === "mcp" ? "mcp" : "oauth_app",
-      });
+      // Only a first authorization is a new connection. The event feeds the
+      // usage activity log, so re-emitting it would count one connection twice;
+      // the securityLog line above is the audit trail for a re-auth.
+      if (!isReauth) {
+        emit({
+          type: EventType.ConnectionCreated,
+          actorSub: pending.ctx.ownerId,
+          connectionKey: conn.id,
+          kind: template?.category === "mcp" ? "mcp" : "oauth_app",
+        });
+      }
 
       if (template?.id === "github") {
         await applyGitHubIdentity(conn, tokens.accessToken, deps);
@@ -218,13 +234,22 @@ async function buildProvider(
     if (dynamicSecret) clientSecret = dynamicSecret;
   }
 
+  // Consent asks for the template's *current* scopes, so a template whose scope
+  // list grew since this connection was created picks the new ones up on
+  // re-authentication. Connections whose scopes came from discovery or user
+  // input (custom MCP, DCR) have no template list and keep their stored ones.
+  const templateScopes =
+    template?.authKind === "oauth" && template.scopes?.length
+      ? template.scopes
+      : undefined;
+
   const provider: OAuthProvider = {
     id: `connection:${conn.id}:${conn.templateId}`,
     authorizationUrl: auth.authorizationUrl,
     tokenEndpoint: auth.tokenUrl,
     clientId: auth.clientId,
     ...(clientSecret ? { clientSecret } : {}),
-    scopes: auth.scopes,
+    scopes: templateScopes ?? auth.scopes,
     ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
     ...(auth.extraAuthParams ? { extraAuthParams: auth.extraAuthParams } : {}),
   };
