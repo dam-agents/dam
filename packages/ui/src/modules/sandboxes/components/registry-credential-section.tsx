@@ -33,16 +33,23 @@ interface Props {
 }
 
 export function RegistryCredentialSection({ value, onChange, partial }: Props) {
-  const [open, setOpen] = useState(false);
-  const expanded = open || partial;
-  const set = (key: keyof RegistryCredential, next: string) =>
+  // The credentials outlive this section, which unmounts on every step change —
+  // so disclosure follows whether there is anything to show unless the user says
+  // otherwise (null = follow the fields). Editing pins it open, or clearing the
+  // last field would collapse it mid-edit. `partial` outranks the user: its hint
+  // renders in here, and blocking Continue with the reason hidden is worse.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = partial || (override ?? registryFilledCount(value) > 0);
+  const set = (key: keyof RegistryCredential, next: string) => {
+    setOverride(true);
     onChange({ ...value, [key]: next });
+  };
 
   return (
     <div>
       <DisclosureToggle
         open={expanded}
-        onToggle={() => setOpen((v) => !v)}
+        onToggle={() => setOverride(!expanded)}
         chevronSize={12}
         className={cn(labelVariants(), "gap-1.5 hover:text-foreground")}
       >
