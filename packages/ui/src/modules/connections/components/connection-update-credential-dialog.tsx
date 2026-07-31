@@ -1,5 +1,5 @@
 import { TRPCClientError } from "@trpc/client";
-import type { ConnectionAuthKind, ConnectionView } from "api-server-api";
+import type { ConnectionView } from "api-server-api";
 import { useState } from "react";
 
 import {
@@ -11,28 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 
 import { useUpdateConnection } from "../api/mutations.js";
+import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
-
-/** What the one field means per auth kind — the server dispatches on the same
- *  distinction, so the copy has to name the right secret. */
-const COPY: Record<
-  Exclude<ConnectionAuthKind, "none" | "oauth">,
-  { label: string; hint: string; multiline?: boolean }
-> = {
-  header: {
-    label: "New credential value",
-    hint: "Replaces the value injected on this connection's hosts.",
-  },
-  "client-credentials": {
-    label: "New client secret",
-    hint: "Verified by minting a token before it is stored — a wrong secret is rejected.",
-  },
-  "github-app": {
-    label: "New private key",
-    hint: "PEM from your GitHub App. Verified by minting an installation token before it is stored.",
-    multiline: true,
-  },
-};
 
 /**
  * Replaces a connection's stored credential in place. The connection's identity
@@ -50,10 +30,7 @@ export function ConnectionUpdateCredentialDialog({
   const [value, setValue] = useState("");
   const update = useUpdateConnection({ silent: true });
 
-  const copy =
-    connection.authKind === "none" || connection.authKind === "oauth"
-      ? undefined
-      : COPY[connection.authKind];
+  const copy = credentialCopyFor(connection.authKind);
   if (!copy) return null;
 
   // A rejected credential is feedback about what was typed, so the server's own
@@ -78,7 +55,7 @@ export function ConnectionUpdateCredentialDialog({
   return (
     <Modal widthClass="w-[505px]">
       <DialogHeader
-        title="Update credential"
+        title={copy.action}
         subtitle={connection.name}
         onClose={onClose}
         closeTestId="update-credential-close"

@@ -219,6 +219,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   pair plus a structured **host list** describing every wire position
   the token should be injected on. The refresh-token loop re-mints
   access tokens before expiry; the agent never sees the refresh token.
+  Re-running login and consent against an existing connection replaces its
+  tokens in place, keeping the connection's identity and grants. When the
+  connection stores the OAuth app's *client* secret itself (rather than
+  inheriting the deployment's), that secret is replaceable in place too — the
+  api-server immediately tries the stored refresh token with it, so a rotation
+  upstream usually revives the connection with no user consent at all, and where
+  it can't, re-authentication is unblocked by it. A client secret supplied by the
+  operator is deploy config and is rotated there.
 - **User-supplied secrets** (Anthropic API keys, generic API tokens) —
   the Connections subsystem writes them as a **header Connection** per
   credential, built from its template and stored with the same labels and

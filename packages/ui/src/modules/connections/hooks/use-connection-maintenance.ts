@@ -18,12 +18,16 @@ export function useConnectionMaintenance() {
     connection: ConnectionView,
   ): RowMaintenanceActions | undefined => {
     switch (connection.authKind) {
-      // Consent is the only way to mint an OAuth credential; pasting one is
-      // meaningless.
+      // Consent is the only way to mint an OAuth *token*. A connection storing
+      // its own client secret additionally offers that secret's rotation —
+      // without it, a rotated app secret breaks refresh and re-consent alike.
       case "oauth":
         return {
           onReauthenticate: () => void reauthenticate(connection),
           busy: busyId === connection.id,
+          ...(connection.hasClientSecret
+            ? { onUpdateCredential: () => setUpdating(connection) }
+            : {}),
         };
       case "header":
       case "client-credentials":

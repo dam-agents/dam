@@ -129,6 +129,10 @@ export const connectionView = z.object({
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
+  // Set only for an OAuth connection storing its own client secret, which is
+  // what makes that secret replaceable per connection rather than in deploy
+  // config. Clients gate the rotation affordance on it.
+  hasClientSecret: z.boolean().optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
 

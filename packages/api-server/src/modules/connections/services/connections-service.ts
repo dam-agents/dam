@@ -32,12 +32,16 @@ import {
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
-import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
+import {
+  OAuthTokenEndpointError,
+  type OAuthEngine,
+} from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { mintGitHubAppToken } from "./github-app.js";
+import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -74,6 +78,9 @@ export function createConnectionsService(deps: {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
             ...(conn.auth.kind === "oauth" && conn.auth.appSlug
               ? { appSlug: conn.auth.appSlug }
+              : {}),
+            ...(conn.auth.kind === "oauth" && conn.auth.clientSecretRef
+              ? { hasClientSecret: true }
               : {}),
             ...(conn.auth.connectedAt
               ? {
@@ -214,6 +221,60 @@ export function createConnectionsService(deps: {
     });
   }
 
+  // An OAuth connection's *client* secret, not its tokens: without this a
+  // rotated app secret is unfixable, because refresh and re-consent both die at
+  // the token exchange. Only connections carrying their own secret qualify — an
+  // operator-supplied one is deploy config.
+  async function rotateOAuthClientSecret(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "oauth" }>,
+    clientSecret: string,
+  ): Promise<void> {
+    if (!auth.clientSecretRef) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection uses the OAuth client secret configured for the whole deployment. Rotate it there; it can't be replaced per connection.",
+      });
+    }
+    // Never injected on the wire, so no SDS to re-bake.
+    await deps.secretStore.putFields(auth.clientSecretRef, {
+      [auth.clientSecretRef.field]: clientSecret,
+    });
+
+    // Rotating an app secret doesn't revoke tokens already issued, so the stored
+    // refresh token usually still works: trying it revives the connection with
+    // no user consent at all. A failure changes nothing — the new secret is
+    // stored, the connection stays expired, and its row still offers
+    // re-authentication, which the rotation has just unblocked.
+    try {
+      const next = await refreshOAuthAccessToken({
+        conn,
+        auth,
+        engine: deps.oauthEngine,
+        templates: deps.templates,
+        secretStore: deps.secretStore,
+      });
+      await deps.repo.updateAuth(conn.id, {
+        ...withoutRefreshFailureMarker(auth),
+        expiresAt: next.expiresAt,
+      });
+    } catch (err) {
+      // Swallowed by design (see above) but never silent: without this line the
+      // operator sees a successful update next to a still-expired connection
+      // with no record of why the revive didn't take.
+      securityLog("warn", "connection.client_secret_revive_failed", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "failure",
+        reason: reviveFailureReason(err),
+        detail: { templateId: conn.templateId, authKind: conn.auth.kind },
+      });
+    }
+  }
+
   // A minting credential is validated by using it: nothing is written until the
   // provider accepts it, and its own rejection is the most useful message the
   // user can get, so it rides through as the BAD_REQUEST.
@@ -277,11 +338,8 @@ export function createConnectionsService(deps: {
           await rotatePrivateKey(conn, conn.auth, value);
           break;
         case "oauth":
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "This connection recovers by re-authenticating, not by pasting a credential.",
-          });
+          await rotateOAuthClientSecret(conn, conn.auth, value);
+          break;
         case "none":
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -619,6 +677,15 @@ export function createConnectionsService(deps: {
       return probeClusterCa(input.host);
     },
   };
+}
+
+// Metadata only — a provider's raw rejection body could echo credential
+// material, and the audit stream must never carry it.
+function reviveFailureReason(err: unknown): string {
+  if (err instanceof OAuthTokenEndpointError) {
+    return err.oauthError ?? `token endpoint status ${err.status ?? "unknown"}`;
+  }
+  return err instanceof Error ? err.name : "unknown";
 }
 
 function stripSecretsFromInputs(input: {

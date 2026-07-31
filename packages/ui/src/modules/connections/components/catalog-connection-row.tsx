@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { credentialCopyFor } from "../forms/field-copy.js";
 import { ConnectionStatusBadge } from "./connection-status-badge.js";
 import { GithubAppInstallLink } from "./github-app-install-hint.js";
 
@@ -20,12 +21,13 @@ export interface RowGrantControls {
   actionHidden?: boolean;
 }
 
-/** Credential maintenance for one row. Exactly one of the two callbacks is set
- *  — the caller decides from the auth kind, so the row stays unaware of it. */
+/** Credential maintenance for one row. Which callbacks are set is the caller's
+ *  decision, from the auth kind, so the row stays unaware of it. */
 export interface RowMaintenanceActions {
   /** Re-run login/consent (OAuth connections). */
   onReauthenticate?: () => void;
-  /** Paste a replacement secret (stored-credential connections). */
+  /** Paste a replacement secret (stored-credential connections, and an OAuth
+   *  connection carrying its own client secret). */
   onUpdateCredential?: () => void;
   /** A consent popup for this row is already open. */
   busy?: boolean;
@@ -56,15 +58,20 @@ export function CatalogConnectionRow({
 }: Props) {
   const reauthLabel =
     connection.status === "pending" ? "Authorize" : "Re-authenticate";
+  // Named from the connection's own auth kind, so the menu item and the
+  // dialog it opens read from one source.
+  const updateLabel =
+    credentialCopyFor(connection.authKind)?.action ?? "Update credential";
   // An expired row carries its own fix, so recovery is one click from the
-  // failure rather than a hunt through the ⋮ menu.
+  // failure rather than a hunt through the ⋮ menu. Re-authentication wins when
+  // both are offered — it is the fix that always applies.
   const inlineFix =
     connection.status !== "expired"
       ? undefined
       : maintenance?.onReauthenticate
         ? { label: reauthLabel, run: maintenance.onReauthenticate }
         : maintenance?.onUpdateCredential
-          ? { label: "Update credential", run: maintenance.onUpdateCredential }
+          ? { label: updateLabel, run: maintenance.onUpdateCredential }
           : undefined;
   return (
     <div
@@ -145,7 +152,7 @@ export function CatalogConnectionRow({
                 onSelect={maintenance.onUpdateCredential}
                 data-testid={`catalog-update-credential-${connection.id}`}
               >
-                Update credential
+                {updateLabel}
               </DropdownMenuItem>
             )}
             {grant?.granted && (

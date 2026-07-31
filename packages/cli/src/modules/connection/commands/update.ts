@@ -19,6 +19,9 @@ const SECRET_LABELS: Record<string, string> = {
   header: "New credential value",
   "client-credentials": "New client secret",
   "github-app": "New private key (PEM)",
+  // Its own client secret, not its tokens — those come from `reauth`. Only
+  // connections carrying their own qualify; the server rejects the rest.
+  oauth: "New OAuth client secret",
 };
 
 export function buildUpdateCommand(deps: {
@@ -50,7 +53,8 @@ export function buildUpdateCommand(deps: {
         '  dam connection update my-github-app --value "$(cat app.pem)"\n' +
         "\nA multi-line secret (a PEM private key) can't be typed at the\n" +
         "prompt — pass it with --value, as in the last example.\n" +
-        "\nOAuth connections recover by re-authenticating instead:\n" +
+        "\nOn an OAuth connection this rotates its *client secret* (only when the\n" +
+        "connection carries its own). To replace expired tokens, re-consent:\n" +
         "  dam connection reauth <id-or-name>\n",
     )
     .action(

@@ -28,6 +28,7 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
+import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { mintGitHubAppToken } from "./github-app.js";
 
 export interface OAuthRefreshLoop {
@@ -322,47 +323,13 @@ async function refreshOne(
     db: Db;
   },
 ): Promise<void> {
-  if (!auth.refreshTokenRef) {
-    throw new Error("no refresh token ref");
-  }
-  const refreshToken = await deps.secretStore.getField(auth.refreshTokenRef);
-  if (!refreshToken) {
-    throw new Error(`refresh token missing at ${auth.refreshTokenRef.path}`);
-  }
-
-  const template = deps.templates.get(conn.templateId);
-  let clientSecret =
-    template && template.authKind === "oauth"
-      ? template.clientSecret
-      : undefined;
-  if (auth.clientSecretRef) {
-    const dyn = await deps.secretStore.getField(auth.clientSecretRef);
-    if (dyn) clientSecret = dyn;
-  }
-  const provider: OAuthProvider = {
-    id: `connection:${conn.id}:${conn.templateId}`,
-    authorizationUrl: auth.authorizationUrl,
-    tokenEndpoint: auth.tokenUrl,
-    clientId: auth.clientId,
-    ...(clientSecret ? { clientSecret } : {}),
-    scopes: auth.scopes,
-    ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
-  };
-
-  const next = await deps.engine.refresh({ provider, refreshToken });
-
-  const sdsFields = buildConnectionSdsFields(
-    conn.contributions,
-    next.accessToken,
-  );
-  const fields: Record<string, string> = {
-    access_token: next.accessToken,
-    ...sdsFields,
-  };
-  if (next.refreshToken && auth.refreshTokenRef) {
-    fields.refresh_token = next.refreshToken;
-  }
-  await deps.secretStore.putFields(auth.accessTokenRef, fields);
+  const next = await refreshOAuthAccessToken({
+    conn,
+    auth,
+    engine: deps.engine,
+    templates: deps.templates,
+    secretStore: deps.secretStore,
+  });
   const updatedAuth: ConnectionAuthConfig = {
     ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
