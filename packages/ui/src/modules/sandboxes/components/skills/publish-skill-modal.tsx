@@ -26,7 +26,7 @@ type FormValues = z.infer<typeof publishSchema>;
 /**
  * Publish a Standalone Local Skill upstream as a pull request. Prefills the PR
  * title and description; the target dropdown lists only publishable (GitHub)
- * sources. On success the caller shows the "In review" pill.
+ * sources. On success the caller shows the "Published" pill.
  */
 export function PublishSkillModal({
   skill,
