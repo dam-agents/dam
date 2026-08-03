@@ -4,7 +4,6 @@ import { chatInput, setMockLongTurnReply } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import {
-  DELIVERY_TIMEOUT_MS,
   expectMilestoneBeforeFailure,
   LONG_TURN_MS,
   openMockAgentChat,
