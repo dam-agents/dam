@@ -7,7 +7,7 @@ import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
-import { ConnectionUpdateCredentialDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 
@@ -78,12 +78,7 @@ export function GrantedConnectionsPanel({
           />
         ))}
       </Wrap>
-      {maintenance.updating && (
-        <ConnectionUpdateCredentialDialog
-          connection={maintenance.updating}
-          onClose={maintenance.closeUpdate}
-        />
-      )}
+      <ConnectionMaintenanceDialog maintenance={maintenance} />
     </>
   );
 }

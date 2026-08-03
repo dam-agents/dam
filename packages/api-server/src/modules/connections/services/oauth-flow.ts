@@ -108,8 +108,12 @@ export function createOAuthFlowService(deps: {
       }
       await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
 
+      // `expiresAt` stays in the OR for back-compat: connections authorized
+      // before `connectedAt` existed carry an expiry but no `connectedAt`.
       const isReauth =
-        conn.auth.kind === "oauth" && conn.auth.connectedAt !== undefined;
+        conn.auth.kind === "oauth" &&
+        (conn.auth.connectedAt !== undefined ||
+          conn.auth.expiresAt !== undefined);
 
       if (conn.auth.kind === "oauth") {
         // `connectedAt` is written on every successful exchange, even when the

@@ -24,7 +24,10 @@ import {
   buildConnection,
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
-import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
+import {
+  tokenRejectionOf,
+  withoutRefreshFailureMarker,
+} from "../domain/refresh-failure-marker.js";
 import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
@@ -32,10 +35,7 @@ import {
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
-import {
-  OAuthTokenEndpointError,
-  type OAuthEngine,
-} from "../infrastructure/oauth-engine.js";
+import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
@@ -272,14 +272,25 @@ export function createConnectionsService(deps: {
 
   // Validated by use: nothing is written until the provider accepts it, and its
   // own rejection is the most useful thing to show, so it rides the BAD_REQUEST.
+  // Only the OAuth error code, though — a token-endpoint message embeds the
+  // provider's raw body, which could echo credential material.
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
     } catch (err) {
+      const rejection = tokenRejectionOf(err);
+      if (rejection) {
+        process.stderr.write(
+          `[connections] credential rejected: ${(err as Error).message}\n`,
+        );
+      }
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message:
-          err instanceof Error ? err.message : "The credential was rejected.",
+        message: rejection
+          ? `The provider rejected the credential (${reviveFailureReason(err)}).`
+          : err instanceof Error
+            ? err.message
+            : "The credential was rejected.",
       });
     }
   }
@@ -675,8 +686,12 @@ export function createConnectionsService(deps: {
 
 // Metadata only: a provider's raw body could echo credential material.
 function reviveFailureReason(err: unknown): string {
-  if (err instanceof OAuthTokenEndpointError) {
-    return err.oauthError ?? `token endpoint status ${err.status ?? "unknown"}`;
+  const rejection = tokenRejectionOf(err);
+  if (rejection) {
+    return (
+      rejection.oauthError ??
+      `token endpoint status ${rejection.status ?? "unknown"}`
+    );
   }
   return err instanceof Error ? err.name : "unknown";
 }

@@ -25,7 +25,7 @@ import {
   CatalogProviderCard,
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
-import { ConnectionUpdateCredentialDialog } from "./connection-update-credential-dialog.js";
+import { ConnectionMaintenanceDialog } from "./connection-update-credential-dialog.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
@@ -116,12 +116,7 @@ export function ConnectionCatalogModal({
   if (maintenance.updating) {
     // The credential dialog replaces the catalogue while open — stacking two
     // modals would trap focus in whichever mounted last.
-    return (
-      <ConnectionUpdateCredentialDialog
-        connection={maintenance.updating}
-        onClose={maintenance.closeUpdate}
-      />
-    );
+    return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 
   return (

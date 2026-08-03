@@ -23,15 +23,24 @@ export interface OAuthProvider {
 export class OAuthTokenEndpointError extends Error {
   readonly status: number | undefined;
   readonly oauthError: string | undefined;
+  /** The response body was OAuth-shaped (JSON or form-encoded). False for an
+   *  HTML error page from a proxy/WAF, whose status says nothing about the
+   *  credential. */
+  readonly oauthShapedBody: boolean;
 
   constructor(
     message: string,
-    opts: { status?: number; oauthError?: string } = {},
+    opts: {
+      status?: number;
+      oauthError?: string;
+      oauthShapedBody?: boolean;
+    } = {},
   ) {
     super(message);
     this.name = "OAuthTokenEndpointError";
     this.status = opts.status;
     this.oauthError = opts.oauthError;
+    this.oauthShapedBody = opts.oauthShapedBody ?? false;
   }
 }
 
@@ -141,9 +150,17 @@ export function createOAuthEngine(
     if (!res.ok) {
       const txt = await res.text();
       const oauthError = parseOAuthErrorCode(txt);
+      const errCt = res.headers.get("content-type") ?? "";
       throw new OAuthTokenEndpointError(
         `OAuth token endpoint ${provider.id}: ${res.status} ${txt.slice(0, 500)}`,
-        { status: res.status, ...(oauthError ? { oauthError } : {}) },
+        {
+          status: res.status,
+          ...(oauthError ? { oauthError } : {}),
+          oauthShapedBody:
+            oauthError !== undefined ||
+            errCt.includes("application/json") ||
+            errCt.includes("application/x-www-form-urlencoded"),
+        },
       );
     }
     const ct = res.headers.get("content-type") ?? "";
@@ -178,6 +195,7 @@ export function createOAuthEngine(
         {
           status: res.status,
           ...(data.error ? { oauthError: data.error } : {}),
+          oauthShapedBody: true,
         },
       );
     }

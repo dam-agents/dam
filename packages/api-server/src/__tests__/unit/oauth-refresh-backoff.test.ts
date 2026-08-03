@@ -103,6 +103,9 @@ function makeLoop(opts?: {
   baseMs?: number;
   maxMs?: number;
   auth?: ConnectionAuthConfig;
+  /** Simulate a credential fix racing the tick: the guarded marker write
+   *  matches no rows. */
+  markerWriteMatches?: boolean;
 }) {
   const auth = opts?.auth ?? AUTH;
   let clock = 0;
@@ -141,11 +144,18 @@ function makeLoop(opts?: {
     update: () => ({
       set: (patch: { auth: unknown }) => ({
         where: () => {
+          const isMarkerWrite =
+            patch.auth &&
+            typeof patch.auth === "object" &&
+            "queryChunks" in patch.auth;
+          if (isMarkerWrite && opts?.markerWriteMatches === false) {
+            return Promise.resolve({ rowCount: 0 });
+          }
           for (const r of rows) {
             r.auth = applyAuthWrite(r.auth as MarkableAuth, patch.auth);
           }
           written.push((rows[0]?.auth ?? patch.auth) as ConnectionAuthConfig);
-          return Promise.resolve(undefined);
+          return Promise.resolve({ rowCount: rows.length });
         },
       }),
     }),
@@ -357,6 +367,18 @@ describe("oauth refresh permanent failures", () => {
     ownSecret.setClock(9_000);
     expect((await ownSecret.loop.tickOnce()).failed).toBe(1);
     expect(ownSecret.written().at(-1)).toMatchObject({ refreshFailedAt: 9 });
+  });
+
+  it("falls back to the backoff when the guarded marker write matches no rows", async () => {
+    const h = makeLoop({ markerWriteMatches: false });
+    h.setMode("revoked-grant");
+    h.setClock(0);
+    expect((await h.loop.tickOnce()).failed).toBe(1);
+    expect(h.written()).toEqual([]);
+
+    // Not parked: still due, held by the backoff window instead of retried hot.
+    expect((await h.loop.tickOnce()).skipped).toBe(1);
+    expect(h.fetchCount()).toBe(1);
   });
 
   it("re-admits a connection once the marker is cleared", async () => {

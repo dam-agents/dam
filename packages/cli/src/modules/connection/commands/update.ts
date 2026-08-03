@@ -1,5 +1,6 @@
 import { cancel, isCancel } from "@clack/prompts";
 import { Command } from "commander";
+import type { ConnectionAuthKind } from "api-server-api";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -15,7 +16,7 @@ import type { ConnectionService } from "../services/connection-service.js";
 
 /** What `value` means per auth kind — the server dispatches on the same
  *  distinction, so the prompt has to name the right secret. */
-const SECRET_LABELS: Record<string, string> = {
+const SECRET_LABELS: Record<Exclude<ConnectionAuthKind, "none">, string> = {
   header: "New credential value",
   "client-credentials": "New client secret",
   "github-app": "New private key (PEM)",
@@ -112,7 +113,7 @@ export function buildUpdateCommand(deps: {
                 'pass --value "$(cat app.pem)" instead\n',
             );
           }
-          const label = SECRET_LABELS[match.authKind] ?? "New credential value";
+          const label = SECRET_LABELS[match.authKind];
           const entered = await promptSecret(`${label} for ${match.name}`);
           if (isCancel(entered)) {
             cancel("Cancelled");

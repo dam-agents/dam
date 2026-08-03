@@ -13,16 +13,16 @@ import {
   type ConnectionAuthConfig,
   type Contribution,
 } from "api-server-api";
-import {
-  OAuthTokenEndpointError,
-  type OAuthEngine,
-  type OAuthProvider,
+import type {
+  OAuthEngine,
+  OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import {
   isPermanentTokenRejection,
+  tokenRejectionOf,
   withoutRefreshFailureMarker,
 } from "../domain/refresh-failure-marker.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -199,10 +199,10 @@ function isPermanentAuthFailure(
   err: unknown,
   auth: ConnectionAuthConfig,
 ): boolean {
-  if (!(err instanceof OAuthTokenEndpointError)) return false;
+  const rejection = tokenRejectionOf(err);
+  if (!rejection) return false;
   return isPermanentTokenRejection({
-    oauthError: err.oauthError,
-    status: err.status,
+    ...rejection,
     ownsClientSecret: ownsClientSecret(auth),
   });
 }
@@ -232,12 +232,13 @@ async function markRefreshFailure(
 ): Promise<boolean> {
   if (conn.auth.kind === "header" || conn.auth.kind === "none") return false;
   const auth = conn.auth;
+  let markedRows: number;
   try {
     // This verdict is as old as the tick's read. Merge the one key server-side
     // rather than replacing `auth`, and only while `expiresAt`/`connectedAt`
     // still match what the tick saw — every successful credential write bumps
     // one of them, so a fix that landed since wins and this marks nothing.
-    await deps.db
+    const result = await deps.db
       .update(connectionsTable)
       .set({
         auth: sql`jsonb_set(${connectionsTable.auth}, '{refreshFailedAt}', to_jsonb(${Math.floor(nowMs / 1000)}::bigint))`,
@@ -250,6 +251,7 @@ async function markRefreshFailure(
           sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
         ),
       );
+    markedRows = (result as unknown as { rowCount?: number }).rowCount ?? 0;
   } catch (writeErr) {
     log(
       `connection ${conn.id} refresh-failure marker write failed: ` +
@@ -257,6 +259,10 @@ async function markRefreshFailure(
     );
     return false;
   }
+  // A credential fix landed between the tick's read and this write — nothing
+  // was marked, so nothing is parked (and there is no failure to audit).
+  if (markedRows === 0) return false;
+  const rejection = tokenRejectionOf(err);
   securityLog("warn", "connection.refresh_permanent_failure", {
     category: "credential",
     actor: "system:oauth-refresh",
@@ -267,10 +273,14 @@ async function markRefreshFailure(
     detail: {
       templateId: conn.templateId,
       authKind: conn.auth.kind,
-      ...(err instanceof OAuthTokenEndpointError
+      ...(rejection
         ? {
-            ...(err.oauthError ? { oauthError: err.oauthError } : {}),
-            ...(err.status !== undefined ? { status: err.status } : {}),
+            ...(rejection.oauthError
+              ? { oauthError: rejection.oauthError }
+              : {}),
+            ...(rejection.status !== undefined
+              ? { status: rejection.status }
+              : {}),
           }
         : {}),
     },

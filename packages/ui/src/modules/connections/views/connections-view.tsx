@@ -11,7 +11,7 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionGroupCard } from "../components/connection-group-card.js";
-import { ConnectionUpdateCredentialDialog } from "../components/connection-update-credential-dialog.js";
+import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
@@ -84,12 +84,7 @@ export function ConnectionsView() {
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />
       )}
 
-      {maintenance.updating && (
-        <ConnectionUpdateCredentialDialog
-          connection={maintenance.updating}
-          onClose={maintenance.closeUpdate}
-        />
-      )}
+      <ConnectionMaintenanceDialog maintenance={maintenance} />
     </div>
   );
 }

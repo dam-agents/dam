@@ -14,6 +14,27 @@ import { useUpdateConnection } from "../api/mutations.js";
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 
+/** The dialog half of `useConnectionMaintenance`: owns the `updating` guard so
+ *  a surface wiring the row actions can't forget the mount. Render it either
+ *  alongside the list or, as the catalogue modal does, *instead of* the host —
+ *  it is null until a row opens it. */
+export function ConnectionMaintenanceDialog({
+  maintenance,
+}: {
+  maintenance: {
+    updating: ConnectionView | null;
+    closeUpdate: () => void;
+  };
+}) {
+  if (!maintenance.updating) return null;
+  return (
+    <ConnectionUpdateCredentialDialog
+      connection={maintenance.updating}
+      onClose={maintenance.closeUpdate}
+    />
+  );
+}
+
 /** Replaces a connection's stored credential in place — identity and grants
  *  survive, so this only ever collects the one secret. */
 export function ConnectionUpdateCredentialDialog({
