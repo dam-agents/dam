@@ -10,13 +10,10 @@ import type { SecretStore } from "../../secret-store/index.js";
 export type OAuthAuth = Extract<ConnectionAuthConfig, { kind: "oauth" }>;
 
 /**
- * One refresh_token exchange, shared by the background refresh loop and
- * credential maintenance: reads the stored refresh token, exchanges it, and
- * writes the fresh token plus re-baked SDS onto the connection's Secret.
- *
- * Persisting the new horizon is left to the caller — the loop reaches the row
- * through Drizzle and the service through its repository, and that is the only
- * difference between the two paths.
+ * One refresh_token exchange, shared by the refresh loop and credential
+ * maintenance. Persisting the new horizon is the caller's, because the loop
+ * reaches the row through Drizzle and the service through its repository —
+ * the only difference between the two paths.
  */
 export async function refreshOAuthAccessToken(opts: {
   conn: Connection;
@@ -34,8 +31,7 @@ export async function refreshOAuthAccessToken(opts: {
     throw new Error(`refresh token missing at ${auth.refreshTokenRef.path}`);
   }
 
-  // A per-connection secret (the user's own OAuth app, or one rotated in place)
-  // overrides the operator's baked-in one.
+  // A per-connection secret overrides the operator's baked-in one.
   const template = opts.templates.get(conn.templateId);
   let clientSecret =
     template && template.authKind === "oauth"

@@ -14,12 +14,8 @@ import { useUpdateConnection } from "../api/mutations.js";
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 
-/**
- * Replaces a connection's stored credential in place. The connection's identity
- * and every sandbox grant survive, so this dialog only ever collects the one
- * secret. A rejection from the provider is shown inline rather than as a toast —
- * it is about what was typed.
- */
+/** Replaces a connection's stored credential in place — identity and grants
+ *  survive, so this only ever collects the one secret. */
 export function ConnectionUpdateCredentialDialog({
   connection,
   onClose,
@@ -33,9 +29,8 @@ export function ConnectionUpdateCredentialDialog({
   const copy = credentialCopyFor(connection.authKind);
   if (!copy) return null;
 
-  // A rejected credential is feedback about what was typed, so the server's own
-  // message belongs on the field. Anything else (transport, 500) is not about
-  // the value at all — showing "fetch failed" under the input would blame it.
+  // A rejection is about what was typed, so the server's words belong on the
+  // field. A transport failure isn't — "fetch failed" there would blame it.
   const fieldError =
     update.error === null
       ? undefined
@@ -92,8 +87,7 @@ export function ConnectionUpdateCredentialDialog({
   );
 }
 
-/** The minting kinds reject a bad secret as BAD_REQUEST carrying the provider's
- *  own words; everything else is a failure of the request, not of the value. */
+/** A bad secret comes back as BAD_REQUEST with the provider's own words. */
 function isBadRequest(err: unknown): err is Error {
   return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

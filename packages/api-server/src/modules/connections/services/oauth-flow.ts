@@ -108,17 +108,13 @@ export function createOAuthFlowService(deps: {
       }
       await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
 
-      // An already-connected OAuth connection is being re-authenticated: same
-      // identity, same grants, fresh tokens.
       const isReauth =
         conn.auth.kind === "oauth" && conn.auth.connectedAt !== undefined;
 
       if (conn.auth.kind === "oauth") {
-        // Completion marker for status derivation — written on every
-        // successful exchange, even when the provider returns no expiry. The
-        // recorded scopes are what the provider says it granted (a user can
-        // decline scopes at consent); a provider that stays silent is assumed
-        // to have granted what this consent requested.
+        // `connectedAt` is written on every successful exchange, even when the
+        // provider returns no expiry. Scopes are what it says it granted; a
+        // silent provider is assumed to have granted what was requested.
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(conn.auth),
           connectedAt: Math.floor(Date.now() / 1000),
@@ -147,9 +143,8 @@ export function createOAuthFlowService(deps: {
           reauth: isReauth,
         },
       });
-      // Only a first authorization is a new connection. The event feeds the
-      // usage activity log, so re-emitting it would count one connection twice;
-      // the securityLog line above is the audit trail for a re-auth.
+      // Only a first authorization is a new connection: the event feeds the usage
+      // activity log, so re-emitting would count one connection twice.
       if (!isReauth) {
         emit({
           type: EventType.ConnectionCreated,
@@ -234,10 +229,9 @@ async function buildProvider(
     if (dynamicSecret) clientSecret = dynamicSecret;
   }
 
-  // Consent asks for the template's *current* scopes, so a template whose scope
-  // list grew since this connection was created picks the new ones up on
-  // re-authentication. Connections whose scopes came from discovery or user
-  // input (custom MCP, DCR) have no template list and keep their stored ones.
+  // Consent asks for the template's *current* scopes, so a list that grew since
+  // create takes effect on re-auth. Discovery/DCR connections have no template
+  // list and keep their stored ones.
   const templateScopes =
     template?.authKind === "oauth" && template.scopes?.length
       ? template.scopes

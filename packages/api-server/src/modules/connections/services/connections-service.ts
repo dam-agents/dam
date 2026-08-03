@@ -155,9 +155,8 @@ export function createConnectionsService(deps: {
     };
   }
 
-  // Every credential rotation is one merge onto the connection's single
-  // per-Connection Secret plus, for the minting kinds, an auth update carrying
-  // the fresh horizon. Identity, contributions, and grants are never touched.
+  // Each rotation is one merge onto the connection's single Secret, plus an auth
+  // update for the minting kinds. Identity, contributions, and grants stay put.
 
   async function rotateHeaderValue(
     conn: Connection,
@@ -221,10 +220,8 @@ export function createConnectionsService(deps: {
     });
   }
 
-  // An OAuth connection's *client* secret, not its tokens: without this a
-  // rotated app secret is unfixable, because refresh and re-consent both die at
-  // the token exchange. Only connections carrying their own secret qualify — an
-  // operator-supplied one is deploy config.
+  // The *client* secret, not the tokens: without this a rotated app secret is
+  // unfixable, since refresh and re-consent both die at the token exchange.
   async function rotateOAuthClientSecret(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "oauth" }>,
@@ -242,11 +239,10 @@ export function createConnectionsService(deps: {
       [auth.clientSecretRef.field]: clientSecret,
     });
 
-    // Rotating an app secret doesn't revoke tokens already issued, so the stored
-    // refresh token usually still works: trying it revives the connection with
-    // no user consent at all. A failure changes nothing — the new secret is
-    // stored, the connection stays expired, and its row still offers
-    // re-authentication, which the rotation has just unblocked.
+    // An app-secret rotation doesn't revoke issued tokens, so the stored refresh
+    // token usually still works — trying it revives the connection with no
+    // consent at all. On failure the secret is still stored and the row's
+    // re-authenticate action, now unblocked, is the way back.
     try {
       const next = await refreshOAuthAccessToken({
         conn,
@@ -260,9 +256,8 @@ export function createConnectionsService(deps: {
         expiresAt: next.expiresAt,
       });
     } catch (err) {
-      // Swallowed by design (see above) but never silent: without this line the
-      // operator sees a successful update next to a still-expired connection
-      // with no record of why the revive didn't take.
+      // Swallowed by design, but never silent: otherwise the operator sees a
+      // successful update next to a still-expired connection and no reason.
       securityLog("warn", "connection.client_secret_revive_failed", {
         category: "credential",
         actor: deps.ownerId,
@@ -275,9 +270,8 @@ export function createConnectionsService(deps: {
     }
   }
 
-  // A minting credential is validated by using it: nothing is written until the
-  // provider accepts it, and its own rejection is the most useful message the
-  // user can get, so it rides through as the BAD_REQUEST.
+  // Validated by use: nothing is written until the provider accepts it, and its
+  // own rejection is the most useful thing to show, so it rides the BAD_REQUEST.
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -679,8 +673,7 @@ export function createConnectionsService(deps: {
   };
 }
 
-// Metadata only — a provider's raw rejection body could echo credential
-// material, and the audit stream must never carry it.
+// Metadata only: a provider's raw body could echo credential material.
 function reviveFailureReason(err: unknown): string {
   if (err instanceof OAuthTokenEndpointError) {
     return err.oauthError ?? `token endpoint status ${err.status ?? "unknown"}`;
@@ -726,10 +719,9 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
   }
 }
 
-// The marker is the definitive signal, written only on a permanent rejection.
-// A past horizon is the fallback: refresh renews well ahead of expiry, so a
-// token that outlived its own horizon has no working refresh path. A provider
-// that issues no `expires_in` (GitHub) carries no horizon and stays active.
+// The marker is definitive. A past horizon is the fallback: refresh renews well
+// ahead of expiry, so a token outliving it has no working refresh path. Providers
+// issuing no `expires_in` (GitHub) carry no horizon and stay active.
 function isExpiredAuth(auth: {
   expiresAt?: number;
   refreshFailedAt?: number;

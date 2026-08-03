@@ -76,18 +76,17 @@ type Mode =
   | "ok";
 
 const MODE_RESPONSES: Record<Mode, () => Response> = {
-  // Retryable: the token endpoint failed to answer, it didn't reject anything.
+  // Retryable: the endpoint failed to answer rather than rejecting anything.
   transient: () => new Response("upstream unavailable", { status: 503 }),
   // What Google returns for a revoked refresh token, form-encoded.
   "revoked-grant": () => new Response("error=invalid_grant", { status: 400 }),
-  // GitHub's shape: the same rejection carried in a 200 form body, so the code
-  // — not the status — has to be what classifies it.
+  // GitHub's shape: the rejection rides a 200 form body, so the code — not the
+  // status — has to classify it.
   "revoked-grant-200": () =>
     new Response("error=bad_refresh_token&error_description=expired", {
       status: 200,
     }),
-  // The *client's* credential was rejected — permanent only when the
-  // connection stores that secret itself.
+  // Client credential rejected: permanent only if the connection owns it.
   "invalid-client": () =>
     new Response(JSON.stringify({ error: "invalid_client" }), {
       status: 401,
@@ -117,12 +116,9 @@ function makeLoop(opts?: {
     return MODE_RESPONSES[mode]();
   }) as typeof fetch;
 
-  // The loop writes the marker as a server-side jsonb merge, so that write
-  // arrives as a SQL fragment rather than an object — the point being that a
-  // concurrent credential fix is never clobbered. The fake stands in for
-  // Postgres applying it: merge `refreshFailedAt` (from the clock the loop
-  // reads) onto whatever auth the row currently holds. Success paths still
-  // write plain auth objects and pass through verbatim.
+  // The marker write arrives as a SQL fragment (a server-side jsonb merge, so a
+  // concurrent fix isn't clobbered); stand in for Postgres applying it. Success
+  // paths write plain auth objects and pass through.
   const applyAuthWrite = (
     current: MarkableAuth,
     next: unknown,
@@ -131,10 +127,8 @@ function makeLoop(opts?: {
       ? { ...current, refreshFailedAt: Math.floor(clock / 1000) }
       : (next as ConnectionAuthConfig);
 
-  // dueConnections' SQL is exercised against Postgres elsewhere; the fake
-  // reproduces only the refresh-failure-marker clause, because "a marked
-  // connection is parked" is behavior these tests assert. Auth writes land back
-  // on the rows so the next tick sees them (one connection under test).
+  // Only the marker clause is reproduced here — "a marked connection is parked"
+  // is what these tests assert. Writes land back on the rows for the next tick.
   const db = {
     select: () => ({
       from: () => ({
@@ -245,8 +239,7 @@ describe("oauth refresh loop backoff", () => {
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(2);
 
-    // A transient failure never persists a marker — the connection must stay in
-    // the due set so the backoff above is what governs the retry.
+    // A transient failure never marks: the backoff above governs the retry.
     expect(h.written()).toEqual([]);
   });
 
@@ -333,8 +326,7 @@ describe("oauth refresh permanent failures", () => {
       });
       expect(h.written().at(-1)).toMatchObject({ refreshFailedAt: 5 });
 
-      // Parked, not backed off: the connection is gone from the due set, so the
-      // next tick doesn't even count it as skipped.
+      // Parked, not backed off — gone from the due set, so not even skipped.
       expect(await h.loop.tickOnce()).toEqual({
         refreshed: 0,
         failed: 0,
@@ -345,8 +337,7 @@ describe("oauth refresh permanent failures", () => {
   );
 
   it("marks a rejected client secret only when the connection owns it", async () => {
-    // AUTH carries no clientSecretRef: the secret is the operator's, a redeploy
-    // fixes it, so parking it would demand a needless re-consent.
+    // No clientSecretRef: the operator owns the secret, a redeploy fixes it.
     const operatorBaked = makeLoop();
     operatorBaked.setMode("invalid-client");
     expect((await operatorBaked.loop.tickOnce()).failed).toBe(1);

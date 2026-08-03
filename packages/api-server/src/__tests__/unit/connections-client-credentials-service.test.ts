@@ -235,8 +235,7 @@ describe("client-credentials connection create", () => {
     );
     const id = await svc.createFromTemplate(createInput());
 
-    // A stale marker on the row is what parks it out of the refresh loop; the
-    // rotation has to clear it or the revived connection stays parked.
+    // The rotation must clear the marker, or the revived connection stays parked.
     const created = rows.get(id)!;
     if (created.auth.kind !== "client-credentials") throw new Error("kind");
     rows.set(id, {

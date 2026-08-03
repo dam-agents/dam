@@ -4,9 +4,7 @@ export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
 
-// `value` is the connection's stored credential, whatever shape that kind
-// stores: the injected value, a client secret, or a PEM private key. The server
-// dispatches on the connection's auth kind.
+// `value` is whichever secret the connection's auth kind stores.
 export const connectionUpdateInputSchema = z.object({
   id: z.string().min(1),
   value: z.string().min(1),

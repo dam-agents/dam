@@ -14,11 +14,8 @@ interface Pending {
   connectedAt: string | undefined;
 }
 
-/**
- * Re-runs login/consent against an existing OAuth connection. Unlike the create
- * flow this never deletes anything on abandon: the connection keeps working on
- * its old credential, so there is no husk to clean up.
- */
+/** Unlike the create flow this never deletes anything on abandon: the
+ *  connection keeps working on its old credential. */
 export function useReauthenticateConnection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const pendingRef = useRef<Pending | null>(null);
@@ -60,10 +57,8 @@ export function useReauthenticateConnection() {
   } = useOAuthPopup((result) => void settle(result));
 
   const reauthenticate = async (connection: ConnectionView) => {
-    // One consent at a time: the popup is a *named* window, so opening a
-    // second flow — even for a different connection — would navigate the
-    // first one away mid-consent and silently orphan it. Bring the open
-    // popup back to the front instead.
+    // One consent at a time: the popup is a *named* window, so a second flow —
+    // even for another connection — would navigate the first away mid-consent.
     if (busyId !== null) {
       focusPopup();
       return;

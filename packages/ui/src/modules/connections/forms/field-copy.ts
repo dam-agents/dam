@@ -55,9 +55,8 @@ export const CREDENTIAL_COPY: Record<
   oauth: {
     action: "Update client secret",
     label: "New OAuth client secret",
-    // Each connection stores its own copy of the app secret, even the ones that
-    // inherited it from a sibling at create time — so say that here rather than
-    // let a half-fixed set of Google connections be the way it's discovered.
+    // Even connections that inherited the secret hold their own copy, so say so
+    // here rather than let a half-fixed set of Google connections reveal it.
     hint: "The secret of the OAuth app this connection authenticates through. If the stored refresh token still works the connection revives immediately; otherwise re-authenticate afterwards. Other connections using the same OAuth app keep their own copy — update each of them too.",
   },
   header: {

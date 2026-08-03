@@ -17,10 +17,9 @@ export interface OAuthProvider {
   extraAuthParams?: Record<string, string>;
 }
 
-/** A token-endpoint rejection, carrying the machine-readable OAuth error code
- *  alongside the HTTP status so callers can tell a dead credential from a
- *  transient blip. GitHub returns its errors in a **200** form-encoded body, so
- *  `oauthError` — not `status` — is the reliable discriminator. */
+/** A token-endpoint rejection. GitHub returns its errors in a **200**
+ *  form-encoded body, so `oauthError` — not `status` — is the reliable
+ *  discriminator of a dead credential. */
 export class OAuthTokenEndpointError extends Error {
   readonly status: number | undefined;
   readonly oauthError: string | undefined;
@@ -41,9 +40,8 @@ function parseScopeList(raw: string | undefined): string[] {
   return raw?.split(/[\s,]+/).filter(Boolean) ?? [];
 }
 
-// A non-2xx body often still carries the machine-readable code — JSON for most
-// providers, form-encoded for a few. Best-effort: an unparseable body leaves
-// the classification to the HTTP status alone.
+// A non-2xx body usually still carries the code — JSON for most providers,
+// form-encoded for a few. An unparseable body leaves only the status.
 function parseOAuthErrorCode(body: string): string | undefined {
   try {
     const json = JSON.parse(body) as { error?: unknown };
@@ -67,8 +65,7 @@ export interface TokenSet {
   refreshToken?: string;
   /** Unix seconds. Absent when the provider didn't return `expires_in`. */
   expiresAt?: number;
-  /** What the provider says it actually granted (a user can decline scopes at
-   *  consent). Absent when the response carried no `scope`. */
+  /** What the provider granted — a user can decline scopes at consent. */
   scopes?: string[];
 }
 

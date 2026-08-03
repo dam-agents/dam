@@ -252,8 +252,7 @@ describe("github-app connection create", () => {
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
     });
-    // How a PEM arrives from a JSON/env value — the update has to restore the
-    // newlines before the key can sign anything.
+    // How a PEM arrives from a JSON/env value; newlines must be restored.
     await svc.update(id, rotatedPem.replaceAll("\n", "\\n"));
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());

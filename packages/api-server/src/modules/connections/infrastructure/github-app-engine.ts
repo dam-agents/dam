@@ -109,11 +109,9 @@ export function createGitHubAppEngine(
       });
       if (!res.ok) {
         const txt = await res.text();
-        // GitHub speaks REST here, not OAuth, so there is no error code to
-        // carry — translate the two dead ends into the classifier's vocabulary
-        // for "the client's credential was rejected", so the refresh loop parks
-        // them instead of re-signing a dead key every tick: 401 = signature
-        // rejected (rotated/revoked key), 404 = app or installation gone.
+        // REST, not OAuth, so there is no error code to carry: translate the
+        // two dead ends (401 = key rejected, 404 = app/installation gone) into
+        // the classifier's vocabulary so the loop parks them.
         const permanentlyRejected = res.status === 401 || res.status === 404;
         throw new OAuthTokenEndpointError(
           `GitHub App ${id}: installation-token request failed — ${res.status} ${txt.slice(0, 500)}`,

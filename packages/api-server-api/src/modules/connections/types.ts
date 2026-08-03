@@ -17,10 +17,8 @@ export const oauthAuth = z.object({
   clientSecretRef: secretRef.optional(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
-  // Refresh-failure marker (epoch seconds): set only when the token endpoint
-  // rejected a refresh permanently, so the connection derives `expired` and
-  // the refresh loop stops retrying a credential that can't recover on its
-  // own. Any successful token write clears it, as does credential maintenance.
+  // Epoch seconds, set only on a *permanent* token rejection: derives
+  // `expired` and parks the connection. Any successful token write clears it.
   refreshFailedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   extraAuthParams: z.record(z.string(), z.string()).optional(),
@@ -129,9 +127,8 @@ export const connectionView = z.object({
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
-  // Set only for an OAuth connection storing its own client secret, which is
-  // what makes that secret replaceable per connection rather than in deploy
-  // config. Clients gate the rotation affordance on it.
+  // Only for an OAuth connection storing its own client secret — an
+  // operator-supplied one is deploy config, not replaceable per connection.
   hasClientSecret: z.boolean().optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
@@ -224,12 +221,10 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
-  // Replaces the connection's stored credential in place, preserving its
-  // identity and every agent grant. What `value` means follows the connection's
-  // auth kind: the injected value (header), the client secret
-  // (client-credentials), or the PEM private key (github-app). The minting kinds
-  // validate synchronously — an invalid secret fails the update with the
-  // provider's rejection and leaves the connection as it was.
+  // Replaces the stored credential in place, preserving identity and grants.
+  // `value` is the injected value (header), the client secret
+  // (client-credentials/oauth), or the PEM private key (github-app). The minting
+  // kinds validate first, so an invalid secret changes nothing.
   update(id: string, value: string): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;

@@ -21,13 +21,10 @@ export interface RowGrantControls {
   actionHidden?: boolean;
 }
 
-/** Credential maintenance for one row. Which callbacks are set is the caller's
- *  decision, from the auth kind, so the row stays unaware of it. */
+/** Which callbacks are set is the caller's decision, from the auth kind, so the
+ *  row stays unaware of it. */
 export interface RowMaintenanceActions {
-  /** Re-run login/consent (OAuth connections). */
   onReauthenticate?: () => void;
-  /** Paste a replacement secret (stored-credential connections, and an OAuth
-   *  connection carrying its own client secret). */
   onUpdateCredential?: () => void;
   /** A consent popup for this row is already open. */
   busy?: boolean;
@@ -58,13 +55,11 @@ export function CatalogConnectionRow({
 }: Props) {
   const reauthLabel =
     connection.status === "pending" ? "Authorize" : "Re-authenticate";
-  // Named from the connection's own auth kind, so the menu item and the
-  // dialog it opens read from one source.
+  // One source, so the menu item and the dialog it opens can't disagree.
   const updateLabel =
     credentialCopyFor(connection.authKind)?.action ?? "Update credential";
-  // An expired row carries its own fix, so recovery is one click from the
-  // failure rather than a hunt through the ⋮ menu. Re-authentication wins when
-  // both are offered — it is the fix that always applies.
+  // Recovery one click from the failure, not a hunt through the ⋮ menu.
+  // Re-authentication wins when both apply — it always works.
   const inlineFix =
     connection.status !== "expired"
       ? undefined

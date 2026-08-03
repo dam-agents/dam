@@ -123,10 +123,8 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           refreshed++;
         } catch (err) {
           failed++;
-          // A permanent rejection is parked, not retried: the marker takes the
-          // connection out of the due set until credential maintenance clears
-          // it. A failed marker write falls through to the transient backoff so
-          // the connection keeps being attempted rather than going quiet.
+          // Parked, not retried. A failed marker write falls through to the
+          // backoff below, so the connection never goes quiet.
           if (
             isPermanentAuthFailure(err, conn.auth) &&
             (await markRefreshFailure(conn, err, deps, now(), log))
@@ -175,9 +173,7 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
           "client-credentials",
           "github-app",
         ]),
-        // A marked connection is parked: its credential can't recover without
-        // someone supplying a new one, so clearing the marker (credential
-        // maintenance, or any successful token write) is what re-admits it.
+        // Marked connections are parked; clearing the marker re-admits them.
         sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
@@ -213,9 +209,8 @@ function isPermanentAuthFailure(
 
 function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
   switch (auth.kind) {
+    // Absent ref means the operator supplies the secret, fixed centrally.
     case "oauth":
-      // Absent means the client secret comes from the operator's deploy config
-      // — a rotation there is fixed centrally, not per connection.
       return auth.clientSecretRef !== undefined;
     case "client-credentials":
     case "github-app":
@@ -226,9 +221,8 @@ function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
   }
 }
 
-/** Persists the refresh-failure marker. Returns false when there is nothing to
- *  mark or the write failed, so the caller falls back to the transient backoff
- *  instead of silently giving up on the connection. */
+/** Persists the marker. False when nothing was marked, so the caller falls back
+ *  to the backoff rather than giving up on the connection. */
 async function markRefreshFailure(
   conn: Connection,
   err: unknown,
@@ -239,12 +233,10 @@ async function markRefreshFailure(
   if (conn.auth.kind === "header" || conn.auth.kind === "none") return false;
   const auth = conn.auth;
   try {
-    // This verdict is as old as the tick's read, and credential maintenance may
-    // have fixed the connection since. Merge the one key server-side (never
-    // replace `auth`, which would clobber a concurrent write), and only when
-    // `expiresAt`/`connectedAt` still match what the tick saw — every
-    // successful credential write bumps one of them, so a fresher fix wins and
-    // the stale failure marks nothing.
+    // This verdict is as old as the tick's read. Merge the one key server-side
+    // rather than replacing `auth`, and only while `expiresAt`/`connectedAt`
+    // still match what the tick saw — every successful credential write bumps
+    // one of them, so a fix that landed since wins and this marks nothing.
     await deps.db
       .update(connectionsTable)
       .set({
