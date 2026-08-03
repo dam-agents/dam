@@ -8,6 +8,7 @@ import {
   Modal,
 } from "@/components/modal";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../../types.js";
@@ -38,31 +39,32 @@ export function SlackChannelModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-        {/* Dismissal is gated while submitting: changing the channel
-            disconnects the old one before connecting the new, so leaving in
-            between drops that binding with nothing on screen saying so. */}
         <DialogHeader
-          title={editing ? "Edit Slack channel" : "Connect a Slack channel"}
+          title={editing ? "Slack channel settings" : "Connect a Slack channel"}
           onClose={onClose}
           closeDisabled={isSubmitting}
         />
 
         <DialogBody className="flex flex-col gap-4">
-          <FormField
-            label="Channel ID"
-            disableInset
-            error={errors.channelId?.message}
-            hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
-          >
-            <Input
-              className="h-10"
-              variant={errors.channelId ? "invalid" : undefined}
-              aria-invalid={!!errors.channelId}
-              placeholder="C0…"
-              data-testid="slack-channel-id"
-              {...register("channelId")}
-            />
-          </FormField>
+          {channel ? (
+            <ConnectedChannel slackChannelId={channel.slackChannelId} />
+          ) : (
+            <FormField
+              label="Channel ID"
+              disableInset
+              error={errors.channelId?.message}
+              hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
+            >
+              <Input
+                className="h-10"
+                variant={errors.channelId ? "invalid" : undefined}
+                aria-invalid={!!errors.channelId}
+                placeholder="C0…"
+                data-testid="slack-channel-id"
+                {...register("channelId")}
+              />
+            </FormField>
+          )}
 
           <Controller
             control={control}
@@ -83,6 +85,28 @@ export function SlackChannelModal({
         />
       </form>
     </Modal>
+  );
+}
+
+/** The conversation of an existing binding: shown, not edited. A binding *is*
+ *  its conversation, so pointing this sandbox at another one is connecting that
+ *  channel and disconnecting this one. */
+function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <SectionLabel>Channel</SectionLabel>
+      <p
+        className="font-mono text-sm text-foreground"
+        data-testid="slack-channel-bound"
+      >
+        {slackChannelId}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        A connected channel can't be swapped for another one. To reach this
+        sandbox from somewhere else, connect that channel and disconnect this
+        one.
+      </p>
+    </div>
   );
 }
 
