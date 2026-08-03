@@ -43,8 +43,8 @@ New `packages/api-server/src/modules/skills/infrastructure/pr-state-reader.ts`:
 
 ```ts
 export interface PrStateReader {
-  /** Conditional read. `notModified` means the cached state still stands and
-   *  the call cost nothing against the rate limit. */
+  /** Conditional read. `notModified` means the cached state still stands —
+   *  but it was NOT free; see the README on the anonymous 304. */
   read(
     coords: { owner: string; repo: string; number: number },
     etag: string | null,
@@ -59,8 +59,9 @@ export interface PrStateReader {
 `GET https://api.github.com/repos/{owner}/{repo}/pulls/{number}` with:
 
 - `Accept: application/vnd.github+json`
-- `If-None-Match: <etag>` when an etag is stored — **this is the mechanism that makes the budget
-  survivable**, because GitHub does not count a `304` against the rate limit.
+- `If-None-Match: <etag>` when an etag is stored. Worth sending for the bandwidth, but it is
+  **not** a budget mechanism — an anonymous `304` is charged like a `200` (see the README). The
+  hourly re-check in step 3 is what makes the budget survivable.
 - A `User-Agent` (GitHub rejects requests without one).
 
 Map the response:
@@ -68,17 +69,23 @@ Map the response:
 | Response | Result |
 |---|---|
 | `304` | `notModified` |
-| `200`, `draft: true` | `draft` |
-| `200`, `state: "open"` | `open` |
 | `200`, `merged_at` non-null | `merged` |
 | `200`, `state: "closed"` | `closed` |
+| `200`, `draft: true` | `draft` |
+| `200`, `state: "open"` | `open` |
 | `404` | `unavailable: not-found` — private, deleted, or repo gone |
 | `403`/`429` with `x-ratelimit-remaining: 0` | `unavailable: rate-limited` |
 | anything else | `unavailable: error` |
 
-Check `draft` **before** `state`, and `merged_at` before falling through to `closed` — a merged
-pull request also reports `state: "closed"`, so ordering is what distinguishes landed from
-abandoned.
+The order above is the derivation order, and it matters twice. `merged_at` is checked before
+`closed` because a merged pull request also reports `state: "closed"` — that is what distinguishes
+landed from abandoned. And terminal states are checked before `draft`, so a **closed draft** reads
+`Closed`, not `Draft`: it was abandoned, and `Draft` would imply it is still live awaiting
+readiness. (An earlier revision of this plan said to check `draft` first, which gets that case
+wrong.)
+
+Verified against the fixtures: PR #6 is `state: "closed"` with `merged_at` set → `merged`; PR #7 is
+`state: "closed"` with `merged_at: null` → `closed`.
 
 Do not throw on `unavailable`. A badge that cannot be resolved is a normal outcome, not a fault.
 
@@ -91,23 +98,21 @@ the periodic job calls:
 
    ```
    (prState IS NULL OR prState IN ('draft','open'))
-   AND (prEtag IS NOT NULL OR prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h)
+   AND (prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h)
    ```
 
    The first line is mechanism 2 from the README — **terminal states are excluded by the query**,
    which is what makes the working set shrink over time instead of growing with usage.
 
-   The second line is the budget mechanism, and it is load-bearing. Records that *cannot* resolve
-   (private source, deleted repo, deleted pull request) come back `404`, which carries no usable
-   ETag and never becomes terminal — so without it they stay candidates forever at full price,
-   accumulate monotonically, and asymptotically consume the entire hourly budget while the
-   resolvable records converge to free. Each clause:
+   The second line is the budget mechanism, and it is load-bearing, because the README's
+   mechanism 1 does **not** hold: an anonymous `304` is charged the same as a `200` (see the
+   README for the measurement). Every read costs one request, so throttle every record equally —
+   one request per record per hour, ~50 records inside the ceiling. Do **not** re-add an
+   `prEtag IS NOT NULL` exemption; that was the original design and it lets ten open pull requests
+   exhaust the whole instance's allowance.
 
-   - `prEtag IS NOT NULL` — we hold a validator, so the re-check is a free `304`. These keep the
-     every-tick cadence, which is what makes the badge 10-minutes-fresh.
-   - `prStateCheckedAt IS NULL` — a fresh publish resolves on the very next tick.
-   - `< now() - 1h` — anything with no validator drops to **one attempt per hour**. One hour
-     because the anonymous window *is* one hour, so there is nothing to tune.
+   `prStateCheckedAt IS NULL` is exempt from the wait, so a fresh publish still resolves on the
+   next tick rather than in an hour.
 
    Fairness falls out of this for free: a record that was just attempted removes itself from the
    candidate set, so no record can starve the others and no `ORDER BY` is needed.
@@ -154,15 +159,18 @@ applied by the registry).
 ## Acceptance criteria
 
 - [ ] `parsePrUrl` handles `https://github.com/o/r/pull/12` and returns `null` for a non-GitHub host,
-      a repo URL with no `/pull/`, and a non-numeric number.
+      a repo URL with no `/pull/`, and a non-numeric number. It lives in `domain/`, which is only
+      possible because `git-host.ts` moved there too — the domain layer may not import from
+      infrastructure, and that move also fixes two pre-existing `services/` → `infrastructure/`
+      imports of `detectHost`.
 - [ ] The reader sends `If-None-Match` when an etag is stored, and a `304` results in no state change.
-- [ ] `draft`, `open`, `merged` and `closed` are each distinguished correctly, with `draft` checked
-      before `state` and `merged_at` before `closed`.
+- [ ] `draft`, `open`, `merged` and `closed` are each distinguished correctly, in the derivation
+      order above: `merged_at` before `closed`, and both before `draft`.
 - [ ] Records with a terminal `prState` are excluded by the selection query — verifiable by
       inspecting the query, and by confirming a `merged` record is not re-read on later ticks.
-- [ ] A record with no stored ETag is attempted at most once per hour, so a permanently
-      unresolvable record (private source, deleted repo) cannot spend the budget every tick.
-- [ ] A record that *does* hold an ETag is still re-checked every tick, since a `304` is free.
+- [ ] **Every** record is attempted at most once per hour — there is no ETag exemption, because an
+      anonymous `304` is charged like a `200`. A record never attempted (`prStateCheckedAt IS NULL`)
+      is exempt from the wait, so a fresh publish resolves on the next tick.
 - [ ] An `unavailable` outcome never nulls an already-resolved state, and clears the stored ETag.
 - [ ] A `rate-limited` outcome aborts the pass and logs once.
 - [ ] The per-tick cap is enforced and logs what it skipped.

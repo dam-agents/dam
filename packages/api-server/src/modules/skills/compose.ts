@@ -11,8 +11,13 @@ import {
 } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
+import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
+import {
+  createPrStateResolver,
+  type PrStateResolver,
+} from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -60,6 +65,23 @@ function invalidateScanCache(gitUrl: string, path: string | undefined): void {
   if (sharedScanCache.delete(key)) {
     process.stderr.write(`[skills] cache invalidated: ${key}\n`);
   }
+}
+
+/**
+ * The pull-request state resolver, composed for background use. Separate from
+ * {@link composeSkillsModule} because it is owner-agnostic: the skills service
+ * is re-composed per request around one user, while the resolver sweeps every
+ * agent's publish records.
+ */
+export function composePrStateResolver(deps: {
+  db: Db;
+  log: (msg: string) => void;
+}): PrStateResolver {
+  return createPrStateResolver({
+    agentSkills: createAgentSkillsRepository(deps.db),
+    reader: createGitHubPrStateReader(),
+    log: deps.log,
+  });
 }
 
 export function composeSkillsModule(

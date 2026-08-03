@@ -12,7 +12,7 @@ import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
-import { detectHost } from "../infrastructure/git-host.js";
+import { detectHost } from "../domain/git-host.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 import { securityLog } from "../../../core/security-log.js";
 

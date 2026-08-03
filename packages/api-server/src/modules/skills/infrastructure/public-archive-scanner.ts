@@ -6,7 +6,7 @@ import * as tar from "tar";
 import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import { detectHost } from "./git-host.js";
+import { detectHost } from "../domain/git-host.js";
 
 /**
  * Scan a public GitHub source directly — no Envoy sidecar, no git binary,

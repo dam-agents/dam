@@ -35,7 +35,7 @@ import {
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
-import { detectHost } from "../infrastructure/git-host.js";
+import { detectHost } from "../domain/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";

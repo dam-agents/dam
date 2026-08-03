@@ -60,11 +60,18 @@ Pull-request state can only come from `api.github.com`, which is **60 requests/h
 unauthenticated**, shared across every user of an api-server. That budget is exactly what
 [`public-archive-scanner.ts:22`](../../../packages/api-server/src/modules/skills/infrastructure/public-archive-scanner.ts:22)
 deliberately steers around — it uses the tarball endpoint *because* that endpoint has no such
-limit. There is no tarball equivalent for pull-request state, so three mechanisms carry the cost:
+limit. There is no tarball equivalent for pull-request state, so four mechanisms carry the cost —
+though the first turned out not to work, which is why there are four:
 
-1. **Conditional requests.** Store the ETag next to the state and re-check with `If-None-Match`.
-   GitHub does not count `304 Not Modified` against the rate limit, so an unchanged pull request
-   costs nothing. Only actual state *transitions* consume budget.
+1. ~~**Conditional requests.**~~ **Measured false — do not rely on this.** The original plan
+   assumed `304 Not Modified` is exempt from the rate limit, so an unchanged pull request would
+   cost nothing. Against `api.github.com` unauthenticated, it is not: four consecutive
+   `If-None-Match` requests each returned `304` and each decremented
+   `x-ratelimit-remaining` by one (55 → 54 → 53 → 52), identically to a `200`. GitHub's
+   "conditional requests are free" behaviour applies to the *authenticated* primary limit, which
+   is the bucket slice 04's pod path uses — not this one. The ETag is still stored and sent (it
+   saves bandwidth, and it is the right thing on the authenticated path), but it buys **no
+   budget**, so mechanism 4 rather than this one is what makes the read affordable.
 2. **Terminal-state persistence.** `merged` and `closed` are immutable. Observe once, persist,
    and never read that record again. The population needing checks only ever shrinks.
 3. **A periodic job, not on-read resolution.** Resolving inside the `state` query would couple
@@ -72,17 +79,22 @@ limit. There is no tarball equivalent for pull-request state, so three mechanism
    of the shared-fate risk. [`core/periodic-jobs.ts`](../../../packages/api-server/src/core/periodic-jobs.ts)
    is a BullMQ registry that is idempotent across replicas, so volume becomes a function of how
    many open published pull requests exist.
+4. **A per-record hourly re-check.** Since mechanism 1 turned out not to hold, this is what
+   actually bounds spend. Selection requires
+   `prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h`, so every unresolved pull request
+   costs exactly **one request per hour** and roughly **50** of them fit inside the ceiling. The
+   alternative — checking each record on every 10-minute tick — costs six per hour each, so ten
+   open pull requests would exhaust the whole instance's allowance for every user at once.
 
-4. **Per-record backoff for anything without a validator.** Mechanisms 1 and 2 only help records
-   that *can* resolve. A record that cannot — private source, deleted repo, deleted pull request —
-   returns `404`, which carries no usable ETag and never becomes terminal, so it would stay a
-   candidate forever at full price. Those accumulate monotonically while resolvable records
-   converge to free, so left alone they eventually consume the whole budget. Selection therefore
-   requires `prEtag IS NOT NULL OR prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h`:
-   hold a validator and the re-check is free every tick, hold none and it is attempted at most
-   once per hour. This also makes the per-tick cap a backstop rather than the thing that bounds
-   spend, and gives fairness for free — a record just attempted removes itself from the candidate
-   set, so none can starve the others.
+   `prStateCheckedAt IS NULL` is exempt from the wait, which is what keeps the case a user
+   actually watches fast: a *freshly published* pull request still resolves on the next tick,
+   within ten minutes. Only re-checks of an already-known state wait the hour, so the badge is
+   at most ~70 minutes stale after a transition — acceptable for a badge, and the price of
+   supporting 50 records instead of 10.
+
+   Two things fall out for free. The per-tick cap becomes a pure backstop against a pathological
+   backlog rather than the thing bounding spend. And no record can starve the others: one just
+   attempted removes itself from the candidate set, so no ordering logic is needed.
 
 When the budget is exhausted anyway, state resolution degrades to the unknown case, which is a
 truthful label. Nothing breaks; the badge just claims less.
@@ -164,7 +176,7 @@ toggle, so the page needs a note rather than a reversal.
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | Record the resolved pull-request state | `prState`, `prStateCheckedAt`, `prEtag` on `agentSkillPublishes` + `skillPublishRecordSchema`; generated migration; repository read/write. No resolution, no UI change. | — |
-| 02 | Resolve public pull-request state | Anonymous conditional `api.github.com` read, ETag storage, terminal persistence, registered periodic job, rate-limit backoff. | 01 |
+| 02 ✅ | Resolve public pull-request state | Anonymous conditional `api.github.com` read, ETag storage, terminal persistence, registered periodic job, rate-limit backoff. | 01 |
 | 03 | Render the five states | Badge mapping and tones; `Submitted` replaces the unknown-case `Published`; `Publish again` in the `closed` state only. | 01 |
 | 04 | Resolve private state through a warm pod | `getPullRequest` on the runtime's GitHub port, tRPC procedure, api-server delegation only when the pod is already running. | 01, 02 |
 | 05 | Expose the local content hash and de-duplicate the merged row | Lazy `contentHash` on local skills; suppress the source-group entry for an identical merged standalone skill. | 01 |

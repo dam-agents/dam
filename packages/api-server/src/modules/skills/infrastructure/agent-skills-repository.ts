@@ -1,6 +1,16 @@
 import crypto from "node:crypto";
 import type { Db } from "db";
-import { agentSkills, agentSkillPublishes, eq, and, inArray } from "db";
+import {
+  agentSkills,
+  agentSkillPublishes,
+  eq,
+  and,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "db";
 import type { SkillRef, SkillPublishRecord } from "api-server-api";
 
 export interface AgentSkillsRepository {
@@ -15,6 +25,14 @@ export interface AgentSkillsRepository {
 
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
+
+  /** Records whose pull request is worth re-reading, across every agent — the
+   *  resolver is background work, not owner-scoped. See
+   *  {@link PrStateCandidate} for what "worth" means. */
+  listPrStateCandidates(
+    staleBefore: Date,
+    limit: number,
+  ): Promise<PrStateCandidate[]>;
 
   /** Persist a resolved state. Terminal states (`merged`, `closed`) are
    *  written once and the record is never selected for a re-read again, so
@@ -38,6 +56,14 @@ export interface AgentSkillsRepository {
 }
 
 type PrState = NonNullable<SkillPublishRecord["prState"]>;
+
+/** One pull request the resolver may read, with the agent that published it
+ *  (slice 04 escalates to that agent's pod) and the stored validator. */
+export interface PrStateCandidate {
+  agentId: string;
+  prUrl: string;
+  prEtag: string | null;
+}
 
 function generatePublishId(): string {
   return `pub-${crypto.randomBytes(8).toString("hex")}`;
@@ -163,6 +189,46 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         prUrl: record.prUrl,
         publishedAt: new Date(record.publishedAt),
       });
+    },
+
+    async listPrStateCandidates(staleBefore, limit) {
+      const rows = await db
+        .select({
+          agentId: agentSkillPublishes.agentId,
+          prUrl: agentSkillPublishes.prUrl,
+          prEtag: agentSkillPublishes.prEtag,
+        })
+        .from(agentSkillPublishes)
+        .where(
+          and(
+            // Terminal states are excluded here, not filtered later: `merged`
+            // and `closed` are immutable, so the working set shrinks with use
+            // instead of growing.
+            or(
+              isNull(agentSkillPublishes.prState),
+              inArray(agentSkillPublishes.prState, ["draft", "open"]),
+            ),
+            // Throttle every record equally. A conditional request is NOT
+            // exempt from the anonymous rate limit — measured against
+            // api.github.com, each 304 decrements x-ratelimit-remaining by one
+            // exactly like a 200 — so an ETag saves bandwidth but buys no
+            // budget, and re-checking on every tick would let ~10 open pull
+            // requests exhaust the instance's whole hourly allowance. A record
+            // never attempted is exempt, so a fresh publish still resolves on
+            // the next tick.
+            or(
+              isNull(agentSkillPublishes.prStateCheckedAt),
+              lt(agentSkillPublishes.prStateCheckedAt, staleBefore),
+            ),
+          ),
+        )
+        // NULLS FIRST, explicitly: Postgres sorts NULL last by default, which
+        // would put never-attempted records — a fresh publish, the case a user
+        // is actually watching — behind every already-attempted one and starve
+        // them whenever the backlog exceeds the per-tick cap.
+        .orderBy(sql`${agentSkillPublishes.prStateCheckedAt} asc nulls first`)
+        .limit(limit);
+      return rows;
     },
 
     // Keyed on prUrl, not (agentId, skillName): the same pull request can be

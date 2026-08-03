@@ -21,6 +21,7 @@ import {
   createAgentSweep,
 } from "./modules/agents/index.js";
 import {
+  composePrStateResolver,
   createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
@@ -716,6 +717,18 @@ const artifactExpirySweeper = composeArtifactExpirySweeper({
 });
 await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
   artifactExpirySweeper.tick(),
+);
+
+// Re-read the pull requests behind skill publish records so the badge reports
+// their real state. Ten minutes: with conditional requests a tick over
+// unchanged pull requests is nearly free, so the interval trades badge
+// freshness against almost nothing.
+const prStateResolver = composePrStateResolver({
+  db,
+  log: (msg) => process.stderr.write(`[pr-state-resolver] ${msg}\n`),
+});
+await periodicJobs.register("skill-pr-state-resolve", 10 * 60_000, () =>
+  prStateResolver.tick(),
 );
 periodicJobs.start();
 
