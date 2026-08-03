@@ -487,7 +487,7 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-xs"
                 aria-label={surfaceCopy.actionsAria}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                className="hover-capable:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
                 <OverflowMenuVertical size={14} />
               </Button>
