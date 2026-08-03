@@ -45,7 +45,19 @@ function Tooltip({
 }: TooltipProps) {
   return (
     <TooltipPrimitive.Root>
-      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+      {/* Radix opens on any focus, so restoring focus to a trigger — what a
+          menu or dialog does when it closes — would leave a tooltip stuck open
+          away from the pointer. preventDefault here suppresses only Radix's
+          own handler. */}
+      <TooltipPrimitive.Trigger
+        asChild
+        onFocus={(event) => {
+          if (!event.currentTarget.matches(":focus-visible"))
+            event.preventDefault();
+        }}
+      >
+        {children}
+      </TooltipPrimitive.Trigger>
       <TooltipContent
         side={side}
         className={cn("max-w-xs text-xs leading-relaxed", className)}
