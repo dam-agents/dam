@@ -120,6 +120,45 @@ export async function setMockReplyWithFiles(
   });
 }
 
+/** Script a turn that takes `holdMs` to finish: the head chunk streams
+ *  immediately, the tail only after the delay. The delay sits *inside* the
+ *  turn, so the runtime keeps the prompt slot occupied for the whole time and
+ *  parks anything sent meanwhile — which is what makes the delivery-feedback
+ *  scenarios deterministic without a single fixed sleep in the spec. Pass no
+ *  `head` for a turn that emits nothing at all until the delay elapses (a
+ *  wedged agent: the prompt was handed over, then silence). */
+export async function setMockLongTurnReply(
+  api: ApiClient,
+  agentId: string,
+  parts: { head?: string; holdMs: number; tail: string },
+): Promise<void> {
+  await api.e2e.setScript.mutate({
+    agentId,
+    script: {
+      entries: [
+        ...(parts.head === undefined
+          ? []
+          : [
+              {
+                sessionUpdate: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: parts.head },
+                },
+              },
+            ]),
+        {
+          delayMs: parts.holdMs,
+          sessionUpdate: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: parts.tail },
+          },
+        },
+      ],
+      stopReason: "end_turn",
+    },
+  });
+}
+
 export async function setMockReplyWithMidTurnUserPrompt(
   api: ApiClient,
   agentId: string,
