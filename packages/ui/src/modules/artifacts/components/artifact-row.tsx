@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCopy } from "@/hooks/use-copy";
 import { timeAgo } from "@/lib/format-time";
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -52,14 +53,9 @@ export function ArtifactRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onPreview(artifact)}
+      {...clickableProps(() => onPreview(artifact))}
       onMouseEnter={warmPreview}
       onFocus={warmPreview}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onPreview(artifact);
-      }}
       className={cn(
         "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
         expiry.state === "expired" && "opacity-55",
@@ -100,7 +96,6 @@ export function ArtifactRow({
         <div
           className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
         >
           <ShareLinkButton artifact={artifact} onShare={onShare} />
           <DropdownMenu>

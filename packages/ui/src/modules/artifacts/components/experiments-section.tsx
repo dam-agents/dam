@@ -8,7 +8,7 @@ import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
-import { DisclosureChevron } from "@/components/ui/disclosure";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
@@ -121,16 +121,12 @@ export function ExperimentsSection({
 
   return (
     <Card className="mt-2 overflow-hidden border-dashed bg-muted/30 anim-in">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") setOpen((o) => !o);
-        }}
-        className="flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
+      <DisclosureToggle
+        open={expanded}
+        onToggle={() => setOpen((o) => !o)}
+        chevronClassName="text-muted-foreground"
+        className="w-full cursor-pointer select-none gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >
-        <DisclosureChevron open={expanded} className="text-muted-foreground" />
         <Chemistry size={16} className="shrink-0 text-muted-foreground" />
         <span className="text-sm font-semibold text-muted-foreground">
           Experiments
@@ -142,7 +138,7 @@ export function ExperimentsSection({
         <span className="ml-auto hidden text-xs text-muted-foreground/70 sm:block">
           scripts, dashboards and run results published by your agents
         </span>
-      </div>
+      </DisclosureToggle>
       {expanded &&
         visible.map((folder) => {
           const artifacts = byFolder.get(folder.id) ?? [];
