@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { getErrorMessage } from "../../lib/errors.js";
 import { formatBytes } from "../../lib/format-size.js";
 import {
+  formatDate,
   formatTimestamp,
   largestUnit,
   timeAgo,
@@ -45,11 +46,17 @@ describe("timeUntil", () => {
     expect(timeUntil("2026-01-01T14:00:00Z", now)).toBe("in 2 h");
     expect(timeUntil("2026-01-06T12:00:00Z", now)).toBe("in 5 d");
   });
+  test("unparseable dates degrade to an em dash, not NaN/moments", () => {
+    expect(timeUntil("not-a-date", now)).toBe("—");
+    expect(timeAgo("not-a-date")).toBe("—");
+  });
 });
 
-describe("formatTimestamp", () => {
-  test("invalid date is an em dash", () => {
+describe("formatTimestamp / formatDate", () => {
+  test("invalid or absent dates are an em dash, not Invalid Date or 1970", () => {
     expect(formatTimestamp("not-a-date")).toBe("—");
+    expect(formatDate(null)).toBe("—");
+    expect(formatDate(undefined)).toBe("—");
   });
 });
 
@@ -76,6 +83,14 @@ describe("getErrorMessage", () => {
     expect(getErrorMessage(new Error(""), "Delete failed")).toBe(
       "Delete failed",
     );
+  });
+  test("a supplied fallback beats a generic transport line", () => {
+    expect(getErrorMessage(new Event("error"), "Save failed")).toBe(
+      "Save failed",
+    );
+  });
+  test("without a fallback, the transport line describes the failure", () => {
+    expect(getErrorMessage(new Event("error"))).toBe("Connection error");
   });
   test("no fallback stringifies the unknown", () => {
     expect(getErrorMessage("bare string")).toBe("bare string");

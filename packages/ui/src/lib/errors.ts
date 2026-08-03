@@ -3,11 +3,14 @@
  * shapes that actually reach the UI:
  *  - an `Error` / `DOMException` — has `.message`
  *  - the raw JSON-RPC error `{ code, message, data }` — has `.message`
- *  - a WebSocket `CloseEvent` on connection drop — no message; use `code`/`reason`
- *  - a WebSocket `Event` from `onerror` — browsers omit useful details here
+ *  - a WebSocket `CloseEvent` with a `reason` — the reason is the message
+ *  - a `CloseEvent` with no reason / a bare `onerror` `Event` — no usable
+ *    message; only a generic "connection …" line describes it
  *
- * Anything with no usable message falls back to `fallback` when given, else
- * `String(e)` (which is why an `Event` without the guard reads `[object Event]`).
+ * When there is no usable message, a caller-supplied `fallback` wins: it names
+ * the operation that failed ("Delete failed", "Couldn't open <path>"), which
+ * tells the user more than a generic transport line. Without a fallback we fall
+ * back to that transport line, then `String(e)`.
  */
 export function getErrorMessage(e: unknown, fallback?: string): string {
   if (e && typeof e === "object" && "message" in e) {
@@ -15,11 +18,21 @@ export function getErrorMessage(e: unknown, fallback?: string): string {
     if (typeof m === "string" && m) return m;
   }
   if (e instanceof Error && e.message) return e.message;
+  if (
+    typeof CloseEvent !== "undefined" &&
+    e instanceof CloseEvent &&
+    e.reason
+  ) {
+    return e.reason;
+  }
+  // No usable message from here on — a named-operation fallback beats the
+  // generic transport description.
+  if (fallback) return fallback;
   if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
-    return e.reason || `Connection closed (code ${e.code})`;
+    return `Connection closed (code ${e.code})`;
   }
   if (typeof Event !== "undefined" && e instanceof Event) {
     return "Connection error";
   }
-  return fallback ?? String(e);
+  return String(e);
 }
