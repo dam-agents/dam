@@ -8,6 +8,7 @@ import {
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
+import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,7 +69,7 @@ export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
   );
 }
 
-/** Latest publish record per skill name — drives the "In review" pill. */
+/** Latest publish record per skill name — drives the "Published" pill. */
 function latestPublishByName(
   publishes: SkillPublishRecord[],
 ): Map<string, SkillPublishRecord> {
@@ -80,10 +83,14 @@ function latestPublishByName(
 
 /**
  * "Created in this sandbox" — Standalone Local Skills authored in place or
- * uploaded as Markdown. Each row can be published upstream as a PR (or shows an
- * "In review" pill once it has a publish record), and the kebab downloads or
+ * uploaded as Markdown. Each row can be published upstream as a PR (or shows a
+ * "Published" pill once it has a publish record), and the kebab downloads or
  * deletes it. There is no install toggle: standalone skills are simply present
  * on disk.
+ *
+ * The pill reports the publish *event*, never the PR's state: nothing here
+ * re-reads GitHub, so a state claim would go stale the moment the PR is merged
+ * or closed (#3019).
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -142,13 +149,24 @@ export function StandaloneSkillsGroup({
               </div>
 
               {pub ? (
-                <a
-                  href={pub.prUrl}
-                  {...externalLinkProps}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
+                <Tooltip
+                  content={`Published to ${pub.sourceName} on ${formatDateTime(
+                    pub.publishedAt,
+                  )} — opens the pull request`}
                 >
-                  <PullRequest size={13} /> In review · {pub.sourceName}
-                </a>
+                  <a
+                    href={pub.prUrl}
+                    {...externalLinkProps}
+                    className={cn(
+                      badgeVariants({ variant: "muted" }),
+                      // border-border, because the readOnly card is bg-muted too
+                      // and the pill would otherwise vanish into it.
+                      "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
+                    )}
+                  >
+                    <PullRequest size={13} /> Published · {pub.sourceName}
+                  </a>
+                </Tooltip>
               ) : (
                 <Button
                   variant="outline"
