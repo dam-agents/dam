@@ -72,10 +72,11 @@ export const localSkillSchema = z.object({
 });
 
 /** Explicit record of a publish event. Written on a successful
- *  `publish` call into the Postgres `instance_skill_publishes` table.
- *  Drives the `Published` badge + "View PR" link in the UI — the
- *  name-match heuristic it replaces had confusing false positives
- *  when a local skill happened to share a name with a catalog entry.
+ *  `publish` call into the Postgres `agent_skill_publishes` table.
+ *  The record's existence drives the badge's *presence* + "View PR"
+ *  link in the UI — it replaced a name-match heuristic that had
+ *  confusing false positives when a local skill happened to share a
+ *  name with a catalog entry. `prState` drives the badge's *label*.
  *
  *  Source fields are denormalized so the record stays usable after
  *  the source is renamed or deleted. */
@@ -87,6 +88,16 @@ export const skillPublishRecordSchema = z.object({
   prUrl: z.string(),
   /** ISO 8601 timestamp. */
   publishedAt: z.string(),
+  /** Resolved outcome of `prUrl`, or null when it has never been
+   *  resolved — the source is private, the read was rate-limited, the
+   *  pull request is gone. `merged` and `closed` are terminal and are
+   *  never re-read (#3019). */
+  prState: z.enum(["draft", "open", "merged", "closed"]).nullable(),
+  /** ISO 8601 timestamp of the last resolution *attempt*, which is not
+   *  the same as the last success: an attempt that resolved nothing
+   *  still stamps it, because it doubles as the backoff clock. Null
+   *  until the first attempt. */
+  prStateCheckedAt: z.string().nullable(),
 });
 
 /** Reconciled view of an instance's skills: both the installed

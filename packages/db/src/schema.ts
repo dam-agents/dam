@@ -307,6 +307,13 @@ export const agentSkillPublishes = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    // text, not a pg enum: the value set is GitHub's, so widening it should not
+    // need a migration. The contract's Zod enum is what validates it.
+    prState: text("pr_state"),
+    /** Last resolution *attempt*, not last success — it doubles as the backoff
+     *  clock that keeps unresolvable records off the anonymous rate limit. */
+    prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
+    prEtag: text("pr_etag"),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

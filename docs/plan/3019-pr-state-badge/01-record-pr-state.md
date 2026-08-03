@@ -50,7 +50,9 @@ extend `skillPublishRecordSchema`:
  *  no source is public, the read was rate-limited, the pull request is gone.
  *  `merged` and `closed` are terminal and never re-read (#3019). */
 prState: z.enum(["draft", "open", "merged", "closed"]).nullable(),
-/** ISO 8601; null while `prState` is null. */
+/** ISO 8601 of the last resolution *attempt*, not the last success: an
+ *  attempt that resolved nothing still stamps it, because it doubles as
+ *  the backoff clock (see 02). Null until the first attempt. */
 prStateCheckedAt: z.string().nullable(),
 ```
 
@@ -80,7 +82,7 @@ needs no change: omitting the columns inserts `null`, which is correct — a fre
 request is unresolved until the resolver says otherwise, and guessing `open` here would be a
 claim we have not verified.
 
-Add one new method to the port for slice 02 to call:
+Add two new methods to the port for slice 02 to call:
 
 ```ts
 /** Persist a resolved state. Terminal states (`merged`, `closed`) are written
@@ -89,7 +91,20 @@ setPrState(
   prUrl: string,
   next: { prState: string; checkedAt: Date; etag: string | null },
 ): Promise<void>;
+/** Stamp an attempt that yielded no new state, so the backoff clock moves even
+ *  when nothing was learned. Never touches `prState`. `dropEtag` discards a
+ *  validator we no longer trust, which also moves the record out of the free
+ *  every-tick lane. */
+touchPrState(
+  prUrl: string,
+  checkedAt: Date,
+  opts?: { dropEtag?: boolean },
+): Promise<void>;
 ```
+
+Two methods rather than one with an optional `prState`: the three writes slice 02
+needs touch different column sets, and an `undefined`-means-keep /
+`null`-means-clear etag parameter is the kind of subtlety that misfires later.
 
 Key on `prUrl`, not on `(agentId, skillName)` — the same pull request can be referenced by
 records for different agents, and resolving it once should settle all of them in one update.
@@ -102,10 +117,12 @@ records for different agents, and resolving it once should settle all of them in
 - [ ] `skillPublishRecordSchema` carries `prState` and `prStateCheckedAt`, both nullable; `prEtag`
       is **not** in the contract.
 - [ ] `listPublishes` returns `prState: null` / `prStateCheckedAt: null` for existing rows.
-- [ ] `setPrState` exists on the repository port and its implementation keys on `prUrl`.
+- [ ] `setPrState` and `touchPrState` exist on the repository port and both key on `prUrl`.
 - [ ] The stale `instance_skill_publishes` / "Published badge" doc comment above the schema is
       corrected.
-- [ ] No UI file is touched; the pill renders exactly as it does on `main`.
+- [ ] The pill renders exactly as it does on `main`. The only UI change permitted is adding the
+      two new required-nullable fields to the optimistic publish record in
+      `use-skills-surface.ts`, without which the branch does not compile.
 
 ## Smoke test
 

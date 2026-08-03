@@ -87,21 +87,54 @@ Do not throw on `unavailable`. A badge that cannot be resolved is a normal outco
 New `packages/api-server/src/modules/skills/services/resolve-pr-state.ts` — one exported function
 the periodic job calls:
 
-1. Select records needing a look: `prState IS NULL OR prState IN ('draft','open')`. **Terminal
-   states are excluded by the query** — that is mechanism 2 from the README, and it is what makes
-   the working set shrink over time instead of growing with usage.
+1. Select records needing a look:
+
+   ```
+   (prState IS NULL OR prState IN ('draft','open'))
+   AND (prEtag IS NOT NULL OR prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h)
+   ```
+
+   The first line is mechanism 2 from the README — **terminal states are excluded by the query**,
+   which is what makes the working set shrink over time instead of growing with usage.
+
+   The second line is the budget mechanism, and it is load-bearing. Records that *cannot* resolve
+   (private source, deleted repo, deleted pull request) come back `404`, which carries no usable
+   ETag and never becomes terminal — so without it they stay candidates forever at full price,
+   accumulate monotonically, and asymptotically consume the entire hourly budget while the
+   resolvable records converge to free. Each clause:
+
+   - `prEtag IS NOT NULL` — we hold a validator, so the re-check is a free `304`. These keep the
+     every-tick cadence, which is what makes the badge 10-minutes-fresh.
+   - `prStateCheckedAt IS NULL` — a fresh publish resolves on the very next tick.
+   - `< now() - 1h` — anything with no validator drops to **one attempt per hour**. One hour
+     because the anonymous window *is* one hour, so there is nothing to tune.
+
+   Fairness falls out of this for free: a record that was just attempted removes itself from the
+   candidate set, so no record can starve the others and no `ORDER BY` is needed.
 2. Deduplicate by `prUrl` before reading. Several agents can carry a record for the same pull
    request; read it once.
 3. Skip records whose source is not resolvable anonymously. Cheapest reliable signal is the
    outcome itself — a `404` means "not public" as much as "not there" — so attempt the read and
    treat `not-found` as unresolvable rather than trying to pre-classify the source.
-4. On `state`, call `setPrState`. On `notModified`, update only `prStateCheckedAt`. On
-   `unavailable`, leave the record untouched — **never overwrite a known state with `null`**,
-   or a rate-limit blip would erase a resolved `merged`.
+4. Every outcome stamps `prStateCheckedAt`, because it is the backoff clock rather than a success
+   timestamp. **No outcome ever overwrites a known `prState` with `null`** — a rate-limit blip
+   must not erase a resolved `merged`.
+
+   | Outcome | Write |
+   |---|---|
+   | `state` | `setPrState` — state + `checkedAt` + etag |
+   | `notModified` | `touchPrState` — `checkedAt` only, validator still good |
+   | `unavailable` | `touchPrState(…, { dropEtag: true })` — `checkedAt`, and discard the validator |
+
+   Dropping the etag on `unavailable` is what closes the last hole: a pull request already
+   resolved as `open` whose repo later goes private would otherwise keep its validator and keep
+   404-ing every tick. Clearing it is also just honest — the cached validator is no longer
+   known-good — and it moves the record into the hourly lane with no extra state to track.
 5. On `rate-limited`, stop the whole pass immediately and log once. Continuing would burn the
    next window's budget on requests that are certain to fail.
-6. Bound the pass: cap reads per tick (start at **20**) so a large backlog cannot exhaust the hour
-   in one tick. `log()` how many were skipped by the cap — a silent cap reads as "everything was
+6. Bound the pass: cap reads per tick at **20**. With the backoff predicate above this is a pure
+   backstop against a pathological backlog rather than the thing that bounds spend, so it does not
+   need tuning. `log()` how many were skipped by the cap — a silent cap reads as "everything was
    checked" when it wasn't.
 
 ### 4. Register the job
@@ -127,7 +160,10 @@ applied by the registry).
       before `state` and `merged_at` before `closed`.
 - [ ] Records with a terminal `prState` are excluded by the selection query — verifiable by
       inspecting the query, and by confirming a `merged` record is not re-read on later ticks.
-- [ ] An `unavailable` outcome never nulls an already-resolved state.
+- [ ] A record with no stored ETag is attempted at most once per hour, so a permanently
+      unresolvable record (private source, deleted repo) cannot spend the budget every tick.
+- [ ] A record that *does* hold an ETag is still re-checked every tick, since a `304` is free.
+- [ ] An `unavailable` outcome never nulls an already-resolved state, and clears the stored ETag.
 - [ ] A `rate-limited` outcome aborts the pass and logs once.
 - [ ] The per-tick cap is enforced and logs what it skipped.
 - [ ] The job is registered through `periodic-jobs.ts`, not a bare `setInterval`.

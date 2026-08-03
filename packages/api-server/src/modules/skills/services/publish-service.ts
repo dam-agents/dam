@@ -119,6 +119,10 @@ export async function publishSkill(
     sourceGitUrl: source.gitUrl,
     prUrl: result.prUrl,
     publishedAt: new Date().toISOString(),
+    // Unresolved, not `open`: a freshly opened pull request has not been read
+    // back yet, and guessing would be a claim we have not verified.
+    prState: null,
+    prStateCheckedAt: null,
   };
   await deps.agentSkills.appendPublish(input.agentId, record);
 

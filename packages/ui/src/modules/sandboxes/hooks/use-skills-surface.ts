@@ -427,6 +427,10 @@ export function useSkillsSurface(
             sourceGitUrl: src?.gitUrl ?? "",
             prUrl: result.prUrl,
             publishedAt: new Date().toISOString(),
+            // Nothing has read the pull request back yet, so the optimistic
+            // record claims no state.
+            prState: null,
+            prStateCheckedAt: null,
           },
         ]);
         void refreshSource(input.sourceId);

@@ -16,8 +16,28 @@ export interface AgentSkillsRepository {
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
 
+  /** Persist a resolved state. Terminal states (`merged`, `closed`) are
+   *  written once and the record is never selected for a re-read again, so
+   *  this is the only writer of `prState`. */
+  setPrState(
+    prUrl: string,
+    next: { prState: PrState; checkedAt: Date; etag: string | null },
+  ): Promise<void>;
+  /** Stamp an attempt that yielded no new state, so the record's backoff clock
+   *  moves even when nothing was learned. Never touches `prState` — a
+   *  rate-limit blip must not erase a resolved `merged`. `dropEtag` discards a
+   *  validator we no longer trust, which also moves the record out of the
+   *  free every-tick lane. */
+  touchPrState(
+    prUrl: string,
+    checkedAt: Date,
+    opts?: { dropEtag?: boolean },
+  ): Promise<void>;
+
   deleteByAgent(agentId: string): Promise<void>;
 }
+
+type PrState = NonNullable<SkillPublishRecord["prState"]>;
 
 function generatePublishId(): string {
   return `pub-${crypto.randomBytes(8).toString("hex")}`;
@@ -125,6 +145,10 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         sourceGitUrl: r.sourceGitUrl,
         prUrl: r.prUrl,
         publishedAt: r.publishedAt.toISOString(),
+        // Cast because the column is `text` (widening the value set should not
+        // need a migration); the Zod schema at the tRPC edge enforces the union.
+        prState: r.prState as SkillPublishRecord["prState"],
+        prStateCheckedAt: r.prStateCheckedAt?.toISOString() ?? null,
       }));
     },
 
@@ -139,6 +163,30 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         prUrl: record.prUrl,
         publishedAt: new Date(record.publishedAt),
       });
+    },
+
+    // Keyed on prUrl, not (agentId, skillName): the same pull request can be
+    // referenced by records for different agents, and one read should settle
+    // all of them.
+    async setPrState(prUrl, next) {
+      await db
+        .update(agentSkillPublishes)
+        .set({
+          prState: next.prState,
+          prStateCheckedAt: next.checkedAt,
+          prEtag: next.etag,
+        })
+        .where(eq(agentSkillPublishes.prUrl, prUrl));
+    },
+
+    async touchPrState(prUrl, checkedAt, opts) {
+      await db
+        .update(agentSkillPublishes)
+        .set({
+          prStateCheckedAt: checkedAt,
+          ...(opts?.dropEtag ? { prEtag: null } : {}),
+        })
+        .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 
     async deleteByAgent(agentId) {

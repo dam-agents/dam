@@ -73,6 +73,17 @@ limit. There is no tarball equivalent for pull-request state, so three mechanism
    is a BullMQ registry that is idempotent across replicas, so volume becomes a function of how
    many open published pull requests exist.
 
+4. **Per-record backoff for anything without a validator.** Mechanisms 1 and 2 only help records
+   that *can* resolve. A record that cannot — private source, deleted repo, deleted pull request —
+   returns `404`, which carries no usable ETag and never becomes terminal, so it would stay a
+   candidate forever at full price. Those accumulate monotonically while resolvable records
+   converge to free, so left alone they eventually consume the whole budget. Selection therefore
+   requires `prEtag IS NOT NULL OR prStateCheckedAt IS NULL OR prStateCheckedAt < now() - 1h`:
+   hold a validator and the re-check is free every tick, hold none and it is attempted at most
+   once per hour. This also makes the per-tick cap a backstop rather than the thing that bounds
+   spend, and gives fairness for free — a record just attempted removes itself from the candidate
+   set, so none can starve the others.
+
 When the budget is exhausted anyway, state resolution degrades to the unknown case, which is a
 truthful label. Nothing breaks; the badge just claims less.
 
@@ -152,7 +163,7 @@ toggle, so the page needs a note rather than a reversal.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Record the resolved pull-request state | `prState`, `prStateCheckedAt`, `prEtag` on `agentSkillPublishes` + `skillPublishRecordSchema`; generated migration; repository read/write. No resolution, no UI change. | — |
+| 01 ✅ | Record the resolved pull-request state | `prState`, `prStateCheckedAt`, `prEtag` on `agentSkillPublishes` + `skillPublishRecordSchema`; generated migration; repository read/write. No resolution, no UI change. | — |
 | 02 | Resolve public pull-request state | Anonymous conditional `api.github.com` read, ETag storage, terminal persistence, registered periodic job, rate-limit backoff. | 01 |
 | 03 | Render the five states | Badge mapping and tones; `Submitted` replaces the unknown-case `Published`; `Publish again` in the `closed` state only. | 01 |
 | 04 | Resolve private state through a warm pod | `getPullRequest` on the runtime's GitHub port, tRPC procedure, api-server delegation only when the pod is already running. | 01, 02 |
