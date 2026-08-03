@@ -9,11 +9,20 @@ const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 // connections compose instead of clobbering (each contributes one path).
 const KUBECONFIG_ENV = "KUBECONFIG";
 
+export interface EnvChange {
+  /**
+   * True when a variable was added, removed, or renamed. False for a pure
+   * value change (e.g. a rotated credential), which the caller should apply
+   * at the next harness spawn rather than recycling an in-flight run.
+   */
+  namesChanged: boolean;
+}
+
 export interface EnvPluginDeps {
   /** The shared env store; the driver is its only writer. */
   store: EnvStateStore;
-  /** Fired only when the written env changed, so a running harness can recycle. */
-  onChange?: () => void;
+  /** Fired only when the written env changed, so consumers can refresh. */
+  onChange?: (change: EnvChange) => void;
 }
 
 export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
@@ -45,14 +54,19 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
         // Flag the harness wrapper scripts read for GitHub auth availability.
         env[GH_AVAILABLE_ENV] = GH_TOKEN_ENV in env ? "true" : "false";
 
-        // Only rewrite + recycle when env actually changed (dispatcher fires on any snapshot change).
-        if (envEquals(deps.store.current(), env)) {
+        // Only rewrite + notify when env actually changed (dispatcher fires on any snapshot change).
+        const current = deps.store.current();
+        if (envEquals(current, env)) {
           ctx.log("env unchanged");
           return;
         }
+        const namesChanged = !sameNames(current, env);
         deps.store.write(env);
-        ctx.log(`wrote ${Object.keys(env).length} env var(s)`);
-        deps.onChange?.();
+        ctx.log(
+          `wrote ${Object.keys(env).length} env var(s)` +
+            (namesChanged ? "" : " (values only)"),
+        );
+        deps.onChange?.({ namesChanged });
       };
     },
   };
@@ -78,4 +92,13 @@ function envEquals(
   const ak = Object.keys(a);
   if (ak.length !== Object.keys(b).length) return false;
   return ak.every((k) => a[k] === b[k]);
+}
+
+function sameNames(
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean {
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  return ak.every((k) => k in b);
 }

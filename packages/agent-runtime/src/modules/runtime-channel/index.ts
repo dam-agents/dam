@@ -2,7 +2,7 @@ export { composeRuntimeChannel } from "./compose.js";
 export type { RuntimeChannelComposition } from "./compose.js";
 export type { RuntimeManifest } from "./manifest.js";
 
-export { createEnvPlugin } from "./drivers/env-plugin.js";
+export { createEnvPlugin, type EnvChange } from "./drivers/env-plugin.js";
 export {
   createEnvStateStore,
   type EnvStateStore,
