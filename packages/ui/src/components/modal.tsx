@@ -243,10 +243,26 @@ export function DialogActions({
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** Focusables that can actually take focus. The selector alone also matches
+ *  unrendered elements — several dialogs open with a `display: none` file
+ *  input first in the DOM — and `focus()` on one is a no-op, which would leave
+ *  focus outside the panel and make Tab dead-end on it. Tested by client
+ *  rects rather than `offsetParent`, which is also null for `position: fixed`
+ *  elements that are perfectly focusable. */
+function focusablesIn(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter((el) => el.getClientRects().length > 0);
+}
+
 /** Trap Tab inside `containerRef` and restore focus to the previously
  *  focused element on unmount. If nothing inside is focused yet (e.g. no
  *  `autoFocus` field), focus jumps to the first focusable. Shared by
- *  `Modal` and `DialogOverlay` so global confirms get the same behavior. */
+ *  `Modal` and `DialogOverlay` so global confirms get the same behavior.
+ *
+ *  `DialogHeader` marks its ✕ with `data-dialog-close` so the initial grab can
+ *  skip it — keep that attribute on any other close affordance added here, or
+ *  opening the dialog will focus it and the first Enter will dismiss. */
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current;
@@ -259,9 +275,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const reassertUntil = performance.now() + 500;
     const grab = () => {
       if (!container.contains(document.activeElement)) {
-        const focusables = Array.from(
-          container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-        );
+        const focusables = focusablesIn(container);
         // Skip the header's ✕ when there is anything else to land on: it comes
         // first in the DOM, so focusing it would make the opening keystroke
         // dismiss the dialog.
@@ -277,9 +291,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
-      const focusables = Array.from(
-        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
+      const focusables = focusablesIn(container);
       if (focusables.length === 0) {
         e.preventDefault();
         return;
