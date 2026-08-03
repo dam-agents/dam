@@ -1,9 +1,9 @@
-import { Password } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useRevokeApiKey } from "../api/mutations.js";
@@ -33,9 +33,6 @@ export function ApiKeysList() {
       <PageHeader
         title="API Keys"
         description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
-        actions={
-          <Button onClick={() => setCreateOpen(true)}>Create key</Button>
-        }
       />
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -53,28 +50,30 @@ export function ApiKeysList() {
       )}
 
       {!isLoading && !isError && keys && keys.length === 0 && (
-        <Callout variant="dashed" className="bg-card">
-          <div className="flex flex-col items-center gap-3 py-4">
-            <Password size={32} className="text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No API keys yet. Create one to authenticate the CLI without a
-              browser.
-            </p>
-          </div>
-        </Callout>
+        <PageEmptyState
+          title="No API keys yet"
+          message="Create one to authenticate the CLI without a browser."
+          actionLabel="Create key"
+          onAction={() => setCreateOpen(true)}
+        />
       )}
 
       {!isLoading && !isError && keys && keys.length > 0 && (
-        <ul className="space-y-2">
-          {keys.map((k) => (
-            <ApiKeyRow
-              key={k.id}
-              apiKey={k}
-              onRevoke={(id, name) => setRevokeTarget({ id, name })}
-              revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
-            />
-          ))}
-        </ul>
+        <>
+          <Button className="mb-4" onClick={() => setCreateOpen(true)}>
+            Create key
+          </Button>
+          <ul className="space-y-2">
+            {keys.map((k) => (
+              <ApiKeyRow
+                key={k.id}
+                apiKey={k}
+                onRevoke={(id, name) => setRevokeTarget({ id, name })}
+                revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
+              />
+            ))}
+          </ul>
+        </>
       )}
 
       {createOpen && (

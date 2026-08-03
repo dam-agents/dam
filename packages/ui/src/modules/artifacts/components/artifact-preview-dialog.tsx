@@ -60,7 +60,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   return (
     <>
       <Modal widthClass="w-[860px]">
-        <DialogHeader title={artifact.title} />
+        <DialogHeader title={artifact.title} onClose={onClose} />
         <DialogBody>
           <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">
             <span className="truncate">{artifact.fileName}</span>
@@ -139,9 +139,6 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
           >
             <Download size={16} />
             Download
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Close
           </Button>
         </DialogFooter>
       </Modal>

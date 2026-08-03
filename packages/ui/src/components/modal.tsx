@@ -73,6 +73,9 @@ interface DialogHeaderProps {
   subtitle?: ReactNode;
   /** Omit for dialogs that exit through the footer. */
   onClose?: () => void;
+  /** Gate the ✕ while an in-flight action would lose something if the dialog
+   *  went away — a one-time secret, or a multi-step write mid-way. */
+  closeDisabled?: boolean;
   closeTestId?: string;
   truncateTitle?: boolean;
 }
@@ -85,6 +88,7 @@ export function DialogHeader({
   titleAccessory,
   subtitle,
   onClose,
+  closeDisabled,
   closeTestId,
   truncateTitle,
   children,
@@ -123,11 +127,16 @@ export function DialogHeader({
               variant="ghost"
               size="icon-sm"
               onClick={onClose}
+              disabled={closeDisabled}
               aria-label="Close"
+              data-dialog-close
               data-testid={closeTestId}
-              className="shrink-0 text-muted-foreground"
+              /* Pulled out of the header's padding so it sits 16px off the
+                 panel corner at both breakpoints, rather than lining up with
+                 the title. */
+              className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
             >
-              <Close size={18} />
+              <Close size={16} />
             </Button>
           )}
         </div>
@@ -171,13 +180,89 @@ export function DialogFooter({ children, className }: DialogRegionProps) {
   );
 }
 
+interface DialogActionsProps {
+  onCancel: () => void;
+  cancelLabel?: string;
+  label: string;
+  /** Replaces `label` while `pending`. Required so a pending button can never
+   *  sit there looking idle. */
+  pendingLabel: string;
+  pending?: boolean;
+  /** Gate Cancel while an in-flight action would lose something if the dialog
+   *  went away. Off by default: a dialog should stay escapable. */
+  cancelDisabled?: boolean;
+  disabled?: boolean;
+  destructive?: boolean;
+  /** Omit inside a `<form>` so the button submits it; pass to drive the action
+   *  from a handler instead. */
+  onSubmit?: () => void;
+  testId?: string;
+  className?: string;
+}
+
+/** The dismiss + confirm pair a dialog ends with. Cancel is always an outline
+ *  button and always `type="button"`, so it can't submit the form it sits in,
+ *  and it stays enabled while the confirm is pending so the dialog is always
+ *  escapable. */
+export function DialogActions({
+  onCancel,
+  cancelLabel = "Cancel",
+  label,
+  pendingLabel,
+  pending = false,
+  cancelDisabled = false,
+  disabled = false,
+  destructive = false,
+  onSubmit,
+  testId,
+  className,
+}: DialogActionsProps) {
+  return (
+    <DialogFooter className={className}>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onCancel}
+        disabled={cancelDisabled}
+      >
+        {cancelLabel}
+      </Button>
+      <Button
+        type={onSubmit ? "button" : "submit"}
+        variant={destructive ? "destructive" : "default"}
+        onClick={onSubmit}
+        disabled={disabled || pending}
+        data-testid={testId}
+      >
+        {pending ? pendingLabel : label}
+      </Button>
+    </DialogFooter>
+  );
+}
+
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Focusables that can actually take focus. The selector alone also matches
+ *  unrendered elements — several dialogs open with a `display: none` file
+ *  input first in the DOM — and `focus()` on one is a no-op, which would leave
+ *  focus outside the panel and make Tab dead-end on it. Tested by client
+ *  rects rather than `offsetParent`, which is also null for `position: fixed`
+ *  elements that are perfectly focusable. */
+function focusablesIn(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter((el) => el.getClientRects().length > 0);
+}
 
 /** Trap Tab inside `containerRef` and restore focus to the previously
  *  focused element on unmount. If nothing inside is focused yet (e.g. no
  *  `autoFocus` field), focus jumps to the first focusable. Shared by
- *  `Modal` and `DialogOverlay` so global confirms get the same behavior. */
+ *  `Modal` and `DialogOverlay` so global confirms get the same behavior.
+ *
+ *  `DialogHeader` marks its ✕ with `data-dialog-close` so the initial grab can
+ *  skip it — keep that attribute on any other close affordance added here, or
+ *  opening the dialog will focus it and the first Enter will dismiss. */
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current;
@@ -190,7 +275,14 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const reassertUntil = performance.now() + 500;
     const grab = () => {
       if (!container.contains(document.activeElement)) {
-        container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+        const focusables = focusablesIn(container);
+        // Skip the header's ✕ when there is anything else to land on: it comes
+        // first in the DOM, so focusing it would make the opening keystroke
+        // dismiss the dialog.
+        const target =
+          focusables.find((el) => !el.hasAttribute("data-dialog-close")) ??
+          focusables[0];
+        target?.focus();
       }
       if (performance.now() < reassertUntil)
         grabRaf = requestAnimationFrame(grab);
@@ -199,9 +291,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
-      const focusables = Array.from(
-        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
+      const focusables = focusablesIn(container);
       if (focusables.length === 0) {
         e.preventDefault();
         return;

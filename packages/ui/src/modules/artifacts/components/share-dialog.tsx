@@ -3,8 +3,8 @@ import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
@@ -60,7 +60,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader title={`Share “${artifact.title}”`} />
+      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
       <DialogBody>
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between gap-3">
@@ -128,14 +128,14 @@ export function ShareDialog({ artifact, onClose }: Props) {
           )}
         </div>
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-        <Button onClick={save} disabled={sharing.isPending}>
-          {sharing.isPending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        cancelLabel="Close"
+        label="Save"
+        pendingLabel="Saving…"
+        pending={sharing.isPending}
+        onSubmit={save}
+      />
     </Modal>
   );
 }

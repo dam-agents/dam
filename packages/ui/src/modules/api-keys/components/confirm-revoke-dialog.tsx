@@ -1,10 +1,8 @@
 import type { ApiKeyView } from "api-server-api";
 
-import { Button } from "@/components/ui/button";
-
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "../../../components/modal.js";
@@ -36,19 +34,14 @@ export function ConfirmRevokeDialog({
           This cannot be undone — to restore access, create a new key.
         </p>
       </DialogBody>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          onClick={onConfirm}
-          disabled={pending}
-        >
-          {pending ? "Revoking…" : "Revoke"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onCancel}
+        label="Revoke"
+        pendingLabel="Revoking…"
+        pending={pending}
+        destructive
+        onSubmit={onConfirm}
+      />
     </Modal>
   );
 }
