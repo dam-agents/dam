@@ -54,6 +54,19 @@ describe("isSafeReturnPath", () => {
     expect(isSafeReturnPath("/auth/callback?code=abc&state=xyz")).toBe(false);
     expect(isSafeReturnPath("/terms")).toBe(false);
   });
+
+  // Browsers strip these while parsing, so both checks have to look past them:
+  // "/<tab>/host" resolves cross-origin and "/terms<tab>" re-enters the gate.
+  it.each(["\t", "\n", "\r"])(
+    "sees through a %j the browser would drop",
+    (control) => {
+      expect(isSafeReturnPath(`/${control}/evil.example`)).toBe(false);
+      expect(isSafeReturnPath(`/${control}\\evil.example`)).toBe(false);
+      expect(isSafeReturnPath(`/terms${control}`)).toBe(false);
+      expect(isSafeReturnPath(`/${control}terms`)).toBe(false);
+      expect(isSafeReturnPath(`/auth${control}/callback`)).toBe(false);
+    },
+  );
 });
 
 describe("toReturnPath", () => {

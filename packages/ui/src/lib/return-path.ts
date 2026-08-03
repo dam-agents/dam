@@ -33,9 +33,12 @@ export interface ReturnPathStore {
 
 /** Stored values are untrusted on the way out: only same-origin paths pass. */
 export function isSafeReturnPath(value: string): boolean {
+  // Browsers drop tab/LF/CR while parsing, so "/<tab>/host" is protocol-relative
+  // after the fact — validate what the browser will act on, not the raw text.
+  const parsed = value.replace(/[\t\n\r]/g, "");
   // "//host" and "/\host" are protocol-relative URLs, not paths.
-  if (!value.startsWith("/") || /^\/[/\\]/.test(value)) return false;
-  return !INTERSTITIAL_PATHS.includes(value.split(/[?#]/)[0]!);
+  if (!parsed.startsWith("/") || /^\/[/\\]/.test(parsed)) return false;
+  return !INTERSTITIAL_PATHS.includes(parsed.split(/[?#]/)[0]!);
 }
 
 /** The location as a return path, or null when it isn't a destination. */
