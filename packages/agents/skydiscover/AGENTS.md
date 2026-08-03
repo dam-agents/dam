@@ -32,9 +32,10 @@ one, and the search loops toward better solutions. You drive it through the
   long-horizon runs (≳50 iterations).
 
 Default every run's `--search` to `$SKYDISCOVER_SEARCH` — that is what the
-user picked when they chose this preset. If the run's budget clearly fits the
-*other* strategy better, say so in one line (both are installed), but let the
-user decide.
+user picked when they chose this preset. If `$SKYDISCOVER_SEARCH` is unset
+(the image was launched directly, outside the catalog presets), default to
+`adaevolve` and say so. If the run's budget clearly fits the *other* strategy
+better, say so in one line (both are installed), but let the user decide.
 
 **The `skydiscover` skill is your reference** for the CLI surface, the model
 setup, and how to author the run inputs (evaluator + optional initial

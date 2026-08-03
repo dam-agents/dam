@@ -30,8 +30,11 @@ ENV PATH="/opt/skydiscover-venv/bin:${PATH}"
 # behavioral policy; claude-code symlinks /etc/claude-code/CLAUDE.md here
 COPY AGENTS.md /etc/AGENTS.md
 
-# Default search strategy; the AdaEvolve/EvoX template presets override it.
-ENV SKYDISCOVER_SEARCH=adaevolve
+# Deliberately NO baked SKYDISCOVER_SEARCH default: the harness env merge
+# lets container env win name collisions, so an image-baked value would
+# permanently shadow the preset the template injects over the runtime env
+# rail (adaevolve vs evox). The template presets are the only source;
+# AGENTS.md documents the adaevolve fallback for preset-less runs.
 
 # /app/working-dir is seeded onto persistent $HOME on first boot
 ENV SKYDISCOVER_OUTPUT_ROOT=/home/agent/skydiscover-runs

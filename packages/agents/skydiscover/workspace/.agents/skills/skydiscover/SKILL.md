@@ -169,7 +169,7 @@ skydiscover-run INITIAL_PROGRAM EVALUATOR --search <type> \
 |---|---|
 | `INITIAL_PROGRAM` | required — the starting program (`EVOLVE-BLOCK` markers; a minimal stub for from-scratch problems) |
 | `EVALUATOR` | required — the `evaluate(program_path)` file |
-| `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`); only those two work in this pod |
+| `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
 | `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total |
 | `-m, --model` | plain model id served by the endpoint (Step 1); an ensemble goes in the config YAML instead |
 | `--api-base` | the OpenAI-compatible endpoint (`"$base/v1"`) — **always pass it** in this pod |
