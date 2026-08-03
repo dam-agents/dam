@@ -26,6 +26,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Adds the “Run as a virtual machine” switch to the create-sandbox wizard, revealing images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container.",
   },
+  {
+    id: "session-costs",
+    label: "Session costs",
+    description:
+      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
+  },
 ];
 
 /** The hidden Features settings tab — per-user, per-feature toggles stored

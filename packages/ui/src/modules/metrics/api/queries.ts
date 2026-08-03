@@ -14,6 +14,20 @@ export function useSpendBreakdown(from: string, to: string, timeZone: string) {
   });
 }
 
+/** Per-session cost lookup for the sessions sidebar, keyed by ACP session id. */
+export function useSessionCosts(agentId: string | null, enabled: boolean) {
+  return useQuery({
+    ...trpc.metrics.overview.queryOptions(
+      agentId && enabled ? { agentId, limit: 1 } : skipToken,
+    ),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+    select: (data) =>
+      new Map(data.runtimeBySession.map((r) => [r.sessionId, r])),
+  });
+}
+
 /** Metrics overview for one agent. Disabled while no agent is selected. */
 export function useMetricsOverview(
   agentId: string | null,
