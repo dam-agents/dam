@@ -104,7 +104,12 @@ export function FolderGroup({
           <div className={cn("ml-auto", HOVER_ACTION)}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" title="Folder actions">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Folder actions"
+                  tooltip="Folder actions"
+                >
                   <OverflowMenuVertical size={16} />
                 </Button>
               </DropdownMenuTrigger>

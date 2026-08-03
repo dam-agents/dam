@@ -31,6 +31,7 @@ import {
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format-size";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -817,15 +818,16 @@ export function ChatView() {
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {harnessCurrent.model}
-                        <Settings size={12} />
-                      </button>
+                      <Tooltip content={surfaceCopy.modelTitle}>
+                        <button
+                          type="button"
+                          onClick={handleConfigureSandbox}
+                          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {harnessCurrent.model}
+                          <Settings size={12} />
+                        </button>
+                      </Tooltip>
                     </ChatColumn>
                   </div>
                 )}

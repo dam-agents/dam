@@ -83,7 +83,7 @@ export function DockedArtifactPanel() {
           <Button
             variant="outline"
             size="xs"
-            title="Sharing settings"
+            tooltip="Sharing settings"
             onClick={() => setShareOpen(true)}
           >
             <Share size={14} />
@@ -104,7 +104,8 @@ export function DockedArtifactPanel() {
           <Button
             variant="outline"
             size="icon-xs"
-            title="Download"
+            aria-label="Download"
+            tooltip="Download"
             onClick={() => void downloadArtifact(artifact.id)}
           >
             <Download size={14} />
@@ -113,7 +114,8 @@ export function DockedArtifactPanel() {
         <Button
           variant="ghost"
           size="icon-sm"
-          title="Close"
+          aria-label="Close"
+          tooltip="Close"
           onClick={() => setOpenArtifactId(null)}
         >
           <Close size={16} />

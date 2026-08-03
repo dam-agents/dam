@@ -87,7 +87,8 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    title="Fullscreen"
+                    aria-label="Fullscreen"
+                    tooltip="Fullscreen"
                     onClick={() => setFullscreen(true)}
                   >
                     <Maximize size={16} />

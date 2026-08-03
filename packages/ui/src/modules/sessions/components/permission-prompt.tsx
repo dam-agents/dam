@@ -209,7 +209,7 @@ export function PermissionPrompt({
                 size="sm"
                 onClick={() => pick(opt)}
                 className="bg-background h-[26px] text-sm font-medium max-w-full"
-                title={`${opt.name} — press ${i + 1}`}
+                tooltip={`${opt.name} — press ${i + 1}`}
               >
                 <span className="truncate">{opt.name}</span>
               </Button>

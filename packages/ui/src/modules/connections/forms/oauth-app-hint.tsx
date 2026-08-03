@@ -54,7 +54,8 @@ export function OAuthAppHint({
               size="icon-xs"
               className="shrink-0"
               onClick={copy}
-              title="Copy redirect URI"
+              aria-label="Copy redirect URI"
+              tooltip="Copy redirect URI"
             >
               {copied ? (
                 <Checkmark size={12} className="text-success" />

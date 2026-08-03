@@ -170,7 +170,8 @@ export function SessionRow({
             size="icon-xs"
             className={cn("shrink-0", HOVER_ACTION)}
             onClick={(e) => e.stopPropagation()}
-            title="More actions"
+            aria-label="More actions"
+            tooltip="More actions"
           >
             <OverflowMenuVertical size={16} />
           </Button>

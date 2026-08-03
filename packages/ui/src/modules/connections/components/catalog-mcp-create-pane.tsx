@@ -248,7 +248,7 @@ export function McpCreatePane({
             !awaitingPopup &&
             (pending || !template || showDetecting || !formState.isValid)
           }
-          title={
+          tooltip={
             awaitingPopup
               ? "Bring the authorization window back to the front"
               : undefined

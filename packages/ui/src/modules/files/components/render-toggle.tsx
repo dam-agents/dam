@@ -26,7 +26,7 @@ export function RenderToggle({
       size="xs"
       className="text-sm"
       onClick={onToggle}
-      title={rendered ? rawTitle : renderTitle}
+      tooltip={rendered ? rawTitle : renderTitle}
     >
       {rendered ? <Code size={14} /> : <View size={14} />}
       {rendered ? "Raw" : "Render"}

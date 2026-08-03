@@ -10,6 +10,7 @@ import {
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
@@ -93,15 +94,16 @@ export function IconRail({
         data-testid="app-sidebar"
       >
         <div className="flex items-center justify-center pt-2">
-          <button
-            type="button"
-            onClick={sandboxes.navigate}
-            title={getBrand().name}
-            aria-label={getBrand().name}
-            className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <BrandLogo />
-          </button>
+          <Tooltip content={getBrand().name} side="right">
+            <button
+              type="button"
+              onClick={sandboxes.navigate}
+              aria-label={getBrand().name}
+              className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <BrandLogo />
+            </button>
+          </Tooltip>
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...sandboxes} />
@@ -137,20 +139,21 @@ export function IconRail({
 
 function RailItem({ label, icon: Icon, active, badge, navigate }: Destination) {
   return (
-    <button
-      type="button"
-      onClick={navigate}
-      title={label}
-      aria-label={label}
-      className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-        active
-          ? "text-primary bg-muted"
-          : "text-foreground/80 hover:text-foreground hover:bg-muted",
-      )}
-    >
-      <IconWithBadge icon={Icon} badge={badge} />
-    </button>
+    <Tooltip content={label} side="right">
+      <button
+        type="button"
+        onClick={navigate}
+        aria-label={label}
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+          active
+            ? "text-primary bg-muted"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        )}
+      >
+        <IconWithBadge icon={Icon} badge={badge} />
+      </button>
+    </Tooltip>
   );
 }
 

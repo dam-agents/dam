@@ -503,7 +503,8 @@ function RuleRow({
           className="h-6 w-6 text-muted-foreground hover:text-destructive"
           onClick={onAction}
           disabled={disabled}
-          title={pendingDelete ? "Undo delete" : "Revoke rule"}
+          aria-label={pendingDelete ? "Undo delete" : "Revoke rule"}
+          tooltip={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
           {pendingDelete ? (
             <RotateCounterclockwise size={11} />
@@ -543,7 +544,8 @@ function PendingAddRow({
         size="icon"
         className="h-6 w-6 text-muted-foreground hover:text-destructive"
         onClick={onCancel}
-        title="Discard pending rule"
+        aria-label="Discard pending rule"
+        tooltip="Discard pending rule"
       >
         <TrashCan size={11} />
       </Button>

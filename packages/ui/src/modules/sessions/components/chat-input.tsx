@@ -186,7 +186,8 @@ export function ChatInput({
               className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
               disabled={loadingSession}
-              title="Attach file"
+              aria-label="Attach file"
+              tooltip="Attach file"
             >
               <Add size={16} />
             </Button>
@@ -208,7 +209,8 @@ export function ChatInput({
                 size="icon-sm"
                 className="shrink-0 mb-[9px] h-10 w-10"
                 onClick={onStop}
-                title="Stop"
+                aria-label="Stop"
+                tooltip="Stop"
               >
                 <Stop size={16} />
               </Button>
@@ -220,7 +222,8 @@ export function ChatInput({
                 className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
-                title={isComputing ? "Queue" : "Send"}
+                aria-label={isComputing ? "Queue" : "Send"}
+                tooltip={isComputing ? "Queue" : "Send"}
               >
                 <SendAltFilled size={16} />
               </Button>

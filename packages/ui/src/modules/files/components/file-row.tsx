@@ -108,7 +108,8 @@ export function FileRow({
                   className={HOVER_ACTION}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
-                  title="More actions"
+                  aria-label="More actions"
+                  tooltip="More actions"
                 >
                   <OverflowMenuHorizontal size={13} />
                 </Button>

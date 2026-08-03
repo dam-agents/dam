@@ -133,7 +133,7 @@ function ApprovalRow({
             size="xs"
             disabled={inflight || allowOnceDisabled}
             onClick={() => approveOnce.mutate({ id: row.id })}
-            title={
+            tooltip={
               allowOnceDisabled
                 ? "Original request already failed; pick Allow permanently to allow future retries"
                 : "Allow this single request"
@@ -147,7 +147,7 @@ function ApprovalRow({
             size="xs"
             disabled={inflight}
             onClick={() => approvePermanent.mutate({ id: row.id })}
-            title="Allow this exact path on this host (writes a rule)"
+            tooltip="Allow this exact path on this host (writes a rule)"
           >
             <CheckmarkFilled size={11} /> Allow permanently
           </Button>
@@ -159,7 +159,7 @@ function ApprovalRow({
               className="min-w-0 max-w-full"
               disabled={inflight}
               onClick={() => approveHost.mutate({ id: row.id })}
-              title={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
+              tooltip={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
             >
               <Globe size={11} />
               <span className="truncate">Allow {hostLabel}</span>
@@ -172,7 +172,7 @@ function ApprovalRow({
             size="xs"
             disabled={inflight || !live}
             onClick={() => dismiss.mutate({ id: row.id })}
-            title={
+            tooltip={
               !live
                 ? "Original request already failed; nothing to dismiss"
                 : "Deny this single request — re-prompts on the next attempt"
@@ -187,7 +187,7 @@ function ApprovalRow({
             size="xs"
             disabled={inflight}
             onClick={() => denyForever.mutate({ id: row.id })}
-            title="Deny this exact path on this host (writes a deny rule)"
+            tooltip="Deny this exact path on this host (writes a deny rule)"
           >
             <Misuse size={11} /> Deny forever
           </Button>
@@ -198,7 +198,7 @@ function ApprovalRow({
               size="xs"
               disabled={inflight}
               onClick={() => navigateToSandboxHome(row.agentId)}
-              title="Open this sandbox's settings (connections, network access, environment)"
+              tooltip="Open this sandbox's settings (connections, network access, environment)"
             >
               <SettingsAdjust size={11} /> Customize…
             </Button>

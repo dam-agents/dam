@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
@@ -142,21 +143,22 @@ export function StandaloneSkillsGroup({
               </div>
 
               {pub ? (
-                <a
-                  href={pub.prUrl}
-                  {...externalLinkProps}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
-                  title={`Pull request open on ${pub.sourceName}`}
-                >
-                  <PullRequest size={13} /> In review · {pub.sourceName}
-                </a>
+                <Tooltip content={`Pull request open on ${pub.sourceName}`}>
+                  <a
+                    href={pub.prUrl}
+                    {...externalLinkProps}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
+                  >
+                    <PullRequest size={13} /> In review · {pub.sourceName}
+                  </a>
+                </Tooltip>
               ) : (
                 <Button
                   variant="outline"
                   size="xs"
                   disabled={!canPublish}
                   onClick={() => onPublish(skill)}
-                  title={
+                  tooltip={
                     canPublish
                       ? "Publish this skill as a pull request"
                       : "Add a GitHub source first to publish there"
@@ -172,7 +174,8 @@ export function StandaloneSkillsGroup({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    title="Skill actions"
+                    aria-label="Skill actions"
+                    tooltip="Skill actions"
                     className="shrink-0 text-muted-foreground"
                   >
                     <OverflowMenuHorizontal size={18} />

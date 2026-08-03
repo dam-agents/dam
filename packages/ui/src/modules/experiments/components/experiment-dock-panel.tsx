@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -126,24 +127,27 @@ export function ExperimentDockPanel({
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         {options.length > 1 && onSelect ? (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-sm font-medium text-foreground hover:text-foreground/80"
-                title="Switch experiment"
-              >
-                <span className="min-w-0 truncate">
-                  {experiment.name}
-                  {isDraft && (
-                    <span className="ml-1 text-muted-foreground">(draft)</span>
-                  )}
-                </span>
-                <ChevronDown
-                  size={14}
-                  className="shrink-0 text-muted-foreground"
-                />
-              </button>
-            </DropdownMenuTrigger>
+            <Tooltip content="Switch experiment">
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-sm font-medium text-foreground hover:text-foreground/80"
+                >
+                  <span className="min-w-0 truncate">
+                    {experiment.name}
+                    {isDraft && (
+                      <span className="ml-1 text-muted-foreground">
+                        (draft)
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className="shrink-0 text-muted-foreground"
+                  />
+                </button>
+              </DropdownMenuTrigger>
+            </Tooltip>
             <DropdownMenuContent align="start">
               {options.map((option) => (
                 <DropdownMenuItem
@@ -186,7 +190,8 @@ export function ExperimentDockPanel({
           <Button
             variant="ghost"
             size="icon-sm"
-            title="Close"
+            aria-label="Close"
+            tooltip="Close"
             onClick={onClose}
           >
             <Close size={16} />
@@ -253,53 +258,58 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Invocations</SectionLabel>
       {rows.map((row) => (
-        <button
+        <Tooltip
           key={row.id}
-          type="button"
-          disabled={row.agentName === null}
-          onClick={() => selectAgent(row.id)}
-          className={cn(
-            "flex w-full items-center gap-2 py-0.5 text-left text-sm",
-            row.agentName === null
-              ? "cursor-default text-muted-foreground"
-              : "text-foreground/90 hover:text-foreground hover:underline",
-          )}
-          title={
+          content={
             row.agentName === null
               ? "This subagent has already been cleaned up"
               : "Open the subagent's chat"
           }
         >
-          <span
+          <button
+            type="button"
+            disabled={row.agentName === null}
+            onClick={() => selectAgent(row.id)}
             className={cn(
-              "size-[7px] shrink-0 rounded-full",
-              // Invocation statuses: running | done | failed.
-              row.waitingForRoom
-                ? "animate-pulse bg-amber-500"
-                : row.status === "running"
-                  ? "animate-pulse bg-emerald-500"
-                  : row.status === "failed"
-                    ? "bg-red-500"
-                    : "bg-muted-foreground/45",
+              "flex w-full items-center gap-2 py-0.5 text-left text-sm",
+              row.agentName === null
+                ? "cursor-default text-muted-foreground"
+                : "text-foreground/90 hover:text-foreground hover:underline",
             )}
-          />
-          <span className="min-w-0 flex-1 truncate">
-            {row.agentName ?? (
-              <>
-                {row.id.slice(0, 8)}…{" "}
-                <span className="italic text-muted-foreground">(deleted)</span>
-              </>
-            )}
-          </span>
-          {row.stage && (
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {row.stage}
+          >
+            <span
+              className={cn(
+                "size-[7px] shrink-0 rounded-full",
+                // Invocation statuses: running | done | failed.
+                row.waitingForRoom
+                  ? "animate-pulse bg-amber-500"
+                  : row.status === "running"
+                    ? "animate-pulse bg-emerald-500"
+                    : row.status === "failed"
+                      ? "bg-red-500"
+                      : "bg-muted-foreground/45",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {row.agentName ?? (
+                <>
+                  {row.id.slice(0, 8)}…{" "}
+                  <span className="italic text-muted-foreground">
+                    (deleted)
+                  </span>
+                </>
+              )}
             </span>
-          )}
-          <span className="shrink-0 text-[11px] text-muted-foreground">
-            {row.waitingForRoom ? "waiting for room" : row.status}
-          </span>
-        </button>
+            {row.stage && (
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {row.stage}
+              </span>
+            )}
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {row.waitingForRoom ? "waiting for room" : row.status}
+            </span>
+          </button>
+        </Tooltip>
       ))}
     </div>
   );
@@ -335,15 +345,15 @@ function RunArtifacts({
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Run artifacts</SectionLabel>
       {runArtifacts.map((artifact) => (
-        <button
-          key={artifact.id}
-          type="button"
-          onClick={() => setOpenArtifactId(artifact.id)}
-          className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
-          title={artifact.title}
-        >
-          {artifact.title}
-        </button>
+        <Tooltip key={artifact.id} content={artifact.title}>
+          <button
+            type="button"
+            onClick={() => setOpenArtifactId(artifact.id)}
+            className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
+          >
+            {artifact.title}
+          </button>
+        </Tooltip>
       ))}
     </div>
   );

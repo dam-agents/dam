@@ -17,6 +17,7 @@ import {
 import { useCopy } from "@/hooks/use-copy";
 import { timeAgo } from "@/lib/format-time";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -101,7 +102,12 @@ export function ArtifactRow({
           <ShareLinkButton artifact={artifact} onShare={onShare} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" title="More actions">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="More actions"
+                tooltip="More actions"
+              >
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
@@ -126,18 +132,19 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const agentName = useAgentDisplayName(agentId);
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigateToSandboxHome(agentId, "artifacts");
-      }}
-      title={`Open ${agentName}'s artifacts`}
-      className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
-    >
-      <Box size={12} className="shrink-0" />
-      <span className="truncate">{agentName}</span>
-    </button>
+    <Tooltip content={`Open ${agentName}'s artifacts`}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          navigateToSandboxHome(agentId, "artifacts");
+        }}
+        className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
+      >
+        <Box size={12} className="shrink-0" />
+        <span className="truncate">{agentName}</span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -156,7 +163,10 @@ function ShareLinkButton({
     <Button
       variant="ghost"
       size="icon-sm"
-      title={copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"}
+      aria-label={url ? "Copy share link" : "Sharing settings"}
+      tooltip={
+        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
+      }
       onClick={() => (url ? void copy(url) : onShare(artifact))}
     >
       <Link size={16} className={cn(copied && "text-success")} />

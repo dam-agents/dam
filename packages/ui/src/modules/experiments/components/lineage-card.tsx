@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -41,24 +42,26 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
       >
         {/* Closed reads as a plain chevron; open boxes it, so an expanded row is
             obvious without reading the runs below. */}
-        <button
-          type="button"
-          title={expanded ? "Collapse runs" : "Show runs"}
-          aria-expanded={expanded}
-          onClick={(e) => {
-            e.stopPropagation();
-            setExpanded((x) => !x);
-          }}
-          className={cn(
-            "flex shrink-0 items-center justify-center rounded-md transition-all",
-            expanded ? "size-7 border border-border" : "size-5",
-          )}
-        >
-          <DisclosureChevron
-            open={expanded}
-            className={expanded ? "text-foreground" : "text-muted-foreground"}
-          />
-        </button>
+        <Tooltip content={expanded ? "Collapse runs" : "Show runs"}>
+          <button
+            type="button"
+            aria-label={expanded ? "Collapse runs" : "Show runs"}
+            aria-expanded={expanded}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((x) => !x);
+            }}
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-md transition-all",
+              expanded ? "size-7 border border-border" : "size-5",
+            )}
+          >
+            <DisclosureChevron
+              open={expanded}
+              className={expanded ? "text-foreground" : "text-muted-foreground"}
+            />
+          </button>
+        </Tooltip>
 
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="truncate text-[15px] font-semibold text-foreground">
@@ -77,7 +80,12 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
         <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" title="More actions">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="More actions"
+                tooltip="More actions"
+              >
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>

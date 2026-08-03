@@ -124,7 +124,8 @@ function ArtifactListRow({
               variant="ghost"
               size="icon-xs"
               className={HOVER_ACTION}
-              title="More actions"
+              aria-label="More actions"
+              tooltip="More actions"
             >
               <OverflowMenuVertical size={13} />
             </Button>

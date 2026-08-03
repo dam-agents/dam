@@ -88,7 +88,8 @@ export function ShareDialog({ artifact, onClose }: Props) {
               <Button
                 variant="outline"
                 size="icon-sm"
-                title="Copy link"
+                aria-label="Copy link"
+                tooltip="Copy link"
                 onClick={() => void copy(shareUrl)}
               >
                 {copied ? (

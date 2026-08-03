@@ -75,7 +75,7 @@ export function EgressApprovalToast({
           className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight || !live}
           onClick={() => approveOnce.mutate({ id: row.id })}
-          title={
+          tooltip={
             live
               ? "Allow this single request"
               : "Original request already failed; pick an Always option to allow future retries"
@@ -109,7 +109,7 @@ export function EgressApprovalToast({
           className="h-[26px] text-sm font-medium"
           disabled={inflight || !live}
           onClick={() => dismiss.mutate({ id: row.id })}
-          title={
+          tooltip={
             live
               ? "Deny this single request — re-prompts on the next attempt"
               : "Original request already failed; nothing to deny"
@@ -123,7 +123,7 @@ export function EgressApprovalToast({
           className="h-[26px] text-sm font-medium"
           disabled={inflight}
           onClick={() => denyForever.mutate({ id: row.id })}
-          title="Deny this exact path on this host (writes a deny rule)"
+          tooltip="Deny this exact path on this host (writes a deny rule)"
         >
           <Locked size={14} /> Always deny this request
         </Button>
@@ -133,7 +133,7 @@ export function EgressApprovalToast({
           className="h-[26px] text-sm font-medium"
           disabled={inflight}
           onClick={() => navigateToSandboxHome(row.agentId)}
-          title="Open this sandbox's settings"
+          tooltip="Open this sandbox's settings"
         >
           <Settings size={14} /> Customize…
         </Button>
