@@ -25,9 +25,11 @@ export function getErrorMessage(e: unknown, fallback?: string): string {
   ) {
     return e.reason;
   }
-  // No usable message from here on — a named-operation fallback beats the
-  // generic transport description.
-  if (fallback) return fallback;
+  // No usable message from here on — a supplied fallback beats the generic
+  // transport description. `!== undefined` (not truthiness) so an intentional
+  // empty-string fallback ("give me a real message or nothing") is honoured
+  // rather than falling through to String(e).
+  if (fallback !== undefined) return fallback;
   if (typeof CloseEvent !== "undefined" && e instanceof CloseEvent) {
     return `Connection closed (code ${e.code})`;
   }
