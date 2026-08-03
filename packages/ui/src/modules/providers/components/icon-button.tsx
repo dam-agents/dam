@@ -17,7 +17,6 @@ export function IconButton({
   children,
 }: {
   onClick: () => void | Promise<void>;
-  /** Names the button and doubles as its tooltip — there is no visible text. */
   label: string;
   hoverTone: "accent" | "danger" | "neutral";
   className?: string;
@@ -36,7 +35,6 @@ export function IconButton({
       size="icon"
       onClick={onClick}
       aria-label={label}
-      tooltip={label}
       className={cn("h-7 w-7", tone, className)}
     >
       {children}

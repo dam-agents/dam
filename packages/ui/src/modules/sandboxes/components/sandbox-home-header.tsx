@@ -95,7 +95,6 @@ export function SandboxHomeHeader({ agent, display }: Props) {
                 variant="outline"
                 size="icon"
                 aria-label="Sandbox actions"
-                tooltip="Sandbox actions"
               >
                 <OverflowMenuVertical />
               </Button>

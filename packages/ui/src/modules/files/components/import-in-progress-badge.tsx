@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { HintTooltip } from "@/components/ui/tooltip";
 
 import { useIsImporting } from "../hooks/use-is-importing.js";
 
@@ -11,8 +12,8 @@ export function ImportInProgressBadge({ agentId }: Props) {
   const importing = useIsImporting(agentId);
   if (!importing) return null;
   return (
-    <Badge variant="accent" title="Importing files into the agent">
-      Importing…
-    </Badge>
+    <HintTooltip label="Importing…" content="Importing files into the agent">
+      <Badge variant="accent">Importing…</Badge>
+    </HintTooltip>
   );
 }

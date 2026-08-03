@@ -4,21 +4,19 @@ import { CARD_SURFACE } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface PanelCardProps {
-  /** Rendered at 16px beside the title — usually a `ConnectionIcon`. */
   icon?: ReactNode;
   title: string;
-  /** Sits directly after the title, e.g. a count. */
+  /** Sits directly after the title. */
   titleAccessory?: ReactNode;
-  /** Pushed to the header's trailing edge, e.g. a "New" button. */
+  /** Pushed to the header's trailing edge. */
   headerRight?: ReactNode;
   testId?: string;
   className?: string;
   children: ReactNode;
 }
 
-/** A card whose contents are introduced by a fixed-height header: icon, title,
- *  and slots either side of the gap. The anatomy the channel, connection-group
- *  and catalogue cards all draw. */
+/** A card introduced by a fixed-height header: icon, title, and a slot either
+ *  side of the gap. */
 export function PanelCard({
   icon,
   title,

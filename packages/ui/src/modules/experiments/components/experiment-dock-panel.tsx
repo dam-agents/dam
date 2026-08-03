@@ -191,7 +191,6 @@ export function ExperimentDockPanel({
             variant="ghost"
             size="icon-sm"
             aria-label="Close"
-            tooltip="Close"
             onClick={onClose}
           >
             <Close size={16} />
@@ -345,15 +344,15 @@ function RunArtifacts({
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Run artifacts</SectionLabel>
       {runArtifacts.map((artifact) => (
-        <Tooltip key={artifact.id} content={artifact.title}>
-          <button
-            type="button"
-            onClick={() => setOpenArtifactId(artifact.id)}
-            className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
-          >
-            {artifact.title}
-          </button>
-        </Tooltip>
+        <button
+          key={artifact.id}
+          type="button"
+          onClick={() => setOpenArtifactId(artifact.id)}
+          className="block w-full truncate py-0.5 text-left text-sm text-foreground/90 hover:text-foreground hover:underline"
+          title={artifact.title}
+        >
+          {artifact.title}
+        </button>
       ))}
     </div>
   );

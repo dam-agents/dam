@@ -171,7 +171,6 @@ export function SessionRow({
             className={cn("shrink-0", HOVER_ACTION)}
             onClick={(e) => e.stopPropagation()}
             aria-label="More actions"
-            tooltip="More actions"
           >
             <OverflowMenuVertical size={16} />
           </Button>
@@ -262,8 +261,9 @@ function SessionIndicators({
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"
+          role="img"
+          aria-label="Needs your approval"
           className="w-2 h-2 rounded-full bg-accent shrink-0"
-          title="Needs your approval"
         />
       ) : working ? (
         <WorkingDots className="text-accent" title="Working" />

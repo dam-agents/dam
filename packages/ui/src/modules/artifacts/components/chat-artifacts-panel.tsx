@@ -112,8 +112,9 @@ function ArtifactListRow({
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
         <span
+          role="img"
+          aria-label="Shared"
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-          title="Shared"
         />
       )}
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -125,7 +126,6 @@ function ArtifactListRow({
               size="icon-xs"
               className={HOVER_ACTION}
               aria-label="More actions"
-              tooltip="More actions"
             >
               <OverflowMenuVertical size={13} />
             </Button>

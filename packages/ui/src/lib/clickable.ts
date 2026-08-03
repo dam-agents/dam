@@ -1,15 +1,9 @@
 import type { KeyboardEvent } from "react";
 
-/** Button semantics for a row or card that can't be a real `<button>` — one
- *  that wraps its own action menu or link, which a button may not contain.
- *
- *  Activates on click, Enter and Space. Space is the half hand-rolled rows keep
- *  missing, and it needs its default suppressed or the page scrolls instead.
- *  Keys are ignored unless they land on the row itself, so a nested control
- *  keeps its own Enter and Space.
- *
- *  Pass `undefined` to leave the element inert — a row that is only sometimes
- *  clickable then has no stale `role` or tab stop. */
+/** Button semantics for a row that can't be a real `<button>` because it wraps
+ *  its own menu or link. Keys are ignored unless they land on the row itself,
+ *  so a nested control keeps its own Enter and Space. `undefined` leaves the
+ *  element inert, with no stale `role` or tab stop. */
 export function clickableProps(onActivate: (() => void) | undefined) {
   if (!onActivate) return {};
   return {

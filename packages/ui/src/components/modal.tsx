@@ -71,11 +71,7 @@ interface DialogHeaderProps {
    *  accessible name. */
   titleAccessory?: ReactNode;
   subtitle?: ReactNode;
-  /** Draws the ✕, at 16px like every other icon action. Omit it only where the
-   *  dialog exists to force a choice — a confirmation, or a secret shown once
-   *  that the user has to acknowledge. Every other dialog gets one: the corner
-   *  is where users look to leave, and the footer's Cancel is a second exit,
-   *  not a replacement. */
+  /** Draws the ✕. Omit only where the dialog exists to force a choice. */
   onClose?: () => void;
   /** Gate the ✕ while an in-flight action would lose something if the dialog
    *  went away — a one-time secret, or a multi-step write mid-way. */

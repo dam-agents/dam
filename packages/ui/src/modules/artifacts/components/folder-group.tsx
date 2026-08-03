@@ -108,7 +108,6 @@ export function FolderGroup({
                   variant="ghost"
                   size="icon-sm"
                   aria-label="Folder actions"
-                  tooltip="Folder actions"
                 >
                   <OverflowMenuVertical size={16} />
                 </Button>

@@ -102,12 +102,7 @@ export function ArtifactRow({
           <ShareLinkButton artifact={artifact} onShare={onShare} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="More actions"
-                tooltip="More actions"
-              >
+              <Button variant="ghost" size="icon-sm" aria-label="More actions">
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>

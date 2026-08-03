@@ -3,6 +3,7 @@ import type { LocalSkill } from "api-server-api";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /** Image-shipped Local Skills, split out of "Created in this sandbox"
@@ -55,13 +56,13 @@ function BuiltInSkillRow({
         </p>
       </div>
       {skill.origin === "system-modified" && (
-        <Badge
-          variant="warning"
+        <HintTooltip
+          label="Modified"
+          content="This skill's files differ from the copy shipped in the sandbox image"
           className="shrink-0"
-          title="This skill's files differ from the copy shipped in the sandbox image"
         >
-          Modified
-        </Badge>
+          <Badge variant="warning">Modified</Badge>
+        </HintTooltip>
       )}
     </div>
   );

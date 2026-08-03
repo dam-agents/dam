@@ -277,7 +277,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           className="shrink-0"
           onClick={onClose}
           aria-label="Close"
-          tooltip="Close"
         >
           <Close size={16} />
         </Button>

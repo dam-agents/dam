@@ -12,10 +12,8 @@ export const CARD_SURFACE = "rounded-lg bg-card text-card-foreground border";
  *  reads as nothing there. `transition-colors` alone is the 150ms fade. */
 export const CARD_HOVER = "transition-colors hover:bg-muted/40";
 
-/** Surface for a card that represents a choice — picked or still pickable.
- *  The selected one drops the hover tint: its emphasized border already says
- *  it's the current choice. Shared by `CardButton` and by the pickers that
- *  can't be a button, so one picker never shows two selected looks. */
+/** Surface for a card that represents a choice, picked or still pickable.
+ *  Shared with the pickers that can't be a `CardButton`. */
 export const cardSelectionVariants = cva(`${CARD_SURFACE} transition-colors`, {
   variants: {
     selected: {

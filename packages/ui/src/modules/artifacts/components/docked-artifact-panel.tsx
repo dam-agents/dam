@@ -115,7 +115,6 @@ export function DockedArtifactPanel() {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
-          tooltip="Close"
           onClick={() => setOpenArtifactId(null)}
         >
           <Close size={16} />

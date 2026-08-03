@@ -109,7 +109,6 @@ export function FileRow({
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                   aria-label="More actions"
-                  tooltip="More actions"
                 >
                   <OverflowMenuHorizontal size={13} />
                 </Button>

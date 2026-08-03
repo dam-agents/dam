@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format-time";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -149,15 +148,15 @@ function RunRow({
       {extraArtifacts.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {extraArtifacts.map((artifact) => (
-            <Tooltip key={artifact.id} content={artifact.title}>
-              <button
-                type="button"
-                onClick={() => onOpenArtifact(artifact.id)}
-                className="max-w-[220px] truncate rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {artifact.title}
-              </button>
-            </Tooltip>
+            <button
+              key={artifact.id}
+              type="button"
+              onClick={() => onOpenArtifact(artifact.id)}
+              title={artifact.title}
+              className="max-w-[220px] truncate rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {artifact.title}
+            </button>
           ))}
         </div>
       )}

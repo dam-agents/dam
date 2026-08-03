@@ -112,12 +112,7 @@ export function AgentRow({
         <span onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Sandbox actions"
-                tooltip="Sandbox actions"
-              >
+              <Button variant="ghost" size="icon" aria-label="Sandbox actions">
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>

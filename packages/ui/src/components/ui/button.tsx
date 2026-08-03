@@ -68,8 +68,8 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ComponentProps<"button">, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
-  /** Hover/focus hint, in place of a native `title`. It reads as a description,
-   *  so an icon-only button still needs its own `aria-label`. */
+  /** Reads as a description, so an icon-only button still needs an
+   *  `aria-label`. */
   tooltip?: ReactNode;
 }
 

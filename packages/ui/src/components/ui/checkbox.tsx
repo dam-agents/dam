@@ -36,10 +36,8 @@ interface CheckboxItemProps extends Omit<
   testId?: string;
 }
 
-/** A checkbox with a label and an optional description, laid out like
- *  `RadioGroupItem` so a multi-select list and a single-select list read the
- *  same. The label wraps the control, so a click anywhere in the row toggles
- *  it, and `className` styles that row rather than the box. */
+/** The multi-select counterpart of `RadioGroupItem`. `className` styles the
+ *  row, not the box. */
 function CheckboxItem({
   label,
   labelClassName,

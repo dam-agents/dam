@@ -90,7 +90,6 @@ export function KeyValueEditor({
               disabled={disabled}
               className="shrink-0 text-muted-foreground"
               aria-label="Remove"
-              tooltip="Remove"
             >
               <Close size={13} />
             </Button>

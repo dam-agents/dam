@@ -175,7 +175,6 @@ export function StandaloneSkillsGroup({
                     variant="ghost"
                     size="icon-sm"
                     aria-label="Skill actions"
-                    tooltip="Skill actions"
                     className="shrink-0 text-muted-foreground"
                   >
                     <OverflowMenuHorizontal size={18} />

@@ -182,7 +182,6 @@ export function SkillSourceCard({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Source actions"
-                tooltip="Source actions"
                 className="shrink-0 text-muted-foreground"
               >
                 <OverflowMenuHorizontal size={18} />

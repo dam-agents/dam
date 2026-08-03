@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -490,7 +491,7 @@ function RuleRow({
         {rule.pathPattern}
       </span>
       {sourceLabel && (
-        <SourceTag label={sourceLabel} title={`source: ${rule.source}`} />
+        <SourceTag label={sourceLabel} hint={`source: ${rule.source}`} />
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
@@ -604,16 +605,13 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       </span>
       <SourceTag
         label={row.sourceBadge}
-        title={`Preview — ${row.sourceBadge} (saved on commit)`}
+        hint={`Preview — ${row.sourceBadge} (saved on commit)`}
       />
-      <Badge
-        size="sm"
-        variant="accent"
-        className="uppercase tracking-wider"
-        title="This rule will be saved on commit"
-      >
-        preview
-      </Badge>
+      <HintTooltip label="preview" content="This rule will be saved on commit">
+        <Badge size="sm" variant="accent" className="uppercase tracking-wider">
+          preview
+        </Badge>
+      </HintTooltip>
       <span className="ml-auto" />
       {/* No per-row actions in preview mode: the rules don't exist yet, so
           there's nothing to revoke. The user can change the dropdown
@@ -634,10 +632,12 @@ function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
   );
 }
 
-function SourceTag({ label, title }: { label: string; title: string }) {
+function SourceTag({ label, hint }: { label: string; hint: string }) {
   return (
-    <Badge size="sm" variant="muted" title={title}>
-      {label}
-    </Badge>
+    <HintTooltip label={label} content={hint}>
+      <Badge size="sm" variant="muted">
+        {label}
+      </Badge>
+    </HintTooltip>
   );
 }
