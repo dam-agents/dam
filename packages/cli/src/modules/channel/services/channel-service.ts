@@ -31,8 +31,12 @@ export interface ChannelService {
       | ChannelInvalidInputError
     >
   >;
-  /** Unbind the Agent's Slack channel. Idempotent server-side. */
-  disconnectSlack(id: string): Promise<ChannelResult<ChannelList>>;
+  /** Unbind one of the Agent's Slack channels, or all of them when
+   *  `slackChannelId` is omitted. Idempotent server-side. */
+  disconnectSlack(
+    id: string,
+    slackChannelId?: string,
+  ): Promise<ChannelResult<ChannelList>>;
 }
 
 export function createChannelService(deps: {
@@ -62,9 +66,12 @@ export function createChannelService(deps: {
         return classifyTrpcError(e);
       }
     },
-    async disconnectSlack(id) {
+    async disconnectSlack(id, slackChannelId) {
       return trpcCall(async () => {
-        const agent = await deps.trpc.agents.disconnectSlack.mutate({ id });
+        const agent = await deps.trpc.agents.disconnectSlack.mutate({
+          id,
+          ...(slackChannelId ? { slackChannelId } : {}),
+        });
         return agent.channels;
       });
     },

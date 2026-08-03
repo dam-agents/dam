@@ -41,6 +41,17 @@ export function isAmbientThreadKey(
 }
 
 /**
+ * Session key for a Slack thread, qualified by its conversation. A Slack
+ * `thread_ts` is only unique within a conversation, and one agent may be bound
+ * to several at once (#3086) — an unqualified key would let a thread in one
+ * channel resume a same-ts thread's session in another. A conversation id never
+ * spells `ambient`, so this can't collide with {@link ambientThreadKey}.
+ */
+export function slackThreadKey(channelId: string, threadTs: string): string {
+  return `${channelId}:${threadTs}`;
+}
+
+/**
  * Sessions are agent-owned: the UI and channel workers read, create,
  * and mutate them directly over ACP, decoding this view from `_meta.platform`.
  * The server has no session service — the one schedule-scoped mutation (reset)

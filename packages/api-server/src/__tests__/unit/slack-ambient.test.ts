@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { AgentsService } from "api-server-api";
+import { slackThreadKey, type AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
@@ -68,7 +68,7 @@ function harness(opts: {
     async () => OWNER,
     {
       resolveSlackBinding: opts.resolveBinding ?? (async () => opts.binding),
-      resolveSlackChannelByInstance: async () => "C1",
+      resolveSlackChannelsByInstance: async () => ["C1"],
     } as never,
     async () => {},
     async (channelId, ambient) => {
@@ -260,7 +260,9 @@ describe("slack ambient inbound", () => {
 
     expect(h.sendOpts).toHaveLength(1);
     const opts = h.sendOpts[0]!;
-    expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe("5.1");
+    expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe(
+      slackThreadKey("C1", "5.1"),
+    );
     // A reply threads back into the same thread, not the triggering ts.
     await h.worker.reply("agent-1", { text: "here" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "5.1" });
@@ -442,7 +444,9 @@ describe("slack ambient inbound", () => {
     // Every turn resumes the thread's own session, never the channel's rolling
     // ambient one.
     for (const o of h.sendOpts) {
-      expect("platformMeta" in o && o.platformMeta?.threadTs).toBe("T.0");
+      expect("platformMeta" in o && o.platformMeta?.threadTs).toBe(
+        slackThreadKey("C1", "T.0"),
+      );
     }
 
     // The batched messages all live in one thread, so an id-less reply during
@@ -574,7 +578,7 @@ describe("slack ambient inbound", () => {
     expect(h.prompts).toHaveLength(2);
     expect(
       h.sendOpts.map((o) => "platformMeta" in o && o.platformMeta?.threadTs),
-    ).toEqual(["T.1", "T.2"]);
+    ).toEqual([slackThreadKey("C1", "T.1"), slackThreadKey("C1", "T.2")]);
 
     pending.forEach((r) => r(""));
     await h.settled(() => h.turnEvents().length === 2);

@@ -109,7 +109,12 @@ export function buildSlackConnectCommand(deps: {
           // lands mentions-only — the safe direction (the agent listens less,
           // not more) — so keep the binding but fail loudly instead of
           // claiming ambient.
-          const slackCh = res.value.find((c) => c.type === ChannelType.Slack);
+          // By channel id, not "the" Slack binding: an Agent may hold several,
+          // and the first row is not necessarily the one just connected.
+          const slackCh = res.value.find(
+            (c) =>
+              c.type === ChannelType.Slack && c.slackChannelId === channelId,
+          );
           if (!slackCh?.ambient) {
             process.stderr.write(
               "error: this server does not support ambient mode — the channel is connected without it\n",

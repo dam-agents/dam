@@ -87,8 +87,8 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState },
     },
     {
-      // Pure-API shared-mode coverage (no storageState); runs after
-      // "slack" because rebinding replaces the agent's single Slack binding.
+      // Pure-API shared-mode coverage (no storageState); runs after "slack",
+      // and each Slack spec below establishes the bindings it needs.
       name: "slack-shared",
       testMatch: /08-slack-shared\.spec\.ts$/,
       dependencies: ["slack"],
@@ -96,15 +96,15 @@ export default defineConfig({
     },
     {
       // In-chat bind/unbind slash commands (pure API, no storageState); runs
-      // after "slack-shared" because it too replaces the single Slack binding.
+      // after "slack-shared" and releases every binding when it finishes.
       name: "slack-inchat",
       testMatch: /09-slack-inchat-bind\.spec\.ts$/,
       dependencies: ["slack-shared"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // Ambient mode on a shared binding (pure API, no storageState); runs
-      // after "slack-inchat" because it too replaces the single Slack binding.
+      // Ambient mode on a binding (pure API, no storageState); runs after
+      // "slack-inchat", releasing prior bindings before establishing its own.
       name: "slack-ambient",
       testMatch: /10-slack-ambient\.spec\.ts$/,
       dependencies: ["slack-inchat"],
@@ -161,6 +161,13 @@ export default defineConfig({
             // several agent boots per spec — minutes each, hence full-only.
             name: "invocations-full",
             testMatch: /full\/invocation-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            // Several Slack bindings on one agent (#3086): two agent turns
+            // plus rebinding, minutes long — hence full-only.
+            name: "slack-full",
+            testMatch: /full\/slack-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
         ]

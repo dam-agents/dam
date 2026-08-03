@@ -45,7 +45,12 @@ export const agentPauseInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
-export const agentDisconnectSlackInputSchema = idSchema;
+// An agent may hold several Slack bindings, so a disconnect names the
+// conversation to release. Optional for compatibility: an older client sends
+// only `id`, which keeps its original meaning — release every Slack binding.
+export const agentDisconnectSlackInputSchema = idSchema.extend({
+  slackChannelId: z.string().min(1).optional(),
+});
 
 /** Agent Kind: a durable category marker naming which first-class surface an
  *  Agent additionally belongs to (a Knowledge Base is an Agent + marker; an

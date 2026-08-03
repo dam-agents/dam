@@ -15,7 +15,7 @@ import {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,
-  findSlackChannelByAgent,
+  findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   createAgentSweep,
@@ -388,7 +388,7 @@ const channelRegistry: ChannelRegistry = {
       ...(row.ambient ? { ambient: true } : {}),
     };
   },
-  resolveSlackChannelByInstance: findSlackChannelByAgent(db),
+  resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
 };
 
 const slackTokens =

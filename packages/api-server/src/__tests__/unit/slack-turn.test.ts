@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import type { AgentsService } from "api-server-api";
+import { slackThreadKey, type AgentsService } from "api-server-api";
 import {
   createSlackWorker,
   TURN_LINGER_MS,
@@ -68,7 +68,9 @@ function harness(opts: {
         instanceName: "agent-1",
         owner: OWNER,
       }),
-      resolveSlackChannelByInstance: async () => opts.boundChannel?.() ?? "C1",
+      resolveSlackChannelsByInstance: async () => [
+        opts.boundChannel?.() ?? "C1",
+      ],
     } as never,
     async () => {},
     async () => {},
@@ -357,11 +359,14 @@ function gatedHarness() {
         teamId: "T-e2e",
       });
     },
+    /** Threads are named by their bare `thread_ts`; session keys are qualified
+     *  by the conversation (#3086), and this harness only ever fires into C1. */
     async waitInFlight(...threads: string[]) {
-      for (let i = 0; i < 200 && !threads.every((t) => started.has(t)); i++) {
+      const keys = threads.map((t) => slackThreadKey("C1", t));
+      for (let i = 0; i < 200 && !keys.every((k) => started.has(k)); i++) {
         await tick();
       }
-      expect(threads.every((t) => started.has(t))).toBe(true);
+      expect(keys.every((k) => started.has(k))).toBe(true);
     },
     release() {
       for (const g of gates) g.release();
@@ -623,7 +628,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       const meta = opts as { platformMeta?: { threadTs?: string } };
       const thread = meta.platformMeta?.threadTs ?? "unknown";
       started.add(thread);
-      if (thread === "200.2") {
+      if (thread === slackThreadKey("C1", "200.2")) {
         await new Promise<void>((resolve) => gates.push(resolve));
       }
       return "answer";
@@ -652,7 +657,8 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       text: "new thread",
       teamId: "T-e2e",
     });
-    for (let i = 0; i < 200 && !started.has("200.2"); i++) await tick();
+    const thread2 = slackThreadKey("C1", "200.2");
+    for (let i = 0; i < 200 && !started.has(thread2); i++) await tick();
     h.gw.resetOutbound();
 
     // The ghost run from the failed resume may still be driving thread 100.1;

@@ -57,7 +57,8 @@ function harness(opts: {
     async () => OWNER,
     {
       resolveSlackBinding: async () => null,
-      resolveSlackChannelByInstance: async () => opts.boundChannelId,
+      resolveSlackChannelsByInstance: async () =>
+        opts.boundChannelId ? [opts.boundChannelId] : [],
     },
     async () => {},
     async () => {},
