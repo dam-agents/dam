@@ -22,20 +22,12 @@ import (
 // admitted destination is its paired gateway. All other egress —
 // external, harness, ext-authz — flows through the gateway.
 
-// BuildAgentEgressNetworkPolicy renders the per-pair egress NP for the
-// agent pod of `pairKey`. Long-lived pairs use the instance name;
-// Run executors use the run name. Selector pins to the pair's agent pod —
-// the paired gateway pod's egress stays unrestricted.
+// BuildAgentEgressNetworkPolicy renders the per-pair egress NP admitting
+// egress from the pair's agent pod to its gateway pod's Envoy port. Selector
+// pins to the pair's agent pod — the paired gateway pod's egress stays
+// unrestricted.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
-	return buildAgentEgressNetworkPolicyTo(pairKey, pairKey, cfg, ownerRef)
-}
-
-// buildAgentEgressNetworkPolicyTo admits egress from the `selectorPair` agent
-// pod to the `gatewayPair` gateway pod's Envoy port. For long-lived agents and
-// the long-lived pair the two are identical (a pod reaches its own gateway); `dam-run`
-// executors set `gatewayPair` to the parent so they route through the parent's
-// already-running gateway rather than standing up their own.
-func buildAgentEgressNetworkPolicyTo(selectorPair, gatewayPair string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
+	selectorPair, gatewayPair := pairKey, pairKey
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
 

@@ -34,9 +34,9 @@ flowchart LR
   objectstore[(Object store<br/>S3-compatible)]
 
   subgraph k8s[K8s API]
-    cr-spec[Agent / Run CR<br/>spec]
-    cr-status[Agent / Run CR<br/>status subresource]
-    cr-anno[Agent / Run CR<br/>annotations]
+    cr-spec[Agent CR<br/>spec]
+    cr-status[Agent CR<br/>status subresource]
+    cr-anno[Agent CR<br/>annotations]
   end
 
   pvc[(Per-Agent PVC)]
@@ -82,7 +82,6 @@ Resources the controller reconciles are Kubernetes CRDs under the `agent-platfor
 | Kind | What it declares | `spec` writer | `status` writer |
 |---|---|---|---|
 | `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
-| `Run` | A `dam-run` executor (currently disabled — see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run--disabled)): parent Agent ref | api-server | controller |
 
 Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
@@ -122,7 +121,7 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 
 ### Storage migration (transitional)
 
-Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (a Slack per-person fork, a `dam-run` executor) could write into a live agent's workspace. Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state. Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume. Throttled fleet-wide; a no-op once no RWX workspace volume remains. Operators keep the old storage backend (the deprecated bundled NFS server, or a managed shared filesystem) available until the last RWX volume drains, then decommission it — the migration knobs and the deprecated NFS chart block are removed together in a later release.
+Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (the since-removed Slack per-person fork and `dam-run` executor) could write into a live agent's workspace. Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state. Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume. Throttled fleet-wide; a no-op once no RWX workspace volume remains. Operators keep the old storage backend (the deprecated bundled NFS server, or a managed shared filesystem) available until the last RWX volume drains, then decommission it — the migration knobs and the deprecated NFS chart block are removed together in a later release.
 
 ## Lifetime
 

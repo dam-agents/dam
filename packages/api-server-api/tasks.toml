@@ -33,13 +33,12 @@ depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
 
 ["api-server-api:gen:crd-types"]
-description = "Regenerate the Agent + Run CR spec TS types from the controller's CRDs. AgentSpec derives from AgentSpecCR, so the Go-authored types are the single source."
+description = "Regenerate the Agent CR spec TS types from the controller's CRDs. AgentSpec derives from AgentSpecCR, so the Go-authored types are the single source."
 dir = "{{config_root}}/packages/api-server-api"
 # Chain: api/v1/*.go --(controller:generate)--> CRD yaml --(here)--> crd-types.gen.ts
 depends = ["controller:generate", "common:setup:pnpm"]
 sources = [
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
-  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_runs.yaml",
   "scripts/gen-crd-types.sh",
 ]
 outputs = ["src/crd-types.gen.ts"]
@@ -51,7 +50,6 @@ dir = "{{config_root}}/packages/api-server-api"
 depends = ["common:setup:pnpm"]
 sources = [
   "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
-  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_runs.yaml",
   "src/crd-types.gen.ts",
   "scripts/gen-crd-types.sh",
 ]

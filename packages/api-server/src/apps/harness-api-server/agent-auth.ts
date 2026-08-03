@@ -5,9 +5,8 @@ import {
 } from "../../modules/agents/infrastructure/labels.js";
 
 /** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
- *  ephemeral children (e.g. dam-run Runs) for cascade deletion. `vmBackend`
- *  marks a KubeVirt vm-backend agent — Run executors are unavailable there
- *  (they materialize the agent image as a pod container). */
+ *  ephemeral children for cascade deletion. `vmBackend` marks a KubeVirt
+ *  vm-backend agent. */
 export interface AgentIdentity {
   agentId: string;
   owner: string;

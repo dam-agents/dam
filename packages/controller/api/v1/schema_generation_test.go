@@ -15,7 +15,6 @@ import (
 func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 	cases := map[string]int{
 		"agent-platform.ai_agents.yaml":      AgentSchemaGeneration,
-		"agent-platform.ai_runs.yaml":        RunSchemaGeneration,
 		"agent-platform.ai_userbudgets.yaml": UserBudgetSchemaGeneration,
 	}
 	for file, want := range cases {

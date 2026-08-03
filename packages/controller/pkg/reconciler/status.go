@@ -103,7 +103,3 @@ func writeConditionlessStatus[T any](ctx context.Context, dyn dynamic.Interface,
 		return err
 	})
 }
-
-func writeRunStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.RunStatus) error {
-	return writeConditionlessStatus(ctx, dyn, RunsGVR, "run", namespace, name, desired)
-}

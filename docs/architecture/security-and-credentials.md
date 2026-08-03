@@ -513,26 +513,15 @@ happens. The binding owner's Terms-of-Use acceptance gates each turn
 security log attributes the allow to the messenger-native sender id
 with basis *place*.
 
-## `dam-run` executor pods (disabled)
+## `dam-run`
 
-Currently disabled — the executor co-wrote the agent's live workspace,
-which ReadWriteOnce volumes no longer allow; the relay refuses every
-invocation while the machinery stays dormant (see
-[agent-lifecycle](agent-lifecycle.md#run-executors-dam-run--disabled)).
-The boundary description below still holds for the dormant machinery.
-
-The in-pod `dam-run` CLI runs a command in a fresh ephemeral pod (a
-`Run`). It adds **no new privilege to the agent pod**: `dam-run` only dials the
-api-server harness port the agent can already reach, pinned to the
-agent's own SA at the waypoint, so an agent can spawn executors only for
-itself. The executor holds no credential bytes and has no SA, gateway,
-cert, or AuthorizationPolicy of its own — one egress NetworkPolicy routes
-it through the parent's existing gateway, so its egress boundary is
-exactly the parent's: same credentials, same ext-authz/HITL gate. That
-identity reaches the parent's full harness surface, runs included, so
-recursion is bounded by a per-agent concurrent-run cap in the api-server
-relay rather than structurally — a deliberate trade for dropping the
-per-run gateway and its mesh identity.
+The in-pod `dam-run` CLI is a compatibility shim that runs its command
+as a regular local process in the same pod (see
+[agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)). It adds
+no privilege: the command runs inside the agent's existing sandbox, with
+the agent's existing egress boundary. The earlier remote-executor
+machinery (ephemeral `Run` pods borrowing the parent's gateway) was
+removed.
 
 ## Intra-cluster identity and admission
 
