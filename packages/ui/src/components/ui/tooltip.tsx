@@ -35,6 +35,12 @@ interface TooltipProps {
   className?: string;
 }
 
+/** A hint on something that is already interactive: the child becomes the
+ *  trigger, so it keeps its own focus, click and ref. Use this instead of the
+ *  native `title` attribute, which neither keyboard nor touch can reach.
+ *
+ *  The content is announced as a description, not as a name — an icon-only
+ *  trigger still needs its own `aria-label`. */
 function Tooltip({
   children,
   content,
@@ -43,9 +49,7 @@ function Tooltip({
 }: TooltipProps) {
   return (
     <TooltipPrimitive.Root>
-      <TooltipPrimitive.Trigger asChild>
-        <span className="inline-flex">{children}</span>
-      </TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
       <TooltipContent
         side={side}
         className={cn("max-w-xs text-xs leading-relaxed", className)}
@@ -56,4 +60,33 @@ function Tooltip({
   );
 }
 
-export { Tooltip, TooltipContent, TooltipProvider };
+interface HintTooltipProps extends Omit<TooltipProps, "className"> {
+  /** Names the trigger, since the hint itself is only its description. */
+  label: string;
+  /** Classes for the focusable wrapper, not for the tooltip. */
+  className?: string;
+}
+
+/** A hint hung off something inert — a status dot, a badge, a warning glyph.
+ *  Wrapping it in a button is what makes the hint reachable at all: a bare
+ *  span takes neither focus nor tap. */
+function HintTooltip({
+  children,
+  label,
+  className,
+  ...props
+}: HintTooltipProps) {
+  return (
+    <Tooltip {...props}>
+      <button
+        type="button"
+        aria-label={label}
+        className={cn("inline-flex cursor-help items-center", className)}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
+export { HintTooltip, Tooltip, TooltipContent, TooltipProvider };

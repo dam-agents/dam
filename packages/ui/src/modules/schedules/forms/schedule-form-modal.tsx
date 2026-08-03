@@ -14,7 +14,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip } from "@/components/ui/tooltip";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
@@ -264,9 +264,14 @@ export function ScheduleFormModal({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1.5">
               <SectionLabel>Session type</SectionLabel>
-              <Tooltip content={SESSION_TOOLTIP} side="top">
-                <Information size={14} className="text-muted-foreground" />
-              </Tooltip>
+              <HintTooltip
+                content={SESSION_TOOLTIP}
+                label="About session types"
+                side="top"
+                className="text-muted-foreground"
+              >
+                <Information size={14} />
+              </HintTooltip>
             </div>
             <Controller
               control={control}
