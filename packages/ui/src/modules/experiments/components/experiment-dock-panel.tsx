@@ -257,60 +257,75 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
     <div className="max-h-[160px] shrink-0 overflow-y-auto border-t border-border px-4 py-2">
       <SectionLabel className="block pb-1">Invocations</SectionLabel>
       {rows.map((row) => (
-        <Tooltip
-          key={row.id}
-          content={
-            row.agentName === null
-              ? "This subagent has already been cleaned up"
-              : "Open the subagent's chat"
-          }
-        >
-          <button
-            type="button"
-            disabled={row.agentName === null}
-            onClick={() => selectAgent(row.id)}
-            className={cn(
-              "flex w-full items-center gap-2 py-0.5 text-left text-sm",
-              row.agentName === null
-                ? "cursor-default text-muted-foreground"
-                : "text-foreground/90 hover:text-foreground hover:underline",
-            )}
-          >
-            <span
-              className={cn(
-                "size-[7px] shrink-0 rounded-full",
-                // Invocation statuses: running | done | failed.
-                row.waitingForRoom
-                  ? "animate-pulse bg-amber-500"
-                  : row.status === "running"
-                    ? "animate-pulse bg-emerald-500"
-                    : row.status === "failed"
-                      ? "bg-red-500"
-                      : "bg-muted-foreground/45",
-              )}
-            />
-            <span className="min-w-0 flex-1 truncate">
-              {row.agentName ?? (
-                <>
-                  {row.id.slice(0, 8)}…{" "}
-                  <span className="italic text-muted-foreground">
-                    (deleted)
-                  </span>
-                </>
-              )}
-            </span>
-            {row.stage && (
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {row.stage}
-              </span>
-            )}
-            <span className="shrink-0 text-[11px] text-muted-foreground">
-              {row.waitingForRoom ? "waiting for room" : row.status}
-            </span>
-          </button>
-        </Tooltip>
+        <InvocationRow key={row.id} row={row} onSelect={selectAgent} />
       ))}
     </div>
+  );
+}
+
+type InvocationRowView = TraceFeed["invocations"][number] & {
+  agentName: string | null;
+  waitingForRoom: boolean;
+  stage: string | null;
+};
+
+function InvocationRow({
+  row,
+  onSelect,
+}: {
+  row: InvocationRowView;
+  onSelect: (id: string) => void;
+}) {
+  const deleted = row.agentName === null;
+  const button = (
+    <button
+      type="button"
+      disabled={deleted}
+      onClick={() => onSelect(row.id)}
+      className={cn(
+        "flex w-full items-center gap-2 py-0.5 text-left text-sm",
+        deleted
+          ? "cursor-default text-muted-foreground"
+          : "text-foreground/90 hover:text-foreground hover:underline",
+      )}
+    >
+      <span
+        className={cn(
+          "size-[7px] shrink-0 rounded-full",
+          // Invocation statuses: running | done | failed.
+          row.waitingForRoom
+            ? "animate-pulse bg-amber-500"
+            : row.status === "running"
+              ? "animate-pulse bg-emerald-500"
+              : row.status === "failed"
+                ? "bg-red-500"
+                : "bg-muted-foreground/45",
+        )}
+      />
+      <span className="min-w-0 flex-1 truncate">
+        {row.agentName ?? (
+          <>
+            {row.id.slice(0, 8)}…{" "}
+            <span className="italic text-muted-foreground">(deleted)</span>
+          </>
+        )}
+      </span>
+      {row.stage && (
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {row.stage}
+        </span>
+      )}
+      <span className="shrink-0 text-[11px] text-muted-foreground">
+        {row.waitingForRoom ? "waiting for room" : row.status}
+      </span>
+    </button>
+  );
+  // A disabled button fires neither pointer nor focus events, so a tooltip on
+  // one can never open; the row's own "(deleted)" text carries that instead.
+  return deleted ? (
+    button
+  ) : (
+    <Tooltip content="Open the subagent's chat">{button}</Tooltip>
   );
 }
 

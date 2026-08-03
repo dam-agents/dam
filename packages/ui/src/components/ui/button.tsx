@@ -86,6 +86,12 @@ function Button({
   const button = (
     <Comp
       className={cn(buttonVariants({ variant, size, tone, className }))}
+      /* A disabled button fires neither pointer nor focus events, so the
+         tooltip can never open — `title` still reaches assistive tech, which
+         matters most for a hint that explains why the button is disabled. */
+      title={
+        props.disabled && typeof tooltip === "string" ? tooltip : undefined
+      }
       {...props}
     />
   );
