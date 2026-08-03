@@ -64,7 +64,7 @@ export function createOAuthFlowService(deps: {
         template?.authKind === "oauth"
           ? template.localhostCallbackAlias
           : undefined;
-      const { authUrl } = deps.engine.start<OAuthFlowPendingCtx>({
+      const { authUrl } = await deps.engine.start<OAuthFlowPendingCtx>({
         provider,
         redirectUri: applyCallbackAlias(deps.callbackUrl, alias),
         ctx: {
@@ -82,7 +82,7 @@ export function createOAuthFlowService(deps: {
     },
 
     async completeOAuth(state, code) {
-      const pending = deps.engine.consume<OAuthFlowPendingCtx>(state);
+      const pending = await deps.engine.consume<OAuthFlowPendingCtx>(state);
       if (!pending) throw new Error("invalid or expired OAuth state");
 
       const tokens = await deps.engine.exchange(pending, code);

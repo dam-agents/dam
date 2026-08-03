@@ -1,3 +1,4 @@
+import type { TtlStore } from "../../../core/ttl-store.js";
 import { Hono } from "hono";
 import type {
   TelegramOAuthPending,
@@ -16,7 +17,7 @@ const FLOW_TTL_MS = 10 * 60 * 1000;
  *  mutation does the ownership check and the write. Every human-visible
  *  outcome lands on the one picker page. */
 export function createTelegramOAuthRoutes(deps: {
-  pendingFlows: Map<string, TelegramOAuthPending>;
+  pendingFlows: TtlStore<TelegramOAuthPending>;
   bindFlows: TelegramBindFlowStore;
   oauthConfig: KeycloakOAuthConfig;
   uiBaseUrl: string;
@@ -37,20 +38,15 @@ export function createTelegramOAuthRoutes(deps: {
       return c.text("Missing parameters", 400);
     }
 
-    const pending = deps.pendingFlows.get(state);
+    const pending = await deps.pendingFlows.consume(state);
     if (!pending) {
       // Unknown and replayed states read the same as expired — no oracle.
       return c.redirect(`${bindPage}?error=expired`);
     }
 
     if (Date.now() - pending.createdAt > FLOW_TTL_MS) {
-      deps.pendingFlows.delete(state);
       return c.redirect(`${bindPage}?error=expired`);
     }
-
-    // Consume before the exchange so a failed exchange still invalidates
-    // the state.
-    deps.pendingFlows.delete(state);
 
     const result = await exchangeCodeForTokens(
       deps.oauthConfig,
@@ -62,7 +58,7 @@ export function createTelegramOAuthRoutes(deps: {
       return c.redirect(`${bindPage}?error=exchange_failed`);
     }
 
-    const flowId = deps.bindFlows.create({
+    const flowId = await deps.bindFlows.create({
       conversationId: pending.threadId,
       telegramUserId: pending.telegramUserId,
       keycloakSub: result.keycloakSub,

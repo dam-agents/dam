@@ -1,3 +1,4 @@
+import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -41,7 +42,8 @@ function harness(opts?: {
   isAdmin?: boolean;
   termsAccepted?: boolean;
 }) {
-  const pendingOAuthFlows = new Map<string, TelegramOAuthPending>();
+  const { store: pendingOAuthFlows, map: pendingOAuthFlowsMap } =
+    createInspectableTtlStore<TelegramOAuthPending>();
   const unbind = vi.fn(async () => {});
   const bind = vi.fn(async () => "bound" as const);
   const relay = vi.fn(async () => {});
@@ -67,7 +69,14 @@ function harness(opts?: {
     relay,
   });
 
-  return { handle, pendingOAuthFlows, unbind, bind, relay };
+  return {
+    handle,
+    pendingOAuthFlows,
+    pendingOAuthFlowsMap,
+    unbind,
+    bind,
+    relay,
+  };
 }
 
 const author = (userId = "tg-7") => ({
@@ -85,7 +94,7 @@ describe("telegram message handler", () => {
     expect(thread.posts.join("\n")).toContain(
       "Only group admins can `/dam bind`.",
     );
-    expect(h.pendingOAuthFlows.size).toBe(0);
+    expect(h.pendingOAuthFlowsMap.size).toBe(0);
   });
 
   it("tells an already-bound chat to unbind first", async () => {
@@ -93,7 +102,7 @@ describe("telegram message handler", () => {
     const thread = makeThread();
     await h.handle(thread, { text: "/dam bind", author: author() }, true);
     expect(thread.posts.join("\n")).toContain("`/dam unbind` first");
-    expect(h.pendingOAuthFlows.size).toBe(0);
+    expect(h.pendingOAuthFlowsMap.size).toBe(0);
   });
 
   it("mints a pending OAuth flow (no agent, with chat title) and posts the link", async () => {
@@ -101,8 +110,8 @@ describe("telegram message handler", () => {
     const thread = makeThread({ isDM: true });
     await h.handle(thread, { text: "/dam bind", author: author() }, true);
 
-    expect(h.pendingOAuthFlows.size).toBe(1);
-    const pending = [...h.pendingOAuthFlows.values()][0]!;
+    expect(h.pendingOAuthFlowsMap.size).toBe(1);
+    const pending = [...h.pendingOAuthFlowsMap.values()][0]!;
     expect(pending).toMatchObject({
       telegramUserId: "tg-7",
       threadId: "chat-42",
@@ -138,7 +147,7 @@ describe("telegram message handler", () => {
       }
     }
     // Usage is help only — it neither starts a bind flow nor unbinds.
-    expect(h.pendingOAuthFlows.size).toBe(0);
+    expect(h.pendingOAuthFlowsMap.size).toBe(0);
     expect(h.unbind).not.toHaveBeenCalled();
   });
 
@@ -148,7 +157,7 @@ describe("telegram message handler", () => {
     const loginH = harness();
     const dm = makeThread({ isDM: true });
     await loginH.handle(dm, { text: "/login", author: author() }, true);
-    expect(loginH.pendingOAuthFlows.size).toBe(0);
+    expect(loginH.pendingOAuthFlowsMap.size).toBe(0);
     expect(dm.posts.join("\n")).toContain("isn't connected to an agent");
 
     // `/logout` in a bound chat no longer unbinds — it relays as a message.
@@ -202,7 +211,7 @@ describe("telegram message handler", () => {
         "Connect this chat to one of your agents",
       );
     }
-    expect(h.pendingOAuthFlows.size).toBe(3);
+    expect(h.pendingOAuthFlowsMap.size).toBe(3);
   });
 
   it("ignores the bot's own messages", async () => {

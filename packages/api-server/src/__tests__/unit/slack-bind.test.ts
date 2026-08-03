@@ -12,14 +12,14 @@ configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
 
-function harness(opts?: {
+async function harness(opts?: {
   owner?: string;
   boundTo?: string | null;
   connectOk?: boolean;
   postError?: string;
 }) {
   const store = createSlackBindFlowStore({ now: () => 1_000 });
-  const flowId = store.create({
+  const flowId = await store.create({
     slackChannelId: "C-1",
     slackUserId: "U-7",
     keycloakSub: OWNER,
@@ -57,13 +57,13 @@ function harness(opts?: {
 
 describe("slack bind flow", () => {
   it("binds shared (ambient off), consumes the flow, posts a plain confirmation, returns the title", async () => {
-    const h = harness();
+    const h = await harness();
     const res = await h.run("agent-1", h.flowId);
     expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
     // Ambient is off by default: the bind connects shared and passes no ambient
     // flag, so read-along stays an explicit opt-in via the ambient command.
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
-    expect(h.store.peek(h.flowId)).toBe(null);
+    expect(await h.store.peek(h.flowId)).toBe(null);
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
     expect(text).toContain("my-agent");
     // The confirmation is a plain connect notice — no ambient copy.
@@ -71,7 +71,7 @@ describe("slack bind flow", () => {
   });
 
   it("rejects an unknown flow id", async () => {
-    const h = harness();
+    const h = await harness();
     expect(await h.run("agent-1", "no-such-flow")).toEqual({
       ok: false,
       error: { type: "FlowInvalid" },
@@ -79,17 +79,17 @@ describe("slack bind flow", () => {
   });
 
   it("rejects a different signed-in user WITHOUT consuming the flow", async () => {
-    const h = harness({ owner: "kc|someone-else" });
+    const h = await harness({ owner: "kc|someone-else" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: false,
       error: { type: "FlowInvalid" },
     });
-    expect(h.store.peek(h.flowId)).not.toBe(null);
+    expect(await h.store.peek(h.flowId)).not.toBe(null);
     expect(h.connectShared).not.toHaveBeenCalled();
   });
 
   it("rejects an agent the caller does not own", async () => {
-    const h = harness();
+    const h = await harness();
     expect(await h.run("agent-of-someone-else", h.flowId)).toEqual({
       ok: false,
       error: { type: "AgentNotFound" },
@@ -97,17 +97,17 @@ describe("slack bind flow", () => {
   });
 
   it("rejects an already-bound channel outright, keeping the flow alive", async () => {
-    const h = harness({ boundTo: "agent-2" });
+    const h = await harness({ boundTo: "agent-2" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: false,
       error: { type: "ChannelAlreadyBound" },
     });
     expect(h.connectShared).not.toHaveBeenCalled();
-    expect(h.store.peek(h.flowId)).not.toBe(null);
+    expect(await h.store.peek(h.flowId)).not.toBe(null);
   });
 
   it("also refuses re-binding the SAME agent (no in-place override)", async () => {
-    const h = harness({ boundTo: "agent-1" });
+    const h = await harness({ boundTo: "agent-1" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: false,
       error: { type: "ChannelAlreadyBound" },
@@ -116,7 +116,7 @@ describe("slack bind flow", () => {
   });
 
   it("maps a lost connect race to ChannelAlreadyBound", async () => {
-    const h = harness({ connectOk: false });
+    const h = await harness({ connectOk: false });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: false,
       error: { type: "ChannelAlreadyBound" },
@@ -124,7 +124,7 @@ describe("slack bind flow", () => {
   });
 
   it("still succeeds when the in-chat confirmation fails", async () => {
-    const h = harness({ postError: "bot not running" });
+    const h = await harness({ postError: "bot not running" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: true,
       value: { channelTitle: "general" },

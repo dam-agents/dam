@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  createMemoryTtlStore,
+  type TtlStore,
+} from "../../../core/ttl-store.js";
 
 /** A bind begun in a Telegram chat, waiting for the Keycloak callback.
  *  Carries no agent — the owner picks one in the UI after authenticating. */
@@ -24,60 +28,42 @@ export interface TelegramPendingBind {
 }
 
 export interface FlowStore<T> {
-  create(record: Omit<T, "createdAt">): string;
-  /** TTL-checked read; an expired entry is deleted and reads as null.
-   *  Deliberately not consuming — callers consume only on success, so a
+  create(record: Omit<T, "createdAt">): Promise<string>;
+  /** Non-consuming read — callers consume only on success, so a
    *  recoverable failure leaves the flow alive within the TTL. */
-  peek(flowId: string): T | null;
-  consume(flowId: string): void;
+  peek(flowId: string): Promise<T | null>;
+  consume(flowId: string): Promise<void>;
 }
 
 export type TelegramBindFlowStore = FlowStore<TelegramPendingBind>;
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
-/** In-memory, single-replica by design (like the OAuth pending-flow maps):
- *  the handoff lives well under the TTL, and the api-server runs one replica. */
+/** Cross-replica flow store: the browser leg of a bind handoff may land on a
+ *  different api-server replica than the chat leg that started it. Backed by
+ *  a shared TtlStore (Redis in production, in-memory in tests). */
 export function createFlowStore<T extends { createdAt: number }>(opts?: {
   now?: () => number;
   ttlMs?: number;
+  store?: TtlStore<T>;
 }): FlowStore<T> {
   const now = opts?.now ?? (() => Date.now());
-  const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS;
-  const flows = new Map<string, T>();
-
-  let janitor: ReturnType<typeof setInterval> | null = null;
-  function ensureJanitor() {
-    if (janitor != null) return;
-    janitor = setInterval(() => {
-      const cutoff = now() - ttlMs;
-      for (const [k, v] of flows) {
-        if (v.createdAt < cutoff) flows.delete(k);
-      }
-    }, 60_000);
-    janitor.unref?.();
-  }
+  const store =
+    opts?.store ?? createMemoryTtlStore<T>(opts?.ttlMs ?? DEFAULT_TTL_MS, now);
 
   return {
-    create(record) {
-      ensureJanitor();
+    async create(record) {
       const flowId = randomUUID();
-      flows.set(flowId, { ...record, createdAt: now() } as T);
+      await store.set(flowId, { ...record, createdAt: now() } as T);
       return flowId;
     },
 
-    peek(flowId) {
-      const flow = flows.get(flowId);
-      if (!flow) return null;
-      if (now() - flow.createdAt > ttlMs) {
-        flows.delete(flowId);
-        return null;
-      }
-      return flow;
+    async peek(flowId) {
+      return store.peek(flowId);
     },
 
-    consume(flowId) {
-      flows.delete(flowId);
+    async consume(flowId) {
+      await store.delete(flowId);
     },
   };
 }
@@ -85,6 +71,7 @@ export function createFlowStore<T extends { createdAt: number }>(opts?: {
 export function createTelegramBindFlowStore(opts?: {
   now?: () => number;
   ttlMs?: number;
+  store?: TtlStore<TelegramPendingBind>;
 }): TelegramBindFlowStore {
   return createFlowStore<TelegramPendingBind>(opts);
 }

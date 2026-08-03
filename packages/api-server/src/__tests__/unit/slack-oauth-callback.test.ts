@@ -1,3 +1,4 @@
+import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createSlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
@@ -30,8 +31,9 @@ function makeHarness(opts: {
   intent: "login" | "bind";
   pendingCreatedAt?: number;
 }) {
-  const pendingFlows = new Map<string, SlackOAuthPending>();
-  pendingFlows.set("state-1", {
+  const { store: pendingFlows, map: pendingFlowsMap } =
+    createInspectableTtlStore<SlackOAuthPending>();
+  pendingFlowsMap.set("state-1", {
     slackUserId: SLACK_USER_ID,
     channelId: "C-123",
     codeVerifier: "verifier",
@@ -52,7 +54,7 @@ function makeHarness(opts: {
     brandShort: "dam",
   });
 
-  return { routes, pendingFlows, bindFlows, link };
+  return { routes, pendingFlows, pendingFlowsMap, bindFlows, link };
 }
 
 describe("slack oauth callback — bind intent", () => {
@@ -71,14 +73,14 @@ describe("slack oauth callback — bind intent", () => {
     expect(location.startsWith(`${UI}/slack/bind?flow=`)).toBe(true);
 
     const flowId = new URL(location).searchParams.get("flow")!;
-    expect(h.bindFlows.peek(flowId)).toMatchObject({
+    expect(await h.bindFlows.peek(flowId)).toMatchObject({
       slackChannelId: "C-123",
       slackUserId: SLACK_USER_ID,
       keycloakSub: KEYCLOAK_SUB,
     });
     // The binder is identity-linked too, so they can later /unbind in-chat.
     expect(h.link).toHaveBeenCalledWith("slack", SLACK_USER_ID, KEYCLOAK_SUB);
-    expect(h.pendingFlows.has("state-1")).toBe(false);
+    expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
   it("redirects to the picker error page on token-exchange failure", async () => {
@@ -93,7 +95,7 @@ describe("slack oauth callback — bind intent", () => {
     expect(res.headers.get("location")).toBe(
       `${UI}/slack/bind?error=exchange_failed`,
     );
-    expect(h.pendingFlows.has("state-1")).toBe(false);
+    expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
   it("expires a stale bind pending flow to the picker error page", async () => {

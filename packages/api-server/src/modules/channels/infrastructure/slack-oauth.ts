@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { SlackOAuthPending } from "./slack.js";
+import type { TtlStore } from "../../../core/ttl-store.js";
 import type { SlackBindFlowStore } from "./slack-flows.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
 import {
@@ -17,7 +18,7 @@ const FLOW_TTL_MS = 10 * 60 * 1000;
  *  the authenticated sub and hands the user to the UI agent picker, which does
  *  the ownership check and the write. */
 export function createSlackOAuthRoutes(deps: {
-  pendingFlows: Map<string, SlackOAuthPending>;
+  pendingFlows: TtlStore<SlackOAuthPending>;
   bindFlows: SlackBindFlowStore;
   identityLinks: IdentityLinkService;
   oauthConfig: KeycloakOAuthConfig;
@@ -42,7 +43,7 @@ export function createSlackOAuthRoutes(deps: {
       return c.text("Missing parameters", 400);
     }
 
-    const pending = deps.pendingFlows.get(state);
+    const pending = await deps.pendingFlows.consume(state);
     if (!pending) {
       // Invalid/replayed state on a public callback — a CSRF/replay probe.
       securityLog("warn", "identity.link.denied", {
@@ -61,7 +62,6 @@ export function createSlackOAuthRoutes(deps: {
     const isBind = pending.intent === "bind";
 
     if (Date.now() - pending.createdAt > FLOW_TTL_MS) {
-      deps.pendingFlows.delete(state);
       return isBind
         ? c.redirect(`${bindPage}?error=expired`)
         : c.text(
@@ -69,8 +69,6 @@ export function createSlackOAuthRoutes(deps: {
             400,
           );
     }
-
-    deps.pendingFlows.delete(state);
 
     const result = await exchangeCodeForTokens(
       deps.oauthConfig,
@@ -106,7 +104,7 @@ export function createSlackOAuthRoutes(deps: {
     });
 
     if (isBind) {
-      const flowId = deps.bindFlows.create({
+      const flowId = await deps.bindFlows.create({
         slackChannelId: pending.channelId,
         slackUserId: pending.slackUserId,
         keycloakSub: result.keycloakSub,

@@ -6,15 +6,14 @@ import {
 } from "../infrastructure/wrapper-response-frames.js";
 
 export interface DeliverySweeper {
-  start(): void;
-  stop(): Promise<void>;
+  /** One idempotent retry + expiry pass — scheduled via the shared
+   *  periodic-jobs queue (one execution per period across replicas). */
+  tick(): Promise<void>;
 }
 
 export interface CreateDeliverySweeperDeps {
   repo: ApprovalsRepository;
   wrapperFrameSender: WrapperFrameSender;
-  /** How often to scan for resolved-but-undelivered rows. */
-  intervalMs: number;
   /** Only retry rows whose `resolved_at` is at least this old — gives the
    *  inline path on the click-handling replica room to finish without the
    *  sweep racing it. */
@@ -28,11 +27,11 @@ export interface CreateDeliverySweeperDeps {
  * paired with an overdue-pending sweep that flips rows past their
  * `expires_at` to `expired`.
  *
- * No claim coordination — every replica scans, and on a contention race
- * multiple replicas may dial the wrapper for the same row. The wrapper
- * deduplicates by JSON-RPC id (matches against its `pendingFromAgent` map
- * and drops anything not pending), so duplicate sends are harmless. First
- * successful send stamps `delivered_at`; subsequent scans skip the row.
+ * Runs on the shared periodic-jobs queue — one scan per period across
+ * replicas. Duplicate sends (a sweep racing the inline path) are harmless:
+ * the wrapper deduplicates by JSON-RPC id (matches against its
+ * `pendingFromAgent` map and drops anything not pending). First successful
+ * send stamps `delivered_at`; subsequent scans skip the row.
  *
  * The retry path covers exactly the failure modes the inline path can't:
  *   - Replica died after CAS-resolve, before WS send.
@@ -47,7 +46,6 @@ export interface CreateDeliverySweeperDeps {
 export function createDeliverySweeper(
   deps: CreateDeliverySweeperDeps,
 ): DeliverySweeper {
-  let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   async function tick(): Promise<void> {
@@ -85,23 +83,5 @@ export function createDeliverySweeper(
     }
   }
 
-  return {
-    start() {
-      if (timer) return;
-      timer = setInterval(() => {
-        tick().catch(() => {});
-      }, deps.intervalMs);
-      // Don't keep the event loop alive on shutdown.
-      timer.unref?.();
-    },
-    async stop() {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      // Wait for an in-flight tick to settle. Bounded by frame-sender
-      // connect timeout × batchSize; in practice well under a second.
-      while (running) await new Promise((r) => setTimeout(r, 50));
-    },
-  };
+  return { tick };
 }

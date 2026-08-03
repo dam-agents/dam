@@ -9,36 +9,36 @@ const BIND = {
 };
 
 describe("telegram bind-flow store", () => {
-  it("create → peek returns the record without consuming it", () => {
+  it("create → peek returns the record without consuming it", async () => {
     const store = createTelegramBindFlowStore({ now: () => 1_000 });
-    const id = store.create(BIND);
-    expect(store.peek(id)).toMatchObject(BIND);
-    expect(store.peek(id)).toMatchObject(BIND);
+    const id = await store.create(BIND);
+    expect(await store.peek(id)).toMatchObject(BIND);
+    expect(await store.peek(id)).toMatchObject(BIND);
   });
 
-  it("consume removes the record", () => {
+  it("consume removes the record", async () => {
     const store = createTelegramBindFlowStore({ now: () => 1_000 });
-    const id = store.create(BIND);
-    store.consume(id);
-    expect(store.peek(id)).toBe(null);
+    const id = await store.create(BIND);
+    await store.consume(id);
+    expect(await store.peek(id)).toBe(null);
   });
 
-  it("expires records past the TTL", () => {
+  it("expires records past the TTL", async () => {
     let clock = 1_000;
     const store = createTelegramBindFlowStore({
       now: () => clock,
       ttlMs: 60_000,
     });
-    const id = store.create(BIND);
+    const id = await store.create(BIND);
     clock += 60_001;
-    expect(store.peek(id)).toBe(null);
+    expect(await store.peek(id)).toBe(null);
     // Expired entries are deleted on read, not resurrected later.
     clock = 1_000;
-    expect(store.peek(id)).toBe(null);
+    expect(await store.peek(id)).toBe(null);
   });
 
-  it("unknown flow ids read as null", () => {
+  it("unknown flow ids read as null", async () => {
     const store = createTelegramBindFlowStore();
-    expect(store.peek("nope")).toBe(null);
+    expect(await store.peek("nope")).toBe(null);
   });
 });

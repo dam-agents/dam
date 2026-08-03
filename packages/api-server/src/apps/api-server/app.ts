@@ -116,16 +116,25 @@ import type {
   PresetSeeder,
 } from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { PeriodicJobs } from "../../core/periodic-jobs.js";
+import type { Redis } from "ioredis";
+import { createRedisTtlStore, type TtlStore } from "../../core/ttl-store.js";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
 
 export interface ApiServerAppDeps {
   config: Config;
+  /** Shared BullMQ periodic-job scheduler (one execution per period across
+   *  replicas); used for the OAuth refresh pass. */
+  periodicJobs: PeriodicJobs;
+  /** Dedicated Redis client for cross-replica shared state (session
+   *  presence, OAuth/bind handoff stores). */
+  sharedRedis: Redis;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
   identityLinkService: IdentityLinkService;
-  pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
-  pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
+  pendingSlackOAuthFlows: TtlStore<SlackOAuthPending>;
+  pendingTelegramOAuthFlows: TtlStore<TelegramOAuthPending>;
   /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
   telegramBindFlows?: TelegramBindFlowStore;
   /** Backs the Slack in-chat bind handoff (OAuth callback → agent picker). */
@@ -206,6 +215,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     secretStore: secretStores.default(),
+    // Redis-backed: the provider's OAuth callback may land on any replica.
+    pendingFlowStore: createRedisTtlStore(
+      deps.sharedRedis,
+      "oauth:connections",
+      10 * 60 * 1000,
+    ),
     operatorCredentials: {
       ...(config.defaultGithubClientId && config.defaultGithubClientSecret
         ? {
@@ -242,7 +257,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         : {}),
     },
   });
-  connectionsBoot.refreshLoop.start();
+  // OAuth refresh runs on the shared periodic-jobs queue: one refresh pass
+  // per minute across replicas — refresh-token rotation must never race.
+  void deps.periodicJobs.register("oauth-refresh", 60_000, () =>
+    connectionsBoot.refreshLoop.tickOnce(),
+  );
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -992,7 +1011,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
-  const sessionPresence = createSessionPresence(agentsRepo);
+  const sessionPresence = createSessionPresence(agentsRepo, deps.sharedRedis);
+  // Sweep active-session pins orphaned by a crashed replica (its presence
+  // keys expire by TTL); one pass per minute across replicas.
+  void deps.periodicJobs.register("session-presence-reconcile", 60_000, () =>
+    sessionPresence.reconcile(),
+  );
 
   const acpRelay = createAcpRelay(
     config.namespace,

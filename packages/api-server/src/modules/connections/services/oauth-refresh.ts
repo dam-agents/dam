@@ -32,8 +32,8 @@ import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { mintGitHubAppToken } from "./github-app.js";
 
 export interface OAuthRefreshLoop {
-  start(): void;
-  stop(): Promise<void>;
+  /** One idempotent refresh pass — scheduled via the shared periodic-jobs
+   *  queue (one execution per period across replicas). */
   tickOnce(): Promise<{ refreshed: number; failed: number; skipped: number }>;
 }
 
@@ -43,7 +43,6 @@ interface RefreshDeps {
   githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
-  intervalMs?: number;
   refreshSkewSeconds?: number;
   /** First-failure retry delay; doubles per consecutive failure. */
   backoffBaseMs?: number;
@@ -68,19 +67,17 @@ export function backoffDelayMs(
 }
 
 export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
-  const intervalMs = deps.intervalMs ?? 60_000;
   const skewSec = deps.refreshSkewSeconds ?? 5 * 60;
   const backoffBaseMs = deps.backoffBaseMs ?? 60_000;
   const backoffMaxMs = deps.backoffMaxMs ?? 30 * 60_000;
   const now = deps.now ?? (() => Date.now());
   const log =
     deps.log ?? ((m) => process.stderr.write(`[oauth-refresh] ${m}\n`));
-  let timer: ReturnType<typeof setInterval> | null = null;
   let running = false;
 
   // Per-connection failure backoff. A connection whose token can't be
   // refreshed (e.g. a revoked refresh token) stays in the due set on every
-  // tick; without this it would be retried every `intervalMs` forever. An
+  // tick; without this it would be retried on every tick forever. An
   // entry is cleared on the first success and pruned once its connection
   // leaves the due set. State is in-memory — a process restart re-attempts.
   const backoff = new Map<string, { failures: number; nextAttempt: number }>();
@@ -146,20 +143,7 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
     return { refreshed, failed, skipped };
   }
 
-  return {
-    start(): void {
-      const initial = Math.floor(Math.random() * intervalMs);
-      setTimeout(() => {
-        void tick();
-        timer = setInterval(() => void tick(), intervalMs);
-      }, initial);
-    },
-    async stop(): Promise<void> {
-      if (timer) clearInterval(timer);
-      while (running) await new Promise((r) => setTimeout(r, 50));
-    },
-    tickOnce: tick,
-  };
+  return { tickOnce: tick };
 }
 
 async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {

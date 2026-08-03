@@ -581,6 +581,9 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- api-server replica count. Cross-replica coordination (periodic jobs,
+  # session presence, OAuth handoff state) runs through Redis/Postgres.
+  replicas: 1
   # -- Minimum severity emitted by the structured logger
   # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at
   # common levels (denials → warn, allowed/successful actions → info), so the

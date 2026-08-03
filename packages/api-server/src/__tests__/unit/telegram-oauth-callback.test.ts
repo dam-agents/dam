@@ -1,3 +1,4 @@
+import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import {
@@ -25,8 +26,9 @@ const oauthConfig: KeycloakOAuthConfig = {
 };
 
 function makeHarness(opts?: { pendingCreatedAt?: number }) {
-  const pendingFlows = new Map<string, TelegramOAuthPending>();
-  pendingFlows.set("state-1", {
+  const { store: pendingFlows, map: pendingFlowsMap } =
+    createInspectableTtlStore<TelegramOAuthPending>();
+  pendingFlowsMap.set("state-1", {
     telegramUserId: TELEGRAM_USER_ID,
     threadId: "chat-123",
     codeVerifier: "verifier",
@@ -42,7 +44,7 @@ function makeHarness(opts?: { pendingCreatedAt?: number }) {
     uiBaseUrl: UI,
   });
 
-  return { routes, pendingFlows, bindFlows };
+  return { routes, pendingFlows, pendingFlowsMap, bindFlows };
 }
 
 describe("telegram oauth callback", () => {
@@ -65,13 +67,13 @@ describe("telegram oauth callback", () => {
     const flowId = new URL(location).searchParams.get("flow")!;
     // The flow pins the AUTHENTICATED sub, not the Telegram user id — the
     // bind mutation matches it against the UI session's sub.
-    expect(h.bindFlows.peek(flowId)).toMatchObject({
+    expect(await h.bindFlows.peek(flowId)).toMatchObject({
       conversationId: "chat-123",
       telegramUserId: TELEGRAM_USER_ID,
       keycloakSub: KEYCLOAK_SUB,
       chatTitle: "Team chat",
     });
-    expect(h.pendingFlows.has("state-1")).toBe(false);
+    expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
   it("redirects unknown or replayed states to the expired page", async () => {
@@ -99,7 +101,7 @@ describe("telegram oauth callback", () => {
     expect(res.headers.get("location")).toBe(
       `${UI}/telegram/bind?error=expired`,
     );
-    expect(h.pendingFlows.has("state-1")).toBe(false);
+    expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
   it("consumes the pending flow and mints nothing on token-exchange failure", async () => {
@@ -114,7 +116,7 @@ describe("telegram oauth callback", () => {
     expect(res.headers.get("location")).toBe(
       `${UI}/telegram/bind?error=exchange_failed`,
     );
-    expect(h.pendingFlows.has("state-1")).toBe(false);
+    expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
   it("routes a user-denied Keycloak login to the picker's error state", async () => {

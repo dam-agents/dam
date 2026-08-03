@@ -1,3 +1,4 @@
+import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -33,7 +34,8 @@ function harness(opts: { binding: Binding }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
-  const pending = new Map<string, SlackOAuthPending>();
+  const { store: pending, map: pendingMap } =
+    createInspectableTtlStore<SlackOAuthPending>();
   const acp: AcpClient = {
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
@@ -74,6 +76,7 @@ function harness(opts: { binding: Binding }) {
     events,
     prompts,
     pending,
+    pendingMap,
     async start() {
       await worker.start("agent-1", {} as StoredChannelConfig);
     },
@@ -209,7 +212,7 @@ describe("slack /bind in a DM", () => {
     const ack = await h.command("bind", "D-7");
 
     expect(ack).toContain("this DM");
-    const entries = [...h.pending.values()];
+    const entries = [...h.pendingMap.values()];
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       intent: "bind",

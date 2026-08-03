@@ -5,22 +5,20 @@
 // past the window (no accepted trace event; executedAt as the pre-event
 // basis) are reaped to `failed`. Multi-replica safe: each reap is an atomic
 // conditional transition, so a contention race no-ops on the already-terminal
-// row; jittered start keeps replicas from scanning in lockstep.
+// row.
 
 import { sweepDecision } from "../domain/lifecycle.js";
 import type { ExperimentsRepository } from "../infrastructure/experiments-repository.js";
 
 export interface ExperimentInactivitySweep {
-  start(): void;
-  stop(): Promise<void>;
-  /** Run one scan synchronously. Exposed for tests; `start()` schedules it. */
+  /** One idempotent scan — scheduled via the shared periodic-jobs queue
+   *  (one execution per period across replicas). */
   tick(): Promise<void>;
 }
 
 export interface CreateExperimentInactivitySweepDeps {
   repo: ExperimentsRepository;
   inactivityMs: number;
-  intervalMs: number;
   /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
   /** Terminal-transition hook — pin release and the terminal dashboard
@@ -37,9 +35,7 @@ export function createExperimentInactivitySweep(
   deps: CreateExperimentInactivitySweepDeps,
 ): ExperimentInactivitySweep {
   const now = deps.now ?? (() => new Date());
-  let timer: NodeJS.Timeout | null = null;
   let running = false;
-  let inFlight: Promise<void> = Promise.resolve();
 
   async function tick(): Promise<void> {
     if (running) return;
@@ -92,29 +88,5 @@ export function createExperimentInactivitySweep(
     }
   }
 
-  return {
-    start() {
-      if (timer) return;
-      // Random offset so multiple replicas don't scan in lockstep.
-      const jitter = Math.floor(Math.random() * deps.intervalMs);
-      const schedule = () => {
-        timer = setInterval(() => {
-          inFlight = tick();
-        }, deps.intervalMs);
-        timer.unref();
-      };
-      const first = setTimeout(() => {
-        inFlight = tick();
-        schedule();
-      }, jitter);
-      first.unref();
-      timer = first;
-    },
-    async stop() {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      await inFlight;
-    },
-    tick,
-  };
+  return { tick };
 }

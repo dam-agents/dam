@@ -26,9 +26,8 @@ import type { AgentsService } from "api-server-api";
 import type { InfraAgent } from "../infrastructure/agent-mappers.js";
 
 export interface AgentSweep {
-  start(): void;
-  stop(): Promise<void>;
-  /** Run one scan synchronously. Exposed for tests; `start()` schedules it. */
+  /** One idempotent scan — scheduled via the shared periodic-jobs queue
+   *  (one execution per period across replicas). */
   tick(): Promise<void>;
 }
 
@@ -37,7 +36,6 @@ export interface CreateAgentSweepDeps {
   listAgents: () => Promise<InfraAgent[]>;
   /** Owner-scoped agents service, for deleting a swept agent. */
   agentsFor: (owner: string) => AgentsService;
-  intervalMs: number;
   now?: () => Date;
 }
 
@@ -54,7 +52,6 @@ export function isSweepDue(agent: InfraAgent, now: Date): boolean {
 
 export function createAgentSweep(deps: CreateAgentSweepDeps): AgentSweep {
   const now = deps.now ?? (() => new Date());
-  let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   async function tick(): Promise<void> {
@@ -83,27 +80,5 @@ export function createAgentSweep(deps: CreateAgentSweepDeps): AgentSweep {
     }
   }
 
-  return {
-    tick,
-    start() {
-      if (timer) return;
-      const jitter = Math.floor(Math.random() * deps.intervalMs);
-      timer = setTimeout(() => {
-        tick().catch(() => {});
-        timer = setInterval(() => {
-          tick().catch(() => {});
-        }, deps.intervalMs);
-        timer.unref?.();
-      }, jitter);
-      timer.unref?.();
-    },
-    async stop() {
-      if (timer) {
-        clearTimeout(timer);
-        clearInterval(timer);
-        timer = null;
-      }
-      while (running) await new Promise((r) => setTimeout(r, 50));
-    },
-  };
+  return { tick };
 }
