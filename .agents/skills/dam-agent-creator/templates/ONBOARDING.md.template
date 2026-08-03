@@ -1,0 +1,181 @@
+<!-- TODO(creator): fill every TODO from the approved design, delete inapplicable steps
+     (renumber if needed), delete all TODO comments. Keep every step idempotent — a failed
+     run must be safe to re-run from the top. This file must fully bootstrap a fresh agent
+     on an empty volume: every config key, state seed, schedule, and sentinel the runtime
+     needs is created here. -->
+
+# Onboarding — first-run initialization
+
+Bootstraps a fresh {{AGENT_NAME}} agent, **once per agent instance**. Self-guarding via a
+sentinel; all steps are idempotent, so a failed run is safe to re-run from the top.
+
+Two git repositories exist after onboarding and must never overlap:
+
+| Path | Repo | Purpose |
+| --- | --- | --- |
+| `/home/agent` | the **definition repo** (`origin`) — derived in Step 0 from this file's URL | Agent definition, evolved via PRs. |
+| `/home/agent/work` | `$GITHUB_REPO_WORK` (when set) | Runtime state. <!-- TODO(creator): adjust if the design chose local-only state. --> |
+
+`work/` is git-ignored by the outer repo (allowlist `.gitignore`), so the two stay fully
+independent.
+
+## Guard — skip if already onboarded
+
+```bash
+if [ -f "$HOME/.{{AGENT_NAME}}-onboarded" ]; then
+  echo "Already onboarded ($(cat "$HOME/.{{AGENT_NAME}}-onboarded")); skipping onboarding."
+  exit 0
+fi
+```
+
+Sentinel exists → **stop here**. It lives in persistent `$HOME`, so onboarding runs once
+per volume, not per scheduled run.
+
+## Step 0 — Prerequisites & resolution
+
+1. **Sanity-check every integration** the design needs before touching anything.
+   <!-- TODO(creator): one read-only probe per integration, e.g. `gh api user --jq .login`
+        (also yields the bot login for the config dialog), a list_schedules call, a
+        channel connection check. On failure: stop and tell the operator which
+        connection/token is broken. -->
+2. **Definition repo** — derive `OWNER/REPO` from the URL of this runbook as given by the
+   operator (for a fork that's the fork, never upstream). No URL available → ask.
+   Validate, then `export DEFINITION_REPO="<owner/repo>"` (persisted in the config step).
+3. **Environment variables** — <!-- TODO(creator): for each design env var: if unset,
+     ask + validate (never continue unvalidated) or inform-once-and-default. State
+     precedence: env var always wins over the stored config copy. Include the state-repo
+     var when git-backed state was chosen, with the "durable state" recommendation and a
+     local-only fallback. -->
+
+Then route git auth through `gh` (idempotent; used for all github.com repos):
+
+```bash
+git config --global --replace-all credential."https://github.com".helper "" \
+  && git config --global --add credential."https://github.com".helper "!gh auth git-credential"
+```
+
+## Step 1 — Make `/home/agent` the definition repo
+
+`/home/agent` is `$HOME` — it holds secrets (`.ssh`, `.claude`, `.config`) and `work/`.
+The repo's allowlist `.gitignore` is what makes a repo-at-`$HOME` safe. Do **not**
+`git clone` into `$HOME` (needs an empty dir) — init + fetch + hard-reset instead, which
+never touches untracked files:
+
+```bash
+cd /home/agent
+if [ ! -d /home/agent/.git ]; then
+  git init -q
+  git remote add origin "https://github.com/$DEFINITION_REPO.git"
+else
+  git remote set-url origin "https://github.com/$DEFINITION_REPO.git"
+fi
+git fetch -q origin main
+git reset --hard origin/main
+git branch --set-upstream-to=origin/main main 2>/dev/null || true
+```
+
+> **NEVER run `git clean` in `/home/agent`** and never `git add` un-allowlisted paths —
+> either could capture or delete `.ssh`, `.claude`, `work/`, etc.
+
+Then confirm nothing leaks: `git status --porcelain` **must be clean** — if anything
+under `work/`, `.ssh`, `.claude`, or `.config` shows up, stop and fix `.gitignore`
+before continuing; do not write the sentinel.
+
+## Step 2 — Provision `work/` (runtime state)
+
+**2a — state repo env var set** → replace `work/` with a fresh clone (enables the
+end-of-run commit & push per [docs/persistence.md](docs/persistence.md)):
+
+```bash
+if [ -n "$GITHUB_REPO_WORK" ]; then
+  tmp="$(mktemp -d)"
+  if git clone "https://github.com/$GITHUB_REPO_WORK" "$tmp/work"; then
+    rm -rf /home/agent/work && mv "$tmp/work" /home/agent/work
+    git -C /home/agent/work config user.name  "{{AGENT_NAME}}"
+    git -C /home/agent/work config user.email "{{AGENT_NAME}}@agents.local"
+  else
+    echo "WARNING: clone failed; falling back to local-only (2b)."; rm -rf "$tmp"
+  fi
+fi
+```
+
+**2b — unset, or the clone failed** → create the directory tree and seed files from the
+templates below, **only if missing** (never overwrite an existing memory/state file — it
+may hold unreconstructable history):
+
+<!-- TODO(creator): mkdir the work/ tree and embed a heredoc seed for each state file
+     from the design (tracking table header, MEMORY.md skeleton when the agent learns,
+     …). These seeds live HERE, not as tracked files in the repo. -->
+
+## Step 3 — Configure the agent (`work/CONFIG.md`, interactive)
+
+The definition is project-agnostic: every instance-specific value lives in
+`work/CONFIG.md` — exact key semantics in `CLAUDE.md` → **Runtime configuration** (read
+it first). Gather the values below, then write the file and show it to the operator.
+
+**Re-onboarding note:** if Step 2a brought an existing `CONFIG.md`, **keep its values**
+and only ask for missing keys — never silently overwrite operator-set config (especially
+immutable keys).
+
+<!-- TODO(creator): one numbered item per config key: how it's obtained (auto-detected +
+     confirmed / asked with default / derived), the validation, and the consequence to
+     state when asking (e.g. "this account posts publicly as X", "this value is immutable
+     once used — changing it later orphans past outputs"). Opt-in questions for anything
+     people-facing, default off. End with the full example CONFIG.md block the operator
+     sees. -->
+
+<!-- TODO(creator): when the design includes a roster (agents that @-mention people),
+     add the roster-building sub-step here: import candidate people from the integration,
+     operator prunes, operator pastes platform member IDs (not auto-resolvable), validate
+     ID format, write the roster file with the "only mentionable set, operator-owned
+     seeds" header. -->
+
+## Step 4 — Reconstruct state (only when `work/` was not hydrated in 2a)
+
+<!-- TODO(creator): keep only when the design has external dedup markers that make
+     tracking state reconstructable. Procedure: list live items, find the agent's markers,
+     write one tracking row per item with the EXTERNAL-system timestamps (history, not
+     "now"); items without markers get no row; never fabricate. State explicitly what is
+     NOT reconstructable (learned memory) and that it starts from the Step 2b seed.
+     Delete the step for local-only designs without markers. -->
+
+## Step 5 — Register the scheduled jobs
+
+<!-- TODO(creator): one sub-step per scheduled run type from the design (including the
+     weekly audit). For each: ask for the cadence (offer the design default), then create
+     the platform schedule. Delete only for designs with zero scheduled runs (rare — the
+     audit is recommended for every agent). -->
+
+Check with `mcp__platform-outbound__list_schedules` first — a schedule whose `name`
+starts with the same prefix already exists → skip creating it. Never use an in-process
+cron — only platform schedules survive restarts and are visible to the operator.
+
+Create each schedule with `name: {{AGENT_NAME}}-<runtype>-<cadence-shorthand>`,
+`sessionMode: fresh`, and the task text pattern from CLAUDE.md's run-types table:
+
+> <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
+> nothing_to_do, report its logs in one line and end the run. Otherwise follow
+> CLAUDE.md → "<run section>": read docs/<file>.md, <the run's action summary>, and
+> commit & push work/ at the end when $GITHUB_REPO_WORK is set.
+
+## Step 6 — Record the version, write the sentinel, report
+
+Only after all previous steps succeeded. `work/VERSION` records the adopted definition
+version (used by the version check — docs/persistence.md → **Definition version &
+upgrade**):
+
+```bash
+head -1 "$HOME/VERSION" > "$HOME/work/VERSION"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$HOME/.{{AGENT_NAME}}-onboarded"
+echo "Onboarding complete."
+```
+
+Then give the operator a short **onboarding summary** in the chat UI:
+
+1. The final `work/CONFIG.md` (verbatim).
+2. What runs where: schedules and cadences, state persistence mode.
+3. Day-to-day usage: <!-- TODO(creator): 3-5 bullets — how work gets triggered, how a
+   human requests a re-run, how feedback is given, what can be changed later in chat
+   (and which keys cannot). -->
+
+From now on the guard short-circuits and normal runs follow `CLAUDE.md`.
