@@ -3,7 +3,6 @@ import type { Experiment, TraceFeed } from "api-server-api";
 import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
-import { useFeatures } from "../../features/api/queries.js";
 
 /** Poll cadence for a live experiment — span granularity is seconds, so a
  *  2.5 s staleness is invisible; terminal experiments stop polling. */
@@ -26,12 +25,10 @@ export function useExperiments() {
 }
 
 /** The list as background context on non-experiment surfaces (the artifact
- *  library's run grouping): feature-gated, silent on error. */
+ *  library's run grouping): silent on error. */
 export function useExperimentsAmbient() {
-  const { data: features } = useFeatures();
   return useQuery({
     ...trpc.experiments.list.queryOptions(),
-    enabled: !!features?.experiments,
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -39,12 +36,16 @@ export function useExperimentsAmbient() {
 
 /** The Experiments destination rows: driver agents + what they're doing.
  *  Refresh-on-open like every list. */
-export function useDriverSummaries() {
+export function useDriverSummaries(opts?: { silent?: boolean }) {
   return useQuery({
     ...trpc.experiments.driverSummaries.queryOptions(),
     refetchOnMount: "always",
     staleTime: 0,
-    meta: { errorToast: "Couldn't load experiments" },
+    // Ambient consumers (row subtitles) degrade the segment instead of
+    // toasting about a page the user isn't on.
+    ...(opts?.silent
+      ? {}
+      : { meta: { errorToast: "Couldn't load experiments" } }),
   });
 }
 

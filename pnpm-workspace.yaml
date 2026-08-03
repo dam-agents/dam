@@ -5,6 +5,9 @@ packages:
   - "packages/e2e/playwright"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
+minimumReleaseAgeExclude:
+  # security fix for CVE-2026-14257, published 2026-07-28; remove after 2026-08-04
+  - "brace-expansion@2.1.3"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while

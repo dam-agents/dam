@@ -24,7 +24,7 @@ import (
 
 // BuildAgentEgressNetworkPolicy renders the per-pair egress NP for the
 // agent pod of `pairKey`. Long-lived pairs use the instance name;
-// forks use the fork name. Selector pins to the pair's agent pod —
+// Run executors use the run name. Selector pins to the pair's agent pod —
 // the paired gateway pod's egress stays unrestricted.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	return buildAgentEgressNetworkPolicyTo(pairKey, pairKey, cfg, ownerRef)
@@ -32,7 +32,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 
 // buildAgentEgressNetworkPolicyTo admits egress from the `selectorPair` agent
 // pod to the `gatewayPair` gateway pod's Envoy port. For long-lived agents and
-// forks the two pairs are identical (a pod reaches its own gateway); `dam-run`
+// the long-lived pair the two are identical (a pod reaches its own gateway); `dam-run`
 // executors set `gatewayPair` to the parent so they route through the parent's
 // already-running gateway rather than standing up their own.
 func buildAgentEgressNetworkPolicyTo(selectorPair, gatewayPair string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
@@ -86,7 +86,7 @@ func buildAgentEgressNetworkPolicyTo(selectorPair, gatewayPair string, cfg *conf
 
 // applyNetworkPolicy creates or updates a NetworkPolicy. Mirrors
 // applyAuthorizationPolicy / applyServiceAccount shape. Shared by the Agent,
-// Fork, and Run reconcilers.
+// and Run reconcilers.
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {
 	cli := client.NetworkingV1().NetworkPolicies(desired.Namespace)
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {

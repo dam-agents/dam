@@ -26,8 +26,8 @@ export function TemplateUpdateNotice({ agent }: Props) {
         Upgrade sandbox{" "}
         <strong className="text-foreground">"{agent.name}"</strong> to its
         template's current version? The image moves from{" "}
-        <span className="font-mono text-[12px]">{update.fromImage}</span> to{" "}
-        <span className="font-mono text-[12px]">{update.toImage}</span>.{" "}
+        <span className="font-mono text-xs">{update.fromImage}</span> to{" "}
+        <span className="font-mono text-xs">{update.toImage}</span>.{" "}
         {restartsOnUpgrade
           ? "The sandbox restarts to apply it — in-flight work is interrupted."
           : "It applies when the sandbox next starts."}
@@ -46,12 +46,12 @@ export function TemplateUpdateNotice({ agent }: Props) {
       inset
       className="mt-3 flex flex-wrap items-center gap-x-10 gap-y-1.5"
     >
-      <p className="min-w-0 flex-1 basis-[280px] text-[13px] leading-relaxed text-muted-foreground">
+      <p className="min-w-0 flex-1 basis-[280px] text-sm leading-relaxed text-muted-foreground">
         <strong className="font-medium text-foreground/80">
           Update available.
         </strong>{" "}
         The template now ships{" "}
-        <span className="break-all font-mono text-[12px] text-foreground">
+        <span className="break-all font-mono text-xs text-foreground">
           {update.toImage}
         </span>
       </p>

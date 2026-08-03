@@ -28,10 +28,10 @@ export function GithubAppInstallHint({
     <Callout
       tone="muted"
       size="sm"
-      className="mx-4 mt-3 text-[13px] leading-relaxed text-muted-foreground"
+      className="mx-4 mt-3 text-sm leading-relaxed text-muted-foreground"
     >
       <strong className="text-foreground/80">
-        GitHub App connections need one more step.
+        GitHub app connections need one more step.
       </strong>{" "}
       To let {getBrand().name} work with your private repos, install the app on
       the organization that owns them.
@@ -52,7 +52,7 @@ export function GithubAppInstallLink({
       href={url}
       target="_blank"
       rel="noreferrer noopener"
-      className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
+      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-accent hover:underline"
     >
       Install on GitHub <Launch size={13} aria-hidden />
     </a>

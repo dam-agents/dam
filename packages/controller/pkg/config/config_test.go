@@ -73,7 +73,7 @@ func TestLoadFromEnv_RejectsMissingRequiredAgentBase(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{}`, // accessMode + terminationGracePeriod missing
+		"AGENT_BASE":            `{}`, // terminationGracePeriod missing
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
@@ -95,7 +95,7 @@ func TestLoadFromEnv_RejectsMissingContainerSecurityContext(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5}`, // containerSecurityContext missing
+		"AGENT_BASE":            `{"terminationGracePeriod": 5}`, // containerSecurityContext missing
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
@@ -152,7 +152,6 @@ func TestLoadFromEnv_AgentBase_Parsed(t *testing.T) {
 		"AGENT_BASE": `{
 			"imagePullSecrets": ["regcred"],
 			"storageClass": "platform-rwx",
-			"accessMode": "ReadWriteOnce",
 			"idleTimeout": "30m",
 			"terminationGracePeriod": 10,
 			"runtimeClassName": "kata",
@@ -167,7 +166,6 @@ func TestLoadFromEnv_AgentBase_Parsed(t *testing.T) {
 	b := cfg.AgentBase
 	assert.Equal(t, []string{"regcred"}, b.ImagePullSecrets)
 	assert.Equal(t, "platform-rwx", b.StorageClass)
-	assert.Equal(t, "ReadWriteOnce", b.AccessMode)
 	assert.Equal(t, 30*time.Minute, b.IdleTimeout.AsDuration())
 	assert.Equal(t, int64(10), b.TerminationGracePeriod)
 	assert.Equal(t, "kata", b.RuntimeClassName)
@@ -210,7 +208,7 @@ func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "idleTimeout": "0s", "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`,
+		"AGENT_BASE":            `{"terminationGracePeriod": 5, "idleTimeout": "0s", "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -235,7 +233,7 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 // tests that override AGENT_BASE / AGENT_TEMPLATE_DEFAULTS take full
 // responsibility for satisfying validation themselves.
 const (
-	minAgentBaseJSON             = `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
+	minAgentBaseJSON             = `{"terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
 )
 

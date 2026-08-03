@@ -20,7 +20,6 @@ export interface ChannelService {
   connectSlack(
     id: string,
     slackChannelId: string,
-    mode?: "shared" | "person-scoped",
     ambient?: boolean,
   ): Promise<
     Result<
@@ -32,8 +31,12 @@ export interface ChannelService {
       | ChannelInvalidInputError
     >
   >;
-  /** Unbind the Agent's Slack channel. Idempotent server-side. */
-  disconnectSlack(id: string): Promise<ChannelResult<ChannelList>>;
+  /** Unbind one of the Agent's Slack channels, or all of them when
+   *  `slackChannelId` is omitted. Idempotent server-side. */
+  disconnectSlack(
+    id: string,
+    slackChannelId?: string,
+  ): Promise<ChannelResult<ChannelList>>;
 }
 
 export function createChannelService(deps: {
@@ -43,12 +46,11 @@ export function createChannelService(deps: {
     async available() {
       return trpcCall(() => deps.trpc.channels.available.query());
     },
-    async connectSlack(id, slackChannelId, mode, ambient) {
+    async connectSlack(id, slackChannelId, ambient) {
       try {
         const agent = await deps.trpc.agents.connectSlack.mutate({
           id,
           slackChannelId,
-          ...(mode ? { mode } : {}),
           ...(ambient ? { ambient: true } : {}),
         });
         return ok(agent.channels);
@@ -64,9 +66,12 @@ export function createChannelService(deps: {
         return classifyTrpcError(e);
       }
     },
-    async disconnectSlack(id) {
+    async disconnectSlack(id, slackChannelId) {
       return trpcCall(async () => {
-        const agent = await deps.trpc.agents.disconnectSlack.mutate({ id });
+        const agent = await deps.trpc.agents.disconnectSlack.mutate({
+          id,
+          ...(slackChannelId ? { slackChannelId } : {}),
+        });
         return agent.channels;
       });
     },

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +17,7 @@ export function VersionSwitcher({
 }) {
   if (total < 2) return null;
   return (
-    <div className="flex items-center gap-0.5 text-[12px] text-muted-foreground">
+    <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
       <Button
         variant="ghost"
         size="icon-xs"

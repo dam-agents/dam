@@ -36,6 +36,8 @@ export type {
   SpawnInvocationResponse,
   InvocationView,
   InvocationStatus,
+  InvocationTarget,
+  InvocationsQueryService,
 } from "./modules/invocations/types.js";
 
 export type {
@@ -100,7 +102,7 @@ export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
-export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,
@@ -130,6 +132,7 @@ export type {
   AppendEventsInput,
   Experiment,
   ExperimentDriverSummary,
+  ExperimentSandboxCreateInput,
   ExperimentSpan,
   TraceFeed,
   TraceFeedStage,
@@ -146,6 +149,8 @@ export {
   appendEventsResponseSchema,
   finishRequestSchema,
   experimentIdInputSchema,
+  experimentSandboxCreateInputSchema,
+  EXPERIMENT_SKILL_NAME,
   SCRIPT_CONTENT_MAX_BYTES,
   DASHBOARD_CONTENT_MAX_BYTES,
   CUSTOM_DATA_MAX_BYTES,
@@ -302,6 +307,7 @@ export {
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
+  slackThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 
@@ -337,10 +343,14 @@ export type {
   Skill,
   SkillCreateLocalInput,
   SkillCreateSourceInput,
+  SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishRecord,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,

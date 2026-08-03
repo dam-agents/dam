@@ -18,6 +18,19 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
+   * Backend selects the isolation substrate the agent workload runs on;
+   * nil = container. Immutable after create (enforced by the api-server,
+   * the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+   * instead of the agent StatefulSet; the paired gateway is unaffected.
+   */
+  backend?: {
+    type: "container" | "vm";
+    /**
+     * VM carries vm-backend props; present only when type == "vm".
+     */
+    vm?: {};
+  };
+  /**
    * Description is an optional human-readable description.
    */
   description?: string;
@@ -55,7 +68,7 @@ export interface AgentSpecCR {
    * ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
    * kubelet uses to pull the agent image from a private registry. Unlike
    * SecretRef it is never projected into the agent container — only the
-   * kubelet consumes it at pod creation, so a foreign-replier fork can pull
+   * kubelet consumes it at pod creation, so an ephemeral executor pod can pull
    * with it without ever seeing it. When set it takes precedence over the
    * install-wide default pull secret, which is retained as a fallback.
    */
@@ -70,7 +83,7 @@ export interface AgentSpecCR {
    * rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
    * Written by the api-server when such a rule exists for this agent;
    * per-agent grain so a rule on one agent never reshapes a sibling's
-   * gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+   * gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
    * stays the egress policy authority for foreign turns).
    *
    * The item pattern is a hard boundary: each entry is interpolated into
@@ -109,6 +122,7 @@ export interface AgentSpecCR {
   name?: string;
   /**
    * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   * Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
    */
   nodeSelector?: {
     [k: string]: string;
@@ -126,45 +140,38 @@ export interface AgentSpecCR {
   };
   /**
    * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   * Selects among *container* runtimes only — rejected on the vm backend.
    */
   runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
-   * agent container (operator-supplied envs).
+   * agent container (operator-supplied envs). Container backend only —
+   * rejected on the vm backend (nothing projects it into the guest).
    */
   secretRef?: string;
   /**
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */
   storageSize?: string;
-}
-
-/**
- * ForkSpec is the per-turn ephemeral runtime that derives from an Agent —
- * Forks survived the Instance/Agent collapse. The parent Agent's
- * egress surface scopes what the fork can reach. The api-server is the sole
- * writer.
- */
-export interface ForkSpecCR {
   /**
-   * AgentName names the parent Agent this fork impersonates.
+   * TelemetryAttributionID is the agent id stamped as the trusted telemetry
+   * attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+   * by the api-server for Invocation targets to their root Driver, so a
+   * target's spend credits the agent that drove it rather than the
+   * short-lived target. When set, the gateway also stamps
+   * `x-platform-invocation-id` with this agent's own id, keeping child rows
+   * distinguishable after their attribution is merged. Never user-settable —
+   * a user-supplied value would forge attribution onto an agent the caller
+   * does not drive; it is service-only input, like the pre-minted id.
    */
-  agentName: string;
-  /**
-   * ForeignSub is the foreign user identity the fork runs as.
-   */
-  foreignSub: string;
-  /**
-   * SessionID is the optional originating session.
-   */
-  sessionId?: string;
+  telemetryAttributionId?: string;
 }
 
 /**
  * RunSpec is an ephemeral executor derived from an Agent, backing the in-pod
  * `dam-run` CLI: it materializes a throwaway sandbox pod (same image, config,
  * and RWX workspace as the parent) that runs one command streamed over
- * /api/exec. Unlike a Fork it runs as the parent Agent's own owner. The command
+ * /api/exec. It runs as the parent Agent's own owner. The command
  * argv is deliberately NOT stored here — it travels only over the exec
  * WebSocket — so the executor pod is generic and no command bytes land in etcd.
  * The api-server is the sole writer of the spec and deletes the Run when the

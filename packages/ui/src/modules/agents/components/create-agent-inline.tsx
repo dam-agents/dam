@@ -2,13 +2,14 @@ import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 
 import type { AgentView } from "../../../types.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
-import { ProviderSection } from "../../providers/components/provider-section.js";
+import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { generateSandboxName } from "../../sandboxes/lib/sandbox-name.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
@@ -67,7 +68,7 @@ export function CreateAgentInline({ onCreated }: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+    <Card className="flex flex-col gap-4 p-4">
       <FormField label="Name" labelInset>
         <Input
           value={name}
@@ -93,12 +94,10 @@ export function CreateAgentInline({ onCreated }: Props) {
 
       <div>
         <SectionLabel spaced>Provider</SectionLabel>
-        <ProviderSection
+        <ProviderSelect
           selected={providerRef}
           onSelect={setProviderRef}
           autoSelectFirst
-          variant="collapsible"
-          manageKeys={false}
         />
       </div>
 
@@ -110,6 +109,6 @@ export function CreateAgentInline({ onCreated }: Props) {
       >
         {createAgent.isPending ? "Creating…" : "Create agent"}
       </Button>
-    </div>
+    </Card>
   );
 }

@@ -5,11 +5,14 @@ import {
 } from "../../modules/agents/infrastructure/labels.js";
 
 /** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
- *  ephemeral children (e.g. dam-run Runs) for cascade deletion. */
+ *  ephemeral children (e.g. dam-run Runs) for cascade deletion. `vmBackend`
+ *  marks a KubeVirt vm-backend agent — Run executors are unavailable there
+ *  (they materialize the agent image as a pod container). */
 export interface AgentIdentity {
   agentId: string;
   owner: string;
   uid: string;
+  vmBackend: boolean;
 }
 
 /**
@@ -33,5 +36,12 @@ export async function resolveAgent(
   const owner = obj.metadata?.labels?.[LABEL_OWNER];
   if (!owner) return null;
 
-  return { agentId, owner, uid: obj.metadata?.uid ?? "" };
+  const backend = (obj.spec as { backend?: { type?: string } } | undefined)
+    ?.backend;
+  return {
+    agentId,
+    owner,
+    uid: obj.metadata?.uid ?? "",
+    vmBackend: backend?.type === "vm",
+  };
 }

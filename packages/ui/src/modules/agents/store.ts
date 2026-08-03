@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
-import { viewToPath } from "../platform/lib/routes.js";
+import { routeToPath } from "../platform/lib/routes.js";
 
 /**
  * UI-side state for the agents domain. Server state (agents list,
@@ -111,7 +111,7 @@ export const createAgentsSlice: StateCreator<
     }),
 
   selectAgent: (id) => {
-    history.pushState(null, "", viewToPath("chat", id));
+    history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
     get().resetChatContext();
     set({
       selectedAgent: id,
@@ -121,7 +121,11 @@ export const createAgentsSlice: StateCreator<
   },
 
   openKnowledgeBase: (id) => {
-    history.pushState(null, "", viewToPath("knowledge-base-chat", id));
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "knowledge-base-chat", agent: id }),
+    );
     get().resetChatContext();
     set({
       selectedAgent: id,
@@ -131,7 +135,7 @@ export const createAgentsSlice: StateCreator<
   },
 
   openAgentSession: (agentId, sessionId) => {
-    history.pushState(null, "", viewToPath("chat", agentId));
+    history.pushState(null, "", routeToPath({ view: "chat", agent: agentId }));
     get().resetChatContext();
     set({
       selectedAgent: agentId,
@@ -142,7 +146,7 @@ export const createAgentsSlice: StateCreator<
   },
 
   openAgentTerminal: (agentId) => {
-    history.pushState(null, "", viewToPath("chat", agentId));
+    history.pushState(null, "", routeToPath({ view: "chat", agent: agentId }));
     // Set the pending flag after the reset (which clears it), mirroring the
     // resume handoff; chat-view consumes it on entry to spawn a terminal.
     get().resetChatContext();
@@ -160,7 +164,7 @@ export const createAgentsSlice: StateCreator<
     history.pushState(
       null,
       "",
-      fromKnowledgeBase ? viewToPath("knowledge-bases") : "/",
+      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "list" }),
     );
     get().resetChatContext();
     set({

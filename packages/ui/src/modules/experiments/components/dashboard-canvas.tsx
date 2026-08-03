@@ -39,7 +39,7 @@ export function DashboardCanvas({
   }
   if (!preview) {
     return (
-      <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading dashboard…
       </div>
     );
@@ -63,7 +63,7 @@ function NativeFallback({
   note: string;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-[13px] text-muted-foreground">
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
       <p>{note}</p>
       {feed && (
         <p>

@@ -133,14 +133,19 @@ export function createClickhouseReader(
     },
 
     async spendByAgent(agentIds, window) {
-      // Group on the trusted, gateway-stamped agent id. The display name is
-      // read from the telemetry itself — argMax picks the latest
-      // `platform.agent.name` seen in range — so a since-deleted agent still
+      // Group on the trusted, gateway-stamped agent id — now the root Driver's
+      // id for Invocation targets, so delegated work is attributed to the
+      // Driver. The display name is read from the telemetry itself — argMaxIf
+      // picks the latest `platform.agent.name` among the agent's OWN rows,
+      // excluding child rows (those carrying a `platform.invocation.id`) whose
+      // name belongs to the target, not the Driver the row is attributed to.
+      // This keeps a heavy delegator's bar labelled with its own name instead
+      // of the newest target's `invocation-<hex>`. A since-deleted agent still
       // shows its last known name. The name is display-only; the id is the key.
       const r = await rows(
         `SELECT
            ResourceAttributes['platform.agent.id'] AS agentId,
-           argMax(ResourceAttributes['platform.agent.name'], Timestamp) AS agentName,
+           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName,
            sum(${COST_USD}) AS costUsd
          FROM otel_logs
          WHERE ${ownedApiRequests(window)}
@@ -179,21 +184,59 @@ export function createClickhouseReader(
     },
 
     async runtimeBySession(agentIds, window) {
+      // Group each session under the root of its trace family (root = the
+      // earliest session on a shared trace), so child harness runs count
+      // inside the session that spawned them. The CTEs stay session-unfiltered
+      // but owner-gated; a session with no traced rows keeps its own id.
+      const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
-        `SELECT
-           LogAttributes['session.id'] AS sessionId,
-           ResourceAttributes['platform.agent.id'] AS agentId,
+        `WITH trace_root AS (
+           SELECT TraceId,
+                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
+           FROM otel_logs
+           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+           GROUP BY TraceId
+         ),
+         session_root AS (
+           SELECT sid, argMin(rootSid, firstAt) AS rootSid
+           FROM (
+             SELECT LogAttributes['session.id'] AS sid,
+                    TraceId,
+                    min(Timestamp) AS firstAt
+             FROM otel_logs
+             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+             GROUP BY sid, TraceId
+           ) AS st
+           INNER JOIN trace_root USING (TraceId)
+           GROUP BY sid
+         )
+         SELECT
+           coalesce(nullIf(rootSid, ''), sid) AS sessionId,
+           agentId,
            count() AS calls,
-           sum(${IN("'duration_ms'")}) AS totalDurationMs,
-           sum(${TOK_IN}) AS inputTokens,
-           sum(${IN("'output_tokens'")}) AS outputTokens,
-           sum(${TOK_CACHE_R}) AS cacheReadTokens,
-           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd,
-           min(Timestamp) AS firstAt,
-           max(Timestamp) AS lastAt
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
+           sum(durationMs) AS totalDurationMs,
+           sum(rowInputTokens) AS inputTokens,
+           sum(rowOutputTokens) AS outputTokens,
+           sum(rowCacheReadTokens) AS cacheReadTokens,
+           sum(rowCacheCreationTokens) AS cacheCreationTokens,
+           sum(rowCostUsd) AS costUsd,
+           min(ts) AS firstAt,
+           max(ts) AS lastAt
+         FROM (
+           SELECT
+             LogAttributes['session.id'] AS sid,
+             ResourceAttributes['platform.agent.id'] AS agentId,
+             ${IN("'duration_ms'")} AS durationMs,
+             ${TOK_IN} AS rowInputTokens,
+             ${IN("'output_tokens'")} AS rowOutputTokens,
+             ${TOK_CACHE_R} AS rowCacheReadTokens,
+             ${TOK_CACHE_C} AS rowCacheCreationTokens,
+             ${COST_USD} AS rowCostUsd,
+             Timestamp AS ts
+           FROM otel_logs
+           WHERE ${ownedApiRequests(window)} AND LogAttributes['session.id'] != ''
+         ) AS calls_rows
+         LEFT JOIN session_root USING (sid)
          GROUP BY sessionId, agentId
          ORDER BY lastAt DESC`,
         windowParams(agentIds, window),

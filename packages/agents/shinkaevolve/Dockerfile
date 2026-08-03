@@ -35,7 +35,8 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 
 RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$SHINKA_VENV" &&\
-    uv pip install --python "$SHINKA_VENV/bin/python" "shinka-evolve==${SHINKA_VERSION}" &&\
+    # pillow floor: CVE-2026-25990, -40192, -42308..11, -54058..60
+    uv pip install --python "$SHINKA_VENV/bin/python" "shinka-evolve==${SHINKA_VERSION}" "pillow>=12.3.0" &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/shinka-venv /opt/uv
 

@@ -3,8 +3,10 @@ import { TRPCError } from "@trpc/server";
 import {
   CUSTOM_DATA_MAX_BYTES,
   experimentFolderName,
+  type Agent,
   type Experiment,
   type ExperimentDriverSummary,
+  type ExperimentSandboxCreateInput,
   type ExperimentSpan,
   type ExperimentsService,
   type FinishInput,
@@ -117,6 +119,10 @@ export interface ExperimentsServiceDeps {
       task: string;
     }): Promise<void>;
   };
+  /** Mints the experiment sandbox (Agent + `experiment` Kind + authoring-skill
+   *  install). Required for createSandbox(); the harness REST composition omits
+   *  it — an agent never creates sandboxes. */
+  createSandbox?: (input: ExperimentSandboxCreateInput) => Promise<Agent>;
   now?: () => Date;
 }
 
@@ -254,6 +260,19 @@ export function createExperimentsService(
 
   return {
     // ---- owner surface (tRPC) ------------------------------------------------
+
+    async createSandbox(input: ExperimentSandboxCreateInput) {
+      if (!deps.createSandbox) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "creating experiment sandboxes is not wired on this surface",
+        });
+      }
+      // No Experiment row is written here: the sandbox is a venue, and a draft
+      // only ever comes from the script's Plan Registration. So a fresh sandbox
+      // shows on the Experiments destination as an empty container.
+      return deps.createSandbox(input);
+    },
 
     async list() {
       return (await repo.list(owner)).map(toView);

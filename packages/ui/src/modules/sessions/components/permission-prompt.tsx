@@ -57,12 +57,12 @@ export function PermissionStatusLine() {
     : undefined;
   if (!current) return null;
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border-light bg-muted/30 px-4 min-h-[44px] text-[14px] anim-in">
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-11 text-sm anim-in">
       <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
       </span>
-      <span className="font-semibold text-text truncate">
+      <span className="font-semibold text-foreground truncate">
         Allow {toolTitle(current.toolCall)}
       </span>
     </div>
@@ -72,14 +72,14 @@ export function PermissionStatusLine() {
 /** A resolved verdict, rendered in the transcript where the user decided it. */
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   return (
-    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-[44px] text-[14px] anim-in">
+    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-11 text-sm anim-in">
       {verdict.allowed ? (
         <Checkmark size={16} className="text-success shrink-0" />
       ) : (
         <Close size={16} className="text-destructive shrink-0" />
       )}
       <span className="text-muted-foreground shrink-0">{verdict.label} —</span>
-      <span className="font-semibold text-text truncate">
+      <span className="font-semibold text-foreground truncate">
         {verdict.subject}
       </span>
     </div>
@@ -177,8 +177,8 @@ export function PermissionPrompt({
   return (
     <div className="px-4 md:px-8 pt-3 pb-4">
       <ChatColumn className="flex flex-col gap-2">
-        <div className="rounded-xl border border-border-light bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
-          <div className="flex items-start gap-2 text-[14px] font-semibold text-text">
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
+          <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
             <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
             <span
               ref={titleRef}
@@ -191,13 +191,13 @@ export function PermissionPrompt({
             <button
               type="button"
               onClick={() => setExpanded((e) => !e)}
-              className="self-start pl-4 text-[12px] text-muted-foreground hover:text-text transition-colors"
+              className="self-start pl-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {expanded ? "Show less" : "Show more"}
             </button>
           )}
           {location && (
-            <div className="pl-4 text-[14px] text-muted-foreground break-all">
+            <div className="pl-4 text-sm text-muted-foreground break-all">
               {location}
             </div>
           )}
@@ -208,7 +208,7 @@ export function PermissionPrompt({
                 variant="outline"
                 size="sm"
                 onClick={() => pick(opt)}
-                className="bg-background h-[26px] text-[14px] font-medium max-w-full"
+                className="bg-background h-[26px] text-sm font-medium max-w-full"
                 title={`${opt.name} — press ${i + 1}`}
               >
                 <span className="truncate">{opt.name}</span>

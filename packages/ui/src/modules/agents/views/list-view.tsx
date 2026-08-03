@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
@@ -9,15 +10,17 @@ import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
-import { isKnowledgeBase } from "../utils/agent-kind.js";
+import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function ListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
     useAgentRows();
-  // Knowledge Bases are agents too, but they live on their own surface — the
-  // Sandboxes list shows only unmarked agents.
-  const agents = (agentsData?.list ?? []).filter(
-    (agent) => !isKnowledgeBase(agent),
+  // Every agent the user created, badged with its Kind: the per-kind
+  // destinations are filtered views onto this list. Invocation targets are the
+  // one exception — run-owned and ephemeral, they hide behind a meta line on
+  // the driver's own row that accounts for their compute.
+  const { visible: agents, drawByDriver } = splitTemporarySandboxes(
+    agentsData?.list ?? [],
   );
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
@@ -59,32 +62,36 @@ export function ListView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[666px]">
+    <div>
       <PageHeader
-        title="Sandboxes"
+        title="Home"
         actions={
           agents.length > 0 ? (
-            <Button onClick={navigateToCreateSandbox}>Create sandbox</Button>
+            <Button onClick={() => navigateToCreateSandbox()}>
+              Create sandbox
+            </Button>
           ) : undefined
         }
       />
 
-      {initialLoaded && agents.length > 0 && <BudgetMeter />}
+      {initialLoaded && agents.length > 0 && (
+        <>
+          <BudgetMeter />
+          <SectionLabel spaced>Sandboxes</SectionLabel>
+        </>
+      )}
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
       {initialLoaded && agents.length === 0 && (
-        <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-          <h2 className="text-[16px] font-semibold text-foreground">
-            No sandboxes yet
-          </h2>
-          <p className="text-[14px] text-muted-foreground">
-            Create your first sandbox to get started.
-          </p>
-          <Button className="mt-1" onClick={navigateToCreateSandbox}>
-            Create sandbox
-          </Button>
-        </Card>
+        <PageEmptyState
+          title="No sandboxes yet"
+          message="Create your first sandbox to get started."
+          actionLabel="Create sandbox"
+          // Wrapped: navigateToCreateSandbox takes an optional starting point,
+          // and a bare handler would receive the click event as one.
+          onAction={() => navigateToCreateSandbox()}
+        />
       )}
 
       <div className="flex flex-col gap-3">
@@ -93,6 +100,7 @@ export function ListView() {
             <AgentRow
               key={agent.id}
               {...rowProps(agent)}
+              temporaryDraw={drawByDriver.get(agent.id)}
               onSelect={() => navigateToSandboxHome(agent.id)}
               onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}

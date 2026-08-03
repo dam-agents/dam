@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink } from "lucide-react";
+import { Checkmark, Copy, Launch } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ export function OAuthAppHint({
 
   return (
     <Callout tone="muted" className="flex flex-col gap-2">
-      <p className="text-[12px] text-foreground/80">
+      <p className="text-xs text-foreground/80">
         Register an OAuth app at the provider, then paste its client credentials
         below.
         {setupUrl && (
@@ -37,7 +37,7 @@ export function OAuthAppHint({
               rel="noreferrer"
               className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
             >
-              Create an app <ExternalLink size={11} />
+              Create an app <Launch size={11} />
             </a>
           </>
         )}
@@ -60,7 +60,7 @@ export function OAuthAppHint({
               title="Copy redirect URI"
             >
               {copied ? (
-                <Check size={12} className="text-success" />
+                <Checkmark size={12} className="text-success" />
               ) : (
                 <Copy size={12} />
               )}

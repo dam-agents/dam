@@ -29,7 +29,6 @@ var testConfig = &config.Config{
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
 	AgentBase: config.AgentBase{
-		AccessMode:             "ReadWriteMany",
 		TerminationGracePeriod: 5,
 		ContainerSecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
@@ -274,7 +273,7 @@ func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
 	assert.Equal(t, "home-agent", pvc.Name)
-	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, pvc.Spec.AccessModes)
+	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, pvc.Spec.AccessModes)
 	assert.Nil(t, pvc.Spec.StorageClassName, "unset StorageClass → PVC gets cluster-default class")
 
 	volMap := make(map[string]corev1.Volume)
@@ -339,19 +338,6 @@ func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 	assert.Equal(t,
 		"http://platform-apiserver.default.svc:4001/api/agents/my-instance/pod-files/events",
 		envMap["PLATFORM_POD_FILES_EVENTS_URL"])
-}
-
-func TestBuildAgentStatefulSet_VMEnabledEnv(t *testing.T) {
-	// DAM_VM_ENABLED is injected only when a VM host is configured; the agent
-	// entrypoint keys the dam-vm tool doc off it.
-	off := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
-	_, present := envToMap(off.Spec.Template.Spec.Containers[0].Env)["DAM_VM_ENABLED"]
-	assert.False(t, present, "no DAM_VM_ENABLED when VM host unconfigured")
-
-	cfg := *testConfig
-	cfg.VMEnabled = true
-	on := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "")
-	assert.Equal(t, "1", envToMap(on.Spec.Template.Spec.Containers[0].Env)["DAM_VM_ENABLED"])
 }
 
 func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
@@ -441,7 +427,7 @@ func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
@@ -489,7 +475,7 @@ func podClaimName(ss *appsv1.StatefulSet, volName string) (string, bool) {
 }
 
 func TestBuildAgentStatefulSet_PersistedVCTCarriesMountLabel(t *testing.T) {
-	// #692: every persisted PVC must carry the (agent, mount) labels so a fork
+	// #692: every persisted PVC must carry the (agent, mount) labels so a Run executor
 	// can resolve it by label instead of reconstructing its name.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
 	var vct *corev1.PersistentVolumeClaim

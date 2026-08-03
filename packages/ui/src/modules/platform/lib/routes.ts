@@ -1,24 +1,5 @@
 import { z } from "zod";
 
-export const viewSchema = z.enum([
-  "list",
-  "chat",
-  "settings",
-  "inbox",
-  "terms",
-  "telegram-bind",
-  "slack-bind",
-  "sandbox-new",
-  "sandbox-home",
-  "experiments",
-  "knowledge-bases",
-  "knowledge-base-new",
-  "knowledge-base-chat",
-  "knowledge-base-config",
-  "artifacts",
-]);
-export type View = z.infer<typeof viewSchema>;
-
 export const settingsTabSchema = z.enum([
   "account",
   "appearance",
@@ -40,47 +21,31 @@ export const sandboxSectionSchema = z.enum([
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
-export function viewToPath(
-  view: View,
-  agent?: string | null,
-  agentId?: string | null,
-  settingsTab?: SettingsTab | null,
-  sandboxSection?: SandboxSection | null,
-): string {
-  if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
-  if (view === "settings")
-    return settingsTab && settingsTab !== "account"
-      ? `/settings/${settingsTab}`
-      : "/settings";
-  if (view === "inbox") return "/inbox";
-  if (view === "terms") return "/terms";
-  if (view === "telegram-bind") return "/telegram/bind";
-  if (view === "slack-bind") return "/slack/bind";
-  if (view === "sandbox-new") return "/sandboxes/new";
-  if (view === "sandbox-home" && agentId) {
-    const base = `/sandboxes/${encodeURIComponent(agentId)}`;
-    return sandboxSection && sandboxSection !== "setup"
-      ? `${base}/${sandboxSection}`
-      : base;
-  }
-  if (view === "experiments") return "/experiments";
-  if (view === "knowledge-bases") return "/knowledge-bases";
-  if (view === "knowledge-base-new") return "/knowledge-bases/new";
-  if (view === "knowledge-base-chat" && agent)
-    return `/knowledge-bases/${encodeURIComponent(agent)}`;
-  if (view === "knowledge-base-config" && agentId)
-    return `/knowledge-bases/${encodeURIComponent(agentId)}/settings`;
-  if (view === "artifacts") return "/artifacts";
-  return "/";
-}
+export type Route =
+  | { view: "list" }
+  | { view: "chat"; agent: string }
+  | { view: "settings"; settingsTab: SettingsTab }
+  | { view: "inbox" }
+  | { view: "terms" }
+  | { view: "telegram-bind" }
+  | { view: "slack-bind" }
+  | { view: "sandbox-new" }
+  | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
+  | { view: "experiments" }
+  | { view: "knowledge-bases" }
+  | { view: "knowledge-base-chat"; agent: string }
+  | { view: "knowledge-base-config"; agentId: string }
+  | { view: "artifacts" };
 
-export function pathToState(path: string): {
-  view: View;
-  agent?: string;
-  agentId?: string;
-  settingsTab?: SettingsTab;
-  sandboxSection?: SandboxSection;
-} {
+export type View = Route["view"];
+
+// Alternation derived from the schema so the regex can't drift from it.
+const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
+const sandboxHomeRe = new RegExp(
+  `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
+);
+
+export function parseRoute(path: string): Route {
   if (path.startsWith("/chat/"))
     return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
@@ -96,20 +61,25 @@ export function pathToState(path: string): {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
+  // Must stay above the sandbox-home regex, which would otherwise capture
+  // "new" as an agent id.
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
   if (path === "/artifacts") return { view: "artifacts" };
-  const sandboxHomeMatch = path.match(
-    /^\/sandboxes\/([^/]+)(?:\/(setup|connections|channels|skills|schedules|artifacts))?$/,
-  );
-  if (sandboxHomeMatch)
+  const sandboxHomeMatch = path.match(sandboxHomeRe);
+  if (sandboxHomeMatch) {
+    const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
     return {
       view: "sandbox-home",
       agentId: decodeURIComponent(sandboxHomeMatch[1]!),
-      sandboxSection: (sandboxHomeMatch[2] as SandboxSection) ?? "setup",
+      sandboxSection: section.success ? section.data : "setup",
     };
+  }
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
-  if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
+  // Knowledge bases are created in the shared sandbox wizard now. Land old
+  // links there instead of letting them fall through to the chat matcher
+  // below, which would try to open a knowledge base named "new".
+  if (path === "/knowledge-bases/new") return { view: "sandbox-new" };
   const knowledgeBaseConfigMatch = path.match(
     /^\/knowledge-bases\/([^/]+)\/settings$/,
   );
@@ -125,4 +95,68 @@ export function pathToState(path: string): {
       agent: decodeURIComponent(knowledgeBaseChatMatch[1]!),
     };
   return { view: "list" };
+}
+
+export function routeToPath(route: Route): string {
+  switch (route.view) {
+    case "list":
+      return "/";
+    case "chat":
+      return `/chat/${encodeURIComponent(route.agent)}`;
+    case "settings":
+      return route.settingsTab === "account"
+        ? "/settings"
+        : `/settings/${route.settingsTab}`;
+    case "inbox":
+      return "/inbox";
+    case "terms":
+      return "/terms";
+    case "telegram-bind":
+      return "/telegram/bind";
+    case "slack-bind":
+      return "/slack/bind";
+    case "sandbox-new":
+      return "/sandboxes/new";
+    case "sandbox-home": {
+      const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
+      return route.sandboxSection === "setup"
+        ? base
+        : `${base}/${route.sandboxSection}`;
+    }
+    case "experiments":
+      return "/experiments";
+    case "knowledge-bases":
+      return "/knowledge-bases";
+    case "knowledge-base-chat":
+      return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
+    case "knowledge-base-config":
+      return `/knowledge-bases/${encodeURIComponent(route.agentId)}/settings`;
+    case "artifacts":
+      return "/artifacts";
+    default: {
+      const unhandled: never = route;
+      return unhandled;
+    }
+  }
+}
+
+/** Map a route onto the four flat fields the navigation slice owns. */
+export function routeToNavigationState(route: Route): {
+  view: View;
+  agentId: string | null;
+  settingsTab: SettingsTab;
+  sandboxSection: SandboxSection;
+} {
+  return {
+    view: route.view,
+    // The KB settings form keys off `agentId`, the same field sandbox-home
+    // uses; both chat surfaces carry their agent as `selectedAgent` instead.
+    agentId:
+      route.view === "sandbox-home" || route.view === "knowledge-base-config"
+        ? route.agentId
+        : null,
+    settingsTab: route.view === "settings" ? route.settingsTab : "account",
+    sandboxSection:
+      route.view === "sandbox-home" ? route.sandboxSection : "setup",
+  };
 }

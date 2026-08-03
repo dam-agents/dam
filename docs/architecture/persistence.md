@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-07-27
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -9,8 +9,8 @@ Platform persists state on four durable substrates, split cleanly between the pl
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned. The bundled instance runs under three roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
-- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
-- **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Forks), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
+- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
+- **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Runs), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:
 
@@ -34,9 +34,9 @@ flowchart LR
   objectstore[(Object store<br/>S3-compatible)]
 
   subgraph k8s[K8s API]
-    cr-spec[Agent / Fork CR<br/>spec]
-    cr-status[Agent / Fork CR<br/>status subresource]
-    cr-anno[Agent / Fork CR<br/>annotations]
+    cr-spec[Agent / Run CR<br/>spec]
+    cr-status[Agent / Run CR<br/>status subresource]
+    cr-anno[Agent / Run CR<br/>annotations]
   end
 
   pvc[(Per-Agent PVC)]
@@ -71,7 +71,7 @@ The api-server is the sole writer for all of it. The controller does not touch P
 
 The object store carries bulk binary blobs that would be wrong as database rows — data whose size, not queryability, is the point. Its first consumer is artifact-library content ([artifact-library](artifact-library.md)); it is also the durable-bulk-storage foundation intended for future features like storage backups and agent duplication.
 
-Ownership is api-server-centric: it holds the only standing credentials, the controller never touches the store, and bulk bytes move **directly** between producer/consumer and the store under platform-minted authorization — the api-server issues short-lived links scoped to a single object and operation (upload links to agents after attributing the caller, download links to browsers after owner checks), and the store rejects anything else. An agent's traffic still exits only through its paired gateway; what changes with the store present is that the gateway forwards store-bound requests without a per-request human decision, the link itself being the authorization ([security-and-credentials](security-and-credentials.md)). Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
+Ownership is api-server-centric: it holds the only standing credentials, the controller never touches the store, and bulk bytes move **directly** between producer/consumer and the store under platform-minted authorization — the api-server issues short-lived links scoped to a single object and operation, each signed for the authority its audience dials and valid on no other (upload links to agents after attributing the caller, download links to an agent through its gateway or to a browser directly, after owner checks), and the store rejects anything else. An agent's traffic still exits only through its paired gateway; what changes with the store present is that the gateway forwards store-bound requests without a per-request human decision, the link itself being the authorization ([security-and-credentials](security-and-credentials.md)). Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
 
 The store is any S3-compatible endpoint, chosen at deploy time via Helm: the chart bundles a single-node SeaweedFS by default (dev and local clusters work with no external account; Apache-2.0, so bundling carries no copyleft obligations), or the operator points the platform at an external store — a cloud bucket or an on-prem installation. The api-server provisions its bucket at startup when missing and fails boot fast when the store is unreachable. An install with no object store fails closed: bulk-blob features are unavailable until one is configured.
 
@@ -82,7 +82,7 @@ Resources the controller reconciles are Kubernetes CRDs under the `agent-platfor
 | Kind | What it declares | `spec` writer | `status` writer |
 |---|---|---|---|
 | `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
-| `Fork` | Forked run: parent Agent ref + overrides | api-server | controller |
+| `Run` | A `dam-run` executor (currently disabled — see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run--disabled)): parent Agent ref | api-server | controller |
 
 Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
@@ -100,7 +100,7 @@ Two domain resources are deliberately not CRDs:
 
 ### Per-Agent PVCs
 
-Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so the workspace can be shared concurrently between the Agent's original owner and a foreign user running a fork against it — both pods mount the same volume at the same time.
+Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteOnce` on ordinary single-writer storage — the agent pod is the volume's only writer, so no install needs a shared filesystem class. (Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
 
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
@@ -110,7 +110,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
 
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint symlinks it to pod-local disk (`/tmp/agent-cache`) so tool caches don't load the shared RWX volume. Tools and dependencies the agent relies on must be baked into the image at build time.
+What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint symlinks it to pod-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. Tools and dependencies the agent relies on must be baked into the image at build time.
 
 ### Warm PVC pool
 
@@ -119,6 +119,10 @@ First-start provisioning of a workspace PVC is slow on production storage — te
 A spare only helps if it holds real storage while idle, so pool PVCs use an **immediate-binding** StorageClass — the agents' own class defers allocation until mount, which would leave a pre-created spare empty. At create time, for each persisted mount whose size matches a configured pool, the controller claims one spare and mounts it by name rather than through the StatefulSet's `volumeClaimTemplate`; a mount with no matching pool, or an exhausted pool, falls back to on-demand provisioning so Agent creation never blocks.
 
 Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a pool label but **no owning-agent label**, so the orphan-PVC sweep — which acts only on agent-labeled PVCs — leaves it untouched. On claim the controller stamps the agent label and removes the available marker in one atomic update; from that point the volume is an ordinary per-Agent PVC, reclaimed on Agent deletion and reattached on wake. The claim decision is made once at create and reconstructed from the live StatefulSet on every later reconcile, so it survives hibernate/wake without ever re-rendering the pod's volumes — even if the claimed volume is deleted out-of-band, the agent keeps referencing it by name rather than degrading to a mount with no backing volume.
+
+### Storage migration (transitional)
+
+Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (a Slack per-person fork, a `dam-run` executor) could write into a live agent's workspace. Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state. Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume. Throttled fleet-wide; a no-op once no RWX workspace volume remains. Operators keep the old storage backend (the deprecated bundled NFS server, or a managed shared filesystem) available until the last RWX volume drains, then decommission it — the migration knobs and the deprecated NFS chart block are removed together in a later release.
 
 ## Lifetime
 
@@ -140,6 +144,6 @@ An Agent created on a private custom image carries an agent-scoped image-pull Se
 
 ## Security boundary
 
-The PVC is a **shared mutable surface across every session, trigger, fork, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
+The PVC is a **shared mutable surface across every session, trigger, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
 
-The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly), the gateway pod gates credentialed egress, and forks let you run with a narrowed credential set without polluting the parent's workspace. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).
+The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly), and the gateway pod gates credentialed egress. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).

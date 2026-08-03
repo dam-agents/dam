@@ -1,6 +1,7 @@
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { cn } from "../../../../lib/utils.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
 
 export type BindingMode = "all" | "specific";
@@ -28,7 +29,7 @@ export function AgentBindingField({
   return (
     <div className="mb-4">
       <SectionLabel className="mb-1 block">Agent access</SectionLabel>
-      <p className="text-[12px] text-muted-foreground mb-2">
+      <p className="text-xs text-muted-foreground mb-2">
         {lockedToAll ? (
           <>
             <code>agents:manage</code> keys must cover every agent — per-agent
@@ -39,87 +40,52 @@ export function AgentBindingField({
         )}
       </p>
 
-      <div className="space-y-2">
-        <BindingModeOption
+      <RadioGroup
+        aria-label="Agent access"
+        value={effectiveMode}
+        onValueChange={(value) =>
+          onModeChange(value === "specific" ? "specific" : "all")
+        }
+      >
+        <RadioGroupItem
+          value="all"
           label="All agents"
           description="Every agent you own, now and in the future."
-          checked={effectiveMode === "all"}
-          disabled={false}
-          onSelect={() => onModeChange("all")}
+          className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
         />
-        <BindingModeOption
+        <RadioGroupItem
+          value="specific"
           label="Specific agents"
           description="Only the agents you pick below."
-          checked={effectiveMode === "specific"}
           disabled={lockedToAll}
-          onSelect={() => onModeChange("specific")}
+          className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
         />
-      </div>
+      </RadioGroup>
 
       {effectiveMode === "specific" && (
         <div className="mt-2 ml-6 space-y-1.5">
           {agents.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               You have no agents yet — create one first, or choose “All agents”.
             </p>
           ) : (
             agents.map((agent) => (
               <label
                 key={agent.id}
-                className="flex items-center gap-2 text-[13px] cursor-pointer"
+                htmlFor={`api-key-agent-${agent.id}`}
+                className="flex cursor-pointer items-center gap-2"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
+                  id={`api-key-agent-${agent.id}`}
                   checked={selectedAgentIds.has(agent.id)}
-                  onChange={() => onToggleAgent(agent.id)}
+                  onCheckedChange={() => onToggleAgent(agent.id)}
                 />
-                <span className="truncate">{agent.name}</span>
+                <span className="truncate text-sm">{agent.name}</span>
               </label>
             ))
           )}
         </div>
       )}
     </div>
-  );
-}
-
-interface BindingModeOptionProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onSelect: () => void;
-}
-
-function BindingModeOption({
-  label,
-  description,
-  checked,
-  disabled,
-  onSelect,
-}: BindingModeOptionProps) {
-  return (
-    <label
-      className={cn(
-        "flex items-start gap-2 p-2 rounded-lg",
-        disabled
-          ? "opacity-50 cursor-not-allowed"
-          : "hover:bg-muted/40 cursor-pointer",
-      )}
-    >
-      <input
-        type="radio"
-        checked={checked}
-        disabled={disabled}
-        onChange={onSelect}
-        className="mt-1"
-      />
-      <div className="flex-1">
-        <span className="text-[13px] font-semibold">{label}</span>
-        <span className="text-[12px] text-muted-foreground block">
-          {description}
-        </span>
-      </div>
-    </label>
   );
 }

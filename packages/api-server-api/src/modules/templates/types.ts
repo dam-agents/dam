@@ -61,7 +61,13 @@ export interface TemplateSpec {
   /** Overrides `controller.agent.templateDefaults.storageSize` for the
    *  persistent home mount. Per-mount `size` (if set) wins over this. */
   storageSize?: string;
-  /** Overrides the chart-wide runtime class (e.g. a GPU Kata class). Empty = inherit. */
+  /** Isolation substrate for agents created from this template: `container`
+   *  (default) or `vm` (KubeVirt VirtualMachine; requires
+   *  `virtualization.enabled` on the install). Copied verbatim onto the
+   *  Agent spec at create time and immutable afterwards. */
+  backend?: { type: "container" | "vm"; vm?: Record<string, unknown> };
+  /** Overrides the chart-wide runtime class (e.g. a GPU Kata class). Empty =
+   *  inherit. Container runtimes only — rejected with `backend.type: vm`. */
   runtimeClassName?: string;
   /** Node-selector labels merged onto the chart-wide selector. Empty = inherit. */
   nodeSelector?: Record<string, string>;

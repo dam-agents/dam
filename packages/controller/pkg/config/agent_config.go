@@ -34,7 +34,7 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 // AgentBase is the chart-only platform policy applied verbatim to every
-// controller-rendered agent / fork agent pod. Agent ConfigMaps cannot
+// controller-rendered agent / executor pod. Agent ConfigMaps cannot
 // override these fields by design — security, scheduling, and cluster
 // integration are operator policy. Shipped via the AGENT_BASE env var.
 //
@@ -48,12 +48,19 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 type AgentBase struct {
 	// Cluster details
 	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
-	StorageClass     string   `json:"storageClass,omitempty"`
-	AccessMode       string   `json:"accessMode,omitempty"` // ReadWriteMany (default) or ReadWriteOnce
+	// StorageClass for workspace PVCs; empty = cluster default. Access mode
+	// is not configurable: workspace volumes are always ReadWriteOnce — the
+	// agent pod is the volume's only writer (#2988).
+	StorageClass string `json:"storageClass,omitempty"`
+	// Deprecated: ignored (#2988). Workspace volumes are always
+	// ReadWriteOnce. Kept only so an install that still sets
+	// controller.agent.base.accessMode in its values survives the strict
+	// config decode on upgrade; LoadFromEnv warns when it is set.
+	AccessMode string `json:"accessMode,omitempty"`
 
 	// Lifecycle
 	IdleTimeout            Duration `json:"idleTimeout,omitempty"`            // hibernate idle instances; 0 disables.
-	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // agent + fork agent only.
+	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // agent + executor pod only.
 
 	// Pod metadata
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
@@ -95,6 +102,21 @@ type AgentNPGateInit struct {
 	Image   string `json:"image,omitempty"`
 	// Bound on probe convergence; fail-closed on timeout.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+}
+
+// VMConfig configures the KubeVirt vm backend (spec.backend.type=vm).
+// Chart-only, threaded via the AGENT_VM env var from Helm `virtualization.*`.
+// Disabled ⇒ vm-backend agents fail reconcile with a clear error.
+type VMConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// ScratchSize is the emptyDisk capacity attached to every VM (serial
+	// "scratch") for the guest's docker/k3s image stores. Global knob by
+	// design — not per-VM. Default 30Gi.
+	ScratchSize string `json:"scratchSize,omitempty"`
+	// Scheduling for virt-launcher pods (KVM-capable nodes). Applied instead
+	// of AgentBase scheduling; the template's NodeSelector still merges on top.
+	NodeSelector map[string]string   `json:"nodeSelector,omitempty"`
+	Tolerations  []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // AgentProbes — sub-field nil means "use the controller's built-in probe
@@ -155,8 +177,7 @@ type WarmPool struct {
 	// AgentBase.StorageClass, whose bundled NFS class is WaitForFirstConsumer —
 	// under which a pre-created PVC would stay Pending and save nothing. The
 	// access mode is NOT configured here: a claimed spare becomes the agent's
-	// workspace PVC, so it must match AgentBase.AccessMode (RWX so
-	// per-turn fork pods can co-mount); the pool inherits that single value.
+	// workspace PVC, so it is ReadWriteOnce like every workspace volume.
 	StorageClass string `json:"storageClass,omitempty"`
 	// ReplenishInterval is how often the manager reconciles inventory toward
 	// target. Zero falls back to a built-in default.
@@ -195,4 +216,60 @@ type SkillSource struct {
 	Name   string `json:"name"`
 	GitURL string `json:"gitUrl"`
 	Path   string `json:"path,omitempty"`
+}
+
+// StorageMigration drives the one-time RWX -> RWO workspace-volume migration
+// (#2988). The controller copies every ReadWriteMany workspace PVC onto a
+// fresh ReadWriteOnce volume (checksum-verified), re-points the agent's
+// StatefulSet, and deletes the old volume — forcibly scaling the agent down
+// for the duration of its copy. Shipped via the STORAGE_MIGRATION env var
+// from `controller.storageMigration`. A no-op once no RWX workspace volume
+// remains, so leaving it enabled on a fully-migrated install costs one PVC
+// list per interval.
+type StorageMigration struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// Concurrency caps how many agents migrate at once (default 10). Each
+	// migration reads its source volume in full three times (copy + two
+	// verification passes), so the cap is what stands between a fleet
+	// drain and saturating the shared filesystem being drained — lower it
+	// if the filer's read throughput suffers, raise it if the fleet's
+	// total drain time matters more.
+	Concurrency int `json:"concurrency,omitempty"`
+	// Interval between reconcile passes. Zero falls back to a built-in
+	// default.
+	Interval Duration `json:"interval,omitempty"`
+	// TargetStorageClass is the class migrated workspaces land on. Empty
+	// (the default) means the CLUSTER DEFAULT class — deliberately NOT
+	// AgentBase.StorageClass, which on a pre-migration install still names
+	// the shared filesystem being drained: inheriting it would move a
+	// workspace from RWX to RWO on the same NFS backend, changing the access
+	// mode and nothing else. The migration exists to leave that backend, so
+	// its destination is configured independently and defaults to ordinary
+	// cluster-default storage.
+	TargetStorageClass string `json:"targetStorageClass,omitempty"`
+	// AllowSameStorageClass permits a migration whose target class is the
+	// class the workspace already sits on. Default false: that combination is
+	// almost always a misconfiguration — it force-restarts every agent and
+	// copies every byte to arrive at the same backend — so it is refused with
+	// a loud log naming the remedy.
+	AllowSameStorageClass bool `json:"allowSameStorageClass,omitempty"`
+	// MinTargetSize floors the size of a migrated workspace volume. Empty
+	// (the default) keeps the source's request verbatim. Set it where the
+	// target class prices IOPS PER GIGABYTE — IBM's block tiers do — because
+	// there a faithfully-sized 1Gi volume also inherits a 1Gi share of IOPS
+	// and the copy crawls; such classes also tend to have a minimum volume
+	// size of their own, which a smaller request is silently rounded up to
+	// anyway.
+	MinTargetSize string `json:"minTargetSize,omitempty"`
+	// AllowOwnershipRemap is deprecated and ignored: the copy preserves
+	// ownership exactly now that the writer side runs privileged on the
+	// target (readable foreign-owned entries copy faithfully instead of
+	// requiring remap consent). Kept so strict config decoding accepts
+	// values files from the release that introduced it.
+	AllowOwnershipRemap bool `json:"allowOwnershipRemap,omitempty"`
+	// JobImage runs the copy script. It must provide bash, GNU tar and GNU
+	// coreutils (find -printf, md5sum): the copy relies on tar's hard-link
+	// and sparse handling — a hard-link-heavy store (pnpm) would otherwise
+	// inflate past the volume size — and the verification on find -printf.
+	JobImage string `json:"jobImage,omitempty"`
 }

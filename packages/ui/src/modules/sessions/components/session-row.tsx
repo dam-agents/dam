@@ -5,7 +5,12 @@ import {
   Time,
   TrashCan,
 } from "@carbon/icons-react";
-import { SessionMode, SessionType, type SessionView } from "api-server-api";
+import {
+  SessionMode,
+  type SessionRuntime,
+  SessionType,
+  type SessionView,
+} from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { formatSessionTimestamp } from "../lib/format-session-timestamp.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { WorkingDots } from "./working-dots.js";
@@ -29,6 +35,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -39,6 +46,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  cost,
   onResume,
   onDelete,
 }: Props) {
@@ -89,10 +97,10 @@ export function SessionRow({
   // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
-    ? "text-text-muted italic"
+    ? "text-muted-foreground italic"
     : unread
-      ? "font-semibold text-text"
-      : "font-normal text-text";
+      ? "font-semibold text-foreground"
+      : "font-normal text-foreground";
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
   const terminal = s.mode === SessionMode.Terminal;
@@ -109,7 +117,7 @@ export function SessionRow({
       data-session-id={s.sessionId}
       data-active={active ? "true" : "false"}
       className={cn(
-        "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border-light transition-colors select-none",
+        "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
       onClick={handleClick}
@@ -123,6 +131,7 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
+          {/* The one 13px step in the design; every other size is on the scale. */}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -140,6 +149,15 @@ export function SessionRow({
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
           {formatSessionTimestamp(s.updatedAt ?? s.createdAt)}
+          {cost && (
+            <span
+              className="tabular-nums"
+              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+            >
+              {" · "}
+              {formatUsdCell(cost.costUsd)}
+            </span>
+          )}
         </span>
       </div>
       {/* Desktop: hover-visible overflow menu */}
@@ -170,7 +188,7 @@ export function SessionRow({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-surface py-1 anim-scale-in shadow-md"
+          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
         >
           <Button
             variant="ghost"
@@ -211,14 +229,14 @@ function SessionIndicators({
   return (
     <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
       {terminal && (
-        <Code size={16} className="text-text" aria-label="Terminal" />
+        <Code size={16} className="text-foreground" aria-label="Terminal" />
       )}
       {channel &&
         (ambient ? (
           // Rolling channel reader: keep the # channel glyph, brand it with a
           // superscript "A" so it stands apart from the threads it spins off.
           <span
-            className="inline-flex items-start text-text"
+            className="inline-flex items-start text-foreground"
             aria-label="Ambient channel session"
           >
             <Hashtag size={16} />
@@ -232,12 +250,12 @@ function SessionIndicators({
         ) : (
           <Hashtag
             size={16}
-            className="text-text"
+            className="text-foreground"
             aria-label="Channel session"
           />
         ))}
       {scheduled && (
-        <Time size={16} className="text-text" aria-label="Scheduled" />
+        <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
       {needsApproval ? (
         <span

@@ -9,6 +9,7 @@ import { emitToast } from "@/lib/toast";
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { routeToPath } from "../../platform/lib/routes.js";
 import {
   useCreateConnection,
   useDiscoverMcp,
@@ -167,7 +168,7 @@ export function useTemplateCreateSubmit({
         if (!oauthReturnView)
           sessionStorage.setItem(
             "platform-return-view",
-            "/settings/connections",
+            routeToPath({ view: "settings", settingsTab: "connections" }),
           );
         window.location.href = r.authUrl;
       } catch (err) {

@@ -1,10 +1,10 @@
-import { Link as Cable } from "@carbon/icons-react";
+import { Link } from "@carbon/icons-react";
 
 import { GithubIcon } from "@/components/brand-icons";
 
 /**
  * Per-app brand icon. Known app ids resolve to a brand SVG under
- * `/icons/`; everything else falls back to a `Cable` glyph — visually
+ * `/icons/`; everything else falls back to a `Link` glyph — visually
  * distinct from KeyRound (which generic app-connection rows use) and
  * Globe (MCP rows), and reads as "user-supplied integration."
  *
@@ -35,7 +35,7 @@ interface Props {
   appId: string;
   /** Alt text — usually the app's display name. */
   alt: string;
-  /** Pixel size; matches Lucide's default 16. */
+  /** Pixel size. */
   size?: number;
 }
 
@@ -57,5 +57,5 @@ export function OAuthAppIcon({ appId, alt, size = 16 }: Props) {
       />
     );
   }
-  return <Cable size={size} aria-label={alt} />;
+  return <Link size={size} aria-label={alt} />;
 }

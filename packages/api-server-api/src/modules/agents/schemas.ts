@@ -6,7 +6,8 @@ const idSchema = z.object({ id: z.string().min(1) });
 
 // CPU as cores ("2") or millicores ("500m"); memory as Mi/Gi. Deliberately
 // narrower than the full K8s quantity grammar — these are slider outputs,
-// not operator YAML. Floors keep a chosen size schedulable.
+// not operator YAML. The memory floor is what the agent needs to actually
+// run (~384Mi for Claude Code), not just be schedulable.
 const cpuQuantitySchema = z
   .string()
   .regex(/^\d+(\.\d+)?m?$/, "CPU must look like '2', '0.5' or '500m'")
@@ -16,8 +17,8 @@ const cpuQuantitySchema = z
 const memoryQuantitySchema = z
   .string()
   .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '2Gi'")
-  .refine((v) => toMemoryMi(v) >= 128, {
-    message: "memory must be at least 128Mi",
+  .refine((v) => toMemoryMi(v) >= 384, {
+    message: "memory must be at least 384Mi",
   });
 
 function toCpuMilli(v: string): number {
@@ -45,14 +46,22 @@ export const agentPauseInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
-export const agentDisconnectSlackInputSchema = idSchema;
+// An agent may hold several Slack bindings, so a disconnect names the
+// conversation to release. Optional for compatibility: an older client sends
+// only `id`, which keeps its original meaning — release every Slack binding.
+export const agentDisconnectSlackInputSchema = idSchema.extend({
+  slackChannelId: z.string().min(1).optional(),
+});
 
-/** Agent Kind: a durable category marker distinguishing special first-class
- *  resources built on Agents (a Knowledge Base is an Agent + marker) from
- *  plain sandboxes (no marker). Stamped as an annotation at create,
- *  immutable afterwards, and surfaced on the Agent view so each list surface
- *  shows only its own kind. */
-export const agentKindSchema = z.enum(["knowledge-base"]);
+/** Agent Kind: a durable category marker naming which first-class surface an
+ *  Agent additionally belongs to (a Knowledge Base is an Agent + marker; an
+ *  experiment sandbox likewise). Absent on plain sandboxes. Stamped as an
+ *  annotation at create, immutable afterwards, and surfaced on the Agent view.
+ *  The Sandboxes list shows every agent badged with its Kind — the per-kind
+ *  destinations are filtered views onto the same agents, not exclusive homes.
+ *  Declared intent, not a capability gate: what a marked agent actually gets
+ *  is whatever its Install Command sets up. */
+export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
 
 export const agentCreateInputSchema = z
   .object({
@@ -74,7 +83,6 @@ export const agentCreateInputSchema = z
         password: z.string().min(1),
       })
       .optional(),
-    allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
     // Per-agent idle timeout override in minutes (0 = never hibernate); omit to inherit the global default.
     hibernationTimeoutMin: z.number().int().min(0).optional(),
@@ -105,10 +113,11 @@ export const agentCreateInputSchema = z
     // as it hibernates. Ignored unless `sweepable`.
     lifetimeMs: z.number().int().min(0).optional(),
     // Agent Kind is deliberately NOT part of this schema: it is a
-    // service-level field (see AgentCreateInput) set only by the owning
-    // module's create path (knowledge-bases). A `kind` passed to the public
+    // service-level field (see AgentCreateInput) set only by an owning module's
+    // create path (knowledge-bases, experiments). A `kind` passed to the public
     // agents.create is stripped, so a caller cannot mint a marked agent that
-    // skipped the owning module's setup (e.g. a KB without its install run).
+    // skipped that module's setup — a KB or experiment sandbox whose Install
+    // Command never ran.
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",
@@ -120,7 +129,6 @@ export const agentUpdateInputSchema = z.object({
   description: z.string().optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
-  allowedUserEmails: z.array(z.email()).optional(),
   // Per-agent idle timeout override in minutes (0 = never hibernate); null clears it back to the global default.
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   // Resize (#1900). On a sleeping sandbox the new Size rides the next start
@@ -129,20 +137,12 @@ export const agentUpdateInputSchema = z.object({
   size: agentSizeSchema.optional(),
 });
 
-export const agentConnectSlackInputSchema = z
-  .object({
-    id: z.string().min(1),
-    slackChannelId: z.string().min(1),
-    // Access mode; absent = person-scoped.
-    mode: z.enum(["shared", "person-scoped"]).optional(),
-    // Ambient mode; absent = off. Unlike mode it is mutable: re-connecting
-    // with the same mode updates it in place.
-    ambient: z.boolean().optional(),
-  })
-  .refine((v) => !v.ambient || v.mode === "shared", {
-    message: "Ambient mode requires a shared binding",
-    path: ["ambient"],
-  });
+export const agentConnectSlackInputSchema = z.object({
+  id: z.string().min(1),
+  slackChannelId: z.string().min(1),
+  // Ambient mode; absent = off. Mutable: re-connecting updates it in place.
+  ambient: z.boolean().optional(),
+});
 
 export const agentListTelegramChatsInputSchema = z.object({
   agentId: z.string().min(1),

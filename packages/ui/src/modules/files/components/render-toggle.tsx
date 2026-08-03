@@ -1,4 +1,4 @@
-import { Code, View as Eye } from "@carbon/icons-react";
+import { Code, View } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -24,11 +24,11 @@ export function RenderToggle({
     <Button
       variant="outline"
       size="xs"
-      className="text-[14px]"
+      className="text-sm"
       onClick={onToggle}
       title={rendered ? rawTitle : renderTitle}
     >
-      {rendered ? <Code size={14} /> : <Eye size={14} />}
+      {rendered ? <Code size={14} /> : <View size={14} />}
       {rendered ? "Raw" : "Render"}
     </Button>
   );

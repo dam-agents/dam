@@ -102,7 +102,6 @@ function harness() {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     (e) => events.push(e),
   );
 

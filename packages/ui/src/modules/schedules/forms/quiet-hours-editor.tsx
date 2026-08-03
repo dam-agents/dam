@@ -42,7 +42,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
     <Button
       type="button"
       variant="outline"
-      className="h-[30px] px-2.5 text-[14px]"
+      className="h-[30px] px-2.5 text-sm"
       onClick={() =>
         append({ startTime: "22:00", endTime: "06:00", enabled: true })
       }
@@ -64,7 +64,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
             <SectionLabel>Quiet hours</SectionLabel>
             {addButton}
           </div>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Runs inside a window are suppressed; start is inside, end is
             outside.
           </p>
@@ -78,17 +78,17 @@ export function QuietHoursEditor({ control, register, error }: Props) {
               <div key={field.id} className="flex items-center gap-2">
                 <div className="w-[120px]">
                   <Select
-                    className="h-[40px]"
+                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.startTime`)}
                   >
                     {timeOptions}
                   </Select>
                 </div>
-                <span className="text-[13px] text-muted-foreground">→</span>
+                <span className="text-sm text-muted-foreground">→</span>
                 <div className="w-[120px]">
                   <Select
-                    className="h-[40px]"
+                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.endTime`)}
                   >

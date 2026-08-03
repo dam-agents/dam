@@ -34,6 +34,13 @@ export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
 });
 
+// No skillPaths: the runtime resolves them from its manifest, same as
+// readLocal/writeLocal. (Contrast skillUninstallInputSchema, whose paths come
+// from the driver applying a declarative install.)
+export const skillDeleteLocalInputSchema = z.object({
+  name: z.string().min(1),
+});
+
 export const skillWriteLocalInputSchema = z.object({
   skills: z
     .array(

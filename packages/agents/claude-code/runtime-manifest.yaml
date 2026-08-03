@@ -24,7 +24,7 @@ drivers:
               description: "Fable 5 · Most capable for the hardest, longest-running tasks"
             - value: opus
               name: "Opus (recommended)"
-              description: "Opus 4.8 · Best for everyday, complex tasks"
+              description: "Opus 5 · Best for everyday, complex tasks"
             - value: sonnet
               name: "Sonnet"
               description: "Sonnet 4.6 · Efficient for routine tasks"

@@ -23,18 +23,12 @@ import {
   listChannelsByAgent,
   upsertChannel,
   deleteChannelByType,
+  deleteSlackChannelByAgent,
   deleteChannelsByAgentIds,
   findBySlackChannelId,
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
-import {
-  listAllowedUsersByOwner,
-  listAllowedUsersByAgent,
-  setAllowedUsers,
-  deleteAllowedUsersByAgentIds,
-} from "./infrastructure/allowed-users-repository.js";
-import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -50,13 +44,15 @@ export function composeAgentsModule(deps: {
   agentIdleTimeoutMinutes: number;
   /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: { cpu: string; memory: string };
+  /** KubeVirt vm backend available in this install; absent = false (creating
+   *  from a vm-backend template is rejected). */
+  virtualizationEnabled?: boolean;
   /** Budget gate for live resizes (#1900); omitted by system compositions. */
   resizeGate?: ResizeGatePort;
   /** `undefined` enables system-level composition (cross-owner) for the
    *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
   db: Db;
-  userDirectory: KeycloakUserDirectory;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
@@ -87,7 +83,7 @@ export function composeAgentsModule(deps: {
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
   // Postgres queries that already accept an empty-string owner-filter
-  // (channels/allowed_users repos) treat "" as "match all" — keep that.
+  // (channels repo) treat "" as "match all" — keep that.
   const owner = deps.owner ?? "";
   return {
     agents: createAgentsService({
@@ -95,6 +91,7 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
+      virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
@@ -108,6 +105,7 @@ export function composeAgentsModule(deps: {
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),
       deleteChannelByType: deleteChannelByType(deps.db, owner),
+      deleteSlackChannelByAgent: deleteSlackChannelByAgent(deps.db, owner),
       deleteChannelsByAgentIds: deleteChannelsByAgentIds(deps.db, owner),
       unitOfWork: createUnitOfWork(deps.db),
       channelsTxRepo: {
@@ -118,14 +116,6 @@ export function composeAgentsModule(deps: {
       findSlackChannelBinding: findBySlackChannelId(deps.db),
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
-      listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
-      listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
-      setAllowedUsers: setAllowedUsers(deps.db, owner),
-      deleteAllowedUsersByAgentIds: deleteAllowedUsersByAgentIds(
-        deps.db,
-        owner,
-      ),
-      userDirectory: deps.userDirectory,
     }),
     repo,
     isOwnedAgent: (agentId) =>

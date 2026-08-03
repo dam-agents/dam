@@ -36,16 +36,41 @@ export function listChannelsByAgent(db: Db, owner: string) {
   };
 }
 
+/** Write the agent's binding for one Slack conversation, leaving its other
+ *  bindings alone — an agent may hold several at once (#3086), so the row
+ *  identity is the conversation, not the agent.
+ *
+ *  The update is scoped to this agent's own row, so it only ever refreshes a
+ *  binding the agent already holds (an ambient flip). A conversation bound to a
+ *  *different* agent falls through to the insert and trips the unique index,
+ *  which the caller reads as `ChannelAlreadyBound` — a bind never silently
+ *  takes a conversation away from another agent, including when it races the
+ *  caller's pre-check. */
+async function upsertSlackChannel(
+  runner: Db | Tx,
+  owner: string,
+  agentId: string,
+  channel: ChannelConfig,
+): Promise<void> {
+  const { type, ...config } = channel;
+  const updated = await runner
+    .update(channels)
+    .set({ owner, config })
+    .where(
+      and(
+        eq(channels.agentId, agentId),
+        eq(channels.type, type),
+        sql`${channels.config}->>'slackChannelId' = ${channel.slackChannelId}`,
+      ),
+    )
+    .returning({ agentId: channels.agentId });
+  if (updated.length > 0) return;
+  await runner.insert(channels).values({ agentId, owner, type, config });
+}
+
 export function upsertChannel(db: Db, owner: string) {
   return async (agentId: string, channel: ChannelConfig): Promise<void> => {
-    const { type, ...config } = channel;
-    await db
-      .insert(channels)
-      .values({ agentId, owner, type, config })
-      .onConflictDoUpdate({
-        target: [channels.agentId, channels.type],
-        set: { config, owner },
-      });
+    await upsertSlackChannel(db, owner, agentId, channel);
   };
 }
 
@@ -55,14 +80,7 @@ export async function upsertChannelTx(
   agentId: string,
   channel: ChannelConfig,
 ): Promise<void> {
-  const { type, ...config } = channel;
-  await tx
-    .insert(channels)
-    .values({ agentId, owner, type, config })
-    .onConflictDoUpdate({
-      target: [channels.agentId, channels.type],
-      set: { config, owner },
-    });
+  await upsertSlackChannel(tx, owner, agentId, channel);
 }
 
 export async function listChannelsByAgentTx(
@@ -122,14 +140,12 @@ export function findBySlackChannelId(db: Db) {
   ): Promise<{
     agentId: string;
     owner: string;
-    mode?: "shared" | "person-scoped";
     ambient?: boolean;
   } | null> => {
     const rows = await db
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
-        mode: sql<string | null>`${channels.config}->>'mode'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
       })
       .from(channels)
@@ -145,8 +161,6 @@ export function findBySlackChannelId(db: Db) {
     return {
       agentId: row.agentId,
       owner: row.owner,
-      // Only "shared" is ever stored; anything else reads as the default.
-      ...(row.mode === "shared" ? { mode: "shared" as const } : {}),
       ...(row.ambient === "true" ? { ambient: true } : {}),
     };
   };
@@ -194,8 +208,12 @@ export function deleteSlackChannelBinding(db: Db) {
   };
 }
 
-export function findSlackChannelByAgent(db: Db) {
-  return async (agentId: string): Promise<string | null> => {
+/** Every Slack conversation bound to the agent, oldest binding first so the
+ *  order the agent sees (and `describe_channel`'s "home surface" lead) stays
+ *  stable across calls. Postgres has no insertion order to sort on here, so the
+ *  conversation id is the tiebreaker — arbitrary but deterministic. */
+export function findSlackChannelsByAgent(db: Db) {
+  return async (agentId: string): Promise<string[]> => {
     const rows = await db
       .select({ config: channels.config })
       .from(channels)
@@ -205,8 +223,29 @@ export function findSlackChannelByAgent(db: Db) {
           eq(channels.type, ChannelType.Slack),
         ),
       )
-      .limit(1);
-    const cfg = rows[0]?.config as { slackChannelId?: string } | undefined;
-    return cfg?.slackChannelId ?? null;
+      .orderBy(sql`${channels.config}->>'slackChannelId'`);
+    return rows
+      .map((r) => (r.config as { slackChannelId?: string }).slackChannelId)
+      .filter((id): id is string => !!id);
+  };
+}
+
+/** Release one of an agent's Slack bindings, owner-scoped — the UI/CLI
+ *  disconnect of a single conversation. Returns false when the agent holds no
+ *  such binding, so the caller can tell "released" from "never bound". */
+export function deleteSlackChannelByAgent(db: Db, owner: string) {
+  return async (agentId: string, slackChannelId: string): Promise<boolean> => {
+    const deleted = await db
+      .delete(channels)
+      .where(
+        and(
+          eq(channels.agentId, agentId),
+          eq(channels.owner, owner),
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      )
+      .returning({ agentId: channels.agentId });
+    return deleted.length > 0;
   };
 }

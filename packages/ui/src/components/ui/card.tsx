@@ -2,16 +2,18 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/** The card surface, for elements that must be something other than a `div` —
+ *  see `CardButton`. */
+export const CARD_SURFACE = "rounded-lg bg-card text-card-foreground border";
+
+/** Hover feedback for a clickable card. A background tint rather than a shadow:
+ *  a dark-mode card sits on a near-identical background, so an elevation shadow
+ *  reads as nothing there. `transition-colors` alone is the 150ms fade. */
+export const CARD_HOVER = "transition-colors hover:bg-muted/40";
+
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
-      data-slot="card"
-      className={cn(
-        "rounded-lg bg-card text-card-foreground border",
-        className,
-      )}
-      {...props}
-    />
+    <div data-slot="card" className={cn(CARD_SURFACE, className)} {...props} />
   );
 }
 

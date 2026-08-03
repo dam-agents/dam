@@ -14,10 +14,14 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
+// LabelType marks the ephemeral workload kind derived from an Agent
+// (e.g. RunPodLabelType for `dam-run` executors).
+const LabelType = "agent-platform.ai/type"
+
 // createPodIfMissing creates desired only if no pod of that name exists. Bare
 // ephemeral pods are immutable in their key fields, so an existing pod with the
 // same name is authoritative and left running. Owner references GC it with its
-// owner. Shared by the Fork and Run reconcilers.
+// owner.
 func createPodIfMissing(ctx context.Context, client kubernetes.Interface, desired *corev1.Pod) error {
 	_, err := client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -27,7 +31,7 @@ func createPodIfMissing(ctx context.Context, client kubernetes.Interface, desire
 }
 
 // findEphemeralPod returns the live (non-terminating) pod labeled labelKey=name,
-// or nil if none. Shared by the Fork and Run reconcilers.
+// or nil if none.
 func findEphemeralPod(ctx context.Context, client kubernetes.Interface, namespace, labelKey, name string) (*corev1.Pod, error) {
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("%s=%s", labelKey, name),
@@ -48,8 +52,7 @@ func findEphemeralPod(ctx context.Context, client kubernetes.Interface, namespac
 // workspace — whose name is the pool's generated name, not the
 // `<mount>-<agent>-0` convention — resolves correctly (#692). For agents created
 // before the mount label existed, no labeled PVC is found and it falls back to
-// the legacy convention name, which is still the real name for those. Shared by
-// the Fork and Run reconcilers.
+// the legacy convention name, which is still the real name for those.
 func resolveParentWorkspacePVCs(ctx context.Context, client kubernetes.Interface, cfg *config.Config, parentAgent string, agentSpec *types.AgentSpec) (map[string]string, error) {
 	out := map[string]string{}
 	for _, m := range resolveSpecMounts(agentSpec, cfg.AgentTemplateDefaults) {
@@ -76,7 +79,7 @@ func resolveParentWorkspacePVCs(ctx context.Context, client kubernetes.Interface
 // with the parent PVC names resolved by label (#692) — the builder fills in the
 // legacy `<mount>-<agent>-0` name; this swaps in the warm-pool spare's generated
 // name when the parent claimed one (a no-op for pre-label agents and an empty
-// map). Shared by Fork (Job template) and Run (Pod) — both pass their volumes.
+// map).
 func rewriteParentPVCs(volumes []corev1.Volume, parentPVCs map[string]string) {
 	for i := range volumes {
 		pvc := volumes[i].PersistentVolumeClaim
@@ -89,16 +92,15 @@ func rewriteParentPVCs(volumes []corev1.Volume, parentPVCs map[string]string) {
 	}
 }
 
-// Shared shape for the two ephemeral pod-set kinds derived from an Agent: the
-// per-turn Fork (wrapped in a Job) and the per-command Run executor (a bare
-// Pod). Both run the agent image with egress through a paired gateway pod
-// reached via HTTPS_PROXY, mount the parent's RWX workspace, and carry no
-// SA token and no credential bytes — the gateway injects credentials on the
-// wire. The only differences are the identity/type labels, a few env vars, and
-// the workload kind, captured by ephemeralPodConfig.
+// Shape for an ephemeral pod derived from an Agent — today only the
+// per-command Run executor (a bare Pod). It runs the agent image with egress
+// through a paired gateway pod reached via HTTPS_PROXY, mounts the parent's
+// workspace, and carries no SA token and no credential bytes — the gateway
+// injects credentials on the wire. Kind-specific identity/type labels and env
+// are captured by ephemeralPodConfig.
 
 type ephemeralPodConfig struct {
-	name               string // fork/run name; pair key
+	name               string // run name; pair key
 	parentAgentID      string // parent Agent: PVC owner + ext-authz/MCP identity
 	agentSpec          *types.AgentSpec
 	cfg                *config.Config
@@ -106,9 +108,9 @@ type ephemeralPodConfig struct {
 	gatewayClusterIP   string
 	serviceAccountName string          // SA the pod runs as ("" → namespace default)
 	leafSecretName     string          // Envoy leaf Secret to project ca.crt from
-	typeLabel          string          // value for ForkLabelType
-	idLabelKey         string          // ForkLabelForkID / RunLabelRunID
-	extraEnv           []corev1.EnvVar // kind-specific env (fork ids / exec-only)
+	typeLabel          string          // value for LabelType
+	idLabelKey         string          // RunLabelRunID
+	extraEnv           []corev1.EnvVar // kind-specific env (exec-only)
 	// l7Hosts is the parent Agent's spec.l7Hosts (#2865). Promoted hosts
 	// put MITM chains on the pod's gateway even with zero credential
 	// Secrets, so the agent container must trust the MITM CA then too.
@@ -116,7 +118,7 @@ type ephemeralPodConfig struct {
 }
 
 // buildEphemeralAgentPod renders the object-level labels and the pod template
-// shared by Fork Jobs and Run Pods. The template's pod labels add the
+// for ephemeral pods (Run executors). The template's pod labels add the
 // ambient-mesh opt-out; the agent half is gated at the kernel by NetworkPolicy,
 // not the mesh.
 func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, tmpl corev1.PodTemplateSpec) {
@@ -136,12 +138,12 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 	specEnv := configEnvToTypes(defaults.Env)
 
 	objLabels = map[string]string{
-		ForkLabelType: c.typeLabel,
-		c.idLabelKey:  c.name,
+		LabelType:    c.typeLabel,
+		c.idLabelKey: c.name,
 		// `agent-platform.ai/agent` references the *parent* agent — the
 		// pod-IP resolver and ext_authz identity flow through this label, so
 		// traffic resolves under the parent's egress rules.
-		ForkLabelAgentRef: c.parentAgentID,
+		LabelAgent: c.parentAgentID,
 		// Pair key + role for NetworkPolicy / Service scoping. Using the
 		// ephemeral name as the pair key isolates it from the parent agent's
 		// pair: this agent only reaches its own gateway, never the parent's.
@@ -171,13 +173,6 @@ func buildEphemeralAgentPod(c ephemeralPodConfig) (objLabels map[string]string, 
 		{Name: "API_SERVER_URL", Value: c.cfg.APIServerURL()},
 		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", c.cfg.HarnessServerURL, c.parentAgentID)},
-	}
-	// Keep the dam-vm tool doc in the instructions when a VM host is configured
-	// (entrypoint strips it otherwise). Run executors borrow the parent's
-	// gateway and can use dam-vm; forks can't reach /vm but matching keeps the
-	// image behavior uniform.
-	if c.cfg.VMEnabled {
-		env = append(env, corev1.EnvVar{Name: "DAM_VM_ENABLED", Value: "1"})
 	}
 	env = append(env, c.extraEnv...)
 	// Placeholder credential envs from the K8s Secrets — same purpose as the

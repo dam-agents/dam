@@ -86,7 +86,7 @@ func TestRunReconcile_CreatesExecutorPod(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, RoleAgent, pod.Labels[LabelRole])
 	assert.Equal(t, "run-1", pod.Labels[RunLabelRunID])
-	assert.Equal(t, RunPodLabelType, pod.Labels[ForkLabelType])
+	assert.Equal(t, RunPodLabelType, pod.Labels[LabelType])
 	assert.Equal(t, "none", pod.Labels["istio.io/dataplane-mode"])
 	// No per-run SA — the executor borrows the parent gateway's egress identity.
 	assert.Empty(t, pod.Spec.ServiceAccountName)

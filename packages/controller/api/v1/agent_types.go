@@ -12,6 +12,8 @@ import (
 // but observed status the controller derives from activity. Security context
 // is chart-only (config.AgentBase); scheduling is chart-wide except
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.secretRef)",message="secretRef (envFrom projection) is not supported on the vm backend"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -52,21 +54,31 @@ type AgentSpec struct {
 	AgentHome string `json:"agentHome,omitempty"`
 
 	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+	// Selects among *container* runtimes only — rejected on the vm backend.
 	// +optional
 	RuntimeClassName string `json:"runtimeClassName,omitempty"`
 	// NodeSelector overrides the chart-wide node selector; empty = inherit.
+	// Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
+	// Backend selects the isolation substrate the agent workload runs on;
+	// nil = container. Immutable after create (enforced by the api-server,
+	// the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+	// instead of the agent StatefulSet; the paired gateway is unaffected.
+	// +optional
+	Backend *Backend `json:"backend,omitempty"`
+
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
-	// agent container (operator-supplied envs).
+	// agent container (operator-supplied envs). Container backend only —
+	// rejected on the vm backend (nothing projects it into the guest).
 	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 
 	// ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
 	// kubelet uses to pull the agent image from a private registry. Unlike
 	// SecretRef it is never projected into the agent container — only the
-	// kubelet consumes it at pod creation, so a foreign-replier fork can pull
+	// kubelet consumes it at pod creation, so an ephemeral executor pod can pull
 	// with it without ever seeing it. When set it takes precedence over the
 	// install-wide default pull secret, which is retained as a fallback.
 	// +optional
@@ -87,7 +99,7 @@ type AgentSpec struct {
 	// rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
 	// Written by the api-server when such a rule exists for this agent;
 	// per-agent grain so a rule on one agent never reshapes a sibling's
-	// gateway. Forks inherit the parent agent's L7Hosts (the parent owner
+	// gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
 	// stays the egress policy authority for foreign turns).
 	//
 	// The item pattern is a hard boundary: each entry is interpolated into
@@ -101,6 +113,38 @@ type AgentSpec struct {
 	// +kubebuilder:validation:items:MaxLength=253
 	// +kubebuilder:validation:items:Pattern=`^(\*\.)?([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$`
 	L7Hosts []string `json:"l7Hosts,omitempty"`
+
+	// TelemetryAttributionID is the agent id stamped as the trusted telemetry
+	// attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+	// by the api-server for Invocation targets to their root Driver, so a
+	// target's spend credits the agent that drove it rather than the
+	// short-lived target. When set, the gateway also stamps
+	// `x-platform-invocation-id` with this agent's own id, keeping child rows
+	// distinguishable after their attribution is merged. Never user-settable —
+	// a user-supplied value would forge attribution onto an agent the caller
+	// does not drive; it is service-only input, like the pre-minted id.
+	// +optional
+	TelemetryAttributionID string `json:"telemetryAttributionId,omitempty"`
+}
+
+// Backend is a discriminated union selecting the agent's isolation substrate
+// (K8s convention: `type` plus a sub-block named after the variant).
+// +kubebuilder:validation:XValidation:rule="self.type == 'vm' || !has(self.vm)",message="vm block requires type: vm"
+type Backend struct {
+	// +kubebuilder:validation:Enum=container;vm
+	Type string `json:"type"`
+	// VM carries vm-backend props; present only when type == "vm".
+	// +optional
+	VM *VMBackend `json:"vm,omitempty"`
+}
+
+// VMBackend is deliberately empty for now — scratch sizing and placement are
+// chart-level policy (config.VM); it exists so future vm-only props have a home.
+type VMBackend struct{}
+
+// IsVM reports whether the spec selects the vm backend.
+func (s *AgentSpec) IsVM() bool {
+	return s.Backend != nil && s.Backend.Type == "vm"
 }
 
 // Condition types on an Agent's status. Conditions are the source of truth for
@@ -182,7 +226,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=5
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=7
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

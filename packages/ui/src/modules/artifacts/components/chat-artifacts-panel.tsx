@@ -1,5 +1,5 @@
+import { OverflowMenuVertical } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { MoreVertical } from "lucide-react";
 import { type CSSProperties, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { ShareDialog } from "./share-dialog.js";
+import { VersionBadge } from "./version-badge.js";
 
 /** Tracks agents publishing mid-conversation without a manual refresh. */
 const LIVE_POLL_MS = 5000;
@@ -50,10 +51,11 @@ export function ChatArtifactsPanel({
       open={open}
       onToggle={onToggle}
       className={className}
+      headerClassName="border-t border-border"
       style={style}
     >
       {artifacts.length === 0 ? (
-        <p className="px-4 py-5 text-[12px] text-text-muted">
+        <p className="px-4 py-5 text-xs text-muted-foreground">
           No artifacts yet
         </p>
       ) : (
@@ -104,20 +106,13 @@ function ArtifactListRow({
       }}
       title={artifact.title}
       className={cn(
-        "group flex h-[32px] w-full cursor-pointer items-center gap-2 px-3 text-left text-[13px] text-text-secondary transition-colors hover:bg-muted",
+        "group flex h-8 w-full cursor-pointer items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
         active && "bg-muted text-foreground",
       )}
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-      {artifact.version > 1 && (
-        <span
-          className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
-          title={`Version ${artifact.version}`}
-        >
-          v{artifact.version}
-        </span>
-      )}
+      {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
         <span
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
@@ -138,7 +133,7 @@ function ArtifactListRow({
               className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
               title="More actions"
             >
-              <MoreVertical size={13} />
+              <OverflowMenuVertical size={13} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

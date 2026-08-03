@@ -7,7 +7,11 @@ import type {
 } from "../domain/artifact-store.js";
 
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+/** Browser download links are fetched the instant they are minted. */
 const DOWNLOAD_URL_TTL_SECONDS = 60;
+/** An agent may run other tool calls between minting and fetching — give it
+ *  the same window uploads get. */
+const AGENT_DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
 
 /** Wraps the storage port with the one policy this module owns: the size cap
  *  — enforced up front on the relay path, post-upload on the direct path. */
@@ -33,6 +37,13 @@ export interface ArtifactService {
   verifyUpload(key: string): Promise<ArtifactStat>;
   /** null when the blob can't be served directly — callers relay instead. */
   createDownloadUrl(key: string, filename: string): Promise<string | null>;
+  /** Download link signed for the agent-dialed authority — null only when no
+   *  object store is configured (agents always reach a configured store
+   *  through their gateway, unlike browsers). */
+  createAgentDownloadUrl(
+    key: string,
+    filename: string,
+  ): Promise<{ url: string; expiresSeconds: number } | null>;
 }
 
 export function createArtifactService(deps: {
@@ -86,7 +97,22 @@ export function createArtifactService(deps: {
       return deps.store.presignDownload(key, {
         filename,
         expiresSeconds: DOWNLOAD_URL_TTL_SECONDS,
+        audience: "browser",
       });
+    },
+
+    // No size policy on either download path: the blob was capped when it was
+    // stored, so a cap here could only reject bytes the platform already
+    // accepted.
+    async createAgentDownloadUrl(key, filename) {
+      const url = await deps.store.presignDownload(key, {
+        filename,
+        expiresSeconds: AGENT_DOWNLOAD_URL_TTL_SECONDS,
+        audience: "agent",
+      });
+      return url
+        ? { url, expiresSeconds: AGENT_DOWNLOAD_URL_TTL_SECONDS }
+        : null;
     },
   };
 }

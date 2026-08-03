@@ -5,7 +5,10 @@ import { cn } from "@/lib/utils";
 interface PageHeaderProps {
   title: ReactNode;
   description?: ReactNode;
+  /** Text CTAs are default-size Buttons without leading icons;
+   *  icon-only utility buttons (nav, overflow menus) are fine. */
   actions?: ReactNode;
+  /** Status chip/badge rendered inline after the title. */
   adornment?: ReactNode;
   className?: string;
 }
@@ -23,7 +26,7 @@ export function PageHeader({
         <div className="order-1 flex min-w-0 items-center gap-3">
           <h1
             title={typeof title === "string" ? title : undefined}
-            className="truncate text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]"
+            className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"
           >
             {title}
           </h1>
@@ -35,7 +38,7 @@ export function PageHeader({
           </div>
         )}
         {description && (
-          <p className="order-2 mt-1 text-[14px] text-muted-foreground @lg:order-3 @lg:w-full">
+          <p className="order-2 mt-1 text-sm text-balance text-muted-foreground @lg:order-3 @lg:w-full">
             {description}
           </p>
         )}

@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { LocalSkill, SkillSource } from "api-server-api";
-import { X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -69,19 +68,10 @@ export function PublishSkillModal({
 
   return (
     <Modal>
-      <DialogHeader className="flex items-start justify-between gap-3">
-        <h2 className="text-[17px] font-semibold text-foreground">
-          Publishing {skill.name} as a pull request
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Close"
-        >
-          <X size={18} />
-        </button>
-      </DialogHeader>
+      <DialogHeader
+        title={`Publishing ${skill.name} as a pull request`}
+        onClose={onClose}
+      />
 
       <form onSubmit={onSubmit}>
         <DialogBody className="flex flex-col gap-5">
@@ -102,7 +92,7 @@ export function PublishSkillModal({
           <div className="flex flex-col gap-1.5">
             <SectionLabel>Description</SectionLabel>
             <Textarea
-              className="min-h-[96px] resize-y text-[13px]"
+              className="min-h-[96px] resize-y text-sm"
               rows={4}
               {...register("body")}
             />

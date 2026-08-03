@@ -4,59 +4,34 @@ import type {
   KnowledgeBaseCreateInput,
   KnowledgeBasesService,
 } from "api-server-api";
+import {
+  createKindedAgent,
+  type KindedAgentCreateDeps,
+} from "../../agents/services/kinded-agent-create.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { buildKnowledgeBaseInstallCommand } from "../domain/install-command.js";
-import { securityLog } from "../../../core/security-log.js";
-
-/** How long the install command may wait for the fresh agent to come up.
- *  Generous (matching the workspace-seed clone TTL) because a fresh agent can
- *  legitimately wait far beyond boot time — parked over budget (#1900) until
- *  the owner frees room. Redelivery before the command has succeeded is
- *  deduped in-pod by the workspace-command plugin's sentinel. */
-const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createKnowledgeBasesService(deps: {
   owner: string;
-  agents: Pick<AgentsService, "create">;
+  agents: Pick<AgentsService, "create" | "delete">;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   now?: () => Date;
 }): KnowledgeBasesService {
-  const now = deps.now ?? (() => new Date());
+  const rail: KindedAgentCreateDeps = deps;
 
   return {
     async create(input: KnowledgeBaseCreateInput): Promise<Agent> {
-      // The Kind marker is what makes this agent a Knowledge Base; everything
-      // else is a plain agent create (provider, size, egress all standard).
-      const agent = await deps.agents.create({
-        ...input,
-        kind: "knowledge-base",
+      // The Kind marker is what makes this agent a Knowledge Base; the install
+      // command bootstraps its knowledge tooling from an external installer.
+      // Everything else — provider, size, egress, connections — is a plain
+      // agent create, and the delivery mechanics are the shared kinded rail.
+      return createKindedAgent(rail, {
+        createInput: { ...input, kind: "knowledge-base" },
+        installCommand: buildKnowledgeBaseInstallCommand(input.kbTemplateId),
+        eventIdPrefix: "kb-install",
+        securityEvent: "knowledge_base.create",
       });
-
-      // Deliver the install command over the workspace-command rail — durable
-      // (survives the pod not being up yet), delivered once Ready, run once
-      // in-pod (sentinel-guarded). No agent turn: the command bootstraps the
-      // knowledge tooling in the workspace, then the user chats with the KB.
-      const command = buildKnowledgeBaseInstallCommand(input.kbTemplateId);
-      await deps.runtimeMutator.bump(agent.id, [
-        {
-          id: `kb-install:${agent.id}:${now().getTime()}`,
-          kind: "workspace-command",
-          payload: { command },
-          expiresAt: new Date(now().getTime() + INSTALL_EVENT_TTL_MS),
-        },
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(agent.id);
-      await deps.wakeAgent(agent.id);
-
-      securityLog("info", "knowledge_base.create", {
-        category: "resource",
-        actor: deps.owner,
-        actorKind: "user",
-        agentId: agent.id,
-        result: "success",
-      });
-      return agent;
     },
   };
 }

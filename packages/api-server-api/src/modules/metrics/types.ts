@@ -42,7 +42,8 @@ export interface SpendByDay {
 
 /** One row per Claude Code session: API-call count, summed request latency,
  *  and token/cost totals. The sessionId is the ACP session id — Claude Code
- *  reuses it as its OTel `session.id`, so it joins with the UI's session list. */
+ *  reuses it as its OTel `session.id`, so it joins with the UI's session list.
+ *  Child harness runs are folded into their root session via shared trace. */
 export interface SessionRuntime {
   sessionId: string;
   agentId: string;

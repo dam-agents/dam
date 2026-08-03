@@ -55,6 +55,7 @@ export function useSandboxSettingsForm() {
     handleSubmit,
     watch,
     setValue,
+    getValues,
     reset,
     resetField,
     formState,
@@ -135,17 +136,14 @@ export function useSandboxSettingsForm() {
     resetField,
   ]);
 
-  const {
-    providerAppIds,
-    selectedProvider,
-    selectProvider,
-    dropProviderGrant,
-  } = useProviderStaging({
-    apps,
-    assignedAppIds,
-    setAssignedAppIds: (ids) =>
-      setValue("assignedAppIds", ids, { shouldDirty: true }),
-  });
+  const { providerAppIds, selectedProvider, selectProvider } =
+    useProviderStaging({
+      apps,
+      assignedAppIds,
+      getAssignedAppIds: () => getValues("assignedAppIds"),
+      setAssignedAppIds: (ids) =>
+        setValue("assignedAppIds", ids, { shouldDirty: true }),
+    });
 
   const inheritedEnvs = useInheritedEnvs({
     agentEnv: agent?.env ?? [],
@@ -204,7 +202,6 @@ export function useSandboxSettingsForm() {
     saving,
     selectedProvider,
     selectProvider,
-    dropProviderGrant,
     currentPreset,
     egressStaged,
     inheritedEnvs,

@@ -1,13 +1,15 @@
-import { MoreVertical } from "lucide-react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CardButton } from "@/components/ui/card-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
@@ -15,15 +17,8 @@ import { CardIcon } from "./card-icon.js";
 interface Props {
   type: ProviderPresetType;
   description: string;
-  subtitle?: string;
   connected: boolean;
-  selected: boolean;
-  selectable?: boolean;
-  /** Show the per-row key-management menu (Edit key / Remove key). Off on
-   *  surfaces that only pick a provider and have no confirm-dialog host. */
-  manageKeys?: boolean;
   onConnect: () => void;
-  onSelect: () => void;
   onEditKey: () => void;
   onRemoveKey: () => void;
 }
@@ -31,13 +26,8 @@ interface Props {
 export function ProviderRow({
   type,
   description,
-  subtitle,
   connected,
-  selected,
-  selectable = true,
-  manageKeys = true,
   onConnect,
-  onSelect,
   onEditKey,
   onRemoveKey,
 }: Props) {
@@ -45,75 +35,48 @@ export function ProviderRow({
 
   if (!connected) {
     return (
-      <button
-        type="button"
+      <CardButton
         onClick={onConnect}
-        className="flex w-full items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-start gap-3 p-4"
       >
         <CardIcon provider={type} />
         <ProviderText name={name} description={description} />
-        <span className="shrink-0 text-[14px] font-normal text-muted-foreground">
+        <span className="shrink-0 text-sm font-normal text-muted-foreground">
           Connect
         </span>
-      </button>
+      </CardButton>
     );
   }
 
-  const info = (
-    <>
-      <CardIcon provider={type} />
-      <ProviderText
-        name={name}
-        description={subtitle ?? description}
-        connected
-      />
-    </>
-  );
-
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1 rounded-lg border bg-card pr-2 transition-colors",
-        selectable && selected ? "border-foreground" : "border-border",
-      )}
-    >
-      {selectable ? (
-        <button
-          type="button"
-          onClick={onSelect}
-          aria-pressed={selected}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-4 py-4 text-left transition-colors hover:bg-muted/30"
-        >
-          {info}
-        </button>
-      ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
-          {info}
-        </div>
-      )}
-      {manageKeys && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" title="Provider actions">
-              <MoreVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
-            <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
-              Remove key
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+    <Card className="flex items-center gap-1 pr-2 transition-colors">
+      <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
+        <CardIcon provider={type} />
+        <ProviderText name={name} description={description} connected />
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${name}`}
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
+          <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
+            Remove key
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Card>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return (
-    <div className="h-[72px] rounded-lg border border-border bg-card anim-pulse" />
-  );
+  return <Card className="h-[76px] animate-pulse" />;
 };
 
 function ProviderText({
@@ -128,14 +91,10 @@ function ProviderText({
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
-        <p className="text-[16px] font-medium text-foreground">{name}</p>
-        {connected && (
-          <span className="rounded-full bg-success-light px-2.5 py-0.5 text-[12px] font-normal text-success">
-            Connected
-          </span>
-        )}
+        <p className="text-base font-medium text-foreground">{name}</p>
+        {connected && <Badge variant="success">Connected</Badge>}
       </div>
-      <p className="text-[14px] text-muted-foreground">{description}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }

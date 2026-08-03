@@ -1,5 +1,11 @@
-import type { LocalSkill, Skill, SkillRef, SkillSource } from "api-server-api";
-import { Plus, Upload } from "lucide-react";
+import { Add, Upload } from "@carbon/icons-react";
+import type {
+  LocalSkill,
+  Skill,
+  SkillPublishRecord,
+  SkillSource,
+  SkillsState,
+} from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -12,18 +18,21 @@ import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
+import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import {
+  StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
   StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
 
 /**
- * The redesigned skills surface: skills grouped by location — Standalone Local
- * Skills ("Created in this sandbox") and Skill Sources ("Sourced from GitHub").
+ * The redesigned skills surface: skills grouped by provenance — user-authored
+ * Standalone Local Skills ("Created in this sandbox"), image-shipped ones
+ * ("Included with sandbox image"), and Skill Sources ("Sourced from GitHub").
  * Toggles install/uninstall immediately; the "+ Add source" control and the
  * per-source kebab (re-scan / view repo / remove) administer sources. While the
  * agent is stopped/starting the whole surface is a dimmed, non-interactive
@@ -34,7 +43,7 @@ export function SkillsSurface({
   agentState,
   readOnly,
   comingUp,
-  onInstalledChange,
+  onStateChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -42,7 +51,7 @@ export function SkillsSurface({
   /** Agent is coming up (starting) — still read-only, but rendered a touch
    *  less dimmed than a full stop to signal it's on its way. */
   comingUp?: boolean;
-  onInstalledChange?: (installed: SkillRef[]) => void;
+  onStateChange?: (state: SkillsState) => void;
 }) {
   const isError = agentState === "error";
   const showConfirm = useStore((s) => s.showConfirm);
@@ -72,12 +81,54 @@ export function SkillsSurface({
     update,
     createSource,
     createLocalSkills,
+    deleteStandalone,
+    downloadStandalone,
     removeSource,
     refreshSource,
     publish,
-  } = useSkillsSurface(agentId, { readOnly, isError, onInstalledChange });
+  } = useSkillsSurface(agentId, { readOnly, isError, onStateChange });
 
   const publishableSources = sources.filter((s) => s.canPublish);
+
+  // Missing origin (pre-provenance agent image) counts as user-authored.
+  const createdHere = standalone.filter(
+    (s) => s.origin === undefined || s.origin === "user",
+  );
+  const builtIn = standalone.filter(
+    (s) => s.origin === "system" || s.origin === "system-modified",
+  );
+
+  const deleteWithConfirm = async (
+    skill: LocalSkill,
+    pub?: SkillPublishRecord,
+  ) => {
+    // State-neutral wording about the PR: the "In review" pill is never
+    // refreshed against GitHub, so we can't claim the PR is still open (#3019).
+    const ok = await showConfirm(
+      <>
+        This skill will be removed from the sandbox.
+        {pub && (
+          // Leading space joins this onto the sentence above: JSX drops the
+          // newline whitespace that would otherwise separate them.
+          <>
+            {" The "}
+            <a
+              href={pub.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              pull request
+            </a>{" "}
+            you published to {pub.sourceName} isn't withdrawn.
+          </>
+        )}
+      </>,
+      `Delete ${skill.name}?`,
+      { kind: "destructive", confirmLabel: "Delete skill" },
+    );
+    if (ok) await deleteStandalone(skill);
+  };
 
   const removeWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
@@ -97,7 +148,7 @@ export function SkillsSurface({
       size="sm"
       onClick={() => setModal({ tab: "github", files: [] })}
     >
-      <Plus size={14} /> Add source
+      <Add size={14} /> Add source
     </Button>
   );
 
@@ -152,7 +203,7 @@ export function SkillsSurface({
           <Callout variant="dashed">
             <div className="flex flex-col items-center gap-4 py-10 text-center">
               <Upload size={22} className="text-muted-foreground" />
-              <p className="text-[14px] text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Drop a .md file here to create a skill, or add a GitHub repo as
                 a source.
               </p>
@@ -162,20 +213,26 @@ export function SkillsSurface({
         </section>
       ) : (
         <>
-          {standalone.length > 0 ? (
+          {createdHere.length > 0 ? (
             <StandaloneSkillsGroup
-              skills={standalone}
+              skills={createdHere}
               readOnly={readOnly}
               publishes={publishes}
               canPublish={publishableSources.length > 0}
               onPublish={setPublishFor}
+              onDownload={(skill) => void downloadStandalone(skill)}
+              onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
               action={addSourceButton}
             />
-          ) : (
+          ) : readOnly ? (
             // Stopped/starting: the list is on the offline pod, so show the
             // section with a placeholder instead of dropping it.
-            readOnly && <StandaloneSkillsPlaceholder />
+            <StandaloneSkillsPlaceholder />
+          ) : (
+            <StandaloneSkillsEmptyState action={addSourceButton} />
           )}
+
+          {builtIn.length > 0 && <BuiltInSkillsGroup skills={builtIn} />}
 
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -185,7 +242,7 @@ export function SkillsSurface({
             {!sourcesLoaded ? (
               <SkillSourcesSkeleton />
             ) : sources.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 No skill sources connected.
               </p>
             ) : (

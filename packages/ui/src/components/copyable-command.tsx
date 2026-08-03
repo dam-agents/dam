@@ -1,4 +1,4 @@
-import { Check, Copy } from "lucide-react";
+import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ export function CopyableCommand({ command }: { command: string }) {
   return (
     <div>
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted p-3">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-foreground">
+        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
           <span className="select-none text-muted-foreground">$ </span>
           {command}
         </code>
@@ -39,7 +39,7 @@ export function CopyableCommand({ command }: { command: string }) {
         >
           {copyState === "copied" ? (
             <>
-              <Check size={14} /> Copied
+              <Checkmark size={14} /> Copied
             </>
           ) : (
             <>
@@ -49,7 +49,7 @@ export function CopyableCommand({ command }: { command: string }) {
         </Button>
       </div>
       {copyState === "failed" && (
-        <p className="mt-1.5 text-[12px] text-danger">
+        <p className="mt-1.5 text-xs text-danger">
           Couldn't copy automatically — select the command and copy it manually.
         </p>
       )}

@@ -38,7 +38,7 @@ const STYLES: Record<
   "ibm-litellm": {
     Icon: LiteLLMIcon,
     bg: "bg-muted",
-    iconClass: "text-[24px] leading-none",
+    iconClass: "text-2xl leading-none",
   },
   bob: {
     Icon: BobIcon,
@@ -87,7 +87,7 @@ export function CardIcon({
           size === "lg" && LARGE_ICON_CLASS[provider],
           size === "sm" &&
             provider !== "bob" &&
-            (provider === "ibm-litellm" ? "!text-[16px]" : "!w-3.5 !h-3.5"),
+            (provider === "ibm-litellm" ? "!text-base" : "!w-3.5 !h-3.5"),
         )}
       />
     </div>

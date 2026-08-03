@@ -65,19 +65,4 @@ if [ -f "$user_mise_cfg" ]; then
 	done
 fi
 
-# `dam-vm` only works when the deployment has a VM host configured (the
-# controller sets DAM_VM_ENABLED then). Drop the whole dam-vm block from the
-# agent instructions otherwise, so we don't advertise a command that would just
-# fail; when enabled, drop only the marker comments and keep the tool doc.
-# /etc is reset from the image each boot, so this re-runs cleanly; the file is
-# made agent-writable at build time (see Dockerfile).
-agents_md=/etc/AGENTS.md
-if [ -w "$agents_md" ]; then
-	if [ "${DAM_VM_ENABLED:-}" = "1" ]; then
-		sed -i '/<!-- dam-vm:start/d; /<!-- dam-vm:end -->/d' "$agents_md" 2>/dev/null || true
-	else
-		sed -i '/<!-- dam-vm:start/,/<!-- dam-vm:end -->/d' "$agents_md" 2>/dev/null || true
-	fi
-fi
-
 exec "$@"

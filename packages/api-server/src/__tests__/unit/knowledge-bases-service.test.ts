@@ -13,7 +13,6 @@ function fakeAgent(id: string): Agent {
     overBudget: false,
     contributionFailures: [],
     channels: [],
-    allowedUserEmails: [],
     kind: "knowledge-base",
   };
 }
@@ -41,6 +40,7 @@ function makeHarness() {
         calls.createInputs.push(input);
         return fakeAgent("agent-kb1");
       },
+      async delete() {},
     },
     runtimeMutator,
     wakeAgent: async (agentId) => {

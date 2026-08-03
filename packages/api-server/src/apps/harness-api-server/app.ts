@@ -23,7 +23,6 @@ import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
 import { createRunRelay } from "./harness-run-relay.js";
-import { createVmRelay } from "./harness-vm-relay.js";
 import { createRunsService } from "../../modules/runs/services/runs-service.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -129,22 +128,15 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the
   // harness port; we materialise an ephemeral Run pod and relay its /api/exec
   // stdio. WebSocket upgrades on the harness port are wired manually (the Hono
-  // node server doesn't handle them).
+  // node server doesn't handle them). Disabled while the executor's
+  // shared-workspace model is reworked for RWO storage (#2989) — the relay
+  // refuses every dial with a clear close reason; the machinery stays dormant.
   const runs = createRunsService(k8sClient);
   const runRelay = createRunRelay({
     k8s: k8sClient,
     runs,
+    enabled: false,
   });
-  // `dam-vm` streams ride the same harness port to /api/agents/<id>/vm and
-  // are relayed to the operator's VM host over mutual TLS (deployment client
-  // cert) with the waypoint-proven agent id attached (packages/dam-vm).
-  const vmRelay = createVmRelay({
-    url: config.vmHostUrl,
-    clientCert: config.vmHostClientCert,
-    clientKey: config.vmHostClientKey,
-    caCert: config.vmHostCaCert,
-  });
-
   const server = serve(
     { fetch: app.fetch, port: config.harnessServerPort },
     () => {
@@ -159,14 +151,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
     );
-    const m = url.pathname.match(/^\/api\/agents\/([^/]+)\/(run|vm)$/);
+    const m = url.pathname.match(/^\/api\/agents\/([^/]+)\/run$/);
     if (!m) {
       socket.destroy();
       return;
     }
-    const agentId = decodeURIComponent(m[1]!);
-    if (m[2] === "run") runRelay.handleUpgrade(req, socket, head, agentId);
-    else vmRelay.handleUpgrade(req, socket, head, agentId);
+    runRelay.handleUpgrade(req, socket, head, decodeURIComponent(m[1]!));
   });
 
   // A fresh harness process holds no live relays, so any Run CR that survived a

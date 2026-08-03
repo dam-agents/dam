@@ -8,11 +8,11 @@ export function CardContent({ template }: { template: TemplateView }) {
     <>
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex items-center gap-2">
-          <p className="text-[16px] font-semibold text-foreground">
+          <p className="text-base font-semibold text-foreground">
             {template.name}
           </p>
           {template.experimental && (
-            <Badge className="shrink-0 border-transparent bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            <Badge variant="warning" className="shrink-0">
               Alpha
             </Badge>
           )}
@@ -20,9 +20,7 @@ export function CardContent({ template }: { template: TemplateView }) {
         <CardTags tags={template.tags} />
       </div>
       {template.description && (
-        <p className="text-[14px] text-muted-foreground">
-          {template.description}
-        </p>
+        <p className="text-sm text-muted-foreground">{template.description}</p>
       )}
     </>
   );

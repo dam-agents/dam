@@ -1,25 +1,18 @@
 import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
+import { CardButton } from "@/components/ui/card-button";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET } from "@/components/ui/inset";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
-import {
-  type ProviderRef,
-  sameProviderRef,
-} from "../../../providers/components/provider-item.js";
-import { ProviderSection } from "../../../providers/components/provider-section.js";
+import type { ProviderRef } from "../../../providers/components/provider-item.js";
+import { ProviderSelect } from "../../../providers/components/provider-select.js";
 import type {
   EgressPreset,
+  providerPolicy,
   WizardSnapshot,
 } from "../../lib/wizard-snapshot.js";
 import { CardList } from "../card-list.js";
-import {
-  type RegistryCredential,
-  RegistryCredentialSection,
-  registryFilledCount,
-} from "../registry-credential-section.js";
 import { SandboxSizeSection } from "../sandbox-size-section.js";
 import { StepHeader } from "../step-header.js";
 
@@ -49,34 +42,26 @@ interface Props {
   name: string;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
-  showRegistry: boolean;
-  registryCredential: RegistryCredential;
-  onRegistryChange: (value: RegistryCredential) => void;
   update: (patch: Partial<WizardSnapshot>) => void;
   setupNote?: { title: string; body: string };
   templateSize?: { cpu?: string; memory?: string };
   sizeCpuMilli: number | null;
   sizeMemoryMi: number | null;
+  /** Which providers this starting point offers, and which it steers toward. */
+  providers: ReturnType<typeof providerPolicy>;
 }
 
 export function SetupStep({
   name,
   providerRef,
   egressPreset,
-  showRegistry,
-  registryCredential,
-  onRegistryChange,
   update,
   setupNote,
   templateSize,
   sizeCpuMilli,
   sizeMemoryMi,
+  providers,
 }: Props) {
-  const registryPartial =
-    showRegistry &&
-    registryFilledCount(registryCredential) > 0 &&
-    registryFilledCount(registryCredential) < 3;
-
   return (
     <div>
       <StepHeader
@@ -106,10 +91,10 @@ export function SetupStep({
       {setupNote && (
         <section className="mb-8">
           <Callout tone="info" inset>
-            <p className="text-[14px] font-semibold text-foreground">
+            <p className="text-sm font-semibold text-foreground">
               {setupNote.title}
             </p>
-            <p className="mt-1 text-[14px] text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               {setupNote.body}
             </p>
           </Callout>
@@ -118,16 +103,15 @@ export function SetupStep({
 
       <section className="mb-8">
         <SectionLabel spaced>Provider</SectionLabel>
-        <ProviderSection
-          selected={providerRef}
-          onSelect={(ref) => update({ providerRef: ref })}
-          onProviderRemoved={(ref) => {
-            if (providerRef && sameProviderRef(providerRef, ref))
-              update({ providerRef: null });
-          }}
-          autoSelectFirst
-          listClassName={FIELD_INSET}
-        />
+        <Inset>
+          <ProviderSelect
+            selected={providerRef}
+            onSelect={(ref) => update({ providerRef: ref })}
+            autoSelectFirst
+            allow={providers.allow}
+            recommended={providers.recommended}
+          />
+        </Inset>
       </section>
 
       <section className="mb-8">
@@ -144,14 +128,6 @@ export function SetupStep({
           ))}
         </CardList>
       </section>
-
-      {showRegistry && (
-        <RegistryCredentialSection
-          value={registryCredential}
-          onChange={onRegistryChange}
-          partial={registryPartial}
-        />
-      )}
     </div>
   );
 }
@@ -168,21 +144,15 @@ export function NetworkPresetRow({
   onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <CardButton
       onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        "w-full rounded-lg border px-4 py-3 text-left transition-colors",
-        selected
-          ? "border-foreground bg-card"
-          : "border-border bg-card hover:bg-muted/30",
-      )}
+      selected={selected}
+      className="w-full px-4 py-3"
     >
-      <p className="text-[16px] font-medium text-foreground leading-[1.2]">
+      <p className="text-base font-medium text-foreground leading-[1.2]">
         {label}
       </p>
-      <p className="text-[14px] text-muted-foreground">{help}</p>
-    </button>
+      <p className="text-sm text-muted-foreground">{help}</p>
+    </CardButton>
   );
 }

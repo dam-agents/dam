@@ -2,7 +2,7 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
-  Email as Inbox,
+  Email,
   Folders,
   Home,
   Settings,
@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
-import { useFeatures } from "../modules/features/api/queries.js";
 import { useStore } from "../store.js";
 
 const EMPTY: never[] = [];
@@ -40,12 +39,9 @@ export function IconRail({
 
   const { data: approvals = EMPTY } = useApprovalsForOwner();
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
-  const { data: features } = useFeatures();
-  const showExperiments = features?.experiments ?? false;
-  const showKnowledgeBases = features?.["knowledge-bases"] ?? false;
 
   const sandboxes: Destination = {
-    label: "Sandboxes",
+    label: "Home",
     icon: Home,
     active: view === "list",
     badge: 0,
@@ -63,7 +59,6 @@ export function IconRail({
     icon: Book,
     active:
       view === "knowledge-bases" ||
-      view === "knowledge-base-new" ||
       view === "knowledge-base-chat" ||
       view === "knowledge-base-config",
     badge: 0,
@@ -77,8 +72,8 @@ export function IconRail({
     navigate: () => setView("artifacts"),
   };
   const inbox: Destination = {
-    label: "Inbox",
-    icon: Inbox,
+    label: "Email",
+    icon: Email,
     active: view === "inbox",
     badge: pendingCount,
     navigate: () => setView("inbox"),
@@ -110,12 +105,12 @@ export function IconRail({
         </div>
         <div className="flex flex-col items-center gap-1">
           <RailItem {...sandboxes} />
-          {showExperiments && <RailItem {...experiments} />}
-          {showKnowledgeBases && <RailItem {...knowledgeBases} />}
+          <RailItem {...experiments} />
+          <RailItem {...knowledgeBases} />
           <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
-        {/* Inbox is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
+        {/* Email is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
         <div className="flex flex-col items-center gap-1 mb-2">
           <RailItem {...inbox} />
           <RailItem {...settings} />
@@ -126,8 +121,8 @@ export function IconRail({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             sandboxes,
-            ...(showExperiments ? [experiments] : []),
-            ...(showKnowledgeBases ? [knowledgeBases] : []),
+            experiments,
+            knowledgeBases,
             artifacts,
             inbox,
             settings,
@@ -194,7 +189,7 @@ function IconWithBadge({
       {badge > 0 && (
         <Badge
           variant="default"
-          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
+          className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
         >
           {badge > 9 ? "9+" : badge}
         </Badge>

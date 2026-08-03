@@ -50,8 +50,11 @@ export interface InvocationsRepository {
    *  reaps these when the driver agent is deleted. */
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
   /** Every agent id a `running` row references (targets and drivers) — the
-   *  orphan sweeper checks these against live agents and cascades the rest. */
-  listRunningAgentIds(): Promise<string[]>;
+   *  orphan sweeper checks these against live agents and cascades the rest.
+   *  Rows younger than `olderThan` are skipped: the row is written BEFORE the
+   *  target agent exists in K8s, so without the grace an unlucky sweeper tick
+   *  would read a newborn spawn as an orphan and cascade it. */
+  listRunningAgentIds(olderThan: Date): Promise<string[]>;
   /** Terminal rows whose result is old enough to drop (retention elapsed). */
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
   /** Invocations a driver stamped with this experiment's span ids — the
@@ -65,6 +68,14 @@ export interface InvocationsRepository {
    *  owner — the experiments index's "what is this agent doing right now"
    *  signal. Plain (non-experiment) spawns are deliberately excluded. */
   countRunningByDriver(owner: string): Promise<Map<string, number>>;
+  /** Every Invocation of one owner as driver → target pairs (an Invocation's
+   *  id IS its target agent's id) — what lets the Sandboxes list hide targets
+   *  and put their compute on the driver's row. Deliberately ALL statuses:
+   *  a terminal row outlives its agent (retention sweep), so a reaped-any-
+   *  second target stays attributed instead of flashing back as a peer. */
+  listTargetsByOwner(
+    owner: string,
+  ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
   /** Fail every `running` Invocation attached to this experiment (Stop's
    *  teeth: unblocks spawn() waiters at once). Returns the failed ids so the
    *  caller can eagerly reap the target agents. */
@@ -176,14 +187,19 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return rows.map(toRow);
     },
 
-    async listRunningAgentIds() {
+    async listRunningAgentIds(olderThan) {
       const rows = await db
         .select({
           id: invocationsTable.id,
           driverAgentId: invocationsTable.driverAgentId,
         })
         .from(invocationsTable)
-        .where(eq(invocationsTable.status, "running"));
+        .where(
+          and(
+            eq(invocationsTable.status, "running"),
+            lt(invocationsTable.createdAt, olderThan),
+          ),
+        );
       const ids = new Set<string>();
       for (const r of rows) {
         ids.add(r.id);
@@ -233,6 +249,17 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         )
         .returning({ id: invocationsTable.id });
       return updated.map((r) => r.id);
+    },
+
+    async listTargetsByOwner(owner) {
+      const rows = await db
+        .select({
+          driverAgentId: invocationsTable.driverAgentId,
+          targetAgentId: invocationsTable.id,
+        })
+        .from(invocationsTable)
+        .where(eq(invocationsTable.owner, owner));
+      return rows;
     },
 
     async countRunningByDriver(owner) {

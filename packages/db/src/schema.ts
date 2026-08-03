@@ -22,6 +22,10 @@ export const activityOutcomeEnum = pgEnum("activity_outcome", [
   "failure",
 ]);
 
+// An agent may hold several Slack bindings at once (#3086) — one row per bound
+// conversation — so (agent_id, type) is a lookup index, not a uniqueness
+// constraint. The place-scoped invariant that survives is the other way round:
+// a Slack conversation binds to at most one agent install-wide.
 export const channels = pgTable(
   "channels",
   {
@@ -31,7 +35,7 @@ export const channels = pgTable(
     config: jsonb("config").notNull(),
   },
   (table) => [
-    uniqueIndex("channels_agent_type_idx").on(table.agentId, table.type),
+    index("channels_agent_type_idx").on(table.agentId, table.type),
     uniqueIndex("channels_slack_channel_unique_idx")
       .on(sql`(${table.config}->>'slackChannelId')`)
       .where(sql`${table.type} = 'slack'`),
@@ -49,16 +53,6 @@ export const identityLinks = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.provider, table.externalUserId] })],
-);
-
-export const allowedUsers = pgTable(
-  "allowed_users",
-  {
-    agentId: text("agent_id").notNull(),
-    owner: text("owner").notNull(),
-    keycloakSub: text("keycloak_sub").notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.agentId, table.keycloakSub] })],
 );
 
 export const telegramConversations = pgTable(

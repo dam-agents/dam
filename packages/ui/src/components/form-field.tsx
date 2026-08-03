@@ -18,6 +18,7 @@ interface Props {
    *  inside the container padding and indent the label to it, instead of
    *  outdenting the control onto the border. Ignored when `disableInset`. */
   labelInset?: boolean;
+  className?: string;
   children: ReactNode;
 }
 
@@ -27,20 +28,19 @@ export function FormField({
   error,
   disableInset,
   labelInset,
+  className,
   children,
 }: Props) {
   const indentLabel = !disableInset && labelInset;
   return (
-    <label className="flex flex-col gap-2">
+    <label className={cn("flex flex-col gap-2", className)}>
       <SectionLabel className={cn(indentLabel && LABEL_INSET)}>
         {label}
       </SectionLabel>
       <div className={cn(!disableInset && !labelInset && FIELD_INSET)}>
         {children}
       </div>
-      {hint && (
-        <span className="text-[12px] text-muted-foreground">{hint}</span>
-      )}
+      {hint && <span className="text-sm text-muted-foreground">{hint}</span>}
       <FormError message={error} />
     </label>
   );

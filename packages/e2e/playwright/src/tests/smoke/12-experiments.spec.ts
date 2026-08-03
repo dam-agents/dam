@@ -51,13 +51,6 @@ test("experiment: plan, execute, watch it run to completion", async ({
 
   const agentId = await waitForAgentRunning(api, agentName);
 
-  await test.step("enable the experiments feature", async () => {
-    await api.features.setFlag.mutate({
-      feature: "experiments",
-      enabled: true,
-    });
-  });
-
   await test.step("register the plan by running the script in-pod", async () => {
     await setMockReplyWithFiles(api, agentId, "script written", [
       { path: scriptPath, content: experimentScript },

@@ -1,0 +1,15 @@
+# Changelog
+
+Agent-facing history: per version, a **Changed** block and an **Upgrade** block — the
+idempotent steps a deployed instance applies when crossing that version. Consumed by the
+version check ([docs/persistence.md](docs/persistence.md) → **Definition version &
+upgrade**); authoring rules: [docs/self-modification.md](docs/self-modification.md) §12.
+
+## 1.0.0 — {{DATE}}
+
+**Changed:**
+- Initial definition: <!-- TODO(creator): one line per major capability (run types,
+  integrations, state model), matching the design brief. -->
+
+**Upgrade:**
+- Nothing — initial version; onboarding records it (`work/VERSION`).

@@ -1,7 +1,9 @@
 import type { FeatureId } from "api-server-api";
 
+import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 import { useFeatures, useSetFeature } from "../api/queries.js";
 
@@ -13,22 +15,22 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "experiments",
-    label: "Experiments",
-    description:
-      "Loop scripts your agents author and run, observed live: skeleton graph, per-stage progress, score charts. Adds the Experiments destination.",
-  },
-  {
-    id: "knowledge-bases",
-    label: "Knowledge bases",
-    description:
-      "Agents that build and maintain a body of knowledge you chat with. Adds the Knowledge bases destination.",
-  },
-  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
-      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials) and the sandbox Channels section.",
+      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials).",
+  },
+  {
+    id: "vm-sandboxes",
+    label: "VM sandboxes",
+    description:
+      "Adds the “Run as a virtual machine” switch to the create-sandbox wizard, revealing images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container.",
+  },
+  {
+    id: "session-costs",
+    label: "Session costs",
+    description:
+      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
   },
 ];
 
@@ -50,13 +52,16 @@ export function FeaturesTab() {
         {FEATURE_ROWS.map((row) => (
           <label
             key={row.id}
-            className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
+            className={cn(
+              CARD_SURFACE,
+              "flex cursor-pointer items-start justify-between gap-4 p-4",
+            )}
           >
             <span>
-              <span className="block text-[14px] font-medium text-foreground">
+              <span className="block text-sm font-medium text-foreground">
                 {row.label}
               </span>
-              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+              <span className="mt-0.5 block text-sm text-muted-foreground">
                 {row.description}
               </span>
             </span>

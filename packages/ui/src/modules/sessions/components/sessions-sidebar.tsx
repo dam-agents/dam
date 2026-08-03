@@ -1,6 +1,5 @@
-import { Filter } from "@carbon/icons-react";
+import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,16 +10,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
+import type { SessionView } from "../../../types.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { useSessionCosts } from "../../metrics/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
   SESSION_CATEGORY_LABELS,
   sessionCategory,
 } from "../lib/session-category.js";
+import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
 
@@ -62,16 +67,16 @@ export function SessionsSidebar({
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
-  const agentRunState = useAgentRunState(selectedAgent);
-  const { data: sessions = [], isFetching } = useAcpSessions(
-    selectedAgent,
-    listInclude,
-    {
-      enabled: agentRunState === "running",
-      activeSessionId: sessionId,
-    },
-  );
-  const loading = isFetching;
+  const agentOperable = useIsAgentOperable(selectedAgent);
+  const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
+    enabled: agentOperable,
+    activeSessionId: sessionId,
+  });
+  const sessions: SessionView[] = data ?? EMPTY;
+  // First load only, not every refetch: the list polls every few seconds, and
+  // keying the empty state off `isFetching` made "No sessions yet" blink out on
+  // each poll for an agent that genuinely has none.
+  const loading = data === undefined && isFetching;
 
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
@@ -94,6 +99,12 @@ export function SessionsSidebar({
       visibleSessions.filter((s) => sessionCategory(s) === "experiments"),
     ],
     [visibleSessions],
+  );
+
+  const { data: features } = useFeatures();
+  const { data: sessionCosts } = useSessionCosts(
+    selectedAgent,
+    features?.["session-costs"] ?? false,
   );
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
@@ -145,6 +156,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
@@ -161,7 +173,7 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="text-[14px] font-normal text-muted-foreground"
+            className="text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
             {sessionFilter.length === SESSION_CATEGORIES.length
@@ -184,8 +196,8 @@ export function SessionsSidebar({
       </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs" className="text-[14px]">
-            <Plus size={12} /> New
+          <Button variant="outline" size="xs" className="text-sm">
+            <Add size={12} /> New
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -222,30 +234,31 @@ export function SessionsSidebar({
       style={style}
     >
       <div className="flex-1 overflow-y-auto">
+        {loading && <SessionListSkeleton />}
         {!loading && sessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No sessions yet
           </p>
         )}
         {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No sessions match the filter
           </p>
         )}
         {conversationSessions.map(renderRow)}
         {(runSessions.length > 0 || launchingRun) && (
-          <p className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+          <SectionLabel className="block px-4 pb-1 pt-4">
             Experiment runs
-          </p>
+          </SectionLabel>
         )}
         {launchingRun && (
           <button
             type="button"
             onClick={focusPendingLaunch}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
-            <Loader2 size={14} className="shrink-0 animate-spin" />
+            <Spinner />
             <span className="min-w-0 flex-1 truncate">
               Starting run — waking the agent…
             </span>

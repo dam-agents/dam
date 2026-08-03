@@ -5,8 +5,10 @@ WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
-RUN dnf install -y git tar gzip && dnf clean all &&\
-    set -eu; \
+# `set -eu` first, or a failed step exits 0 via the trailing `rm` and caches a
+# mise-less layer; `mise --version` last so the layer can't lie about it.
+RUN set -eu; \
+    dnf install -y git tar gzip; dnf clean all; \
     case "$(uname -m)" in \
     x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
     aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
@@ -16,7 +18,8 @@ RUN dnf install -y git tar gzip && dnf clean all &&\
     echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/mise.tar.gz -C /tmp; \
     mv /tmp/mise/bin/mise /usr/local/bin/mise; \
-    rm -rf /tmp/mise /tmp/mise.tar.gz
+    rm -rf /tmp/mise /tmp/mise.tar.gz; \
+    mise --version
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
@@ -31,6 +34,9 @@ RUN --mount=type=cache,target=/root/.cache/mise mise install node
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
 RUN --mount=type=cache,target=/root/.cache/mise mise install python
+# mise's CPython bundles pip 26.0.1 (CVE-2026-3219); self-upgrade until a
+# python release bundles pip >= 26.1.
+RUN mise exec python -- python -m pip install --upgrade pip==26.1
 # node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
 # (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
 # node release bundles npm >= 11.17.0.
@@ -129,8 +135,6 @@ RUN set -eu; \
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
-# same script, mode from the invoked name (argv[1] is not realpath'd)
-RUN ln -s dam-run /usr/local/bin/dam-vm
 COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json

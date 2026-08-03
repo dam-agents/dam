@@ -39,7 +39,7 @@ const EXECUTOR_HANDSHAKE_TIMEOUT_MS = 10_000;
  * Buffer client frames (e.g. the tty's initial OP_RESIZE) until the upstream
  * leg is open, then splice the two sockets together. Attaches its message
  * listener synchronously, so frames arriving while the caller awaits are not
- * lost. Shared with the dam-vm relay.
+ * lost.
  */
 export function spliceClient(client: WebSocket) {
   const pending: [Buffer, boolean][] = [];
@@ -77,7 +77,7 @@ export function spliceClient(client: WebSocket) {
   };
 }
 
-/** Shared with the dam-vm relay — see the cadence rationale above. */
+/** See the cadence rationale above. */
 export function keepalive(sock: WebSocket) {
   let alive = true;
   sock.on("pong", () => {
@@ -97,8 +97,19 @@ export function createRunRelay(deps: {
   runs: RunsService;
   /** agent-runtime port on the executor pod; injectable for tests. */
   executorPort?: number;
+  /**
+   * dam-run is disabled while its shared-workspace model is reworked (#2989):
+   * the executor pod co-mounted the agent's workspace concurrently with the
+   * live agent pod, which is exactly the multi-writer access RWO storage
+   * (#2988) no longer provides. The relay machinery below stays intact and
+   * tested — re-enabling is a deliberate code change here once the executor
+   * has a new way to reach the workspace, never a config knob (a knob would
+   * quietly break on multi-node clusters).
+   */
+  enabled?: boolean;
 }) {
   const executorPort = deps.executorPort ?? 8080;
+  const enabled = deps.enabled ?? false;
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const livePerAgent = new Map<string, number>();
 
@@ -110,6 +121,11 @@ export function createRunRelay(deps: {
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
+
+      if (!enabled) {
+        client.close(1008, "dam-run is temporarily disabled on this platform");
+        return;
+      }
 
       const live = livePerAgent.get(agentId) ?? 0;
       if (live >= MAX_CONCURRENT_RUNS_PER_AGENT) {
@@ -155,6 +171,13 @@ export function createRunRelay(deps: {
         const identity = await resolveAgent(deps.k8s, agentId);
         if (!identity) {
           client.close(1011, "agent not found");
+          return release();
+        }
+        if (identity.vmBackend) {
+          // A Run executor materializes the agent image as a pod container —
+          // impossible for a vm backend's containerDisk. The sandbox is a
+          // whole machine; run heavy commands directly in it.
+          client.close(1008, "dam-run is not available on VM sandboxes");
           return release();
         }
         if (clientGone || spliced.overflowed()) return release();

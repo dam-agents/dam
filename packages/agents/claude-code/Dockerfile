@@ -17,7 +17,23 @@ RUN --mount=type=cache,target=/root/.npm \
       "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
     find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
+# Claude Code phones home (usage telemetry to Statsig, error logs to Datadog
+# intake) — traffic the gateway egress chain would surface for approval. The
+# explicit flags below turn exactly that off; the umbrella
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is deliberately NOT set — it also
+# switches off wanted behavior beyond these constituents. The auto-updater
+# loss is intentional since the harness version is pinned above. Platform
+# OTEL export is a separate, opt-in path and is unaffected.
+ENV DISABLE_TELEMETRY=1 \
+    DISABLE_ERROR_REPORTING=1 \
+    DISABLE_FEEDBACK_COMMAND=1 \
+    DISABLE_FEEDBACK_SURVEY=1 \
+    DISABLE_AUTOUPDATER=1
+
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
+# Implements the platform's background-work contract from Claude Code's Stop
+# hook, so a session that left a job running is not reaped out from under it.
+COPY report-background-work.mjs /usr/local/lib/report-background-work.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
@@ -41,14 +57,19 @@ RUN mkdir -p /opt/cc-websearch &&\
     node -e 'const c=require("crypto"),f=require("fs"),d="/opt/cc-websearch/";const want={"websearch.cjs":"7a5e95cb865f905879635ddaa2de564c4e9bc3a8c14d5125595917a670fef90a","webfetch.cjs":"81be0f6666237bbd46de9cfbbe3d3f4b4296f777e28cc552c9f6de003708f297"};for(const[n,h]of Object.entries(want)){const g=c.createHash("sha256").update(f.readFileSync(d+n)).digest("hex");if(g!==h){console.error(`cc-websearch: checksum mismatch for ${n}: got ${g} want ${h}`);process.exit(1);}}console.log("cc-websearch bundles verified");'
 COPY --chmod=0755 deny-web-tool.sh /opt/cc-websearch/deny-web-tool.sh
 
-# managed-settings.json carries the WebSearch/WebFetch deny hooks (above); keep
-# it otherwise minimal — a legacy allowedMcpServers shape breaks Claude Code 2.x startup.
+# managed-settings.json carries the WebSearch/WebFetch deny hooks (above) and the
+# Stop/SubagentStop background-work report; keep it otherwise minimal — a legacy
+# allowedMcpServers shape breaks Claude Code 2.x startup.
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
+
+# Staged outside /app/working-dir so the first-boot `cp -rn` never seeds it into
+# a plain sandbox; an experiment sandbox's Install Command copies it in instead.
+COPY --chown=65532:0 dam-skills/ /usr/local/share/dam-skills/
 
 # Override platform-base's manifest to add the Claude-specific harnessConfig block.
 COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml

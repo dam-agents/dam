@@ -120,6 +120,20 @@
       "when": 1785155863502,
       "tag": "0016_demonic_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785339113965,
+      "tag": "0017_remove_person_scoped_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785739708798,
+      "tag": "0018_flimsy_thunderball",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// withPodTermination appends the pod's abnormal-termination cause to a generic detail.
+func withPodTermination(detail string, pod *corev1.Pod) string {
+	if _, msg, ok := terminationReason(pod); ok {
+		return fmt.Sprintf("%s: %s", detail, msg)
+	}
+	return detail
+}
+
+func isPodReady(pod corev1.Pod) bool {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
 // terminationReason returns a reason token + message for why a pod is abnormally down, whether a container exit (OOM/crash) or a stuck waiting state (image pull failure); ok=false on a clean start.
 func terminationReason(pod *corev1.Pod) (reason, message string, ok bool) {
 	if pod == nil {

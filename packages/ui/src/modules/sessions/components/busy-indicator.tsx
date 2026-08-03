@@ -52,7 +52,7 @@ export function BusyIndicator({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 text-[14px] font-normal text-muted-foreground",
+        "inline-flex items-center gap-2 text-sm font-normal text-muted-foreground",
         className,
       )}
     >

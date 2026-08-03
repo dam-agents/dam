@@ -29,13 +29,13 @@ const (
 	RunMaxLifetime = 60 * time.Minute
 )
 
-// RunReconciler materialises the executor behind the in-pod `dam-run` CLI. It is
-// deliberately lighter than ForkReconciler: the executor runs as the parent
-// Agent's own owner and routes egress through the parent's already-running
-// gateway, so it needs no gateway/cert/SA/AuthorizationPolicy of its own — just
-// a bare Pod plus one egress NetworkPolicy admitting it to the parent gateway.
-// Recursion (an executor spawning executors) is bounded by the api-server's
-// per-agent concurrency cap.
+// RunReconciler materialises the executor behind the in-pod `dam-run` CLI. It
+// is deliberately light: the executor runs as the parent Agent's own owner and
+// routes egress through the parent's already-running gateway, so it needs no
+// gateway/cert/SA/AuthorizationPolicy of its own — just a bare Pod plus one
+// egress NetworkPolicy admitting it to the parent gateway. Recursion (an
+// executor spawning executors) is bounded by the api-server's per-agent
+// concurrency cap.
 type RunReconciler struct {
 	client   kubernetes.Interface
 	dynamic  dynamic.Interface
@@ -61,9 +61,9 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 
 	// Hard GC backstop for a Run the api-server never cleaned up. Deleting the
 	// CR cascades to the executor pod + egress NetworkPolicy via ownerRefs.
-	// Runs before the terminal-phase short-circuit (mirroring the Fork reaper)
-	// so a Failed CR the api-server never deleted — whose pod may sit
-	// Running-but-unready indefinitely — is reaped too.
+	// Runs before the terminal-phase short-circuit so a Failed CR the
+	// api-server never deleted — whose pod may sit Running-but-unready
+	// indefinitely — is reaped too.
 	if age := r.now().Sub(run.CreationTimestamp.Time); age > RunMaxLifetime {
 		slog.Warn("reaping over-age run", "run", runName, "age", age.String())
 		if err := r.dynamic.Resource(RunsGVR).Namespace(r.config.Namespace).
@@ -81,7 +81,7 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 	parentAgentID := run.Spec.AgentName
 	parentAgent, agentSpec, err := r.resolver.Resolve(parentAgentID)
 	if err != nil {
-		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, err.Error())
+		return r.setRunFailed(ctx, runName, types.RunReasonOrchestrationFailed, err.Error())
 	}
 
 	// Route through the parent's already-running gateway (IP-direct, no DNS).
@@ -99,23 +99,23 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, parentAgent.Labels[envoyOwnerLabel],
 		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {
-		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing credential secrets: %v", err))
+		return r.setRunFailed(ctx, runName, types.RunReasonOrchestrationFailed, fmt.Sprintf("listing credential secrets: %v", err))
 	}
 
 	// One owned resource beyond the pod: an egress NetworkPolicy admitting the
 	// executor (pair=runName) to the parent gateway (pair=parentAgentID).
 	if err := applyNetworkPolicy(ctx, r.client, buildAgentEgressNetworkPolicyTo(runName, parentAgentID, r.config, ownerRef)); err != nil {
-		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, err.Error())
+		return r.setRunFailed(ctx, runName, types.RunReasonOrchestrationFailed, err.Error())
 	}
 
 	desired := BuildRunExecutorPod(runName, parentAgentID, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
 	parentPVCs, err := resolveParentWorkspacePVCs(ctx, r.client, r.config, parentAgentID, agentSpec)
 	if err != nil {
-		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
+		return r.setRunFailed(ctx, runName, types.RunReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
 	}
 	rewriteParentPVCs(desired.Spec.Volumes, parentPVCs)
 	if err := createPodIfMissing(ctx, r.client, desired); err != nil {
-		return r.setRunFailed(ctx, runName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying executor pod: %v", err))
+		return r.setRunFailed(ctx, runName, types.RunReasonOrchestrationFailed, fmt.Sprintf("applying executor pod: %v", err))
 	}
 
 	pod, err := findEphemeralPod(ctx, r.client, r.config.Namespace, RunLabelRunID, runName)
@@ -128,10 +128,10 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 		})
 	}
 	if _, msg, ok := terminationReason(pod); ok {
-		return r.setRunFailed(ctx, runName, types.ForkReasonPodNotReady, msg)
+		return r.setRunFailed(ctx, runName, types.RunReasonPodNotReady, msg)
 	}
 	if age := r.now().Sub(run.CreationTimestamp.Time); age > RunPodReadyTimeout {
-		return r.setRunFailed(ctx, runName, types.ForkReasonTimeout,
+		return r.setRunFailed(ctx, runName, types.RunReasonTimeout,
 			withPodTermination(fmt.Sprintf("pod not Ready after %s", RunPodReadyTimeout), pod))
 	}
 	if phase == "" {
@@ -141,8 +141,8 @@ func (r *RunReconciler) Reconcile(ctx context.Context, run *apiv1.Run) error {
 }
 
 // Delete is a no-op beyond logging: the executor pod and egress NetworkPolicy
-// are owner-refed to the Run CR and reaped by K8s GC. Unlike forks, runs render
-// nothing in the release namespace.
+// are owner-refed to the Run CR and reaped by K8s GC. Runs render nothing in
+// the release namespace.
 func (r *RunReconciler) Delete(_ context.Context, name string) {
 	slog.Info("run deleted", "run", name)
 }

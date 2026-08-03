@@ -1,9 +1,9 @@
 import {
-  FileText,
+  Document,
   Folder,
-  Image as ImageIcon,
-  MoreHorizontal,
-} from "lucide-react";
+  Image,
+  OverflowMenuHorizontal,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,16 +13,15 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { Caret } from "../../sessions/components/caret.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
 import {
   type FileRowMenuAction,
@@ -87,7 +86,7 @@ export function FileRow({
     <ContextMenu onOpenChange={setMenuOpen}>
       <ContextMenuTrigger asChild>
         <div
-          className={`group relative flex items-center h-[32px] text-[14px] cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-text-secondary font-medium" : `text-text-secondary hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
+          className={`group relative flex items-center h-8 text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
           onClick={
             isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)
@@ -98,12 +97,7 @@ export function FileRow({
             className="flex items-center gap-1.5 flex-1 min-w-0"
             style={{ opacity: isDot ? 0.6 : 1 }}
           >
-            <RowIcons
-              isDir={isDir}
-              isCollapsed={isCollapsed}
-              isDot={isDot}
-              name={name}
-            />
+            <RowIcons isDir={isDir} isCollapsed={isCollapsed} name={name} />
             <span className="truncate flex-1">{name}</span>
             <DropdownMenu onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
@@ -115,7 +109,7 @@ export function FileRow({
                   onClick={(e) => e.stopPropagation()}
                   title="More actions"
                 >
-                  <MoreHorizontal size={13} />
+                  <OverflowMenuHorizontal size={13} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -143,36 +137,31 @@ export function FileRow({
 function RowIcons({
   isDir,
   isCollapsed,
-  isDot,
   name,
 }: {
   isDir: boolean;
   isCollapsed: boolean;
-  isDot: boolean;
   name: string;
 }) {
   const looksLikeImage = !isDir && IMAGE_EXT.test(name);
   return (
     <>
       {isDir ? (
-        <span className="w-[16px] shrink-0 flex items-center justify-center">
-          <Caret
-            className={cn(
-              "transition-transform",
-              isCollapsed && "-rotate-90",
-              isDot ? "text-text-muted" : "text-muted-foreground",
-            )}
+        <span className="w-4 shrink-0 flex items-center justify-center">
+          <DisclosureChevron
+            open={!isCollapsed}
+            className="text-muted-foreground"
           />
         </span>
       ) : (
-        <span className="w-[16px] shrink-0" />
+        <span className="w-4 shrink-0" />
       )}
       {isDir ? (
         <Folder size={16} className="shrink-0" />
       ) : looksLikeImage ? (
-        <ImageIcon size={16} className="shrink-0" />
+        <Image size={16} className="shrink-0" />
       ) : (
-        <FileText size={16} className="shrink-0" />
+        <Document size={16} className="shrink-0" />
       )}
     </>
   );

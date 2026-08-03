@@ -1,4 +1,4 @@
-import { Pencil, Trash2, Upload } from "lucide-react";
+import { Edit, TrashCan, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { DialogBody, DialogFooter } from "@/components/modal";
@@ -93,7 +93,7 @@ export function UploadSkillsTab({
           )}
         >
           <Upload size={20} className="text-muted-foreground" />
-          <span className="text-[13px] text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Drop .md files here, or click to browse
           </span>
         </button>
@@ -109,10 +109,10 @@ export function UploadSkillsTab({
           }}
         />
 
-        {notice && <p className="text-[13px] text-destructive">{notice}</p>}
-        {topError && <p className="text-[13px] text-destructive">{topError}</p>}
+        {notice && <p className="text-sm text-destructive">{notice}</p>}
+        {topError && <p className="text-sm text-destructive">{topError}</p>}
         {hasDuplicate && (
-          <p className="text-[13px] text-destructive">
+          <p className="text-sm text-destructive">
             Two staged skills resolve to the same skill id — rename one before
             adding.
           </p>
@@ -199,38 +199,40 @@ function StagedSkillRow({
             <p className="truncate text-[15px] font-medium text-foreground">
               {skill.name || "Untitled skill"}
             </p>
-            <p className="truncate text-[13px] text-muted-foreground">
+            <p className="truncate text-sm text-muted-foreground">
               {skill.fileName}
             </p>
           </>
         )}
         {conflict && (
-          <p className="mt-1 text-[12px] text-destructive">
+          <p className="mt-1 text-xs text-destructive">
             A skill with this name already exists in this sandbox.
           </p>
         )}
         {!conflict && unsluggable && (
-          <p className="mt-1 text-[12px] text-destructive">
+          <p className="mt-1 text-xs text-destructive">
             Name needs at least one letter or number.
           </p>
         )}
       </div>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-xs"
         title="Rename skill"
         onClick={onStartRename}
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="shrink-0 text-muted-foreground"
       >
-        <Pencil size={16} />
-      </button>
-      <button
-        type="button"
+        <Edit size={16} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
         title="Remove skill"
         onClick={onRemove}
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="shrink-0 text-muted-foreground"
       >
-        <Trash2 size={16} />
-      </button>
+        <TrashCan size={16} />
+      </Button>
     </div>
   );
 }

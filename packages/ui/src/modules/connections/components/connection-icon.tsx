@@ -1,4 +1,4 @@
-import { Cable, KeyRound, Server } from "lucide-react";
+import { BareMetalServer, Link, Password } from "@carbon/icons-react";
 
 import { GithubIcon } from "@/components/brand-icons";
 
@@ -56,10 +56,12 @@ export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
     );
   }
   if (iconSlug === "mcp") {
-    return <Server size={size} aria-label={alt} className={className} />;
+    return (
+      <BareMetalServer size={size} aria-label={alt} className={className} />
+    );
   }
   if (iconSlug === "key") {
-    return <KeyRound size={size} aria-label={alt} className={className} />;
+    return <Password size={size} aria-label={alt} className={className} />;
   }
-  return <Cable size={size} aria-label={alt} className={className} />;
+  return <Link size={size} aria-label={alt} className={className} />;
 }

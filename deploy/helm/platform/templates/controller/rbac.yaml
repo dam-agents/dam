@@ -27,7 +27,7 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 rules:
-  # the reconciled resources are agent-platform.ai/v1 Agent + Fork
+  # the reconciled resources are agent-platform.ai/v1 Agent + Run
   # custom resources. The controller watches them and is the sole writer of
   # their status subresource. The api-server owns spec *intent*; the one
   # controller spec write — hence `patch` — is the fill-if-absent Size
@@ -36,27 +36,21 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents"]
     verbs: ["get", "list", "watch", "patch"]
-  # Forks additionally need update/patch (the controller stamps the
-  # parent-Agent owner reference onto the Fork CR) and delete (the over-age
-  # fork reaper), mirroring the runs grant below.
   - apiGroups: ["agent-platform.ai"]
-    resources: ["forks"]
-    verbs: ["get", "list", "watch", "update", "patch", "delete"]
-  - apiGroups: ["agent-platform.ai"]
-    resources: ["agents/status", "forks/status"]
+    resources: ["agents/status"]
     verbs: ["get", "update", "patch"]
   # The children the controller renders (Envoy bootstrap CM, StatefulSets,
-  # Services, …) are owner-refed to the Agent/Fork CR with blockOwnerDeletion.
+  # Services, …) are owner-refed to the Agent CR with blockOwnerDeletion.
   # K8s admission only permits that if the creator can update the owner's
-  # finalizers, so the controller needs the agents/forks finalizers subresource.
+  # finalizers, so the controller needs the agents finalizers subresource.
   # (Previously the children were owned by the agent ConfigMap, hence the old
   # configmaps/finalizers grant — now dead.)
   - apiGroups: ["agent-platform.ai"]
-    resources: ["agents/finalizers", "forks/finalizers"]
+    resources: ["agents/finalizers"]
     verbs: ["update"]
   # Runs back the in-pod `dam-run` CLI. The controller additionally updates Runs
   # (parent owner-ref) and deletes them (the over-age GC backstop for a Run the
-  # api-server never cleaned up), so this grant is wider than agents/forks.
+  # api-server never cleaned up), so this grant is wider than the agents one.
   - apiGroups: ["agent-platform.ai"]
     resources: ["runs"]
     verbs: ["get", "list", "watch", "update", "patch", "delete"]
@@ -73,7 +67,7 @@ rules:
     resources: ["userbudgets"]
     verbs: ["get"]
   # ConfigMaps for the chart-shipped templates and the controller-rendered Envoy
-  # bootstrap CM (owner-refed to the Agent/Fork).
+  # bootstrap CM (owner-refed to the Agent/Run).
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -100,6 +94,13 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if .Values.virtualization.enabled }}
+  # KubeVirt vm backend (backend.type=vm): the agent side reconciles to a
+  # VirtualMachine whose runStrategy the controller flips (wake/hibernate).
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -122,10 +123,9 @@ rules:
     resources: ["storageclasses"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    # Per-fork gateway Pod: the fork's paired gateway is a bare
-    # Pod, not a StatefulSet, so the controller needs full CRUD on pods
-    # in the agent namespace to bring it up and tear it down with the
-    # fork Job. Owner-refed to the fork ConfigMap.
+    # Run executor pods are bare Pods, not StatefulSets, so the controller
+    # needs full CRUD on pods in the agent namespace to bring them up and
+    # tear them down. Owner-refed to the Run CR.
     resources: ["pods"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
@@ -154,7 +154,7 @@ rules:
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get"]
-    resourceNames: ["agents.agent-platform.ai", "forks.agent-platform.ai", "runs.agent-platform.ai", "userbudgets.agent-platform.ai"]
+    resourceNames: ["agents.agent-platform.ai", "runs.agent-platform.ai", "userbudgets.agent-platform.ai"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

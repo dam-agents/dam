@@ -1,4 +1,10 @@
-import { FilePlus, FolderPlus, FolderUp, Plus, Upload } from "lucide-react";
+import {
+  Add,
+  DocumentAdd,
+  FolderAdd,
+  Folders,
+  Upload,
+} from "@carbon/icons-react";
 import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -38,11 +44,11 @@ export function FilesPanel({
         <Button
           variant="outline"
           size="xs"
-          className="text-[14px]"
+          className="text-sm"
           disabled={controller.isUploading}
           title={controller.isUploading ? "Upload in progress…" : "Add"}
         >
-          <Plus size={12} /> Add
+          <Add size={12} /> Add
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -50,13 +56,13 @@ export function FilesPanel({
           <Upload size={13} /> Upload file
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={controller.openFolderPicker}>
-          <FolderUp size={13} /> Upload folder
+          <Folders size={13} /> Upload folder
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
-          <FilePlus size={13} /> New file
+          <DocumentAdd size={13} /> New file
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
-          <FolderPlus size={13} /> New folder
+          <FolderAdd size={13} /> New folder
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -69,7 +75,7 @@ export function FilesPanel({
       onToggle={onToggle}
       headerRight={addMenu}
       className={className}
-      headerClassName="border-t border-border-light"
+      headerClassName="border-t border-border"
       style={style}
     >
       <input
@@ -112,7 +118,7 @@ export function FilesPanel({
               />
             )}
             {controller.rootIsLoadedEmpty && (
-              <p className="px-4 py-5 text-[12px] text-text-muted">
+              <p className="px-4 py-5 text-xs text-muted-foreground">
                 No files yet
               </p>
             )}
@@ -121,7 +127,7 @@ export function FilesPanel({
         )}
         {controller.showPanelOverlay && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
-            <div className="text-[12px] font-semibold text-accent">
+            <div className="text-xs font-semibold text-accent">
               Drop files to upload to /home/agent
             </div>
           </div>

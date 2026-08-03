@@ -1,0 +1,38 @@
+[Unit]
+Description=Platform agent-runtime (ACP server + harness supervisor)
+# Order after cloud-init's *init* stage, which is where both write_files and
+# mounts run (cloud_init_modules) — so /etc/platform/* and the virtiofs
+# workspace mounts are in place. NOT cloud-final: that is itself
+# After=multi-user.target, so combining it with WantedBy=multi-user.target below
+# formed an ordering cycle and systemd resolved it by deleting this unit's start
+# job — agent-runtime never started, on any boot. cloud-init.service is the
+# pre-24.3 name of cloud-init-network.service; naming both works on either.
+# Requires on the gate keeps this fail-closed — gate failure ⇒ no runtime.
+After=cloud-init.service cloud-init-network.service platform-ca.service platform-boot-gate.service
+Requires=platform-boot-gate.service
+
+[Service]
+User=agent
+WorkingDirectory=/app
+EnvironmentFile=/etc/platform/env
+Environment=PORT=8080
+Environment=MISE_DATA_DIR=/usr/local/share/mise
+Environment=PATH=/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/local/share/lazy-tools
+Environment=SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+Environment=REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# agent-entrypoint: CA trust is root-owned here (platform-ca.service) so its
+# own attempt just warns; the ~/.cache→/tmp symlink and mise-pin heal still
+# apply, then it execs the runtime.
+ExecStart=/usr/local/bin/agent-entrypoint node dist/server.js
+# stderr to kmsg, not the journal: a startup failure here happens before
+# anything can read the guest's journal (no SSH, ephemeral rootfs), and systemd
+# logs service output at info — below the journald→kmsg threshold. This puts the
+# reason on the serial console, the only channel out of the guest. stdout stays
+# on the journal; it carries every ACP message and would flood the console.
+StandardError=kmsg
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

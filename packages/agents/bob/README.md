@@ -8,7 +8,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 |---|---|---|
 | Harness | `bobshell` (installed from `bob.ibm.com/download/bobshell.sh`) | Bob CLI in `--experimental-acp` mode + native TUI |
 | ACP bridge | `bob-acp-shim.mjs` | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob emits it only for file edits in yolo — see autonomy posture below); stages chat attachments into the workspace so Bob can read them (it can't consume `resource_link` blocks in ACP mode); emulates `session/list` + `session/load` from Bob's on-disk chats so the sidebar and chat resume work (see below) |
-| Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; chat history under `~/.bob/tmp/<projectHash>/chats/`; survives pod restarts |
+| Storage | `/home/agent` PVC | Bob's session index lives under `~/.bob/`; chat history under `~/.bob/tmp/<projectHash>/chats/`; survives pod restarts |
 
 ## Authentication
 

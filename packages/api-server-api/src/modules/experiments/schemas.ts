@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { agentSizeSchema } from "../agents/schemas.js";
+import { egressPresetSchema } from "../egress-rules/schemas.js";
 
 // Experiments v2 (#2942): the wire contract between the in-pod experiment SDK,
 // the api-server, and the live view. Zod here is the source of truth; types.ts
@@ -173,3 +175,33 @@ export const finishRequestSchema = z.object({
 export const experimentIdInputSchema = z.object({
   id: z.string().min(1),
 });
+
+/** The authoring skill an experiment sandbox's Install Command copies in. Shared
+ *  because two sides depend on the same name: the server composes the copy, and
+ *  the UI probes `skills.state.standalone` for it to know the setup landed
+ *  before running the onboarding greeting. */
+export const EXPERIMENT_SKILL_NAME = "dam-experiment";
+
+/** Create an experiment sandbox: an Agent carrying the `experiment` Agent Kind,
+ *  set up by an Install Command that copies the authoring skill in from the
+ *  image. Mirrors the agent create input minus what this flow decides itself
+ *  (the Kind, and the harness image the UI pins). Creating one registers no
+ *  Experiment — a draft only ever comes from the script's Plan Registration. */
+export const experimentSandboxCreateInputSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .refine((n) => !n.startsWith("agent-"), {
+        message: "agent name cannot start with 'agent-' (reserved for IDs)",
+      }),
+    templateId: z.string().optional(),
+    image: z.string().optional(),
+    description: z.string().optional(),
+    connectionIds: z.array(z.string()).optional(),
+    egressPreset: egressPresetSchema.optional(),
+    size: agentSizeSchema.optional(),
+  })
+  .refine((d) => d.templateId !== undefined || d.image !== undefined, {
+    message: "Either templateId or image is required",
+  });

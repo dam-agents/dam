@@ -11,7 +11,7 @@ export function ProvidersView() {
       />
 
       <section className="mb-8">
-        <ProviderSection manage />
+        <ProviderSection />
       </section>
     </div>
   );

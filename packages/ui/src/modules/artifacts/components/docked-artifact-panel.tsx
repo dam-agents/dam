@@ -1,4 +1,4 @@
-import { Code, Download, Eye, Share2, X } from "lucide-react";
+import { Close, Code, Download, Share, View } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -65,9 +65,9 @@ export function DockedArtifactPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[48px] shrink-0 items-center gap-2 border-b border-border-light px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <span
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={artifact?.title}
         >
           {artifact?.title ?? "Artifact"}
@@ -86,7 +86,7 @@ export function DockedArtifactPanel() {
             title="Sharing settings"
             onClick={() => setShareOpen(true)}
           >
-            <Share2 size={14} />
+            <Share size={14} />
             Share
           </Button>
         )}
@@ -96,7 +96,7 @@ export function DockedArtifactPanel() {
             size="xs"
             onClick={() => setShowSource((s) => !s)}
           >
-            {showSource ? <Eye size={14} /> : <Code size={14} />}
+            {showSource ? <View size={14} /> : <Code size={14} />}
             {showSource ? "Preview" : "Source"}
           </Button>
         )}
@@ -116,13 +116,13 @@ export function DockedArtifactPanel() {
           title="Close"
           onClick={() => setOpenArtifactId(null)}
         >
-          <X size={16} />
+          <Close size={16} />
         </Button>
       </div>
 
       <div className="min-h-0 flex-1">
         {!artifact ? (
-          <p className="py-6 text-center text-[13px] text-muted-foreground">
+          <p className="py-6 text-center text-sm text-muted-foreground">
             Artifact not found — it may have been deleted.
           </p>
         ) : showFrame ? (
@@ -137,7 +137,7 @@ export function DockedArtifactPanel() {
               postData={feedPostForShown}
             />
           ) : (
-            <p className="py-6 text-center text-[13px] text-muted-foreground">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               {preview.isLoading ? "Loading preview…" : "No preview available."}
             </p>
           )

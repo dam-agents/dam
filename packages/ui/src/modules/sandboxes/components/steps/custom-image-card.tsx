@@ -3,17 +3,31 @@ import { Input } from "@/components/ui/input";
 import { CUSTOM_IMAGE_DOCS_URL } from "@/constants";
 import { cn } from "@/lib/utils";
 
+import type { RegistryCredential } from "../registry-credential-section.js";
+import { RegistryCredentialSection } from "../registry-credential-section.js";
+
+export interface RegistryControls {
+  value: RegistryCredential;
+  onChange: (value: RegistryCredential) => void;
+  partial: boolean;
+}
+
+interface Props {
+  value: string;
+  selected: boolean;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  /** Pull-credential controls; present whenever Custom is the starting point. */
+  registry?: RegistryControls;
+}
+
 export function CustomImageCard({
   value,
   selected,
   onChange,
   onSubmit,
-}: {
-  value: string;
-  selected: boolean;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-}) {
+  registry,
+}: Props) {
   return (
     <div
       className={cn(
@@ -22,21 +36,16 @@ export function CustomImageCard({
       )}
     >
       <div className="flex items-center gap-2">
-        <p className="text-[16px] font-semibold text-foreground">Custom</p>
-        <Badge
-          variant="outline"
-          className="border-transparent bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-        >
-          Advanced
-        </Badge>
+        <p className="text-base font-semibold text-foreground">Custom</p>
+        <Badge variant="accent">Advanced</Badge>
       </div>
-      <p className="mt-1 text-[14px] text-muted-foreground">
+      <p className="mt-1 text-sm text-muted-foreground">
         Bring your own ACP-compatible image{" "}
         <a
           href={CUSTOM_IMAGE_DOCS_URL}
           target="_blank"
           rel="noreferrer"
-          className="text-[14px] text-muted-foreground underline underline-offset-2 hover:text-primary"
+          className="text-sm text-muted-foreground underline underline-offset-2 hover:text-primary"
         >
           Learn more
         </a>
@@ -52,6 +61,15 @@ export function CustomImageCard({
           variant="monospace"
         />
       </div>
+      {registry && (
+        <div className="mt-4 border-t border-border pt-3">
+          <RegistryCredentialSection
+            value={registry.value}
+            onChange={registry.onChange}
+            partial={registry.partial}
+          />
+        </div>
+      )}
     </div>
   );
 }

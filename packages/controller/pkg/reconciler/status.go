@@ -74,8 +74,8 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 // writeConditionlessStatus overwrites a CR's status subresource as a
 // whole-status replace (no condition merging) with a no-op guard that keeps an
 // unchanged observation from re-triggering reconcile (the controller watches
-// these CRs). Used for Forks and Runs, which carry no conditions; `kind` names
-// the resource in errors.
+// these CRs). Used for Runs, which carry no conditions; `kind` names the
+// resource in errors.
 func writeConditionlessStatus[T any](ctx context.Context, dyn dynamic.Interface, gvr schema.GroupVersionResource, kind, namespace, name string, desired T) error {
 	cli := dyn.Resource(gvr).Namespace(namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -102,10 +102,6 @@ func writeConditionlessStatus[T any](ctx context.Context, dyn dynamic.Interface,
 		_, err = cli.UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 		return err
 	})
-}
-
-func writeForkStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.ForkStatus) error {
-	return writeConditionlessStatus(ctx, dyn, ForksGVR, "fork", namespace, name, desired)
 }
 
 func writeRunStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.RunStatus) error {

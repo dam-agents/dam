@@ -1,14 +1,9 @@
-import {
-  AlertCircle,
-  ArrowLeft,
-  Loader2,
-  Moon,
-  Play,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowLeft, Asleep, Play, Renew, Warning } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
@@ -20,48 +15,35 @@ import type {
 } from "../utils/agent-resolver.js";
 
 interface OverlayCopy {
-  Icon: typeof Loader2;
+  /** Omitted for transient states, where a `Spinner` stands in for the icon. */
+  Icon?: typeof Asleep;
   description: string;
-  spinning: boolean;
 }
 
 /** Copy + iconography per non-running state. `running` is present only to
  *  satisfy the exhaustive record; the overlay is never rendered for it. The
  *  `error` description is replaced at render time with the agent's own message. */
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
-  running: { Icon: Loader2, description: "", spinning: false },
-  starting: {
-    Icon: Loader2,
-    description: "The agent pod is starting up.",
-    spinning: true,
-  },
+  running: { description: "" },
+  starting: { description: "The agent pod is starting up." },
   preparing_workspace: {
-    Icon: Loader2,
     description: "Cloning the workspace seed. This finishes shortly.",
-    spinning: true,
   },
-  hibernating: {
-    Icon: Loader2,
-    description: "The agent is going to sleep.",
-    spinning: true,
-  },
+  hibernating: { description: "The agent is going to sleep." },
   hibernated: {
-    Icon: Moon,
+    Icon: Asleep,
     description:
       "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
-    spinning: false,
   },
   error: {
-    Icon: AlertCircle,
+    Icon: Warning,
     description: "The agent hit an error and isn't running.",
-    spinning: false,
   },
   over_budget: {
-    Icon: AlertCircle,
+    Icon: Warning,
     description:
       "Starting this sandbox would exceed your compute budget. Pause or stop " +
       "a running sandbox to free room, then start this one again.",
-    spinning: false,
   },
 };
 
@@ -75,14 +57,16 @@ function OverlayFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 z-overlay flex flex-col bg-bg/95 backdrop-blur-sm">
-      <button
+    <div className="absolute inset-0 z-overlay flex flex-col bg-background/95 backdrop-blur-sm">
+      <Button
+        variant="ghost"
+        size="inline"
         onClick={onBack}
-        className="absolute left-4 top-3 flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
+        className="absolute left-4 top-3 gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
       >
         <ArrowLeft size={14} />
         Sandboxes
-      </button>
+      </Button>
       <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         {children}
       </div>
@@ -114,9 +98,9 @@ export function AgentUnavailableOverlay({
   if (!agent || !display) {
     return (
       <OverlayFrame onBack={onBack}>
-        <Loader2 size={40} className="text-text-muted animate-spin" />
-        <h2 className="text-[18px] font-bold text-text">{name}</h2>
-        <p className="max-w-105 text-[14px] text-text-secondary">
+        <Spinner size={40} />
+        <h2 className="text-lg font-bold text-foreground">{name}</h2>
+        <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
       </OverlayFrame>
@@ -128,15 +112,12 @@ export function AgentUnavailableOverlay({
   if (display.state === "running") {
     return (
       <OverlayFrame onBack={onBack}>
-        <Loader2 size={40} className="text-text-muted animate-spin" />
+        <Spinner size={40} />
         <div className="flex flex-col items-center gap-2">
-          <h2 className="text-[18px] font-bold text-text">{agent.name}</h2>
-          <StatusBadge
-            label="Reconnecting"
-            colorClasses="bg-warning-light text-warning border-warning"
-          />
+          <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+          <Badge variant="warning">Reconnecting</Badge>
         </div>
-        <p className="max-w-105 text-[14px] text-text-secondary">
+        <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
       </OverlayFrame>
@@ -144,7 +125,7 @@ export function AgentUnavailableOverlay({
   }
 
   const { state, powerAction } = display;
-  const { Icon, spinning } = OVERLAY_COPY[state];
+  const { Icon } = OVERLAY_COPY[state];
   const description =
     state === "error" && agent.error
       ? agent.error
@@ -152,18 +133,19 @@ export function AgentUnavailableOverlay({
 
   return (
     <OverlayFrame onBack={onBack}>
-      <Icon
-        size={40}
-        className={`text-text-muted ${spinning ? "animate-spin" : ""}`}
-      />
+      {Icon ? (
+        <Icon size={40} className="text-muted-foreground" />
+      ) : (
+        <Spinner size={40} />
+      )}
       <div className="flex flex-col items-center gap-2">
-        <h2 className="text-[18px] font-bold text-text">{agent.name}</h2>
+        <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
         <StatusBadge state={state} />
       </div>
-      <p className="max-w-105 text-[14px] text-text-secondary">{description}</p>
+      <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {agent.podTerminationReason && (
-        <p className="flex items-center gap-1.5 max-w-105 font-mono text-[13px] text-danger">
-          <AlertCircle size={14} className="shrink-0" />
+        <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
+          <Warning size={14} className="shrink-0" />
           {agent.podTerminationReason}
         </p>
       )}
@@ -174,7 +156,7 @@ export function AgentUnavailableOverlay({
       )}
       {powerAction === "restart" && (
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
-          <RefreshCw size={14} /> Restart agent
+          <Renew size={14} /> Restart agent
         </Button>
       )}
     </OverlayFrame>

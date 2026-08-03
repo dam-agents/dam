@@ -1,3 +1,5 @@
+import { Card } from "@/components/ui/card";
+
 /** Placeholder rows shown while a source's skills load, shaped like the real
  *  skill rows so the card doesn't reflow (and never flashes "No skills"). The
  *  bars sit inside `<p>` lines with the same font-sizes as `SkillRow`, so each
@@ -14,7 +16,7 @@ export function SkillRowsSkeleton({ rows = 3 }: { rows?: number }) {
             <p className="text-[15px] font-medium">
               <span className="inline-block h-[0.7em] w-32 rounded bg-muted align-middle" />
             </p>
-            <p className="text-[13px]">
+            <p className="text-sm">
               <span className="inline-block h-[0.7em] w-48 rounded bg-muted/60 align-middle" />
             </p>
           </div>
@@ -31,17 +33,17 @@ export function SkillSourcesSkeleton({ cards = 2 }: { cards?: number }) {
   return (
     <div className="flex flex-col gap-3">
       {Array.from({ length: cards }).map((_, i) => (
-        <div key={i} className="rounded-lg border border-border bg-card">
+        <Card key={i}>
           <div className="animate-pulse px-4 py-3">
             <p className="text-[15px] font-semibold">
               <span className="inline-block h-[0.7em] w-40 rounded bg-muted align-middle" />
             </p>
-            <p className="text-[13px]">
+            <p className="text-sm">
               <span className="inline-block h-[0.7em] w-56 rounded bg-muted/60 align-middle" />
             </p>
           </div>
           <SkillRowsSkeleton rows={2} />
-        </div>
+        </Card>
       ))}
     </div>
   );

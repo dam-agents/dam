@@ -16,6 +16,8 @@ configureLogger({ level: "error", write: () => {} });
 function harness(opts: {
   /** null = agent has no Slack binding. */
   boundChannelId: string | null;
+  /** Further conversations bound to the same agent (#3086). */
+  extraBoundChannelIds?: string[];
   /** Workspace channel directory; unlisted ids resolve as not found. */
   channels?: FakeSlackChannel[];
   /** Make the gateway fail to start, so ensureGateway yields null. */
@@ -33,7 +35,6 @@ function harness(opts: {
   } as unknown as AcpClient;
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -46,14 +47,16 @@ function harness(opts: {
     async () => OWNER,
     {
       resolveSlackBinding: async () => null,
-      resolveSlackChannelByInstance: async () => opts.boundChannelId,
+      resolveSlackChannelsByInstance: async () =>
+        opts.boundChannelId
+          ? [opts.boundChannelId, ...(opts.extraBoundChannelIds ?? [])]
+          : [],
     },
     async () => {},
     async () => {},
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     () => {},
   );
 
@@ -222,5 +225,66 @@ describe("slack outbound — cross-workspace reach", () => {
       throw new Error("missing_scope");
     };
     expect(await h.list()).toEqual([{ id: BOUND, title: BOUND }]);
+  });
+});
+
+describe("slack outbound — an agent bound to several conversations (#3086)", () => {
+  const SECOND = "C-SECOND";
+  const multi = () =>
+    harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: [SECOND],
+      channels: [
+        ...workspace,
+        { id: SECOND, name: "second-home", botIsMember: true },
+      ],
+    });
+
+  it("refuses an omitted chatId and names the candidates — there is no single default", async () => {
+    const h = multi();
+    expect(await h.post("hello")).toMatchObject({
+      error: expect.stringContaining("pass chatId"),
+    });
+    expect(await h.post("hello")).toMatchObject({
+      error: expect.stringContaining(SECOND),
+    });
+    expect(h.messages()).toHaveLength(0);
+  });
+
+  it("either bound conversation is a valid chatId", async () => {
+    const h = multi();
+    expect(await h.post("one", { conversationId: BOUND })).toEqual({
+      ok: true,
+    });
+    expect(await h.post("two", { conversationId: SECOND })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([
+      { channel: BOUND, text: "one" },
+      { channel: SECOND, text: "two" },
+    ]);
+  });
+
+  it("every bound conversation short-circuits discovery, not just the first", async () => {
+    // Empty directory = conversations.info would fail (e.g. missing scopes).
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: [SECOND],
+      channels: [],
+    });
+    expect(await h.post("hi", { conversationId: SECOND })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: SECOND }]);
+  });
+
+  it("listConversations leads with every bound conversation, then the rest", async () => {
+    const h = multi();
+    expect(await h.list()).toEqual([
+      { id: BOUND, title: "#agent-home" },
+      { id: SECOND, title: "#second-home" },
+      { id: "C-ALERTS", title: "#alerts" },
+      { id: "C-GENERAL", title: "#general" },
+    ]);
   });
 });

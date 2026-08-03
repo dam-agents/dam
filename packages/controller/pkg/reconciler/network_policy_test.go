@@ -43,21 +43,6 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	assert.Equal(t, corev1.ProtocolTCP, *gwRule.Ports[0].Protocol)
 }
 
-// Fork pair: same shape, keyed on the fork name (fork isolation).
-func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, configMapOwnerRef(testForkOwnerCM))
-
-	assert.Equal(t, "fork-abc-agent-egress", np.Name)
-	assert.Equal(t, "fork-abc", np.Spec.PodSelector.MatchLabels[LabelPair])
-	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
-
-	// Gateway peer must scope to the fork's own gateway.
-	gwRule := np.Spec.Egress[0]
-	require.NotNil(t, gwRule.To[0].PodSelector)
-	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],
-		"fork agent NP must scope to the fork's own gateway")
-}
-
 // DNS deny is structural — proxy is IP-direct.
 func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, configMapOwnerRef(testOwnerCM))

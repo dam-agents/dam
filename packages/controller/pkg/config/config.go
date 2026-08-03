@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -29,7 +30,7 @@ type Config struct {
 	PodName                string // This pod's name (from downward API)
 
 	// AgentBase carries chart-only platform policy applied verbatim to every
-	// controller-rendered agent / fork agent pod. Threaded in via the
+	// controller-rendered agent / executor pod. Threaded in via the
 	// AGENT_BASE env var from Helm `controller.agent.base`. Not overridable
 	// by agent ConfigMaps.
 	AgentBase AgentBase
@@ -43,6 +44,21 @@ type Config struct {
 	// Threaded in via the WARM_POOL env var from `controller.warmPool`.
 	// Disabled by default.
 	WarmPool WarmPool
+
+	// StorageMigration configures the one-time RWX -> RWO workspace
+	// migration (#2988). Threaded in via the STORAGE_MIGRATION env var from
+	// `controller.storageMigration`.
+	StorageMigration StorageMigration
+
+	// VM configures the KubeVirt vm backend (spec.backend.type=vm). Threaded
+	// in via the AGENT_VM env var from Helm `virtualization.*`. Disabled by
+	// default — vm-backend agents then fail reconcile with a clear error.
+	VM VMConfig
+	// KubeAPIAddr is the in-cluster kube-apiserver authority (host:port) from
+	// the kubelet-injected KUBERNETES_SERVICE_* env — the vm backend's guest
+	// boot gate probes it as its denied target (must be unreachable before the
+	// workload starts, mirroring the pod np-gate). Empty skips that check.
+	KubeAPIAddr string
 
 	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
 	// per-user Ceiling on concurrently reserved compute (#1900), applied when
@@ -75,7 +91,6 @@ type Config struct {
 	LegacyAgentMemoryLimit resource.Quantity
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
-	VMEnabled                bool          // dam-vm has a VM host configured (api-server's apiServer.vmHost.url); injected as DAM_VM_ENABLED so the entrypoint keeps the dam-vm tool doc
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
 	EnvoyImage               string        // Image for the Envoy credential-injector sidecar
@@ -131,7 +146,9 @@ type Config struct {
 	// telemetry backend is disabled; the chart sets it from
 	// `clickstack.enabled`. When set, each gateway gains a collector egress
 	// chain that stamps the trusted `x-platform-agent-id` header so the
-	// collector can attribute telemetry to the producing instance.
+	// collector can attribute telemetry to the producing instance — or, when
+	// the api-server set a per-agent attribution override, to the agent that
+	// drove it (an Invocation target credits its root Driver, #3041).
 	TelemetryCollectorHost string
 	// TelemetryCollectorPort is the collector's OTLP/HTTP port (default 4318).
 	TelemetryCollectorPort int
@@ -339,6 +356,31 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
 		}
 	}
+	if cfg.AgentBase.AccessMode != "" {
+		slog.Warn("controller.agent.base.accessMode is deprecated and ignored — workspace volumes are always ReadWriteOnce (#2988); remove it from your values")
+	}
+	if v := os.Getenv("STORAGE_MIGRATION"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.StorageMigration); err != nil {
+			return nil, fmt.Errorf("STORAGE_MIGRATION: invalid JSON: %w", err)
+		}
+	}
+	if v := os.Getenv("AGENT_VM"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.VM); err != nil {
+			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
+		}
+	}
+	if cfg.VM.ScratchSize == "" {
+		cfg.VM.ScratchSize = "30Gi"
+	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
+		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
+	}
+	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
+		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
+	}
 	// Relayed from the controller's own process: whatever OTEL_* the chart (or
 	// an injector) set — the same env the controller's own SDK reads.
 	cfg.OTelEnv = collectOTelEnv()
@@ -348,7 +390,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.VMEnabled = envOrDefaultBool("AGENT_VM_ENABLED", false)
 	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome for environments
 	// that ship only the env var (e.g. tests). The chart's deployment.yaml
 	// always sets both from the same `templateDefaults.agentHome` value;
@@ -429,9 +470,6 @@ func (c *Config) validate() error {
 	if c.AgentBase.TerminationGracePeriod <= 0 {
 		return fmt.Errorf("controller.agent.base.terminationGracePeriod must be > 0 (got %d)", c.AgentBase.TerminationGracePeriod)
 	}
-	if c.AgentBase.AccessMode == "" {
-		return fmt.Errorf("controller.agent.base.accessMode is required")
-	}
 	if c.AgentTemplateDefaults.StorageSize == "" {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
 	}
@@ -452,6 +490,9 @@ func (c *Config) validate() error {
 	}
 	if err := c.WarmPool.validate(); err != nil {
 		return err
+	}
+	if c.StorageMigration.Enabled && c.StorageMigration.JobImage == "" {
+		return fmt.Errorf("controller.storageMigration.jobImage is required when the storage migration is enabled")
 	}
 	return nil
 }

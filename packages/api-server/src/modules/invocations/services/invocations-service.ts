@@ -7,7 +7,9 @@ import {
   MAX_INVOCATION_TTL_MS,
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
+import type { DriverResolution } from "./driver-resolution.js";
 import type {
   InvocationsRepository,
   InvocationStatus,
@@ -49,6 +51,20 @@ export class ExperimentNotRunningError extends Error {
       `experiment ${experimentId} is not running; spawns attached to it are rejected`,
     );
     this.name = "ExperimentNotRunningError";
+  }
+}
+
+/** Thrown by `spawn` when the driver chain cannot be resolved to a root Driver
+ *  (`resolveRoot` returns null past the depth ceiling — a corruption guard).
+ *  Stamping the target's own id would manufacture exactly the orphan spend row
+ *  this feature eliminates (#3041), so spawn refuses at the door. The endpoint
+ *  maps this to 409. */
+export class UnresolvableDriverError extends Error {
+  constructor(driverAgentId: string) {
+    super(
+      `driver chain could not be resolved; refusing to spawn an unattributable target (driver ${driverAgentId})`,
+    );
+    this.name = "UnresolvableDriverError";
   }
 }
 
@@ -105,6 +121,11 @@ export function createInvocationsService(deps: {
   owner: string;
   repo: InvocationsRepository;
   agents: AgentsService;
+  /** Resolves a spawning target's driver chain up to the root Driver, whose
+   *  id is stamped into the target so its gateway attributes spend upward
+   *  (#3041). Safe at spawn: every ancestor is still `running`, so the chain
+   *  is fully present. */
+  driverResolution: DriverResolution;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   /** Gate for experiment-attached spawns: a stopped experiment's loop must
@@ -169,6 +190,36 @@ export function createInvocationsService(deps: {
         }
       }
 
+      // Resolve the root Driver BEFORE the row (fail at the door — no row to
+      // clean up). The target has no spend identity of its own; its telemetry
+      // is the Driver's, so the target's gateway must attribute upward from the
+      // first exported record. A chain that can't resolve fails closed: stamping
+      // self would manufacture the orphan row this feature eliminates (#3041).
+      const rootId = await deps.driverResolution.resolveRoot(
+        input.driverAgentId,
+      );
+      if (rootId === null) {
+        throw new UnresolvableDriverError(input.driverAgentId);
+      }
+
+      // Row BEFORE agent, under a pre-minted id: from the first instant the
+      // target can appear in any agents list, the invocations table already
+      // attributes it to its driver — no window where it reads as a plain
+      // sandbox. The orphan sweeper's created-at grace covers the moments the
+      // row exists without its agent; a failed create deletes the row.
+      const targetId = generateK8sName("agent");
+      const expiresAt = new Date(
+        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
+      );
+      await deps.repo.insert({
+        id: targetId,
+        driverAgentId: input.driverAgentId,
+        owner: deps.owner,
+        resultSchema: input.schema,
+        expiresAt,
+        experimentSpanId: input.experimentSpanId ?? null,
+      });
+
       // The target is a fresh ephemeral Agent, marked Sweepable so the Agent
       // Sweep reaps it once it hibernates — the backstop for the eager reap on
       // this Invocation reaching terminal. No Lifetime grace: an Invocation
@@ -176,29 +227,25 @@ export function createInvocationsService(deps: {
       // target has no egress identity of its own — the ext_authz gate resolves
       // every request to the driver's rules, so seeded target rules would be
       // dead rows.
-      const agent = await deps.agents.create({
-        name: `invocation-${randomBytes(6).toString("hex")}`,
-        sweepable: true,
-        egressPreset: "none",
-        ...(input.templateId ? { templateId: input.templateId } : {}),
-        ...(input.image ? { image: input.image } : {}),
-        ...(input.connections.length
-          ? { connectionIds: input.connections }
-          : {}),
-        ...(input.size ? { size: input.size } : {}),
-      });
-
-      const expiresAt = new Date(
-        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
-      );
-      await deps.repo.insert({
-        id: agent.id,
-        driverAgentId: input.driverAgentId,
-        owner: deps.owner,
-        resultSchema: input.schema,
-        expiresAt,
-        experimentSpanId: input.experimentSpanId ?? null,
-      });
+      let agent;
+      try {
+        agent = await deps.agents.create({
+          id: targetId,
+          name: `invocation-${randomBytes(6).toString("hex")}`,
+          sweepable: true,
+          egressPreset: "none",
+          telemetryAttributionId: rootId,
+          ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(input.image ? { image: input.image } : {}),
+          ...(input.connections.length
+            ? { connectionIds: input.connections }
+            : {}),
+          ...(input.size ? { size: input.size } : {}),
+        });
+      } catch (err) {
+        await deps.repo.delete(targetId).catch(() => {});
+        throw err;
+      }
 
       // Deliver the one-shot prompt (carrying the report_result contract +
       // schema) via the trigger rail, then wake the fresh agent so it drains it.

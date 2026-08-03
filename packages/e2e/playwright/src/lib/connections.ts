@@ -19,7 +19,8 @@ export async function createCustomHeaderConnection(
     .getByTestId("app-sidebar")
     .getByRole("button", { name: "Settings" })
     .click();
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  // The settings nav is a tablist, not a row of buttons.
+  await page.getByRole("tab", { name: "Connections", exact: true }).click();
   await page.getByTestId("open-connection-catalog").click();
   await page.getByTestId("catalog-tab-custom-headers").click();
   await page.getByTestId("catalog-new-custom-header").click();

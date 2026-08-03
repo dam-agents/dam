@@ -103,7 +103,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -112,7 +112,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("envoyBootstrap")
 	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, true); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -237,7 +237,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			// Scale down NOW, before the template applies below: with
 			// replicas still 1 the StatefulSet would briefly roll a pod at
 			// the denied size.
-			if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+			if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
@@ -287,32 +287,45 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	// #692: back matching persisted mounts with a pre-provisioned warm-pool PVC
-	// so a new agent skips the dynamic-provisioning wait. A lookup error requeues.
-	claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
-	if err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
+	if agentSpec.IsVM() {
+		// VM backend: the agent side reconciles to a KubeVirt VirtualMachine
+		// (the gateway pair above is backend-agnostic). Warm pool and
+		// roll-rev are container-backend concepts and don't apply.
+		if !r.config.VM.Enabled {
+			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
+		}
+		if err := r.reconcileAgentVM(ctx, agent, ownerRef, gatewayIP, running); err != nil {
+			return fmt.Errorf("agent %s: vm: %w", name, err)
+		}
+		timer.mark("agentVirtualMachine")
+	} else {
+		// #692: back matching persisted mounts with a pre-provisioned warm-pool PVC
+		// so a new agent skips the dynamic-provisioning wait. A lookup error requeues.
+		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
+		if err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
+		}
+		timer.mark("workspaceClaims")
+		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
+		applyPoolClaims(agentSS, claims)
+		stampRollRev(agentSS, rollRev)
+		if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+		}
 	}
-	timer.mark("workspaceClaims")
-	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
-	applyPoolClaims(agentSS, claims)
-	stampRollRev(agentSS, rollRev)
-	agentSvc := BuildAgentService(name, r.config, ownerRef)
-	if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
-	}
-	if err := r.applyService(ctx, agentSvc); err != nil {
+	if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 	}
 	timer.mark("agentStatefulSet")
 
-	// Hard stop (#1900): the one exception to "scale-down is the idle
-	// checker's job" — user intent scales the pair to zero now, bypassing
-	// the busy probe (a hard stop may interrupt work by design). Idempotent
-	// on resync; any later explicit wake or schedule fire clears the
-	// annotation and the pair goes back through the budget gate above.
-	if agent.Annotations[annStopRequested] != "" {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name); err != nil {
+	// Hard stop (#1900) and storage migration (#2988): the exceptions to
+	// "scale-down is the idle checker's job" — user intent (or the
+	// migration's need for a quiesced volume) scales the pair to zero now,
+	// bypassing the busy probe (both may interrupt work by design).
+	// Idempotent on resync; a stop clears on explicit wake or schedule
+	// fire, a migration gate clears when the manager flips the volume.
+	if agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != "" {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -336,7 +349,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		// the agent's), and applyStatefulSet(…, false) preserves replicas. Scale
 		// the pair to zero explicitly so a parked agent never strands an orphan
 		// gateway pod until the idle sweep.
-		if err := scaleAgentPairToZero(ctx, r.client, r.config.Namespace, name); err != nil {
+		if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
@@ -367,13 +380,20 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	// edit, credential set) — every change to the rendered template bumps the
 	// StatefulSet revision, so a still-Ready pod on a superseded revision reads
 	// as not-ready until the new revision is up.
-	agentReady := r.podCurrentAndReady(ctx, name)
+	agentReady := false
+	if agent.Spec.IsVM() {
+		agentReady = r.vmCurrentAndReady(ctx, name)
+	} else {
+		agentReady = r.podCurrentAndReady(ctx, name)
+	}
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
 	ready := agentReady && gatewayReady
 
-	// Name the abnormal-termination cause on AgentPodReady so callers can surface it.
+	// Name the abnormal-termination cause on AgentPodReady so callers can
+	// surface it. (Container backend only — a VM has no container statuses;
+	// its failures surface as PodNotReady until VM-shaped causes are mapped.)
 	agentFailReason, agentFailMsg := "PodNotReady", ""
-	if !agentReady {
+	if !agentReady && !agent.Spec.IsVM() {
 		if reason, msg, ok := terminationReason(r.getPod(ctx, name)); ok {
 			agentFailReason, agentFailMsg = reason, msg
 		}
@@ -479,8 +499,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
 	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
-	// We clean them up explicitly here. (In-flight forks are owner-refed to
-	// the Agent CR, so K8s GC reaps them — see ensureForkOwnerReference.)
+	// We clean them up explicitly here. (In-flight Runs are owner-refed to
+	// the Agent CR, so K8s GC reaps them.)
 	r.deletePVCs(ctx, name)
 
 	r.clearDeniedWake(name)

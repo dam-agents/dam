@@ -26,8 +26,10 @@ export type {
   LocalSkill,
   LocalSkillFile,
   ScannedSkill,
+  SkillDeleteLocalInput,
   SkillInstallInput,
   SkillInstallResult,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishResult,
   SkillReadLocalInput,
@@ -39,6 +41,7 @@ export type {
   SkillWriteLocalInput,
 } from "./modules/skills/types.js";
 export {
+  skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
@@ -48,6 +51,7 @@ export {
 } from "./modules/skills/schemas.js";
 export {
   SKILL_SOURCE_ROOTS,
+  STAGED_SKILLS_DIR,
   dedupeByName,
 } from "./modules/skills/source-roots.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
@@ -57,6 +61,15 @@ export type {
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
 export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
+export {
+  backgroundWorkItemSchema,
+  backgroundWorkReportSchema,
+} from "./modules/background-work/schemas.js";
+export type {
+  BackgroundWorkItem,
+  BackgroundWorkReport,
+  BackgroundWorkReporterContract,
+} from "./modules/background-work/types.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
 export {

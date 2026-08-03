@@ -106,7 +106,7 @@ export function SearchableSelect({
         aria-controls={listId}
         aria-invalid={invalid || undefined}
         className={cn(
-          "flex h-[40px] w-full items-center justify-between rounded-md border bg-background px-3 text-left text-[14px]",
+          "flex h-10 w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm",
           invalid ? "border-destructive" : "border-input",
           className,
         )}
@@ -132,7 +132,7 @@ export function SearchableSelect({
               aria-activedescendant={
                 filtered[highlight] ? optionId(highlight) : undefined
               }
-              className="h-[32px] w-full rounded border border-input bg-background px-2 text-[14px] outline-hidden"
+              className="h-8 w-full rounded border border-input bg-background px-2 text-sm outline-hidden"
             />
           </div>
           <ul
@@ -142,7 +142,7 @@ export function SearchableSelect({
             className="max-h-[240px] overflow-y-auto p-1 pt-0"
           >
             {filtered.length === 0 && (
-              <li className="px-3 py-2 text-[13px] text-muted-foreground">
+              <li className="px-3 py-2 text-sm text-muted-foreground">
                 No matches
               </li>
             )}
@@ -155,7 +155,7 @@ export function SearchableSelect({
                   onClick={() => commit(o)}
                   onMouseEnter={() => setHighlight(i)}
                   className={cn(
-                    "flex h-9 w-full items-center rounded-md px-3 text-left text-[14px]",
+                    "flex h-9 w-full items-center rounded-md px-3 text-left text-sm",
                     i === highlight
                       ? "bg-muted text-foreground"
                       : "text-foreground",

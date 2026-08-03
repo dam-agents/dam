@@ -1,15 +1,17 @@
+import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
-import { FolderPlus, Search, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { api } from "../../../api.js";
+import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useStore } from "../../../store.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
@@ -24,8 +26,12 @@ const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
 
 export function ArtifactsView() {
-  const { data: artifacts = EMPTY_ARTIFACTS, isLoading } = useArtifacts();
-  const { data: folders = EMPTY_FOLDERS } = useArtifactFolders();
+  const { data: artifacts = EMPTY_ARTIFACTS, isLoading: artifactsLoading } =
+    useArtifacts();
+  const { data: folders = EMPTY_FOLDERS, isLoading: foldersLoading } =
+    useArtifactFolders();
+
+  const setView = useStore((s) => s.setView);
 
   const [search, setSearch] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -88,84 +94,98 @@ export function ArtifactsView() {
   );
 
   const ungrouped = byFolder.get(null) ?? [];
-  const isEmpty = !isLoading && artifacts.length === 0 && folders.length === 0;
+  const loading = artifactsLoading || foldersLoading;
+  const hasContent = artifacts.length > 0 || folders.length > 0;
+  // Folders load on their own query — a folders-only library must not flash the
+  // empty state (which also strips the search box) before its groups land.
+  const isEmpty = !loading && !hasContent;
 
   return (
     <div className="anim-in">
       <PageHeader
         title="Artifacts"
-        description="Pages and files created by you and your agents. Share with a link, set an expiry."
+        description={
+          hasContent
+            ? "Pages and files created by you and your agents. Share with a link, set an expiry."
+            : undefined
+        }
         actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFolderDialog({ folder: null })}
-            >
-              <FolderPlus size={16} />
-              New folder
-            </Button>
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
-              <Upload size={16} />
-              Upload artifact
-            </Button>
-          </>
+          hasContent ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setFolderDialog({ folder: null })}
+              >
+                New folder
+              </Button>
+              <Button onClick={() => setUploadOpen(true)}>
+                Upload artifact
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
-      <div className="relative mt-7">
-        <Search
-          size={16}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          className="pl-9"
-          placeholder="Search artifacts…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      {hasContent && (
+        <div className="relative mt-7">
+          <Search
+            size={16}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            className="pl-9"
+            placeholder="Search artifacts…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
 
-      <div className="mt-5 flex flex-col gap-3">
-        {isEmpty ? (
-          <EmptyState onUpload={() => setUploadOpen(true)} />
-        ) : (
-          <>
-            {userFolders.map((folder) => (
-              <FolderGroup
-                key={folder.id}
-                folder={folder}
-                artifacts={byFolder.get(folder.id) ?? []}
-                onEditFolder={(f) => setFolderDialog({ folder: f })}
-                onDeleteFolder={setDeleteFolderTarget}
-                onCopyFolderLink={copyFolderLink}
-                {...rowActions}
-              />
-            ))}
-            {ungrouped.length > 0 && (
-              <FolderGroup
-                folder={null}
-                artifacts={ungrouped}
-                {...rowActions}
-              />
-            )}
-            {experimentFolders.length > 0 && (
-              <ExperimentsSection
-                folders={experimentFolders}
-                byFolder={byFolder}
-                searching={search.trim().length > 0}
-                onEditFolder={(f) => setFolderDialog({ folder: f })}
-                onDeleteFolder={setDeleteFolderTarget}
-                onCopyFolderLink={copyFolderLink}
-                {...rowActions}
-              />
-            )}
-          </>
-        )}
-      </div>
+      {/* Artifacts can be warm from another view while folders is still cold —
+          skeleton only when there is nothing to show, never above content. */}
+      {loading && !hasContent && <ListSkeleton rows={2} rowHeight={70} />}
+
+      {isEmpty && (
+        <PageEmptyState
+          title="No artifacts yet"
+          message="Artifacts from every sandbox collect here."
+          actionLabel="Go to sandboxes"
+          onAction={() => setView("list")}
+        />
+      )}
+
+      {hasContent && (
+        <div className="mt-5 flex flex-col gap-3">
+          {userFolders.map((folder) => (
+            <FolderGroup
+              key={folder.id}
+              folder={folder}
+              artifacts={byFolder.get(folder.id) ?? []}
+              onEditFolder={(f) => setFolderDialog({ folder: f })}
+              onDeleteFolder={setDeleteFolderTarget}
+              onCopyFolderLink={copyFolderLink}
+              {...rowActions}
+            />
+          ))}
+          {ungrouped.length > 0 && (
+            <FolderGroup folder={null} artifacts={ungrouped} {...rowActions} />
+          )}
+          {experimentFolders.length > 0 && (
+            <ExperimentsSection
+              folders={experimentFolders}
+              byFolder={byFolder}
+              searching={search.trim().length > 0}
+              onEditFolder={(f) => setFolderDialog({ folder: f })}
+              onDeleteFolder={setDeleteFolderTarget}
+              onCopyFolderLink={copyFolderLink}
+              {...rowActions}
+            />
+          )}
+        </div>
+      )}
 
       {artifacts.length > 0 && (
-        <p className="mt-5 text-[13px] text-muted-foreground">
+        <p className="mt-5 text-sm text-muted-foreground">
           {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"} ·{" "}
           {formatBytes(totalBytes)} stored
         </p>
@@ -211,23 +231,5 @@ export function ArtifactsView() {
         }}
       />
     </div>
-  );
-}
-
-function EmptyState({ onUpload }: { onUpload: () => void }) {
-  return (
-    <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-      <h2 className="text-[16px] font-semibold text-foreground">
-        No artifacts yet
-      </h2>
-      <p className="max-w-[400px] text-[14px] text-muted-foreground">
-        Agents publish artifacts with their built-in tools, or upload one
-        yourself — then share it with a link.
-      </p>
-      <Button size="sm" onClick={onUpload}>
-        <Upload size={16} />
-        Upload artifact
-      </Button>
-    </Card>
   );
 }
