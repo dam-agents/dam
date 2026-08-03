@@ -4,6 +4,10 @@
 @import "./styles/hljs-dark.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Tailwind gates `hover:`/`group-hover:` behind `@media (hover: hover)`, so a
+   breakpoint is the wrong proxy for "has a pointer" — a touch tablet is wider
+   than `md` and never fires hover. Hide-until-hover keys on this instead. */
+@custom-variant hover-capable (@media (hover: hover));
 
 @theme {
   /* ── Color tokens (resolved via CSS vars set in :root / .dark) ── */
@@ -472,6 +476,13 @@
   line-height: 1.6;
   color: var(--foreground);
   box-shadow: none;
+}
+.prose .code-block {
+  position: relative;
+  margin: 0.65em 0;
+}
+.prose .code-block pre {
+  margin: 0;
 }
 .prose ul,
 .prose ol {
