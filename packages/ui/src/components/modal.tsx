@@ -73,6 +73,9 @@ interface DialogHeaderProps {
   subtitle?: ReactNode;
   /** Omit for dialogs that exit through the footer. */
   onClose?: () => void;
+  /** Gate the ✕ while an in-flight action would lose something if the dialog
+   *  went away — a one-time secret, or a multi-step write mid-way. */
+  closeDisabled?: boolean;
   closeTestId?: string;
   truncateTitle?: boolean;
 }
@@ -85,6 +88,7 @@ export function DialogHeader({
   titleAccessory,
   subtitle,
   onClose,
+  closeDisabled,
   closeTestId,
   truncateTitle,
   children,
@@ -123,7 +127,9 @@ export function DialogHeader({
               variant="ghost"
               size="icon-sm"
               onClick={onClose}
+              disabled={closeDisabled}
               aria-label="Close"
+              data-dialog-close
               data-testid={closeTestId}
               /* Pulled out of the header's padding so it sits 16px off the
                  panel corner at both breakpoints, rather than lining up with
@@ -178,9 +184,13 @@ interface DialogActionsProps {
   onCancel: () => void;
   cancelLabel?: string;
   label: string;
-  /** Replaces `label` while `pending`; falls back to `label`. */
-  pendingLabel?: string;
+  /** Replaces `label` while `pending`. Required so a pending button can never
+   *  sit there looking idle. */
+  pendingLabel: string;
   pending?: boolean;
+  /** Gate Cancel while an in-flight action would lose something if the dialog
+   *  went away. Off by default: a dialog should stay escapable. */
+  cancelDisabled?: boolean;
   disabled?: boolean;
   destructive?: boolean;
   /** Omit inside a `<form>` so the button submits it; pass to drive the action
@@ -200,6 +210,7 @@ export function DialogActions({
   label,
   pendingLabel,
   pending = false,
+  cancelDisabled = false,
   disabled = false,
   destructive = false,
   onSubmit,
@@ -208,7 +219,12 @@ export function DialogActions({
 }: DialogActionsProps) {
   return (
     <DialogFooter className={className}>
-      <Button type="button" variant="outline" onClick={onCancel}>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onCancel}
+        disabled={cancelDisabled}
+      >
         {cancelLabel}
       </Button>
       <Button
@@ -218,7 +234,7 @@ export function DialogActions({
         disabled={disabled || pending}
         data-testid={testId}
       >
-        {pending ? (pendingLabel ?? label) : label}
+        {pending ? pendingLabel : label}
       </Button>
     </DialogFooter>
   );
@@ -243,7 +259,16 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const reassertUntil = performance.now() + 500;
     const grab = () => {
       if (!container.contains(document.activeElement)) {
-        container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+        const focusables = Array.from(
+          container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+        );
+        // Skip the header's ✕ when there is anything else to land on: it comes
+        // first in the DOM, so focusing it would make the opening keystroke
+        // dismiss the dialog.
+        const target =
+          focusables.find((el) => !el.hasAttribute("data-dialog-close")) ??
+          focusables[0];
+        target?.focus();
       }
       if (performance.now() < reassertUntil)
         grabRaf = requestAnimationFrame(grab);

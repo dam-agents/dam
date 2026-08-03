@@ -30,9 +30,13 @@ export function SlackChannelModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
+        {/* Dismissal is gated while submitting: a channel change disconnects
+            before it reconnects, so leaving in between strands the sandbox
+            with no channel and nothing on screen saying so. */}
         <DialogHeader
           title={editing ? "Edit Slack channel" : "Connect a Slack channel"}
           onClose={onClose}
+          closeDisabled={isSubmitting}
         />
 
         <DialogBody className="flex flex-col gap-4">
@@ -64,8 +68,9 @@ export function SlackChannelModal({
         <DialogActions
           onCancel={onClose}
           label={editing ? "Save" : "Connect"}
-          pendingLabel="Saving…"
+          pendingLabel={editing ? "Saving…" : "Connecting…"}
           pending={isSubmitting}
+          cancelDisabled={isSubmitting}
           testId="slack-save"
         />
       </form>

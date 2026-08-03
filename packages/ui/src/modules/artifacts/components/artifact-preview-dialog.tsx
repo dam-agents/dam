@@ -140,9 +140,6 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
             <Download size={16} />
             Download
           </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
         </DialogFooter>
       </Modal>
 

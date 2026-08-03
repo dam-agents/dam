@@ -83,7 +83,14 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     // Body/Footer sit directly in the Modal's flex column — otherwise the form
     // wrapper breaks the column and the scrollable body, overflowing the panel.
     <form onSubmit={handleSubmit} className="contents">
-      <DialogHeader title="Create API key" onClose={onCancel} />
+      {/* Both dismissals are gated while the key is being created: the
+          plaintext is shown once on the next step, so leaving mid-flight
+          creates a key the user can never see and must revoke. */}
+      <DialogHeader
+        title="Create API key"
+        onClose={onCancel}
+        closeDisabled={createApiKey.isPending}
+      />
       <DialogBody>
         <div className="mb-4">
           <FormField label="Name">
@@ -141,6 +148,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
         label="Create"
         pendingLabel="Creating…"
         pending={createApiKey.isPending}
+        cancelDisabled={createApiKey.isPending}
         disabled={submitDisabled}
       />
     </form>

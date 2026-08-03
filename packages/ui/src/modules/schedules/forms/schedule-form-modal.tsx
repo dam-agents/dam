@@ -297,7 +297,7 @@ export function ScheduleFormModal({
         <DialogActions
           onCancel={onClose}
           label={existing ? "Save" : "Create"}
-          pendingLabel="Saving…"
+          pendingLabel={existing ? "Saving…" : "Creating…"}
           pending={mutation.isPending}
         />
       </form>
