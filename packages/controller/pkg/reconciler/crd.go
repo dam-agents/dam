@@ -77,4 +77,3 @@ func (g agentLister) Get(name string) (*apiv1.Agent, error) {
 	}
 	return FromCacheObject[apiv1.Agent](obj)
 }
-

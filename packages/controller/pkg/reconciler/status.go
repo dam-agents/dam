@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
 
@@ -68,38 +67,5 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 		Reason:             reason,
 		Message:            message,
 		ObservedGeneration: generation,
-	})
-}
-
-// writeConditionlessStatus overwrites a CR's status subresource as a
-// whole-status replace (no condition merging) with a no-op guard that keeps an
-// unchanged observation from re-triggering reconcile (the controller watches
-// these CRs). Used for Runs, which carry no conditions; `kind` names the
-// resource in errors.
-func writeConditionlessStatus[T any](ctx context.Context, dyn dynamic.Interface, gvr schema.GroupVersionResource, kind, namespace, name string, desired T) error {
-	cli := dyn.Resource(gvr).Namespace(namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		obj, err := cli.Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("getting %s %s/%s: %w", kind, namespace, name, err)
-		}
-		var current T
-		if raw, ok, _ := unstructured.NestedMap(obj.Object, "status"); ok && raw != nil {
-			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw, &current); err != nil {
-				return fmt.Errorf("decoding %s status: %w", kind, err)
-			}
-		}
-		if apiequality.Semantic.DeepEqual(current, desired) {
-			return nil
-		}
-		statusMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&desired)
-		if err != nil {
-			return fmt.Errorf("encoding %s status: %w", kind, err)
-		}
-		if err := unstructured.SetNestedMap(obj.Object, statusMap, "status"); err != nil {
-			return fmt.Errorf("setting %s status: %w", kind, err)
-		}
-		_, err = cli.UpdateStatus(ctx, obj, metav1.UpdateOptions{})
-		return err
 	})
 }
