@@ -77,7 +77,7 @@ export function EgressApprovalToast({
           onClick={() => approveOnce.mutate({ id: row.id })}
           tooltip={
             live
-              ? "Allow this single request"
+              ? undefined
               : "Original request already failed; pick an Always option to allow future retries"
           }
         >

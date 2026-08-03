@@ -46,7 +46,7 @@ export function FilesPanel({
           size="xs"
           className="text-sm"
           disabled={controller.isUploading}
-          tooltip={controller.isUploading ? "Upload in progress…" : "Add"}
+          tooltip={controller.isUploading ? "Upload in progress…" : undefined}
         >
           <Add size={12} /> Add
         </Button>

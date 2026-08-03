@@ -237,24 +237,18 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
-                rawTitle="Show raw SVG"
-                renderTitle="Render SVG"
               />
             )}
             {isMarkdown && (
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
-                rawTitle="Show raw"
-                renderTitle="Render markdown"
               />
             )}
             {isHtml && (
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
-                rawTitle="Show raw HTML"
-                renderTitle="Render HTML"
               />
             )}
             {isRenderedPreview && (

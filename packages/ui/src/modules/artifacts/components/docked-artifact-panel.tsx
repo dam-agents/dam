@@ -83,7 +83,6 @@ export function DockedArtifactPanel() {
           <Button
             variant="outline"
             size="xs"
-            tooltip="Sharing settings"
             onClick={() => setShareOpen(true)}
           >
             <Share size={14} />

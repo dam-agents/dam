@@ -136,7 +136,7 @@ function ApprovalRow({
             tooltip={
               allowOnceDisabled
                 ? "Original request already failed; pick Allow permanently to allow future retries"
-                : "Allow this single request"
+                : undefined
             }
           >
             <Checkmark size={11} /> Allow once

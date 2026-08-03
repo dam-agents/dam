@@ -18,7 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
@@ -143,15 +142,13 @@ export function StandaloneSkillsGroup({
               </div>
 
               {pub ? (
-                <Tooltip content={`Pull request open on ${pub.sourceName}`}>
-                  <a
-                    href={pub.prUrl}
-                    {...externalLinkProps}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
-                  >
-                    <PullRequest size={13} /> In review · {pub.sourceName}
-                  </a>
-                </Tooltip>
+                <a
+                  href={pub.prUrl}
+                  {...externalLinkProps}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
+                >
+                  <PullRequest size={13} /> In review · {pub.sourceName}
+                </a>
               ) : (
                 <Button
                   variant="outline"
