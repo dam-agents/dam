@@ -39,6 +39,9 @@ describe("isSafeReturnPath", () => {
     expect(isSafeReturnPath("/")).toBe(true);
     expect(isSafeReturnPath("/slack/bind?flow=abc")).toBe(true);
     expect(isSafeReturnPath("/settings/connections#tokens")).toBe(true);
+    // Only the interstitials themselves are barred, not paths that share a prefix.
+    expect(isSafeReturnPath("/terms-of-service")).toBe(true);
+    expect(isSafeReturnPath("/termsx")).toBe(true);
   });
 
   it("rejects anything that could leave the origin", () => {
@@ -55,16 +58,22 @@ describe("isSafeReturnPath", () => {
     expect(isSafeReturnPath("/terms")).toBe(false);
   });
 
-  // Browsers strip these while parsing, so both checks have to look past them:
-  // "/<tab>/host" resolves cross-origin and "/terms<tab>" re-enters the gate.
-  it.each(["\t", "\n", "\r"])(
-    "sees through a %j the browser would drop",
+  // Dropped anywhere in a URL, so an interior one turns a path into a
+  // protocol-relative reference: "/<tab>/host" resolves to another origin.
+  it.each(["\t", "\n", "\r"])("sees through an interior %j", (control) => {
+    expect(isSafeReturnPath(`/${control}/evil.example`)).toBe(false);
+    expect(isSafeReturnPath(`/${control}\\evil.example`)).toBe(false);
+    expect(isSafeReturnPath(`/${control}terms`)).toBe(false);
+  });
+
+  // Trimmed at the ends — the whole C0-plus-space class, not just the three
+  // above — so a trailing one would smuggle an interstitial past the check.
+  it.each(["\t", "\n", "\r", "\f", "\v", "\0", " "])(
+    "sees through a trailing %j on an interstitial",
     (control) => {
-      expect(isSafeReturnPath(`/${control}/evil.example`)).toBe(false);
-      expect(isSafeReturnPath(`/${control}\\evil.example`)).toBe(false);
       expect(isSafeReturnPath(`/terms${control}`)).toBe(false);
-      expect(isSafeReturnPath(`/${control}terms`)).toBe(false);
-      expect(isSafeReturnPath(`/auth${control}/callback`)).toBe(false);
+      expect(isSafeReturnPath(`/auth/callback${control}`)).toBe(false);
+      expect(isSafeReturnPath(`${control}/terms`)).toBe(false);
     },
   );
 });
