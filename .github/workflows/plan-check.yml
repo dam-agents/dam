@@ -4,10 +4,13 @@ name: Plan check
 # feature branch and must be deleted before the feature merges. This check is
 # red while the plan is on the branch and flips green once the cleanup commit
 # lands — make it a required status check so a plan can never reach main.
+# Draft PRs are skipped (skipped counts as passing for required checks);
+# ready_for_review re-triggers the run when the PR leaves draft.
 
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -15,6 +18,7 @@ permissions:
 jobs:
   no-plan-files:
     name: no docs/plan in merge result
+    if: '!github.event.pull_request.draft'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
