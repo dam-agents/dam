@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format-time";
 
 import { Markdown } from "../../../components/markdown.js";
+import { takeReturnPath } from "../../../lib/return-path.js";
 import { useStore } from "../../../store.js";
 import { useAcceptTerms } from "../api/mutations.js";
 import { useLatestAcceptance, useTermsDocument } from "../api/queries.js";
@@ -49,8 +50,12 @@ export function TermsView() {
               accept.mutate(
                 { version: doc.version },
                 // Full reload on purpose (unlike BackButton): it clears the
-                // server's 412 terms_stale gate with a clean refetch.
-                { onSuccess: () => window.location.assign("/") },
+                // server's 412 terms_stale gate with a clean refetch. Resumes
+                // wherever the gate interrupted — a bind deep link, usually.
+                {
+                  onSuccess: () =>
+                    window.location.assign(takeReturnPath("terms")),
+                },
               )
             }
           />

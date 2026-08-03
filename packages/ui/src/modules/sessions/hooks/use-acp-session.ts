@@ -4,8 +4,8 @@ import { getErrorMessage } from "@/lib/errors";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { classifyResumeError, extractErrorMessage } from "../../acp/errors.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
-import { classifyResumeError } from "../../acp/utils.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import {
   deleteAgentSession,

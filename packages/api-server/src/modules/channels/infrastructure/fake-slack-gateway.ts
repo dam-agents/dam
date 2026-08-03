@@ -41,6 +41,11 @@ export interface FakeSlackGateway extends SlackGateway {
    *  the real gateway before its first probe), so a test only needs this to
    *  simulate a scope that is confirmed granted or confirmed missing. */
   setGrantedScopes(scopes: string[] | null): void;
+  /** Seed what downloadFile returns for one `url_private`. Unseeded urls throw,
+   *  matching the real gateway on a download it can't complete. Bytes are
+   *  served verbatim so a test can hand the worker a real image, a web page,
+   *  or a format no harness reads. */
+  setFileBytes(urlPrivate: string, bytes: Buffer): void;
   /** Seed the reactions getMessageReactions reports for one channel+ts pair.
    *  An unseeded pair reports as message-not-found (null), matching the real
    *  gateway on a bad ts. */
@@ -61,6 +66,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let nextStreamTs = 1;
   let grantedScopes: Set<string> | null = null;
   const messageReactions = new Map<string, SlackMessageReaction[]>();
+  const fileBytes = new Map<string, Buffer>();
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -173,8 +179,17 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async downloadFile() {
-      throw new Error("downloadFile is not supported by the fake gateway");
+    async downloadFile(urlPrivate) {
+      const bytes = fileBytes.get(urlPrivate);
+      if (!bytes) throw new Error(`HTTP 404`);
+      return bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+    },
+
+    setFileBytes(urlPrivate, bytes) {
+      fileBytes.set(urlPrivate, bytes);
     },
 
     async listBotChannels() {

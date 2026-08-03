@@ -6,6 +6,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
+import { extractErrorMessage } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
   hasStreamingAssistant,

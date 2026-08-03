@@ -10,6 +10,8 @@ export interface RegistryControls {
   value: RegistryCredential;
   onChange: (value: RegistryCredential) => void;
   partial: boolean;
+  disclosureOverride: boolean | null;
+  onDisclosureOverride: (override: boolean) => void;
 }
 
 interface Props {
@@ -67,6 +69,8 @@ export function CustomImageCard({
             value={registry.value}
             onChange={registry.onChange}
             partial={registry.partial}
+            disclosureOverride={registry.disclosureOverride}
+            onDisclosureOverride={registry.onDisclosureOverride}
           />
         </div>
       )}

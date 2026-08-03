@@ -23,7 +23,10 @@ export function PageHeader({
   return (
     <header className={cn("@container mb-8", className)}>
       <div className="flex flex-col @lg:flex-row @lg:flex-wrap @lg:items-center @lg:justify-between @lg:gap-x-4">
-        <div className="order-1 flex min-w-0 items-center gap-3">
+        {/* Reserves the action row's height even with no actions, so the title
+            doesn't shift by half its leading between pages that have a button
+            and pages that don't. */}
+        <div className="order-1 flex min-h-10 min-w-0 items-center gap-3">
           <h1
             title={typeof title === "string" ? title : undefined}
             className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"

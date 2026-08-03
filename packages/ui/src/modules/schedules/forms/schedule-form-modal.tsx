@@ -4,12 +4,11 @@ import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -114,6 +113,7 @@ export function ScheduleFormModal({
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
         <DialogHeader
           title={existing ? "Edit schedule" : "Create a new Schedule"}
+          onClose={onClose}
         />
 
         <DialogBody className="flex flex-col gap-4">
@@ -294,14 +294,12 @@ export function ScheduleFormModal({
           </div>
         </DialogBody>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? "…" : existing ? "Save" : "Create"}
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          onCancel={onClose}
+          label={existing ? "Save" : "Create"}
+          pendingLabel={existing ? "Saving…" : "Creating…"}
+          pending={mutation.isPending}
+        />
       </form>
     </Modal>
   );

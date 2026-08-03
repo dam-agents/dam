@@ -56,23 +56,6 @@ export async function buildPromptBlocks(
   return blocks;
 }
 
-/**
- * Classify a resume-time failure so the inline error card can render the
- * right message and action. Prefers structured error fields (ACP JSON-RPC
- * `code`, tRPC `data.code`) over regexing the human-readable message — the
- * latter breaks the moment server wording changes.
- */
-export function classifyResumeError(
-  e: unknown,
-): "not-found" | "connection" | "other" {
-  if (e && typeof e === "object") {
-    const anyE = e as { code?: unknown; data?: { code?: unknown } };
-    if (anyE.code === -32002) return "not-found";
-    if (anyE.data?.code === "NOT_FOUND") return "not-found";
-    if (e instanceof DOMException) return "connection";
-  }
-  const msg = getErrorMessage(e);
-  if (/not\s*found/i.test(msg)) return "not-found";
-  if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
-  return "other";
-}
+// Error extraction/presentation helpers live in ./errors.js — kept separate
+// so node-environment unit tests can import them without this module's
+// upload-API dependency chain (which touches `window` at import time).

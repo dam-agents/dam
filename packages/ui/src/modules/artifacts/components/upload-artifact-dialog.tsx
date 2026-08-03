@@ -3,8 +3,8 @@ import type { ArtifactFolder } from "api-server-api";
 import { useRef, useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
@@ -61,7 +61,7 @@ export function UploadArtifactDialog({
 
   return (
     <Modal>
-      <DialogHeader title="Upload artifact" />
+      <DialogHeader title="Upload artifact" onClose={onClose} />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <input
@@ -114,17 +114,14 @@ export function UploadArtifactDialog({
           </p>
         </div>
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          onClick={() => void submit()}
-          disabled={!file || uploading || create.isPending}
-        >
-          {uploading || create.isPending ? "Uploading…" : "Upload"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        label="Upload"
+        pendingLabel="Uploading…"
+        pending={uploading || create.isPending}
+        disabled={!file}
+        onSubmit={() => void submit()}
+      />
     </Modal>
   );
 }

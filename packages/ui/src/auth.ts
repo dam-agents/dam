@@ -1,6 +1,7 @@
 import { type AuthConfig, authConfigSchema } from "api-server-api";
 import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
+import { rememberReturnPath, takeReturnPath } from "./lib/return-path.js";
 import { readStoredTheme } from "./modules/platform/store/theme.js";
 
 let userManager: UserManager;
@@ -56,9 +57,7 @@ export async function initAuth(): Promise<User | null> {
   if (window.location.pathname === "/auth/callback") {
     try {
       currentUser = await userManager.signinRedirectCallback();
-      const returnUrl = sessionStorage.getItem("platform-auth-return") || "/";
-      sessionStorage.removeItem("platform-auth-return");
-      window.history.replaceState({}, "", returnUrl);
+      window.history.replaceState({}, "", takeReturnPath("login"));
       return currentUser;
     } catch (err) {
       console.error("OIDC callback error:", err);
@@ -73,10 +72,7 @@ export async function initAuth(): Promise<User | null> {
   }
 
   // Not authenticated — save current location and redirect to Keycloak
-  sessionStorage.setItem(
-    "platform-auth-return",
-    window.location.pathname + window.location.search,
-  );
+  rememberReturnPath("login");
   await userManager.signinRedirect({ extraQueryParams: signinExtraParams() });
   return null;
 }
@@ -94,7 +90,8 @@ export async function getAccessToken(): Promise<string> {
     currentUser = renewed;
     return renewed!.access_token;
   } catch {
-    // Silent renew failed — redirect to login
+    // Silent renew failed — log in again, resuming on the current page after.
+    rememberReturnPath("login");
     await userManager.signinRedirect({ extraQueryParams: signinExtraParams() });
     throw new Error("Session expired");
   }
