@@ -1,4 +1,4 @@
-import { Add as Plus, Close as X } from "@carbon/icons-react";
+import { Add, Close } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ export function KeyValueEditor({
   return (
     <div className="flex flex-col gap-2">
       {value.length === 0 && emptyMessage && (
-        <p className="text-[12px] text-muted-foreground">{emptyMessage}</p>
+        <p className="text-xs text-muted-foreground">{emptyMessage}</p>
       )}
       {value.map((row, i) => {
         const invalid = row.key.length > 0 && !isValidEnvName(row.key);
@@ -58,6 +58,7 @@ export function KeyValueEditor({
           <div key={i} className="flex items-start gap-2">
             <div className="flex-1 flex flex-col gap-1">
               <Input
+                size="sm"
                 className={`font-mono ${invalid ? "border-destructive" : ""}`}
                 placeholder={keyPlaceholder}
                 value={row.key}
@@ -73,6 +74,7 @@ export function KeyValueEditor({
               )}
             </div>
             <Input
+              size="sm"
               className="flex-1 font-mono"
               placeholder={valuePlaceholder}
               value={row.value}
@@ -82,13 +84,14 @@ export function KeyValueEditor({
             <Button
               type="button"
               variant="outline"
-              size="icon"
+              tone="danger"
+              size="icon-sm"
               onClick={() => remove(i)}
               disabled={disabled}
-              className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive"
+              className="shrink-0 text-muted-foreground"
               title="Remove"
             >
-              <X size={13} />
+              <Close size={13} />
             </Button>
           </div>
         );
@@ -101,7 +104,7 @@ export function KeyValueEditor({
         disabled={disabled}
         className="self-start"
       >
-        <Plus size={12} /> {addLabel}
+        <Add size={12} /> {addLabel}
       </Button>
     </div>
   );

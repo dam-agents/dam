@@ -10,7 +10,7 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { printTrpcError } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -131,14 +131,6 @@ function printTrpcUploadError(
   remotePath: string,
   host: string,
 ): void {
-  const classified = classifyTrpcError(e);
-  if (!classified.ok && classified.error.kind === "auth-required") {
-    process.stderr.write(
-      `error: not authenticated: ${classified.error.reason}\n` +
-        "hint: run `dam auth login` first\n",
-    );
-    return;
-  }
   const trpcErr = e instanceof TRPCClientError ? e : undefined;
   const code = trpcErr?.data?.code as string | undefined;
   // Server detail (e.g. "file 15728640 bytes (max 10485760)") lives in
@@ -165,6 +157,5 @@ function printTrpcUploadError(
     );
     return;
   }
-  const msg = e instanceof Error ? e.message : String(e);
-  process.stderr.write(`error: cannot reach server \`${host}\`: ${msg}\n`);
+  printTrpcError(e, host);
 }

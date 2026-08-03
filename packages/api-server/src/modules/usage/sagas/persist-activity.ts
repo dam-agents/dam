@@ -72,7 +72,14 @@ export function startPersistActivitySaga(
               agentId: event.agentId,
               surface: event.channel,
               outcome: event.outcome,
-              payload: event.forkId ? { forkId: event.forkId } : {},
+              // externalActorId stays in the payload — the actor_sub column
+              // is HMAC-pseudonymized Keycloak-sub space, not messenger ids.
+              payload: {
+                ...(event.externalActorId
+                  ? { externalActorId: event.externalActorId }
+                  : {}),
+                ...(event.reason ? { reason: event.reason } : {}),
+              },
             });
           } catch (err) {
             process.stderr.write(

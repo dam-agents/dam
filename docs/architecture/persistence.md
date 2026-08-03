@@ -1,32 +1,26 @@
 # Persistence
 
-Last verified: 2026-06-08
-
-## Motivated by
-
-- [ADR-001 — Ephemeral containers + persistent workspace volumes](../adrs/001-ephemeral-containers.md) — agents are stateless processes; their state lives on PVCs that outlive the pod
-- [ADR-006 — ConfigMaps over CRDs](../adrs/006-configmaps-over-crds.md) — domain resources are namespace-scoped ConfigMaps with a single-writer-per-key split
-- [ADR-055 — Agent-owned session metadata](../adrs/055-agent-owned-session-metadata.md) — sessions are owned by the agent and carried over ACP `_meta.platform`; Postgres holds no session state (supersedes [ADR-017](../adrs/017-db-backed-sessions.md))
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
-- [ADR-8 — Usage tracking with pseudonymized identifiers](../adrs/048-usage-tracking.md) — append-only activity log + agent mirror table, with HMAC-pseudonymized `sub` values at the write boundary
-- [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — pre-provisioned, size-keyed spare workspace volumes claimed at create time to skip first-start provisioning latency
+Last verified: 2026-07-29
 
 ## Overview
 
-Platform persists state on three durable substrates, split cleanly between the platform and the agent:
+Platform persists state on four durable substrates, split cleanly between the platform and the agent:
 
 **Platform-owned** (the agent never touches these):
 
-- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned ([ADR-055](../adrs/055-agent-owned-session-metadata.md)).
-- **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, agents, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
+- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned. The bundled instance runs under three roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
+- **Object store** — bulk binary blobs behind an S3-compatible API, first consumer: artifact-library content. The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload (through its paired gateway) or a browser download directly, after ownership checks — an agent has no access to the store beyond a link the platform issued. The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead. An install with no object store cannot store artifact content — the feature fails closed.
+- **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Runs), as CRDs with a `spec` / `status` ownership split enforced by the status subresource. Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:
 
-- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the Agent is deleted.
+- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the custom resources that describe it. Persists across hibernation; reclaimed when the Agent is deleted.
 
-**Choosing between Postgres and ConfigMaps.** A new resource belongs on a ConfigMap iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on a ConfigMap is using the K8s API as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement.
+**Choosing between Postgres and the K8s API.** A new resource belongs on a CRD iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on the K8s API is using it as a generic key-value store. An earlier "K8s is the database" framing predates Postgres landing in the platform — the rule above is the refinement that replaced it, carried forward unchanged through the CRD migration. This is why schedules live in Postgres and templates never became a CRD.
 
-The controller and api-server never share writes on the same key — write contention is impossible by convention rather than by lock. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or a ConfigMap by the api-server or controller, not by the agent itself.
+The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
+
+The optional agent-telemetry backend adds a fifth durable substrate, outside this split — see [observability](observability.md). It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
 
 ## Diagram
 
@@ -37,23 +31,24 @@ flowchart LR
   agent-runtime[agent-runtime pod]
 
   postgres[(Postgres)]
+  objectstore[(Object store<br/>S3-compatible)]
 
   subgraph k8s[K8s API]
-    cm-spec[ConfigMap<br/>spec.yaml]
-    cm-status[ConfigMap<br/>status.yaml]
-    cm-anno[ConfigMap<br/>annotations]
+    cr-spec[Agent / Run CR<br/>spec]
+    cr-status[Agent / Run CR<br/>status subresource]
+    cr-anno[Agent / Run CR<br/>annotations]
   end
 
   pvc[(Per-Agent PVC)]
 
   api-server -->|write| postgres
-  api-server -->|write| cm-spec
-  api-server -->|read| cm-status
-  api-server -->|annotate| cm-anno
+  api-server -->|read/write| objectstore
+  api-server -->|write| cr-spec
+  api-server -->|read| cr-status
+  api-server -->|annotate| cr-anno
 
-  controller -->|write| cm-status
-  controller -->|read| cm-spec
-  controller -.kubectl exec into running pod.-> agent-runtime
+  controller -->|write| cr-status
+  controller -->|read| cr-spec
 
   agent-runtime -->|read/write| pvc
 ```
@@ -65,75 +60,90 @@ flowchart LR
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
 - **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
-- **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
+- **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
+- **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
 
-The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
+The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 
-### ConfigMaps
+### Object store
 
-Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types after [ADR-046](../adrs/046-eliminate-instance.md) collapsed the former `agent` (template) + `agent-instance` (instance) pair into a single `agent` CM that owns both definition and runtime state, distinguished by `platform.ai/type`:
+The object store carries bulk binary blobs that would be wrong as database rows — data whose size, not queryability, is the point. Its first consumer is artifact-library content ([artifact-library](artifact-library.md)); it is also the durable-bulk-storage foundation intended for future features like storage backups and agent duplication.
 
-| Type | What it declares | `spec.yaml` writer | `status.yaml` writer |
+Ownership is api-server-centric: it holds the only standing credentials, the controller never touches the store, and bulk bytes move **directly** between producer/consumer and the store under platform-minted authorization — the api-server issues short-lived links scoped to a single object and operation (upload links to agents after attributing the caller, download links to browsers after owner checks), and the store rejects anything else. An agent's traffic still exits only through its paired gateway; what changes with the store present is that the gateway forwards store-bound requests without a per-request human decision, the link itself being the authorization ([security-and-credentials](security-and-credentials.md)). Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
+
+The store is any S3-compatible endpoint, chosen at deploy time via Helm: the chart bundles a single-node SeaweedFS by default (dev and local clusters work with no external account; Apache-2.0, so bundling carries no copyleft obligations), or the operator points the platform at an external store — a cloud bucket or an on-prem installation. The api-server provisions its bucket at startup when missing and fails boot fast when the store is unreachable. An install with no object store fails closed: bulk-blob features are unavailable until one is configured.
+
+### Custom resources
+
+Resources the controller reconciles are Kubernetes CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
+
+| Kind | What it declares | `spec` writer | `status` writer |
 |---|---|---|---|
-| `template` | Template: image, command, default env, mount declarations, injection rules (read-only blueprint copied into an Agent at create time) | api-server | (no status — templates are not reconciled) |
-| `agent` | Agent: image / mount declarations, env, secret refs, allowed users, `desiredState`. **Both** `spec.yaml` (api-server) **and** `status.yaml` (controller) live on this single CM — there is no longer a separate "instance" CM where status lives | api-server | controller |
-| `agent-schedule` | Schedule: RRULE, quiet hours, task payload, session mode | api-server | controller |
-| `agent-fork` | Forked run: parent Agent ref + overrides | api-server | controller |
+| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
+| `Run` | A `dam-run` executor (currently disabled — see [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run--disabled)): parent Agent ref | api-server | controller |
 
-The single-writer split for the merged `agent` CM is the same `spec.yaml` / `status.yaml` pattern used elsewhere — what changed in ADR-046 is that the runtime state (`status.yaml`, plus the high-frequency annotations) now lives on the **same** ConfigMap as the definition, rather than on a paired `agent-instance` CM. The `inst-` ID prefix retires; the merged Agent uses `agent-` as the sole ID prefix.
+Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
-Each reconciled ConfigMap carries two `data` keys with strict single-writer ownership:
+- **`spec`** — user intent. Written exclusively by the api-server and validated by the K8s API server at admission against the CRD schema; the controller consumes typed objects without re-validating shape. Cross-field and referential rules stay application logic.
+- **`status`** — observed state, written exclusively by the controller through the status subresource. Conditions are the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`); `Ready` is the agent-and-gateway pod intersection and the api-server's sole routing signal.
 
-- **`spec.yaml`** — user intent. Written exclusively by the api-server.
-- **`status.yaml`** — observed state and scheduler bookkeeping (next fire, last fire, error). Written exclusively by the controller.
+There is no stored desired state — the former `desiredState` latch is eliminated. Wake is a one-off activity poke, the controller hibernates on idleness, and running-vs-hibernated is recorded as observed status; see [agent-lifecycle](agent-lifecycle.md).
 
-High-frequency, lightweight metadata (heartbeats, activity timestamps, `granted-secret-ids`, `granted-connection-ids`, `last-activity`) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update. (Credential `env` no longer has a `secrets-rev` annotation — it rides the runtime channel; see [connections.md](connections.md) and ADR-DRAFT.)
+High-frequency, out-of-band signals live on **annotations** rather than `status`, so they are independently patchable without a spec or status write: the last-activity timestamp and active-session marker that drive hibernation, and the roll trigger the api-server bumps to force a rolling restart of the pair. Connection and secret grants are intent and moved from annotations into `spec`. (Credential `env` rides the runtime channel; see [connections.md](connections.md).)
 
-ConfigMaps were chosen over CRDs so that Platform installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
+Two domain resources are deliberately not CRDs:
+
+- **Templates** stay ConfigMaps — chart-rendered, read-only blueprints copied into an Agent at create time, never reconciled, loaded by the api-server at boot.
+- **Schedules** live in Postgres — only the api-server reads and writes them (see the Postgres/K8s rule above).
 
 ### Per-Agent PVCs
 
-Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts ([ADR-001](../adrs/001-ephemeral-containers.md)). A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so the workspace can be shared concurrently between the Agent's original owner and a foreign user running a fork against it — both pods mount the same volume at the same time.
+Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteOnce` on ordinary single-writer storage — the agent pod is the volume's only writer, so no install needs a shared filesystem class. (Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
 
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
-- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart. The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's sole source of truth for per-session mode, type, `scheduleId`, `threadTs`, and `createdAt`, surfaced over ACP `_meta.platform` ([ADR-055](../adrs/055-agent-owned-session-metadata.md)) — alongside the trigger-binding and runtime-channel state files.
-- **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)).
+- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart. The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's sole source of truth for per-session mode, type, `scheduleId`, `threadTs`, `createdAt`, and the time of the session's last genuine message, surfaced over ACP `_meta.platform` — alongside the trigger-binding and runtime-channel state files.
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`. Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
 
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. Tools and dependencies the agent relies on must be baked into the image at build time.
+What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint symlinks it to pod-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. Tools and dependencies the agent relies on must be baked into the image at build time.
 
 ### Warm PVC pool
 
-First-start provisioning of a workspace PVC is slow on production storage — tens of seconds to minutes — because the volume is allocated on demand when the first pod mounts it. To hide that latency the controller can keep a **warm pool**: a background buffer of pre-provisioned, already-bound spare PVCs, organized into per-workspace-size pools, that a newly created Agent claims instantly instead of waiting ([ADR-061](../adrs/061-warm-pvc-pool.md)). The buffer refills in the background and is operator-tunable; it is disabled by default.
+First-start provisioning of a workspace PVC is slow on production storage — tens of seconds to minutes — because the volume is allocated on demand when the first pod mounts it. To hide that latency the controller can keep a **warm pool**: a background buffer of pre-provisioned, already-bound spare PVCs, organized into per-workspace-size pools, that a newly created Agent claims instantly instead of waiting. The buffer refills in the background and is operator-tunable; it is disabled by default.
 
 A spare only helps if it holds real storage while idle, so pool PVCs use an **immediate-binding** StorageClass — the agents' own class defers allocation until mount, which would leave a pre-created spare empty. At create time, for each persisted mount whose size matches a configured pool, the controller claims one spare and mounts it by name rather than through the StatefulSet's `volumeClaimTemplate`; a mount with no matching pool, or an exhausted pool, falls back to on-demand provisioning so Agent creation never blocks.
 
 Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a pool label but **no owning-agent label**, so the orphan-PVC sweep — which acts only on agent-labeled PVCs — leaves it untouched. On claim the controller stamps the agent label and removes the available marker in one atomic update; from that point the volume is an ordinary per-Agent PVC, reclaimed on Agent deletion and reattached on wake. The claim decision is made once at create and reconstructed from the live StatefulSet on every later reconcile, so it survives hibernate/wake without ever re-rendering the pod's volumes — even if the claimed volume is deleted out-of-band, the agent keeps referencing it by name rather than degrading to a mount with no backing volume.
 
+### Storage migration (transitional)
+
+Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (a Slack per-person fork, a `dam-run` executor) could write into a live agent's workspace. Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state. Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume. Throttled fleet-wide; a no-op once no RWX workspace volume remains. Operators keep the old storage backend (the deprecated bundled NFS server, or a managed shared filesystem) available until the last RWX volume drains, then decommission it — the migration knobs and the deprecated NFS chart block are removed together in a later release.
+
 ## Lifetime
 
-| Event | Postgres | ConfigMap (spec/status) | PVC |
-|---|---|---|---|
-| Pod restart | survives | survives | survives |
-| Hibernate (replicas → 0) | survives | survives | survives |
-| Wake (replicas → 1) | survives | survives | survives |
-| api-server restart | survives | survives | survives |
-| Controller restart | survives | survives | survives |
-| Agent delete | session rows removed by api-server | ConfigMap removed | PVCs removed by controller |
-| Schedule delete | session rows optionally removed (UI checkbox) | ConfigMap removed | n/a |
+| Event | Postgres | Object store | Agent CR (spec/status) | PVC |
+|---|---|---|---|---|
+| Pod restart | survives | survives | survives | survives |
+| Hibernate (replicas → 0) | survives | survives | survives | survives |
+| Wake (replicas → 1) | survives | survives | survives | survives |
+| api-server restart | survives | survives | survives | survives |
+| Controller restart | survives | survives | survives | survives |
+| Agent delete | agent row marked deleted by api-server | survives (artifacts belong to the owner's library, not the Agent) | CR removed | PVCs removed by controller |
+| Schedule delete | schedule row removed | n/a | n/a | n/a |
 
-Schedules are independent ConfigMaps and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
+Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion. Once claimed, a spare follows the PVC column above.
 
+An Agent created on a private custom image carries an agent-scoped image-pull Secret that follows the Agent itself: the api-server writes it at create and removes it on delete (a delete-time cleanup hook, with a label-scoped orphan sweep as backstop). This is the opposite of the owner-scoped credential Secrets the gateway injects for egress, which are reusable across an owner's Agents and outlive any single one. The mechanism and trust boundary live on [security-and-credentials](security-and-credentials.md#image-pull-credentials).
+
 ## Security boundary
 
-The PVC is a **shared mutable surface across every session, trigger, fork, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
+The PVC is a **shared mutable surface across every session, trigger, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
 
-The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly — [ADR-038](../adrs/038-paired-gateway-pod.md)), the gateway pod gates credentialed egress, and forks let you run with a narrowed credential set without polluting the parent's workspace. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).
+The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly), and the gateway pod gates credentialed egress. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).

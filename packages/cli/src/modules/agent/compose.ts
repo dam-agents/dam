@@ -23,7 +23,7 @@ import {
  * module exposes factories the command actions invoke with the resolved
  * host.
  *
- * Per ADR-046 the `agent` parent owns the full lifecycle surface that
+ * The `agent` parent owns the full lifecycle surface that
  * previously split between `agent` (interactive) and `instance`
  * (scripted): create, create-interactive, list, get, delete, restart.
  */

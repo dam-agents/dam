@@ -1,3 +1,10 @@
+---
+id: 036
+title: Redis as a platform primitive — pub/sub, queues, cache
+status: accepted
+subsystem: platform-topology
+summary: Adopt Redis alongside Postgres for cross-replica pub/sub, simple queues, and shared cache, keeping Postgres as the source of truth.
+---
 # ADR-036: Redis as a platform primitive — pub/sub, queues, cache
 
 **Date:** 2026-04-29

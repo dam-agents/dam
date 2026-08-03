@@ -10,26 +10,23 @@ import (
 	v1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// Spec shapes are aliases of the api/v1 CRD types (ADR-058): each is authored
+// Spec shapes are aliases of the api/v1 CRD types: each is authored
 // Go-first under api/v1 and consumed here, so there is a single definition. The
 // controller reads these directly off the typed custom resources; status lives
-// on the CR status subresource (api/v1.AgentStatus / api/v1.ForkStatus), so
+// on the CR status subresource (api/v1.AgentStatus / api/v1.RunStatus), so
 // there are no local status shapes.
 type (
 	AgentSpec    = v1.AgentSpec
 	Mount        = v1.Mount
 	EnvVar       = v1.EnvVar
 	ResourceSpec = v1.ResourceSpec
-	ForkSpec     = v1.ForkSpec
-	ForkError    = v1.ForkError
 )
 
-// Fork failure reasons stamped onto api/v1.ForkError.Reason by the reconciler.
+// Run failure reasons stamped onto api/v1.RunError.Reason by the reconciler.
 const (
-	ForkReasonCredentialMintFailed = "CredentialMintFailed"
-	ForkReasonOrchestrationFailed  = "OrchestrationFailed"
-	ForkReasonPodNotReady          = "PodNotReady"
-	ForkReasonTimeout              = "Timeout"
+	RunReasonOrchestrationFailed = "OrchestrationFailed"
+	RunReasonPodNotReady         = "PodNotReady"
+	RunReasonTimeout             = "Timeout"
 )
 
 // ParseAgentSpec parses a ConfigMap spec.yaml into the api/v1 AgentSpec. Legacy
@@ -52,22 +49,6 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 				return nil, fmt.Errorf("agent spec: mount %q size %q is not a valid K8s quantity: %w", m.Path, m.Size, err)
 			}
 		}
-	}
-	return &spec, nil
-}
-
-// ParseForkSpec parses a ConfigMap spec.yaml into the api/v1 ForkSpec. Uses
-// sigs.k8s.io/yaml so the JSON tags (agentName, foreignSub) are honored.
-func ParseForkSpec(data string) (*ForkSpec, error) {
-	var spec ForkSpec
-	if err := sigsyaml.Unmarshal([]byte(data), &spec); err != nil {
-		return nil, fmt.Errorf("parsing fork spec: %w", err)
-	}
-	if spec.AgentName == "" {
-		return nil, fmt.Errorf("fork spec: agentName is required")
-	}
-	if spec.ForeignSub == "" {
-		return nil, fmt.Errorf("fork spec: foreignSub is required")
 	}
 	return &spec, nil
 }

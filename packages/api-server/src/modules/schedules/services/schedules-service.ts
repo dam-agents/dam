@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import type {
   SchedulesService,
   ScheduleCreateCronInput,
@@ -15,6 +16,23 @@ import {
   validateTimezone,
 } from "../domain/recurrences.js";
 import { securityLog } from "../../../core/security-log.js";
+
+// The domain validators throw plain `Error`, which tRPC surfaces as
+// INTERNAL_SERVER_ERROR — indistinguishable from a real server fault to a
+// client. Map them to BAD_REQUEST at the service boundary (the domain stays
+// transport-agnostic) so the CLI can exit on bad input. Each validator is
+// wrapped individually so an unexpected fault from repo/runner/ensureAgent
+// still propagates as INTERNAL_SERVER_ERROR.
+function asBadRequest(fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: e instanceof Error ? e.message : "invalid schedule",
+    });
+  }
+}
 
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
@@ -70,10 +88,12 @@ export function createSchedulesService(deps: {
       return schedule;
     },
 
-    async createRRule(input: ScheduleCreateRRuleInput) {
-      validateTimezone(input.timezone);
-      validateRRule(input.rrule);
-      validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
+    async createRRule(input: ScheduleCreateRRuleInput, createdBy = "user") {
+      asBadRequest(() => validateTimezone(input.timezone));
+      asBadRequest(() => validateRRule(input.rrule));
+      asBadRequest(() =>
+        validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []),
+      );
       await ensureAgent(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
@@ -82,7 +102,7 @@ export function createSchedulesService(deps: {
         timezone: input.timezone,
         task: input.task,
         enabled: true,
-        createdBy: "user",
+        createdBy,
         ...(input.quietHours && input.quietHours.length > 0
           ? { quietHours: input.quietHours }
           : {}),
@@ -95,15 +115,17 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      // An agent self-scheduling recurring executions (createdBy='agent') is
+      // especially notable.
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
-        actorKind: "user",
+        actorKind: createdBy === "agent" ? "agent" : "user",
         agentId: input.agentId,
         target: schedule.id,
         result: "success",
         detail: {
-          createdBy: "user",
+          createdBy,
           type: "rrule",
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
@@ -112,9 +134,11 @@ export function createSchedulesService(deps: {
     },
 
     async updateRRule(input: ScheduleUpdateRRuleInput) {
-      validateTimezone(input.timezone);
-      validateRRule(input.rrule);
-      validateHasVisibleOccurrence(input.rrule, input.quietHours);
+      asBadRequest(() => validateTimezone(input.timezone));
+      asBadRequest(() => validateRRule(input.rrule));
+      asBadRequest(() =>
+        validateHasVisibleOccurrence(input.rrule, input.quietHours),
+      );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
       const spec: ScheduleSpec = {
@@ -124,8 +148,11 @@ export function createSchedulesService(deps: {
         timezone: input.timezone,
         quietHours: input.quietHours,
         task: input.task,
-        ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
       };
+      // "fresh" is the absence of sessionMode — clear any value inherited from
+      // the spread so an edit to fresh isn't masked by the prior setting.
+      if (input.sessionMode) spec.sessionMode = input.sessionMode;
+      else delete spec.sessionMode;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (updated) await deps.runner.sync(updated.id);

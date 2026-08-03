@@ -37,12 +37,19 @@ export interface ApprovalsRepository {
   ): Promise<PendingApprovalRow[]>;
   /** CAS update: only succeeds if the row is still `pending`. The single
    *  consumer of the pending → resolved transition is enforced here, so
-   *  concurrent inbox clicks / in-session responses are at-most-once. */
+   *  concurrent inbox clicks / in-session responses are at-most-once.
+   *  Returns whether this call won the CAS — `false` means the row was
+   *  unknown or already settled/expired. */
   resolvePending(
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
     decidedBy: string,
     opts?: { markDelivered?: boolean },
+  ): Promise<boolean>;
+  resolveExpired(
+    id: string,
+    verdict: "allow" | "deny",
+    decidedBy: string,
   ): Promise<void>;
   /** Idempotent. Stamps `delivered_at` on a row whose response frame has
    *  reached the wrapper. Re-running is harmless: the WHERE keeps it from
@@ -85,13 +92,15 @@ interface RawPending {
   ownerSub: string;
   sessionId: string | null;
   payload: unknown;
-  createdAt: Date;
-  expiresAt: Date;
-  resolvedAt: Date | null;
+  // Raw `db.execute(sql...)` reads bypass drizzle's timestamptz mapper and
+  // yield strings; typed `.select()`/`.returning()` reads yield Dates.
+  createdAt: Date | string;
+  expiresAt: Date | string;
+  resolvedAt: Date | string | null;
   verdict: string | null;
   decidedBy: string | null;
   status: string;
-  deliveredAt: Date | null;
+  deliveredAt: Date | string | null;
 }
 
 /** Default cap when the caller doesn't specify, and the hard ceiling
@@ -106,6 +115,9 @@ function clampLimit(requested: number | undefined): number {
   return Math.min(requested, MAX_LIST_LIMIT);
 }
 
+const toDate = (v: Date | string): Date =>
+  v instanceof Date ? v : new Date(v);
+
 function toPendingRow(r: RawPending): PendingApprovalRow {
   return {
     id: r.id,
@@ -114,13 +126,13 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
     ownerSub: r.ownerSub,
     sessionId: r.sessionId,
     payload: r.payload as ApprovalPayload,
-    createdAt: r.createdAt,
-    expiresAt: r.expiresAt,
-    resolvedAt: r.resolvedAt,
+    createdAt: toDate(r.createdAt),
+    expiresAt: toDate(r.expiresAt),
+    resolvedAt: r.resolvedAt === null ? null : toDate(r.resolvedAt),
     verdict: r.verdict as PendingApprovalRow["verdict"],
     decidedBy: r.decidedBy,
     status: r.status as ApprovalStatus,
-    deliveredAt: r.deliveredAt,
+    deliveredAt: r.deliveredAt === null ? null : toDate(r.deliveredAt),
   };
 }
 
@@ -214,7 +226,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async resolvePending(id, verdict, decidedBy, opts) {
       const now = new Date();
-      await db
+      const rows = await db
         .update(pendingApprovals)
         .set({
           status: "resolved",
@@ -227,6 +239,27 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           and(
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
+          ),
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
+    },
+
+    async resolveExpired(id, verdict, decidedBy) {
+      const now = new Date();
+      await db
+        .update(pendingApprovals)
+        .set({
+          status: "resolved",
+          verdict,
+          decidedBy,
+          resolvedAt: now,
+          deliveredAt: now,
+        })
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "expired"),
           ),
         );
     },

@@ -82,6 +82,7 @@ export function createSkillInstallPlugin(deps: {
             name: c.name,
             version: c.version,
             skillPaths,
+            ...(c.path !== undefined ? { path: c.path } : {}),
           };
           ctx.log(
             `install ${c.name}@${c.version} from ${c.sourceUrl} into ${skillPaths.length} path(s)`,
@@ -127,5 +128,3 @@ export function createSkillInstallPlugin(deps: {
     },
   };
 }
-
-export const SKILL_INSTALL_PLUGIN_NAME = IMPL_NAME;

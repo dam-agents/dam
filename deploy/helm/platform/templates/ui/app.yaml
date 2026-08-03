@@ -16,10 +16,28 @@ data:
         ''      '';
     }
 
+    # Structured JSON access log, one object per line on stdout.
+    log_format json_access escape=json
+        '{'
+        '"time":"$time_iso8601",'
+        '"remote_addr":"$remote_addr",'
+        '"method":"$request_method",'
+        '"uri":"$request_uri",'
+        '"status":$status,'
+        '"body_bytes_sent":$body_bytes_sent,'
+        '"request_time":$request_time,'
+        '"upstream_response_time":"$upstream_response_time",'
+        '"referer":"$http_referer",'
+        '"user_agent":"$http_user_agent",'
+        '"x_forwarded_for":"$http_x_forwarded_for"'
+        '}';
+
     server {
         listen {{ .Values.ui.port }};
         root /usr/share/nginx/html;
         index index.html;
+
+        access_log /dev/stdout json_access;
 
         location /api/ {
             proxy_pass http://{{ $apiserverName }}:{{ .Values.apiServer.port }};
@@ -74,8 +92,14 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: ui
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.ui) | nindent 2 }}
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/component: ui
@@ -85,8 +109,8 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: ui
-      annotations:
-        checksum/nginx-config: {{ toYaml .Values.ui | sha256sum }}
+      {{- $checksums := dict "checksum/nginx-config" (toYaml .Values.ui | sha256sum) }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.ui "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       containers:

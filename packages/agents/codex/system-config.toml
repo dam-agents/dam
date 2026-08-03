@@ -1,0 +1,14 @@
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+cli_auth_credentials_store = "file"
+developer_instructions = "/etc/AGENTS.md"
+forced_login_method = "api"
+
+# WSS disabled: the Envoy MITM proxy can't relay upgrades, Codex would hang then fall back
+[model_providers.openai-platform]
+name = "OpenAI"
+env_key = "OPENAI_API_KEY"
+supports_websockets = false
+
+[projects."/home/agent/work"]
+trust_level = "trusted"

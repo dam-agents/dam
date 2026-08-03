@@ -14,12 +14,13 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only supersede PR runs. main/tag/schedule runs must finish: they publish the
+  # per-commit images (and Helm chart) that releases and the build-vs-reuse
+  # resolver depend on — a cancelled main run leaves that commit without images.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
-  # early opt-in, remove after 2026-06-16:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   check:
@@ -30,13 +31,16 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+          # CRD checks diff against history: crd-backwards-compatibility vs the
+          # latest v* tag, crd-schema-generation vs the origin/main merge-base.
+          fetch-depth: 0
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
       - run: mise run check
 
   test:
     name: mise test
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,12 +51,79 @@ jobs:
       - run: mise run setup
       - run: mise run test
 
-  build-images:
-    needs: [check]
+  appversion:
+    name: derive app version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      composite: ${{ steps.c.outputs.composite }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - id: c
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:12}"
+          if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
+            composite="${REF_NAME#v}"
+          else
+            appver="$(grep -E '^appVersion:' deploy/helm/platform/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            composite="${appver}-dev-${short}"
+          fi
+          echo "composite=$composite" >> "$GITHUB_OUTPUT"
+          echo "::notice::composite app version: $composite"
+
+  changes:
+    name: detect stale images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platform_base: ${{ steps.d.outputs.platform_base }}
+      platform_base_tag: ${{ steps.d.outputs.platform_base_tag }}
+      agents: ${{ steps.d.outputs.agents }}
+      archs: ${{ steps.d.outputs.archs }}
+      workloads: ${{ steps.d.outputs.workloads }}
+      claude_code_base_tag: ${{ steps.d.outputs.claude_code_base_tag }}
+      source_shas: ${{ steps.d.outputs.source_shas }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: d
+        env:
+          # PR: reuse from the registry what the merge-base already built.
+          # Everything else (main/tag/schedule/dispatch) rebuilds & republishes all.
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
+          out="$(scripts/resolve-image.sh gha-outputs)"
+          printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
+          printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
+
+  build-images:
+    # Deliberately not gated on `check`: builds run in parallel with it and
+    # push by digest only (no tags), so broken code never becomes referencable
+    # — merge-images, which creates the tags, requires `check`. PRs build
+    # amd64 only (changes.archs): PR sha tags feed nothing but the amd64 e2e.
+    needs: [changes]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
+        component: [controller, api-server, ui, keycloak]
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
         include:
           - component: controller
             dockerfile: packages/controller/Dockerfile
@@ -63,9 +134,6 @@ jobs:
           - component: ui
             dockerfile: packages/ui/Dockerfile
             context: .
-          - component: platform-base
-            dockerfile: packages/platform-base/Dockerfile
-            context: .
           - component: keycloak
             dockerfile: packages/keycloak-theme/Dockerfile
             context: .
@@ -73,7 +141,6 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -84,50 +151,42 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - if: matrix.component == 'keycloak'
         run: mise run setup && mise run keycloak-theme:build
-      - id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
-        with:
-          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-          tags: |
-            type=sha,prefix=,format=long
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+      - id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ startsWith(github.ref, 'refs/tags/v') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.component }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
 
-  build-agents:
-    needs: [build-images]
+  merge-images:
+    name: merge multi-arch manifests
+    needs: [build-images, appversion, check]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     strategy:
       matrix:
-        include:
-          - component: claude-code
-            dockerfile: packages/agents/claude-code/Dockerfile
-            context: packages/agents/claude-code
-          - component: codex
-            dockerfile: packages/agents/codex/Dockerfile
-            context: packages/agents/codex
-          - component: pi-agent
-            dockerfile: packages/agents/pi-agent/Dockerfile
-            context: packages/agents/pi-agent
-          - component: bob
-            dockerfile: packages/agents/bob/Dockerfile
-            context: packages/agents/bob
+        component: [controller, api-server, ui, keycloak]
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          persist-credentials: false
-      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
+          pattern: digests-${{ matrix.component }}-*
+          path: /tmp/digests
+          merge-multiple: true
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -142,24 +201,337 @@ jobs:
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+      - name: Create manifest list and push
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+  build-platform-base:
+    # Not gated on `check` either — see build-images. merge-platform-base
+    # carries the gate for the whole agent-image chain.
+    needs: [changes]
+    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ startsWith(github.ref, 'refs/tags/v') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: packages/platform-base/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=platform-base-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=platform-base-${{ matrix.arch }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-platform-base-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-platform-base:
+    name: merge multi-arch platform-base manifest
+    needs: [build-platform-base, appversion, changes, check]
+    if: ${{ needs.changes.outputs.platform_base == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: digests-platform-base-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/platform-base
+          # The source-sha tag (last commit touching the component's effective
+          # source) is the exact ref the build-vs-reuse resolver probes.
+          # github.sha-only tagging made reuse depend on that commit being a
+          # green push tip; this keeps reuse alive across multi-commit pushes
+          # and red main runs. PR runs don't tag it (untrusted-ish, and PRs
+          # only ever reuse what non-PR runs published).
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['platform-base'] }},enable=${{ github.event_name != 'pull_request' }}
+      - name: Create manifest list and push
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/platform-base
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+  build-agents:
+    needs: [merge-platform-base, changes]
+    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.agents) }}
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: packages/agents/${{ matrix.component }}
+          file: packages/agents/${{ matrix.component }}/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.component }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-agents:
+    name: merge multi-arch agent manifests
+    needs: [build-agents, appversion, changes]
+    # !cancelled() && !failure() so this still runs when merge-platform-base was
+    # skipped (platform-base reused) — build-agents runs via the same guard, and
+    # without it here GitHub's implicit success() gate skips this merge (leaving
+    # claude-code untagged, which breaks build-workloads).
+    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.agents) }}
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: digests-${{ matrix.component }}-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          # source-sha tag: see merge-platform-base.
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)[matrix.component] }},enable=${{ github.event_name != 'pull_request' }}
+      - name: Create manifest list and push
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+  # all claude-code-derived workload images; list = resolve-image.sh WORKLOADS
+  build-workloads:
+    needs: [merge-agents, changes]
+    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      # one flaky workload build must not cancel the siblings
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: packages/agents/${{ matrix.component }}
+          file: packages/agents/${{ matrix.component }}/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.component }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # The VM sandbox's containerDisk (hidden behind the vm-sandboxes feature).
+  # Not part of build-agents/build-workloads: those are plain buildx Dockerfile
+  # builds, while this one runs bootc-image-builder to produce a qcow2 and wraps
+  # it as an OCI image — it needs a privileged container and loop devices, which
+  # GitHub-hosted runners allow but buildx cannot express.
+  #
+  # amd64 only: the feature is behind a hidden flag and its consumers are x86_64
+  # clusters. Add the arch matrix here when it graduates — the build is ~15 min
+  # per arch, so paying for arm64 now buys nothing.
+  build-claude-code-vm:
+    needs: [merge-agents, appversion, changes]
+    if: ${{ contains(needs.changes.outputs.agents, 'claude-code') && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/claude-code-vm
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build containerDisk and push
+        env:
+          AGENT_IMAGE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
+        run: |
+          set -euo pipefail
+          docker pull "$AGENT_IMAGE"
+          # build.sh reads AGENT_IMAGE/OUT_TAG; OUT_TAG is the first metadata
+          # tag, the rest are added as aliases below.
+          first="$(jq -cr '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          OUT_TAG="$first" packages/agents/claude-code-vm/build.sh
+          for t in $(jq -cr '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+            [ "$t" = "$first" ] || docker tag "$first" "$t"
+            docker push "$t"
+          done
+
+  merge-workloads:
+    name: merge multi-arch workload manifests
+    needs: [build-workloads, appversion, changes]
+    if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.workloads) }}
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: digests-${{ matrix.component }}-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          # source-sha tag: see merge-platform-base.
+          tags: |
+            type=sha,prefix=,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)[matrix.component] }},enable=${{ github.event_name != 'pull_request' }}
+      - name: Create manifest list and push
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
 
   build-mock:
     name: build mock (e2e fixture)
-    needs: [build-images]
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    needs: [merge-platform-base, changes]
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -180,14 +552,23 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ github.sha }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
           cache-from: type=gha,scope=mock
           cache-to: type=gha,mode=max,scope=mock
 
   e2e:
     name: mise e2e
-    needs: [build-images, build-agents, build-mock]
-    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    needs: [merge-images, build-mock]
+    # Without a status-check function the implicit success() applies, and it is
+    # false whenever any transitive dependency was skipped — merge-platform-base
+    # skips on PRs that don't touch platform-base, which silently skipped e2e on
+    # most PRs. Require the direct needs explicitly instead: e2e pulls exactly
+    # the images those two jobs push.
+    if: >-
+      ${{ !startsWith(github.ref, 'refs/tags/v') &&
+          !cancelled() &&
+          needs.merge-images.result == 'success' &&
+          needs.build-mock.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -210,7 +591,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for c in controller api-server ui keycloak claude-code codex pi-agent bob mock; do
+          for c in controller api-server ui keycloak mock; do
             docker pull "$IMAGE_PREFIX/$c:$SHA"
             docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
           done
@@ -232,7 +613,7 @@ jobs:
           if-no-files-found: ignore
 
   publish:
-    needs: [build-agents]
+    needs: [merge-images, merge-agents, merge-workloads, appversion]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -262,22 +643,26 @@ jobs:
             echo "npmTag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build Helm chart dependencies
+        run: mise run helm:deps
+
       - name: Push Helm chart (release)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "$VERSION" --app-version "$VERSION"
+          helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
           helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
       - name: Push Helm chart (main)
         if: github.ref == 'refs/heads/main'
         env:
           RUN_NUMBER: ${{ github.run_number }}
-          SHA: ${{ github.sha }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$SHA"
+          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
-          helm package deploy/helm/platform --version 0.0.0-main --app-version "$SHA"
+          helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
       - name: Publish CLI to npm
@@ -291,7 +676,7 @@ jobs:
 
   go-vuln:
     name: mise controller:scan:govulncheck
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -347,7 +732,7 @@ jobs:
 
   npm-audit:
     name: mise common:scan:npm-audit
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -402,7 +787,7 @@ jobs:
 
   mend-sca:
     name: Mend SCA
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -465,7 +850,7 @@ jobs:
 
   trivy-tasks:
     name: mise tasks | grep ':scan:trivy$'
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -484,8 +869,15 @@ jobs:
 
   container-scan:
     name: mise run ${{ matrix.task }}
-    needs: [trivy-tasks, build-images, build-agents]
-    if: github.event_name != 'pull_request'
+    needs:
+      [
+        trivy-tasks,
+        merge-images,
+        merge-platform-base,
+        merge-agents,
+        merge-workloads,
+      ]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -557,7 +949,7 @@ jobs:
   manage-security-issues:
     name: File security issues
     needs: [go-vuln, npm-audit, mend-sca, container-scan]
-    if: ${{ always() && github.event_name != 'pull_request' }}
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -568,7 +960,7 @@ jobs:
         with:
           pattern: findings-*
           path: findings
-      - name: Reconcile issues
+      - name: Reconcile summary issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -580,47 +972,50 @@ jobs:
             echo "::notice::no findings artifacts to process"
             exit 0
           fi
-          mapfile -t findings < <(jq -c -s 'add // [] | unique_by(.title) | .[]' "${files[@]}")
-          echo "Processing ${#findings[@]} finding(s) across all scanners"
-          footer="See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow."
 
-          confirmed=()
-          for finding in "${findings[@]}"; do
-            title=$(jq -r '.title' <<<"$finding")
-            body=$(jq -r '.body' <<<"$finding")
-            query=$(jq -r '.searchTerms | map("\"" + . + "\"") | join(" ")' <<<"$finding")
-            existing=$(gh issue list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --search "in:title ${query}" \
-              --json number \
-              --jq '.[0].number // empty')
-            if [ -n "$existing" ]; then
-              confirmed+=("$existing")
-              continue
-            fi
-            url=$(gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$(printf '%s\n\n---\n%s\n' "$body" "$footer")" \
-              --label "security,vulnerability")
-            confirmed+=("${url##*/}")
-          done
-
-          mapfile -t open_issues < <(gh issue list \
+          title="Security vulnerabilities (automated scan)"
+          existing=$(gh issue list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
-            --label "vulnerability" \
-            --author "github-actions[bot]" \
-            --limit 200 \
+            --search "in:title \"$title\"" \
             --json number \
-            --jq '.[].number')
+            --jq '.[0].number // empty')
 
-          for issue_num in "${open_issues[@]}"; do
-            for c in "${confirmed[@]}"; do
-              [ "$c" = "$issue_num" ] && continue 2
-            done
-            gh issue close "$issue_num" \
+          count=$(jq -s 'add // [] | unique_by(.title) | length' "${files[@]}")
+          echo "::notice::$count finding(s) across all scanners"
+
+          if [ "$count" -eq 0 ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --comment "All vulnerabilities resolved — no findings in the latest scan."
+            fi
+            exit 0
+          fi
+
+          body=$(jq -s -r --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" '
+            add // [] | unique_by(.title) | sort_by(.title)
+            | ([ "Open vulnerabilities found by the scheduled scanners (\(length) total).",
+                 "This issue is regenerated on every scan — last update: [run](\($run)).",
+                 "" ]
+               + map("<details><summary>\(.title)</summary>\n\n\(.body)\n\n</details>")
+               + [ "",
+                   "---",
+                   "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow." ])
+            | join("\n")
+          ' "${files[@]}")
+
+          # GitHub caps issue bodies at 65536 chars; a too-long body 422s the API call
+          if [ "${#body}" -gt 65000 ]; then
+            body="${body:0:65000}"$'\n\n---\n**Truncated** — full findings in the workflow run artifacts.'
+          fi
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "${GITHUB_REPOSITORY}" --body "$body"
+          else
+            gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
-              --comment "Vulnerability no longer detected by scanners."
-          done
+              --title "$title" \
+              --body "$body" \
+              --label "security,vulnerability"
+          fi

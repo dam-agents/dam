@@ -2,17 +2,21 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
-import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
   type PresetSeeder,
   type ContributionsSettledPort,
+  type ResizeGatePort,
+  type TelegramBindingPort,
+  type SlackBindingPort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -20,16 +24,10 @@ import {
   upsertChannel,
   deleteChannelByType,
   deleteChannelsByAgentIds,
+  findBySlackChannelId,
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
-import {
-  listAllowedUsersByOwner,
-  listAllowedUsersByAgent,
-  setAllowedUsers,
-  deleteAllowedUsersByAgentIds,
-} from "./infrastructure/allowed-users-repository.js";
-import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -41,26 +39,36 @@ export type {
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
+  /** Global default idle timeout in minutes; the per-agent override resolves against it. */
+  agentIdleTimeoutMinutes: number;
+  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  agentDefaultLimits: { cpu: string; memory: string };
+  /** KubeVirt vm backend available in this install; absent = false (creating
+   *  from a vm-backend template is rejected). */
+  virtualizationEnabled?: boolean;
+  /** Budget gate for live resizes (#1900); omitted by system compositions. */
+  resizeGate?: ResizeGatePort;
   /** `undefined` enables system-level composition (cross-owner) for the
    *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
   db: Db;
-  userDirectory: KeycloakUserDirectory;
-  channelSecretStore: ChannelSecretStore;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Single-shot create; wired from secrets + connections. Omitted system-side. */
+  /** Telegram chat→agent binding flow; omitted system-side. */
+  telegramBinding?: TelegramBindingPort;
+  /** Slack in-chat channel→agent binding flow; omitted system-side. */
+  slackBinding?: SlackBindingPort;
+  /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
-      secretIds: string[];
       connectionIds: string[];
-    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    }): Promise<{ grantedConnectionIds: string[] }>;
     applyAfterCreate(
       agentId: string,
-      sel: { secretIds: string[]; connectionIds: string[] },
+      sel: { connectionIds: string[] },
     ): Promise<void>;
   };
 }): {
@@ -70,17 +78,25 @@ export function composeAgentsModule(deps: {
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s);
+  const agentEnvRepo = createAgentEnvRepository(deps.db);
+  const registrySecretPort = createAgentRegistrySecretPort(k8s);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
   // Postgres queries that already accept an empty-string owner-filter
-  // (channels/allowed_users repos) treat "" as "match all" — keep that.
+  // (channels repo) treat "" as "match all" — keep that.
   const owner = deps.owner ?? "";
   return {
     agents: createAgentsService({
       repo,
+      agentEnvRepo,
+      agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
+      agentDefaultLimits: deps.agentDefaultLimits,
+      virtualizationEnabled: deps.virtualizationEnabled,
+      resizeGate: deps.resizeGate,
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
+      registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
       grantProvisioner: deps.grantProvisioner,
@@ -95,15 +111,9 @@ export function composeAgentsModule(deps: {
           upsertChannelTx(tx, owner, agentId, channel),
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
       },
-      channelSecretStore: deps.channelSecretStore,
-      listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, owner),
-      listAllowedUsersByAgent: listAllowedUsersByAgent(deps.db, owner),
-      setAllowedUsers: setAllowedUsers(deps.db, owner),
-      deleteAllowedUsersByAgentIds: deleteAllowedUsersByAgentIds(
-        deps.db,
-        owner,
-      ),
-      userDirectory: deps.userDirectory,
+      findSlackChannelBinding: findBySlackChannelId(deps.db),
+      telegramBinding: deps.telegramBinding,
+      slackBinding: deps.slackBinding,
     }),
     repo,
     isOwnedAgent: (agentId) =>

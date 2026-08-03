@@ -26,16 +26,35 @@ const EMIT: Record<
   info: sonner.info,
 };
 
-/** Surface a toast through Sonner. The single emit path for the whole app —
- *  React components and non-React modules (query helpers) both call this. */
-export function emitToast({
-  kind,
-  message,
-  action,
-  ttl,
-}: Toast): string | number {
-  return EMIT[kind](message, {
+/** Sonner fans a toast out to whoever is subscribed at publish time and keeps
+ *  no backlog, so anything emitted before `<Toaster>` mounts is lost for good.
+ *  On a cold load that silently swallows mount-time toasts — including the
+ *  OAuth result, which only ever arrives on a cold load. */
+let hostReady = false;
+const pending: Toast[] = [];
+
+/** Called by the Toaster wrapper once Sonner is subscribed. */
+export function onToastHostMounted(): () => void {
+  hostReady = true;
+  for (const toast of pending.splice(0)) send(toast);
+  return () => {
+    hostReady = false;
+  };
+}
+
+function send({ kind, message, action, ttl }: Toast): void {
+  EMIT[kind](message, {
     action,
     duration: ttl === undefined ? DEFAULT_TTL : ttl > 0 ? ttl : Infinity,
   });
+}
+
+/** Surface a toast through Sonner. The single emit path for the whole app —
+ *  React components and non-React modules (query helpers) both call this. */
+export function emitToast(toast: Toast): void {
+  if (!hostReady) {
+    pending.push(toast);
+    return;
+  }
+  send(toast);
 }

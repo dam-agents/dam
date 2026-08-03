@@ -8,16 +8,18 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak-provision
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
-    helm.sh/hook-weight: "5"
+  {{- $hooks := dict
+        "helm.sh/hook" "post-install,post-upgrade"
+        "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded"
+        "helm.sh/hook-weight" "5" }}
+  {{- include "platform.annotations" (dict "root" $ "internal" $hooks) | nindent 2 }}
 spec:
   template:
     metadata:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak-provision
+      {{- include "platform.podAnnotations" (dict "root" $) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       restartPolicy: OnFailure

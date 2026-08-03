@@ -26,12 +26,6 @@ provision:
     script: |
       #!/bin/sh
       set -e
-      # nfs-common is required so the kubelet can mount the platform-rwx
-      # PVCs served by the in-cluster NFS provisioner. Without this
-      # package, agent pods fail with "bad option; … you might need a
-      # /sbin/mount.<type> helper program."
-      DEBIAN_FRONTEND=noninteractive apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
       mkdir -p /etc/rancher/k3s
       cat > /etc/rancher/k3s/config.yaml << 'EOF'
       kubelet-arg:
@@ -39,7 +33,14 @@ provision:
         - "container-log-max-files=3"
       EOF
       if [ ! -d /var/lib/rancher/k3s ]; then
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
+        # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
+        # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
+        # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
+        # its binary relabel step fails under set -e on a disabled-SELinux host.
+        if ! { command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" != Disabled ]; }; then
+          export INSTALL_K3S_SKIP_SELINUX_RPM=true
+        fi
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.36.1+k3s1" INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445" sh -
       fi
       mkdir -p /var/lib/rancher/k3s/server/manifests
       cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'

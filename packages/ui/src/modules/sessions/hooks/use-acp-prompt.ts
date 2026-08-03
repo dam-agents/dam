@@ -13,6 +13,13 @@ import { acpSessionsKeys } from "../api/queries.js";
 
 const DELIVERY_TIMEOUT_MS = 60_000;
 
+export interface SendPromptOptions {
+  /** Send the prompt to the agent without rendering a user bubble, and drop
+   *  the turn silently if it fails — so an auto-sent prompt reads as the agent
+   *  speaking first rather than the user having typed a command. */
+  hidden?: boolean;
+}
+
 interface LiveConnection {
   connection: ClientSideConnection;
   ws: WebSocket;
@@ -41,26 +48,41 @@ export function useAcpPrompt(
   connectionRef: React.MutableRefObject<LiveConnection | null>,
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ): {
-  sendPrompt: (text: string, attachments?: Attachment[]) => Promise<void>;
+  sendPrompt: (
+    text: string,
+    attachments?: Attachment[],
+    opts?: SendPromptOptions,
+  ) => Promise<void>;
   stopAgent: () => Promise<void>;
 } {
   const setMessages = useStore((s) => s.setMessages);
-  const addLog = useStore((s) => s.addLog);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendPrompt = useCallback(
-    async (text: string, attachments?: Attachment[]) => {
+    async (
+      text: string,
+      attachments?: Attachment[],
+      opts?: SendPromptOptions,
+    ) => {
       if (
         (!text && (!attachments || attachments.length === 0)) ||
         !selectedAgent
       )
         return;
 
+      // Hidden sends (e.g. a KB's auto-run onboarding) still reach the agent
+      // but render no user bubble, so the turn reads as the agent speaking
+      // first. A hidden send that fails is dropped silently rather than
+      // leaving an error the user never asked for.
+      const hidden = opts?.hidden ?? false;
+
       const userParts: Message["parts"] = [];
       if (attachments?.length) for (const a of attachments) userParts.push(a);
       if (text) userParts.push({ kind: "text", text });
 
       const aId = crypto.randomUUID();
+      const dropBubble = () =>
+        setMessages((p) => p.filter((m) => m.id !== aId));
 
       // If a prior turn is still streaming, this bubble starts `queued: true`
       // — the projection will promote it to active once prompt N's content
@@ -90,33 +112,35 @@ export function useAcpPrompt(
             ? { ...m, error: { message: m.error.message } }
             : m,
         ),
-        uMsg,
+        ...(hidden ? [] : [uMsg]),
         aMsg,
       ]);
-      addLog("prompt", { text });
 
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
       watchdogRef.current = setTimeout(() => {
         const msgs = useStore.getState().messages;
         const bubble = msgs.find((m) => m.id === aId);
         if (bubble?.streaming && bubble.parts.length === 0) {
-          addLog("error", { message: "Delivery watchdog fired" });
-          setMessages((p) =>
-            p.map((m) =>
-              m.id === aId
-                ? {
-                    ...m,
-                    streaming: false,
-                    queued: false,
-                    parts: [],
-                    error: {
-                      message: "Couldn't deliver — the agent didn't respond.",
-                      retryWith: { text, attachments },
-                    },
-                  }
-                : m,
-            ),
-          );
+          if (hidden) {
+            dropBubble();
+          } else {
+            setMessages((p) =>
+              p.map((m) =>
+                m.id === aId
+                  ? {
+                      ...m,
+                      streaming: false,
+                      queued: false,
+                      parts: [],
+                      error: {
+                        message: "Couldn't deliver — the agent didn't respond.",
+                        retryWith: { text, attachments },
+                      },
+                    }
+                  : m,
+              ),
+            );
+          }
         }
         watchdogRef.current = null;
       }, DELIVERY_TIMEOUT_MS);
@@ -133,8 +157,7 @@ export function useAcpPrompt(
           text,
           attachments,
         );
-        const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
-        addLog("done", { stopReason: r.stopReason });
+        await conn.prompt({ sessionId: sid, prompt: promptBlocks });
 
         // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
         // variant without our extension), force-close our bubble anyway.
@@ -144,21 +167,27 @@ export function useAcpPrompt(
           ),
         );
       } catch (err: unknown) {
-        const errMsg = extractErrorMessage(err);
-        addLog("error", { message: errMsg });
-        setMessages((p) =>
-          p.map((m) =>
-            m.id === aId
-              ? {
-                  ...m,
-                  streaming: false,
-                  queued: false,
-                  parts: [],
-                  error: { message: errMsg, retryWith: { text, attachments } },
-                }
-              : m,
-          ),
-        );
+        if (hidden) {
+          dropBubble();
+        } else {
+          const errMsg = extractErrorMessage(err);
+          setMessages((p) =>
+            p.map((m) =>
+              m.id === aId
+                ? {
+                    ...m,
+                    streaming: false,
+                    queued: false,
+                    parts: [],
+                    error: {
+                      message: errMsg,
+                      retryWith: { text, attachments },
+                    },
+                  }
+                : m,
+            ),
+          );
+        }
       } finally {
         if (watchdogRef.current) {
           clearTimeout(watchdogRef.current);
@@ -172,7 +201,6 @@ export function useAcpPrompt(
       selectedAgent,
       ensureConnection,
       engagedSessionIdRef,
-      addLog,
       setMessages,
       textareaRef,
     ],

@@ -38,6 +38,7 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         name: r.name,
         version: r.version,
         ...(r.contentHash !== null ? { contentHash: r.contentHash } : {}),
+        ...(r.path !== null ? { path: r.path } : {}),
       }));
     },
 
@@ -50,12 +51,14 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           name: ref.name,
           version: ref.version,
           contentHash: ref.contentHash ?? null,
+          path: ref.path ?? null,
         })
         .onConflictDoUpdate({
           target: [agentSkills.agentId, agentSkills.source, agentSkills.name],
           set: {
             version: ref.version,
             contentHash: ref.contentHash ?? null,
+            path: ref.path ?? null,
           },
         });
     },

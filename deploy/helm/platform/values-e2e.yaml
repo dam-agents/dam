@@ -1,4 +1,4 @@
-# E2E test cluster overlay (ADR-056). Layered on top of values-local.yaml
+# E2E test cluster overlay. Layered on top of values-local.yaml
 # by `mise run e2e`. Flips the e2e.enabled gate so the api-server registers
 # its control tRPC namespace and the mock harness becomes drivable from
 # Playwright. values-local.yaml already enables `keycloak.testUser` (dev/dev).
@@ -6,18 +6,13 @@
 e2e:
   enabled: true
 
-# Helm replaces lists wholesale — narrow values-local.yaml's agentTemplates
-# down to just `mock`. The e2e task builds only platform-base + mock images,
-# so registering claude-code / codex / pi-agent / bob would
-# leave the chart pointing at images that aren't loaded in the test cluster.
+# Override values-local's transitional NFS server (#2988): the e2e cluster
+# must prove the platform runs with no shared filesystem available.
+nfsProvisioner:
+  enabled: false
+
+# Only the mock image is built for the e2e cluster — disable claude-code,
+# the one other template values-local.yaml leaves enabled.
 agentTemplates:
-  - name: mock
-    enabled: true
-    description: "Scripted mock agent (E2E test fixture)"
-    image:
-      repository: platform-mock
-      tag: latest
-    storageSize: "1Gi"
-    env:
-      - name: MOCK_DEFAULT_REPLY
-        value: "Hello from the mock agent."
+  claude-code:
+    enabled: false

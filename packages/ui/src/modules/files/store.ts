@@ -2,24 +2,25 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 
-export type RightTab = "files" | "log" | "configuration";
-
 export interface FilesSlice {
-  /** Path of the file currently open in the viewer. The content itself lives
-   *  in the TanStack Query cache (see modules/files/api/queries.ts); this
-   *  field is the UI-state side of the pair. */
   openFilePath: string | null;
-  rightTab: RightTab;
+  filesSectionOpen: boolean;
   /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
+  openFileEdit: boolean;
   expandedDirs: Record<string, Set<string>>;
-  setOpenFilePath: (path: string | null) => void;
-  setRightTab: (tab: RightTab) => void;
+  /** In-flight import count per agent; count not bool so overlapping uploads compose. */
+  importingAgents: Record<string, number>;
+  setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
+  setOpenFileEdit: (edit: boolean) => void;
+  setFilesSectionOpen: (open: boolean) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
   pruneExpandedDir: (agentId: string, path: string) => void;
   renameExpandedDir: (agentId: string, from: string, to: string) => void;
+  beginImport: (agentId: string) => void;
+  endImport: (agentId: string) => void;
 }
 
 /** Drop `prefix` and every path nested under it. Collapsing a parent must
@@ -57,11 +58,22 @@ export const createFilesSlice: StateCreator<
   FilesSlice
 > = (set) => ({
   openFilePath: null,
-  rightTab: "files",
+  filesSectionOpen: true,
   openFileDirty: false,
+  openFileEdit: false,
   expandedDirs: {},
-  setOpenFilePath: (path) => set({ openFilePath: path, openFileDirty: false }),
-  setRightTab: (tab) => set({ rightTab: tab }),
+  importingAgents: {},
+  setOpenFilePath: (path, opts) =>
+    set({
+      openFilePath: path,
+      openFileDirty: false,
+      openFileEdit: opts?.edit ?? false,
+      // The docked file viewer and the docked artifact preview share the
+      // right dock — opening one closes the other.
+      ...(path !== null ? { openArtifactId: null } : {}),
+    }),
+  setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
+  setFilesSectionOpen: (open) => set({ filesSectionOpen: open }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {
     set((state) => {
@@ -94,6 +106,23 @@ export const createFilesSlice: StateCreator<
           [agentId]: rewritePrefix(current, from, to),
         },
       };
+    });
+  },
+  beginImport: (agentId) => {
+    set((state) => ({
+      importingAgents: {
+        ...state.importingAgents,
+        [agentId]: (state.importingAgents[agentId] ?? 0) + 1,
+      },
+    }));
+  },
+  endImport: (agentId) => {
+    set((state) => {
+      const next = (state.importingAgents[agentId] ?? 0) - 1;
+      const importingAgents = { ...state.importingAgents };
+      if (next > 0) importingAgents[agentId] = next;
+      else delete importingAgents[agentId];
+      return { importingAgents };
     });
   },
 });

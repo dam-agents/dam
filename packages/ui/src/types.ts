@@ -1,10 +1,4 @@
-import type {
-  EnvMapping,
-  EnvVar,
-  InjectionConfig,
-  SecretType,
-} from "api-server-api";
-import { isProviderPresetType } from "api-server-api";
+import type { AgentKind, EnvVar } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -54,12 +48,22 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
+/** Client-minted record of a tool-approval verdict, anchored where the user
+ *  decided it. Not part of the runtime log — it vanishes on session replay. */
+export interface VerdictPart {
+  kind: "verdict";
+  label: string;
+  subject: string;
+  allowed: boolean;
+}
+
 export type MessagePart =
   | TextPart
   | ThoughtPart
   | ImagePart
   | FilePart
-  | ToolChip;
+  | ToolChip
+  | VerdictPart;
 
 export interface Message {
   id: string;
@@ -83,13 +87,6 @@ export interface Message {
   };
 }
 
-export interface LogEntry {
-  id: string;
-  ts: string;
-  type: string;
-  payload: object;
-}
-
 export type { SessionView } from "api-server-api";
 export { SessionType } from "api-server-api";
 
@@ -98,6 +95,16 @@ export interface TemplateView {
   name: string;
   image: string;
   description?: string;
+  category: "harness" | "preconfigured";
+  tags?: string[];
+  docsUrl?: string;
+  setupNote?: { title: string; body: string };
+  experimental: boolean;
+  /** Backed by a KubeVirt VM rather than a pod — the image is a containerDisk,
+   *  so this is a property of the template, never a per-sandbox override. */
+  vm: boolean;
+  /** The template's default Size (#1900): CPU/memory limit strings. */
+  size?: { cpu?: string; memory?: string };
 }
 
 export type AgentState =
@@ -106,24 +113,59 @@ export type AgentState =
   | "running"
   | "hibernating"
   | "hibernated"
+  /** Parked (#1900): wants to run, but starting it would breach the owner's
+   *  Ceiling. Waits at zero until a deliberate start after room frees. */
+  | "over_budget"
   | "error";
 
 export interface AgentView {
   id: string;
   name: string;
   templateId: string | null;
+  /** Present when the sandbox is behind its template (#1077): the template
+   *  now ships a different image than the one captured at create time. */
+  templateUpdate: { fromImage: string; toImage: string } | null;
   image: string;
   description?: string;
   env?: EnvVar[];
+  hibernationTimeoutMin: number;
+  grantedSecretIds: string[];
+  grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
+  /** Parked (#1900): starting would breach the owner's compute budget; the
+   *  sandbox stays parked until you free room and start it. */
+  overBudget: boolean;
+  /** The controller's figures for a parked sandbox (tooltip copy). */
+  overBudgetMessage?: string;
+  /** The sandbox's Size (#1900): its CPU/memory limit strings. */
+  size: { cpu?: string; memory?: string };
+  /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */
+  podTerminationReason?: string;
   /** Contributions that failed to install on the last settle; empty when healthy. */
   contributionFailures: { kind: string; message: string }[];
   channels: (
-    | { type: "slack"; slackChannelId: string }
+    | {
+        type: "slack";
+        slackChannelId: string;
+        /** Ambient mode: the agent reads along and may chime in without
+         *  being mentioned; absent = off. */
+        ambient?: boolean;
+      }
     | { type: "telegram" }
   )[];
-  allowedUserEmails: string[];
+  /** The KB template a Knowledge Base was created from. Null on plain
+   *  sandboxes and on Knowledge Bases created before the id was stamped. */
+  kbTemplateId: string | null;
+  /** The driver that spawned this agent as an Invocation target; null for
+   *  every agent the user created. Targets are run-owned and ephemeral, so the
+   *  list hides them and accounts for their compute on the driver's row. */
+  spawnedBy: string | null;
+  /** Which first-class surface this agent also belongs to (a Knowledge Base and
+   *  an experiment sandbox are each an agent plus this marker). Absent on plain
+   *  sandboxes. The Sandboxes list shows every agent badged with its kind; the
+   *  per-kind destinations are filtered views onto the same agents. */
+  kind?: AgentKind;
 }
 
 export interface QuietWindowView {
@@ -148,64 +190,24 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-// `SecretType` is re-exported from `api-server-api` near the bottom of
-// this file alongside the rest of the secrets shared types — keeping
-// one source of truth so a new provider added to the api-server-api
-// union can't be silently missed here.
-
-/** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
-export const MCP_SECRET_PREFIX = "__mcp:";
-
-export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
-  return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
-}
-
-export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
-  return !isProviderPresetType(s.type) && !s.name.startsWith(MCP_SECRET_PREFIX);
-}
-
-export function mcpHostnameFromSecretName(name: string): string {
-  return name.startsWith(MCP_SECRET_PREFIX)
-    ? name.slice(MCP_SECRET_PREFIX.length)
-    : name;
-}
-
 export type {
   BobModelPins,
   EgressPreset,
   EnvMapping,
   EnvVar,
-  IbmLitellmModelPins,
   InjectionConfig,
   ProviderPreset,
   ProviderPresetMode,
   ProviderPresetType,
-  SecretType,
 } from "api-server-api";
 export {
   BOB_CHAT_MODES,
-  bobEnvMappings,
-  bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
-  IBM_LITELLM_DEFAULT_MODEL_PINS,
-  ibmLitellmEnvMappings,
-  ibmLitellmPinsFromEnvMappings,
   isProviderPresetType,
   isValidEnvName,
   PROVIDER_PRESET_TYPES,
   PROVIDERS,
 } from "api-server-api";
-
-export interface SecretView {
-  id: string;
-  name: string;
-  type: SecretType;
-  hostPattern: string;
-  pathPattern?: string;
-  injectionConfig?: InjectionConfig;
-  createdAt: string;
-  envMappings?: EnvMapping[];
-}
 
 export interface McpConnection {
   hostname: string;

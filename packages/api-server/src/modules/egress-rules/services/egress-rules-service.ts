@@ -9,16 +9,17 @@ import type {
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
-import type { K8sAllowOnlySecretsPort } from "../infrastructure/k8s-allow-only-secrets-port.js";
+import { promotedHosts } from "../domain/l7-promotion.js";
+import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
 import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
-  /** Port that materializes the allow-only Secret which promotes a host
-   *  onto Envoy's L7 chain. Optional so non-cluster contexts (tests) can
-   *  skip the side effect. */
-  allowOnlySecrets?: K8sAllowOnlySecretsPort;
+  /** Port that promotes a host onto the agent's L7 chain via the Agent
+   *  CR's spec.l7Hosts (#2865). Optional so non-cluster contexts (tests)
+   *  can skip the side effect. */
+  l7Hosts?: AgentL7HostsPort;
   /** Bulk-seeder used by `applyPreset`. Optional so non-cluster contexts
    *  (tests) can skip preset operations. */
   presetSeeder?: PresetSeeder;
@@ -29,18 +30,12 @@ export interface CreateEgressRulesServiceDeps {
   ownerSub: string;
 }
 
-/** A rule needs the L7 (HTTP) ext_authz path — and therefore MITM — when
- *  it constrains method or path. Wildcard-only rules stay on the L4 path
- *  where the API server gates by SNI alone. */
-function needsL7Promotion(method: string, pathPattern: string): boolean {
-  return method !== "*" || pathPattern !== "*";
-}
-
 function toView(row: EgressRuleRow): EgressRuleView {
   return {
     id: row.id,
     agentId: row.agentId,
     host: row.host,
+    ...(row.port ? { port: row.port } : {}),
     method: row.method,
     pathPattern: row.pathPattern,
     verdict: row.verdict,
@@ -53,6 +48,26 @@ function toView(row: EgressRuleRow): EgressRuleView {
 export function createEgressRulesService(
   deps: CreateEgressRulesServiceDeps,
 ): EgressRulesService {
+  // Recompute the agent's promoted-host set from its active rules and write
+  // it wholesale, so spec.l7Hosts stays a pure projection of the rules
+  // table (#2865). Run after every mutation — create/update *and* revoke —
+  // so a narrowing that no longer exists drops its host instead of
+  // ratcheting forever. Idempotent: the port skips the patch (and the
+  // gateway roll) when the set is unchanged.
+  //
+  // Deliberately NOT transactional with the rule write: if the CR patch
+  // throws (conflict retries exhausted, pruned write), the rule row stays
+  // committed and the caller sees the error — fail-loud, never
+  // silently-unpromoted (#2322). The gap self-heals: the projection is
+  // recomputed from the table on the agent's next rule mutation, and a
+  // missed promotion also heals on api-server boot (the startup backfill
+  // re-projects every agent with active narrow rules).
+  async function reconvergePromotions(agentId: string): Promise<void> {
+    if (!deps.l7Hosts) return;
+    const rows = await deps.repo.listForAgent(agentId);
+    await deps.l7Hosts.set(agentId, promotedHosts(rows));
+  }
+
   return {
     async listForAgent(agentId) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
@@ -82,16 +97,50 @@ export function createEgressRulesService(
         });
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
-      const row = await deps.repo.insert({
+      let row = await deps.repo.insert({
         id: randomUUID(),
         agentId: input.agentId,
         host: input.host,
+        ...(input.port ? { port: input.port } : {}),
         method: input.method,
         pathPattern: input.pathPattern,
         verdict: input.verdict,
         decidedBy: deps.ownerSub,
         source: "manual",
       });
+      // Insert conflicted with an existing rule carrying a different verdict.
+      // Nothing changed, so bail before the create audit log and L7 side
+      // effect — changing a verdict is the update/edit path's job.
+      if (row.verdict !== input.verdict) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `an equivalent rule already exists with verdict '${row.verdict}' — edit the existing rule instead`,
+        });
+      }
+      // Port is outside the rule's unique key and not editable, so a
+      // port-differing duplicate can't be stored or fixed by edit — reject
+      // rather than return a rule that misrepresents the requested port.
+      if ((row.port ?? null) !== (input.port ?? null)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `an equivalent rule already exists ${row.port ? `for port ${row.port}` : "without a port"} — revoke it and create the rule again`,
+        });
+      }
+      // Same-verdict duplicate of a preset/connection row: the manual create
+      // takes ownership (same intent as edit-promotes-to-manual), so a later
+      // preset sweep or connection revoke won't silently drop a rule the
+      // user explicitly asked for.
+      if (row.source !== "manual" && row.source !== "inbox") {
+        row =
+          (await deps.repo.updateTakeOwnership({
+            id: row.id,
+            method: row.method,
+            pathPattern: row.pathPattern,
+            verdict: row.verdict,
+            decidedBy: deps.ownerSub,
+            source: "manual",
+          })) ?? row;
+      }
       securityLog("info", "egress_rule.create", {
         category: "authz-list",
         actor: deps.ownerSub,
@@ -111,16 +160,12 @@ export function createEgressRulesService(
             : {}),
         },
       });
-      // Path-specific rules need MITM so the L7 ext_authz handler can see
-      // method/path. The allow-only Secret is the controller's signal to
-      // extend the cert SAN list and render an MITM chain. Idempotent: if
-      // a credentialed Secret already exists for the host, this no-ops.
-      if (
-        needsL7Promotion(input.method, input.pathPattern) &&
-        deps.allowOnlySecrets
-      ) {
-        await deps.allowOnlySecrets.ensure(deps.ownerSub, input.host);
-      }
+      // Path-specific rules need the host on the L7 chain so the ext_authz
+      // handler can see method/path. spec.l7Hosts on the Agent CR is the
+      // controller's per-agent signal to extend the cert SAN list and
+      // render the chain (#2865); reconverge recomputes it from the agent's
+      // full active rule set.
+      await reconvergePromotions(input.agentId);
       return toView(row);
     },
 
@@ -146,12 +191,13 @@ export function createEgressRulesService(
       const method = input.method ?? rule.method;
       const pathPattern = input.pathPattern ?? rule.pathPattern;
       const verdict = input.verdict ?? rule.verdict;
-      const updated = await deps.repo.updatePromoteToManual({
+      const updated = await deps.repo.updateTakeOwnership({
         id: input.id,
         method,
         pathPattern,
         verdict,
         decidedBy: deps.ownerSub,
+        source: "manual",
       });
       if (!updated) {
         throw new TRPCError({
@@ -173,12 +219,10 @@ export function createEgressRulesService(
           priorVerdict: rule.verdict,
         },
       });
-      // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
-      // which promotes the host to L7 if it wasn't already. Same idempotent
-      // ensure as create.
-      if (needsL7Promotion(method, pathPattern) && deps.allowOnlySecrets) {
-        await deps.allowOnlySecrets.ensure(deps.ownerSub, updated.host);
-      }
+      // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`
+      // (promotes the host) or widened it back (demotes, if it was the last
+      // narrowing on that host). Reconverge covers both directions.
+      await reconvergePromotions(updated.agentId);
       return toView(updated);
     },
 
@@ -199,6 +243,10 @@ export function createEgressRulesService(
           pathPattern: rule.pathPattern,
         },
       });
+      // Revoking the last narrowing on a host demotes it — reconverge drops
+      // it from spec.l7Hosts so the gateway stops MITM-terminating a host
+      // no rule needs anymore (#2865).
+      await reconvergePromotions(rule.agentId);
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {

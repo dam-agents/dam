@@ -1,5 +1,5 @@
 {{/*
-Agent templates (ADR-058). One ConfigMap in the RELEASE namespace with a
+Agent templates. One ConfigMap in the RELEASE namespace with a
 `<name>.yaml` data key per enabled `.Values.agentTemplates` entry. It is
 mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
 boot — the api-server no longer reads templates dynamically via the K8s API,
@@ -23,19 +23,67 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 data:
-  {{- range $tmpl := .Values.agentTemplates }}
-  {{- if $tmpl.enabled }}
+  {{- range $name, $tmpl := .Values.agentTemplates }}
+  {{- if and $tmpl $tmpl.enabled }}
+  {{- /* backend access must stay behind the nil guard above — a nulled
+         template entry (`agentTemplates.foo: null`) has no fields. */}}
+  {{- $isVM := and $tmpl.backend (eq ($tmpl.backend.type | default "") "vm") }}
+  {{- if or (not $isVM) $.Values.virtualization.enabled }}
   {{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
-  {{ $tmpl.name }}.yaml: |
+  {{ $name }}.yaml: |
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
     agentHome: {{ $home | quote }}
+    {{- with $tmpl.displayName }}
+    name: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.category }}
+    category: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.tags }}
+    tags:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.docsUrl }}
+    docsUrl: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.setupNote }}
+    setupNote:
+      title: {{ .title | quote }}
+      body: {{ .body | quote }}
+    {{- end }}
+    {{- if $tmpl.experimental }}
+    experimental: true
+    {{- end }}
     {{- with $tmpl.image.pullPolicy }}
     imagePullPolicy: {{ . | quote }}
     {{- end }}
     {{- with $tmpl.storageSize }}
     storageSize: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.hibernationTimeout }}
+    hibernationTimeout: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.backend }}
+    backend:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.runtimeClassName }}
+    runtimeClassName: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
+    {{- fail (printf "agentTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
+    {{- end }}
+    {{- if $tmpl.imagePullSecret }}
+    imagePullSecretRef: {{ printf "%s-tmpl-%s-pull" (include "platform.fullname" $) $name | quote }}
+    {{- end }}
+    {{- with $tmpl.imagePullSecretRef }}
+    imagePullSecretRef: {{ . | quote }}
     {{- end }}
     {{- with $tmpl.resources }}
     resources:
@@ -51,7 +99,11 @@ data:
         {{- end }}
       {{- end }}
     {{- end }}
-    {{- with $tmpl.env }}
+    {{- $env := $tmpl.env | default list }}
+    {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}
+    {{- $env = concat $env (include "platform.agentTelemetry.env" (dict "root" $ "templateName" $name) | fromYamlArray) }}
+    {{- end }}
+    {{- with $env }}
     env:
       {{- toYaml . | nindent 6 }}
     {{- end }}
@@ -63,5 +115,6 @@ data:
     init: |
       {{- . | nindent 6 }}
     {{- end }}
+  {{- end }}
   {{- end }}
   {{- end }}

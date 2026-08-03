@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
+import {
+  checkAgentBinding,
+  operateAgentsProcedure,
+} from "../../auth-procedures.js";
 
 const uploadInputSchema = z.object({
   agentId: z.string().min(1),
@@ -23,8 +27,11 @@ export interface FilesService {
 }
 
 export const filesRouter = t.router({
-  upload: t.procedure
+  upload: operateAgentsProcedure
     .input(uploadInputSchema)
     .output(uploadOutputSchema)
-    .mutation(({ ctx, input }) => ctx.files.upload(input)),
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.files.upload(input);
+    }),
 });

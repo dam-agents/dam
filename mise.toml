@@ -1,5 +1,8 @@
 [tools]
 nodejs = "24"
+# The experiment-sdk tasks run through uv (locked dev group: ruff, pytest) —
+# declared here so CI runners get the binary; uv manages python itself.
+uv = "0.9"
 
 # Go
 go = "1.26"
@@ -19,6 +22,7 @@ maven = "latest"
 helm = "4.2.0"
 kubeconform = "latest"
 "lima" = "2"
+"go:sigs.k8s.io/crdify" = "latest"
 
 # Security scanning
 "zizmor" = "latest"
@@ -28,6 +32,7 @@ kubeconform = "latest"
 fd = "latest"
 yq = "latest"
 gum = "latest"
+gh = "latest"
 pinact = "latest"
 
 [settings]
@@ -45,15 +50,23 @@ includes = [
     "packages/agent-runtime-api/tasks.toml",
     "packages/agent-runtime/tasks.toml",
     "packages/agents/bob/tasks.toml",
+    "packages/agents/claude-code-vm/tasks.toml",
     "packages/agents/claude-code/tasks.toml",
     "packages/agents/codex/tasks.toml",
+    "packages/agents/gepa/tasks.toml",
+    "packages/agents/k-search/tasks.toml",
+    "packages/agents/nous/tasks.toml",
+    "packages/agents/openevolve/tasks.toml",
     "packages/agents/pi-agent/tasks.toml",
+    "packages/agents/shinkaevolve/tasks.toml",
     "packages/agents/tasks.toml",
     "packages/api-server-api/tasks.toml",
     "packages/api-server/tasks.toml",
     "packages/cli/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
+    "packages/driver-sdk/tasks.toml",
+    "packages/experiment-sdk/tasks.toml",
     "packages/e2e/agents/mock-api/tasks.toml",
     "packages/e2e/agents/mock/tasks.toml",
     "packages/e2e/playwright/tasks.toml",

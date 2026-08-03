@@ -1,6 +1,6 @@
 {
   "quietStartup": true,
-  "defaultThinkingModel": "medium",
+  "defaultThinkingLevel": "medium",
   "packages": [
     "npm:@zhafron/pi-memory"
   ],

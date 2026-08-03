@@ -1,11 +1,7 @@
 ["platform-base:image"]
-description = "Build the platform-base image (shared base layer for every agent image)"
+description = "Build the platform-base image (shared base layer for every agent image), or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/platform-base/Dockerfile -t platform-base .
-'''
+run = "scripts/resolve-image.sh build-or-reuse platform-base -- -f packages/platform-base/Dockerfile ."
 
 ["platform-base:scan"]
 depends = ["platform-base:scan:*"]

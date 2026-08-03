@@ -2,7 +2,7 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS builder
 
 USER root
 
-COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
+COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
 COPY package.json ./
 RUN install-pnpm
 

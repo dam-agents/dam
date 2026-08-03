@@ -8,7 +8,20 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
-import type { Agent, AgentsService, ApiContext } from "api-server-api";
+import {
+  ALL_SCOPES,
+  type Agent,
+  type AgentsService,
+  type ApiContext,
+  type UserIdentity,
+} from "api-server-api";
+
+const FIXTURE_USER: UserIdentity = {
+  sub: "fixture-user",
+  preferredUsername: "fixture-user",
+  scopes: ALL_SCOPES,
+  agentIds: "*",
+};
 
 const exec = promisify(execFile);
 
@@ -27,7 +40,16 @@ async function runDam(
   env: Record<string, string>,
 ): Promise<RunResult> {
   try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
+    // process.execPath, not "node" from PATH: under mise, PATH's node is a
+    // shim that needs mise's own env, which this deliberately stripped env
+    // doesn't carry — the shim then dies silently with exit 1.
+    const { stdout, stderr } = await exec(
+      process.execPath,
+      [BIN_PATH, ...args],
+      {
+        env,
+      },
+    );
     return { exitCode: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code?: number; stdout?: string; stderr?: string };
@@ -48,15 +70,21 @@ async function startFixture(opts: {
     get: opts.get ?? (async () => null),
   };
 
-  const ctx = new Proxy({ agents } as Record<string, unknown>, {
-    get(target, prop) {
-      if (prop in target) return target[prop as string];
-      if (prop === "then") return undefined;
-      throw new Error(
-        `fake api-server: unexpected ctx access: ${String(prop)}`,
-      );
+  // agents.list/get join spawn attribution in from the invocations table, so
+  // the fixture must answer that read too.
+  const invocationsQuery = { listTargets: async () => [] };
+  const ctx = new Proxy(
+    { agents, invocationsQuery, user: FIXTURE_USER } as Record<string, unknown>,
+    {
+      get(target, prop) {
+        if (prop in target) return target[prop as string];
+        if (prop === "then") return undefined;
+        throw new Error(
+          `fake api-server: unexpected ctx access: ${String(prop)}`,
+        );
+      },
     },
-  }) as unknown as ApiContext;
+  ) as unknown as ApiContext;
 
   const server: Server = createServer(async (req, res) => {
     if (req.url === "/api/version") {
@@ -121,9 +149,10 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
       image: "",
     },
     state: "running",
+    effectiveHibernationTimeoutMin: 60,
+    overBudget: false,
     contributionFailures: [],
     channels: [],
-    allowedUserEmails: [],
     ...overrides,
   };
 }
@@ -163,7 +192,6 @@ describe("dam agent get (integration)", () => {
         image: "registry.example.com/claude-code:latest",
         description: "My prod environment",
       },
-      allowedUserEmails: ["alice@example.com", "bob@example.com"],
     });
     const fixture = await startFixture({
       get: async (id) => (id === "agent-42" ? agent : null),
@@ -186,9 +214,6 @@ describe("dam agent get (integration)", () => {
       );
       expect(r.stdout).toMatch(/^STATE:\s+running$/m);
       expect(r.stdout).toMatch(/^DESCRIPTION:\s+My prod environment$/m);
-      expect(r.stdout).toMatch(
-        /^ALLOWED:\s+alice@example\.com, bob@example\.com$/m,
-      );
     } finally {
       await fixture.close();
     }

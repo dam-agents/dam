@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"log/slog"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,6 +13,10 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
+
+// AgentContainerName is the agent container's name in the rendered pod. The
+// live-resize budget gate reads the running template's limits back off it.
+const AgentContainerName = "agent"
 
 // portInt32 narrows a config-supplied port (typed `int` because it comes
 // from `strconv.Atoi` on an env var) to int32 with an explicit upper-bound
@@ -26,19 +31,18 @@ func portInt32(p int) int32 {
 	return int32(p)
 }
 
-// ADR-038 paired-pod labels. `LabelPair` identifies the two pods of a single
+// Paired-pod labels. `LabelPair` identifies the two pods of a single
 // agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
 //
 // Pair scope is *per orchestration unit*, not per agent: long-lived agents
-// use the agent name as the pair key, but forks use the fork name (each
-// fork has its own paired gateway, the parent's gateway is not shared).
+// use the agent name as the pair key.
 // The `LabelAgent` label still identifies the parent agent for ext_authz /
 // pod-IP resolver purposes — for long-lived pods it equals the pair key,
-// for fork pods it points at the parent agent so traffic resolves under
-// the parent's egress rules (ADR-027).
+// for Run executor pods it points at the parent agent so traffic resolves under
+// the parent's egress rules.
 const (
-	// LabelAgent points at the durable Agent ConfigMap. After ADR-046
-	// collapsed Instance into Agent, this replaces the former
+	// LabelAgent points at the durable Agent ConfigMap. After Instance was
+	// collapsed into Agent, this replaces the former
 	// `agent-platform.ai/agent` label.
 	LabelAgent  = "agent-platform.ai/agent"
 	LabelPair   = "agent-platform.ai/pair"
@@ -62,7 +66,7 @@ const (
 )
 
 // annRollRev is an api-server-set annotation on the Agent that requests a
-// rolling restart of the pair (ADR-058). The controller stamps its value into
+// rolling restart of the pair. The controller stamps its value into
 // both pod templates, so bumping it rolls the agent + gateway without any
 // spec/status write — this is how the UI restart button and credential-grant
 // changes force a fresh pod. It is complementary to the gateway's
@@ -71,14 +75,47 @@ const (
 const annRollRev = "agent-platform.ai/roll-rev"
 
 // agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
-// The agent/fork reconcilers requeue until the gateway ClusterIP is
+// The reconcilers requeue until the gateway ClusterIP is
 // assigned, so this never sees an empty IP at steady state.
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
 
-// BuildAgentStatefulSet renders the agent half of the paired pod set
-// (ADR-038). The agent container holds zero credentials; egress credential
+// agentPlatformEnv is the platform wiring env shared by both backends: the
+// container backend projects it as pod env, the vm backend writes it into the
+// guest's /etc/platform/env via cloud-init. The agent holds zero platform
+// credentials either way. Inbound calls to agent-runtime's tRPC are gated by
+// the api-server's mesh AuthorizationPolicies; ALL outbound calls — external
+// hosts AND the harness API — cross the paired gateway pod, whose SPIFFE
+// principal (per-instance SA) is the identity the waypoint enforces.
+func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{Name: "HTTPS_PROXY", Value: proxyAddr},
+		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "https_proxy", Value: proxyAddr},
+		{Name: "http_proxy", Value: proxyAddr},
+		// Node doesn't read the system trust store, so it gets the cluster CA
+		// through NODE_EXTRA_CA_CERTS (which adds to its built-in CAs). Other
+		// tools (git, curl, Go) read the system store, where the agent
+		// entrypoint installs the CA. Python's certifi-based clients read
+		// neither, so the base image points SSL_CERT_FILE / REQUESTS_CA_BUNDLE
+		// at the merged system bundle — never set those here to the bare CA
+		// file, which would override the image and drop the public CAs.
+		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
+		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		{Name: "PLATFORM_AGENT_ID", Value: name},
+		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "HOME", Value: agentHome},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
+		// agent-runtime opens this SSE stream and materializes pod-files
+		// (gh hosts.yml today; more producers later) directly under HOME.
+		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
+	}
+}
+
+// BuildAgentStatefulSet renders the agent half of the paired pod set.
+// The agent container holds zero credentials; egress credential
 // injection happens in the paired gateway pod, reached via HTTPS_PROXY.
 //
 // The template is independent of the granted set: it always mounts the leaf
@@ -89,12 +126,12 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // used directly as the HTTPS_PROXY target. The caller requeues when
 // it's not yet assigned.
 //
-// ADR-046: there is no separate InstanceSpec anymore — the merged AgentSpec
+// There is no separate InstanceSpec anymore — the merged AgentSpec
 // carries `SecretRef` and the single user-owned env list.
 //
 // Replicas are set to 1 here (the running default) but are owned by the
 // reconciler's applyStatefulSet, which scales up on activity and defers
-// scale-down to the idle checker (ADR-058: run state is activity-driven, not a
+// scale-down to the idle checker (run state is activity-driven, not a
 // stored desiredState).
 func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
@@ -110,10 +147,8 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		agentHome = defaults.AgentHome
 	}
 	specMounts := resolveSpecMounts(agentSpec, defaults)
-	specEnv := agentSpec.Env
-	if len(specEnv) == 0 {
-		specEnv = configEnvToTypes(defaults.Env)
-	}
+	// Project only chart-level platform defaults; user env rides the runtime channel, not spec.env.
+	specEnv := configEnvToTypes(defaults.Env)
 
 	replicas := int32(1)
 
@@ -133,53 +168,18 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	// identity in this model; mesh-keyed AuthorizationPolicy on the gateway
 	// pod is gone (NP is the gate). The paired gateway pod remains a mesh
 	// participant — its SPIFFE principal still gates gateway → harness and
-	// gateway → ext-authz hops (ADR-041).
+	// gateway → ext-authz hops.
 	podLabels := map[string]string{}
 	for k, v := range labels {
 		podLabels[k] = v
 	}
 	podLabels["istio.io/dataplane-mode"] = "none"
 
-	caCertPath := "/etc/platform/ca/ca.crt"
-
 	proxyAddr := agentProxyAddr(cfg, gatewayClusterIP)
 
-	// The agent container holds zero platform credentials. Inbound calls to
-	// agent-runtime's tRPC are gated by the api-server's mesh
-	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
-	// harness API — cross the paired gateway pod.
-	//
-	// ADR-041: identity for harness traffic comes from the gateway pod's
-	// SPIFFE principal (gateway runs as the per-instance SA). When the
-	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
-	// the connection with the gateway's principal, and the waypoint
-	// enforces principal == URL `:id`. The Envoy bootstrap routes
-	// harness traffic without ext_authz HITL gating and without
-	// credential-header injection.
-	env := []corev1.EnvVar{
-		{Name: "HTTPS_PROXY", Value: proxyAddr},
-		{Name: "HTTP_PROXY", Value: proxyAddr},
-		{Name: "https_proxy", Value: proxyAddr},
-		{Name: "http_proxy", Value: proxyAddr},
-		// Node doesn't read the system trust store, so it gets the cluster CA
-		// through NODE_EXTRA_CA_CERTS (which adds to its built-in CAs). Other
-		// tools (git, curl, Go, Python) read the system store, where the agent
-		// entrypoint installs the CA — so we don't set SSL_CERT_FILE /
-		// GIT_SSL_CAINFO, which would replace and drop the public CAs.
-		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "PLATFORM_AGENT_ID", Value: name},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: agentHome},
-		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
-		// agent-runtime opens this SSE stream and materializes pod-files
-		// (gh hosts.yml today; more producers later) directly under HOME.
-		// Forks deliberately do NOT receive this env — see fork_resources.go.
-		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
-	}
+	env := agentPlatformEnv(name, cfg, agentHome, proxyAddr)
 
-	// User-supplied agent env; credential placeholders arrive via the runtime channel.
+	// Chart-level platform default env; user env arrives via the runtime channel.
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
@@ -207,7 +207,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		if m.Persist {
 			storageSize := effectiveMountSize(m, agentSpec, defaults)
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
@@ -232,7 +232,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	// ca.crt only (the tls.key stays on the gateway) — the only platform data
-	// the agent mounts (ADR-038). The leaf is always issued, so this Secret
+	// the agent mounts. The leaf is always issued, so this Secret
 	// always exists and the volume never flips with the granted set.
 	volumes = append(volumes, corev1.Volume{
 		Name: "ca-cert",
@@ -250,16 +250,42 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
-	// Resources: template wins when set, else chart-wide default.
+	// Resources (#1900): limits are the user-facing "size" — the spec's
+	// stamped limits (user slider, else template, else chart default), with
+	// missing dimensions filled from the chart default so no agent renders
+	// unbounded. Requests are scheduling internals derived per dimension:
+	// max(limit × fraction, floor), clamped to the limit. A spec-set request
+	// (operator escape hatch via a template) bypasses derivation.
 	resourceReqs := corev1.ResourceRequirements{}
-	if agentSpec.Resources.Requests != nil {
-		resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
+	resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
+	if defaults.Resources != nil {
+		for name, q := range defaults.Resources.Limits {
+			if _, set := resourceReqs.Limits[name]; !set {
+				resourceReqs.Limits[name] = q
+			}
+		}
 	}
-	if agentSpec.Resources.Limits != nil {
-		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
+	if len(resourceReqs.Limits) == 0 {
+		resourceReqs.Limits = nil
 	}
-	if resourceReqs.Requests == nil && resourceReqs.Limits == nil && defaults.Resources != nil {
-		resourceReqs = *defaults.Resources
+	resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
+	for _, dim := range []struct {
+		name  corev1.ResourceName
+		floor resource.Quantity
+		milli bool // sub-unit precision (CPU); memory derives on whole bytes
+	}{
+		{corev1.ResourceCPU, cfg.RequestsMinCPU, true},
+		{corev1.ResourceMemory, cfg.RequestsMinMemory, false},
+	} {
+		if _, set := resourceReqs.Requests[dim.name]; set {
+			continue
+		}
+		if limit, ok := resourceReqs.Limits[dim.name]; ok {
+			resourceReqs.Requests[dim.name] = deriveRequest(limit, cfg.RequestsFraction, dim.floor, dim.milli)
+		}
+	}
+	if len(resourceReqs.Requests) == 0 {
+		resourceReqs.Requests = nil
 	}
 
 	// Init container: template wins, else chart-wide default.
@@ -292,16 +318,19 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		})
 	}
 
-	// Image pull secrets — chart-only.
 	var pullSecrets []corev1.LocalObjectReference
+	if agentSpec.ImagePullSecretRef != "" {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: agentSpec.ImagePullSecretRef})
+	}
 	for _, n := range base.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
-	// Fast (1s) during startup so wake-up is detected quickly, slow
-	// (10s) afterwards so we're not probing every agent pod every
-	// second forever. FailureThreshold=120 → ~2 min of startup
-	// runway, enough for a cold pull of a large agent image.
+	// Startup + readiness hit /healthz every 1s so wake-up and ready
+	// transitions surface near-instantly (readiness routing keys on PodReady).
+	// Liveness stays 10s — it only needs to catch a hung process, not
+	// drive routing. startup FailureThreshold=120 → ~2 min of runway,
+	// enough for a cold pull of a large agent image.
 	var startupProbe, readinessProbe, livenessProbe *corev1.Probe
 	if cfg.AgentProbesEnabled {
 		startupProbe = &corev1.Probe{
@@ -311,11 +340,13 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		}
 		readinessProbe = &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
+			PeriodSeconds: 1,
 		}
 		livenessProbe = &corev1.Probe{
-			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
+			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+			FailureThreshold: 3,
 		}
 	}
 
@@ -334,7 +365,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	containers := []corev1.Container{{
-		Name:            "agent",
+		Name:            AgentContainerName,
 		Image:           agentSpec.Image,
 		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 		Ports: []corev1.ContainerPort{{
@@ -350,9 +381,9 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		VolumeMounts:    volumeMounts,
 	}}
 
-	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
+	// Threat model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
-	// paired-pod split (ADR-038) the agent and gateway are different pods
+	// paired-pod split the agent and gateway are different pods
 	// so process-namespace sharing is structurally moot, but we keep
 	// `false` explicit for clarity.
 	falseVal := false
@@ -370,7 +401,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		// SPIFFE workload identity. The per-instance SA still scopes
 		// Secret access at the controller level —
 		// `automountServiceAccountToken: false` keeps the SA token
-		// off-pod (ADR-033 threat model).
+		// off-pod (threat model).
 		ServiceAccountName:            name,
 		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,
@@ -382,6 +413,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		Volumes:                       volumes,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
+	applyTemplateScheduling(&podSpec, agentSpec)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -431,7 +463,7 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 }
 
 // applyPoolClaims swaps the named mounts from a volumeClaimTemplate to an
-// explicit pod Volume referencing the claimed PVC by name (the shape forks use).
+// explicit pod Volume referencing the claimed PVC by name (the shape Run executors use).
 // The container's volumeMount already targets the mount name. No-op for an empty
 // map, so unclaimed agents render exactly as before.
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
@@ -458,7 +490,10 @@ func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
 
 // BuildAgentService is the headless Service the api-server uses to reach the
 // agent pod's ACP/tRPC port. Selector pins to the pair key + role=agent so
-// the gateway pod (which carries the same instance label) is excluded.
+// the gateway pod (which carries the same instance label) is excluded. The
+// target port is numeric, not the named `acp` port: a vm backend's
+// virt-launcher pod matches the selector but declares no named ports, and a
+// named target would drop it from the endpoints.
 func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	selector := map[string]string{LabelPair: name, LabelRole: RoleAgent}
 	return &corev1.Service{
@@ -472,16 +507,46 @@ func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerRef
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  selector,
 			Ports: []corev1.ServicePort{{
-				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
+				Name: "acp", Port: 8080, TargetPort: intstr.FromInt32(8080),
 			}},
 		},
 	}
 }
 
+// toResourceList drops malformed and non-positive quantities (with a log)
+// instead of panicking the reconcile loop — the caller's default-fill then
+// applies the chart default for the missing dimension, which is the same
+// tolerance the budget's parseQuantityOr applies to the identical input. The
+// two must agree, or enforcement would count a value the pod doesn't run with.
 func toResourceList(m map[string]string) corev1.ResourceList {
 	rl := make(corev1.ResourceList)
 	for k, v := range m {
-		rl[corev1.ResourceName(k)] = resource.MustParse(v)
+		q, err := resource.ParseQuantity(v)
+		if err != nil || q.Sign() <= 0 {
+			slog.Warn("ignoring invalid resource quantity in agent spec; chart default applies",
+				"resource", k, "value", v)
+			continue
+		}
+		rl[corev1.ResourceName(k)] = q
 	}
 	return rl
+}
+
+// deriveRequest computes a pod request from its limit (#1900):
+// max(limit × fraction, floor), clamped to the limit so a floor above a tiny
+// limit can never render an invalid pod (request > limit).
+func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Quantity, milli bool) resource.Quantity {
+	var derived resource.Quantity
+	if milli {
+		derived = *resource.NewMilliQuantity(int64(float64(limit.MilliValue())*fraction), limit.Format)
+	} else {
+		derived = *resource.NewQuantity(int64(float64(limit.Value())*fraction), limit.Format)
+	}
+	if derived.Cmp(floor) < 0 {
+		derived = floor
+	}
+	if derived.Cmp(limit) > 0 {
+		derived = limit
+	}
+	return derived
 }

@@ -1,81 +1,98 @@
-import { Plus } from "lucide-react";
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { useStore } from "../../../store.js";
-import { useSchedules, useScheduleSessions } from "../api/queries.js";
-import { CreateScheduleForm } from "../forms/create-schedule-form.js";
+import { Button } from "@/components/ui/button";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { Inset } from "@/components/ui/inset";
+import { SectionLabel } from "@/components/ui/section-label";
+
+import type { Schedule } from "../../../types.js";
+import { useSchedules } from "../api/queries.js";
+import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
+import { ScheduleResultsModal } from "./schedule-results-modal.js";
+
+type FormState =
+  | { mode: "create" }
+  | { mode: "edit"; schedule: Schedule }
+  | null;
 
 export function SchedulesPanel({
+  agentId,
   onResumeSession,
 }: {
+  agentId: string | null;
   onResumeSession?: (sessionId: string) => void;
 }) {
-  const selectedAgent = useStore((s) => s.selectedAgent);
-
-  const schedulesQuery = useSchedules(selectedAgent);
+  const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
 
-  const sessionsQuery = useScheduleSessions(selectedAgent, expandedId);
-  const sessionsForExpanded = sessionsQuery.data ?? [];
+  const closeForm = () => setForm(null);
 
   return (
-    <div className="flex flex-col">
-      <div className="px-3 py-2.5 shrink-0">
-        <button
-          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
-          onClick={() => {
-            setIsCreating(true);
-            setEditingId(null);
-          }}
-        >
-          <Plus size={12} /> Add Schedule
-        </button>
-      </div>
+    <>
+      {schedules.length === 0 ? (
+        <>
+          <SectionLabel spaced>Schedules</SectionLabel>
+          <EmptyStateCard
+            message="You have not set up any Schedules yet"
+            actionLabel="Create Schedule"
+            onAction={() => setForm({ mode: "create" })}
+          />
+        </>
+      ) : (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <SectionLabel>Schedules</SectionLabel>
+            <Button
+              variant="outline"
+              className="h-8 px-3 text-sm font-normal"
+              onClick={() => setForm({ mode: "create" })}
+            >
+              <Add size={16} />
+              Create Schedule
+            </Button>
+          </div>
+          <Inset className="flex flex-col gap-3">
+            {schedules.map((schedule) => (
+              <ScheduleCard
+                key={schedule.id}
+                schedule={schedule}
+                isExpanded={expandedId === schedule.id}
+                onToggleExpanded={() =>
+                  setExpandedId((prev) =>
+                    prev === schedule.id ? null : schedule.id,
+                  )
+                }
+                onEdit={() => setForm({ mode: "edit", schedule })}
+                onViewResults={() => setResultsFor(schedule)}
+              />
+            ))}
+          </Inset>
+        </>
+      )}
 
-      {isCreating && selectedAgent && (
-        <CreateScheduleForm
-          agentId={selectedAgent}
-          onCancel={() => setIsCreating(false)}
-          onSaved={() => setIsCreating(false)}
+      {agentId && form && (
+        <ScheduleFormModal
+          agentId={agentId}
+          existing={form.mode === "edit" ? form.schedule : undefined}
+          onClose={closeForm}
+          onSaved={closeForm}
         />
       )}
 
-      {schedules.length === 0 && !isCreating && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>
+      {agentId && resultsFor && (
+        <ScheduleResultsModal
+          agentId={agentId}
+          schedule={resultsFor}
+          onClose={() => setResultsFor(null)}
+          onResumeSession={onResumeSession}
+        />
       )}
-      {schedules.map((schedule) =>
-        editingId === schedule.id && selectedAgent ? (
-          <CreateScheduleForm
-            key={schedule.id}
-            agentId={selectedAgent}
-            existing={schedule}
-            onCancel={() => setEditingId(null)}
-            onSaved={() => setEditingId(null)}
-          />
-        ) : (
-          <ScheduleCard
-            key={schedule.id}
-            schedule={schedule}
-            isExpanded={expandedId === schedule.id}
-            sessions={expandedId === schedule.id ? sessionsForExpanded : []}
-            onToggleExpanded={() =>
-              setExpandedId((prev) =>
-                prev === schedule.id ? null : schedule.id,
-              )
-            }
-            onEdit={() => {
-              setEditingId(schedule.id);
-              setIsCreating(false);
-            }}
-            onResumeSession={onResumeSession}
-          />
-        ),
-      )}
-    </div>
+    </>
   );
 }

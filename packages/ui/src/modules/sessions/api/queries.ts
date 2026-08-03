@@ -1,20 +1,101 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
-import { SessionType } from "api-server-api";
+import {
+  type SessionMode,
+  SessionType,
+  type SessionView,
+} from "api-server-api";
 
+import { queryClient } from "../../../query-client.js";
 import { listAgentSessions } from "./acp-session-ops.js";
+
+const STATUS_POLL_MS = 5_000;
+
+export interface SessionListInclude {
+  channels: boolean;
+  scheduled: boolean;
+}
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
   agentLists: (agentId: string | null) =>
     [...acpSessionsKeys.all, agentId] as const,
-  list: (agentId: string | null, includeChannel: boolean) =>
-    [...acpSessionsKeys.agentLists(agentId), { includeChannel }] as const,
+  list: (agentId: string | null, include: SessionListInclude) =>
+    [...acpSessionsKeys.agentLists(agentId), include] as const,
 };
 
+// Optimistic insert so the sidebar shows the row immediately; the next refetch reconciles.
+export function optimisticInsertSession(
+  agentId: string,
+  sessionId: string,
+  mode: SessionMode,
+  running = false,
+): void {
+  const stub: SessionView = {
+    sessionId,
+    agentId,
+    type: SessionType.Regular,
+    mode,
+    createdAt: new Date().toISOString(),
+    scheduleId: null,
+    experimentId: null,
+    title: null,
+    updatedAt: null,
+    running,
+  };
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.some((s) => s.sessionId === sessionId)
+        ? prev
+        : [stub, ...(prev ?? [])],
+  );
+}
+
+// Remove the session from the sidebar list cache so the row disappears immediately; the invalidate that follows reconciles.
+export function removeSessionFromCache(
+  agentId: string,
+  sessionId: string,
+): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) => prev?.filter((s) => s.sessionId !== sessionId),
+  );
+}
+
+// Mirror the agent-side seen stamp into the list cache ahead of the next poll.
+// Stamps the row's own activity time, not the browser clock, to rule out skew.
+export function setSessionSeen(agentId: string, sessionId: string): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, seenAt: s.updatedAt ?? s.createdAt }
+          : s,
+      ),
+  );
+}
+
+// Seed the open session's live busy state into the list cache so its status dot
+// stays correct the instant it stops being the open row — before the next poll.
+export function setSessionRunning(
+  agentId: string,
+  sessionId: string,
+  running: boolean,
+): void {
+  queryClient.setQueriesData<SessionView[]>(
+    { queryKey: acpSessionsKeys.agentLists(agentId) },
+    (prev) =>
+      prev?.map((s) => (s.sessionId === sessionId ? { ...s, running } : s)),
+  );
+}
+
 /**
- * Sessions list, read straight off the agent over ACP `session/list` (ADR-055)
- * and decoded from `_meta.platform`. Schedule sessions are excluded from the
- * main list; channel sessions are included only when asked. Pass
+ * Sessions list, read straight off the agent over ACP `session/list`
+ * and decoded from `_meta.platform`. Regular and experiment-execute sessions
+ * are always listed (an experiment's launch turn is reachable from its
+ * driver's sidebar); schedule and channel sessions are included only when
+ * asked. Pass
  * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
  * without firing requests.
  *
@@ -23,23 +104,41 @@ export const acpSessionsKeys = {
  */
 export function useAcpSessions(
   agentId: string | null,
-  includeChannel: boolean,
-  options?: { enabled?: boolean },
+  include: SessionListInclude,
+  options?: {
+    enabled?: boolean;
+    activeSessionId?: string | null;
+  },
 ) {
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
-    queryKey: acpSessionsKeys.list(agentId, includeChannel),
+    queryKey: acpSessionsKeys.list(agentId, include),
     queryFn: live
       ? async () => {
           const sessions = await listAgentSessions(agentId);
-          const allowed: string[] = [SessionType.Regular];
-          if (includeChannel)
+          const allowed: string[] = [
+            SessionType.Regular,
+            SessionType.ExperimentExecute,
+          ];
+          if (include.channels)
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
-          return sessions.filter((s) => allowed.includes(s.type));
+          if (include.scheduled) allowed.push(SessionType.ScheduleCron);
+          const fresh = sessions.filter((s) => allowed.includes(s.type));
+          // Keep the active session's optimistic stub if not fetched so a refetch can't drop it.
+          const activeId = options?.activeSessionId;
+          if (!activeId || fresh.some((s) => s.sessionId === activeId))
+            return fresh;
+          const prev = queryClient.getQueryData<SessionView[]>(
+            acpSessionsKeys.list(agentId, include),
+          );
+          const stub = prev?.find((s) => s.sessionId === activeId);
+          return stub ? [stub, ...fresh] : fresh;
         }
       : skipToken,
     refetchOnMount: "always",
-    staleTime: 5_000,
+    // Poll while running so per-session status dots and harness-set titles stay live.
+    refetchInterval: live ? STATUS_POLL_MS : false,
+    staleTime: STATUS_POLL_MS,
     meta: { errorToast: "Couldn't refresh session list" },
   });
 }

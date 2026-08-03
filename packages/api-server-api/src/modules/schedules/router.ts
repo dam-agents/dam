@@ -1,6 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
+  manageAgentsProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
+import {
   scheduleCreateCronInputSchema,
   scheduleCreateRRuleInputSchema,
   scheduleDeleteInputSchema,
@@ -43,36 +48,38 @@ function toView(sched: Schedule) {
 }
 
 export const schedulesRouter = t.router({
-  list: t.procedure
+  list: readAgentProcedure
     .input(scheduleListInputSchema)
     .query(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
       const schedules = await ctx.schedules.list(input.agentId);
       return schedules.map(toView);
     }),
 
-  get: t.procedure
+  get: readAgentProcedure
     .input(scheduleGetInputSchema)
     .query(async ({ ctx, input }) => {
       const sched = await ctx.schedules.get(input.id);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
+      checkAgentBinding(ctx, sched.agentId);
       return toView(sched);
     }),
 
-  createCron: t.procedure
+  createCron: manageAgentsProcedure
     .input(scheduleCreateCronInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createCron(input);
       return toView(sched);
     }),
 
-  createRRule: t.procedure
+  createRRule: manageAgentsProcedure
     .input(scheduleCreateRRuleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createRRule(input);
       return toView(sched);
     }),
 
-  updateRRule: t.procedure
+  updateRRule: manageAgentsProcedure
     .input(scheduleUpdateRRuleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.updateRRule(input);
@@ -80,11 +87,11 @@ export const schedulesRouter = t.router({
       return toView(sched);
     }),
 
-  delete: t.procedure
+  delete: manageAgentsProcedure
     .input(scheduleDeleteInputSchema)
     .mutation(({ ctx, input }) => ctx.schedules.delete(input.id)),
 
-  toggle: t.procedure
+  toggle: manageAgentsProcedure
     .input(scheduleToggleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.toggle(input.id);
@@ -92,7 +99,7 @@ export const schedulesRouter = t.router({
       return toView(sched);
     }),
 
-  resetSession: t.procedure
+  resetSession: manageAgentsProcedure
     .input(scheduleResetSessionInputSchema)
     .mutation(({ ctx, input }) => ctx.schedules.resetSession(input.id)),
 });

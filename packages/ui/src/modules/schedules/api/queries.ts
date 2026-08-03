@@ -11,6 +11,16 @@ export function prefetchSchedules(agentId: string) {
   });
 }
 
+/** One-shot imperative fetch for flows that need the schedules *now* (e.g.
+ *  the stop-confirm dialog warning that a schedule will restart the sandbox).
+ *  Failures resolve to an empty list — the caller's flow must not block on a
+ *  schedules hiccup. */
+export function fetchSchedulesForAgent(agentId: string) {
+  return queryClient
+    .fetchQuery(trpc.schedules.list.queryOptions({ agentId }))
+    .catch(() => []);
+}
+
 export function useSchedules(agentId: string | null) {
   return useQuery({
     ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),
@@ -21,7 +31,7 @@ export function useSchedules(agentId: string | null) {
 }
 
 /** A schedule's sessions, read straight off the owning agent over ACP and
- *  filtered by `scheduleId` (ADR-055) — the server has no session list. */
+ *  filtered by `scheduleId` — the server has no session list. */
 export function useScheduleSessions(
   agentId: string | null,
   scheduleId: string | null,
@@ -38,6 +48,7 @@ export function useScheduleSessions(
     // Single-shot on expand; the list-level poll is authoritative for status.
     retry: 0,
     staleTime: 30_000,
-    meta: { errorToast: "Couldn't load past runs for this schedule" },
+    // No errorToast: a never-run schedule (or an asleep agent that can't be
+    // listed) is an expected state — the results modal surfaces it inline.
   });
 }

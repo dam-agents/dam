@@ -3,7 +3,8 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import { renderTable } from "../../shared/render-table.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printServiceError } from "./errors.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import {
   EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
@@ -42,8 +43,10 @@ export function buildListCommand(deps: {
       }
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
       if (result.value.length === 0) {
@@ -56,7 +59,7 @@ export function buildListCommand(deps: {
       const sorted = [...result.value].sort((a, b) =>
         a.name.localeCompare(b.name),
       );
-      process.stdout.write(
+      return writeStdoutAndExit(
         renderTable([
           ["NAME", "ID", "TEMPLATE", "STATE"],
           ...sorted.map((a) => [
@@ -66,7 +69,7 @@ export function buildListCommand(deps: {
             a.state,
           ]),
         ]),
+        EXIT_SUCCESS,
       );
-      process.exit(EXIT_SUCCESS);
     });
 }

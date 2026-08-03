@@ -3,10 +3,14 @@ import { TRPCError } from "@trpc/server";
 import type {
   LocalSkill,
   Skill,
+  SkillCreateLocalInput,
   SkillCreateSourceInput,
+  SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
   SkillPublishInput,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,
@@ -24,8 +28,10 @@ import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repos
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
-  AgentRuntimeUpstreamError,
+  AgentRuntimeClientError,
+  AgentRuntimeConflictError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
@@ -33,7 +39,7 @@ import { detectHost } from "../infrastructure/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
-import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
+import { privateScanErrorToTrpc } from "../infrastructure/upstream-to-trpc.js";
 
 /** Stable, deterministic id for a template-derived source row. The hash
  *  prefix keeps the id compact while avoiding collisions when a template
@@ -61,18 +67,28 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   runtimeMutator: RuntimeMutator;
   owner: string;
-  /** Scan via the provided scanner with a shared TTL cache. The cache key is
-   *  the gitUrl alone — results are user-independent. */
+  /** Scan via the provided scanner with a shared TTL cache, keyed by
+   *  `(gitUrl, path)` — the catalogue depends on both, and the cache is shared
+   *  across users who may point the same repo at different subdirs. */
   scanSource: (
     gitUrl: string,
+    path: string | undefined,
     scanner: (gitUrl: string) => Promise<Skill[]>,
   ) => Promise<Skill[]>;
-  invalidateScan: (gitUrl: string) => void;
+  invalidateScan: (gitUrl: string, path: string | undefined) => void;
   /** Scan a public GitHub repo directly from the api-server pod. Throws
    *  `PublicArchiveNotFoundError` when the archive endpoint returns 404 —
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
-  scanPublic: (gitUrl: string) => Promise<Skill[]>;
+  scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
+  /** Read one skill's raw `SKILL.md` (plus its source-relative directory) from
+   *  a public GitHub repo. Throws `PublicArchiveNotFoundError` on 404 (private
+   *  repo). */
+  readPublicSkill: (
+    gitUrl: string,
+    path: string | undefined,
+    name: string,
+  ) => Promise<{ content: string; dir: string } | null>;
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
@@ -112,6 +128,7 @@ async function loadTemplateSources(
     id: templateSourceId(template.id, seed.gitUrl),
     name: seed.name,
     gitUrl: seed.gitUrl,
+    ...(seed.path !== undefined ? { path: seed.path } : {}),
     fromTemplate: { templateId: template.id, templateName: template.name },
   }));
 }
@@ -137,6 +154,7 @@ async function resolveTemplateSource(
     id,
     name: seed.name,
     gitUrl: seed.gitUrl,
+    ...(seed.path !== undefined ? { path: seed.path } : {}),
     fromTemplate: { templateId: template.id, templateName: template.name },
   };
 }
@@ -191,6 +209,46 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
   return out;
 }
 
+/** Recover a source's subdir from its gitUrl using the same merge + dedupe
+ *  precedence as listSources (user → system → template). Install carries the
+ *  gitUrl, not the source id, so this is how the path is found to denormalize
+ *  onto the installed ref. */
+async function resolveSourcePathByGitUrl(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  gitUrl: string,
+): Promise<string | undefined> {
+  const [owned, template] = await Promise.all([
+    deps.repo.list(deps.owner),
+    loadTemplateSources(deps, agentId),
+  ]);
+  const seeds = deps.seedSources.map(seedToSkillSource);
+  const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
+  return merged.find((s) => s.gitUrl === gitUrl)?.path;
+}
+
+/** Re-throw a pod client-error verdict with its own code and message, so a
+ *  missing skill answers 404 and a cap breach 413 rather than a 500. Anything
+ *  else passes through untouched (and stays a server fault). */
+function asPodVerdict(err: unknown): unknown {
+  if (err instanceof AgentRuntimeClientError) {
+    return new TRPCError({ code: err.code, message: err.podMessage });
+  }
+  return err;
+}
+
+/** On-disk Local Skills minus anything tracked as installed-from-remote (by
+ *  name) — the same subtraction getState performs for its `standalone` view. */
+async function standaloneFor(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  tracked: SkillRef[],
+): Promise<LocalSkill[]> {
+  const all = await deps.runtimeClient.listLocal(agentId);
+  const trackedNames = new Set(tracked.map((s) => s.name));
+  return all.filter((s) => !trackedNames.has(s.name));
+}
+
 function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
   const filtered = current.filter(
     (s) => !(s.source === next.source && s.name === next.name),
@@ -230,8 +288,21 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const [enriched] = enrichSources([s]);
       return enriched;
     },
-    createSource: (input: SkillCreateSourceInput) =>
-      deps.repo.create(input, deps.owner),
+    async createSource(input: SkillCreateSourceInput) {
+      try {
+        const created = await deps.repo.create(input, deps.owner);
+        const [enriched] = enrichSources([created]);
+        return enriched;
+      } catch (err) {
+        if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "a skill source for this git URL is already registered",
+          });
+        }
+        throw err;
+      }
+    },
     async deleteSource(id) {
       // Template-derived ids are synthesised at read time — there's no row
       // to delete. Reject up-front with the same FORBIDDEN code the UI uses
@@ -283,7 +354,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // egress — it never touches the agent pod's per-grant gating.
       if (detectHost(src.gitUrl)) {
         try {
-          return await deps.scanSource(src.gitUrl, deps.scanPublic);
+          return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
+            deps.scanPublic(gitUrl, src.path),
+          );
         } catch (err) {
           if (!(err instanceof PublicArchiveNotFoundError)) throw err;
           // 404 → repo is private (or nonexistent). Only the authenticated
@@ -304,18 +377,62 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
       await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
       try {
-        return await deps.scanSource(src.gitUrl, (gitUrl) =>
-          deps.runtimeClient.scan(agentId, gitUrl),
+        return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
+          deps.runtimeClient.scan(agentId, gitUrl, src.path),
         );
       } catch (err) {
-        if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
+        throw privateScanErrorToTrpc(err) ?? err;
+      }
+    },
+
+    async getSkillContent(sourceId: string, name: string) {
+      const src = await resolveSource(deps, sourceId);
+      if (!src) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill source ${JSON.stringify(sourceId)} not found`,
+        });
+      }
+      // Public GitHub: read directly from the api-server (no pod needed).
+      // Private sources' in-product preview is deferred — reading their content
+      // must route through the agent pod for the credential swap, which needs a
+      // new agent-runtime read; until then the UI falls back to a GitHub link.
+      if (!detectHost(src.gitUrl)) {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message: "in-product preview isn't available for private sources yet",
+        });
+      }
+      let read: { content: string; dir: string } | null;
+      try {
+        read = await deps.readPublicSkill(src.gitUrl, src.path, name);
+      } catch (err) {
+        if (err instanceof PublicArchiveNotFoundError) {
+          throw new TRPCError({
+            code: "NOT_IMPLEMENTED",
+            message:
+              "in-product preview isn't available for private sources yet",
+          });
+        }
         throw err;
       }
+      if (read === null) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill ${JSON.stringify(name)} not found in source`,
+        });
+      }
+      return { content: read.content, dir: read.dir };
     },
 
     async install(input: SkillInstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
+      const path = await resolveSourcePathByGitUrl(
+        deps,
+        input.agentId,
+        input.source,
+      );
       const ref: SkillRef = {
         source: input.source,
         name: input.name,
@@ -323,6 +440,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         ...(input.contentHash !== undefined
           ? { contentHash: input.contentHash }
           : {}),
+        ...(path !== undefined ? { path } : {}),
       };
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
       await deps.runtimeMutator.bump(input.agentId, []);
@@ -373,6 +491,86 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
+    async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {
+      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      let created: LocalSkill[];
+      try {
+        created = await deps.runtimeClient.writeLocal(
+          input.agentId,
+          input.skills,
+        );
+      } catch (err) {
+        // Pass the pod's collision verdict through verbatim — the message names
+        // the offending skills and the UI matches rows against it.
+        if (err instanceof AgentRuntimeConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: err.message });
+        }
+        throw err;
+      }
+      // No agent_skills row, no outbox bump: a standalone Local Skill is
+      // deliberately untracked — the reconciled `state` read surfaces it on the
+      // next poll. User-authored content written onto the agent's PV must be
+      // answerable post-incident, so log the write (parity with skill.install).
+      securityLog("info", "skill.create_local", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: "local",
+        result: "success",
+        detail: { names: input.skills.map((s) => s.name) },
+      });
+      return created;
+    },
+
+    async deleteLocal(input: SkillDeleteLocalInput): Promise<LocalSkill[]> {
+      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      const tracked = await deps.agentSkillsRepo.listSkills(input.agentId);
+      // deleteLocal is the standalone-only path: the UI never offers it for a
+      // tracked skill, and letting it through would wipe an install while
+      // leaving a row for the next `state` read to reap as a ghost.
+      if (tracked.some((s) => s.name === input.name)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `skill ${JSON.stringify(input.name)} is installed from a source; uninstall it instead`,
+        });
+      }
+      try {
+        await deps.runtimeClient.deleteLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
+      // Removing user-authored content from the agent's PV must be answerable
+      // post-incident (parity with skill.create_local).
+      securityLog("info", "skill.delete_local", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: "local",
+        result: "success",
+        detail: { name: input.name },
+      });
+      // No agent_skills write, no outbox bump, and agent_skill_publishes rows
+      // are left intact: a publish record logs something that really happened
+      // and is reaped only by the AgentDeleted cleanup saga.
+      return standaloneFor(deps, input.agentId, tracked);
+    },
+
+    async readLocal(input: SkillReadLocalInput): Promise<SkillLocalFiles> {
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
+      // A thin passthrough by design: the size caps and the not-found verdict
+      // are pod-side. No security log — the Files panel already serves
+      // arbitrary pod file content unlogged, so a skill read is strictly less.
+      try {
+        return await deps.runtimeClient.readLocal(input.agentId, input.name);
+      } catch (err) {
+        throw asPodVerdict(err);
+      }
+    },
+
     async publish(input: SkillPublishInput): Promise<SkillPublishResult> {
       const result = await runPublishSkill(
         {
@@ -389,7 +587,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // the merged PR (whenever that happens — we don't wait, we just stop
       // serving a stale snapshot).
       const source = await resolveSource(deps, input.sourceId);
-      if (source) deps.invalidateScan(source.gitUrl);
+      if (source) deps.invalidateScan(source.gitUrl, source.path);
       return result;
     },
 
@@ -400,7 +598,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           code: "NOT_FOUND",
           message: "skill source not found",
         });
-      deps.invalidateScan(source.gitUrl);
+      deps.invalidateScan(source.gitUrl, source.path);
     },
 
     async listLocal(agentId: string): Promise<LocalSkill[]> {
@@ -408,14 +606,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
       if (computeAgentState(infra) !== "running") return [];
-      const all = await deps.runtimeClient.listLocal(agentId);
-      // Subtract anything already tracked as installed-from-remote (by directory
-      // name). Matches behavior that the remote-installed entry is the canonical
-      // one when names collide.
-      const tracked = new Set(
-        (await deps.agentSkillsRepo.listSkills(agentId)).map((s) => s.name),
-      );
-      return all.filter((s) => !tracked.has(s.name));
+      const tracked = await deps.agentSkillsRepo.listSkills(agentId);
+      return standaloneFor(deps, agentId, tracked);
     },
 
     /**

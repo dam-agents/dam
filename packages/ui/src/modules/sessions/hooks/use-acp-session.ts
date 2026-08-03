@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import {
   deleteAgentSession,
   listAgentSessions,
 } from "../api/acp-session-ops.js";
-import { acpSessionsKeys } from "../api/queries.js";
-import { useAcpConfigCache } from "./use-acp-config-cache.js";
+import { acpSessionsKeys, setSessionRunning } from "../api/queries.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
@@ -30,6 +28,7 @@ export function useAcpSession(
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
   const sessionId = useStore((s) => s.sessionId);
+  const sessionMode = useStore((s) => s.sessionMode);
   const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
@@ -43,43 +42,43 @@ export function useAcpSession(
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
+  // Mirror busy into the list cache's `running` so the row keeps its blue dot
+  // when it stops being the open session (the poll-fed `running` lags a switch).
+  useEffect(() => {
+    if (selectedAgent && sessionId) {
+      setSessionRunning(selectedAgent, sessionId, busy);
+    }
+  }, [busy, selectedAgent, sessionId]);
 
-  const agentRunState = useAgentsList().find(
-    (a) => a.id === selectedAgent,
-  )?.state;
+  const agentOperable = useIsAgentOperable(selectedAgent);
 
-  const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
-    useAcpConfigCache(selectedAgent, sessionId, agentRunState);
-
-  const { loadHistory } = useAcpHistory(
-    selectedAgent,
-    captureSessionConfig,
-    handleConfigUpdate,
-  );
+  const { loadHistory } = useAcpHistory(selectedAgent);
 
   const {
     engagedSessionIdRef,
     engage,
     clear: clearEngagement,
-  } = useAcpSessionEngagement(
-    selectedAgent,
-    captureSessionConfig,
-    applySavedPreferences,
-  );
+  } = useAcpSessionEngagement(selectedAgent);
 
-  const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
+  const makeUpdateHandler = useAcpUpdateHandler();
 
   const {
     ensureLive,
     connectionRef,
+    state: connectionState,
     reset: resetConnection,
   } = useAcpConnection({
     selectedAgent,
     sessionId,
+    sessionMode,
     // Don't open a live WS while resumeSession's throwaway is still
     // replaying history — both channels would otherwise receive the replay
     // stream and the live projection would double-apply every update.
     liveBlocked: loadingSession,
+    // Only the pod can answer ACP. Gating here stops the keep-alive and
+    // reconnect loop from hammering (and re-waking, via the relay's
+    // ensureReady) an agent that's hibernated, starting, or mid-restart.
+    agentOperable,
     makeUpdateHandler,
     engage,
     clearEngagement,
@@ -87,21 +86,10 @@ export function useAcpSession(
     setMessages,
   });
 
-  // Wake hibernated agent on entry.
-  useEffect(() => {
-    if (selectedAgent && agentRunState === "hibernated") {
-      api.agents.wake.mutate({ id: selectedAgent }).catch(() => {});
-    }
-  }, [selectedAgent, agentRunState]);
-
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
     setMessages([]);
-    const s = useStore.getState();
-    s.setSessionModes(null);
-    s.setSessionModels(null);
-    s.setSessionConfigOptions([]);
   }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(
@@ -164,16 +152,12 @@ export function useAcpSession(
   );
 
   return {
-    connectionRef,
-    /** Session id the live connection is currently bound to — exposed for
-     *  SessionConfigBar's optimistic mutate paths. */
-    engagedSessionIdRef,
-    ensureConnection: ensureLive,
     resetSession,
     resumeSession,
     sendPrompt,
     stopAgent,
     busy,
     loadingSession,
+    connectionState,
   };
 }

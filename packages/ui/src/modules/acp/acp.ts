@@ -52,10 +52,11 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
-async function wsUrl(agentId: string): Promise<string> {
+async function wsUrl(agentId: string, passive: boolean): Promise<string> {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const token = await getAccessToken();
-  return `${proto}//${location.host}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}`;
+  const suffix = passive ? "&passive=1" : "";
+  return `${proto}//${location.host}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}${suffix}`;
 }
 
 /**
@@ -96,8 +97,11 @@ function awaitPermission(
 export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
+  opts?: { passive?: boolean },
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(await wsUrl(agentId));
+  const { stream, ws } = await wsStream(
+    await wsUrl(agentId, opts?.passive ?? false),
+  );
   const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {

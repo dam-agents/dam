@@ -29,13 +29,6 @@ import (
 // request reaches them. The agent → gateway hop is gated by the per-pair
 // `<id>-agent-egress` NetworkPolicy at the kernel layer, not by mesh AuthZ
 // — see network_policy.go.
-//
-// Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
-// paired with two release-namespace policies that scope the fork narrowly
-// to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
-// fork SA only to `/api/agents/<parent>/mcp`, and
-// `BuildForkExtAuthzAuthorizationPolicy` admits it to the parent's
-// per-agent ext-authz Service.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -142,91 +135,6 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 		"app.kubernetes.io/component":  "apiserver",
 	}
 	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
-}
-
-// BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
-// **narrow** path under the parent agent — `/api/agents/<parent>/mcp`
-// only, not the parent's full `/api/agents/<parent>/*` surface. This
-// preserves the ADR-027 trust boundary: a compromised fork (i.e. a
-// compromised foreign replier) cannot reach pod-files SSE,
-// `/internal/trigger`, or any future per-agent harness endpoint scoped
-// to the parent. Lives in the release namespace alongside the parent's
-// harness-allow policy; Istio OR-s ALLOWs from multiple policies on the
-// same waypoint, so this is purely additive.
-func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
-	spec := map[string]interface{}{
-		"targetRefs": []interface{}{
-			map[string]interface{}{
-				"group": "gateway.networking.k8s.io",
-				"kind":  "Gateway",
-				"name":  cfg.IstioWaypointName,
-			},
-		},
-		"action": "ALLOW",
-		"rules": []interface{}{
-			map[string]interface{}{
-				"from": []interface{}{
-					map[string]interface{}{
-						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(forkName)},
-						},
-					},
-				},
-				"to": []interface{}{
-					map[string]interface{}{
-						"operation": map[string]interface{}{
-							"paths": []interface{}{fmt.Sprintf("/api/agents/%s/mcp", parentAgentID)},
-						},
-					},
-				},
-			},
-		},
-	}
-	labels := map[string]string{
-		LabelAgent:                     parentAgentID,
-		"agent-platform.ai/managed-by": "platform-controller",
-		"app.kubernetes.io/component":  "apiserver",
-		ForkLabelForkID:                forkName,
-	}
-	return authzPolicy(forkName+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
-}
-
-// BuildForkExtAuthzAuthorizationPolicy admits the fork's SA principal to
-// the **parent**'s per-agent ext-authz Service. Forks dial the
-// parent's ext-authz endpoint (the parent owner's HITL rules approve
-// the request; the fork's gateway then injects the replier's
-// credential on the wire). The parent's own ext-authz-allow continues
-// to admit the parent SA; Istio OR-s the principal lists across both
-// policies on the same Service.
-func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
-	spec := map[string]interface{}{
-		"targetRefs": []interface{}{
-			map[string]interface{}{
-				"group": "",
-				"kind":  "Service",
-				"name":  cfg.ExtAuthzServiceName(parentAgentID),
-			},
-		},
-		"action": "ALLOW",
-		"rules": []interface{}{
-			map[string]interface{}{
-				"from": []interface{}{
-					map[string]interface{}{
-						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(forkName)},
-						},
-					},
-				},
-			},
-		},
-	}
-	labels := map[string]string{
-		LabelAgent:                     parentAgentID,
-		"agent-platform.ai/managed-by": "platform-controller",
-		"app.kubernetes.io/component":  "apiserver",
-		ForkLabelForkID:                forkName,
-	}
-	return authzPolicy(forkName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
 // BuildExtAuthzAuthorizationPolicy admits traffic to the per-agent

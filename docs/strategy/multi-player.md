@@ -1,6 +1,6 @@
 # Platform is multiplayer, not multitenant yet
 
-> **TL;DR.** Platform is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). Colleagues can watch for free. They can only talk to the agent if the owner adds them to an access list. When a colleague talks to it, the agent acts as *them*, not the owner.
+> **TL;DR.** Platform is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). That connection *is* the permission: anyone the surface admits can talk to the agent, and every turn runs as the agent — under the owner's credentials — with the sender attributed in the record.
 
 ## The big idea
 
@@ -37,30 +37,25 @@ A component called the **credential gateway** hands credentials to agents. It ch
 
 ## Letting colleagues in — channels
 
-A **channel** is a connection point. It places your agent onto a surface where colleagues work — a Slack channel, a Telegram chat. Pick the surface, connect your agent, and your teammates can now see the agent exists.
+A **channel** is a connection point. It places your agent onto a surface where colleagues work — a Slack channel, a Telegram chat. Pick the surface, connect your agent, and your teammates can talk to it.
 
-By default, seeing is all they can do. Watching is free. **Sending messages to the agent is not.**
+The connection is the permission. There is no separate access list and no per-person mode to configure: lending your agent to a conversation is one deliberate decision, and everyone the surface itself admits is in. If a channel holds people you wouldn't lend the agent to, that's the signal to connect it somewhere smaller — or not at all.
 
-To let a specific person send messages, you add them to the agent's access list. Only then can they interact with it. You decide who is on the list, and you can remove them.
-
-> **Example.** Alice connects `my-researcher` to a Slack channel Bob is in. Bob can now read every exchange Alice has with the agent. He still can't message the agent — Alice hasn't added him. Once she does, he can. Even then, the agent is still Alice's. Bob is a guest.
+> **Example.** Alice connects `my-researcher` to a Slack channel Bob is in. Bob can now read every exchange and message the agent himself. The agent is still Alice's — Bob drives it as a guest, in a place Alice chose.
 
 ## What happens when a colleague uses it?
 
-This is the important part. When Bob (a guest Alice added) messages Alice's agent, the agent acts as **Bob**, not as Alice, for that turn:
+This is the important part. When Bob messages Alice's agent, the agent acts as **itself** — which means under Alice's authority:
 
-- Any pull request the agent opens is authored by Bob.
-- Any usage cost is billed to Bob.
-- Any rate limits hit are Bob's limits.
-- Any audit log shows Bob took the action.
+- The turn runs under the agent's own credentials, the ones Alice configured.
+- Alice's approval prompts and network rules gate the turn exactly as they gate her own.
+- The record still knows it was Bob: the security log attributes the turn to Bob's messenger identity, and the prompt is labelled with who spoke.
 
-Platform achieves this by starting a short-lived process for Bob's turn. That process carries Bob's identity and Bob's credentials. When the turn ends, the process shuts down. Alice's main process — the one that normally runs the agent — is not touched.
+So sharing an agent is lending it. The owner answers for what the agent can reach; the log answers for who asked. There is no per-person credential switching — a colleague who needs to act under their *own* credentials needs their own agent.
 
 ## The shared workspace
 
-Every agent has a **workspace**: persistent storage that holds its files, notes, memory, and conversation history. The workspace survives restarts. Whichever process is running the agent at any given moment reads and writes the same workspace.
-
-This matters when colleagues are involved. When Bob's short-lived process starts up to handle his turn, it reads **the same workspace** Alice's process uses. So Bob's turn has access to every file the agent has saved, every memory, every past conversation.
+Every agent has a **workspace**: persistent storage that holds its files, notes, memory, and conversation history. The workspace survives restarts, and every turn — the owner's, a colleague's, a scheduled one — reads and writes the same workspace.
 
 > **Example.** Alice shows the agent a confidential document. The agent reads it and remembers. Later, Bob asks a question. The agent may reference facts from Alice's document — because it's the same agent with the same memory, even though Bob never saw the document directly.
 
@@ -79,6 +74,5 @@ That may change in the future — the design leaves room for it. For now, the mo
 ## References
 
 - [Security model](security-model.md) — what keeps the agent from escaping or exfiltrating; the companion to this doc.
-- Architecture deep-dives: [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity, owner-labelled resources, the credential gateway, foreign-replier forks · [channels](../architecture/channels.md) — Slack and Telegram adapters, identity linking, per-thread access control · [agent-lifecycle](../architecture/agent-lifecycle.md) — per-turn fork pods that run as the colleague · [persistence](../architecture/persistence.md) — the shared workspace and what it means for cross-turn context.
-- [Ubiquitous language](../../tseng/vocabulary.md) — canonical definitions for *channel*, *instance*, *fork*, *foreign replier*.
-- ADRs: [005](../adrs/005-credential-gateway.md) credential gateway · [006](../adrs/006-configmaps-over-crds.md) ConfigMaps over CRDs · [015](../adrs/015-multi-user-auth.md) multi-user auth · [017](../adrs/017-db-backed-sessions.md) DB-backed sessions · [018](../adrs/018-slack-integration.md) Slack channel · [025](../adrs/025-thread-session.md) session per conversation · [027](../adrs/027-slack-user-impersonation.md) foreign-replier forks · [029](../adrs/029-per-instance-channels.md) per-instance channels.
+- Architecture deep-dives: [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity, owner-labelled resources, the credential gateway · [channels](../architecture/channels.md) — Slack and Telegram adapters, bindings, identity linking · [persistence](../architecture/persistence.md) — the shared workspace and what it means for cross-turn context.
+- [Ubiquitous language](../ubiquitous-language.md) — canonical definitions for *channel*, *channel binding*, *shared access*.

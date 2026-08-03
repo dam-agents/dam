@@ -3,6 +3,10 @@ export type { RuntimeChannelComposition } from "./compose.js";
 export type { RuntimeManifest } from "./manifest.js";
 
 export { createEnvPlugin } from "./drivers/env-plugin.js";
+export {
+  createEnvStateStore,
+  type EnvStateStore,
+} from "./infrastructure/env-state-store.js";
 export { createFilePlugin } from "./drivers/file-plugin.js";
 export { createMcpEntryPlugin } from "./drivers/mcp-entry-plugin.js";
 export {

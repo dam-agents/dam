@@ -1,4 +1,7 @@
+import { Button } from "@/components/ui/button";
+
 import { Markdown } from "../../../components/markdown.js";
+import { useStore } from "../../../store.js";
 import { useAcceptTerms } from "../api/mutations.js";
 import { useLatestAcceptance, useTermsDocument } from "../api/queries.js";
 
@@ -22,10 +25,17 @@ export function TermsView() {
 
   const doc = document.data;
   const acceptedCurrent = latest.data?.version === doc.version;
+  const isStaleReaccept = !!latest.data && latest.data.version !== doc.version;
 
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
       <h1 className="text-2xl font-semibold mb-2">Terms of Use</h1>
+      {isStaleReaccept && (
+        <p className="text-sm text-muted-foreground mb-4">
+          The Terms of Use have been updated — please review and accept to
+          continue.
+        </p>
+      )}
       <TermsMeta version={doc.version} accepted={latest.data} />
       <Markdown>{doc.text}</Markdown>
       <div className="mt-8 flex gap-3 items-center">
@@ -37,6 +47,8 @@ export function TermsView() {
             onClick={() =>
               accept.mutate(
                 { version: doc.version },
+                // Full reload on purpose (unlike BackButton): it clears the
+                // server's 412 terms_stale gate with a clean refetch.
                 { onSuccess: () => window.location.assign("/") },
               )
             }
@@ -56,7 +68,7 @@ function TermsMeta({
 }) {
   const isCurrent = accepted?.version === version;
   return (
-    <div className="text-sm text-muted mb-6">
+    <div className="text-sm text-muted-foreground mb-6">
       Version <code>{version}</code>
       {isCurrent && accepted && (
         <>
@@ -76,26 +88,20 @@ function AcceptButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={onClick}
-      className="bg-accent text-white px-4 py-2 rounded disabled:opacity-50"
-    >
+    <Button type="button" disabled={pending} onClick={onClick}>
       {pending ? "Accepting…" : "I accept the Terms of Use"}
-    </button>
+    </Button>
   );
 }
 
 function BackButton() {
+  const setView = useStore((s) => s.setView);
+  // setView rather than history.back(): a deep link to /terms has no in-app
+  // history behind it, and history.back() would leave the app entirely.
   return (
-    <button
-      type="button"
-      onClick={() => window.location.assign("/")}
-      className="bg-accent text-white px-4 py-2 rounded"
-    >
+    <Button type="button" onClick={() => setView("list")}>
       Back
-    </button>
+    </Button>
   );
 }
 
@@ -108,7 +114,9 @@ function CenteredMessage({
 }) {
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
-      <div className={tone === "error" ? "text-red-600" : "text-muted"}>
+      <div
+        className={tone === "error" ? "text-red-600" : "text-muted-foreground"}
+      >
         {children}
       </div>
     </div>

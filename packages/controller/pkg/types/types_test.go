@@ -113,11 +113,11 @@ mounts:
 	assert.Contains(t, err.Error(), "valid K8s quantity")
 }
 
-// --- Agent runtime fields (ADR-046) ---
+// --- Agent runtime fields ---
 
 // ParseAgentSpec must accept the merged runtime fields (env, secretRef) that
 // formerly lived on InstanceSpec. Legacy fields the CRD dropped (version,
-// desiredState) are tolerated in the YAML and ignored (ADR-058).
+// desiredState) are tolerated in the YAML and ignored.
 func TestParseAgentSpec_RuntimeFields(t *testing.T) {
 	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest
@@ -146,43 +146,5 @@ func TestSanitizeMountName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.expected, SanitizeMountName(tt.path))
-	}
-}
-
-// --- Fork ---
-
-const fixtureForkYAML = `version: agent-platform.ai/v1
-agentName: agent-abc
-foreignSub: kc|user-42
-sessionId: sess-1
-`
-
-func TestParseForkSpec(t *testing.T) {
-	spec, err := ParseForkSpec(fixtureForkYAML)
-	require.NoError(t, err)
-	assert.Equal(t, "agent-abc", spec.AgentName)
-	assert.Equal(t, "kc|user-42", spec.ForeignSub)
-	assert.Equal(t, "sess-1", spec.SessionID)
-}
-
-func TestParseForkSpec_Minimal(t *testing.T) {
-	spec, err := ParseForkSpec(`version: agent-platform.ai/v1
-agentName: agent-abc
-foreignSub: kc|user-42
-`)
-	require.NoError(t, err)
-	assert.Empty(t, spec.SessionID)
-}
-
-func TestParseForkSpec_MissingRequired(t *testing.T) {
-	cases := map[string]string{
-		"missing agentName":  `version: agent-platform.ai/v1` + "\n" + `foreignSub: kc|u`,
-		"missing foreignSub": `version: agent-platform.ai/v1` + "\n" + `agentName: agent-abc`,
-	}
-	for name, yaml := range cases {
-		t.Run(name, func(t *testing.T) {
-			_, err := ParseForkSpec(yaml)
-			assert.Error(t, err)
-		})
 	}
 }

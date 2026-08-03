@@ -1,0 +1,18 @@
+# The experiment SDK ships as ONE stdlib-only module (src/experiment_sdk.py)
+# baked into platform-base on PYTHONPATH — this project file exists solely for
+# the dev tooling (pytest, ruff); nothing here is a runtime dependency.
+[project]
+name = "experiment-sdk"
+version = "0.0.0"
+description = "Platform experiment SDK — driver surface + skeleton/trace reporting"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]

@@ -9,17 +9,24 @@ import {
 import { dirname, resolve } from "node:path";
 import { load as parseYaml, dump as stringifyYaml } from "js-yaml";
 import type { FileFormat, MergeMode } from "agent-runtime-api";
+import { parseFile, serializeFile } from "./file-codec.js";
 
 export interface FileDesired {
   format: FileFormat;
   mergeMode: MergeMode;
   content: unknown;
   keyPath?: string;
+  // key-targeted only: delete `keyPath` (pruning emptied ancestors) instead of set.
+  delete?: boolean;
 }
 
 export interface FileOpsContext {
   agentHome: string;
   log: (msg: string) => void;
+  // Unparseable existing file on a merge that reads it: "rewrite-aside" (default)
+  // moves it to a `.broken-*` sidecar and rewrites; "throw" aborts untouched (for
+  // a one-shot apply over a possibly hand-edited file).
+  onUnparseable?: "rewrite-aside" | "throw";
 }
 
 export interface FileOps {
@@ -62,6 +69,11 @@ export function createFileOps(): FileOps {
         let existing = existed ? readFileSync(target, "utf8") : "";
         if (existing && needsParse(fragments)) {
           const parseErr = probeParse(fragments[0]!.format, existing);
+          if (parseErr && ctx.onUnparseable === "throw") {
+            throw new Error(
+              `[file-ops] ${target} is unparseable as ${fragments[0]!.format} (${parseErr}); refusing to overwrite`,
+            );
+          }
           if (parseErr) {
             const sidecar = `${target}.broken-${Date.now()}`;
             ctx.log(
@@ -128,7 +140,7 @@ function mergeFragments(existing: string, fragments: FileDesired[]): string {
 
 function mergeOverwrite(format: FileFormat, fragments: FileDesired[]): string {
   const last = fragments[fragments.length - 1]!;
-  return serialize(format, last.content);
+  return serializeFile(format, last.content);
 }
 
 function mergeKeyTargeted(
@@ -136,20 +148,22 @@ function mergeKeyTargeted(
   format: FileFormat,
   fragments: FileDesired[],
 ): string {
-  const base = (existing ? parse(format, existing) : {}) as Record<
+  const base = (existing ? parseFile(format, existing) : {}) as Record<
     string,
     unknown
   >;
   const next: Record<string, unknown> = { ...base };
 
   for (const f of fragments) {
-    if (f.keyPath) {
+    if (f.delete) {
+      if (f.keyPath) deleteNested(next, f.keyPath.split("."));
+    } else if (f.keyPath) {
       setNested(next, f.keyPath.split("."), f.content);
     } else if (f.content && typeof f.content === "object") {
       Object.assign(next, f.content as Record<string, unknown>);
     }
   }
-  return serialize(format, next);
+  return serializeFile(format, next);
 }
 
 function mergeSectionMarker(
@@ -176,7 +190,9 @@ function mergeSectionMarker(
   }
   while (out.length > 0 && out[out.length - 1]!.trim() === "") out.pop();
 
-  const blocks = fragments.map((f) => serialize(format, f.content).trimEnd());
+  const blocks = fragments.map((f) =>
+    serializeFile(format, f.content).trimEnd(),
+  );
   const block = blocks.join("\n");
   return [...out, "", startMarker, block, endMarker, ""].join("\n");
 }
@@ -203,18 +219,6 @@ function mergeYamlFillIfMissing(
   return stringifyYaml(next);
 }
 
-function parse(format: FileFormat, content: string): unknown {
-  switch (format) {
-    case "json":
-      return content ? JSON.parse(content) : {};
-    case "yaml":
-      return parseYaml(content) ?? {};
-    case "ini":
-    case "text":
-      return content;
-  }
-}
-
 function needsParse(fragments: FileDesired[]): boolean {
   return fragments.some(
     (f) =>
@@ -224,51 +228,18 @@ function needsParse(fragments: FileDesired[]): boolean {
 
 function probeParse(format: FileFormat, content: string): string | null {
   try {
-    parse(format, content);
+    parseFile(format, content);
     return null;
   } catch (err) {
     return (err as Error).message;
   }
 }
 
-function serialize(format: FileFormat, value: unknown): string {
-  switch (format) {
-    case "json":
-      return JSON.stringify(value, null, 2) + "\n";
-    case "yaml":
-      return stringifyYaml(value);
-    case "text":
-      return typeof value === "string" ? value : String(value ?? "");
-    case "ini":
-      return serializeIni(value);
-  }
-}
-
-function serializeIni(value: unknown): string {
-  if (!value || typeof value !== "object") return "";
-  const out: string[] = [];
-  const obj = value as Record<string, unknown>;
-  const sections: [string, Record<string, unknown>][] = [];
-  for (const [k, v] of Object.entries(obj)) {
-    if (v && typeof v === "object") {
-      sections.push([k, v as Record<string, unknown>]);
-    } else {
-      out.push(`${k}=${String(v)}`);
-    }
-  }
-  for (const [sec, body] of sections) {
-    out.push(`\n[${sec}]`);
-    for (const [k, v] of Object.entries(body)) {
-      out.push(`${k}=${String(v)}`);
-    }
-  }
-  return out.join("\n") + "\n";
-}
-
 function commentSyntax(format: FileFormat): string {
   switch (format) {
     case "yaml":
     case "ini":
+    case "toml":
       return "#";
     case "json":
       return "//";
@@ -277,7 +248,7 @@ function commentSyntax(format: FileFormat): string {
   }
 }
 
-function setNested(
+export function setNested(
   obj: Record<string, unknown>,
   segs: string[],
   value: unknown,
@@ -289,6 +260,43 @@ function setNested(
     cur = cur[s] as Record<string, unknown>;
   }
   cur[segs[segs.length - 1]!] = value;
+}
+
+// Deletes the leaf at `segs`, leaving sibling keys intact, and prunes any
+// ancestor object our deletion leaves empty (so removing
+// `permissions.defaultMode` from `{ permissions: { defaultMode } }` drops the
+// whole `permissions` key, but keeps it if the user has other keys under it).
+// No-op if any segment along the way is missing.
+export function deleteNested(
+  obj: Record<string, unknown>,
+  segs: string[],
+): void {
+  if (segs.length === 0) return;
+  const [head, ...rest] = segs as [string, ...string[]];
+  if (rest.length === 0) {
+    delete obj[head];
+    return;
+  }
+  const child = obj[head];
+  if (!child || typeof child !== "object") return;
+  const childObj = child as Record<string, unknown>;
+  deleteNested(childObj, rest);
+  if (Object.keys(childObj).length === 0) delete obj[head];
+}
+
+// Reads the leaf at `segs`, or undefined if any segment is missing or a
+// non-object is hit along the way. Inverse of setNested — the harness-config
+// read path uses it to map config-file key paths back to logical fields.
+export function getNested(
+  obj: Record<string, unknown>,
+  segs: string[],
+): unknown {
+  let cur: unknown = obj;
+  for (const s of segs) {
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) return undefined;
+    cur = (cur as Record<string, unknown>)[s];
+  }
+  return cur;
 }
 
 function stripTrailingSep(p: string): string {

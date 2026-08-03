@@ -8,6 +8,8 @@ import { applyCallbackAlias } from "./oauth-callback-url.js";
 
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
+  | ClientCredentialsConnectionTemplate
+  | GitHubAppConnectionTemplate
   | HeaderConnectionTemplate
   | NoneConnectionTemplate;
 
@@ -38,11 +40,46 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   credentialFamily?: string;
 }
 
+// Client-credentials grant: the platform mints access tokens from the stored
+// client secret; the token endpoint (discovered from the issuer's OAuth
+// metadata at create time) is dialed server-side, never by the agent.
+export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
+  authKind: "client-credentials";
+  host?: string;
+  issuerUrl?: string;
+  scopes?: string[];
+  audience?: string;
+  headerName?: string;
+  valueFormat?: string;
+  tokenEndpointAcceptJson?: boolean;
+}
+
+// GitHub App installation grant: the platform signs a JWT with the app's
+// private key and mints installation tokens (ghs_…) at the GitHub REST base
+// (`apiBaseUrl`); the token endpoint is dialed server-side, never by the agent.
+export interface GitHubAppConnectionTemplate extends TemplateCommon {
+  authKind: "github-app";
+  host?: string;
+  apiBaseUrl?: string;
+}
+
+// An optional config input a header template ships; filling it emits an `env` contribution, leaving it blank emits nothing.
+export interface ConfigInputSpec {
+  inputName: string;
+  envName: string;
+  label: string;
+  hint?: string;
+  pattern?: string;
+  patternHint?: string;
+  enumValues?: readonly string[];
+}
+
 export interface HeaderConnectionTemplate extends TemplateCommon {
   authKind: "header";
   host?: string;
   headerName?: string;
   valueFormat?: string;
+  configInputs?: ConfigInputSpec[];
 }
 
 export interface NoneConnectionTemplate extends TemplateCommon {
@@ -153,7 +190,14 @@ function inputsFor(
 
   switch (t.authKind) {
     case "oauth": {
-      if (t.dynamicRegistration) return [required("url")];
+      // A pre-registered client skips dynamic client registration; endpoints
+      // still come from the server's OAuth discovery metadata.
+      if (t.dynamicRegistration)
+        return [
+          required("url"),
+          optional("clientId"),
+          { name: "clientSecret", state: "optional", secret: true },
+        ];
       const out: ConnectionTemplateInput[] = [];
 
       const urlsHavePlaceholder =
@@ -185,6 +229,56 @@ function inputsFor(
       }
       return out;
     }
+    case "client-credentials":
+      // Same visible pre-filled style as the custom header credential.
+      return [
+        required("host", { presetValue: t.host }),
+        {
+          name: "issuerUrl",
+          state: "optional",
+          ...(t.issuerUrl !== undefined ? { presetValue: t.issuerUrl } : {}),
+          hint: "Leave blank to discover the authorization server from the host.",
+        },
+        required("clientId"),
+        required("clientSecret", { secret: true }),
+        optional("scopes"),
+        optional("audience"),
+        required("headerName", { presetValue: t.headerName }),
+        required("valueFormat", { presetValue: t.valueFormat }),
+        optional("envName"),
+      ];
+    case "github-app": {
+      const out: ConnectionTemplateInput[] = [];
+      // Only a host-parameterized template (its apiBaseUrl carries a
+      // `{host}` placeholder, e.g. the GitHub Enterprise sibling) asks for a
+      // host — the fixed github.com template has nothing to substitute.
+      if (t.apiBaseUrl?.includes("{host}")) {
+        out.push(t.host ? overridable("host", t.host) : required("host"));
+      }
+      out.push(
+        {
+          name: "appId",
+          state: "required",
+          label: "App ID",
+          hint: "Your GitHub App's numeric App ID (Settings → Developer settings → GitHub Apps → your app).",
+        },
+        {
+          name: "installationId",
+          state: "required",
+          label: "Installation ID",
+          hint: "The installation to mint tokens for — the number at the end of the installation's settings URL (…/installations/<id>).",
+        },
+        {
+          name: "privateKey",
+          state: "required",
+          secret: true,
+          multiline: true,
+          label: "Private key (PEM)",
+          hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
+        },
+      );
+      return out;
+    }
     case "header": {
       const out: ConnectionTemplateInput[] = [];
       if (t.isCustom) {
@@ -194,7 +288,16 @@ function inputsFor(
         out.push(required("headerName", { presetValue: t.headerName }));
         out.push(required("valueFormat", { presetValue: t.valueFormat }));
       } else {
-        out.push(t.host ? overridable("host", t.host) : required("host"));
+        if (t.id === "kubernetes") {
+          out.push({
+            name: "host",
+            state: "required",
+            label: "API server URL",
+            hint: "The cluster API endpoint, exactly as you'd pass to `oc login` / `kubectl` — e.g. https://api.my-cluster.example:6443. A bare host[:port] works too.",
+          });
+        } else {
+          out.push(t.host ? overridable("host", t.host) : required("host"));
+        }
         out.push(
           t.headerName
             ? overridable("headerName", t.headerName)
@@ -207,12 +310,41 @@ function inputsFor(
         );
       }
       out.push(required("value", { secret: true }));
+      // CA is public material (not secret) and optional per endpoint.
+      if (t.id === "kubernetes") {
+        out.push({
+          name: "caData",
+          state: "optional",
+          label: "Cluster CA certificate",
+          hint: "Leave blank for a publicly-trusted API endpoint (most managed clusters). For a private or self-signed CA, paste certificate-authority-data from your kubeconfig (base64 or PEM).",
+        });
+      }
       // Custom credential can also be exposed to the agent as an env var
       // (placeholder in-pod; Envoy injects the real value on egress).
       if (t.isCustom) out.push(optional("envName"));
+      for (const spec of t.configInputs ?? []) {
+        out.push({
+          name: spec.inputName,
+          state: "optional",
+          configInput: true,
+          label: spec.label,
+          ...(spec.hint ? { hint: spec.hint } : {}),
+          ...(spec.pattern ? { pattern: spec.pattern } : {}),
+          ...(spec.patternHint ? { patternHint: spec.patternHint } : {}),
+          ...(spec.enumValues ? { enumValues: [...spec.enumValues] } : {}),
+        });
+      }
       return out;
     }
     case "none":
-      return t.category === "mcp" ? [required("url")] : [];
+      // Custom MCP servers may carry an optional header credential (API
+      // key) injected at the gateway.
+      return t.category === "mcp"
+        ? [
+            required("url"),
+            optional("headerName"),
+            { name: "value", state: "optional", secret: true },
+          ]
+        : [];
   }
 }

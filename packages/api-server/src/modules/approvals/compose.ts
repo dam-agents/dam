@@ -31,6 +31,10 @@ import type { RedisBus } from "../../core/redis-bus.js";
 export interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
+  /** Per-key agent binding. Forwarded into the service so
+   *  `loadOwned` rejects mutations against approval rows whose agentId
+   *  is outside the binding. */
+  agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   bus: RedisBus;
@@ -49,6 +53,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
+    agentBinding: deps.agentBinding,
   });
   return { service };
 }
@@ -66,6 +71,7 @@ export interface ComposeApprovalsSystemDeps {
   ruleMatcher: EgressRuleMatcher;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
+  platformAllowedHosts: readonly string[];
   /** Sweep cadence and freshness window for the outbox retry. */
   sweep?: {
     intervalMs?: number;
@@ -87,6 +93,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
     holdSeconds: deps.holdSeconds,
+    platformAllowedHosts: deps.platformAllowedHosts,
   });
   const sweeper = createDeliverySweeper({
     repo,

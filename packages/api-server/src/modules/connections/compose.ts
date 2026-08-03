@@ -5,6 +5,10 @@ import {
   createOAuthEngine,
   type OAuthEngine,
 } from "./infrastructure/oauth-engine.js";
+import {
+  createGitHubAppEngine,
+  type GitHubAppEngine,
+} from "./infrastructure/github-app-engine.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import { createConnectionsService } from "./services/connections-service.js";
@@ -25,6 +29,7 @@ import type { ConnectionRulesSync } from "../egress-rules/services/connection-ru
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   refreshLoop: OAuthRefreshLoop;
 }
 
@@ -42,14 +47,27 @@ export function composeConnectionsAtBoot(
   );
 
   const oauthEngine = createOAuthEngine();
+  const githubAppEngine = createGitHubAppEngine();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
     engine: oauthEngine,
+    githubAppEngine,
     templates,
     secretStore: opts.secretStore,
   });
 
-  return { templates, oauthEngine, refreshLoop };
+  return { templates, oauthEngine, githubAppEngine, refreshLoop };
+}
+
+export function createConnectionGrantsCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
+  const repo = createConnectionsRepository(db);
+  return (agentId) => repo.revokeAllForAgent(agentId);
+}
+
+export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
+  return createConnectionsRepository(db).listDistinctGrantAgentIds();
 }
 
 export function composeConnectionsForOwner(opts: {
@@ -57,6 +75,7 @@ export function composeConnectionsForOwner(opts: {
   db: Db;
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
@@ -68,7 +87,7 @@ export function composeConnectionsForOwner(opts: {
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
-      // ADR-058: connection grants live in the Agent spec.
+      // Connection grants live in the Agent spec.
       await opts.agentsRepo.patchSpec(agentId, {
         grantedConnectionIds: connectionIds,
       });
@@ -88,6 +107,7 @@ export function composeConnectionsForOwner(opts: {
     repo,
     templates: opts.templates,
     secretStore: opts.secretStore,
+    runtimeMutator: opts.runtimeMutator,
     ownerId: opts.ownerId,
     callbackUrl: opts.oauthCallbackUrl,
   });
@@ -99,6 +119,8 @@ export function composeConnectionsForOwner(opts: {
     secretStore: opts.secretStore,
     fanOut,
     oauthFlow,
+    oauthEngine: opts.oauthEngine,
+    githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
   });

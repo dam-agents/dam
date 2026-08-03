@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -7,13 +8,17 @@ import {
 import {
   composeAgentsModule,
   createAgentsRepository,
-  createKeycloakUserDirectory,
-  startChannelSecretCleanupSaga,
+  createAgentEnvRepository,
+  createAgentRegistrySecretPort,
+  backfillUserEnv,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,
   findSlackChannelByAgent,
+  deleteSlackChannelBinding,
+  setSlackChannelAmbient,
+  createAgentSweep,
 } from "./modules/agents/index.js";
 import {
   createAgentSkillsRepository,
@@ -21,18 +26,17 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
-import {
-  createTelegramWorker,
-  type TelegramOAuthPending,
-} from "./modules/channels/infrastructure/telegram.js";
+import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
-import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -40,37 +44,45 @@ import {
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
-  isThreadAuthorized,
-  authorizeThread,
-  revokeThread,
-  listAuthorizedThreads,
-  deleteThreadsByAgent,
-  getAuthorizedBy,
-} from "./modules/channels/infrastructure/telegram-threads-repository.js";
+  findAgentByConversation,
+  bindConversation,
+  listConversationsByAgent,
+  unbindConversation,
+  deleteConversationsByAgent,
+} from "./modules/channels/infrastructure/telegram-conversations-repository.js";
+import {
+  createTelegramBindFlowStore,
+  type TelegramOAuthPending,
+} from "./modules/channels/infrastructure/telegram-flows.js";
+import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
-import { createSecretEnvSource } from "./modules/secrets/services/secret-env-source.js";
 import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
 } from "./modules/secret-store/index.js";
-import {
-  composeForksModule,
-  startOnForeignReplySaga,
-  startOnChannelTurnRelayedSaga,
-} from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
+import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
-import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
-import { configureLogger } from "./core/logger.js";
+import { configureLogger, getLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
+import { composeArtifactsModule } from "./modules/artifacts/compose.js";
+import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
+import { composeTemplatesModule } from "./modules/templates/compose.js";
+import {
+  composeInvocationLivenessSweep,
+  createDriverResolutionAdapter,
+  createInvocationsCleanupHook,
+  listInvocationAgentIds,
+} from "./modules/invocations/index.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
 import {
   composeApprovalsSystem,
@@ -81,27 +93,80 @@ import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wra
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
+  createL7PromotionBackfill,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
+import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
+  createConnectionGrantsCleanupHook,
+  listConnectionGrantAgentIds,
+} from "./modules/connections/compose.js";
+import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
+import {
+  composeExperimentInactivitySweep,
+  reconcileExperimentPins,
+} from "./modules/experiments/index.js";
+import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
+import {
+  composeArtifactExpirySweeper,
+  composeArtifactLibraryForOwner,
+} from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { sweepLegacyCredentialSecrets } from "./modules/connections/sweep/legacy-secret-sweep.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
+import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
-configureLogger({ level: config.logLevel });
+configureLogger({
+  level: config.logLevel,
+  base: { appVersion: config.appVersion },
+});
+getLogger().info("api-server starting");
 
-const { api, customObjects } = createApi(config.namespace);
-await runMigrations(config.databaseUrl, config.migrationsPath);
-const { db, sql } = createDb(config.databaseUrl);
+const { api } = createApi(config.namespace);
+const dbTls = {
+  ca: config.databaseCaCertPath
+    ? readFileSync(config.databaseCaCertPath, "utf8")
+    : undefined,
+};
+await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
+const { db, sql } = createDb(config.databaseUrl, dbTls);
+
+// Candidate-artifact storage, shared by both app servers. ensureReady
+// provisions the bucket and fails boot fast on an unreachable store.
+const artifactsModule = composeArtifactsModule({
+  maxBytes: config.maxArtifactBytes,
+  objectStorage: config.objectStorageEndpoint
+    ? {
+        endpoint: config.objectStorageEndpoint,
+        agentEndpoint:
+          config.objectStorageAgentEndpoint ?? config.objectStorageEndpoint,
+        publicEndpoint: config.objectStoragePublicEndpoint ?? null,
+        region: config.objectStorageRegion,
+        bucket: config.objectStorageBucket,
+        forcePathStyle: config.objectStorageForcePathStyle,
+        credentials:
+          config.objectStorageAccessKeyId != null &&
+          config.objectStorageSecretAccessKey != null
+            ? {
+                accessKeyId: config.objectStorageAccessKeyId,
+                secretAccessKey: config.objectStorageSecretAccessKey,
+              }
+            : null,
+      }
+    : null,
+});
+await artifactsModule.ensureReady();
+const artifacts = artifactsModule.service;
 
 if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
+  throw new Error("REDIS_URL is required (Redis is a platform primitive)");
 const bullConnection = createBullConnection(
   config.redisUrl,
   config.redisPassword ?? undefined,
@@ -112,6 +177,39 @@ const redisBus = createRedisBus(config.redisUrl, {
 
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
+const agentEnvRepo = createAgentEnvRepository(db);
+
+// Migrate pre-existing spec.env onto agent_env. First pass runs before serving;
+// per-agent failures are isolated and retried on a timer until a clean pass.
+let backfillRetry: ReturnType<typeof setTimeout> | undefined;
+async function runUserEnvBackfill(): Promise<void> {
+  const { failed } = await backfillUserEnv({
+    repo: agentsRepo,
+    agentEnvRepo,
+    log: (m) => getLogger().info(`[user-env] ${m}`),
+  });
+  if (failed > 0)
+    backfillRetry = setTimeout(() => void runUserEnvBackfill(), 60_000);
+}
+await runUserEnvBackfill();
+
+// One-time sweep of the drained legacy credential Secrets the
+// secrets→connections migration left in place (#2198). Fire-and-forget:
+// nothing at runtime reads these Secrets, a failed pass retries on the
+// next boot, and the summary line doubles as the drain-gate confirmation.
+void sweepLegacyCredentialSecrets({
+  k8sClient,
+  log: (m) => getLogger().info(`[legacy-secret-sweep] ${m}`),
+  logError: (m) => getLogger().error(`[legacy-secret-sweep] ${m}`),
+}).catch((err) =>
+  getLogger().error(`[legacy-secret-sweep] pass failed: ${String(err)}`),
+);
+
+// Concrete spec.resources.limits on legacy agents (#1900) are the
+// controller's job: it materializes `legacyAgentSize` into any spec
+// missing a dimension on reconcile (fill-if-absent) — watch-driven, so it
+// also covers CRs created out-of-band, which a boot backfill here never
+// could.
 
 const runtimeDelivery = composeRuntimeDelivery({
   db,
@@ -123,18 +221,69 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
-  secretEnv: createSecretEnvSource({ k8sClient }),
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
 };
-const channelSecretStore = createChannelSecretStore(k8sClient);
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+const connectionsBoot = composeConnectionsAtBoot({
+  db,
+  secretStore: secretStores.default(),
+});
+const connectionsServiceFor = (ownerId: string) =>
+  composeConnectionsForOwner({
+    ownerId,
+    db,
+    templates: connectionsBoot.templates,
+    oauthEngine: connectionsBoot.oauthEngine,
+    githubAppEngine: connectionsBoot.githubAppEngine,
+    secretStore: secretStores.default(),
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    agentsRepo,
+    connectionRulesSync: createConnectionRulesSyncAdapter(db),
+    oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+    brandName: config.brand.name,
+  });
+// L7-promotion backfill (#2865): project active narrow rules onto each
+// Agent CR's spec.l7Hosts and retire the legacy owner-scoped allow-only
+// marker Secrets. Same capped-retry shape as the secrets migration; while
+// it hasn't fully succeeded the markers stay and rules remain enforced.
+let l7BackfillRetry: ReturnType<typeof setTimeout> | undefined;
+let l7BackfillRetries = 0;
+const L7_BACKFILL_MAX_RETRIES = 10;
+const l7PromotionBackfill = createL7PromotionBackfill(db, k8sClient, (m) =>
+  getLogger().info(`[l7-backfill] ${m}`),
+);
+async function runL7PromotionBackfill(): Promise<void> {
+  let failed: number;
+  try {
+    ({ failed } = await l7PromotionBackfill());
+  } catch (err) {
+    // A pass can throw outside its per-agent handling (e.g. listing the
+    // legacy markers while K8s is flaky) — treat it as a failed pass so
+    // the timer retry never becomes an unhandled rejection.
+    getLogger().error(`[l7-backfill] pass failed: ${String(err)}`);
+    failed = 1;
+  }
+  if (failed === 0) return;
+  if (l7BackfillRetries >= L7_BACKFILL_MAX_RETRIES) {
+    getLogger().error(
+      `[l7-backfill] still ${failed} failing after ` +
+        `${L7_BACKFILL_MAX_RETRIES} retries; giving up — legacy allow-only ` +
+        `markers stay in place and rules remain enforced`,
+    );
+    return;
+  }
+  l7BackfillRetries++;
+  l7BackfillRetry = setTimeout(() => void runL7PromotionBackfill(), 60_000);
+}
+await runL7PromotionBackfill();
 
 const { service: termsService, isAcceptedPort: isTermsAccepted } =
   composeTermsModule({
@@ -143,30 +292,25 @@ const { service: termsService, isAcceptedPort: isTermsAccepted } =
     text: config.terms.text,
   });
 
+const fakeSlackGateway =
+  config.e2eEnabled && !(config.slackBotToken && config.slackAppToken)
+    ? createFakeSlackGateway()
+    : undefined;
+
 const { service: e2eService } = composeE2eModule({
   namespace: config.namespace,
+  slack: fakeSlackGateway,
 });
 
-const channelSecretCleanupSub =
-  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
-  deleteThreadsByAgent(db),
+  deleteConversationsByAgent(db),
 );
 const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
   createAgentSkillsRepository(db).deleteByAgent(agentId),
 );
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
-const { forks } = composeForksModule({
-  orchestrator: createK8sForkOrchestrator({
-    customObjects,
-    namespace: config.namespace,
-  }),
-});
-
-const onForeignReplySub = startOnForeignReplySaga(forks);
-const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
 const usage = composeUsageModule({
   db,
   subPseudonymizer,
@@ -190,20 +334,16 @@ usage.start();
 const audit = composeAuditModule();
 audit.start();
 
-const userDirectory = createKeycloakUserDirectory({
-  keycloakUrl: config.keycloakUrl,
-  keycloakRealm: config.keycloakRealm,
-  clientId: config.keycloakApiClientId,
-  clientSecret: config.keycloakApiClientSecret,
-});
-
 const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
+  agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+  agentDefaultLimits: {
+    cpu: config.agentDefaultCpuLimit,
+    memory: config.agentDefaultMemoryLimit,
+  },
   owner: undefined,
   db,
-  userDirectory,
-  channelSecretStore,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
@@ -217,82 +357,131 @@ const identityLinkService = createIdentityLinkService({
 
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
 const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
-
+const telegramBindFlows = config.telegramBotToken
+  ? createTelegramBindFlowStore()
+  : undefined;
+// Unconditional: a trivial in-memory store, needed whenever the Slack OAuth
+// callback is mounted (real tokens or e2e). The bind command mints entries.
+const slackBindFlows = createSlackBindFlowStore();
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
 const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
 
-const chatSdkState = config.telegramEnabled
-  ? createPostgresState({ url: config.databaseUrl, keyPrefix: "chat-sdk" })
+// The chat-sdk state pool uses node-postgres (`pg`), which — unlike postgres-js
+// — reads a CA file from `sslrootcert` in the connection string. Append it so
+// the pool verifies against the same scoped CA; trust stays on this connection.
+const chatSdkDatabaseUrl = config.databaseCaCertPath
+  ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
+  : config.databaseUrl;
+const chatSdkState = config.telegramBotToken
+  ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
   : undefined;
 
 const channelRegistry: ChannelRegistry = {
-  resolveInstanceBySlackChannel: async (slackChannelId) =>
-    (await findBySlackChannelId(db)(slackChannelId))?.agentId ?? null,
+  resolveSlackBinding: async (slackChannelId) => {
+    const row = await findBySlackChannelId(db)(slackChannelId);
+    if (!row) return null;
+    return {
+      instanceName: row.agentId,
+      owner: row.owner,
+      ...(row.ambient ? { ambient: true } : {}),
+    };
+  },
   resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
-const slackWorker =
+const slackTokens =
   config.slackBotToken && config.slackAppToken
-    ? createSlackWorker(
-        config.namespace,
-        config.slackBotToken,
-        config.slackAppToken,
-        () => systemAgents,
-        identityLinkService,
-        {
-          keycloakExternalUrl: config.keycloakExternalUrl,
-          keycloakUrl: config.keycloakUrl,
-          keycloakRealm: config.keycloakRealm,
-          keycloakClientId: config.keycloakClientId,
-          callbackUrl: slackOauthCallbackUrl,
-        },
-        pendingSlackOAuthFlows,
-        (agentId) => agentsRepo.getOwner(agentId),
-        channelRegistry,
-        config.brand.short,
-        isTermsAccepted,
-        config.uiBaseUrl,
-      )
+    ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
+    : null;
+
+const slackGatewayFactory = slackTokens
+  ? () =>
+      createBoltSlackGateway({
+        botToken: slackTokens.botToken,
+        appToken: slackTokens.appToken,
+        commandName: `/${config.brand.short}`,
+      })
+  : fakeSlackGateway
+    ? () => fakeSlackGateway
     : undefined;
 
+// Bind the ACP turn ceiling (and namespace) into the client factories at the
+// composition root; workers get pre-wired factories and stay ignorant of both.
+const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
+const makeAcpClient: AcpClientFactory = (instanceName) =>
+  createAcpClient({
+    namespace: config.namespace,
+    instanceName,
+    turnCeilingMs: acpTurnCeilingMs,
+  });
+
+const slackWorker = slackGatewayFactory
+  ? createSlackWorker(
+      makeAcpClient,
+      slackGatewayFactory,
+      () => systemAgents,
+      identityLinkService,
+      {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: slackOauthCallbackUrl,
+      },
+      pendingSlackOAuthFlows,
+      (agentId) => agentsRepo.getOwner(agentId),
+      channelRegistry,
+      deleteSlackChannelBinding(db),
+      setSlackChannelAmbient(db),
+      { name: config.brand.name, short: config.brand.short },
+      isTermsAccepted,
+      config.uiBaseUrl,
+    )
+  : undefined;
+
 const telegramWorker =
-  config.telegramEnabled && chatSdkState
-    ? createTelegramWorker(
-        config.namespace,
-        chatSdkState,
-        () => systemAgents,
-        {
-          isAuthorized: isThreadAuthorized(db),
-          authorize: authorizeThread(db),
-          list: listAuthorizedThreads(db),
-          revoke: revokeThread(db),
-          getAuthorizedBy: getAuthorizedBy(db),
+  config.telegramBotToken && chatSdkState
+    ? createTelegramWorker({
+        botToken: config.telegramBotToken,
+        configuredBotUsername: config.telegramBotUsername,
+        makeAcpClient,
+        state: chatSdkState,
+        agents: () => systemAgents,
+        conversations: {
+          findAgentByConversation: findAgentByConversation(db),
+          bind: bindConversation(db),
+          listByAgent: listConversationsByAgent(db),
+          unbind: unbindConversation(db),
         },
-        {
+        oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: telegramOauthCallbackUrl,
         },
-        pendingTelegramOAuthFlows,
+        pendingOAuthFlows: pendingTelegramOAuthFlows,
         isTermsAccepted,
-        config.uiBaseUrl,
-      )
+        uiBaseUrl: config.uiBaseUrl,
+        brandShort: config.brand.short,
+      })
     : undefined;
 
 const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
-  channelSecretStore,
 });
 
-// Seed list for the `trusted` egress preset (ADR-035).
+// Seed list for the `trusted` egress preset.
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+
+// Egress Aliasing resolution for the ext_authz gate: Invocation target →
+// root driver, consulted before every identity resolve on the egress path.
+const invocationDriverResolution = createDriverResolutionAdapter(db);
 
 const wrapperFrameSender = createWrapperFrameSender({
   resolveWrapperUrl: (agentId) =>
@@ -311,8 +500,14 @@ const {
   db,
   bus: redisBus,
   identityResolver: {
+    // Egress Aliasing: an Invocation target has no egress identity of its
+    // own — resolve the caller to its root driver first, so rule match,
+    // HITL hold, and approval writes all land on the driver. A target whose
+    // driver is gone resolves to nothing and the gate fails closed.
     resolve: async (agentId) => {
-      const r = await agentsRepo.resolveIdentity(agentId);
+      const rootId = await invocationDriverResolution.resolveRoot(agentId);
+      if (!rootId) return null;
+      const r = await agentsRepo.resolveIdentity(rootId);
       return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
     },
   },
@@ -329,6 +524,11 @@ const {
   },
   wrapperFrameSender,
   holdSeconds: config.approvalHoldSeconds,
+  // The presigned link is the per-request authorization for the store, so
+  // no HITL decision. Bare hostname — the gate strips ports.
+  platformAllowedHosts: config.objectStorageAgentEndpoint
+    ? [new URL(config.objectStorageAgentEndpoint).hostname]
+    : [],
 });
 deliverySweeper.start();
 
@@ -336,17 +536,37 @@ deliverySweeper.start();
 // module's adapter clears its own table; failures log + continue. The
 // orphan-sweeper saga catches anything missed (replica died mid-delete,
 // hook threw, etc.).
+const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
+const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
+
+const agentEnvCleanupHook = (agentId: string) =>
+  agentEnvRepo.deleteForAgent(agentId);
+
+// Driver Cascade: deleting an agent fails its running Invocations and reaps
+// their targets, so no dangling target keeps running against a deleted
+// driver's egress identity. `agentsFor` binds lazily — the factory below is
+// declared later and composes these same hooks, which is what makes chained
+// Invocations unwind transitively.
+const invocationsCleanupHook = createInvocationsCleanupHook({
+  db,
+  agentsFor: (owner) => harnessAgentsServiceFor(owner),
+});
+
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
+  (agentId: string) => registrySecretPort.delete(agentId),
+  connectionGrantsCleanupHook,
+  agentEnvCleanupHook,
+  invocationsCleanupHook,
 ];
 
-// Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
-// keyed by an agent_id no longer in the live set, and runs each module's
-// cleanup. Runs on every replica — DELETEs are idempotent, the random
-// initial-delay jitter spreads scans out.
+// Cross-store orphan reaper. Lists live agent CRs, finds DB rows keyed by
+// an agent_id no longer in the live set, and runs each module's cleanup.
+// Scheduled on the periodic-jobs queue below.
 const agentArtifactsSweeper = createAgentArtifactsSweeper({
-  k8s: createAgentsK8sClient(api, config.namespace),
+  k8s: agentsCleanupK8s,
   sources: [
     {
       name: "egress-rules",
@@ -358,16 +578,116 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       listAgentIds: () => listPendingApprovalAgentIds(db),
       cleanup: agentCleanupHooks[1]!,
     },
+    {
+      name: "registry-pull-secrets",
+      listAgentIds: () => registrySecretPort.listAgentIds(),
+      cleanup: agentCleanupHooks[2]!,
+    },
+    {
+      name: "connection-grants",
+      listAgentIds: () => listConnectionGrantAgentIds(db),
+      cleanup: connectionGrantsCleanupHook,
+    },
+    {
+      name: "agent-env",
+      listAgentIds: () => agentEnvRepo.listAgentIds(),
+      cleanup: agentEnvCleanupHook,
+    },
+    {
+      name: "invocations",
+      listAgentIds: () => listInvocationAgentIds(db),
+      cleanup: invocationsCleanupHook,
+    },
   ],
-  intervalMs: 30 * 60_000,
   batchSize: 200,
 });
-agentArtifactsSweeper.start();
+
+// Experiments v2 inactivity sweep: reaps `running` Experiments whose script
+// has gone silent (no trace event) past the configured window to `failed`, so
+// every executed Experiment reaches a terminal state — and releases the
+// driver's hibernation pin when it was its last running experiment. Atomic
+// conditional transitions make it multi-replica safe. Sweep at the window
+// cadence, capped at 5 minutes.
+const experimentPin = {
+  set: (agentId: string) =>
+    agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
+  clear: (agentId: string) =>
+    agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
+};
+const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
+const experimentInactivitySweep = composeExperimentInactivitySweep({
+  db,
+  inactivityMs: experimentInactivityMs,
+  intervalMs: Math.min(experimentInactivityMs, 5 * 60_000),
+  batchSize: 200,
+  pin: experimentPin,
+  artifactLibraryFor: (owner) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      shareBaseUrl: config.shareBaseUrl,
+    }).artifactLibrary,
+});
+experimentInactivitySweep.start();
+
+// Converge experiment pins to database truth — experiments survive restarts
+// (unlike sessions), so this reconciles rather than blanket-clears.
+void reconcileExperimentPins({
+  db,
+  listPinnedAgentIds: () =>
+    agentsRepo.listAgentIdsWithAnnotation(EXPERIMENT_ACTIVE_KEY, "true"),
+  pin: experimentPin,
+}).then(
+  ({ set, cleared }) => {
+    if (set > 0 || cleared > 0) {
+      process.stderr.write(
+        `[experiments] pin reconciliation: set ${set}, cleared ${cleared}\n`,
+      );
+    }
+  },
+  (err) => {
+    process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
+  },
+);
+
+// Periodic background work runs as BullMQ job schedulers, one queue per job
+// ("periodic.<name>") — one execution per period across replicas, and a
+// hung tick can only stall its own lane. Ticks stay idempotent; the queue
+// is scheduling and visibility, never correctness. The remaining interval
+// sweepers (approvals delivery, cron sweep, OAuth refresh) migrate here
+// incrementally.
+const periodicJobs = createPeriodicJobs({
+  connection: bullConnection,
+  log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
+});
+
+// Cross-store orphan reap every 30 minutes — cheap diff scans, orphans are
+// rare and non-urgent.
+await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
+  agentArtifactsSweeper.tick(),
+);
+
+// Artifact-library expiry sweep: hard-deletes artifacts (private ones too)
+// whose expiry passed more than the grace window ago (the viewer 410s public
+// ones meanwhile). Hourly is plenty — expiry granularity is hours.
+const artifactExpirySweeper = composeArtifactExpirySweeper({
+  db,
+  artifacts: artifactsModule.service,
+  batchSize: 200,
+});
+await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
+  artifactExpirySweeper.tick(),
+);
+periodicJobs.start();
 
 const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  wakeAgent: async (agentId) => {
+    await agentsRepo.wakeIfHibernated(agentId);
+  },
 });
 schedulesBoot.runner.restoreAll().catch((err) => {
   process.stderr.write(
@@ -387,15 +707,85 @@ try {
   );
 }
 
+// Owner-scoped agents factory for the harness surface (the spawn primitive):
+// a driver agent spawns an Invocation target = create an ephemeral Agent +
+// submit a prompt. Mirrors the main app's per-owner agents composition, incl.
+// the connections grantProvisioner so a target's connection subset
+// materializes on create.
+const harnessTemplatesRepo = createTemplatesRepository(
+  config.agentTemplatesPath,
+);
+const { readSpec: harnessReadTemplateSpec } =
+  composeTemplatesModule(harnessTemplatesRepo);
+const wakeAgentFor = async (agentId: string) => {
+  await agentsRepo.wakeIfHibernated(agentId);
+};
+const harnessAgentsServiceFor = (owner: string) => {
+  const connections = connectionsServiceFor(owner);
+  return composeAgentsModule({
+    api,
+    namespace: config.namespace,
+    agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    virtualizationEnabled: config.virtualizationEnabled,
+    agentDefaultLimits: {
+      cpu: config.agentDefaultCpuLimit,
+      memory: config.agentDefaultMemoryLimit,
+    },
+    owner,
+    db,
+    readTemplateSpec: harnessReadTemplateSpec,
+    presetSeeder,
+    cleanupHooks: agentCleanupHooks,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    contributionsSettled: contributionsSettledPort,
+    grantProvisioner: {
+      resolveSpecGrants(sel) {
+        return Promise.resolve({
+          grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
+        });
+      },
+      async applyAfterCreate(agentId, sel) {
+        if (sel.connectionIds.length)
+          await connections.setAgentConnections(agentId, sel.connectionIds);
+      },
+    },
+  }).agents;
+};
+
+// Invocation liveness sweep (owner-agnostic; started once): bounds one result
+// — fails a target that ran past its deadline or crashed mid-turn, reaps it,
+// and drops aged result rows. It does NOT own the target agent's lifecycle.
+const invocationLivenessSweep = composeInvocationLivenessSweep({
+  db,
+  agentsFor: harnessAgentsServiceFor,
+  k8s: k8sClient,
+  intervalMs: 60_000,
+  batchSize: 200,
+});
+invocationLivenessSweep.start();
+
+// Agent Sweep (#2816): generic GC that deletes any Sweepable agent once it
+// hibernates (after its Lifetime grace, if any). Keyed off Agent state, never
+// the Invocations table — the backstop for Invocation targets and the home for
+// future Sweepable agents (e.g. inherited channel agents). Owner-agnostic:
+// lists all agents, resolves an owner-scoped service per agent to delete.
+const agentSweep = createAgentSweep({
+  listAgents: () => agentsRepo.list(),
+  agentsFor: harnessAgentsServiceFor,
+  intervalMs: 60_000,
+});
+agentSweep.start();
+
 const { server: apiServer } = startApiServerApp({
   config,
   api,
   db,
   channelManager,
-  channelSecretStore,
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
+  telegramBindFlows,
+  slackBindFlows,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -406,11 +796,18 @@ const { server: apiServer } = startApiServerApp({
   secretStores,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
+  getAgentCapabilities: (agentId) =>
+    runtimeDelivery.agentsRuntimeRepo
+      .get(agentId)
+      .then((r) => r?.runtimeCapabilities ?? null),
   schedulesBoot,
   mountUsageRoutes: usage.mount,
+  listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+  metricsReader: composeMetricsReader(config),
   terms: termsService,
   isTermsAccepted,
   e2e: e2eService,
+  artifacts,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -422,9 +819,13 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   runtimeHello: runtimeDelivery.hello,
   schedulesBoot,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  artifacts,
+  agentsServiceFor: harnessAgentsServiceFor,
+  connectionsServiceFor,
+  wakeAgent: wakeAgentFor,
 });
 
-// ADR-041: instance identity for ext-authz now flows from the per-instance
+// Instance identity for ext-authz now flows from the per-instance
 // ext-authz Service the gateway pod's Envoy was configured to dial,
 // cryptographically pinned by the AuthorizationPolicy on each per-instance
 // Service. The pod-IP resolver and `x-platform-instance` header are gone.
@@ -448,15 +849,17 @@ listChannelsByOwner(db, "")()
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
-  channelSecretCleanupSub.unsubscribe();
+  if (backfillRetry) clearTimeout(backfillRetry);
+  if (l7BackfillRetry) clearTimeout(l7BackfillRetry);
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
-  onForeignReplySub.unsubscribe();
-  onChannelTurnRelayedSub.unsubscribe();
   usage.stop();
   audit.stop();
   await deliverySweeper.stop();
-  await agentArtifactsSweeper.stop();
+  await experimentInactivitySweep.stop();
+  await invocationLivenessSweep.stop();
+  await agentSweep.stop();
+  await periodicJobs.close();
   await channelManager.stopAll();
   await runtimeDelivery.sweep.stop();
   await runtimeDelivery.worker.close();
@@ -467,6 +870,15 @@ async function shutdown() {
   extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();
   apiServer.close();
+  // Flush OTel if the --import bootstrap (dist/telemetry.js) registered it.
+  // Reached via Symbol lookup — importing telemetry.ts here would evaluate a
+  // second copy of that bundle and split the SDK singleton.
+  const flushOtel = (globalThis as Record<symbol, unknown>)[
+    Symbol.for("platform.otel.shutdown")
+  ];
+  if (typeof flushOtel === "function") {
+    await (flushOtel as () => Promise<void>)();
+  }
   process.exit(0);
 }
 process.on("SIGTERM", shutdown);

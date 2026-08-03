@@ -6,6 +6,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -48,12 +49,13 @@ export function buildGetCommand(deps: {
       }
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
-      process.stdout.write(renderAgent(result.value));
-      process.exit(EXIT_SUCCESS);
+      return writeStdoutAndExit(renderAgent(result.value), EXIT_SUCCESS);
     });
 }
 
@@ -67,12 +69,6 @@ function renderAgent(agent: AgentView): string {
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
-  entries.push([
-    "ALLOWED",
-    agent.allowedUserEmails.length === 0
-      ? "<none>"
-      : agent.allowedUserEmails.join(", "),
-  ]);
   if (agent.state === "error" && agent.error)
     entries.push(["ERROR", agent.error]);
   const pad = Math.max(...entries.map(([k]) => k.length)) + 2;

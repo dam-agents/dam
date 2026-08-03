@@ -1,4 +1,4 @@
-# ADR-041: Istio waypoint that fronts the api-server's harness Service.
+# Istio waypoint that fronts the api-server's harness Service.
 # Istio's mesh-controller observes this Gateway resource (gatewayClassName:
 # istio-waypoint) and synthesises the waypoint Deployment + Pod itself —
 # this chart never declares Pod/Deployment YAML for the waypoint. The

@@ -4,17 +4,21 @@ import {
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved agent metadata. `agentId` mirrors the URL parameter after a
- *  successful resolution; `owner` comes from the Agent's labels. */
+/** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
+ *  ephemeral children (e.g. dam-run Runs) for cascade deletion. `vmBackend`
+ *  marks a KubeVirt vm-backend agent — Run executors are unavailable there
+ *  (they materialize the agent image as a pod container). */
 export interface AgentIdentity {
   agentId: string;
   owner: string;
+  uid: string;
+  vmBackend: boolean;
 }
 
 /**
  * Resolve the calling agent from the URL `:id`.
  *
- * ADR-041: identity is enforced at the Istio waypoint via a per-agent
+ * Identity is enforced at the Istio waypoint via a per-agent
  * AuthorizationPolicy that ALLOWs only principal `<td>/ns/<agent-ns>/sa/<id>`
  * to path `/api/agents/<id>/*`. By the time a request reaches this handler
  * the URL `:id` is already authenticated — the application does not parse
@@ -32,5 +36,12 @@ export async function resolveAgent(
   const owner = obj.metadata?.labels?.[LABEL_OWNER];
   if (!owner) return null;
 
-  return { agentId, owner };
+  const backend = (obj.spec as { backend?: { type?: string } } | undefined)
+    ?.backend;
+  return {
+    agentId,
+    owner,
+    uid: obj.metadata?.uid ?? "",
+    vmBackend: backend?.type === "vm",
+  };
 }

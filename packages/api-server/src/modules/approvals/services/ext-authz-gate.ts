@@ -35,6 +35,10 @@ export interface ExtAuthzGate {
  * directly.
  */
 export interface AgentIdentityResolver {
+  /** Resolves the caller to the identity whose egress policy applies. For an
+   *  Invocation target this is its driver (Egress Aliasing, recursively to
+   *  the root non-target agent). Null when no policy-bearing agent exists —
+   *  the gate fails closed. */
   resolve(
     agentId: string,
   ): Promise<{ ownerSub: string; agentId: string } | null>;
@@ -56,6 +60,10 @@ export interface CreateExtAuthzGateDeps {
   ruleMatcher: EgressRuleMatcher;
   /** Bounded synchronous hold; the durable pending row outlives this. */
   holdSeconds: number;
+  /** Bare hostnames of platform-provided upstreams (the object store) that
+   *  carry their own per-request authorization — no HITL hold. Checked after
+   *  identity, before user rules. */
+  platformAllowedHosts: readonly string[];
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
@@ -79,6 +87,28 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         return "deny";
       }
 
+      // Egress Aliasing: when the caller is an Invocation target, `identity`
+      // is its driver — every decision, hold, and rule below runs against the
+      // driver. `via` keeps the originating caller auditable; undefined (the
+      // caller is the policy-bearing agent itself) drops out of JSON.
+      const via = identity.agentId !== agentId ? agentId : undefined;
+
+      if (deps.platformAllowedHosts.includes(host)) {
+        securityLog("info", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "allow",
+          // Query stripped: presigned-link signatures ride there (mirrors
+          // the gateway access log's REQ_WITHOUT_QUERY).
+          detail: { method, path: path.split("?")[0], basis: "platform", via },
+        });
+        return "allow";
+      }
+
       const matched = await deps.ruleMatcher.match(
         identity.agentId,
         host,
@@ -97,7 +127,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             agentId: identity.agentId,
             target: host,
             decision: matched.verdict,
-            detail: { method, path, basis: "rule" },
+            detail: { method, path, basis: "rule", via },
           },
         );
         return matched.verdict;
@@ -123,7 +153,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           sessionId: null,
-          payload: { kind: "ext_authz", host, method, path },
+          payload: { kind: "ext_authz", host, method, path, viaAgentId: via },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
         const frame = buildExtAuthzSynthFrame({
@@ -132,7 +162,9 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           method,
           path,
         });
-        void deps.bus.publish(injectChannelOf(agentId), frame);
+        // The prompt surfaces on the policy-bearing agent's channel — under
+        // aliasing that is the driver, whose inbox tray owns the decision.
+        void deps.bus.publish(injectChannelOf(identity.agentId), frame);
         // Agent egress blocked awaiting a human verdict. correlationId ties
         // this to the verdict line written when the hold settles (and to the
         // approval.verdict line in approvals-service).
@@ -145,7 +177,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           target: host,
           decision: "hold",
           correlationId: pendingId,
-          detail: { method, path },
+          detail: { method, path, via },
         });
       }
 
@@ -160,7 +192,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         decision: reason === "hold-expired" ? "expired" : verdict,
         correlationId: pendingId,
         reason,
-        detail: { method, path, basis: "hold" },
+        detail: { method, path, basis: "hold", via },
       });
       return verdict;
     },

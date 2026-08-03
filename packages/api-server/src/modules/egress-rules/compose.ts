@@ -13,15 +13,21 @@ import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
-import type { K8sAllowOnlySecretsPort } from "./infrastructure/k8s-allow-only-secrets-port.js";
+import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
+import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
+import { backfillL7Promotions } from "./services/l7-promotion-backfill.js";
+import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
+import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
+import type { K8sClient } from "../agents/infrastructure/k8s.js";
 
 export interface ComposeEgressRulesDeps {
   db: Db;
   ownerSub: string;
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
-  /** Materializes allow-only Secrets that promote a host onto Envoy's L7
-   *  chain. Optional — non-cluster contexts (tests) skip the side effect. */
-  allowOnlySecrets?: K8sAllowOnlySecretsPort;
+  /** Promotes a host onto the agent's L7 chain via the Agent CR's
+   *  spec.l7Hosts (#2865). Optional — non-cluster contexts (tests) skip
+   *  the side effect. */
+  l7Hosts?: AgentL7HostsPort;
   /** Bulk-seeder used by `applyPreset`. The application root owns the
    *  trusted-host list (loaded once from the helm-mounted ConfigMap) and
    *  passes the seeder in so this module doesn't need filesystem access. */
@@ -37,7 +43,7 @@ export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
   const repo = createEgressRulesRepository(deps.db);
   const service = createEgressRulesService({
     repo,
-    allowOnlySecrets: deps.allowOnlySecrets,
+    l7Hosts: deps.l7Hosts,
     presetSeeder: deps.presetSeeder,
     trustedHosts: deps.trustedHosts,
     isAgentOwnedBy: deps.isAgentOwnedBy,
@@ -74,6 +80,10 @@ export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
  * System-level write adapter consumed by the approvals module's
  * approve-permanent / deny-forever paths. Narrow port — only `insert`,
  * matching the `EgressRuleWriter` interface declared on the consumer side.
+ * The row's `agentId` keys the L7 promotion when the rule needs it (#2865).
+ * The returned outcome tells the caller whether a rule was actually
+ * written, no-oped against an equivalent rule, or clashed with the
+ * opposite verdict (#2766).
  */
 export interface EgressRuleWriterAdapter {
   insert(input: {
@@ -85,16 +95,17 @@ export interface EgressRuleWriterAdapter {
     verdict: RuleVerdict;
     decidedBy: string;
     source: EgressRuleSource;
-  }): Promise<void>;
+  }): Promise<EgressRuleWriteOutcome>;
 }
 
-export function createEgressRuleWriterAdapter(db: Db): EgressRuleWriterAdapter {
-  const repo = createEgressRulesRepository(db);
-  return {
-    async insert(input) {
-      await repo.insert(input);
-    },
-  };
+export function createEgressRuleWriterAdapter(
+  db: Db,
+  l7Hosts?: AgentL7HostsPort,
+): EgressRuleWriterAdapter {
+  return createEgressRuleWriter({
+    repo: createEgressRulesRepository(db),
+    l7Hosts,
+  });
 }
 
 /**
@@ -119,14 +130,31 @@ export function createPresetSeederAdapter(
 export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
 export type { EgressPreset };
 export {
-  createK8sAllowOnlySecretsPort,
-  type K8sAllowOnlySecretsPort,
-} from "./infrastructure/k8s-allow-only-secrets-port.js";
+  createAgentL7HostsPort,
+  type AgentL7HostsPort,
+} from "./infrastructure/k8s-agent-l7-hosts-port.js";
 
 /**
- * System-level connection-rules sync, called from the secrets module's
- * setAgentAccess flow. The egress-rules module owns the diff/insert/revoke
- * logic; the secrets module hands over the desired (agent, granted) state.
+ * System-level startup migration (#2865): projects active narrow rules
+ * onto each Agent CR's spec.l7Hosts and retires the legacy owner-scoped
+ * allow-only marker Secrets. Called once from the application root; the
+ * caller owns the retry loop.
+ */
+export function createL7PromotionBackfill(
+  db: Db,
+  k8sClient: K8sClient,
+  log: (message: string) => void,
+): () => Promise<{ failed: number }> {
+  const repo = createEgressRulesRepository(db);
+  const l7Hosts = createAgentL7HostsPort(k8sClient);
+  return () => backfillL7Promotions({ repo, l7Hosts, k8sClient, log });
+}
+
+/**
+ * System-level connection-rules sync, called from `setAgentConnections` and
+ * the secrets→connections migration. The egress-rules module owns the
+ * diff/insert/revoke logic; the caller hands over the desired (agent, granted)
+ * state.
  */
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);

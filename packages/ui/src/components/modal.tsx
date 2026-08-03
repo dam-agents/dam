@@ -1,6 +1,10 @@
+import { Close } from "@carbon/icons-react";
 import type { ReactNode, RefObject } from "react";
 import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface ModalProps {
   widthClass?: string;
@@ -13,9 +17,9 @@ interface ModalProps {
  * users can't lose in-progress form state by accident.
  *
  * Renders into document.body via a portal so it escapes the app shell's
- * `<main>` stacking context (z-10). Without the portal, MobileNav (z-40)
- * would render above the modal because the modal's effective stacking
- * happens at z-10 from the root's perspective.
+ * `<main>` stacking context (z-content). Without the portal, the mobile
+ * bottom bar (z-nav) would render above the modal because the modal's
+ * effective stacking happens at z-content from the root's perspective.
  *
  * Compose the inside with `DialogHeader`, `DialogBody`, and `DialogFooter`
  * so layout (padding, dividers, scroll region) is consistent across every
@@ -34,13 +38,13 @@ export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
   useBodyScrollLock();
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
+      <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
         <div
           ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-surface flex flex-col anim-scale-in shadow-xl`}
+          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl`}
         >
           {children}
         </div>
@@ -59,17 +63,75 @@ interface DialogRegionProps {
   className?: string;
 }
 
-/** Top region of a dialog. Holds the title (and optionally a subtitle or
- *  a small form field). Tighter horizontal padding on mobile. Picks up
- *  the `aria-labelledby` id from `ModalContext` so the parent `Modal` can
- *  point to it without callers wiring ids manually. */
-export function DialogHeader({ children, className }: DialogRegionProps) {
+interface DialogHeaderProps {
+  children?: ReactNode;
+  className?: string;
+  title?: ReactNode;
+  /** Sits beside the title, outside the `<h2>` so it stays out of the dialog's
+   *  accessible name. */
+  titleAccessory?: ReactNode;
+  subtitle?: ReactNode;
+  /** Omit for dialogs that exit through the footer. */
+  onClose?: () => void;
+  closeTestId?: string;
+  truncateTitle?: boolean;
+}
+
+/** Top region of a dialog. Picks up the `aria-labelledby` id from
+ *  `ModalContext` so callers don't wire ids manually — it lands on the `<h2>`
+ *  when there is a `title`, otherwise on the region itself. */
+export function DialogHeader({
+  title,
+  titleAccessory,
+  subtitle,
+  onClose,
+  closeTestId,
+  truncateTitle,
+  children,
+  className,
+}: DialogHeaderProps) {
   const { labelId } = useContext(ModalContext);
   return (
     <div
-      id={labelId}
-      className={`px-5 md:px-7 pt-5 md:pt-7 pb-4 border-b-2 border-border-light ${className ?? ""}`}
+      id={title ? undefined : labelId}
+      className={cn("px-5 pt-5 pb-4 md:px-7 md:pt-7", className)}
     >
+      {(title || subtitle || onClose) && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title && (
+              <div className="flex items-center gap-2">
+                <h2
+                  id={labelId}
+                  className={cn(
+                    "text-base font-semibold text-foreground",
+                    truncateTitle && "truncate",
+                  )}
+                >
+                  {title}
+                </h2>
+                {titleAccessory}
+              </div>
+            )}
+            {subtitle && (
+              <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+          {onClose && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              aria-label="Close"
+              data-testid={closeTestId}
+              className="shrink-0 text-muted-foreground"
+            >
+              <Close size={18} />
+            </Button>
+          )}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -81,10 +143,16 @@ export function DialogHeader({ children, className }: DialogRegionProps) {
  *  load-bearing detail: without it a flex child won't shrink below its
  *  content, so the modal's max-height cap can't push the footer down —
  *  the body would push it off-screen. */
-export function DialogBody({ children, className }: DialogRegionProps) {
+export function DialogBody({
+  children,
+  className,
+  flush,
+}: DialogRegionProps & { flush?: boolean }) {
+  // `flush` drops the horizontal padding so full-bleed content (e.g. a list
+  // whose row dividers must span the modal width) can own its own gutter.
   return (
     <div
-      className={`flex-1 min-h-0 overflow-y-auto px-5 md:px-7 py-5 ${className ?? ""}`}
+      className={`flex-1 min-h-0 overflow-y-auto py-5 ${flush ? "" : "px-5 md:px-7"} ${className ?? ""}`}
     >
       {children}
     </div>
@@ -96,7 +164,7 @@ export function DialogBody({ children, className }: DialogRegionProps) {
 export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
-      className={`px-5 md:px-7 py-4 border-t-2 border-border-light flex items-center justify-end gap-3 ${className ?? ""}`}
+      className={`px-5 md:px-7 py-4 flex items-center justify-end gap-3 ${className ?? ""}`}
     >
       {children}
     </div>
@@ -116,10 +184,18 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     if (!container) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    if (!container.contains(document.activeElement)) {
-      const first = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-      first?.focus();
-    }
+    // A spawning menu's focus trap stays alive through its exit animation and
+    // refocuses its trigger at the end, so re-assert until it gives up.
+    let grabRaf = 0;
+    const reassertUntil = performance.now() + 500;
+    const grab = () => {
+      if (!container.contains(document.activeElement)) {
+        container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+      }
+      if (performance.now() < reassertUntil)
+        grabRaf = requestAnimationFrame(grab);
+    };
+    grab();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
@@ -146,6 +222,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
 
     container.addEventListener("keydown", onKey);
     return () => {
+      cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };

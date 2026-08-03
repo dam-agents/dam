@@ -12,6 +12,8 @@ export {
   scriptEntrySchema,
   scriptFileSchema,
   setScriptInputSchema,
+  spawnInvocationInputSchema,
+  spawnInvocationResultSchema,
 } from "./modules/scripted-mock/schemas.js";
 export type {
   GetEnvInput,
@@ -25,4 +27,6 @@ export type {
   ScriptedMockService,
   ScriptFile,
   SetScriptInput,
+  SpawnInvocationInput,
+  SpawnInvocationResult,
 } from "./modules/scripted-mock/types.js";

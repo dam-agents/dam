@@ -1,3 +1,10 @@
+---
+id: 037
+title: Remote terminal — split "chat" and "terminal" session modes
+status: accepted
+subsystem: agent-lifecycle
+summary: Sessions gain a chat (ACP) and a terminal (TUI-over-PTY) mode, delivered first as a web terminal emulator rendering a real harness TUI in the agent pod.
+---
 # ADR-037: Remote terminal — split "chat" and "terminal" session modes
 
 **Date:** 2026-05-04

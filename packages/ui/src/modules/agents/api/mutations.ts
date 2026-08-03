@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import type { AgentConnections } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -7,14 +8,26 @@ import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import {
-  buildBundle,
   type BundleEntry,
+  importBundle,
   importRawBundle,
 } from "../../files/api/import-bundle.js";
+import { trackImport } from "../../files/track-import.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
   invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
+};
+
+// Lifecycle mutations move Reserved (#1900) — refresh the meter immediately
+// rather than waiting out its 5s poll. Symmetric across everything that can
+// change what's running or how big it is: create/delete, wake/restart,
+// pause/stop, and resize (update).
+const invalidatesAgentsAndBudget = {
+  invalidates: [
+    ...invalidatesAgentsList.invalidates,
+    trpc.budgets.reserved.queryKey(),
+  ],
 };
 
 export interface CreateAgentInput {
@@ -23,11 +36,9 @@ export interface CreateAgentInput {
   image?: string;
   description?: string;
   env?: EnvVar[];
-  /** Initial secret grants, settled into the Agent spec at create. Omitted or
-   *  empty ⇒ no secrets granted (grants are selective; there is no default). */
-  secretIds?: string[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
+  registryCredential?: { server: string; username: string; password: string };
   /** Optional: clone this public repo (optionally a branch/tag) into the working
    *  dir once, shortly after first start (a one-shot `workspace-seed` event).
    *  Flows to `agents.create`. */
@@ -40,18 +51,20 @@ export interface CreateAgentInput {
   /** Pre-built tar / tar.gz / tgz to upload verbatim. Mutually exclusive
    *  with `importEntries`; if both are present, the raw bundle wins. */
   importRawBundle?: File;
+  /** The sandbox's Size (#1900): CPU/memory limits from the wizard sliders.
+   *  Omitted means the template's default (else the chart default). */
+  size?: { cpu?: string; memory?: string };
 }
 
 /**
  * Create-agent orchestrates: create agent, optional file import, set agent
- * access, set app connections. Per ADR-046 the agent is now a single CM
+ * access, set app connections. The agent is now a single CM
  * (no separate instance create) — `agents.create` returns the full Agent
  * including runtime state.
  */
 export function useCreateAgent() {
   return useMutation({
     mutationFn: async ({
-      secretIds,
       appConnectionIds,
       egressPreset,
       importEntries,
@@ -63,7 +76,6 @@ export function useCreateAgent() {
       const agent = await api.agents.create.mutate({
         ...input,
         egressPreset,
-        secretIds,
         connectionIds: appConnectionIds,
       });
       void queryClient.invalidateQueries({
@@ -73,26 +85,26 @@ export function useCreateAgent() {
         queryKey: agentsKeys.listWithChannels(),
       });
 
-      let preparedBundle: { blob: Blob; label: string } | undefined;
+      // Raw bundle is sent verbatim; entries are tarred + gzipped inside importBundle.
+      let runImport: (() => Promise<unknown>) | undefined;
+      let importLabel = "";
       if (rawBundle != null) {
-        preparedBundle = { blob: rawBundle, label: rawBundle.name };
+        importLabel = rawBundle.name;
+        runImport = () =>
+          importRawBundle({ agentId: agent.id, bundle: rawBundle });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
-        preparedBundle = {
-          blob: await buildBundle(importEntries),
-          label: `${count} file${count === 1 ? "" : "s"}`,
-        };
+        importLabel = `${count} file${count === 1 ? "" : "s"}`;
+        runImport = () =>
+          importBundle({ agentId: agent.id, entries: importEntries });
       }
 
-      if (preparedBundle) {
+      if (runImport) {
         try {
-          await importRawBundle({
-            agentId: agent.id,
-            bundle: preparedBundle.blob,
-          });
+          await trackImport(agent.id, runImport);
           emitToast({
             kind: "success",
-            message: `Imported ${preparedBundle.label} into ${input.name}`,
+            message: `Imported ${importLabel} into ${input.name}`,
           });
         } catch (err) {
           emitToast({
@@ -105,7 +117,7 @@ export function useCreateAgent() {
       return agent;
     },
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to create agent",
     },
   });
@@ -115,7 +127,7 @@ export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to delete agent",
     },
   });
@@ -125,18 +137,45 @@ export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     meta: {
-      invalidates: [trpc.agents.list.queryKey(), agentsKeys.listWithChannels()],
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to update agent",
     },
   });
 }
 
-export function useWakeAgent() {
+/**
+ * Raw wake mutation. The optimistic "Starting" lifecycle is managed by
+ * useWakeAgent in hooks/use-wake-agent.ts — consumers should call that so the
+ * overlay/pill flips the instant the user clicks Start, not on the next poll.
+ */
+export function useWakeAgentMutation() {
   return useMutation({
     ...trpc.agents.wake.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to start agent",
+    },
+  });
+}
+
+/** Pause: sleeps now, wakes on its next use. Frees budget immediately. */
+export function usePauseAgent() {
+  return useMutation({
+    ...trpc.agents.pause.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to pause sandbox",
+    },
+  });
+}
+
+/** Hard stop: stays down until explicitly started (or a schedule fires). */
+export function useStopAgent() {
+  return useMutation({
+    ...trpc.agents.stop.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to stop sandbox",
     },
   });
 }
@@ -151,8 +190,20 @@ export function useRestartAgentMutation() {
   return useMutation({
     ...trpc.agents.restart.mutationOptions(),
     meta: {
-      ...invalidatesAgentsList,
+      ...invalidatesAgentsAndBudget,
       errorToast: "Failed to restart agent",
+    },
+  });
+}
+
+// Upgrading rolls a running pod onto the new image — refresh the budget
+// meter alongside, like the other lifecycle mutations.
+export function useUpgradeAgentMutation() {
+  return useMutation({
+    ...trpc.agents.upgrade.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to upgrade sandbox",
     },
   });
 }
@@ -177,48 +228,44 @@ export function useDisconnectSlack() {
   });
 }
 
-export function useConnectTelegram() {
-  return useMutation({
-    ...trpc.agents.connectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to connect Telegram",
-    },
-  });
-}
-
-export function useDisconnectTelegram() {
-  return useMutation({
-    ...trpc.agents.disconnectTelegram.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Failed to disconnect Telegram",
-    },
-  });
-}
-
-export function useSetAgentAccess() {
-  return useMutation({
-    ...trpc.secrets.setAgentAccess.mutationOptions(),
-    meta: {
-      // Server-side `setAgentAccess` syncs `egress_rules` with the new
-      // grant list (insert/revoke connection:* rows), so refetch the
-      // editor's view alongside the access query.
-      invalidates: [
-        trpc.secrets.getAgentAccess.queryKey(),
-        egressRulesKeys.all,
-      ],
-      errorToast: "Failed to update credential access",
-    },
-  });
-}
-
 export function useSetAgentConnections() {
   return useMutation({
-    ...trpc.connections.setAgentConnections.mutationOptions(),
+    mutationFn: (vars: { agentId: string; connectionIds: string[] }) =>
+      api.connections.setAgentConnections.mutate(vars),
+    // Optimistically rewrite the grants cache so consecutive toggles compound
+    // — both reading the pre-mutation set would make the second full-set
+    // write silently drop the first grant.
+    onMutate: async (vars) => {
+      const key = trpc.connections.getAgentConnections.queryKey({
+        agentId: vars.agentId,
+      });
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<AgentConnections>(key);
+      if (previous) {
+        const byId = new Map(
+          previous.connections.map((c) => [c.connectionId, c]),
+        );
+        queryClient.setQueryData<AgentConnections>(key, {
+          ...previous,
+          connections: vars.connectionIds.map(
+            (id) =>
+              byId.get(id) ?? {
+                connectionId: id,
+                grantedAt: new Date().toISOString(),
+              },
+          ),
+        });
+      }
+      return { previous, key };
+    },
+    // `meta.invalidates` fires only on success, so roll back here.
+    onError: (_err, _vars, context) => {
+      if (context?.previous)
+        queryClient.setQueryData(context.key, context.previous);
+    },
     meta: {
       // Server-side `setAgentConnections` syncs `connection:<id>` egress
-      // rules per granted provider's API hosts (ADR-035).
+      // rules per granted provider's API hosts.
       // Refetch the editor's view alongside the grants query.
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
@@ -226,15 +273,5 @@ export function useSetAgentConnections() {
       ],
       errorToast: "Failed to update app connections",
     },
-  });
-}
-
-/**
- * Imperative fetch of per-agent access, used by consumers (e.g. MCP picker)
- * that need the data outside a component render.
- */
-export async function fetchAgentAccess(agentId: string) {
-  return queryClient.fetchQuery({
-    ...trpc.secrets.getAgentAccess.queryOptions({ agentId: agentId }),
   });
 }

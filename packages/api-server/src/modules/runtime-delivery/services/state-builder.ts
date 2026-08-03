@@ -1,6 +1,7 @@
 import {
   eq,
   type Db,
+  agentEnv,
   agentSkills,
   connectionGrants,
   connections as connectionsTable,
@@ -40,26 +41,21 @@ export interface StateBuilder {
   ): Promise<StatePayload>;
 }
 
-/** `env` contributions for an agent's granted standalone secrets (secrets module, ADR-040). */
-export interface SecretEnvSource {
-  forAgent(agentId: string): Promise<Contribution[]>;
-}
-
 export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
-  secretEnv: SecretEnvSource;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [granted, skills, secretEnv] = await Promise.all([
+      const [userEnv, granted, skills] = await Promise.all([
+        readUserEnvContributions(deps.db, agentId),
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
-        deps.secretEnv.forAgent(agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      const rawContribs = [...builtin, ...granted, ...skills, ...secretEnv];
+      // User env first: the env driver is first-occurrence-wins, so it shadows connection env.
+      const rawContribs = [...userEnv, ...builtin, ...granted, ...skills];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
@@ -72,6 +68,24 @@ export function createStateBuilder(deps: {
       };
     },
   };
+}
+
+/** `env` contributions for an agent's user-typed env; the literal value rides in `placeholder`. */
+async function readUserEnvContributions(
+  db: Db,
+  agentId: string,
+): Promise<Contribution[]> {
+  const rows = await db
+    .select({ name: agentEnv.name, value: agentEnv.value })
+    .from(agentEnv)
+    .where(eq(agentEnv.agentId, agentId));
+  return rows.map(
+    (r): Contribution => ({
+      kind: "env",
+      name: r.name,
+      placeholder: r.value,
+    }),
+  );
 }
 
 async function readGrantedContributions(
@@ -111,6 +125,7 @@ async function readSkillRefContributions(
       source: agentSkills.source,
       name: agentSkills.name,
       version: agentSkills.version,
+      path: agentSkills.path,
     })
     .from(agentSkills)
     .where(eq(agentSkills.agentId, agentId));
@@ -120,6 +135,7 @@ async function readSkillRefContributions(
       sourceUrl: r.source,
       name: r.name,
       version: r.version,
+      ...(r.path !== null ? { path: r.path } : {}),
     }),
   );
 }

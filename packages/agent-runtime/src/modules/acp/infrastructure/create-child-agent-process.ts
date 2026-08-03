@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import readline from "node:readline";
 import type { AgentProcess } from "./agent-process.js";
 
 export interface ChildAgentProcessOptions {
@@ -29,16 +30,22 @@ export function createChildAgentProcess(
     process.stderr.write(`[agent-process] spawn error: ${err.message}\n`);
   });
 
+  // send()'s writable guard is racy: after the harness exits (e.g. an image
+  // without a chat harness, whose stub exits immediately), a dispatched write
+  // fails async with EPIPE on this stream — unhandled, it kills the runtime
+  // (PID 1) and the whole pod. Exit cleanup already closes the sessions.
+  child.stdin!.on("error", (err) => {
+    process.stderr.write(`[agent-process] stdin error: ${err.message}\n`);
+  });
+
   const handlers: ((line: string) => void)[] = [];
 
-  let buf = "";
-  child.stdout!.on("data", (chunk: Buffer) => {
-    buf += chunk.toString();
-    const lines = buf.split("\n");
-    buf = lines.pop()!;
-    for (const line of lines) {
-      if (line.trim()) for (const h of handlers) h(line);
-    }
+  const rl = readline.createInterface({
+    input: child.stdout!,
+    crlfDelay: Infinity,
+  });
+  rl.on("line", (line) => {
+    if (line.trim()) for (const h of handlers) h(line);
   });
 
   const exited = new Promise<void>((resolve) => {

@@ -7,7 +7,7 @@
  * rebuild — `helm upgrade` flips the values and the next page load picks
  * them up.
  *
- * Theme colors are applied via `applyBrandTheme()` as CSS custom properties
+ * Theme colors are applied via `applyBrand()` as CSS custom properties
  * on `<html>` so light/dark themes already wired through `App.css` keep
  * working unchanged.
  */
@@ -16,14 +16,14 @@ import { type Brand, brandSchema } from "api-server-api";
 const FALLBACK: Brand = {
   name: "Platform",
   short: "platform",
-  tagline: "",
+  title: "",
   theme: {
     light: {
-      accent: "#1D6BE1",
-      accentHover: "#1556B8",
-      accentLight: "#eaf2fe",
+      accent: "#0F62FE",
+      accentHover: "#0353E9",
+      accentLight: "#edf5ff",
     },
-    dark: { accent: "#3C92FD", accentHover: "#2F88FD", accentLight: "#0f1f3a" },
+    dark: { accent: "#4589FF", accentHover: "#78A9FF", accentLight: "#0f1f3a" },
   },
 };
 
@@ -73,7 +73,7 @@ function setSafe(el: HTMLElement, prop: string, value: string): void {
 }
 
 export function applyBrand(brand: Brand): void {
-  document.title = brand.tagline || brand.name;
+  document.title = brand.title || brand.name;
 
   const themeMeta = document.querySelector<HTMLMetaElement>(
     'meta[name="theme-color"]',

@@ -46,40 +46,24 @@ export interface EgressService {
 export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
   return {
     async listForAgent(agentId) {
-      return trpcCall(
-        () =>
-          deps.trpc.egressRules.listForAgent.query({ agentId }) as Promise<
-            readonly EgressRuleView[]
-          >,
+      return trpcCall(() =>
+        deps.trpc.egressRules.listForAgent.query({ agentId }),
       );
     },
     async currentPreset(agentId) {
-      return trpcCall(
-        () =>
-          deps.trpc.egressRules.currentPreset.query({
-            agentId,
-          }) as Promise<EgressPreset>,
+      return trpcCall(() =>
+        deps.trpc.egressRules.currentPreset.query({ agentId }),
       );
     },
     async trustedHosts() {
-      return trpcCall(
-        () =>
-          deps.trpc.egressRules.trustedHosts.query() as Promise<
-            readonly string[]
-          >,
-      );
+      return trpcCall(() => deps.trpc.egressRules.trustedHosts.query());
     },
     async create(input) {
-      return trpcCall(
-        () =>
-          deps.trpc.egressRules.create.mutate(input) as Promise<EgressRuleView>,
-      );
+      return trpcCall(() => deps.trpc.egressRules.create.mutate(input));
     },
     async update(input) {
       try {
-        const view = (await deps.trpc.egressRules.update.mutate(
-          input,
-        )) as EgressRuleView;
+        const view = await deps.trpc.egressRules.update.mutate(input);
         return ok(view);
       } catch (e) {
         if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {

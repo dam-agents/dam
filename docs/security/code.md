@@ -1,8 +1,6 @@
 # Code scanning
 
-Last verified: 2026-06-02
-
-Motivated by: operational policy, not an architectural decision — no ADR.
+Last verified: 2026-06-12
 
 ## CodeQL
 

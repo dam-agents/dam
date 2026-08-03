@@ -1,7 +1,8 @@
-import { Cable, KeyRound, Server } from "lucide-react";
+import { BareMetalServer, Link, Password } from "@carbon/icons-react";
+
+import { GithubIcon } from "@/components/brand-icons";
 
 const SVG_BY_SLUG = new Set([
-  "github",
   "github-enterprise",
   "gmail",
   "google-admin",
@@ -18,8 +19,10 @@ const SVG_BY_SLUG = new Set([
   "google-sheets",
   "google-slides",
   "google-tasks",
+  "kubernetes",
   "slack",
   "spotify",
+  "telegram",
   "youtube",
 ]);
 
@@ -31,6 +34,16 @@ interface Props {
 }
 
 export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
+  if (iconSlug === "github") {
+    return (
+      <GithubIcon
+        width={size}
+        height={size}
+        aria-label={alt}
+        className={`block ${className ?? ""}`.trim()}
+      />
+    );
+  }
   if (iconSlug && SVG_BY_SLUG.has(iconSlug)) {
     return (
       <img
@@ -43,10 +56,12 @@ export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
     );
   }
   if (iconSlug === "mcp") {
-    return <Server size={size} aria-label={alt} className={className} />;
+    return (
+      <BareMetalServer size={size} aria-label={alt} className={className} />
+    );
   }
   if (iconSlug === "key") {
-    return <KeyRound size={size} aria-label={alt} className={className} />;
+    return <Password size={size} aria-label={alt} className={className} />;
   }
-  return <Cable size={size} aria-label={alt} className={className} />;
+  return <Link size={size} aria-label={alt} className={className} />;
 }

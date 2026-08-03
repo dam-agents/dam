@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { buildPlatformTurnEndedNotification } from "api-server-api";
 
 import {
@@ -15,6 +16,10 @@ import {
   type SessionMetaEntry,
   type SessionMetadataStore,
 } from "../infrastructure/session-metadata-store.js";
+import type {
+  BackgroundWorkRegistry,
+  HeldSession,
+} from "./background-work-registry.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
@@ -43,11 +48,23 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
  */
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
+/**
+ * How long to wait before re-testing a session whose reap was deferred because
+ * the agent left background work running. Short enough that the pod idles down
+ * promptly once the work exits, long enough that the check costs nothing.
+ */
+const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
+
 export interface AcpRuntimeStatus {
-  activeClientCount: number;
-  pendingRequestCount: number;
-  queuedPromptCount: number;
-  agentAlive: boolean;
+  idle: boolean;
+  /**
+   * Sessions kept alive because they report background work still running.
+   * Non-empty forces `idle` false, so the controller's busy probe won't
+   * hibernate the pod out from under the work; published with what each session
+   * is holding for, so an unexpectedly awake sandbox is explainable rather than
+   * mysterious.
+   */
+  backgroundWork: HeldSession[];
 }
 
 export interface AcpRuntime {
@@ -65,8 +82,11 @@ export interface AcpRuntime {
    * A cross-session call like `listSessions` carries no sessionId and never
    * engages — such channels can do their RPC round-trip without ever seeing
    * another session's permission prompts or updates.
+   *
+   * `viewer: false` marks a machine-driven channel (the in-process trigger
+   * driver): its activity never counts as the user having seen the session.
    */
-  attach(channel: ClientChannel): void;
+  attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   resetSession(sessionId: string): void;
   /** Env on disk changed: recycle a running harness so it respawns with the new env. */
@@ -82,14 +102,28 @@ export interface AcpRuntimeDeps {
   orphanTtlMs?: number;
   /** Override the env force-recycle bound — exposed for tests; default 60s. */
   envForceRecycleMs?: number;
+  /** Quiescence window before reaping an idle session's subprocess. 0 (default)
+   * reaps inline; production injects a few seconds so a turn's trailing work
+   * finishes and quick re-attaches keep the subprocess warm. */
+  idleReapDelayMs?: number;
   /** Env already on disk at boot → spawn now; false gates the first spawn until env arrives. Defaults true. */
   envReadyAtBoot?: boolean;
   /** Override the cold-boot warm-start bound — exposed for tests; default 15s. */
   warmStartTimeoutMs?: number;
   /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
-  /** Owns the `_meta.platform.*` round-trip (ADR-055); skipped when omitted. */
+  /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
+  /**
+   * Holds the background work sessions report, so a session with work still
+   * running is neither closed nor counted as idle. Omitted — as in most tests —
+   * the runtime reaps purely on session refcount, as it did before #2965.
+   */
+  backgroundWork?: BackgroundWorkRegistry;
+  /** Override the deferred-reap recheck interval — exposed for tests. */
+  backgroundWorkRecheckMs?: number;
+  /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
+  isTerminalSessionActive?: (sessionId: string) => boolean;
 }
 
 interface ActivePrompt {
@@ -210,6 +244,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
   const envForceRecycleMs =
     deps.envForceRecycleMs ?? DEFAULT_ENV_FORCE_RECYCLE_MS;
+  const idleReapDelayMs = deps.idleReapDelayMs ?? 0;
+  const backgroundWorkRecheckMs =
+    deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
   // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
@@ -239,6 +276,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * which channels receive fan-out broadcasts.
    */
   const engagedSessions = new Map<ClientChannel, Set<string>>();
+  /** Machine-driven channels (trigger driver); their activity is never "seen". */
+  const nonViewerChannels = new Set<ClientChannel>();
   const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
   const activePromptBySession = new Map<string, ActivePrompt>();
@@ -269,6 +308,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   /** Per-session orphan timers. A session is orphaned when it has pending
    * agent-initiated requests but no channel engaged with it. */
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Per-session debounced idle-reap timers (see maybeCloseIdleSession). */
+  const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // ── Session log ──
 
@@ -362,6 +403,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!sessions) return; // channel detached
     if (sessions.has(sessionId)) return; // idempotent
     sessions.add(sessionId);
+    if (!nonViewerChannels.has(channel))
+      deps.sessionMetadata?.recordSeen(sessionId);
 
     // Replay any pending agent→client requests for this session to the
     // newly-engaged channel. A fresh viewer joining an in-progress prompt
@@ -378,6 +421,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function hasEngagedChannel(sessionId: string): boolean {
     for (const [channel, sessions] of engagedSessions) {
       if (sessions.has(sessionId) && channel.isOpen()) return true;
+    }
+    return false;
+  }
+
+  function hasEngagedViewer(sessionId: string): boolean {
+    for (const [channel, sessions] of engagedSessions) {
+      if (
+        sessions.has(sessionId) &&
+        channel.isOpen() &&
+        !nonViewerChannels.has(channel)
+      )
+        return true;
     }
     return false;
   }
@@ -443,22 +498,30 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * still advanced, so subsequent fan-outs don't re-deliver this entry,
    * but a fresh channel (after reload) will catch it through the normal
    * catch-up from cursor=0.
+   *
+   * When `queued` is set (the prompt is parked behind an in-flight turn), the
+   * chunk carries `_meta.queued` so viewers render it as a pending background
+   * prompt instead of treating it as a turn boundary that would split the
+   * active reply (issue #703).
    */
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
     originator: ClientChannel,
+    queued: boolean,
   ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
       if (!block || typeof block !== "object") continue;
+      const update: Record<string, unknown> = {
+        sessionUpdate: "user_message_chunk",
+        content: block,
+      };
+      if (queued) update._meta = { queued: true };
       const line = JSON.stringify({
         jsonrpc: "2.0",
         method: "session/update",
-        params: {
-          sessionId,
-          update: { sessionUpdate: "user_message_chunk", content: block },
-        },
+        params: { sessionId, update },
       });
       appendAndFanOut(sessionId, line, { skipChannel: originator });
     }
@@ -529,7 +592,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const a = deps.spawnAgent();
     agent = a;
-    a.onLine(handleAgentLine);
+    a.onLine((line) => {
+      const start = performance.now();
+      handleAgentLine(line);
+      const ms = performance.now() - start;
+      if (ms >= 250) {
+        const method =
+          (parseFrame(line) as { method?: string } | null)?.method ??
+          "response";
+        deps.log?.(
+          `slow frame ${Math.round(ms)}ms (${line.length}B, ${method})`,
+        );
+      }
+    });
     a.exited.then(() => {
       // A detached (recycled) process exiting must not clobber the current one.
       if (agent !== a) return;
@@ -543,7 +618,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      for (const t of idleReapTimers.values()) clearTimeout(t);
+      idleReapTimers.clear();
       pendingFromAgent.clear();
+      // The harness took its children down with it — nothing left to hold.
+      deps.backgroundWork?.clear();
     });
     return a;
   }
@@ -580,7 +659,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const old = agent;
     if (!old || agentExited) return;
     deps.log?.("recycling harness to apply env change");
-    // Close code 1011 matches a real agent exit; clients reconnect and resume (ADR-055).
+    // Close code 1011 matches a real agent exit; clients reconnect and resume.
     for (const channel of engagedSessions.keys())
       channel.close(1011, "agent recycled for env change");
     engagedSessions.clear();
@@ -589,9 +668,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     bootstrapBySession.clear();
     for (const t of orphanTimers.values()) clearTimeout(t);
     orphanTimers.clear();
+    for (const t of idleReapTimers.values()) clearTimeout(t);
+    idleReapTimers.clear();
     pendingFromAgent.clear();
     activePromptBySession.clear();
     promptQueueBySession.clear();
+    deps.backgroundWork?.clear();
     // Detach before kill so the old process's exit handler no-ops.
     agent = null;
     old.kill();
@@ -608,6 +690,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
     engagedSessions.delete(channel);
+    nonViewerChannels.delete(channel);
     channelCursors.delete(channel);
 
     // Drop any prompts this channel had queued but not yet sent to the agent.
@@ -680,6 +763,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    // The subprocess is going away, so anything it was still running goes with
+    // it — the hold has nothing left to protect.
+    deps.backgroundWork?.forget(sessionId);
+    const reap = idleReapTimers.get(sessionId);
+    if (reap) {
+      clearTimeout(reap);
+      idleReapTimers.delete(sessionId);
+    }
   }
 
   /**
@@ -692,7 +783,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * `sessionCapabilities.close`: we can't tell the agent to drop the session,
    * so we also keep the cache so future resumes can still serve from memory.
    */
-  function maybeCloseIdleSession(sessionId: string): void {
+  function reapIdleSessionNow(sessionId: string): void {
+    idleReapTimers.delete(sessionId);
     if (!agent || agentExited) return;
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
@@ -705,9 +797,45 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
     }
+    // Closing the session tears down the harness's subprocess, and a harness
+    // that supervises background jobs kills them as it goes — so the work dies
+    // seconds after the last tab closes, silently. Wait while the session
+    // reports work still running; the release arrives as a later report, so
+    // re-check rather than closing.
+    if (deps.backgroundWork?.hasWork(sessionId)) {
+      idleReapTimers.set(
+        sessionId,
+        setTimeout(
+          () => reapIdleSessionNow(sessionId),
+          backgroundWorkRecheckMs,
+        ),
+      );
+      return;
+    }
 
     tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
+  }
+
+  // Defer the reap by a quiescence window: the harness can still be flushing
+  // a turn's trailing work (async post-tool hooks) after its prompt response
+  // lands, and a quick re-attach or the next queued prompt should keep the
+  // ~300MB subprocess warm rather than pay a cold respawn. The full guard is
+  // re-checked when the timer fires, so anything that re-engages in the window
+  // cancels the reap. Delay 0 (the library default, and tests) reaps inline,
+  // preserving the original synchronous behaviour. Ceiling: a fixed delay, not
+  // a true harness-idle signal.
+  function maybeCloseIdleSession(sessionId: string): void {
+    if (idleReapDelayMs <= 0) {
+      reapIdleSessionNow(sessionId);
+      return;
+    }
+    const existing = idleReapTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    idleReapTimers.set(
+      sessionId,
+      setTimeout(() => reapIdleSessionNow(sessionId), idleReapDelayMs),
+    );
   }
 
   function sendErrorResponse(
@@ -930,7 +1058,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.channel && mapping.originalId !== null) {
           const responseFrame =
             mapping.method === "session/list" && deps.sessionMetadata
-              ? injectPlatformMetaIntoList(frame, deps.sessionMetadata)
+              ? injectPlatformMetaIntoList(
+                  frame,
+                  deps.sessionMetadata,
+                  (sid) =>
+                    activePromptBySession.has(sid) ||
+                    (deps.isTerminalSessionActive?.(sid) ?? false),
+                )
               : (frame as object);
           const out = JSON.stringify({
             ...responseFrame,
@@ -957,6 +1091,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             // Turn boundary — apply a deferred env change if nothing's in flight.
             maybeRecycleForEnv();
           }
+          // A completed turn is activity too — a response landing with no
+          // viewer attached is what makes the session unread.
+          deps.sessionMetadata?.recordActivity(sid);
+          if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           appendAndFanOut(
             sid,
             JSON.stringify(
@@ -1034,7 +1172,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
-      // `platform/deleteSession` ExtRequest (ADR-055): soft delete — tombstone
+      // `platform/deleteSession` ExtRequest: soft delete — tombstone
       // in the metadata store so `session/list` enrichment hides it even while
       // the harness still lists the on-disk JSONL. Answered synthetically; the
       // vanilla harness has no delete capability, so it never forwards.
@@ -1062,7 +1200,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       //             but reach no client. On completion, all resume waiters
       //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
-        // setMode (ADR-055): a resume may carry `_meta.platform` (e.g. a new
+        // setMode: a resume may carry `_meta.platform` (e.g. a new
         // mode) — merge it into the stored entry, preserving fields it omits.
         const incomingMeta = extractPlatformMeta(frame);
         if (incomingMeta && deps.sessionMetadata) {
@@ -1170,6 +1308,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (promptSessionId !== null) {
+        // A real prompt is genuine activity — stamp it so the session list
+        // sorts/displays by last message, not the harness mtime.
+        deps.sessionMetadata?.recordActivity(promptSessionId);
+        if (hasEngagedViewer(promptSessionId))
+          deps.sessionMetadata?.recordSeen(promptSessionId);
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
@@ -1178,9 +1321,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // against its optimistic bubble.
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
-        appendUserPromptToLog(promptSessionId, promptBlocks, channel);
+        const willQueue = activePromptBySession.has(promptSessionId);
+        appendUserPromptToLog(
+          promptSessionId,
+          promptBlocks,
+          channel,
+          willQueue,
+        );
 
-        if (activePromptBySession.has(promptSessionId)) {
+        if (willQueue) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
             outboundIdToClient.delete(outboundId);
@@ -1220,11 +1369,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   return {
-    attach(channel) {
+    attach(channel, opts) {
       // One path for both: buffer frames until the agent is bound, then replay.
       // Warm (env present) releases synchronously below — buffered stays empty.
       // Cold-boot parks the release until env lands (or the safety timer fires).
       engagedSessions.set(channel, new Set());
+      if (opts?.viewer === false) nonViewerChannels.add(channel);
       const buffered: string[] = [];
       let live: AgentProcess | null = null;
       const release = (): void => {
@@ -1254,11 +1404,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       let queued = 0;
       for (const q of promptQueueBySession.values()) queued += q.length;
+      const backgroundWork = deps.backgroundWork?.held() ?? [];
       return {
-        activeClientCount: engagedSessions.size,
-        pendingRequestCount: pendingFromAgent.size,
-        queuedPromptCount: queued,
-        agentAlive: agent !== null && !agentExited,
+        idle:
+          activePromptBySession.size === 0 &&
+          pendingFromAgent.size === 0 &&
+          queued === 0 &&
+          backgroundWork.length === 0,
+        backgroundWork,
       };
     },
 
@@ -1294,6 +1447,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      for (const t of idleReapTimers.values()) clearTimeout(t);
+      idleReapTimers.clear();
+      deps.backgroundWork?.clear();
       clearEnvForceTimer();
       if (warmTimer) clearTimeout(warmTimer);
       warmWaiters.clear();
@@ -1333,13 +1489,20 @@ function stripPlatformMeta(frame: unknown): object {
 function withPlatformMeta(
   session: Record<string, unknown>,
   entry: SessionMetaEntry,
+  running: boolean,
 ): Record<string, unknown> {
   const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
   return {
     ...session,
+    ...(entry.lastActivityAt ? { updatedAt: entry.lastActivityAt } : {}),
     _meta: {
       ...existingMeta,
-      platform: { ...entry.meta, createdAt: entry.createdAt },
+      platform: {
+        ...entry.meta,
+        createdAt: entry.createdAt,
+        running,
+        ...(entry.seenAt ? { seenAt: entry.seenAt } : {}),
+      },
     },
   };
 }
@@ -1353,6 +1516,7 @@ function withPlatformMeta(
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
+  isRunning: (sessionId: string) => boolean,
 ): object {
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
@@ -1370,7 +1534,18 @@ function injectPlatformMetaIntoList(
     .map((s) => {
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
       const entry = store.get(s.sessionId);
-      return entry ? withPlatformMeta(s, entry) : s;
+      if (entry) return withPlatformMeta(s, entry, isRunning(s.sessionId));
+      // Store-less sessions decode as terminal by having no platform meta;
+      // adding meta for `running` must stamp the mode to keep that decode.
+      if (!isRunning(s.sessionId)) return s;
+      const existingMeta = isNonNullObject(s._meta) ? s._meta : {};
+      return {
+        ...s,
+        _meta: {
+          ...existingMeta,
+          platform: { mode: "terminal", running: true },
+        },
+      };
     });
   return { ...frame, result: { ...result, sessions: enriched } };
 }

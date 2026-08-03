@@ -5,3 +5,12 @@
 # apiServer:
 #   slackBotToken: "xoxb-..."
 #   slackAppToken: "xapp-..."
+#
+# Raise the per-user compute ceiling (summed limits across your running agents).
+# The chart default is 4 CPU / 8Gi. A driver agent plus one concurrent Invocation
+# target run at the same time, so together they exceed that default and need more
+# headroom:
+# controller:
+#   userBudgets:
+#     defaultCpu: "6"
+#     defaultMemory: "16Gi"

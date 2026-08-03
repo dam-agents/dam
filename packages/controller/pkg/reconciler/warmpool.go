@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/telemetry"
 )
 
 // defaultReplenishInterval is used when controller.warmPool.replenishInterval
@@ -88,6 +89,9 @@ func (m *WarmPoolManager) maxPendingAge() time.Duration {
 // size is no longer configured. Each step logs and continues on error; the next
 // tick retries.
 func (m *WarmPoolManager) reconcile(ctx context.Context) {
+	ctx, finish := telemetry.StartPass(ctx, "warm pool sweep")
+	defer finish(nil)
+	start := time.Now()
 	configured := make(map[string]bool, len(m.config.WarmPool.Sizes))
 	for _, s := range m.config.WarmPool.Sizes {
 		key, err := canonicalSize(s.Size)
@@ -100,6 +104,7 @@ func (m *WarmPoolManager) reconcile(ctx context.Context) {
 		m.reconcileSize(ctx, key, s.Target)
 	}
 	m.gcRemovedPools(ctx, configured)
+	slog.Debug("warm pool sweep complete", "pools", len(configured), "duration", time.Since(start))
 }
 
 // reconcileSize drives one size pool to target: reap stuck/lost spares, create
@@ -116,6 +121,13 @@ func (m *WarmPoolManager) reconcileSize(ctx context.Context, poolKey string, tar
 	maxAge := m.maxPendingAge()
 	var bound, pending, stale []corev1.PersistentVolumeClaim
 	for _, p := range avail {
+		// Spares provisioned before the RWO cutover (#2988) carry
+		// ReadWriteMany; a claim would hand a new agent a shared-storage
+		// volume again. Reap and let the shortfall re-provision RWO.
+		if isRWX(p.Spec.AccessModes) {
+			stale = append(stale, p)
+			continue
+		}
 		switch p.Status.Phase {
 		case corev1.ClaimBound:
 			bound = append(bound, p)
@@ -236,11 +248,9 @@ func buildPoolPVC(cfg *config.Config, poolKey string) *corev1.PersistentVolumeCl
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			// A claimed spare becomes the agent's workspace PVC, so its access
-			// mode must match live agents' — inherit the single AgentBase value
-			// rather than a pool-specific knob that could drift (must be RWX so
-			// forks co-mount; ADR-027).
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(cfg.AgentBase.AccessMode)},
+			// A claimed spare becomes the agent's workspace PVC, so it is
+			// ReadWriteOnce like every workspace volume (#2988).
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			StorageClassName: &sc,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(poolKey)},

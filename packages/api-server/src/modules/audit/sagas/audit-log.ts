@@ -7,10 +7,6 @@ import {
   type ChannelTurnRelayed,
   type ScheduleFired,
   type FilesImported,
-  type ForeignReplyReceived,
-  type ForkReady,
-  type ForkFailed,
-  type ForkCompleted,
 } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -24,8 +20,8 @@ import { formatError } from "../../../core/format-error.js";
  * there (so this saga and those call sites stay disjoint — no double-logging).
  *
  * Each handler PROJECTS explicit fields — never spread a whole event onto the
- * line, because some events (ForeignReplyReceived) carry the raw user prompt,
- * which must never reach the audit stream.
+ * line, so an event that carries payload content can never leak it into the
+ * audit stream.
  *
  * Single-process, single-subscriber: one line per replica that handles the
  * event. Domain events must not be moved onto the cross-replica Redis bus
@@ -73,7 +69,12 @@ export function startAuditLogSaga(): Subscription {
       surface: e.channel,
       agentId: e.agentId,
       result: e.outcome,
-      ...(e.forkId ? { detail: { forkId: e.forkId } } : {}),
+      ...(e.reason ? { reason: e.reason } : {}),
+      // `actor` stays Keycloak-sub space; the messenger-native driver id
+      // rides `detail`, never `actor`.
+      ...(e.externalActorId
+        ? { detail: { externalActorId: e.externalActorId } }
+        : {}),
     }),
   );
 
@@ -102,59 +103,6 @@ export function startAuditLogSaga(): Subscription {
       agentId: e.agentId,
       result: e.outcome,
       detail: { bytes: e.bytes },
-    }),
-  );
-
-  on<ForeignReplyReceived>(EventType.ForeignReplyReceived, (e) =>
-    // The single most security-relevant channel action: a NON-owner driving
-    // someone else's agent under their own credentials (ADR-027). Project
-    // fields explicitly — e.prompt MUST NOT be logged.
-    securityLog("info", "channel.foreign_turn.begin", {
-      category: "channel",
-      actor: e.foreignSub,
-      actorKind: "user",
-      surface: "slack",
-      agentId: e.agentId,
-      correlationId: e.replyId,
-      detail: {
-        threadTs: e.threadTs,
-        channelId: e.slackContext.channelId,
-        userSlackId: e.slackContext.userSlackId,
-        ...(e.sessionId ? { sessionId: e.sessionId } : {}),
-      },
-    }),
-  );
-
-  on<ForkReady>(EventType.ForkReady, (e) =>
-    securityLog("info", "fork.ready", {
-      category: "resource",
-      actor: null,
-      actorKind: "system",
-      correlationId: e.replyId,
-      detail: { forkId: e.forkId },
-    }),
-  );
-
-  on<ForkFailed>(EventType.ForkFailed, (e) =>
-    securityLog("warn", "fork.failed", {
-      // A credential-mint failure is a credential-path event, not just a
-      // resource lifecycle blip — surface it as such.
-      category: e.reason === "CredentialMintFailed" ? "credential" : "resource",
-      actor: null,
-      actorKind: "system",
-      result: "failure",
-      reason: e.reason,
-      correlationId: e.replyId,
-      detail: { forkId: e.forkId, ...(e.detail ? { detail: e.detail } : {}) },
-    }),
-  );
-
-  on<ForkCompleted>(EventType.ForkCompleted, (e) =>
-    securityLog("info", "fork.completed", {
-      category: "resource",
-      actor: null,
-      actorKind: "system",
-      correlationId: e.forkId,
     }),
   );
 

@@ -14,7 +14,7 @@ export interface StateQueue {
   close(): Promise<void>;
 }
 
-// `retryUntilReady` jobs wait on the Ready condition (ADR-059/060): re-check on a tight fixed cadence (~wake budget) so the apply lands seconds after Ready, not at the next sparse exponential retry.
+// `retryUntilReady` jobs wait on the Ready condition: re-check on a tight fixed cadence (~wake budget) so the apply lands seconds after Ready, not at the next sparse exponential retry.
 const READY_RECHECK_MS = 1_000;
 const READY_RECHECK_ATTEMPTS = 120;
 

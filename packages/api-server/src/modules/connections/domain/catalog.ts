@@ -1,9 +1,31 @@
+import {
+  type Contribution,
+  type EnvMapping,
+  ibmLitellmEnvMappings,
+  openaiEnvMappings,
+  bobEnvMappings,
+  BOB_CHAT_MODES,
+  IBM_LITELLM_HOST,
+  BOB_HOST,
+} from "api-server-api";
 import type {
+  ClientCredentialsConnectionTemplate,
   ConnectionTemplate,
+  GitHubAppConnectionTemplate,
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
 } from "./connection-template.js";
+import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
+
+// Project a provider preset's env bundle into `env` contributions
+function envContributions(mappings: EnvMapping[]): Contribution[] {
+  return mappings.map((m) => ({
+    kind: "env" as const,
+    name: m.envName,
+    placeholder: m.placeholder,
+  }));
+}
 
 export interface OAuthClientCredentials {
   clientId: string;
@@ -28,7 +50,7 @@ export interface OperatorCredentials {
 
 const ANTHROPIC: HeaderConnectionTemplate = {
   id: "anthropic",
-  name: "Anthropic",
+  name: "Anthropic (API Key)",
   category: "app",
   isCustom: false,
   description: "Anthropic API access (Claude). Sent as `x-api-key`.",
@@ -43,7 +65,56 @@ const ANTHROPIC: HeaderConnectionTemplate = {
       name: "ANTHROPIC_API_KEY",
       placeholder: "dummy-placeholder",
     },
-    { kind: "egress-allow", host: "api.anthropic.com" },
+    {
+      kind: "egress-inject",
+      host: "api.anthropic.com",
+      headerName: "x-api-key",
+      valueFormat: "{value}",
+    },
+  ],
+};
+
+// Contributions are synthesized at build time from the user's API host —
+// see `buildKubernetesContributions`: a Bearer egress-inject (with port and
+// upgrade tunneling for exec/port-forward) plus a ready-to-use kubeconfig.
+const KUBERNETES: HeaderConnectionTemplate = {
+  id: KUBERNETES_TEMPLATE_ID,
+  name: "Kubernetes / OpenShift",
+  category: "app",
+  isCustom: false,
+  description:
+    "kubectl/oc access to a cluster's API server with a service-account token.",
+  iconSlug: "kubernetes",
+  authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [],
+};
+
+const ANTHROPIC_OAUTH: HeaderConnectionTemplate = {
+  id: "anthropic-oauth",
+  name: "Anthropic (OAuth Token)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Anthropic API access (Claude) via an OAuth token. Sent as `Authorization: Bearer`.",
+  iconSlug: "anthropic",
+  authKind: "header",
+  host: "api.anthropic.com",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [
+    {
+      kind: "env",
+      name: "CLAUDE_CODE_OAUTH_TOKEN",
+      placeholder: "dummy-placeholder",
+    },
+    {
+      kind: "egress-inject",
+      host: "api.anthropic.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
   ],
 };
 
@@ -58,12 +129,15 @@ const OPENAI: HeaderConnectionTemplate = {
   host: "api.openai.com",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  // Env bundle sourced from the provider preset so they can't drift (cf. ibm-litellm).
   contributions: [
-    { kind: "env", name: "OPENAI_API_KEY", placeholder: "dummy-placeholder" },
+    ...envContributions(openaiEnvMappings()),
     {
-      kind: "egress-allow",
+      kind: "egress-inject",
       host: "api.openai.com",
       pathPattern: "/v1/*",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     },
   ],
 };
@@ -77,39 +151,23 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
     "Proxy that fronts model endpoints for IBM-internal Claude Code.",
   iconSlug: "ibm",
   authKind: "header",
-  host: "ete-litellm.bx.cloud9.ibm.com",
+  host: IBM_LITELLM_HOST,
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  // Env bundle + host sourced from the provider preset so they can't drift; Claude model pins are omitted as the agent's gateway discovers them.
   contributions: [
+    ...envContributions(ibmLitellmEnvMappings()),
     {
-      kind: "env",
-      name: "ANTHROPIC_BASE_URL",
-      placeholder: "https://ete-litellm.bx.cloud9.ibm.com",
+      kind: "egress-inject",
+      host: IBM_LITELLM_HOST,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     },
-    {
-      kind: "env",
-      name: "ANTHROPIC_AUTH_TOKEN",
-      placeholder: "dummy-placeholder",
-    },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      placeholder: "claude-opus-4-7",
-    },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: "claude-sonnet-4-6",
-    },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-      placeholder: "claude-haiku-4-5",
-    },
-    { kind: "env", name: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-    { kind: "egress-allow", host: "ete-litellm.bx.cloud9.ibm.com" },
   ],
 };
+
+// Transport header for Bob's `?key=` injection; distinct from `Authorization` so both injections coexist on one host without colliding.
+const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
 
 const BOB: HeaderConnectionTemplate = {
   id: "bob",
@@ -119,17 +177,111 @@ const BOB: HeaderConnectionTemplate = {
   description: "Bob CLI model proxy.",
   iconSlug: "bob",
   authKind: "header",
-  host: "api.us-east.bob.ibm.com",
+  host: BOB_HOST,
   headerName: "Authorization",
+  // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
   valueFormat: "Apikey {value}",
+  // Dual injection: `Apikey` header on every request plus the `?key=` URL param Bob appends to admin endpoints.
   contributions: [
+    ...envContributions(bobEnvMappings()),
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      headerName: "Authorization",
+      valueFormat: "Apikey {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      headerName: BOB_QUERY_PARAM_HEADER,
+      valueFormat: "{value}",
+      queryParamName: "key",
+    },
+  ],
+  configInputs: [
+    {
+      inputName: "model",
+      envName: "BOB_SHELL_MODEL",
+      label: "Model",
+      hint: "Default model for new sessions. Empty → Bob's built-in default.",
+    },
+    {
+      inputName: "instanceId",
+      envName: "BOB_INSTANCE_ID",
+      label: "Instance ID",
+      hint: "Sets the x-instance-id header (IBM tenant scoping).",
+    },
+    {
+      inputName: "teamId",
+      envName: "BOB_TEAM_ID",
+      label: "Team ID",
+      hint: "Sets the x-team-id header.",
+    },
+    {
+      inputName: "maxCoins",
+      envName: "BOB_MAX_COINS",
+      label: "Max coins",
+      hint: "Budget cap; Bob exits when exceeded.",
+      pattern: "^[1-9]\\d*$",
+      patternHint: "a positive integer",
+    },
+    {
+      inputName: "chatMode",
+      envName: "BOB_CHAT_MODE",
+      label: "Chat mode",
+      hint: `Default chat persona. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      enumValues: BOB_CHAT_MODES,
+    },
+  ],
+};
+
+const MODAL_HOST = "api.modal.com";
+
+// Modal's gRPC auth is two metadata headers: x-modal-token-id (a public id) and
+// x-modal-token-secret (the secret). Only the secret is the connection
+// credential, injected at the gateway over an HTTP/2 chain. The token-id is
+// non-secret and rides as a plain env (filled via the Token ID config input).
+// Blob uploads hit storage.googleapis.com (+ Cloudflare R2 with dynamic hosts,
+// approved from the HITL inbox at first run).
+const MODAL: HeaderConnectionTemplate = {
+  id: "modal",
+  name: "Modal",
+  category: "app",
+  isCustom: false,
+  description:
+    "Modal cloud GPUs for kernel-evaluation workloads (e.g. K-Search).",
+  iconSlug: "modal",
+  authKind: "header",
+  host: MODAL_HOST,
+  headerName: "x-modal-token-secret",
+  valueFormat: "{value}",
+  contributions: [
+    // Placeholder so the modal client emits the header; the gateway overwrites
+    // it with the real secret. Keeps the `as-` shape the client expects.
     {
       kind: "env",
-      name: "BOB_BASE_URL",
-      placeholder: "https://api.us-east.bob.ibm.com",
+      name: "MODAL_TOKEN_SECRET",
+      placeholder: "as-dummy-placeholder",
     },
-    { kind: "env", name: "BOB_API_KEY", placeholder: "dummy-placeholder" },
-    { kind: "egress-allow", host: "api.us-east.bob.ibm.com" },
+    {
+      kind: "egress-inject",
+      host: MODAL_HOST,
+      headerName: "x-modal-token-secret",
+      valueFormat: "{value}",
+      http2: true,
+    },
+    // Modal streams function I/O and image-build context through cloud blob
+    // storage (it picks a backend with fallback) — allow the ones observed.
+    { kind: "egress-allow", host: "storage.googleapis.com" },
+    { kind: "egress-allow", host: "s3.amazonaws.com" },
+  ],
+  configInputs: [
+    {
+      inputName: "tokenId",
+      envName: "MODAL_TOKEN_ID",
+      label: "Token ID",
+      hint: "Modal token id (ak-…). Required, non-secret — sent as x-modal-token-id.",
+    },
   ],
 };
 
@@ -185,7 +337,7 @@ function githubEnterprise(
     isCustom: false,
     description:
       "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
-    iconSlug: "github",
+    iconSlug: "github-enterprise",
     authKind: "oauth",
     ...(creds?.host ? { host: creds.host } : {}),
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
@@ -504,8 +656,8 @@ function googleService(
       // The Google Workspace CLI (`gws`, baked into platform-base) reads this
       // env var as its OAuth access token. Granting any Google connection
       // stamps the sentinel here; the egress-inject contribution below then
-      // has Envoy swap it for the real Bearer token on *.googleapis.com calls
-      // (ADR-033). Same name across all Google services — first-granted-wins.
+      // has Envoy swap it for the real Bearer token on *.googleapis.com calls.
+      // Same name across all Google services — first-granted-wins.
       {
         kind: "env",
         name: "GOOGLE_WORKSPACE_CLI_TOKEN",
@@ -530,6 +682,109 @@ function googleService(
   };
 }
 
+// github.com uses HTTP Basic `x-access-token:<pat>` (GitHub's git-over-HTTPS PAT form); api.github.com and raw.githubusercontent.com use Bearer.
+const GITHUB_PAT: HeaderConnectionTemplate = {
+  id: "github-pat",
+  name: "GitHub (Personal Access Token)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Read + write GitHub repos, issues, PRs with a personal access token.",
+  iconSlug: "github",
+  authKind: "header",
+  host: "api.github.com",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [
+    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    {
+      kind: "egress-inject",
+      host: "api.github.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: "github.com",
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+    {
+      kind: "egress-inject",
+      host: "raw.githubusercontent.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+  ],
+};
+
+// GitHub App installation tokens (ghs_…). The platform mints them from the
+// app's private key server-side and injects on the same three GitHub hosts as
+// github-pat: api.github.com (Bearer), github.com (Basic x-access-token, for
+// git-over-HTTPS), and raw.githubusercontent.com (Bearer).
+const GITHUB_APP: GitHubAppConnectionTemplate = {
+  id: "github-app",
+  name: "GitHub App (installation)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Act as a GitHub App installation. The platform mints short-lived installation tokens (ghs_…) from the app's private key.",
+  iconSlug: "github",
+  authKind: "github-app",
+  host: "github.com",
+  apiBaseUrl: "https://api.github.com",
+  contributions: [
+    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    {
+      kind: "egress-inject",
+      host: "api.github.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: "github.com",
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+    {
+      kind: "egress-inject",
+      host: "raw.githubusercontent.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+  ],
+};
+
+// GitHub App installation on a GitHub Enterprise host — the bot/agent
+// counterpart to the interactive `github-enterprise` OAuth connection. The
+// user supplies the enterprise host at connect time; `apiBaseUrl`'s `{host}`
+// placeholder is substituted the same way OAuth endpoint placeholders are
+// (see `buildGitHubApp`), and the host-scoped injections mirror the OAuth
+// template's (subdomain-isolated `api.{host}` for REST, apex `{host}` for
+// git-over-HTTPS).
+function githubEnterpriseApp(
+  creds?: GitHubEnterpriseCredentials,
+): GitHubAppConnectionTemplate {
+  return {
+    id: "github-enterprise-app",
+    name: "GitHub Enterprise (App installation)",
+    category: "app",
+    isCustom: false,
+    description:
+      "Act as a GitHub App installation on a GitHub Enterprise host. The platform mints short-lived installation tokens (ghs_…) from the app's private key — usable by bots and scheduled agents, not just interactive sign-in.",
+    iconSlug: "github-enterprise",
+    authKind: "github-app",
+    ...(creds?.host ? { host: creds.host } : {}),
+    apiBaseUrl: "https://api.{host}",
+    contributions: [
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    ],
+  };
+}
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -539,6 +794,20 @@ const CUSTOM_HEADER: HeaderConnectionTemplate = {
     "Inject a header (API key, PAT, bearer) on outbound calls to a host.",
   iconSlug: "key",
   authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [],
+};
+
+const CUSTOM_CLIENT_CREDENTIALS: ClientCredentialsConnectionTemplate = {
+  id: "custom-client-credentials",
+  name: "OAuth client credentials",
+  category: "other",
+  isCustom: true,
+  description:
+    "Machine-to-machine OAuth: access tokens are minted from a client ID and secret and injected on outbound calls to a host.",
+  iconSlug: "key",
+  authKind: "client-credentials",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
   contributions: [],
@@ -573,15 +842,22 @@ export function buildCatalog(
 ): ConnectionTemplate[] {
   return [
     ANTHROPIC,
+    ANTHROPIC_OAUTH,
     OPENAI,
     IBM_LITELLM,
     BOB,
+    MODAL,
     github(creds.github),
+    GITHUB_PAT,
+    GITHUB_APP,
     githubEnterprise(creds.githubEnterprise),
+    githubEnterpriseApp(creds.githubEnterprise),
+    KUBERNETES,
     spotify(creds.spotify),
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
     CUSTOM_HEADER,
+    CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,
   ];

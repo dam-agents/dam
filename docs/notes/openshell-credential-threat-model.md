@@ -43,7 +43,7 @@ This is uniform across **all** providers. The gateway-side resolver at [`provide
 2. The controller renders **two pods** per agent instance: an agent pod and a paired gateway pod. The K8s Secret is mounted **only into the gateway pod**, as the SDS YAML Envoy reads via `path_config_source`.
 3. The agent pod has `automountServiceAccountToken: false`, no Secret mount, no env var with the credential, no path to the K8s API.
 4. The agent reaches the gateway only by `HTTPS_PROXY=<instance>-gateway:<envoyPort>`. Envoy on the gateway pod MITMs the agent's TLS using a per-instance leaf cert; the agent's CA bundle is a single-key projection of `ca.crt`, with `tls.key` staying in the gateway pod.
-5. Envoy injects the credential header per-route, matching on resolved upstream cluster + SNI (not the agent's `Host:` header) — see [ADR-033 §Credential injection](../adrs/033-envoy-credential-gateway.md#L38-L57) and [ADR-033 §Threat Model: route confusion](../adrs/033-envoy-credential-gateway.md#L110-L114).
+5. Envoy injects the credential header per-route, matching on resolved upstream cluster + SNI (not the agent's `Host:` header), which is what closes route-confusion exfiltration.
 
 **Locality.** Credentials are in the gateway pod's Envoy heap and as files inside the gateway pod's filesystem. The agent pod's process tree, `/proc`, filesystem, and network namespace contain nothing about them.
 
@@ -57,7 +57,7 @@ This is uniform across **all** providers. The gateway-side resolver at [`provide
 | Agent's admitted IPC reach to credential holder | Multiple loopback ports + Unix sockets (proxy CONNECT, supervisor SSH, file sync, log push, relay) | One TCP destination (gateway Service on Envoy port), gated by per-pair NetworkPolicy |
 | K8s SA token in agent | Whatever chart provisions (in K8s driver) | `automountServiceAccountToken: false` — no token, no API reach |
 | Per-instance crypto identity | Gateway mTLS to control plane | Per-instance/per-fork SPIFFE SA principal + Istio AuthorizationPolicy on harness waypoint + ext-authz Service |
-| Destination-vs-credential pinning | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications) | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential (ADR-033) |
+| Destination-vs-credential pinning | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications) | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential |
 
 ## Threat-by-threat
 
@@ -113,13 +113,13 @@ The sandbox has two providers attached (e.g., GitHub + Anthropic). Agent puts th
 
 **OpenShell.** [`secrets.rs:184-203`](../../context/OpenShell/crates/openshell-sandbox/src/secrets.rs#L184-L203) (`resolve_placeholder`) is destination-blind — it looks up the placeholder in the resolver with no awareness of the request's destination. Whether the L7 enforcement layer in `proxy.rs` validates destination-vs-credential before calling `rewrite_header_value` needs verification (see §Open verifications). Provider YAMLs declare `endpoints`, so the policy data exists — but the resolver itself does not enforce.
 
-**Platform.** Closed structurally. ADR-033 calls this *"route-confusion exfiltration"* and binds credentialed routes to resolved upstream cluster + SNI, not to the agent's inner `Host:` header ([`033-envoy-credential-gateway.md §Threat Model`](../adrs/033-envoy-credential-gateway.md#L110-L114)). The agent's choice of which placeholder to use doesn't influence destination — each credential has its own STRICT_DNS cluster pinned to its host with SAN-bound TLS validation.
+**Platform.** Closed structurally: credentialed routes bind to resolved upstream cluster + SNI, not to the agent's inner `Host:` header — the platform calls this *route-confusion exfiltration*. The agent's choice of which placeholder to use doesn't influence destination — each credential has its own STRICT_DNS cluster pinned to its host with SAN-bound TLS validation.
 
 ### T7. K8s API / SA-token enumeration
 
 **OpenShell on K8s driver.** Sandbox pod is a generic pod with whatever ServiceAccount the chart configures. If that SA has any `get secrets` reach to the namespace where credentials are kept, an agent that reads its own SA token reads the credentials directly. Mitigation is purely chart configuration discipline.
 
-**Platform.** `automountServiceAccountToken: false` on the agent pod ([ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#L114-L117)). No SA token at all on the agent, no K8s API reach from the agent. Structurally closed.
+**Platform.** `automountServiceAccountToken: false` on the agent pod. No SA token at all on the agent, no K8s API reach from the agent. Structurally closed.
 
 ### T8. Sandbox-to-sandbox / instance-to-instance lateral motion
 
@@ -135,7 +135,7 @@ Both architectures admit DNS for the resolver, and CoreDNS (or equivalent) forwa
 
 **OpenShell.** Depends on the driver's network setup — whether DNS goes through the sandbox proxy or hits the host stack directly. The doc on [`sandbox.md:41`](../../context/OpenShell/architecture/sandbox.md#L41) says *"Network namespace forces ordinary agent egress through the local CONNECT proxy"* — but DNS is not HTTP and is typically resolved via the namespace's `/etc/resolv.conf`, which points at a resolver outside the proxy. Same gap class as Platform's.
 
-**Platform.** Acknowledged residual. [ADR-042 §Consequences](../adrs/042-agent-egress-network-policy.md#L111-L116) states explicitly: *"DNS tunneling via CoreDNS's upstream forwarder remains a residual, low-bandwidth exfil channel… Closing this requires per-pod DNS policy or a DNS-aware egress filter, neither in scope here."*
+**Platform.** Acknowledged, explicitly accepted residual: DNS tunneling via CoreDNS's upstream forwarder remains a residual, low-bandwidth exfil channel. Closing it requires per-pod DNS policy or a DNS-aware egress filter, neither of which is in scope.
 
 **Net.** Equivalent gap in both, of the same shape. Neither model closes it without a constrained recursive resolver.
 

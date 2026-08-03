@@ -1,3 +1,10 @@
+---
+id: 024
+title: Connector-declared pod envs + per-agent env overrides
+status: accepted
+subsystem: connections
+summary: Derive pod env vars from connector-declared mappings and per-agent overrides, resolved last-occurrence-wins so the credential owner names its own envs.
+---
 # ADR-024: Connector-declared pod envs + per-agent env overrides
 
 **Date:** 2026-04-17 (revised 2026-04-21 to cover app connections)

@@ -28,6 +28,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: keycloak
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.keycloak) | nindent 2 }}
 spec:
   replicas: 1
   strategy:
@@ -41,7 +42,7 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
-      annotations: {}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.keycloak) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       initContainers:
@@ -50,7 +51,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              until pg_isready -h {{ include "platform.keycloak.db.host" . }} -U {{ .Values.keycloak.db.user }}; do
+              until pg_isready -h {{ include "platform.keycloak.db.host" . }} -p {{ .Values.keycloak.db.port }} -U {{ .Values.keycloak.db.user }}; do
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
@@ -58,7 +59,7 @@ spec:
         - name: keycloak
           image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.keycloak.image.pullPolicy | default "IfNotPresent" }}
-          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1"]
+          args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1{{ range .Values.keycloak.extraFeatures }},{{ . }}{{ end }}"]
           ports:
             - containerPort: {{ .Values.keycloak.port }}
               name: http
@@ -73,7 +74,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.keycloak.db.password.secretName" . }}
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_KEYCLOAK_PASSWORD
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: {{ .Values.keycloak.admin.user | quote }}
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
@@ -103,6 +104,17 @@ spec:
             - name: KC_HTTP_ENABLED
               value: "true"
             {{- end }}
+            # Login-theme knobs — resolved by theme.properties `${env.…}`
+            # placeholders in the Keycloakify-built theme.
+            - name: PLATFORM_ALLOW_PASSWORD
+              value: {{ .Values.keycloak.login.allowPassword | quote }}
+            {{- with .Values.keycloak.login.requestAccessUrl }}
+            - name: PLATFORM_REQUEST_ACCESS_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.keycloak.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:
@@ -122,6 +134,11 @@ spec:
           volumeMounts:
             - name: gzip-cache
               mountPath: /opt/keycloak/data/tmp
+            {{- if .Values.keycloak.db.caCert }}
+            - name: pg-ca
+              mountPath: /etc/keycloak/pg-ca
+              readOnly: true
+            {{- end }}
       volumes:
         # Keycloak 26.6/26.6.1 ship /opt/keycloak/data/tmp root-owned and not
         # group-writable (0755), so under a non-root UID — i.e. OpenShift's
@@ -134,4 +151,9 @@ spec:
         # Keycloak >= 26.7.0, which fixes the perms upstream (keycloak#48608).
         - name: gzip-cache
           emptyDir: {}
+        {{- if .Values.keycloak.db.caCert }}
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-keycloak-db-ca
+        {{- end }}
 {{- end }}

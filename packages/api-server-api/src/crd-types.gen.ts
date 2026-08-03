@@ -2,13 +2,13 @@
 
 /**
  * AgentSpec is the desired state of an Agent — the sole durable per-agent
- * resource after ADR-046 collapsed Instance into Agent. The api-server is the
+ * resource after Instance was collapsed into Agent. The api-server is the
  * sole writer.
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
- * but observed status the controller derives from activity (ADR-058). Security
- * context and scheduling are chart-only (config.AgentBase) and cannot be set
- * here by design.
+ * but observed status the controller derives from activity. Security context
+ * is chart-only (config.AgentBase); scheduling is chart-wide except
+ * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
  */
 export interface AgentSpecCR {
   /**
@@ -17,6 +17,19 @@ export interface AgentSpecCR {
    * time, so the controller never sees $HOME.
    */
   agentHome?: string;
+  /**
+   * Backend selects the isolation substrate the agent workload runs on;
+   * nil = container. Immutable after create (enforced by the api-server,
+   * the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+   * instead of the agent StatefulSet; the paired gateway is unaffected.
+   */
+  backend?: {
+    type: "container" | "vm";
+    /**
+     * VM carries vm-backend props; present only when type == "vm".
+     */
+    vm?: {};
+  };
   /**
    * Description is an optional human-readable description.
    */
@@ -34,11 +47,15 @@ export interface AgentSpecCR {
   grantedConnectionIds?: string[];
   /**
    * GrantedSecretIDs are the credential Secret IDs granted to this agent's
-   * egress — intent written by the api-server. ADR-058 moved these from a
-   * ConfigMap annotation into spec, because they are reconciled by the
+   * egress — intent written by the api-server. These live in spec rather
+   * than a ConfigMap annotation, because they are reconciled by the
    * controller into the credential set mounted on the gateway.
    */
   grantedSecretIds?: string[];
+  /**
+   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+   */
+  hibernationTimeout?: string;
   /**
    * Image is the agent container image.
    */
@@ -48,9 +65,37 @@ export interface AgentSpecCR {
    */
   imagePullPolicy?: string;
   /**
+   * ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
+   * kubelet uses to pull the agent image from a private registry. Unlike
+   * SecretRef it is never projected into the agent container — only the
+   * kubelet consumes it at pod creation, so an ephemeral executor pod can pull
+   * with it without ever seeing it. When set it takes precedence over the
+   * install-wide default pull secret, which is retained as a fallback.
+   */
+  imagePullSecretRef?: string;
+  /**
    * Init is an optional one-shot init script run before the agent starts.
    */
   init?: string;
+  /**
+   * L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
+   * interception chain without a credential, so path/method/port egress
+   * rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
+   * Written by the api-server when such a rule exists for this agent;
+   * per-agent grain so a rule on one agent never reshapes a sibling's
+   * gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
+   * stays the egress policy authority for foreign turns).
+   *
+   * The item pattern is a hard boundary: each entry is interpolated into
+   * the gateway's Envoy bootstrap (an unescaped `text/template` field)
+   * and into cert-manager SANs, so admission rejects anything that isn't
+   * a DNS hostname (optionally a `*.` wildcard) — no quotes, whitespace,
+   * or YAML metacharacters can reach the rendered config. maxItems caps
+   * the leaf SAN list a single agent can demand.
+   *
+   * @maxItems 256
+   */
+  l7Hosts?: string[];
   /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
    */
@@ -76,6 +121,13 @@ export interface AgentSpecCR {
    */
   name?: string;
   /**
+   * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   * Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
+   */
+  nodeSelector?: {
+    [k: string]: string;
+  };
+  /**
    * Resources are the agent container's resource requests and limits.
    */
   resources?: {
@@ -87,33 +139,47 @@ export interface AgentSpecCR {
     };
   };
   /**
+   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   * Selects among *container* runtimes only — rejected on the vm backend.
+   */
+  runtimeClassName?: string;
+  /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
-   * agent container (operator-supplied envs).
+   * agent container (operator-supplied envs). Container backend only —
+   * rejected on the vm backend (nothing projects it into the guest).
    */
   secretRef?: string;
   /**
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */
   storageSize?: string;
+  /**
+   * TelemetryAttributionID is the agent id stamped as the trusted telemetry
+   * attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+   * by the api-server for Invocation targets to their root Driver, so a
+   * target's spend credits the agent that drove it rather than the
+   * short-lived target. When set, the gateway also stamps
+   * `x-platform-invocation-id` with this agent's own id, keeping child rows
+   * distinguishable after their attribution is merged. Never user-settable —
+   * a user-supplied value would forge attribution onto an agent the caller
+   * does not drive; it is service-only input, like the pre-minted id.
+   */
+  telemetryAttributionId?: string;
 }
 
 /**
- * ForkSpec is the per-turn ephemeral runtime that derives from an Agent
- * (ADR-046: Forks survived the Instance/Agent collapse). The parent Agent's
- * egress surface scopes what the fork can reach. The api-server is the sole
- * writer.
+ * RunSpec is an ephemeral executor derived from an Agent, backing the in-pod
+ * `dam-run` CLI: it materializes a throwaway sandbox pod (same image, config,
+ * and RWX workspace as the parent) that runs one command streamed over
+ * /api/exec. It runs as the parent Agent's own owner. The command
+ * argv is deliberately NOT stored here — it travels only over the exec
+ * WebSocket — so the executor pod is generic and no command bytes land in etcd.
+ * The api-server is the sole writer of the spec and deletes the Run when the
+ * streaming connection ends.
  */
-export interface ForkSpecCR {
+export interface RunSpecCR {
   /**
-   * AgentName names the parent Agent this fork impersonates.
+   * AgentName names the parent Agent this run derives from.
    */
   agentName: string;
-  /**
-   * ForeignSub is the foreign user identity the fork runs as.
-   */
-  foreignSub: string;
-  /**
-   * SessionID is the optional originating session.
-   */
-  sessionId?: string;
 }

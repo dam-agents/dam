@@ -35,13 +35,11 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
 
   return {
     async list() {
-      return trpcCall(
-        () => deps.trpc.agents.list.query() as Promise<readonly AgentView[]>,
-      );
+      return trpcCall(() => deps.trpc.agents.list.query());
     },
     async get(id) {
       try {
-        return ok((await deps.trpc.agents.get.query({ id })) as AgentView);
+        return ok(await deps.trpc.agents.get.query({ id }));
       } catch (e) {
         if ((e as any)?.data?.code === "NOT_FOUND") return ok(null);
         return classifyTrpcError(e);

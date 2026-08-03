@@ -10,7 +10,7 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today. One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
-- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill.
+- **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-first**: agents create them, and read them only when authoring an ADR or recompiling docs; ordinary work uses the architecture pages. No code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
 
 ## Vocabulary
 
@@ -18,29 +18,31 @@ Use the ubiquitous language defined in [`tseng/vocabulary.md`](../../tseng/vocab
 
 ## Architecture Documentation Guidelines
 
-Architecture pages describe **how the accepted ADRs are realized in the current system**. ADRs own *why*; architecture pages own *how the decision is realized*. Make drift the harder path, not the default.
+Architecture pages are the **authoritative, self-contained description of the current system** — both what it looks like and enough of the *why* to work in it. That "why" is **operational** — the couplings and invariants you need to work in the system — not **decision history** (why an alternative was weighed and rejected), which lives in the ADR log. They must stand alone: a reader never needs an ADR to understand a page, and pages never link to ADRs. Make drift the harder path, not the default.
 
 ### Structure
 
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
-- No shared template. Free-form per page. No length cap.
+- No shared template. Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook). The cap is a forcing function, not a style rule: going over means the page dropped to the level of the code, or grew to cover more than one subsystem. Reconcile by raising the level and cutting volatile detail, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit. Do not offload description into an ADR to relieve size: the log holds decisions authored when they were made, not documentation spillover.
 - Cross-page concept ownership: one page owns each concept in depth; others one-liner + cross-link.
 
 ### Mandatory headers
 
-Each subsystem page starts with two headers directly under the title:
+Each subsystem page starts with one header directly under the title:
 
 - `Last verified: YYYY-MM-DD` — bumped whenever you edit the page. A date older than the last subsystem refactor is a smell.
-- `Motivated by:` — bulleted list of ADR links with a one-line hook each. Forward-only (no reverse backlinks added to ADRs).
 
 ### Content policy
 
-**Durable content only.** Architecture pages outlive refactors; volatile facts rot.
+**Durable content only.** Architecture pages outlive refactors; volatile facts rot. Write at the level of architecture — roles, decisions, couplings, and contracts — in the project's [ubiquitous language](#vocabulary), not at the level of the code. If a sentence would break when someone renames a field, reorders a function's arguments, or adds an optional property, it is pitched too low — raise it until it describes the *meaning*, not the *shape*.
 
-- **Include**: component roles, who-talks-to-whom, protocols, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
-- **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level.
-- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/), and ADRs).
+- **Include**: component roles, who-talks-to-whom, protocols *and what their messages mean*, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
+- **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level, and **code-level shape** — type signatures, field names, function arguments, enum members. Name the concept in domain vocabulary, not the symbol in the code.
+- **Describe protocols semantically.** A protocol belongs on the page; its literal type signature does not. Say what is exchanged and what each outcome *means* — e.g. "`applyState` returns either *applied* (with any per-driver failures) or *stale*" — then link out to the contract package as the field-level source of truth. Do not transcribe the type; a reader who needs exact fields follows the link, and the page never drifts when those fields change.
+- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/)).
+
+Shared vocabulary is what makes this safe: because [code names concepts in the same ubiquitous language the docs use](#vocabulary), speaking abstractly is not vaguer than the code — it is the same concept, named once, at the level that survives.
 
 ### Diagrams
 
@@ -52,7 +54,7 @@ Each subsystem page starts with two headers directly under the title:
 ### Links
 
 - Repo-relative, pointing to main (no SHA pins).
-- Each page links to the ADRs it realizes via the `Motivated by:` list.
+- Never link to ADRs.
 
 ### Drift rule
 

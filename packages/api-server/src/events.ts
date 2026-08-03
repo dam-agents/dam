@@ -17,12 +17,6 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
-  TelegramConnected = "TelegramConnected",
-  TelegramDisconnected = "TelegramDisconnected",
-  ForkReady = "ForkReady",
-  ForkFailed = "ForkFailed",
-  ForkCompleted = "ForkCompleted",
-  ForeignReplyReceived = "ForeignReplyReceived",
   ChannelTurnRelayed = "ChannelTurnRelayed",
   ScheduleFired = "ScheduleFired",
   ConnectionCreated = "ConnectionCreated",
@@ -80,68 +74,24 @@ export type SlackDisconnected = {
   agentId: string;
 };
 
-export type TelegramConnected = {
-  type: EventType.TelegramConnected;
-  agentId: string;
-};
-
-export type TelegramDisconnected = {
-  type: EventType.TelegramDisconnected;
-  agentId: string;
-};
-
-export type ForkFailureReason =
-  | "CredentialMintFailed"
-  | "OrchestrationFailed"
-  | "PodNotReady"
-  | "Timeout";
-
-export type ForkReady = {
-  type: EventType.ForkReady;
-  forkId: string;
-  replyId: string;
-  podIP: string;
-};
-
-export type ForkFailed = {
-  type: EventType.ForkFailed;
-  forkId: string;
-  replyId: string;
-  reason: ForkFailureReason;
-  detail?: string;
-};
-
-export type ForkCompleted = {
-  type: EventType.ForkCompleted;
-  forkId: string;
-};
-
-export type ForeignReplyReceived = {
-  type: EventType.ForeignReplyReceived;
-  replyId: string;
-  agentId: string;
-  foreignSub: string;
-  threadTs: string;
-  sessionId?: string;
-  prompt: string | ContentBlock[];
-  slackContext: {
-    channelId: string;
-    userSlackId: string;
-  };
-};
-
 export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";
   agentId: string;
-  /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
+  /** Null for unauthenticated relays (Telegram: only the owner runs the bind, so guest replies have no Keycloak sub). */
   actorSub: string | null;
+  /** Messenger-native id of the driving user (e.g. Telegram user id) — the
+   *  actor record for relays that carry no platform identity. */
+  externalActorId?: string;
   /** "success" when the ACP turn completed and the reply was posted; "failure"
    *  on any caught error in the relay path (ACP throw, fork provisioning
    *  failure, post-back failure). Drives the success/failure breakouts in the
    *  channel-turn views. */
   outcome: TurnOutcome;
-  forkId?: string;
+  /** Low-cardinality failure classifier (e.g.
+   *  "wake-timeout:agent-pod-failed:ImagePullFailure", "acp-error"); absent
+   *  on success. Makes failed turns diagnosable from the audit trail. */
+  reason?: string;
 };
 
 export type ScheduleFired = {
@@ -208,12 +158,6 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
-  | TelegramConnected
-  | TelegramDisconnected
-  | ForkReady
-  | ForkFailed
-  | ForkCompleted
-  | ForeignReplyReceived
   | ChannelTurnRelayed
   | ScheduleFired
   | ConnectionCreated

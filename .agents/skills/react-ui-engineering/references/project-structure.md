@@ -62,6 +62,10 @@ agents/
 
 **If in doubt, put it in the domain module.** Promotion to shared is a later step when you see the code used by 2+ modules. Premature promotion creates a vague "misc" pile.
 
+**[HIGH] Don't hand-roll a generic, domain-agnostic primitive inline inside a feature file.** A `Switch`, `Toggle`, `Spinner`, `Badge` — anything in the same category as `Button`/`Input`/`Modal`, whose props are all generic (`checked`, `onCheckedChange`, `label`) and whose signature carries no domain types — does not belong defined in the middle of a 400-line form. That's the inline-primitive smell: pure styling + a11y wiring, reusable by construction, buried where no other feature can find it.
+
+**Whether such a block is actually a shared-component candidate is a human judgment call — flag it, don't auto-promote.** When you spot one while editing, surface it ("this hand-rolled `Switch` looks like a generic primitive — extract to the shared primitives folder?") and let the user decide. Don't silently move it (premature promotion creates the "misc" pile above) and don't silently leave it. This is the one case where the "if in doubt, keep it local" default is overridden by escalation: the smell is mechanical to spot, but the promotion decision stays with a human.
+
 ## File naming
 
 **[HIGH] Pick one convention per project and hold the line.** Two common choices:

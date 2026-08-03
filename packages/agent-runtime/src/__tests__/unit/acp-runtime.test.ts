@@ -6,6 +6,7 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
+import type { BackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -97,6 +98,30 @@ function makeFakeChannel(): FakeChannel {
     sent,
     closes,
     isOpen: () => open,
+  };
+}
+
+/**
+ * Stands in for the registry sessions report their background work to: `live`
+ * decides whether a session is holding, `calls` records the wiring the runtime
+ * is responsible for.
+ */
+function makeFakeRegistry() {
+  const calls: string[] = [];
+  let live = false;
+  const registry: BackgroundWorkRegistry = {
+    report: (sessionId) => calls.push(`report:${sessionId}`),
+    hasWork: () => live,
+    held: () => (live ? [{ sessionId: SID, items: [{ id: "t1" }] }] : []),
+    forget: (sessionId) => calls.push(`forget:${sessionId}`),
+    clear: () => calls.push("clear"),
+  };
+  return {
+    registry,
+    calls,
+    set live(value: boolean) {
+      live = value;
+    },
   };
 }
 
@@ -230,12 +255,9 @@ describe("createAcpRuntime", () => {
     });
 
     expect(spawnCount).toBe(0);
-    expect(runtime.status().agentAlive).toBe(false);
 
     runtime.attach(makeFakeChannel().channel);
     expect(spawnCount).toBe(1);
-    expect(runtime.status().agentAlive).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(1);
   });
 
   it("keeps the agent alive when a client disconnects", () => {
@@ -250,8 +272,6 @@ describe("createAcpRuntime", () => {
     c.remoteClose();
 
     expect(fa.killed()).toBe(false);
-    expect(runtime.status().agentAlive).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(0);
   });
 
   it("accepts multiple channels without evicting existing ones", () => {
@@ -268,7 +288,6 @@ describe("createAcpRuntime", () => {
 
     expect(c1.isOpen()).toBe(true);
     expect(c2.isOpen()).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(2);
   });
 
   it("does not broadcast session traffic to a channel that hasn't engaged with that session", () => {
@@ -478,7 +497,6 @@ describe("createAcpRuntime", () => {
     c2.pushMessage(promptRequest(1));
 
     expect(fa.sent).toHaveLength(1);
-    expect(runtime.status().queuedPromptCount).toBe(1);
   });
 
   it("advances the queue when the active prompt's response arrives", () => {
@@ -500,7 +518,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(first));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("lets prompts for different sessions run in parallel", () => {
@@ -517,7 +534,6 @@ describe("createAcpRuntime", () => {
     c.pushMessage(promptRequest(2, OTHER_SID));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("drops queued prompts owned by a disconnecting client", () => {
@@ -534,10 +550,13 @@ describe("createAcpRuntime", () => {
 
     c1.pushMessage(promptRequest(1));
     c2.pushMessage(promptRequest(1));
-    expect(runtime.status().queuedPromptCount).toBe(1);
 
     c2.remoteClose();
-    expect(runtime.status().queuedPromptCount).toBe(0);
+
+    // Completing the active prompt must not forward the dropped queued one.
+    const first = outboundId(fa.sent[0]);
+    fa.pushLine(agentPromptResponse(first));
+    expect(fa.sent).toHaveLength(1);
   });
 
   it("still advances the queue if the client owning the active prompt disconnects mid-prompt", () => {
@@ -561,7 +580,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(first));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("rejects prompts beyond the per-session queue cap with a JSON-RPC error", () => {
@@ -577,7 +595,6 @@ describe("createAcpRuntime", () => {
     // 1 active + 32 queued = 33 accepted.
     for (let i = 1; i <= 33; i++) c.pushMessage(promptRequest(i));
     expect(fa.sent).toHaveLength(1);
-    expect(runtime.status().queuedPromptCount).toBe(32);
 
     c.pushMessage(promptRequest(34));
     const last = JSON.parse(c.sent.at(-1)!) as {
@@ -657,7 +674,6 @@ describe("createAcpRuntime", () => {
 
     fa.exit();
     await new Promise<void>((r) => setImmediate(r));
-    expect(runtime.status().agentAlive).toBe(false);
     expect(c1.isOpen()).toBe(false);
 
     const c2 = makeFakeChannel();
@@ -712,7 +728,6 @@ describe("createAcpRuntime", () => {
       c.pushMessage(resumeSessionRequest(1));
 
       fa.pushLine(permissionRequest(5));
-      expect(runtime.status().pendingRequestCount).toBe(1);
 
       c.remoteClose();
 
@@ -723,7 +738,6 @@ describe("createAcpRuntime", () => {
       const errorSent = fa.sent.find((f) => (f as { error?: unknown }).error);
       expect(errorSent).toBeDefined();
       expect((errorSent as { id: number }).id).toBe(5);
-      expect(runtime.status().pendingRequestCount).toBe(0);
     } finally {
       vi.useRealTimers();
     }
@@ -752,7 +766,6 @@ describe("createAcpRuntime", () => {
 
       vi.advanceTimersByTime(200);
       expect(fa.sent.some((f) => (f as { error?: unknown }).error)).toBe(false);
-      expect(runtime.status().pendingRequestCount).toBe(1);
       expect(c2.sent).toContain(permissionRequest(7));
     } finally {
       vi.useRealTimers();
@@ -771,7 +784,6 @@ describe("createAcpRuntime", () => {
     viewer.pushMessage(resumeSessionRequest(1));
     fa.pushLine(permissionRequest(3));
     expect(viewer.sent).toContain(permissionRequest(3));
-    expect(runtime.status().pendingRequestCount).toBe(1);
 
     // An operational call arrives on a separate channel — list sessions and go.
     const ops = makeFakeChannel();
@@ -787,8 +799,13 @@ describe("createAcpRuntime", () => {
     // the pending is still there and the agent hasn't been notified.
     const before = fa.sent.length;
     ops.remoteClose();
-    expect(runtime.status().pendingRequestCount).toBe(1);
     expect(fa.sent).toHaveLength(before);
+
+    // The pending survives: a channel that does engage still gets the replay.
+    const engaged = makeFakeChannel();
+    runtime.attach(engaged.channel);
+    engaged.pushMessage(resumeSessionRequest(2));
+    expect(engaged.sent).toContain(permissionRequest(3));
   });
 
   it("broadcasts a platform/turnEnded notification to engaged channels when a prompt completes", () => {
@@ -1030,6 +1047,123 @@ describe("createAcpRuntime", () => {
     );
     expect(closeFrames).toHaveLength(1);
     expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
+  });
+
+  it("debounces the idle reap and a new prompt within the window cancels it", () => {
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        idleReapDelayMs: 100,
+      });
+
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(initializeRequest(0));
+      fa.pushLine(initializeResponse(outboundId(fa.sent[0]), { close: {} }));
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent[1])));
+
+      // Last viewer leaves → reap is scheduled, not immediate.
+      c.remoteClose();
+      vi.advanceTimersByTime(99);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // A new prompt for the session arrives within the window → reap cancelled.
+      const c2 = makeFakeChannel();
+      runtime.attach(c2.channel);
+      c2.pushMessage(promptRequest(2));
+      vi.advanceTimersByTime(1000);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // Prompt completes and that viewer leaves → reap fires after the window.
+      const promptOut = outboundId(fa.sent[fa.sent.length - 1]);
+      fa.pushLine(agentPromptResponse(promptOut));
+      c2.remoteClose();
+      vi.advanceTimersByTime(100);
+      const closes = fa.sent.filter((f: any) => f.method === "session/close");
+      expect(closes).toHaveLength(1);
+      expect((closes[0] as any).params).toEqual({ sessionId: SID });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds an idle session open while background work it started is still running", () => {
+    // #2965: closing the tab reaps the session seconds later, and the harness
+    // kills the background job it was supervising — the work dies silently.
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const tracker = makeFakeRegistry();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        backgroundWork: tracker.registry,
+        backgroundWorkRecheckMs: 1_000,
+      });
+
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+      c.pushMessage(promptRequest(2));
+      const promptOut = outboundId(fa.sent[1]);
+      fa.pushLine(agentPromptResponse(promptOut));
+
+      // The turn started a job that is still running when the viewer leaves.
+      tracker.live = true;
+      c.remoteClose();
+
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+      // The pod must not hibernate under the work either.
+      expect(runtime.status().idle).toBe(false);
+      expect(runtime.status().backgroundWork).toEqual([
+        { sessionId: SID, items: [{ id: "t1" }] },
+      ]);
+
+      // Still running at the next check → still held.
+      vi.advanceTimersByTime(1_000);
+      expect(
+        fa.sent.filter((f: any) => f.method === "session/close"),
+      ).toHaveLength(0);
+
+      // Job exits → the session reaps on the following check.
+      tracker.live = false;
+      vi.advanceTimersByTime(1_000);
+      const closes = fa.sent.filter((f: any) => f.method === "session/close");
+      expect(closes).toHaveLength(1);
+      expect((closes[0] as any).params).toEqual({ sessionId: SID });
+      expect(runtime.status().idle).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops reported work when the session is torn down, since it dies with the subprocess", () => {
+    const fa = makeFakeAgent();
+    const tracker = makeFakeRegistry();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: tracker.registry,
+    });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    runtime.resetSession(SID);
+
+    expect(tracker.calls).toContain(`forget:${SID}`);
   });
 
   it("does not close a session with pending permission requests", () => {
@@ -1867,7 +2001,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(permissionRequest(7));
     expect(a.sent.some((f) => f === permissionRequest(7))).toBe(true);
     a.pushMessage(permissionResponse(7));
-    expect(runtime.status().pendingRequestCount).toBe(0);
 
     // Fresh viewer B loads the same session. Served from cached metadata.
     const b = makeFakeChannel();
@@ -2008,9 +2141,9 @@ describe("createAcpRuntime", () => {
   });
 });
 
-// ── ADR-055: platform `_meta` round-trip ──
+// ── platform `_meta` round-trip ──
 
-function makeFakeStore(): {
+function makeFakeStore(now: () => string = () => "2026-03-03T00:00:00Z"): {
   store: SessionMetadataStore;
   sessions: Map<string, SessionMetaEntry>;
 } {
@@ -2022,10 +2155,23 @@ function makeFakeStore(): {
       get: (id) => sessions.get(id),
       set: (id, meta) => {
         const existing = sessions.get(id);
+        const lastActivityAt = existing?.lastActivityAt;
         sessions.set(id, {
           meta,
           createdAt: existing?.createdAt ?? "2026-01-01T00:00:00Z",
+          ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+          seenAt: existing?.seenAt ?? now(),
         });
+      },
+      recordActivity: (id) => {
+        const existing = sessions.get(id);
+        if (!existing) return;
+        sessions.set(id, { ...existing, lastActivityAt: now() });
+      },
+      recordSeen: (id) => {
+        const existing = sessions.get(id);
+        if (!existing) return;
+        sessions.set(id, { ...existing, seenAt: now() });
       },
       all: () => Object.fromEntries(sessions),
       tombstone: (id) => {
@@ -2060,7 +2206,7 @@ function lastSent(c: { sent: string[] }): any {
   return JSON.parse(c.sent[c.sent.length - 1]);
 }
 
-describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
+describe("createAcpRuntime — platform _meta round-trip", () => {
   it("captures _meta.platform on session/new and strips it before forwarding", () => {
     const fa = makeFakeAgent();
     const { store, sessions } = makeFakeStore();
@@ -2086,6 +2232,7 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
     expect(sessions.get(SID)).toEqual({
       meta: { type: "schedule", scheduleId: "sch-1" },
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-03-03T00:00:00Z",
     });
   });
 
@@ -2106,6 +2253,7 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
     expect(sessions.get(SID)).toEqual({
       meta: {},
       createdAt: "2026-01-01T00:00:00Z",
+      seenAt: "2026-03-03T00:00:00Z",
     });
   });
 
@@ -2136,8 +2284,38 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
       mode: "chat",
       type: "regular",
       createdAt: "2026-01-01T00:00:00Z",
+      running: false,
     });
     expect(resp.result.sessions[0].title).toBe("Hello");
+  });
+
+  it("stamps terminal mode + running on an active store-less session", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+      isTerminalSessionActive: (sid) => sid === SID,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID },
+        { sessionId: "other-idle" },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions[0]._meta.platform).toEqual({
+      mode: "terminal",
+      running: true,
+    });
+    // Idle store-less sessions keep no platform meta (terminal-default decode).
+    expect(resp.result.sessions[1]._meta).toBeUndefined();
   });
 
   it("leaves harness-only (no store entry) sessions unenriched in the list", () => {
@@ -2249,6 +2427,54 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
       ]),
     );
     expect(lastSent(c).result.sessions).toEqual([]);
+  });
+
+  it("session/list shows the last real message time, stable across a reload (issue #1999)", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    // Genuine activity: create and prompt a session (stamped 2026-03-03).
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    c.pushMessage(promptRequest(2));
+
+    // A plain reload re-attaches and writes bookkeeping (mode) — this must not
+    // bump the recorded activity time.
+    c.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/resume",
+        params: {
+          sessionId: SID,
+          cwd: ".",
+          _meta: { platform: { mode: "terminal" } },
+        },
+      }),
+    );
+
+    // The harness reports a "now" file mtime; the list must report the real
+    // last-message time instead, so it is stable across reloads.
+    c.pushMessage(listSessionsRequest(4));
+    const listFrame = fa.sent.find(
+      (f: any) => f.method === "session/list",
+    ) as object;
+    fa.pushLine(
+      listSessionsResponse(outboundId(listFrame), [
+        { sessionId: SID, title: "Hello", updatedAt: "2026-06-26T12:00:00Z" },
+      ]),
+    );
+
+    expect(lastSent(c).result.sessions[0].updatedAt).toBe(
+      "2026-03-03T00:00:00Z",
+    );
   });
 
   it("session/resume _meta.platform.mode updates mode, preserving other fields", () => {

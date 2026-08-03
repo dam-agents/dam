@@ -1,5 +1,8 @@
 import { Hono } from "hono";
-import type { TelegramOAuthPending, TelegramThreadsRepo } from "./telegram.js";
+import type {
+  TelegramOAuthPending,
+  TelegramBindFlowStore,
+} from "./telegram-flows.js";
 import {
   exchangeCodeForTokens,
   type KeycloakOAuthConfig,
@@ -7,13 +10,19 @@ import {
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
+/** Completes the bind Keycloak roundtrip. The callback writes nothing
+ *  durable: it verifies the login, mints a bind flow pinned to the
+ *  authenticated sub, and hands the user to the UI agent picker — the bind
+ *  mutation does the ownership check and the write. Every human-visible
+ *  outcome lands on the one picker page. */
 export function createTelegramOAuthRoutes(deps: {
   pendingFlows: Map<string, TelegramOAuthPending>;
-  threads: TelegramThreadsRepo;
-  isAgentOwner: (agentId: string, keycloakSub: string) => Promise<boolean>;
+  bindFlows: TelegramBindFlowStore;
   oauthConfig: KeycloakOAuthConfig;
+  uiBaseUrl: string;
 }) {
   const routes = new Hono();
+  const bindPage = `${deps.uiBaseUrl}/telegram/bind`;
 
   routes.get("/api/telegram/oauth/callback", async (c) => {
     const code = c.req.query("code");
@@ -21,7 +30,7 @@ export function createTelegramOAuthRoutes(deps: {
     const error = c.req.query("error");
 
     if (error) {
-      return c.text(`Login failed: ${error}`, 400);
+      return c.redirect(`${bindPage}?error=denied`);
     }
 
     if (!code || !state) {
@@ -30,14 +39,17 @@ export function createTelegramOAuthRoutes(deps: {
 
     const pending = deps.pendingFlows.get(state);
     if (!pending) {
-      return c.text("Invalid or expired state", 400);
+      // Unknown and replayed states read the same as expired — no oracle.
+      return c.redirect(`${bindPage}?error=expired`);
     }
 
     if (Date.now() - pending.createdAt > FLOW_TTL_MS) {
       deps.pendingFlows.delete(state);
-      return c.text("Login link expired. Send /login again.", 400);
+      return c.redirect(`${bindPage}?error=expired`);
     }
 
+    // Consume before the exchange so a failed exchange still invalidates
+    // the state.
     deps.pendingFlows.delete(state);
 
     const result = await exchangeCodeForTokens(
@@ -47,33 +59,19 @@ export function createTelegramOAuthRoutes(deps: {
     );
     if ("error" in result) {
       process.stderr.write(`[telegram-oauth] ${result.error}\n`);
-      return c.text("Token exchange failed. Send /login again.", 400);
+      return c.redirect(`${bindPage}?error=exchange_failed`);
     }
 
-    const isOwner = await deps.isAgentOwner(
-      pending.instanceName,
-      result.keycloakSub,
-    );
-    if (!isOwner) {
-      return c.text(
-        "You must log in as the instance owner to authorize this conversation.",
-        403,
-      );
-    }
+    const flowId = deps.bindFlows.create({
+      conversationId: pending.threadId,
+      telegramUserId: pending.telegramUserId,
+      keycloakSub: result.keycloakSub,
+      ...(pending.chatTitle !== undefined
+        ? { chatTitle: pending.chatTitle }
+        : {}),
+    });
 
-    // Store the Keycloak sub (not the Telegram user ID) as `authorizedBy`:
-    // the inbound terms-of-use gate looks this value up via isTermsAccepted(),
-    // which is keyed on the Keycloak sub. Storing the Telegram ID here would
-    // make the gate block every message regardless of UI acceptance (ADR-047).
-    await deps.threads.authorize(
-      pending.instanceName,
-      pending.threadId,
-      result.keycloakSub,
-    );
-
-    return c.html(
-      "<html><body><h2>Conversation authorized!</h2><p>You can close this window and return to Telegram.</p></body></html>",
-    );
+    return c.redirect(`${bindPage}?flow=${flowId}`);
   });
 
   return routes;

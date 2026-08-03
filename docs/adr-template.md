@@ -1,3 +1,13 @@
+---
+id: NNN                       # zero-padded, matches the filename; omit for DRAFT-
+title: Title
+status: accepted              # accepted | proposed | deprecated
+supersedes:                   # id this record replaces (optional); superseded status is derived from it
+subsystem: subsystem-name     # the architecture page this decision concerns
+tags: []                      # optional free list
+summary: One line stating what was decided.
+---
+
 # ADR-NNN: Title
 
 **Date:** YYYY-MM-DD

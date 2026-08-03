@@ -1,241 +1,112 @@
-import {
-  Add as Plus,
-  Password as KeyRound,
-  Play,
-  Renew,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
-import { useMemo, useState } from "react";
-
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import { useTemplates } from "../../templates/api/queries.js";
-import {
-  useCreateAgent,
-  useDeleteAgent,
-  useWakeAgent,
-} from "../api/mutations.js";
-import { useAgents } from "../api/queries.js";
-import { ContributionFailuresBadge } from "../components/contribution-failures-badge.js";
-import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
-import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
-import {
-  useRestartAgent,
-  useSyncRestartingAgents,
-} from "../hooks/use-restart-agent.js";
-import { resolveAgentDisplay } from "../utils/agent-resolver.js";
+import type { AgentView } from "../../../types.js";
+import { BudgetMeter } from "../../budgets/components/budget-meter.js";
+import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
+import { AgentRow } from "../components/agent-row.js";
+import { useAgentRows } from "../hooks/use-agent-rows.js";
+import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function ListView() {
-  const { data: templates = [], refetch: refetchTemplates } = useTemplates();
-  const {
-    data: agentsData,
-    refetch: refetchAgents,
-    isSuccess: agentsLoaded,
-  } = useAgents();
-  const agents = agentsData?.list ?? [];
-  const restartingAgents = useStore((s) => s.restartingAgents);
-  useSyncRestartingAgents();
-
-  const createAgent = useCreateAgent();
-  const deleteAgent = useDeleteAgent();
-  const { restart: restartAgent } = useRestartAgent();
-  const wakeAgent = useWakeAgent();
-
-  const selectAgent = useStore((s) => s.selectAgent);
-  const setView = useStore((s) => s.setView);
-  const showConfirm = useStore((s) => s.showConfirm);
-
-  const [showAddAgent, setShowAddAgent] = useState(false);
-  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
-
-  const initialLoaded = agentsLoaded;
-  const busyAgent = createAgent.isPending;
-
-  const restartingIds = useMemo(
-    () => new Set(restartingAgents.keys()),
-    [restartingAgents],
+  const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
+    useAgentRows();
+  // Every agent the user created, badged with its Kind: the per-kind
+  // destinations are filtered views onto this list. Invocation targets are the
+  // one exception — run-owned and ephemeral, they hide behind a meta line on
+  // the driver's own row that accounts for their compute.
+  const { visible: agents, drawByDriver } = splitTemporarySandboxes(
+    agentsData?.list ?? [],
   );
 
-  const configAgent = configAgentId
-    ? (agents.find((a) => a.id === configAgentId) ?? null)
-    : null;
+  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  const stopSandbox = async (agent: AgentView) => {
+    // Schedules override a stop by design (#1900) — say so before it lands.
+    const schedules = await fetchSchedulesForAgent(agent.id);
+    const scheduleNote =
+      schedules.length > 0 ? (
+        <>
+          {" "}
+          This sandbox has <strong>{schedules.length} schedule(s)</strong> — the
+          next fire will start it again.
+        </>
+      ) : null;
+    const msg = (
+      <>
+        Stop sandbox <strong className="text-foreground">"{agent.name}"</strong>
+        ? It stays stopped until you start it.{scheduleNote}
+      </>
+    );
+    if (!(await showConfirm(msg, "Stop Sandbox"))) return;
+    suspend.stop(agent.id);
+  };
+
+  const deleteSandbox = async (agent: AgentView) => {
+    const msg = (
+      <>
+        Delete sandbox{" "}
+        <strong className="text-foreground">"{agent.name}"</strong>? This will
+        also delete <strong>all persistent data</strong> and cannot be undone.
+      </>
+    );
+    if (!(await showConfirm(msg, "Delete Sandbox", { kind: "destructive" })))
+      return;
+    deleteAgent.mutate({ id: agent.id });
+  };
 
   return (
-    <>
-      <div>
-        {/* Page header */}
-        <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">
-            Agents
-          </h1>
-          <div className="ml-auto flex items-center gap-2 md:gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                refetchTemplates();
-                refetchAgents();
-              }}
-              title="Refresh"
-            >
-              <Renew />
+    <div>
+      <PageHeader
+        title="Home"
+        actions={
+          agents.length > 0 ? (
+            <Button onClick={() => navigateToCreateSandbox()}>
+              Create sandbox
             </Button>
-            <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>
-              <Plus /> <span className="hidden sm:inline">Add</span> Agent
-            </Button>
-          </div>
-        </div>
+          ) : undefined
+        }
+      />
 
-        {/* Skeleton during initial load — only when we expect agents */}
-        {!initialLoaded && agents.length > 0 && (
-          <div className="flex flex-col gap-6">
-            <Card className="h-[88px] anim-pulse" />
-            <Card className="h-[88px] anim-pulse" />
-          </div>
-        )}
+      {initialLoaded && agents.length > 0 && (
+        <>
+          <BudgetMeter />
+          <SectionLabel spaced>Sandboxes</SectionLabel>
+        </>
+      )}
 
-        {/* Empty state — consistent placeholder when no agents exist */}
-        {initialLoaded && agents.length === 0 && !busyAgent && (
-          <Card className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
-            No agents yet
-          </Card>
-        )}
+      {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-        {/* One row per agent. */}
-        <div className="flex flex-col gap-6">
-          {initialLoaded &&
-            agents.map((agent) => {
-              const display = resolveAgentDisplay(agent, restartingIds);
-              const onOpen = () => {
-                if (display.clickable) selectAgent(agent.id);
-              };
-              return (
-                <Card
-                  key={agent.id}
-                  onClick={onOpen}
-                  className={`overflow-hidden anim-in transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-md" : ""}`}
-                >
-                  <div className="px-4 md:px-6 py-4 md:py-5">
-                    <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2 flex-wrap">
-                          <h2 className="text-[16px] md:text-[17px] font-bold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
-                            {agent.name}
-                          </h2>
-                          <StatusBadge state={display.state} />
-                          <ContributionFailuresBadge
-                            failures={agent.contributionFailures}
-                          />
-                        </div>
-                        {agent.description && (
-                          <p className="text-[13px] text-foreground/80">
-                            {agent.description}
-                          </p>
-                        )}
-                      </div>
+      {initialLoaded && agents.length === 0 && (
+        <PageEmptyState
+          title="No sandboxes yet"
+          message="Create your first sandbox to get started."
+          actionLabel="Create sandbox"
+          // Wrapped: navigateToCreateSandbox takes an optional starting point,
+          // and a bare handler would receive the click event as one.
+          onAction={() => navigateToCreateSandbox()}
+        />
+      )}
 
-                      <div
-                        className="flex items-center gap-2 shrink-0 flex-wrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (display.powerAction === "start")
-                              wakeAgent.mutate({ id: agent.id });
-                            else if (display.powerAction === "restart")
-                              restartAgent(agent.id);
-                          }}
-                          disabled={display.powerAction === null}
-                          title={
-                            display.powerAction === "start"
-                              ? "Wake the hibernated agent"
-                              : "Restart the agent pod"
-                          }
-                        >
-                          {display.powerAction === "start" ? (
-                            <>
-                              <Play /> Start
-                            </>
-                          ) : (
-                            <>
-                              <Renew /> Restart
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setConfigAgentId(agent.id)}
-                          title="Configure agent credentials and env vars"
-                        >
-                          <KeyRound /> Configure
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={async () => {
-                            const msg = (
-                              <>
-                                Delete agent{" "}
-                                <strong className="text-foreground">
-                                  "{agent.name}"
-                                </strong>
-                                ? This will also delete{" "}
-                                <strong>all persistent data</strong> and cannot
-                                be undone.
-                              </>
-                            );
-                            if (
-                              !(await showConfirm(msg, "Delete Agent", {
-                                kind: "destructive",
-                              }))
-                            )
-                              return;
-                            deleteAgent.mutate({ id: agent.id });
-                          }}
-                          disabled={
-                            deleteAgent.isPending &&
-                            deleteAgent.variables?.id === agent.id
-                          }
-                          title="Delete agent"
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-        </div>
+      <div className="flex flex-col gap-3">
+        {initialLoaded &&
+          agents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              {...rowProps(agent)}
+              temporaryDraw={drawByDriver.get(agent.id)}
+              onSelect={() => navigateToSandboxHome(agent.id)}
+              onStop={() => void stopSandbox(agent)}
+              onDelete={() => void deleteSandbox(agent)}
+            />
+          ))}
       </div>
-
-      {showAddAgent && (
-        <AddAgentDialog
-          templates={templates}
-          onSubmit={async (input) => {
-            setShowAddAgent(false);
-            await createAgent.mutateAsync(input);
-          }}
-          onCancel={() => setShowAddAgent(false)}
-          onGoToProviders={() => {
-            setShowAddAgent(false);
-            setView("providers");
-          }}
-        />
-      )}
-      {configAgent && (
-        <ConfigureAgentDialog
-          agent={configAgent}
-          onClose={() => setConfigAgentId(null)}
-        />
-      )}
-    </>
+    </div>
   );
 }

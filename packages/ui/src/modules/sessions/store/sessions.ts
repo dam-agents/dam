@@ -5,9 +5,13 @@ import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
-import type { LogEntry, Message } from "../../../types.js";
+import type { Message } from "../../../types.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
-import { acpSessionsKeys } from "../api/queries.js";
+import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
+} from "../lib/session-category.js";
 
 /** A resume-time failure that blocks showing the session chat. Rendered inline. */
 export interface SessionError {
@@ -21,30 +25,34 @@ export interface SessionsSlice {
   sessionId: string | null;
   sessionMode: SessionMode | null;
   messages: Message[];
-  log: LogEntry[];
   sessionError: SessionError | null;
-  includeChannelSessions: boolean;
+  sessionFilter: SessionCategory[];
   queuedMessage: string | null;
   busy: boolean;
   terminalPaused: boolean;
+  pendingResumeSessionId: string | null;
+  /** Set before entering chat to open a fresh web terminal on arrival. */
+  pendingTerminal: boolean;
 
   setSessionId: (id: string | null) => void;
+  setPendingResumeSessionId: (id: string | null) => void;
+  setPendingTerminal: (v: boolean) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
-  setIncludeChannelSessions: (v: boolean) => void;
+  toggleSessionFilter: (category: SessionCategory) => void;
   setQueuedMessage: (msg: string | null) => void;
   setBusy: (busy: boolean) => void;
 
-  addLog: (type: string, payload: object) => void;
-  /** Delete a session via the platform API, then invalidate the TQ session
-   *  list query. Resets the chat context if the deleted session was active. */
+  /** Delete a session via the platform API, drop it from the sidebar list
+   *  cache immediately, then invalidate to reconcile. Resets the chat context
+   *  if the deleted session was active. */
   deleteSession: (sessionId: string) => Promise<void>;
 
   /**
    * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, log, queued prompt). Callers like `selectInstance`,
+   * session config, queued prompt). Callers like `selectInstance`,
    * `goBack`, and the popstate handler invoke this so every entry point
    * leaves chat state in the same clean shape.
    */
@@ -60,14 +68,17 @@ export const createSessionsSlice: StateCreator<
   sessionId: null,
   sessionMode: null,
   messages: [],
-  log: [],
   sessionError: null,
-  includeChannelSessions: false,
+  sessionFilter: [...SESSION_CATEGORIES],
   queuedMessage: null,
   busy: false,
   terminalPaused: false,
+  pendingResumeSessionId: null,
+  pendingTerminal: false,
 
   setSessionId: (id) => set({ sessionId: id }),
+  setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
+  setPendingTerminal: (v) => set({ pendingTerminal: v }),
   setSessionMode: (mode) => set({ sessionMode: mode }),
   setTerminalPaused: (paused) => set({ terminalPaused: paused }),
   setMessages: (updater) =>
@@ -75,7 +86,12 @@ export const createSessionsSlice: StateCreator<
       messages: typeof updater === "function" ? updater(s.messages) : updater,
     })),
   setSessionError: (e) => set({ sessionError: e }),
-  setIncludeChannelSessions: (v) => set({ includeChannelSessions: v }),
+  toggleSessionFilter: (category) =>
+    set((s) => ({
+      sessionFilter: s.sessionFilter.includes(category)
+        ? s.sessionFilter.filter((c) => c !== category)
+        : [...s.sessionFilter, category],
+    })),
   setQueuedMessage: (msg) => set({ queuedMessage: msg }),
   setBusy: (busy) => set({ busy }),
 
@@ -87,20 +103,11 @@ export const createSessionsSlice: StateCreator<
       sessionError: null,
       terminalPaused: false,
       openFilePath: null,
-      log: [],
-      sessionModes: null,
-      sessionModels: null,
-      sessionConfigOptions: [],
       pendingPermissions: [],
       queuedMessage: null,
+      pendingResumeSessionId: null,
+      pendingTerminal: false,
     }),
-
-  addLog: (type, payload) => {
-    const ts = new Date().toISOString().slice(11, 23);
-    set((s) => ({
-      log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
-    }));
-  },
 
   deleteSession: async (sessionId) => {
     const agentId = get().selectedAgent;
@@ -111,7 +118,14 @@ export const createSessionsSlice: StateCreator<
     );
     if (ok === ACTION_FAILED) return;
     if (get().sessionId === sessionId) get().resetChatContext();
-    queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+    // Cancel in-flight list refetches first — then drop the row and reconcile.
+    await queryClient.cancelQueries({
+      queryKey: acpSessionsKeys.agentLists(agentId),
+    });
+    removeSessionFromCache(agentId, sessionId);
+    queryClient.invalidateQueries({
+      queryKey: acpSessionsKeys.agentLists(agentId),
+    });
     emitToast({ kind: "success", message: "Session deleted" });
   },
 });

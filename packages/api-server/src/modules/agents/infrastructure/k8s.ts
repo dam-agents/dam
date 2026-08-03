@@ -12,15 +12,25 @@ export interface K8sClient {
   /** The namespace this client is scoped to (i.e. where agent pods live). */
   readonly namespace: string;
 
-  // Agents/forks are custom resources and templates are file-mounted now
-  // (ADR-058), so the api-server makes no ConfigMap calls — none are exposed.
+  // Agents/forks are custom resources and templates are file-mounted now,
+  // so the api-server makes no ConfigMap calls — none are exposed.
+  /** Restart info for an agent's backing pod (selected by pair labels, so it
+   *  finds a StatefulSet pod or a vm backend's virt-launcher alike): the
+   *  highest container restart count and the reason the last dead container
+   *  gave (e.g. "OOMKilled"). Null if no pod exists. Read-only; used by the
+   *  Invocation liveness sweep to fail a one-shot target whose pod crashed
+   *  mid-turn (its trigger will not re-fire, so it can never report). */
+  readAgentPodRestart(
+    agentId: string,
+  ): Promise<{ restarts: number; reason: string | null } | null>;
+
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
   createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
   replaceSecret(name: string, body: k8s.V1Secret): Promise<k8s.V1Secret>;
   deleteSecret(name: string): Promise<void>;
 
-  // agent-platform.ai/v1 custom resources (ADR-058). `plural` selects the
+  // agent-platform.ai/v1 custom resources. `plural` selects the
   // resource (e.g. "agents"); the group/version are the platform's.
   getCustomObject(plural: string, name: string): Promise<KubeObject | null>;
   listCustomObjects(
@@ -45,6 +55,8 @@ export interface KubeObject {
   kind?: string;
   metadata?: {
     name?: string;
+    uid?: string;
+    resourceVersion?: string;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
   };
@@ -52,7 +64,7 @@ export interface KubeObject {
   status?: unknown;
 }
 
-// The platform's custom-resource group/version (ADR-058). Kept here so the
+// The platform's custom-resource group/version. Kept here so the
 // generic CR methods stay caller-agnostic about coordinates.
 const CR_GROUP = "agent-platform.ai";
 const CR_VERSION = "v1";
@@ -89,6 +101,31 @@ export function createK8sClient(
 
   return {
     namespace,
+
+    async readAgentPodRestart(agentId) {
+      // Label-selected rather than the `-0` ordinal name: a vm backend's pod
+      // is virt-launcher-<name>-<hash>. (A whole-VM crash under runStrategy
+      // Always surfaces as a *replacement* launcher pod, not a container
+      // restart — that signal is not covered here.)
+      const res = await api.listNamespacedPod({
+        namespace,
+        labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
+      });
+      const pods = res.items ?? [];
+      if (pods.length === 0) return null;
+      let restarts = 0;
+      let reason: string | null = null;
+      for (const pod of pods) {
+        for (const cs of pod.status?.containerStatuses ?? []) {
+          const count = cs.restartCount ?? 0;
+          if (count > restarts) {
+            restarts = count;
+            reason = cs.lastState?.terminated?.reason ?? null;
+          }
+        }
+      }
+      return { restarts, reason };
+    },
 
     async listSecrets(labelSelector) {
       const res = await api.listNamespacedSecret({ namespace, labelSelector });
@@ -178,7 +215,10 @@ export function createK8sClient(
 // ---------------------------------------------------------------------------
 
 export function podBaseUrl(agentId: string, namespace: string): string {
-  return `${agentId}-0.${agentId}.${namespace}.svc:8080`;
+  // Headless agent Service DNS — resolves to the single ready backing pod for
+  // either backend (a StatefulSet pod or a vm backend's virt-launcher pod),
+  // unlike the former `-0` ordinal pod DNS which only StatefulSets provide.
+  return `${agentId}.${namespace}.svc:8080`;
 }
 
 export function createApi(namespace: string) {
@@ -186,10 +226,6 @@ export function createApi(namespace: string) {
   kc.loadFromDefault();
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
-    // Injected into the fork orchestrator (ADR-058) so it stays unit-testable
-    // with a fake. The agents K8sClient builds its own CustomObjectsApi
-    // internally — it's faked in tests, so it needs no injected client.
-    customObjects: kc.makeApiClient(k8s.CustomObjectsApi),
     namespace,
   };
 }

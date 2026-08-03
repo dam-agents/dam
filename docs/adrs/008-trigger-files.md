@@ -1,3 +1,10 @@
+---
+id: 008
+title: Controller-owned cron with exec-based trigger delivery
+status: accepted
+subsystem: agent-lifecycle
+summary: Controller owns cron scheduling and delivers triggers by writing JSON files into the pod via kubectl exec, which agent-runtime watches to start ACP sessions.
+---
 # ADR-008: Controller-owned cron with exec-based trigger delivery
 
 **Date:** 2026-04-02

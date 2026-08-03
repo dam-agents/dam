@@ -1,8 +1,4 @@
-import {
-  Add as Plus,
-  RotateCounterclockwise as RotateCcw,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+import { Add, RotateCounterclockwise, TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -10,9 +6,14 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   useApplyEgressPreset,
@@ -20,6 +21,7 @@ import {
   useRevokeEgressRule,
 } from "../api/mutations.js";
 import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
+import { formatHostPort, splitHostPort } from "../host-port.js";
 
 const EMPTY: EgressRuleView[] = [];
 const EMPTY_HOSTS: readonly string[] = [];
@@ -60,10 +62,10 @@ export interface StagedNetworkAccessController {
   pendingAdds: ReadonlyArray<PendingAdd>;
   appendPendingAdd: (draft: AddRuleDraft) => void;
   removePendingAdd: (tempId: string) => void;
-  /** Mirrors the secret-grant diff in the parent dialog. The server's
-   *  `setAgentAccess` writes a `(host, *, *, allow, source=connection:<id>)`
-   *  rule per granted secret on Save — we render the same rows as preview
-   *  here so the user sees what their connection toggles will produce. */
+  /** Mirrors the connection-grant diff in the parent dialog. The server's
+   *  `setAgentConnections` writes a `(host, *, *, allow, source=connection:<id>)`
+   *  rule per granted connection host on Save — we render the same rows as
+   *  preview here so the user sees what their connection toggles will produce. */
   pendingConnectionGrants: ReadonlyArray<ConnectionGrantPreview>;
   /** Connection ids whose rules will be revoked on Save. Existing rows
    *  with `source = connection:<id>` for these ids are struck through to
@@ -82,12 +84,12 @@ export interface ConnectionGrantPreview {
 
 /**
  * Renders the per-agent network access rules form + list. Embedded in the
- * configure-agent dialog (staged via `staged` controller — Save commits)
- * and in the standalone /agents/:id/egress route (live — every action
- * fires its mutation directly).
+ * sandbox settings page's Network access section (staged via the `staged`
+ * controller — Save commits the bundle). Without `staged` it falls back to
+ * live mode, where every action fires its mutation directly.
  *
  * `currentPreset` is the preset the server derives from the agent's rule
- * `source` column (via `useCurrentPreset` in the parent dialog) — the
+ * `source` column (via `useCurrentPreset` in the parent) — the
  * preset isn't stored on the agent spec; it's the projection of which
  * `preset:*` rows are present. It seeds the dropdown so the user sees
  * their existing choice instead of a hardcoded default. It's also what
@@ -115,14 +117,17 @@ export function AgentEgressEditor({
 
   const stagedMode = staged !== undefined;
 
-  // Path-specific rules need MITM, which means the controller has to
-  // re-issue the leaf cert and roll the agent pod. The L4 (host-only) path
-  // is a pure DB write — no roll. Warn the user so they own the timing.
-  const draftIsPathSpecific =
-    draft.method !== "*" || draft.pathPattern.trim() !== "*";
-  const draftRequiresRestart =
+  // Path-specific and port-carrying rules need MITM, which means the
+  // controller has to re-issue the leaf cert and roll the gateway pod
+  // (the agent pod stays up, #2903). The L4 (host-only, 443) path is a
+  // pure DB write — no roll. Warn the user so they own the timing.
+  const draftNeedsMitm =
+    draft.method !== "*" ||
+    draft.pathPattern.trim() !== "*" ||
+    splitHostPort(draft.host.trim()).port != null;
+  const draftRequiresGatewayRestart =
     draft.host.trim().length > 0 &&
-    draftIsPathSpecific &&
+    draftNeedsMitm &&
     !serverRules.some(
       (r) =>
         r.host === draft.host.trim() &&
@@ -151,14 +156,14 @@ export function AgentEgressEditor({
       return;
     }
     if (
-      draftRequiresRestart &&
+      draftRequiresGatewayRestart &&
       !window.confirm(
-        `Saving this rule will restart the agent (~5–15s) so Envoy can MITM "${next.host}" for path-level enforcement. Continue?`,
+        `This rule needs a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted. Continue?`,
       )
     )
       return;
     createRule.mutate(
-      { agentId, ...next },
+      { agentId, ...next, ...splitHostPort(next.host) },
       { onSuccess: () => setDraft(EMPTY_DRAFT) },
     );
   };
@@ -219,7 +224,7 @@ export function AgentEgressEditor({
     : [];
   const connectionGrantPreviews: PreviewRow[] = stagedMode
     ? staged.pendingConnectionGrants.map((g) => ({
-        key: `preview:connection:${g.connectionId}`,
+        key: `preview:connection:${g.connectionId}:${g.host}`,
         host: g.host,
         method: "*",
         pathPattern: "*",
@@ -233,7 +238,7 @@ export function AgentEgressEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[12px] text-muted-foreground leading-relaxed max-w-prose">
+      <p className="text-sm text-muted-foreground max-w-prose">
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
@@ -242,20 +247,18 @@ export function AgentEgressEditor({
 
       <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {stagedMode ? "Preset" : "Apply preset"}
-          </span>
-          <select
+          <SectionLabel>{stagedMode ? "Preset" : "Apply preset"}</SectionLabel>
+          <Select
+            size="xs"
             value={dropdownValue}
             onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
-            className="h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
           >
             <option value="trusted">
               Trusted defaults (npm, PyPI, GitHub, Anthropic, …)
             </option>
             <option value="none">Strict default-deny (no rules added)</option>
             <option value="all">Allow everything (development only)</option>
-          </select>
+          </Select>
         </div>
         {!stagedMode && (
           <Button
@@ -269,7 +272,7 @@ export function AgentEgressEditor({
             Apply
           </Button>
         )}
-        <p className="basis-full text-[11px] text-muted-foreground">
+        <p className="basis-full text-sm text-muted-foreground">
           {stagedMode
             ? presetPending
               ? `Save will replace existing preset rules with "${staged.preset}". Manual and connection-derived rules are preserved.`
@@ -286,11 +289,12 @@ export function AgentEgressEditor({
               onChange={(e) => setDraft({ ...draft, host: e.target.value })}
               onKeyDown={onInputKeyDown}
               placeholder="api.anthropic.com"
-              className="h-7 text-[12px]"
+              size="xs"
             />
           </Field>
           <Field label="Method" widthClass="w-[100px]">
-            <select
+            <Select
+              size="xs"
               value={
                 ALL_METHODS.includes(
                   draft.method as (typeof ALL_METHODS)[number],
@@ -299,7 +303,6 @@ export function AgentEgressEditor({
                   : "*"
               }
               onChange={(e) => setDraft({ ...draft, method: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="*">* (any)</option>
               {ALL_METHODS.map((m) => (
@@ -307,7 +310,7 @@ export function AgentEgressEditor({
                   {m}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Path" widthClass="min-w-[160px] flex-1">
             <Input
@@ -317,11 +320,13 @@ export function AgentEgressEditor({
               }
               onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
-              className="h-7 text-[12px] font-mono"
+              size="xs"
+              variant="monospace"
             />
           </Field>
           <Field label="Verdict" widthClass="w-[100px]">
-            <select
+            <Select
+              size="xs"
               value={draft.verdict}
               onChange={(e) =>
                 setDraft({
@@ -329,11 +334,10 @@ export function AgentEgressEditor({
                   verdict: e.target.value as "allow" | "deny",
                 })
               }
-              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="allow">allow</option>
               <option value="deny">deny</option>
-            </select>
+            </Select>
           </Field>
           <Button
             type="button"
@@ -341,26 +345,25 @@ export function AgentEgressEditor({
             className="h-7 text-[11px]"
             onClick={onAddRule}
             disabled={!canAdd}
+            variant="outline"
           >
-            <Plus size={11} /> Add rule
+            <Add size={11} /> Add rule
           </Button>
-          {draftRequiresRestart && (
+          {draftRequiresGatewayRestart && (
             <p className="basis-full text-[11px] text-warning">
-              {stagedMode
-                ? "Saving will restart the agent (~5–15s) — path-level rules need MITM on this host."
-                : "Saving will restart the agent (~5–15s) — path-level rules need MITM on this host."}
+              Saving will restart the network gateway (~5–15s) — this rule
+              requires inspecting requests to this host. The agent keeps
+              running.
             </p>
           )}
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
-            loading…
-          </p>
+          <p className="px-4 py-5 text-xs text-muted-foreground">loading…</p>
         ) : serverRules.length === 0 &&
           stagedAddCount === 0 &&
           previewRows.length === 0 ? (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No rules yet. Every outbound request will surface in the inbox.
           </p>
         ) : (
@@ -441,12 +444,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
+    <FormField label={label} disableInset className={cn("gap-1", widthClass)}>
       {children}
-    </label>
+    </FormField>
   );
 }
 
@@ -473,37 +473,24 @@ function RuleRow({
   onAction: () => void;
   disabled: boolean;
 }) {
-  const verdictTone =
-    rule.verdict === "allow"
-      ? "text-primary border-primary/40"
-      : "text-destructive border-destructive/40";
   const sourceLabel =
     sourceLabelOverride ??
     (rule.source === "manual" ? null : formatEgressRuleSource(rule.source));
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
     <li
-      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}
+      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-xs ${dim}`}
     >
-      <span
-        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
-      >
-        {rule.verdict}
-      </span>
+      <VerdictBadge verdict={rule.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {rule.method}
       </span>
-      <span className="font-medium truncate">{rule.host}</span>
+      <span className="font-medium truncate">{formatHostPort(rule)}</span>
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {rule.pathPattern}
       </span>
       {sourceLabel && (
-        <span
-          title={`source: ${rule.source}`}
-          className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
-        >
-          {sourceLabel}
-        </span>
+        <SourceTag label={sourceLabel} title={`source: ${rule.source}`} />
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
@@ -518,7 +505,11 @@ function RuleRow({
           disabled={disabled}
           title={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
-          {pendingDelete ? <RotateCcw size={11} /> : <Trash2 size={11} />}
+          {pendingDelete ? (
+            <RotateCounterclockwise size={11} />
+          ) : (
+            <TrashCan size={11} />
+          )}
         </Button>
       )}
     </li>
@@ -532,17 +523,9 @@ function PendingAddRow({
   add: PendingAdd;
   onCancel: () => void;
 }) {
-  const verdictTone =
-    add.verdict === "allow"
-      ? "text-primary border-primary/40"
-      : "text-destructive border-destructive/40";
   return (
-    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/10">
-      <span
-        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
-      >
-        {add.verdict}
-      </span>
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/10">
+      <VerdictBadge verdict={add.verdict} />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {add.method}
       </span>
@@ -550,9 +533,9 @@ function PendingAddRow({
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {add.pathPattern}
       </span>
-      <span className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5">
+      <Badge size="sm" variant="accent" className="uppercase tracking-wider">
         new
-      </span>
+      </Badge>
       <span className="ml-auto" />
       <Button
         type="button"
@@ -562,7 +545,7 @@ function PendingAddRow({
         onClick={onCancel}
         title="Discard pending rule"
       >
-        <Trash2 size={11} />
+        <TrashCan size={11} />
       </Button>
     </li>
   );
@@ -608,10 +591,8 @@ function buildPresetPreviewRows(
 
 function PreviewPresetRow({ row }: { row: PreviewRow }) {
   return (
-    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/5">
-      <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-primary border-primary/40">
-        allow
-      </span>
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-xs bg-primary/5">
+      <VerdictBadge verdict="allow" />
       <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
         {row.method}
       </span>
@@ -619,22 +600,42 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       <span className="font-mono text-[11px] text-muted-foreground truncate">
         {row.pathPattern}
       </span>
-      <span
+      <SourceTag
+        label={row.sourceBadge}
         title={`Preview — ${row.sourceBadge} (saved on commit)`}
-        className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
-      >
-        {row.sourceBadge}
-      </span>
-      <span
-        className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5"
+      />
+      <Badge
+        size="sm"
+        variant="accent"
+        className="uppercase tracking-wider"
         title="This rule will be saved on commit"
       >
         preview
-      </span>
+      </Badge>
       <span className="ml-auto" />
       {/* No per-row actions in preview mode: the rules don't exist yet, so
           there's nothing to revoke. The user can change the dropdown
           selection or cancel the dialog to drop the preview. */}
     </li>
+  );
+}
+
+function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
+  return (
+    <Badge
+      size="sm"
+      variant={verdict === "allow" ? "success" : "danger"}
+      className="uppercase tracking-wider"
+    >
+      {verdict}
+    </Badge>
+  );
+}
+
+function SourceTag({ label, title }: { label: string; title: string }) {
+  return (
+    <Badge size="sm" variant="muted" title={title}>
+      {label}
+    </Badge>
   );
 }

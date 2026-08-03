@@ -1,4 +1,5 @@
 import type {
+  SkillDeleteLocalInput,
   SkillInstallInput,
   SkillPublishInput,
   SkillReadLocalInput,
@@ -7,6 +8,7 @@ import type {
   SkillsDomainError,
   SkillsService,
   SkillUninstallInput,
+  SkillWriteLocalInput,
 } from "agent-runtime-api";
 import { ok } from "agent-runtime-api";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
@@ -17,6 +19,7 @@ import type { LocalSkillRepository } from "../infrastructure/local-skill-reposit
 import { runInstall } from "./install.js";
 import { runPublish } from "./publish.js";
 import { runScan } from "./scan.js";
+import { runWriteLocal } from "./write-local.js";
 
 export interface SkillsServiceDeps {
   github: GitHubRestClient;
@@ -25,8 +28,12 @@ export interface SkillsServiceDeps {
   /** Read-side paths (listLocal / readLocal / publish), from the manifest's
    *  skill-ref driver. install / uninstall get theirs from the driver. */
   skillPaths: SkillPath[];
+  /** Image-side counterparts of `skillPaths`, listLocal's origin reference.
+   *  Nonexistent dirs are harmless — everything classifies as `user`. */
+  pristineSkillPaths: SkillPath[];
   /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;
+  log: (msg: string) => void;
 }
 
 interface ValidatedNameAndPaths {
@@ -51,6 +58,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
     listLocal: () => doListLocal(deps),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
+    writeLocal: (input: SkillWriteLocalInput) =>
+      runWriteLocal(deps, deps.skillPaths, input),
     scan: (input: SkillScanInput) => runScan(deps, input),
     publish: (input: SkillPublishInput) => doPublish(deps, input),
   };
@@ -78,7 +88,10 @@ async function doUninstall(
 }
 
 async function doListLocal(deps: SkillsServiceDeps) {
-  const skills = await deps.repo.listLocal(deps.skillPaths);
+  const skills = await deps.repo.listLocal(
+    deps.skillPaths,
+    deps.pristineSkillPaths,
+  );
   return ok(skills);
 }
 
@@ -89,6 +102,23 @@ async function doReadLocal(
   const name = makeSkillName(input.name);
   if (!name.ok) return name;
   return deps.repo.readLocal(name.value, deps.skillPaths);
+}
+
+async function doDeleteLocal(
+  deps: SkillsServiceDeps,
+  input: SkillDeleteLocalInput,
+) {
+  const name = makeSkillName(input.name);
+  if (!name.ok) return name;
+  const resolved = await deps.repo.resolveLocalSkillDir(
+    name.value,
+    deps.skillPaths,
+  );
+  // Nothing on disk to remove — a delete whose target is already gone is
+  // satisfied, not an error (a double-click must not fail the second time).
+  if (!resolved) return ok(undefined);
+  await deps.repo.remove(resolved.dir, deps.skillPaths);
+  return ok(undefined);
 }
 
 async function doPublish(deps: SkillsServiceDeps, input: SkillPublishInput) {

@@ -9,14 +9,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// updateAgentStatus read-modify-writes the Agent's status subresource (ADR-058
-// / ADR-059). `mutate` receives the current observed status and adjusts it in
+// updateAgentStatus read-modify-writes the Agent's status subresource.
+// `mutate` receives the current observed status and adjusts it in
 // place — typically via setStatusCondition for conditions plus direct Phase /
 // ObservedGeneration assignment. The write is skipped when the mutation is a
 // no-op, which is load-bearing: the controller watches Agents, so an
@@ -70,21 +71,22 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 	})
 }
 
-// writeForkStatus overwrites the Fork's status subresource (ADR-058). Forks
-// carry no conditions, so this is a whole-status replace; the no-op guard keeps
-// an unchanged observation from re-triggering reconcile (the controller watches
-// Forks).
-func writeForkStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.ForkStatus) error {
-	cli := dyn.Resource(ForksGVR).Namespace(namespace)
+// writeConditionlessStatus overwrites a CR's status subresource as a
+// whole-status replace (no condition merging) with a no-op guard that keeps an
+// unchanged observation from re-triggering reconcile (the controller watches
+// these CRs). Used for Runs, which carry no conditions; `kind` names the
+// resource in errors.
+func writeConditionlessStatus[T any](ctx context.Context, dyn dynamic.Interface, gvr schema.GroupVersionResource, kind, namespace, name string, desired T) error {
+	cli := dyn.Resource(gvr).Namespace(namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		obj, err := cli.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("getting fork %s/%s: %w", namespace, name, err)
+			return fmt.Errorf("getting %s %s/%s: %w", kind, namespace, name, err)
 		}
-		var current apiv1.ForkStatus
+		var current T
 		if raw, ok, _ := unstructured.NestedMap(obj.Object, "status"); ok && raw != nil {
 			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(raw, &current); err != nil {
-				return fmt.Errorf("decoding fork status: %w", err)
+				return fmt.Errorf("decoding %s status: %w", kind, err)
 			}
 		}
 		if apiequality.Semantic.DeepEqual(current, desired) {
@@ -92,12 +94,16 @@ func writeForkStatus(ctx context.Context, dyn dynamic.Interface, namespace, name
 		}
 		statusMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&desired)
 		if err != nil {
-			return fmt.Errorf("encoding fork status: %w", err)
+			return fmt.Errorf("encoding %s status: %w", kind, err)
 		}
 		if err := unstructured.SetNestedMap(obj.Object, statusMap, "status"); err != nil {
-			return fmt.Errorf("setting fork status: %w", err)
+			return fmt.Errorf("setting %s status: %w", kind, err)
 		}
 		_, err = cli.UpdateStatus(ctx, obj, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func writeRunStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, desired apiv1.RunStatus) error {
+	return writeConditionlessStatus(ctx, dyn, RunsGVR, "run", namespace, name, desired)
 }

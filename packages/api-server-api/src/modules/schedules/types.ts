@@ -71,12 +71,17 @@ export interface SchedulesService {
     input: ScheduleCreateCronInput,
     createdBy?: ScheduleCreator,
   ) => Promise<Schedule>;
-  createRRule: (input: ScheduleCreateRRuleInput) => Promise<Schedule>;
+  /** `createdBy` defaults to "user" when omitted, same convention as
+   *  createCron. */
+  createRRule: (
+    input: ScheduleCreateRRuleInput,
+    createdBy?: ScheduleCreator,
+  ) => Promise<Schedule>;
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
   /** Clear the schedule's accumulated session binding so the next tick starts
    *  a fresh conversation. Durable: enqueued over the runtime outbox so it
-   *  reaches the agent even while its pod is scaled to zero (ADR-055). */
+   *  reaches the agent even while its pod is scaled to zero. */
   resetSession: (id: string) => Promise<void>;
 }

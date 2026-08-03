@@ -1,15 +1,23 @@
-# Bob runtime manifest. Bob reads MCP servers from $HOME/.bob/settings.json,
-# so the mcp-entry path is overridden here; other drivers match platform-base.
+# Bob runtime manifest. Bob (≥1.0.6) reads MCP servers from
+# $HOME/.bob/settings/mcp.json; the legacy mcp_settings.json is migrated only
+# once, so the driver must write the canonical path. Other drivers match
+# platform-base.
 manifestVersion: 1
 
 drivers:
+  env:
+    impl: env
+
   file:
     impl: file
 
   mcp-entry:
     impl: mcp-entry
-    path: "$HOME/.bob/mcp_settings.json"
+    path: "$HOME/.bob/settings/mcp.json"
     keyPath: mcpServers
+    # Streamable-HTTP servers go under `httpUrl` (exact casing); `url` is SSE,
+    # which 400s against the platform's streamable MCP endpoint.
+    urlKey: httpUrl
 
   skill-ref:
     impl: skill-install

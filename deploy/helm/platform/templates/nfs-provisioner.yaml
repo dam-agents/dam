@@ -3,10 +3,8 @@ In-cluster NFS server + external provisioner — opt-in.
 
 Ships an RWX-capable StorageClass (`platform-rwx` by default) so dev clusters
 (k3s-on-lima, kind, minikube) whose default provisioner is RWO-only can
-satisfy the agent PVC's ReadWriteMany access mode. The agent PVC
-needs RWX because per-turn foreign-user "fork" pods (ADR DRAFT — Slack
-per-turn user impersonation) mount the same /home/agent volume as the
-main pod concurrently.
+satisfy a ReadWriteMany agent PVC access mode — needed only when `dam-run`
+executor pods mount the same /home/agent volume as the main pod concurrently.
 
 Production deployments on managed K8s should leave this disabled and
 point `controller.agent.base.storageClass` at the cloud-native RWX class
@@ -157,10 +155,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: nfs-provisioner
-  {{- with .Values.nfsProvisioner.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.nfsProvisioner) | nindent 2 }}
 spec:
   serviceName: {{ $name }}
   replicas: 1
@@ -173,10 +168,7 @@ spec:
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: nfs-provisioner
-      {{- with .Values.nfsProvisioner.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.nfsProvisioner) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}

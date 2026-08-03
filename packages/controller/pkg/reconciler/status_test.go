@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 func TestUpdateAgentStatus_PublishesCondition(t *testing.T) {
@@ -75,6 +77,49 @@ func TestUpdateAgentStatus_NoOpWhenUnchanged(t *testing.T) {
 	after2, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, rv1, after2.GetResourceVersion(), "redundant status update must not write")
+}
+
+func TestSetBackoffExceeded_StampsTerminalCondition(t *testing.T) {
+	u, err := agentToUnstructured(&apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+	})
+	require.NoError(t, err)
+	dyn := newFakeDynamic(u)
+	r := NewAgentReconciler(nil, &config.Config{Namespace: "test-agents"}).WithDynamicClient(dyn)
+
+	r.SetBackoffExceeded(context.Background(), "my-agent", 16,
+		fmt.Errorf("gateway Service ClusterIP not yet assigned"))
+
+	got, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
+	require.Len(t, conds, 1)
+	c := conds[0].(map[string]interface{})
+	assert.Equal(t, apiv1.ConditionReconciled, c["type"])
+	assert.Equal(t, string(metav1.ConditionFalse), c["status"])
+	assert.Equal(t, "BackoffLimitExceeded", c["reason"])
+	assert.Contains(t, c["message"], "failed 16 times")
+}
+
+func TestSetError_DoesNotDowngradeBackoffExceeded(t *testing.T) {
+	u, err := agentToUnstructured(&apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+	})
+	require.NoError(t, err)
+	dyn := newFakeDynamic(u)
+	r := NewAgentReconciler(nil, &config.Config{Namespace: "test-agents"}).WithDynamicClient(dyn)
+
+	r.SetBackoffExceeded(context.Background(), "my-agent", 16, fmt.Errorf("boom"))
+	// A subsequent failed reconcile must NOT flip the reason back — the
+	// flip-flop would self-trigger via the informer and never settle.
+	_ = r.setError(context.Background(), "my-agent", "still failing")
+
+	got, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
+	require.Len(t, conds, 1)
+	c := conds[0].(map[string]interface{})
+	assert.Equal(t, "BackoffLimitExceeded", c["reason"], "setError must not downgrade BackoffLimitExceeded")
 }
 
 func TestUpdateAgentStatus_NotFound(t *testing.T) {

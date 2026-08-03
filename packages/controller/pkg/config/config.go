@@ -3,6 +3,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -27,7 +30,7 @@ type Config struct {
 	PodName                string // This pod's name (from downward API)
 
 	// AgentBase carries chart-only platform policy applied verbatim to every
-	// controller-rendered agent / fork agent pod. Threaded in via the
+	// controller-rendered agent / executor pod. Threaded in via the
 	// AGENT_BASE env var from Helm `controller.agent.base`. Not overridable
 	// by agent ConfigMaps.
 	AgentBase AgentBase
@@ -42,6 +45,51 @@ type Config struct {
 	// Disabled by default.
 	WarmPool WarmPool
 
+	// StorageMigration configures the one-time RWX -> RWO workspace
+	// migration (#2988). Threaded in via the STORAGE_MIGRATION env var from
+	// `controller.storageMigration`.
+	StorageMigration StorageMigration
+
+	// VM configures the KubeVirt vm backend (spec.backend.type=vm). Threaded
+	// in via the AGENT_VM env var from Helm `virtualization.*`. Disabled by
+	// default — vm-backend agents then fail reconcile with a clear error.
+	VM VMConfig
+	// KubeAPIAddr is the in-cluster kube-apiserver authority (host:port) from
+	// the kubelet-injected KUBERNETES_SERVICE_* env — the vm backend's guest
+	// boot gate probes it as its denied target (must be unreachable before the
+	// workload starts, mirroring the pod np-gate). Empty skips that check.
+	KubeAPIAddr string
+
+	// DefaultUserCPUBudget / DefaultUserMemoryBudget are the chart-wide
+	// per-user Ceiling on concurrently reserved compute (#1900), applied when
+	// a user has no UserBudget CR. Threaded in via DEFAULT_USER_CPU_BUDGET /
+	// DEFAULT_USER_MEMORY_BUDGET from `controller.userBudgets`. Parse
+	// failures fail startup — a malformed ceiling must never silently become
+	// zero (that would park every agent platform-wide).
+	DefaultUserCPUBudget    resource.Quantity
+	DefaultUserMemoryBudget resource.Quantity
+
+	// RequestsFromLimits derives pod requests from an agent's limits at
+	// render (#1900): request = max(limit × Fraction, floor). Limits are the
+	// user-facing "size" the Budget bounds; requests are scheduling
+	// internals. Threaded via REQUESTS_FROM_LIMITS_* from
+	// `controller.requestsFromLimits`.
+	RequestsFraction  float64
+	RequestsMinCPU    resource.Quantity
+	RequestsMinMemory resource.Quantity
+
+	// LegacyAgentCPULimit / LegacyAgentMemoryLimit are the Size the
+	// controller materializes into an Agent spec that lacks a limits
+	// dimension (#1900) — the limits pre-Sizes agents actually ran with
+	// under the old chart defaults, NOT today's (smaller) default, so
+	// convergence never shrinks an existing workload. Fill-if-absent during
+	// reconcile gives limits "required" semantics without schema-level
+	// enforcement (softer backwards compatibility). Threaded via
+	// AGENT_LEGACY_CPU_LIMIT / AGENT_LEGACY_MEMORY_LIMIT from
+	// `controller.agent.legacyAgentSize`.
+	LegacyAgentCPULimit    resource.Quantity
+	LegacyAgentMemoryLimit resource.Quantity
+
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
@@ -50,13 +98,32 @@ type Config struct {
 	EnvoyMitmCAIssuer        string        // cert-manager ClusterIssuer that mints per-instance leaf certs for the Envoy sidecar's TLS interception
 	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
+	// OTelEnv is the OpenTelemetry environment the controller inherited — every
+	// `OTEL_*` variable in its own process env. The chart sets these under
+	// `clickstack.enabled` (pointing at the bundled collector, the same env the
+	// controller's own SDK reads); a BYO-collector deployment can inject them
+	// instead (e.g. via the OpenTelemetry Operator). The controller relays them
+	// onto gateway Envoy pods and parses the OTLP endpoint to point the
+	// gateway's exporter at the same collector — the gateway is the one
+	// component zero-code auto-instrumentation cannot reach (Envoy is a C++
+	// data plane, not an app runtime), so the controller configures it natively
+	// from this environment. Empty when instrumentation is off — gateways then
+	// emit no telemetry.
+	OTelEnv map[string]string
+	// GatewayOTLPEndpoint/GatewayOTLPProtocol override the relayed OTEL_* pair
+	// for the gateway exporter specifically. The chart sets them to the
+	// bundled collector's gRPC endpoint under `clickstack.enabled` — gRPC
+	// because Envoy's stats sink speaks nothing else — while the controller's
+	// own SDK keeps its OTLP/HTTP env. Empty in BYO deployments, where the
+	// inherited OTEL_* drive the gateway too.
+	GatewayOTLPEndpoint string
+	GatewayOTLPProtocol string
 	// ExtAuthzPort identifies the API server's HITL ext_authz listener
 	// (gRPC). Both Envoy filters use the same endpoint:
 	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
 	//   - Network filter on the catch-all chain (L4 — SNI only)
-	// (ADR-035).
 	//
-	// ADR-041: the host is per-instance (one Service per instance, named
+	// The host is per-instance (one Service per instance, named
 	// `<release>-extauthz-<id>`, gated by AuthorizationPolicy to that
 	// instance's SA principal). The gateway pod's Envoy bootstrap is
 	// templated with its instance's per-instance ext-authz Service URL —
@@ -74,6 +141,170 @@ type Config struct {
 	// AuthorizationPolicy's targetRefs. Must match the Helm chart's
 	// `istio.waypointName`.
 	IstioWaypointName string
+	// TelemetryCollectorHost is the in-cluster DNS of the platform OTLP
+	// collector the gateway forwards agent telemetry to. Empty when the
+	// telemetry backend is disabled; the chart sets it from
+	// `clickstack.enabled`. When set, each gateway gains a collector egress
+	// chain that stamps the trusted `x-platform-agent-id` header so the
+	// collector can attribute telemetry to the producing instance — or, when
+	// the api-server set a per-agent attribution override, to the agent that
+	// drove it (an Invocation target credits its root Driver, #3041).
+	TelemetryCollectorHost string
+	// TelemetryCollectorPort is the collector's OTLP/HTTP port (default 4318).
+	TelemetryCollectorPort int
+	// ObjectStoreHost/ObjectStorePort: plain-HTTP authority of the bundled
+	// Candidate object store. When set, gateways render a CONNECT route
+	// splicing to a pinned upstream (a plain-HTTP CONNECT would RST in the
+	// TLS-intercept chain); egress policy stays with the ext_authz gate.
+	// Empty = no store / HTTPS external.
+	ObjectStoreHost string
+	ObjectStorePort int
+}
+
+// otelEnvPrefix selects the OpenTelemetry environment family. The controller
+// collects every variable with this prefix from its own process and relays
+// them to gateway Envoy pods, so new OTel knobs flow through without the
+// controller enumerating them.
+const otelEnvPrefix = "OTEL_"
+
+// collectOTelEnv snapshots the controller's OTEL_* environment.
+func collectOTelEnv() map[string]string {
+	out := map[string]string{}
+	for _, kv := range os.Environ() {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		if key := kv[:eq]; strings.HasPrefix(key, otelEnvPrefix) {
+			out[key] = kv[eq+1:]
+		}
+	}
+	return out
+}
+
+// OTLPExporter is the parsed view of the inherited OTLP endpoint the gateway
+// Envoy bootstrap needs. Secure (https scheme) and GRPC (transport) are
+// orthogonal: an `http://host:4317` endpoint is plaintext OTLP/gRPC.
+type OTLPExporter struct {
+	Host   string
+	Port   int
+	Secure bool // https scheme → wrap the exporter cluster in upstream TLS
+	GRPC   bool // OTLP/gRPC (true) vs OTLP/HTTP (false), from OTEL_EXPORTER_OTLP_PROTOCOL
+}
+
+// OTelEnabled reports whether the platform's OpenTelemetry instrumentation is
+// active — i.e. the controller's environment carries an OTLP endpoint it can
+// point gateway Envoys at. When false the gateway emits no telemetry. Distinct
+// from TelemetryEnabled, which gates the agent-telemetry transit chain.
+func (c *Config) OTelEnabled() bool {
+	_, ok := c.OTelExporter()
+	return ok
+}
+
+// OTelExporter resolves the exporter the gateway Envoy bootstrap targets.
+// The gateway-specific PLATFORM_GATEWAY_OTLP_ENDPOINT/_PROTOCOL pair wins when
+// set — the chart points it at the bundled collector's gRPC port, decoupled
+// from the OTEL_* env the controller's own (OTLP/HTTP-only) SDK reads, so the
+// two consumers never constrain each other's transport. Without the override
+// the inherited OTEL_EXPORTER_OTLP_ENDPOINT/_PROTOCOL apply (the BYO case).
+// ok is false when neither source names an endpoint.
+func (c *Config) OTelExporter() (OTLPExporter, bool) {
+	if exp, ok := parseOTLPExporter(c.GatewayOTLPEndpoint, c.GatewayOTLPProtocol); ok {
+		return exp, true
+	}
+	return parseOTLPExporter(c.OTelEnv["OTEL_EXPORTER_OTLP_ENDPOINT"], c.OTelEnv["OTEL_EXPORTER_OTLP_PROTOCOL"])
+}
+
+// parseOTLPExporter parses an OTLP endpoint + protocol pair. Per the OTLP spec
+// the endpoint is a URL; a bare host[:port] is tolerated. Port defaults to the
+// OTLP convention for the transport (4317 gRPC, 4318 HTTP) when the URL omits
+// it.
+func parseOTLPExporter(endpoint, protocol string) (OTLPExporter, bool) {
+	raw := strings.TrimSpace(endpoint)
+	if raw == "" {
+		return OTLPExporter{}, false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return OTLPExporter{}, false
+	}
+	exp := OTLPExporter{
+		Host:   u.Hostname(),
+		Secure: u.Scheme == "https",
+		GRPC:   otelUsesGRPC(protocol),
+	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err == nil {
+			exp.Port = n
+		}
+	}
+	if exp.Port == 0 {
+		if exp.GRPC {
+			exp.Port = 4317
+		} else {
+			exp.Port = 4318
+		}
+	}
+	return exp, true
+}
+
+// otelUsesGRPC interprets OTEL_EXPORTER_OTLP_PROTOCOL. Unset defaults to gRPC —
+// the OTLP spec default (port 4317) and the only transport Envoy's OTel stats
+// sink supports. The http/* values select OTLP/HTTP.
+func otelUsesGRPC(proto string) bool {
+	switch strings.TrimSpace(strings.ToLower(proto)) {
+	case "http/protobuf", "http/json", "http":
+		return false
+	default:
+		return true
+	}
+}
+
+// TraceSamplingPercent maps the inherited OTEL_TRACES_SAMPLER[/_ARG] onto the
+// HCM `tracing.random_sampling` percentage Envoy actually honors — Envoy's
+// native tracer ignores those env vars, so the controller translates them.
+// always_on/off → 100/0; the *traceidratio samplers (or a bare _ARG) use the
+// ARG ratio (0..1) ×100. Unset → 100 (full), matching Envoy's default and the
+// canonical config; operators dial egress trace volume down via
+// OTEL_TRACES_SAMPLER_ARG.
+func (c *Config) TraceSamplingPercent() float64 {
+	sampler := strings.TrimSpace(strings.ToLower(c.OTelEnv["OTEL_TRACES_SAMPLER"]))
+	arg := strings.TrimSpace(c.OTelEnv["OTEL_TRACES_SAMPLER_ARG"])
+	ratioArg := func() float64 {
+		if v, err := strconv.ParseFloat(arg, 64); err == nil {
+			return clampPercent(v * 100)
+		}
+		return 100
+	}
+	switch sampler {
+	case "always_off", "parentbased_always_off":
+		return 0
+	case "always_on", "parentbased_always_on":
+		return 100
+	case "traceidratio", "parentbased_traceidratio":
+		return ratioArg()
+	case "":
+		if arg != "" { // a bare ARG with no named sampler is a ratio
+			return ratioArg()
+		}
+		return 100
+	default:
+		return 100
+	}
+}
+
+func clampPercent(p float64) float64 {
+	switch {
+	case p < 0:
+		return 0
+	case p > 100:
+		return 100
+	default:
+		return p
+	}
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -125,6 +356,36 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
 		}
 	}
+	if cfg.AgentBase.AccessMode != "" {
+		slog.Warn("controller.agent.base.accessMode is deprecated and ignored — workspace volumes are always ReadWriteOnce (#2988); remove it from your values")
+	}
+	if v := os.Getenv("STORAGE_MIGRATION"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.StorageMigration); err != nil {
+			return nil, fmt.Errorf("STORAGE_MIGRATION: invalid JSON: %w", err)
+		}
+	}
+	if v := os.Getenv("AGENT_VM"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.VM); err != nil {
+			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
+		}
+	}
+	if cfg.VM.ScratchSize == "" {
+		cfg.VM.ScratchSize = "30Gi"
+	} else if _, err := resource.ParseQuantity(cfg.VM.ScratchSize); err != nil {
+		return nil, fmt.Errorf("AGENT_VM: invalid scratchSize %q: %w", cfg.VM.ScratchSize, err)
+	}
+	if h := os.Getenv("KUBERNETES_SERVICE_HOST"); h != "" {
+		cfg.KubeAPIAddr = net.JoinHostPort(h, envOrDefault("KUBERNETES_SERVICE_PORT", "443"))
+	}
+	// Relayed from the controller's own process: whatever OTEL_* the chart (or
+	// an injector) set — the same env the controller's own SDK reads.
+	cfg.OTelEnv = collectOTelEnv()
+	cfg.GatewayOTLPEndpoint = os.Getenv("PLATFORM_GATEWAY_OTLP_ENDPOINT")
+	cfg.GatewayOTLPProtocol = os.Getenv("PLATFORM_GATEWAY_OTLP_PROTOCOL")
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
@@ -145,6 +406,55 @@ func LoadFromEnv() (*Config, error) {
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
+	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
+	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
+	cpuBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_CPU_BUDGET", "4"))
+	if err != nil {
+		return nil, fmt.Errorf("DEFAULT_USER_CPU_BUDGET is not a valid K8s quantity: %w", err)
+	}
+	memBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_MEMORY_BUDGET", "8Gi"))
+	if err != nil {
+		return nil, fmt.Errorf("DEFAULT_USER_MEMORY_BUDGET is not a valid K8s quantity: %w", err)
+	}
+	cfg.DefaultUserCPUBudget = cpuBudget
+	cfg.DefaultUserMemoryBudget = memBudget
+	fraction, err := strconv.ParseFloat(envOrDefault("REQUESTS_FROM_LIMITS_FRACTION", "0.5"), 64)
+	if err != nil || fraction <= 0 || fraction > 1 {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_FRACTION must be a number in (0, 1] (got %q)", os.Getenv("REQUESTS_FROM_LIMITS_FRACTION"))
+	}
+	minCPU, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_CPU", "100m"))
+	if err != nil {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_CPU is not a valid K8s quantity: %w", err)
+	}
+	minMemory, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_MEMORY", "128Mi"))
+	if err != nil {
+		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_MEMORY is not a valid K8s quantity: %w", err)
+	}
+	cfg.RequestsFraction = fraction
+	cfg.RequestsMinCPU = minCPU
+	cfg.RequestsMinMemory = minMemory
+	legacyCPU, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_CPU_LIMIT", "1"))
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_LEGACY_CPU_LIMIT is not a valid K8s quantity: %w", err)
+	}
+	legacyMem, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_MEMORY_LIMIT", "2Gi"))
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_LEGACY_MEMORY_LIMIT is not a valid K8s quantity: %w", err)
+	}
+	cfg.LegacyAgentCPULimit = legacyCPU
+	cfg.LegacyAgentMemoryLimit = legacyMem
+	if v := os.Getenv("PLATFORM_OBJECT_STORE_AUTHORITY"); v != "" {
+		host, port, err := net.SplitHostPort(v)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_OBJECT_STORE_AUTHORITY must be host:port, got %q: %w", v, err)
+		}
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_OBJECT_STORE_AUTHORITY port must be numeric, got %q", port)
+		}
+		cfg.ObjectStoreHost = host
+		cfg.ObjectStorePort = p
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -160,14 +470,16 @@ func (c *Config) validate() error {
 	if c.AgentBase.TerminationGracePeriod <= 0 {
 		return fmt.Errorf("controller.agent.base.terminationGracePeriod must be > 0 (got %d)", c.AgentBase.TerminationGracePeriod)
 	}
-	if c.AgentBase.AccessMode == "" {
-		return fmt.Errorf("controller.agent.base.accessMode is required")
-	}
 	if c.AgentTemplateDefaults.StorageSize == "" {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
 	}
 	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
+	}
+	// The budget check (#1900) falls back to these for legacy specs without
+	// stamped limits — "fallback, never zero" only holds if they exist.
+	if r := c.AgentTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
+		return fmt.Errorf("controller.agent.templateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
 	}
 	// Defense in depth: refuse to start if the container security context
 	// floor was cleared. The chart ships `capabilities.drop: ["ALL"]`; if a
@@ -178,6 +490,9 @@ func (c *Config) validate() error {
 	}
 	if err := c.WarmPool.validate(); err != nil {
 		return err
+	}
+	if c.StorageMigration.Enabled && c.StorageMigration.JobImage == "" {
+		return fmt.Errorf("controller.storageMigration.jobImage is required when the storage migration is enabled")
 	}
 	return nil
 }
@@ -219,7 +534,7 @@ func (w *WarmPool) validate() error {
 }
 
 // APIServerURL is the harness Service URL, used by agent-runtime to dial
-// MCP / pod-files / trigger endpoints. ADR-041: this points at the
+// MCP / pod-files / trigger endpoints. This points at the
 // `-apiserver-harness` Service which carries the istio.io/use-waypoint
 // label; in-mesh dials route through the waypoint where per-instance
 // AuthorizationPolicies enforce principal == URL `:id`.
@@ -236,8 +551,8 @@ func (c *Config) ExtAuthzServiceName(instanceID string) string {
 }
 
 // ExtAuthzHostFor returns the FQDN of the per-instance ext-authz Service
-// for `instanceID`. Used to template the gateway pod's Envoy bootstrap
-// (ADR-041). The Service is gated by an AuthorizationPolicy keyed on
+// for `instanceID`. Used to template the gateway pod's Envoy bootstrap.
+// The Service is gated by an AuthorizationPolicy keyed on
 // the same SA principal, so a gateway pod can only successfully dial
 // the Service for its own instance.
 func (c *Config) ExtAuthzHostFor(instanceID string) string {
@@ -251,6 +566,13 @@ func (c *Config) ExtAuthzHostFor(instanceID string) string {
 func (c *Config) HarnessHost() string {
 	return fmt.Sprintf("%s-apiserver-harness.%s.svc.cluster.local", c.ReleaseName, c.ReleaseNamespace)
 }
+
+// TelemetryEnabled reports whether the agent-telemetry backend is configured
+// (collector host set by the chart from `clickstack.enabled`). When true, each
+// gateway renders a collector egress chain that stamps the trusted agent id,
+// and the leaf cert is issued (and mounted) even for an instance with no
+// credential Secrets.
+func (c *Config) TelemetryEnabled() bool { return c.TelemetryCollectorHost != "" }
 
 // PrincipalFor returns the SPIFFE principal string for `instanceID`,
 // matching how istiod stamps workload certs (`<td>/ns/<ns>/sa/<sa>`).

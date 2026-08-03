@@ -1,6 +1,6 @@
 import { Command, Option } from "commander";
 import { formatEgressRuleInline, formatEgressRuleSource } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,

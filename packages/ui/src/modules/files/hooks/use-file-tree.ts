@@ -13,21 +13,25 @@ export function useFileTree(selectedAgent: string | null) {
   const openFilePath = useStore((s) => s.openFilePath);
   const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
-  const setRightTab = useStore((s) => s.setRightTab);
+  const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
+  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showConfirm = useStore((s) => s.showConfirm);
 
+  // Files live in the chat's left panel — reveal that section (and, on mobile,
+  // the sessions screen it sits on) when opening a file from anywhere.
+  const revealFiles = useCallback(() => {
+    setFilesSectionOpen(true);
+    setMobileScreen("sessions");
+  }, [setFilesSectionOpen, setMobileScreen]);
+
   const openFileHandler = useCallback(
-    async (path: string) => {
+    async (path: string, opts?: { edit?: boolean }) => {
       if (!selectedAgent) return;
       if (openFilePath === path) {
-        if (openFileDirty) {
-          const ok = await showConfirm(
-            "Discard unsaved changes?",
-            "Unsaved changes",
-          );
-          if (!ok) return;
-        }
-        setOpenFilePath(null);
+        // Re-selecting the open file resurfaces it; the viewer owns closing.
+        if (opts?.edit) setOpenFileEdit(true);
+        revealFiles();
         return;
       }
       if (openFileDirty) {
@@ -41,8 +45,8 @@ export function useFileTree(selectedAgent: string | null) {
         // Pre-warm the content cache before switching the viewer so the UI
         // doesn't flash empty while the poll-driven subscription catches up.
         await fetchFileContent(selectedAgent, path);
-        setOpenFilePath(path);
-        setRightTab("files");
+        setOpenFilePath(path, opts);
+        revealFiles();
       } catch (err) {
         emitToast({
           kind: "error",
@@ -58,7 +62,8 @@ export function useFileTree(selectedAgent: string | null) {
       openFilePath,
       openFileDirty,
       setOpenFilePath,
-      setRightTab,
+      setOpenFileEdit,
+      revealFiles,
       showConfirm,
     ],
   );

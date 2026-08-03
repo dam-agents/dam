@@ -1,9 +1,11 @@
 import type {
+  ApprovalActionOutcome,
   ApprovalVerdict,
   ApprovalView,
   ApprovalsService,
   EgressRuleSource,
 } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
@@ -20,10 +22,32 @@ export interface ApprovalsNotifier {
   notifyResolved(approvalId: string): Promise<void>;
 }
 
+/** Consumer-side view of the rule the writer touched — only the fields
+ *  the approvals service needs for audit and conflict reporting; the
+ *  egress-rules adapter's richer row stays structurally assignable. */
+export interface WrittenEgressRule {
+  id: string;
+  verdict: "allow" | "deny";
+  source: EgressRuleSource;
+}
+
+/** What the rule write actually did. `verdict-clash` means the rules
+ *  table is unchanged — an equivalent active rule with the opposite
+ *  verdict already exists — and the verdict must NOT resolve (#2766). */
+export type EgressRuleWriteOutcome =
+  | { kind: "inserted"; row: WrittenEgressRule }
+  | {
+      kind: "duplicate";
+      row: WrittenEgressRule;
+      tookOwnershipFrom?: EgressRuleSource;
+    }
+  | { kind: "verdict-clash"; existing: WrittenEgressRule };
+
 /** Narrow port the approvals service consumes for the
  *  approve-permanent / deny-forever paths. The egress-rules module's
  *  `compose.ts` provides an adapter; the approvals service never sees the
- *  full `EgressRulesRepository`. */
+ *  full `EgressRulesRepository`. The row's `agentId` keys the per-agent
+ *  L7 promotion when a narrow rule requires it (#2322, #2865). */
 export interface EgressRuleWriter {
   insert(input: {
     id: string;
@@ -34,7 +58,7 @@ export interface EgressRuleWriter {
     verdict: "allow" | "deny";
     decidedBy: string;
     source: EgressRuleSource;
-  }): Promise<void>;
+  }): Promise<EgressRuleWriteOutcome>;
 }
 
 /** Outbox port: opens a one-shot WS to the wrapper and sends a JSON-RPC
@@ -52,7 +76,25 @@ export interface CreateApprovalsServiceDeps {
   wrapperFrameSender: WrapperFrameSender;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
+  /** Per-key agent allowlist. `"*"` for browser-flow callers
+   *  and API keys with wildcard binding. Restricted keys see only their
+   *  bound agents, and any mutation against a non-bound row throws
+   *  FORBIDDEN — single-agent IDs are not opaque to callers, so silent
+   *  no-op would leak the bound agent set by timing. */
+  agentBinding: readonly string[] | "*";
 }
+
+function matchesBinding(
+  binding: readonly string[] | "*",
+  agentId: string,
+): boolean {
+  return binding === "*" || binding.includes(agentId);
+}
+
+const NOT_ACTIONABLE: ApprovalActionOutcome = {
+  outcome: "not_actionable",
+  rule: null,
+};
 
 function toView(row: PendingApprovalRow): ApprovalView {
   return {
@@ -90,7 +132,61 @@ async function loadOwned(
     });
     return null;
   }
+  // Restricted API keys may only act on approvals for their bound agents.
+  if (!matchesBinding(deps.agentBinding, row.agentId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `API key is not bound to agent ${row.agentId}`,
+    });
+  }
   return row;
+}
+
+/** The rule write no-oped against an equivalent rule with the opposite
+ *  verdict: refuse loudly instead of resolving an approval that changed
+ *  nothing (#2766). Audited as a distinct event — not `approval.verdict`,
+ *  whose invariant is "a verdict was applied and the approval resolved" —
+ *  so refused intent stays joinable on correlationId for forensics. */
+function verdictConflict(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  attemptedVerdict: "allow" | "deny",
+  ruleFields: Record<string, unknown>,
+  existing: WrittenEgressRule,
+): TRPCError {
+  securityLog("warn", "approval.verdict_conflict", {
+    category: "approval",
+    actor: deps.ownerSub,
+    actorKind: "user",
+    agentId: row.agentId,
+    decision: "deny",
+    correlationId: row.id,
+    detail: {
+      attemptedVerdict,
+      ...ruleFields,
+      existingRuleId: existing.id,
+      existingVerdict: existing.verdict,
+    },
+  });
+  return new TRPCError({
+    code: "CONFLICT",
+    message: `an equivalent rule already exists with verdict '${existing.verdict}' — edit the agent's network rules instead`,
+  });
+}
+
+/** Truthful rule-write fields for the `approval.verdict` audit line:
+ *  whether a row was actually inserted, which rule now governs, and any
+ *  implicit rule the verdict took ownership of (#2766). */
+function auditRuleFields(
+  outcome: Exclude<EgressRuleWriteOutcome, { kind: "verdict-clash" }>,
+): Record<string, unknown> {
+  return {
+    ruleWritten: outcome.kind === "inserted",
+    ruleId: outcome.row.id,
+    ...(outcome.kind === "duplicate" && outcome.tookOwnershipFrom
+      ? { takenOverFromSource: outcome.tookOwnershipFrom }
+      : {}),
+  };
 }
 
 /** One audit line per HITL verdict. correlationId === the pending-approval id,
@@ -119,7 +215,10 @@ export function createApprovalsService(
   return {
     async listForOwner(opts) {
       const rows = await deps.repo.listPendingForOwner(deps.ownerSub, opts);
-      return rows.map(toView);
+      const visible = rows.filter((r) =>
+        matchesBinding(deps.agentBinding, r.agentId),
+      );
+      return visible.map(toView);
     },
 
     async listForInstance(agentId, opts) {
@@ -132,130 +231,199 @@ export function createApprovalsService(
 
     async approveOnce(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status !== "pending") return;
+      if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
-        await deps.repo.resolvePending(id, "allow_once", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow_once",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow_once",
           ruleWritten: false,
         });
-        return;
+        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
-      await resolveAndDeliverAcpNative(deps, row, "allow_once");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow_once");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
-          verdict: "allow",
+          verdict: "allow" as const,
+        };
+        const written = await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        // The pending row may already be expired (the held call timed out),
-        // in which case resolvePending no-ops — that's the timed-out
-        // approve-permanent flow: rule is written, future retries match.
-        await deps.repo.resolvePending(id, "allow", deps.ownerSub);
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "allow",
+            {
+              host: row.payload.host,
+              method: row.payload.method,
+              pathPattern: row.payload.path,
+            },
+            written.existing,
+          );
+        }
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow",
+          deps.ownerSub,
+        );
+        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
       // ACP-native: persistence ("allow_always") is the harness's own
       // concern — Claude Code / Codex maintain their own permission rules
       // via the option's kind. We just send the verdict; the harness
       // remembers it.
-      await resolveAndDeliverAcpNative(deps, row, "allow");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async approveHost(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       // Wildcard rules only make sense for the ext_authz path; the
       // acp_native path's verdict goes back to the harness, which has its
       // own per-tool rule model. Treat the host-wildcard request as
       // approvePermanent for acp_native.
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: "*",
           pathPattern: "*",
-          verdict: "allow",
+          verdict: "allow" as const,
+        };
+        const written = await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        await deps.repo.resolvePending(id, "allow", deps.ownerSub);
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "allow",
+            { host: row.payload.host, hostWide: true },
+            written.existing,
+          );
+        }
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow",
+          deps.ownerSub,
+        );
+        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         // Host-wide allow (method:*/path:*) — a broad widening of the
         // allow-list; flag it.
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           hostWide: true,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      await resolveAndDeliverAcpNative(deps, row, "allow");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
-          verdict: "deny",
+          verdict: "deny" as const,
+        };
+        const written = await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        await deps.repo.resolvePending(id, "deny", deps.ownerSub);
+        if (written.kind === "verdict-clash") {
+          throw verdictConflict(
+            deps,
+            row,
+            "deny",
+            {
+              host: row.payload.host,
+              method: row.payload.method,
+              pathPattern: row.payload.path,
+            },
+            written.existing,
+          );
+        }
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "deny",
+          deps.ownerSub,
+        );
+        if (!casWon) await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",
-          ruleWritten: true,
+          ...auditRuleFields(written),
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      await resolveAndDeliverAcpNative(deps, row, "deny");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async dismiss(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status !== "pending") return;
+      if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       // Symmetric to approveOnce: resolve the held call without writing
       // a rule. Future requests of the same shape will re-prompt.
       if (row.type === "ext_authz") {
-        await deps.repo.resolvePending(id, "deny_once", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "deny_once",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny_once",
           ruleWritten: false,
         });
-        return;
+        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
-      await resolveAndDeliverAcpNative(deps, row, "deny_once");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny_once");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
   };
 }
@@ -266,21 +434,21 @@ export function createApprovalsService(
  * On send failure the row stays `resolved AND delivered_at IS NULL`; the
  * periodic sweep on any replica will retry. The wrapper deduplicates by
  * JSON-RPC id, so a sweep retry that overlaps a successful inline send is
- * harmless.
+ * harmless. Returns whether this call won the pending → resolved CAS.
  */
 async function resolveAndDeliverAcpNative(
   deps: CreateApprovalsServiceDeps,
   row: PendingApprovalRow,
   verdict: ApprovalVerdict,
-): Promise<void> {
-  if (row.payload.kind !== "acp_native") return;
-  await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+): Promise<boolean> {
+  if (row.payload.kind !== "acp_native") return false;
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,
   });
   const rpcId = row.payload.rpcId;
-  if (rpcId === undefined || rpcId === null) return;
+  if (rpcId === undefined || rpcId === null) return casWon;
   const optionId = pickOptionId(row.payload.options ?? [], verdict);
   const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
   try {
@@ -291,4 +459,5 @@ async function resolveAndDeliverAcpNative(
     // verdict accepted in the inbox; agent-side resumption is best-effort
     // beyond the click and self-heals on the next sweep tick.
   }
+  return casWon;
 }

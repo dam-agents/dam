@@ -20,9 +20,15 @@ export function editorLaunchArgs(
 
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-function proxyCommandString(agentRef: string, serverFlag?: string): string {
-  const node = shQuote(process.execPath);
-  const script = shQuote(process.argv[1] ? resolve(process.argv[1]) : "");
+export function proxyCommandString(
+  agentRef: string,
+  serverFlag?: string,
+  bin: { node?: string; script?: string } = {},
+): string {
+  const node = shQuote(bin.node ?? process.execPath);
+  const script = shQuote(
+    bin.script ?? (process.argv[1] ? resolve(process.argv[1]) : ""),
+  );
   const damArgs = [
     "ssh",
     "_proxy",
@@ -31,8 +37,7 @@ function proxyCommandString(agentRef: string, serverFlag?: string): string {
   ]
     .map(shQuote)
     .join(" ");
-  return [
-    `set -- ${damArgs}`,
+  const resolver = [
     `if [ -x ${node} ] && [ -f ${script} ]; then exec ${node} ${script} "$@"`,
     `elif command -v node >/dev/null 2>&1 && [ -f ${script} ]; then exec node ${script} "$@"`,
     `elif command -v dam >/dev/null 2>&1; then exec dam "$@"`,
@@ -42,6 +47,7 @@ function proxyCommandString(agentRef: string, serverFlag?: string): string {
       `echo 'dam ssh _proxy: dam not found (resolved node+script, node/dam on PATH, or via zsh/bash)' >&2; exit 127`,
     `fi`,
   ].join("; ");
+  return `sh -c ${shQuote(resolver)} dam-ssh-proxy ${damArgs}`;
 }
 
 function sshConfigValue(v: string): string {

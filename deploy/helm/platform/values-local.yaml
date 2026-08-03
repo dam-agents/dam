@@ -18,60 +18,83 @@ controller:
     repository: platform-controller
     tag: latest
     pullPolicy: Never
+  logLevel: debug
   agent:
-    base:
-      storageClass: platform-rwx
     templateDefaults:
-      imagePullPolicy: Never
+      imagePullPolicy: IfNotPresent
 
+# Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
+# upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
+# agent volumes still live on it — the storage migration needs the source
+# volumes readable to drain them. New agents never touch it (workspaces are
+# ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
+# it so the e2e cluster proves the no-shared-filesystem path. Drops together
+# with the chart's nfsProvisioner block once dev clusters are drained.
 nfsProvisioner:
   enabled: true
 
-# Helm replaces lists wholesale — this `agentTemplates` array fully
-# overrides the one in values.yaml. Every field that the chart sets on
-# bundled templates must be repeated here, plus the locally-built image.
-# All four templates are enabled by default for local dev.
+# Merges over the values.yaml catalog. Every template gets a local image
+# override so enabling one later never pulls from quay.
 agentTemplates:
-  - name: claude-code
-    enabled: true
-    description: "Default Claude Code agent"
+  claude-code:
     image:
       repository: platform-claude-code
       tag: latest
-    storageSize: "5Gi"
 
-  - name: codex
+  # Rendered (and thus built/loaded) only when virtualization.enabled is set
+  # on the install (e.g. `mise run cluster:install -- --set=virtualization.enabled=true`).
+  # The `=` form is required — cluster:install only matches `--set=*`, so a
+  # space-separated `--set foo=bar` is silently dropped.
+  claude-code-vm:
+    image:
+      repository: platform-claude-code-vm
+      tag: latest
+
+  codex:
     enabled: false
-    description: "OpenAI Codex coding agent"
     image:
       repository: platform-codex
       tag: latest
-    storageSize: "5Gi"
 
-  - name: pi-agent
+  pi-agent:
     enabled: false
-    description: "Pi coding agent with multi-LLM support"
     image:
       repository: platform-pi-agent
       tag: latest
-    storageSize: "2Gi"
 
-  - name: bob
+  bob:
     enabled: false
-    description: "Bob shell agent"
     image:
       repository: platform-bob
       tag: latest
-    storageSize: "2Gi"
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "2"
-        memory: "4Gi"
 
-  - name: mock
+  nous:
+    enabled: false
+    image:
+      repository: platform-nous
+      tag: latest
+
+  openevolve:
+    enabled: false
+    image:
+      repository: platform-openevolve
+      tag: latest
+
+  shinkaevolve:
+    enabled: false
+    image:
+      repository: platform-shinkaevolve
+      tag: latest
+
+  gepa:
+    enabled: false
+    image:
+      repository: platform-gepa
+      tag: latest
+
+  # Test fixture; not in the values.yaml catalog — the mock image is never
+  # release-tagged (CI pushes per-commit shas for the e2e job only).
+  mock:
     enabled: true
     description: "Scripted mock agent (E2E test fixture)"
     image:
@@ -81,6 +104,17 @@ agentTemplates:
     env:
       - name: MOCK_DEFAULT_REPLY
         value: "Hello from the mock agent."
+
+  k-search:
+    enabled: false
+    image:
+      repository: platform-k-search
+      tag: latest
+
+  k-search-local:
+    image:
+      repository: platform-k-search
+      tag: latest
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
@@ -109,8 +143,8 @@ keycloak:
   log:
     consoleOutput: "default"
 
-# terms.* are required by the chart validators (ADR-047). Dev placeholder so a
+# terms.* are required by the chart validators. Dev placeholder so a
 # local install renders and installs without extra flags.
 terms:
   version: dev
-  text: "Dev placeholder Terms of Use. See ADR-047."
+  text: "Dev placeholder Terms of Use."

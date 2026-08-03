@@ -2,7 +2,7 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS builder
 
 USER root
 
-COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
+COPY --chmod=755 scripts/install-pnpm.js /usr/local/bin/install-pnpm
 COPY package.json ./
 RUN install-pnpm
 
@@ -30,7 +30,7 @@ RUN pnpm --filter api-server exec tsup \
 FROM registry.access.redhat.com/hi/nodejs:24 AS runner
 
 USER root
-ARG NPM_VERSION=11.16.0
+ARG NPM_VERSION=11.18.0
 RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
 USER 65532
 
@@ -39,4 +39,6 @@ COPY --from=builder --chown=65532:0 /app/packages/db/drizzle /app/packages/db/dr
 
 EXPOSE 4000
 
-CMD ["node", "dist/index.js"]
+# The --import preload wires OpenTelemetry before the app evaluates; it is a
+# no-op unless an OTLP endpoint is configured in the environment.
+CMD ["node", "--import", "./dist/telemetry.js", "dist/index.js"]

@@ -1,0 +1,96 @@
+{{- if .Values.postgres.enabled }}
+{{- /*
+Converge the in-cluster Postgres onto the split-role layout.
+
+The official image's entrypoint runs /docker-entrypoint-initdb.d scripts only
+on first PGDATA init, so an existing single-superuser cluster never re-runs
+`01-roles.sql` on its own. This post-install/post-upgrade hook runs that same
+idempotent SQL against the running database:
+  - fresh install: a harmless no-op (the init script already applied it);
+  - upgrade from the single-`platform`-superuser chart: creates the two
+    NOSUPERUSER app roles, hands each database + its objects to its app role,
+    and revokes cross-database CONNECT — with no manual SQL step.
+
+It connects as the bootstrap superuser (`postgres.adminUser`) using the admin
+password, which postgres-secrets.yaml carries forward from the pre-upgrade
+shared password so authentication still works on the running database. App
+pods may CrashLoop in the short window between the rollout and this Job
+finishing; they recover once the roles they connect as exist.
+*/ -}}
+{{- $pgName := include "platform.postgres.fullname" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate-roles" $pgName | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-migrate-roles
+  {{- $hooks := dict
+        "helm.sh/hook" "post-install,post-upgrade"
+        "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded"
+        "helm.sh/hook-weight" "0" }}
+  {{- include "platform.annotations" (dict "root" $ "internal" $hooks) | nindent 2 }}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres-migrate-roles
+      {{- include "platform.podAnnotations" (dict "root" $) | nindent 6 }}
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate-roles
+          image: {{ .Values.postgres.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "waiting for postgres at $PGHOST:$PGPORT ..."
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$POSTGRES_USER" -d postgres; do
+                sleep 2
+              done
+              echo "applying role + database layout ..."
+              psql -v ON_ERROR_STOP=1 -h "$PGHOST" -p "$PGPORT" -U "$POSTGRES_USER" -d postgres -f /sql/01-roles.sql
+              echo "done."
+          env:
+            - name: PGHOST
+              value: {{ $pgName | quote }}
+            - name: PGPORT
+              value: "5432"
+            # Bootstrap superuser identity — matches the running cluster.
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.adminUser | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_ADMIN_PASSWORD
+            # App role names + passwords consumed by 01-roles.sql via \getenv.
+            - name: POSTGRES_APISERVER_USER
+              value: {{ .Values.postgres.apiserverUser | quote }}
+            - name: POSTGRES_APISERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_APISERVER_PASSWORD
+            - name: POSTGRES_KEYCLOAK_USER
+              value: {{ .Values.postgres.keycloakUser | quote }}
+            - name: POSTGRES_KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_KEYCLOAK_PASSWORD
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+      volumes:
+        - name: sql
+          configMap:
+            name: {{ $pgName }}-init
+{{- end }}

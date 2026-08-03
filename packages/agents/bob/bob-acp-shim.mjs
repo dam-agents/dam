@@ -59,12 +59,33 @@
 //
 //   client→agent stdin (human → bob)   → piped through unchanged.
 //
+// ──────────────────────────────────────────────────────────────────────────
+// Session history (list / load / resume)
+//
+// Bob's ACP has no session listing and a disabled `loadSession`, but it does
+// persist every chat to `$HOME/.bob/tmp/<projectHash>/chats/session-*.json`
+// (survives restarts on the PVC). The shim serves history from that store:
+//   initialize   → advertise loadSession + sessionCapabilities.list.
+//   session/list → scan chats/, one session per file.
+//   session/load → replay the file's messages as user/agent chunks.
+//   session/prompt into a loaded session → Bob can't continue a session it
+//     didn't create this process, so spawn a fresh session/new, map old↔new
+//     sessionId, and prepend the prior transcript (capped at
+//     BOB_RESUME_MAX_MESSAGES, default 40) to the first prompt.
+//
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
-import { promises as fsp } from "node:fs";
-import { dirname } from "node:path";
+import {
+  copyFileSync,
+  mkdirSync,
+  promises as fsp,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
 const thinkToolCallIds = new Set();
@@ -83,28 +104,149 @@ let currentModeId = (() => {
   return "ask";
 })();
 const pendingNewSessionIds = new Set();
+// Session workspace (ACP cwd) — the only dir Bob's read guard allows; set on session/new.
+let sessionCwd = process.cwd();
+// Chat uploads land here; only files under it get staged into the workspace.
+const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
 let pendingModeSwitch = null;
 
-// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
-// </thinking>; the actual user-facing text is whatever lives outside the
-// block. Default state is "inside" because bob skips the opening tag for
-// direct-answer turns. messageCarry retains the tail that might contain a
-// partial THINK_OPEN/THINK_CLOSE tag split across token boundaries.
+// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…</thinking>;
+// user-facing text is what's outside. Default state is "inside" — Bob omits the
+// opening tag on direct-answer turns. messageCarry holds the tail in case a tag is
+// split across token boundaries.
 //
-// outsideBuf accumulates out-of-thinking text for meta-hint filtering.
-// Bob peppers "[using tool X: …]" status lines into the message stream,
-// which spread over many tokens (e.g. the closing "]" arrives several
-// chunks later, with real answer text in between). We strip complete
-// "[using tool … ]" segments and keep the tail whenever a still-unclosed
-// "[using tool" start is present so we don't ship partial meta to the UI.
+// outsideBuf accumulates out-of-thinking text for meta-hint filtering: Bob peppers
+// "[using tool X: …]" status lines across many tokens, so we strip complete
+// "[using tool … ]" segments and keep the tail while a "[using tool" is still open.
 const THINK_OPEN = "<thinking>";
 const THINK_CLOSE = "</thinking>";
 const META_COMPLETE = /\[using tool [^\]]*\]\n?/g;
 const META_UNCLOSED = /\[using tool [^\]]*$/;
+const META_PREFIX = "[using tool ";
+
+function isNonNullObject(v) {
+  return typeof v === "object" && v !== null;
+}
+
+// Longest suffix of s that is a proper prefix of tag — the part of a tag that
+// may have been split across chunk boundaries and must be held back.
+function partialSuffixLen(s, tag) {
+  const max = Math.min(s.length, tag.length - 1);
+  for (let n = max; n > 0; n--) {
+    if (s.endsWith(tag.slice(0, n))) return n;
+  }
+  return 0;
+}
 let messageState = "inside";
 let messageCarry = "";
 let outsideBuf = "";
 let lastSessionId = null;
+
+// ── session history state ───────────────────────────────────────────────────
+const BOB_HOME = process.env.HOME || "/home/agent";
+const CHATS_GLOB_ROOT = join(BOB_HOME, ".bob", "tmp");
+const RESUME_MAX_MESSAGES = (() => {
+  const n = Number.parseInt(process.env.BOB_RESUME_MAX_MESSAGES ?? "", 10);
+  return Number.isInteger(n) && n > 0 ? n : 40;
+})();
+
+// Client (or runtime) initialize request id → patch its result to enable load.
+const pendingInitIds = new Set();
+// Resume mapping for sessions the client loaded but Bob has no live copy of.
+//   loadedSessions:      oldSid → { transcript: string, injected: bool }
+//   oldToNew / newToOld: bidirectional sid mapping once a live Bob session exists
+//   resumeNewSessionIds: shim-initiated session/new request id → oldSid
+//   pendingResumePrompts:oldSid → queued client prompt frames awaiting newSid
+const loadedSessions = new Map();
+const oldToNew = new Map();
+const newToOld = new Map();
+const resumeNewSessionIds = new Map();
+const pendingResumePrompts = new Map();
+
+// Read Bob's on-disk chats. Each file is one session; returns newest-first.
+function readBobChatFiles() {
+  const out = [];
+  let projectDirs;
+  try {
+    projectDirs = readdirSync(CHATS_GLOB_ROOT, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const pd of projectDirs) {
+    if (!pd.isDirectory()) continue;
+    const chatsDir = join(CHATS_GLOB_ROOT, pd.name, "chats");
+    let files;
+    try {
+      files = readdirSync(chatsDir);
+    } catch {
+      continue;
+    }
+    for (const name of files) {
+      if (!name.endsWith(".json")) continue;
+      const path = join(chatsDir, name);
+      try {
+        const data = JSON.parse(readFileSync(path, "utf8"));
+        if (typeof data?.sessionId !== "string") continue;
+        out.push(data);
+      } catch {
+        /* skip unreadable/partial files */
+      }
+    }
+  }
+  out.sort((a, b) =>
+    String(b.lastUpdated ?? "").localeCompare(String(a.lastUpdated ?? "")),
+  );
+  return out;
+}
+
+function findBobChat(sessionId) {
+  return readBobChatFiles().find((c) => c.sessionId === sessionId) ?? null;
+}
+
+function titleFromChat(chat) {
+  const firstUser = (chat.messages ?? []).find(
+    (m) => m?.type === "user" && typeof m.content === "string",
+  );
+  const raw = (firstUser?.content ?? "").replace(/\s+/g, " ").trim();
+  if (!raw) return "Untitled session";
+  return raw.length > 120 ? raw.slice(0, 119) + "…" : raw;
+}
+
+// Strip a stored bob-shell message's <thinking> block and "[using tool …]"
+// hints, leaving the user-facing answer.
+function userFacingText(content) {
+  if (typeof content !== "string") return "";
+  let text = content;
+  const close = text.lastIndexOf(THINK_CLOSE);
+  if (close !== -1) text = text.slice(close + THINK_CLOSE.length);
+  return text.replace(META_COMPLETE, "").trim();
+}
+
+// Bob puts the final answer in an `attempt_completion` toolCall; `content` is
+// often just the <thinking> block. Prefer the toolCall, fall back to content.
+function assistantAnswer(message) {
+  const calls = Array.isArray(message?.toolCalls) ? message.toolCalls : [];
+  const results = calls
+    .filter((t) => t?.name === "attempt_completion" && typeof t?.args?.result === "string")
+    .map((t) => t.args.result.trim())
+    .filter(Boolean);
+  if (results.length > 0) return results.join("\n\n");
+  return userFacingText(message?.content);
+}
+
+function buildTranscript(chat) {
+  const msgs = (chat.messages ?? []).slice(-RESUME_MAX_MESSAGES);
+  const lines = [];
+  for (const m of msgs) {
+    if (m?.type === "user" && typeof m.content === "string") {
+      lines.push(`User: ${m.content.trim()}`);
+    } else if (m?.type === "bob-shell") {
+      const t = assistantAnswer(m);
+      if (t) lines.push(`Assistant: ${t}`);
+    }
+  }
+  return lines.join("\n\n");
+}
 
 const bob = spawn("bob", ["--experimental-acp", "--yolo", "--auth-method", "api-key", ...process.argv.slice(2)], {
   stdio: ["pipe", "pipe", "inherit"],
@@ -132,9 +274,47 @@ function handleClientLine(line) {
 
   const isClientRequest = f.id !== undefined && typeof f.method === "string";
 
+  if (isClientRequest && f.method === "initialize") {
+    // Track so the response can advertise loadSession (Bob reports false).
+    pendingInitIds.add(f.id);
+    // Bob rejects initialize without clientCapabilities.fs; some clients send
+    // none. The shim answers fs/* itself, so it can always advertise fs.
+    if (isNonNullObject(f.params)) {
+      const cc = isNonNullObject(f.params.clientCapabilities) ? f.params.clientCapabilities : {};
+      f.params.clientCapabilities = {
+        ...cc,
+        fs: { readTextFile: true, writeTextFile: true, ...(isNonNullObject(cc.fs) ? cc.fs : {}) },
+      };
+      return forwardToBob(JSON.stringify(f));
+    }
+    return forwardToBob(line);
+  }
+
   if (isClientRequest && f.method === "session/new") {
     pendingNewSessionIds.add(f.id);
+    if (typeof f.params?.cwd === "string") sessionCwd = f.params.cwd;
     return forwardToBob(line);
+  }
+
+  if (isClientRequest && f.method === "session/list") {
+    const sessions = readBobChatFiles().map((chat) => ({
+      sessionId: chat.sessionId,
+      // Last-seen prompt cwd, not the chat's original cwd (Bob doesn't store
+      // it). Fine for the sidebar; revisit if a consumer needs per-session cwd.
+      cwd: sessionCwd,
+      title: titleFromChat(chat),
+      updatedAt: chat.lastUpdated ?? chat.startTime ?? null,
+      // Tag as chat so agent-runtime's list enrichment doesn't decode a
+      // store-less session as terminal.
+      _meta: { platform: { mode: "chat" } },
+    }));
+    emitToClient({ jsonrpc: "2.0", id: f.id, result: { sessions } });
+    return;
+  }
+
+  if (isClientRequest && f.method === "session/load") {
+    handleSessionLoad(f);
+    return;
   }
 
   if (isClientRequest && f.method === "session/set_mode") {
@@ -158,26 +338,163 @@ function handleClientLine(line) {
     return;
   }
 
-  // One-shot mode switch: prepend an instruction to the next prompt asking
-  // the LLM to call the switch-mode tool. Bob's system prompt teaches the
-  // exact XML form, so the LLM should comply, after which Bob's bundle
-  // updates its internal mode for subsequent turns.
-  if (isClientRequest && f.method === "session/prompt" && pendingModeSwitch) {
-    try {
-      const prompt = f.params?.prompt;
-      if (Array.isArray(prompt)) {
-        const firstText = prompt.find((p) => p?.type === "text" && typeof p?.text === "string");
-        if (firstText) {
-          const instruction = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n`;
-          firstText.text = instruction + firstText.text;
-          pendingModeSwitch = null;
-          return forwardToBob(JSON.stringify(f));
-        }
+  if (isClientRequest && f.method === "session/prompt" && Array.isArray(f.params?.prompt)) {
+    // Bob rejects resource_link blocks (#441); stage each and pass a text path pointer.
+    f.params.prompt = f.params.prompt.map((b) =>
+      b?.type === "resource_link" ? { type: "text", text: stageAttachment(b) } : b,
+    );
+    // One-shot mode switch: prepend an instruction so the LLM calls the switch-mode tool.
+    if (pendingModeSwitch) {
+      const firstText = f.params.prompt.find(
+        (p) => p?.type === "text" && typeof p?.text === "string",
+      );
+      if (firstText) {
+        firstText.text = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n${firstText.text}`;
+        pendingModeSwitch = null;
       }
-    } catch { /* fall through */ }
+    }
+    // Resume: a prompt into a loaded session Bob never created this process —
+    // route it onto a lazily-spawned fresh Bob session.
+    const sid = f.params?.sessionId;
+    if (typeof sid === "string" && loadedSessions.has(sid) && !oldToNew.has(sid)) {
+      queueResumePrompt(sid, f);
+      return;
+    }
+    return forwardToBob(JSON.stringify(rewriteClientSessionId(f)));
+  }
+
+  // Any other client request carrying a loaded session's id (cancel, set_mode
+  // already handled above) must target Bob's live session id.
+  if (isClientRequest && typeof f.params?.sessionId === "string" && oldToNew.has(f.params.sessionId)) {
+    return forwardToBob(JSON.stringify(rewriteClientSessionId(f)));
   }
 
   forwardToBob(line);
+}
+
+// Rewrite a client frame's sessionId from the loaded (old) id to Bob's live id.
+function rewriteClientSessionId(f) {
+  const sid = f.params?.sessionId;
+  const mapped = typeof sid === "string" ? oldToNew.get(sid) : undefined;
+  if (!mapped) return f;
+  return { ...f, params: { ...f.params, sessionId: mapped } };
+}
+
+// Answer session/load locally: replay the stored conversation to the client and
+// register the session as resumable. No frame reaches Bob (it can't load).
+function handleSessionLoad(f) {
+  const sid = f.params?.sessionId;
+  const chat = typeof sid === "string" ? findBobChat(sid) : null;
+  if (!chat) {
+    emitToClient({
+      jsonrpc: "2.0",
+      id: f.id,
+      error: { code: -32602, message: `Unknown session: ${sid}` },
+    });
+    return;
+  }
+  for (const m of chat.messages ?? []) {
+    if (m?.type === "user" && typeof m.content === "string") {
+      update(sid, {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: m.content },
+      });
+    } else if (m?.type === "bob-shell") {
+      const text = assistantAnswer(m);
+      if (text) emitAgentMessage(sid, text);
+    }
+  }
+  // Register for lazy resume; the live Bob session is created on first prompt.
+  loadedSessions.set(sid, { transcript: buildTranscript(chat), injected: false });
+  emitToClient({
+    jsonrpc: "2.0",
+    id: f.id,
+    result: {
+      modes: {
+        availableModes: AVAILABLE_MODES.map((m) => ({ ...m })),
+        currentModeId,
+      },
+    },
+  });
+}
+
+// Queue a resume prompt and ensure a fresh Bob session is being created for the
+// loaded session (coalesced per session via resumeNewSessionIds).
+function queueResumePrompt(oldSid, frame) {
+  const queue = pendingResumePrompts.get(oldSid) ?? [];
+  queue.push(frame);
+  pendingResumePrompts.set(oldSid, queue);
+  const alreadyRequesting = [...resumeNewSessionIds.values()].includes(oldSid);
+  if (alreadyRequesting) return;
+  const reqId = `shim-resume-${oldSid}`;
+  resumeNewSessionIds.set(reqId, oldSid);
+  sendToBob({
+    jsonrpc: "2.0",
+    id: reqId,
+    method: "session/new",
+    params: { cwd: sessionCwd, mcpServers: [] },
+  });
+}
+
+// Bob answered a shim-initiated resume session/new: wire the mapping and flush.
+function onResumeSessionCreated(reqId, newSid) {
+  const oldSid = resumeNewSessionIds.get(reqId);
+  resumeNewSessionIds.delete(reqId);
+  if (!oldSid || typeof newSid !== "string") return;
+  oldToNew.set(oldSid, newSid);
+  newToOld.set(newSid, oldSid);
+  const queue = pendingResumePrompts.get(oldSid) ?? [];
+  pendingResumePrompts.delete(oldSid);
+  const state = loadedSessions.get(oldSid);
+  for (const frame of queue) {
+    const routed = { ...frame, params: { ...frame.params, sessionId: newSid } };
+    if (state && !state.injected && state.transcript) {
+      const firstText = routed.params.prompt.find(
+        (p) => p?.type === "text" && typeof p?.text === "string",
+      );
+      const preamble =
+        "[System: this continues an earlier conversation. Transcript below for context; do not greet again.]\n\n" +
+        state.transcript +
+        "\n\n[End of prior transcript. The user's new message follows.]\n\n";
+      if (firstText) firstText.text = preamble + firstText.text;
+      else routed.params.prompt.unshift({ type: "text", text: preamble });
+      state.injected = true;
+    }
+    forwardToBob(JSON.stringify(routed));
+  }
+}
+
+// Copy an upload into the workspace so Bob's read guard (workspace + temp only) can see it.
+function stageAttachment(block) {
+  let src = typeof block.uri === "string" ? block.uri : "";
+  const name = typeof block.name === "string" && block.name ? ` "${block.name}"` : "";
+  const mime = block.mimeType ? ` (${block.mimeType})` : "";
+  if (src.startsWith("file://")) {
+    try {
+      src = fileURLToPath(src);
+    } catch {
+      /* keep the raw uri */
+    }
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(src)) {
+    // Non-file scheme (http, data, …): nothing to stage, and resolve() below
+    // would mangle the URI into a bogus workspace path. Pass it through as-is.
+    return `[Attached link${name}${mime}: ${src}]`;
+  }
+  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT and
+  // smuggle an arbitrary file past Bob's read guard.
+  src = resolve(src);
+  if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
+    try {
+      const destDir = join(sessionCwd, ".attachments");
+      mkdirSync(destDir, { recursive: true });
+      const dest = join(destDir, basename(src));
+      copyFileSync(src, dest);
+      src = dest;
+    } catch (err) {
+      if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
+    }
+  }
+  return `[Attached file${name}${mime}: ${src}]`;
 }
 
 function sendToBob(frame) {
@@ -211,8 +528,15 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
 }
 
 bob.on("exit", (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 0);
+  if (signal) {
+    // Drop the forwarding handler before re-raising: with it installed the
+    // re-raised signal would just call bob.kill() on the already-dead child
+    // and the shim would hang until the pod's SIGKILL grace period expires.
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  } else {
+    process.exit(code ?? 0);
+  }
 });
 
 bob.on("error", (err) => {
@@ -328,7 +652,19 @@ function flushOutside(sessionId, finalize) {
     if (emit) emitAgentMessage(sessionId, emit);
     return;
   }
-  if (finalize) outsideBuf = outsideBuf.replace(META_UNCLOSED, "");
+  if (finalize) {
+    outsideBuf = outsideBuf.replace(META_UNCLOSED, "");
+  } else {
+    // META_UNCLOSED only matches once the full "[using tool " prefix has
+    // arrived; hold back a shorter partial ("[usi…") split across chunks too.
+    const keep = partialSuffixLen(outsideBuf, META_PREFIX);
+    if (keep > 0) {
+      const emit = outsideBuf.slice(0, outsideBuf.length - keep);
+      outsideBuf = outsideBuf.slice(outsideBuf.length - keep);
+      if (emit) emitAgentMessage(sessionId, emit);
+      return;
+    }
+  }
   if (outsideBuf) emitAgentMessage(sessionId, outsideBuf);
   outsideBuf = "";
 }
@@ -352,29 +688,36 @@ function processMessageChunk(sessionId, text) {
     }
 
     const idx = buf.indexOf(THINK_OPEN);
-    const chunkEnd = idx === -1 ? buf.length : idx;
-    outsideBuf += buf.slice(0, chunkEnd);
-    flushOutside(sessionId, false);
-
     if (idx === -1) {
-      // Any remaining chars in outsideBuf came from flushOutside's unclosed-meta
-      // hold; don't touch that. The chars we'd want to retain to catch a
-      // <thinking> tag split across chunks were already consumed into
-      // outsideBuf, so we only carry in messageCarry if buf had untouched
-      // suffix — which it doesn't here (chunkEnd = buf.length). Nothing to do.
+      // Hold back a suffix that could be the start of a <thinking> tag split
+      // across chunks — without this the partial tag leaks to the user AND the
+      // state machine misses the flip to "inside", streaming the reasoning as
+      // a visible message. The carry re-enters via messageCarry next chunk.
+      const keep = partialSuffixLen(buf, THINK_OPEN);
+      messageCarry = keep > 0 ? buf.slice(buf.length - keep) : "";
+      outsideBuf += keep > 0 ? buf.slice(0, buf.length - keep) : buf;
+      flushOutside(sessionId, false);
       return;
     }
+    outsideBuf += buf.slice(0, idx);
+    flushOutside(sessionId, false);
     messageState = "inside";
     buf = buf.slice(idx + THINK_OPEN.length);
   }
 }
 
 function flushMessageStateAtTurnEnd() {
-  if (lastSessionId) flushOutside(lastSessionId, true);
+  if (lastSessionId) {
+    // A held-back partial-tag suffix is ordinary text at turn end — no more
+    // chunks are coming that could complete the tag.
+    if (messageState === "outside" && messageCarry) outsideBuf += messageCarry;
+    flushOutside(lastSessionId, true);
+  }
   messageState = "inside";
   messageCarry = "";
   outsideBuf = "";
   lastThoughtText = "";
+  thinkToolCallIds.clear();
 }
 
 function pickAllowOption(options) {
@@ -393,11 +736,44 @@ function handleLine(line) {
   try {
     f = JSON.parse(line);
   } catch {
-    return passthrough(line);
+    // Non-JSON line (e.g. Bob's "Migrated MCP settings …" startup print) is
+    // never an ACP frame — keep it off the client stream, log to stderr.
+    process.stderr.write(`[bob] ${line}\n`);
+    return;
+  }
+
+  // Resume: Bob's reply to a shim-initiated session/new — wire the mapping,
+  // don't forward (the client already holds its loaded session).
+  if (f.id !== undefined && resumeNewSessionIds.has(f.id)) {
+    if (f.result?.sessionId) onResumeSessionCreated(f.id, f.result.sessionId);
+    return;
+  }
+
+  // Rewrite Bob's live session id back to the loaded id the client knows.
+  if (typeof f.params?.sessionId === "string" && newToOld.has(f.params.sessionId)) {
+    f = { ...f, params: { ...f.params, sessionId: newToOld.get(f.params.sessionId) } };
+    line = JSON.stringify(f);
   }
 
   // Agent→client RPC requests from bob: { id, method, params } with no result/error.
   const isAgentRequest = f.id !== undefined && typeof f.method === "string";
+
+  if (f.id !== undefined && pendingInitIds.has(f.id)) {
+    pendingInitIds.delete(f.id);
+    if (isNonNullObject(f.result) && isNonNullObject(f.result.agentCapabilities)) {
+      // Advertise the capabilities the shim emulates (Bob reports neither):
+      // loadSession gates session/load, sessionCapabilities.list gates
+      // session/list — clients skip un-advertised methods.
+      const caps = f.result.agentCapabilities;
+      caps.loadSession = true;
+      caps.sessionCapabilities = {
+        ...(isNonNullObject(caps.sessionCapabilities) ? caps.sessionCapabilities : {}),
+        list: {},
+      };
+    }
+    process.stdout.write(JSON.stringify(f) + "\n");
+    return;
+  }
 
   if (isAgentRequest && f.method === "session/request_permission") {
     emitToolCallOpen(f.params?.sessionId, f.params?.toolCall);

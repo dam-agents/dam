@@ -9,7 +9,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Paired gateway pod (ADR-038). The gateway runs Envoy and is the only
+// Paired gateway pod. The gateway runs Envoy and is the only
 // pod the paired agent can reach for TCP 80/443. Credential Secrets, the
 // leaf TLS Secret, and the Envoy bootstrap ConfigMap mount here only —
 // the agent pod has no path to Secret material.
@@ -36,7 +36,7 @@ func GatewayName(pairKey string) string {
 //
 // `agentName` is both the pair key and the parent agent reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -49,19 +49,20 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 		LabelRole:  RoleGateway,
 	}
 
-	volumes := envoyVolumes(agentName, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
+	volumes := envoyVolumes(agentName, cfg, credentialSecrets, l7Hosts)
+	containers := []corev1.Container{envoyContainer(agentName, cfg, credentialSecrets, l7Hosts)}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod
 
 	annotations := map[string]string{
-		// Roll trigger (ADR-035): hash of the Secret set driving the Envoy
-		// bootstrap. When the api-server adds an allow-only Secret to promote
-		// a host onto L7, the hash changes, the pod template diverges, and
-		// the gateway StatefulSet rolls so Envoy picks up the new chain set
-		// + leaf cert.
-		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
+		// Roll trigger: hash of the inputs driving the Envoy bootstrap.
+		// When the api-server promotes a host onto L7 (spec.l7Hosts,
+		// #2865), the hash changes, the pod template diverges, and the
+		// gateway StatefulSet rolls so Envoy picks up the new chain set
+		// + leaf cert. Per-agent grain: a sibling agent's rule never
+		// changes this agent's hash.
+		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets, l7Hosts),
 	}
 
 	podSpec := corev1.PodSpec{
@@ -91,7 +92,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 			Replicas:    &replicas,
 			ServiceName: gatewayName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
-			// Single-replica pair (ADR-038): there is no "graceful rolling"
+			// Single-replica pair: there is no "graceful rolling"
 			// to preserve. Default StatefulSet rollouts wait for the existing
 			// pod to be Ready before replacing it, which deadlocks if the
 			// pod is in CrashLoopBackOff (e.g. when the bootstrap CM was
@@ -132,79 +133,6 @@ func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.O
 			Name:            gatewayName,
 			Namespace:       cfg.Namespace,
 			Labels:          map[string]string{LabelAgent: agentName, LabelPair: agentName, LabelRole: RoleGateway},
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-		Spec: corev1.ServiceSpec{
-			// ClusterIP omitted → apiserver auto-assigns a stable IP.
-			Selector: selector,
-			Ports: []corev1.ServicePort{{
-				Name:       "proxy",
-				Port:       envoyPort,
-				TargetPort: intstr.FromInt32(envoyPort),
-			}},
-		},
-	}
-}
-
-// BuildForkGatewayPod renders the gateway pod for a fork. Forks use a bare
-// Pod (not a StatefulSet) — there is exactly one fork pod ever, and the
-// owner reference on the fork ConfigMap GCs the Pod when the fork CM is
-// deleted (ADR-038).
-//
-// `parentAgentID` flows into the `agent-platform.ai/agent` label so
-// ext_authz Check calls from this gateway resolve under the parent
-// agent's egress rules (ADR-027). The pair key is the fork's own name
-// so the fork pair is structurally isolated from the parent agent's pair.
-func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *corev1.Pod {
-	gatewayName := GatewayName(forkName)
-	labels := map[string]string{
-		LabelAgent:    parentAgentID,
-		LabelPair:     forkName,
-		LabelRole:     RoleGateway,
-		ForkLabelType: ForkJobLabelType,
-	}
-
-	volumes := envoyVolumes(forkName, credentialSecrets)
-	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
-
-	falseVal := false
-	gracePeriod := gatewayTerminationGracePeriod
-
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            gatewayName,
-			Namespace:       cfg.Namespace,
-			Labels:          labels,
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-		Spec: corev1.PodSpec{
-			// ADR-027: fork gateway pod runs as the per-fork SA (its own
-			// identity, NOT the parent's). The fork *agent* opts out of
-			// ambient (no SPIFFE on that pod), so this gateway SA is the
-			// SPIFFE principal both per-fork harness and per-fork
-			// ext-authz AuthorizationPolicies admit — narrowly scoped to
-			// the parent's surface (`/api/agents/<parent>/mcp` + the
-			// parent's per-agent ext-authz Service).
-			ServiceAccountName:            forkName,
-			RestartPolicy:                 corev1.RestartPolicyAlways,
-			TerminationGracePeriodSeconds: &gracePeriod,
-			AutomountServiceAccountToken:  &falseVal,
-			Containers:                    containers,
-			Volumes:                       volumes,
-		},
-	}
-}
-
-// BuildForkGatewayService mirrors BuildGatewayService for the fork pair.
-func BuildForkGatewayService(forkName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
-	gatewayName := GatewayName(forkName)
-	envoyPort := portInt32(cfg.EnvoyPort)
-	selector := map[string]string{LabelPair: forkName, LabelRole: RoleGateway}
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            gatewayName,
-			Namespace:       cfg.Namespace,
-			Labels:          map[string]string{LabelPair: forkName, LabelRole: RoleGateway},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.ServiceSpec{

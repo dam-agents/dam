@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type {
   ConnectionAuthConfig,
   ConnectionCreateInput,
@@ -6,13 +7,22 @@ import type {
 } from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 import {
+  discoverIssuerFromResourceHost,
+  discoverIssuerMetadata,
   discoverMcpAuth,
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
 import {
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "./connection-sds.js";
+import {
+  buildKubernetesContributions,
+  decodeCaData,
+  KUBERNETES_TEMPLATE_ID,
+  parseClusterEndpoint,
+} from "./kubernetes-contributions.js";
 
 export interface BuildResult {
   auth: ConnectionAuthConfig;
@@ -42,6 +52,21 @@ export async function buildConnection(
         oauthCallbackUrl,
         brandName,
       );
+    case "client-credentials":
+      return buildClientCredentials(
+        template as Extract<
+          ConnectionTemplate,
+          { authKind: "client-credentials" }
+        >,
+        input,
+        mintSecretRef,
+      );
+    case "github-app":
+      return buildGitHubApp(
+        template as Extract<ConnectionTemplate, { authKind: "github-app" }>,
+        input,
+        mintSecretRef,
+      );
     case "header":
       return buildHeader(
         template as Extract<ConnectionTemplate, { authKind: "header" }>,
@@ -52,6 +77,7 @@ export async function buildConnection(
       return buildNone(
         template as Extract<ConnectionTemplate, { authKind: "none" }>,
         input,
+        mintSecretRef,
       );
   }
 }
@@ -116,20 +142,7 @@ async function buildOAuthStatic(
 
   if (template.id === "github-enterprise") {
     if (!host) throw new Error(`template github-enterprise: missing host`);
-    contributions.push({ kind: "env", name: "GH_HOST", placeholder: host });
-    contributions.push({
-      kind: "egress-inject",
-      host: `api.${host}`,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    });
-    contributions.push({
-      kind: "egress-inject",
-      host,
-      headerName: "Authorization",
-      valueFormat: "Basic {value}",
-      encoding: "basic-x-access-token",
-    });
+    contributions.push(...githubEnterpriseHostContributions(host));
   }
 
   const appSlug =
@@ -188,6 +201,29 @@ function substituteHostInContribution(
   }
 }
 
+// Shared by every GitHub Enterprise auth mode (OAuth today, GitHub App
+// below): GH_HOST for the `gh` CLI, plus the two host-scoped injections a
+// subdomain-isolated GHES instance serves — `api.{host}` (Bearer, REST) and
+// the apex `{host}` (Basic x-access-token, git-over-HTTPS).
+function githubEnterpriseHostContributions(host: string): Contribution[] {
+  return [
+    { kind: "env", name: "GH_HOST", placeholder: host },
+    {
+      kind: "egress-inject",
+      host: `api.${host}`,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host,
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+  ];
+}
+
 async function buildOAuthDcr(
   template: Extract<ConnectionTemplate, { authKind: "oauth" }>,
   input: Extract<ConnectionCreateInput, { authKind: "oauth" }>,
@@ -205,21 +241,32 @@ async function buildOAuthDcr(
   if (!meta) {
     throw new Error(`No OAuth discovery metadata at ${input.url}`);
   }
-  if (!meta.registrationEndpoint) {
-    throw new Error(
-      `MCP server at ${input.url} does not support dynamic client registration`,
-    );
-  }
 
-  const dcr = await registerOAuthClient({
-    registrationEndpoint: meta.registrationEndpoint,
-    clientName: `${brandName} Agent Platform`,
-    redirectUris: [oauthCallbackUrl],
-  });
+  // A supplied client is pre-registered with the server — endpoints come
+  // from discovery, registration is skipped.
+  let clientId: string;
+  let clientSecret: string | undefined;
+  if (input.clientId) {
+    clientId = input.clientId;
+    clientSecret = input.clientSecret;
+  } else {
+    if (!meta.registrationEndpoint) {
+      throw new Error(
+        `MCP server at ${input.url} does not support dynamic client registration`,
+      );
+    }
+    const dcr = await registerOAuthClient({
+      registrationEndpoint: meta.registrationEndpoint,
+      clientName: `${brandName} Agent Platform`,
+      redirectUris: [oauthCallbackUrl],
+    });
+    clientId = dcr.clientId;
+    clientSecret = dcr.clientSecret;
+  }
 
   const secrets = new Map<string, Record<string, string>>();
   const fields: Record<string, string> = {};
-  if (dcr.clientSecret) fields.client_secret = dcr.clientSecret;
+  if (clientSecret) fields.client_secret = clientSecret;
   if (Object.keys(fields).length > 0) secrets.set(secretPath.path, fields);
 
   const contributions: Contribution[] = [
@@ -241,13 +288,13 @@ async function buildOAuthDcr(
   return {
     auth: {
       kind: "oauth",
-      clientId: dcr.clientId,
+      clientId,
       refreshTokenRef: { ...secretPath, field: "refresh_token" },
       accessTokenRef: { ...secretPath, field: "access_token" },
       scopes: meta.scopes ?? template.scopes ?? [],
       authorizationUrl: meta.authorizationEndpoint,
       tokenUrl: meta.tokenEndpoint,
-      ...(dcr.clientSecret
+      ...(clientSecret
         ? { clientSecretRef: { ...secretPath, field: "client_secret" } }
         : {}),
     },
@@ -256,21 +303,73 @@ async function buildOAuthDcr(
   };
 }
 
-function buildHeader(
-  template: Extract<ConnectionTemplate, { authKind: "header" }>,
-  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+// Resolves the token endpoint from the issuer's OAuth metadata (like the DCR
+// path above, discovery runs at build time so a bad issuer fails the create).
+// The secret map carries only the client secret: the access token (and the
+// SDS files baked from it) is minted by the service before the secret write.
+async function buildClientCredentials(
+  template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
   mintSecretRef: (purpose: string) => SecretRef,
-): BuildResult {
-  const host = input.host ?? template.host;
-  const headerName = input.headerName ?? template.headerName;
-  const valueFormat = input.valueFormat ?? template.valueFormat ?? "{value}";
-  if (!host) throw new Error(`template ${template.id}: missing host`);
-  if (!headerName) {
-    throw new Error(`template ${template.id}: missing headerName`);
+): Promise<BuildResult> {
+  const rawHost = input.host ?? template.host;
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
+  const { host, port } = parseClusterEndpoint(rawHost);
+
+  const subst = (s: string | undefined): string | undefined =>
+    s?.replace(/\{host\}/g, host);
+  const explicitIssuer = subst(input.issuerUrl ?? template.issuerUrl);
+
+  let issuerUrl: string;
+  let issuerMeta: { tokenEndpoint: string; grantTypesSupported?: string[] };
+  if (explicitIssuer) {
+    const meta = await discoverIssuerMetadata(explicitIssuer);
+    if (!meta) {
+      throw new Error(
+        `No OAuth authorization-server metadata found at ${explicitIssuer} — check that it is the issuer URL (its /.well-known/openid-configuration or /.well-known/oauth-authorization-server must resolve)`,
+      );
+    }
+    issuerUrl = explicitIssuer;
+    issuerMeta = meta;
+  } else {
+    const origin = `https://${host}${port ? `:${port}` : ""}`;
+    const derived = await discoverIssuerFromResourceHost(origin);
+    if (!derived) {
+      throw new Error(
+        `Couldn't discover an authorization server from ${origin} — supply the issuer URL explicitly`,
+      );
+    }
+    issuerUrl = derived.issuerUrl;
+    issuerMeta = derived;
   }
+  // grant_types_supported is optional metadata (many issuers omit it) —
+  // absence is deliberately treated as supported.
+  if (
+    issuerMeta.grantTypesSupported &&
+    !issuerMeta.grantTypesSupported.includes("client_credentials")
+  ) {
+    throw new Error(
+      `The authorization server at ${issuerUrl} does not support the client_credentials grant`,
+    );
+  }
+  const clientId = input.clientId;
+  if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
+  if (!input.clientSecret) {
+    throw new Error(`template ${template.id}: missing clientSecret`);
+  }
+  const headerName = input.headerName ?? template.headerName ?? "Authorization";
+  const valueFormat =
+    input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
+  const scopes =
+    input.scopes
+      ?.split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean) ??
+    template.scopes ??
+    [];
+  const audience = input.audience ?? template.audience;
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
-  const valueRef = { ...secretPath, field: "value" };
   const contributions: Contribution[] = [...template.contributions];
 
   const hasHostContrib = contributions.some(
@@ -282,6 +381,7 @@ function buildHeader(
     contributions.push({
       kind: "egress-inject",
       host,
+      ...(port ? { port } : {}),
       headerName,
       valueFormat,
     });
@@ -295,6 +395,174 @@ function buildHeader(
     });
   }
 
+  return {
+    auth: {
+      kind: "client-credentials",
+      clientId,
+      clientSecretRef: { ...secretPath, field: "client_secret" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      issuerUrl,
+      tokenUrl: issuerMeta.tokenEndpoint,
+      scopes,
+      ...(audience ? { audience } : {}),
+      ...(template.tokenEndpointAcceptJson
+        ? { tokenEndpointAcceptJson: true }
+        : {}),
+      host,
+    },
+    contributions,
+    secrets: new Map([
+      [secretPath.path, { client_secret: input.clientSecret }],
+    ]),
+  };
+}
+
+// Accepts the private key as raw PEM (real or `\n`-escaped newlines) or its
+// base64 encoding — so it survives a single-line paste or a JSON/env value —
+// and validates it up front for a clear error before the synchronous mint.
+function normalizePrivateKeyPem(raw: string): string {
+  const trimmed = raw.trim();
+  // Restore escaped newlines (a PEM pasted from a JSON/env value) or decode a
+  // base64-wrapped PEM; a final trim keeps the stored form canonical whichever
+  // way it arrived.
+  const pem = (
+    trimmed.includes("-----BEGIN ")
+      ? trimmed.replace(/\\n/g, "\n")
+      : Buffer.from(trimmed, "base64").toString("utf8")
+  ).trim();
+  try {
+    crypto.createPrivateKey(pem);
+  } catch {
+    throw new Error(
+      "Private key must be a PEM-encoded RSA private key (or its base64 encoding).",
+    );
+  }
+  return pem;
+}
+
+// GitHub App installation grant. Like client-credentials, the secret map carries
+// only the signing material (the private key); the installation token and its
+// SDS files are minted by the service before the secret write. The token reaches
+// only the gateway — the private key never leaves the api-server.
+function buildGitHubApp(
+  template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  if (!input.appId) throw new Error(`template ${template.id}: missing appId`);
+  if (!input.installationId) {
+    throw new Error(`template ${template.id}: missing installationId`);
+  }
+  if (!input.privateKey) {
+    throw new Error(`template ${template.id}: missing privateKey`);
+  }
+  const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
+
+  // A host-parameterized template (its apiBaseUrl carries `{host}`, e.g. the
+  // GitHub Enterprise sibling) takes the host from user input and substitutes
+  // it through, same as the OAuth GHE path; the fixed github.com template has
+  // nothing to substitute and keeps its static host + contributions.
+  const apiBaseUrlTemplate = template.apiBaseUrl ?? "https://api.github.com";
+  const needsHost = apiBaseUrlTemplate.includes("{host}");
+  const host = needsHost ? (input.host ?? template.host) : template.host;
+  if (needsHost && !host)
+    throw new Error(`template ${template.id}: missing host`);
+  const apiBaseUrl = host
+    ? apiBaseUrlTemplate.replace(/\{host\}/g, host)
+    : apiBaseUrlTemplate;
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const contributions: Contribution[] = template.contributions.map((c) =>
+    needsHost && host ? substituteHostInContribution(c, host) : c,
+  );
+  if (needsHost && host) {
+    contributions.push(...githubEnterpriseHostContributions(host));
+  }
+
+  return {
+    auth: {
+      kind: "github-app",
+      appId: input.appId,
+      installationId: input.installationId,
+      privateKeyRef: { ...secretPath, field: "private_key" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      apiBaseUrl,
+      ...(host ? { host } : {}),
+    },
+    contributions,
+    secrets: new Map([[secretPath.path, { private_key: privateKeyPem }]]),
+  };
+}
+
+function buildHeader(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const rawHost = input.host ?? template.host;
+  const headerName = input.headerName ?? template.headerName;
+  const valueFormat = input.valueFormat ?? template.valueFormat ?? "{value}";
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
+  if (!headerName) {
+    throw new Error(`template ${template.id}: missing headerName`);
+  }
+  const { host, port } = parseClusterEndpoint(rawHost);
+  const caPem = input.caData ? decodeCaData(input.caData) : undefined;
+
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const valueRef = { ...secretPath, field: "value" };
+  const contributions: Contribution[] = [...template.contributions];
+
+  if (template.id === KUBERNETES_TEMPLATE_ID) {
+    contributions.push(
+      ...buildKubernetesContributions({
+        name: input.name,
+        host,
+        port,
+        hasUpstreamCa: !!caPem,
+      }),
+    );
+  }
+
+  const hasHostContrib = contributions.some(
+    (c) =>
+      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      c.host === host,
+  );
+  if (!hasHostContrib) {
+    contributions.push({
+      kind: "egress-inject",
+      host,
+      ...(port ? { port } : {}),
+      headerName,
+      valueFormat,
+      ...(caPem ? { upstreamCa: true } : {}),
+    });
+  }
+
+  if (input.envName) {
+    contributions.push({
+      kind: "env",
+      name: input.envName,
+      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
+    });
+  }
+
+  // Each filled config input becomes an `env` contribution.
+  for (const spec of template.configInputs ?? []) {
+    const value = input.configInputs?.[spec.inputName]?.trim();
+    if (!value) continue;
+    if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(value)) {
+      throw new Error(`${spec.label}: "${value}" is not valid`);
+    }
+    if (spec.enumValues && !spec.enumValues.includes(value)) {
+      throw new Error(
+        `${spec.label}: must be one of ${spec.enumValues.join(", ")}`,
+      );
+    }
+    contributions.push({ kind: "env", name: spec.envName, placeholder: value });
+  }
+
   const sdsFields = buildConnectionSdsFields(contributions, input.value);
 
   return {
@@ -305,24 +573,66 @@ function buildHeader(
       valueFormat,
     },
     contributions,
-    secrets: new Map([[secretPath.path, { value: input.value, ...sdsFields }]]),
+    secrets: new Map([
+      [
+        secretPath.path,
+        {
+          value: input.value,
+          ...(caPem ? { [UPSTREAM_CA_SECRET_FIELD]: caPem } : {}),
+          ...sdsFields,
+        },
+      ],
+    ]),
   };
 }
 
 function buildNone(
   template: Extract<ConnectionTemplate, { authKind: "none" }>,
   input: Extract<ConnectionCreateInput, { authKind: "none" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
   const contributions: Contribution[] = [...template.contributions];
 
   if (input.url) {
     const url = new URL(input.url);
-    contributions.push({ kind: "egress-allow", host: url.host });
+    contributions.push({
+      kind: "egress-allow",
+      host: url.hostname,
+      ...(url.port ? { port: Number(url.port) } : {}),
+    });
     contributions.push({
       kind: "mcp-entry",
       name: template.id,
       url: input.url,
     });
+
+    // Optional header credential: injected at the gateway (egress-inject +
+    // header auth), never written into the mcp-entry the harness sees.
+    if (input.headerName && input.value) {
+      const headerName = input.headerName;
+      const valueFormat = "{value}";
+      contributions.push({
+        kind: "egress-inject",
+        host: url.hostname,
+        ...(url.port ? { port: Number(url.port) } : {}),
+        headerName,
+        valueFormat,
+      });
+      const secretPath = mintSecretRef(`connection:${template.id}`);
+      const sdsFields = buildConnectionSdsFields(contributions, input.value);
+      return {
+        auth: {
+          kind: "header",
+          valueRef: { ...secretPath, field: "value" },
+          headerName,
+          valueFormat,
+        },
+        contributions,
+        secrets: new Map([
+          [secretPath.path, { value: input.value, ...sdsFields }],
+        ]),
+      };
+    }
   }
 
   return {

@@ -1,4 +1,5 @@
 import type {
+  ClusterCaProbe,
   ConnectionCreateInput,
   ConnectionTemplateView,
   ConnectionView,
@@ -21,10 +22,14 @@ export interface ConnectionService {
   createConnection(
     input: ConnectionCreateInput,
   ): Promise<ConnResult<{ id: string }>>;
+  /** Replace a header connection's stored credential value in place. */
+  update(id: string, value: string): Promise<ConnResult<void>>;
   /** Begin the browser OAuth flow for a connection; returns the authorize URL. */
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
   /** Probe an MCP server URL for its auth requirement. */
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
+  /** Probe a cluster API endpoint's TLS to auto-configure the upstream CA. */
+  probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   /** A single connection by id, or null if the caller doesn't own it. */
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
   /** Connection ids currently granted to an agent. */
@@ -59,23 +64,18 @@ export function createConnectionService(deps: {
 
   return {
     async list() {
-      return trpcCall(
-        () =>
-          deps.trpc.connections.list.query() as Promise<
-            readonly ConnectionView[]
-          >,
-      );
+      return trpcCall(() => deps.trpc.connections.list.query());
     },
     async listTemplates() {
-      return trpcCall(
-        () =>
-          deps.trpc.connections.listTemplates.query() as Promise<
-            readonly ConnectionTemplateView[]
-          >,
-      );
+      return trpcCall(() => deps.trpc.connections.listTemplates.query());
     },
     async createConnection(input) {
       return trpcCall(() => deps.trpc.connections.create.mutate(input));
+    },
+    async update(id, value) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.update.mutate({ id, value });
+      });
     },
     async startOAuth(connectionId) {
       return trpcCall(() =>
@@ -85,13 +85,13 @@ export function createConnectionService(deps: {
     async discoverMcp(url) {
       return trpcCall(() => deps.trpc.connections.discoverMcp.mutate({ url }));
     },
-    async getConnection(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.connections.get.query({
-            id,
-          }) as Promise<ConnectionView | null>,
+    async probeClusterCa(host) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeClusterCa.mutate({ host }),
       );
+    },
+    async getConnection(id) {
+      return trpcCall(() => deps.trpc.connections.get.query({ id }));
     },
     async agentConnectionIds(agentId) {
       return trpcCall(() => readIds(agentId));

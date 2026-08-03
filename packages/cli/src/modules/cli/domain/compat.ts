@@ -1,4 +1,4 @@
-// Server-advertised compatibility floor (ADR-039). Domain has no
+// Server-advertised compatibility floor. Domain has no
 // dependencies — the comparator is inlined rather than pulling a semver
 // lib so the layering rule stays clean.
 

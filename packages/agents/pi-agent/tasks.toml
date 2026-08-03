@@ -1,12 +1,8 @@
 ["agents:pi-agent:image"]
-description = "Build the pi-agent agent image"
+description = "Build the pi-agent agent image, or reuse it from the registry when its source is unchanged"
 dir = "{{config_root}}"
 depends = ["platform-base:image"]
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-pi-agent:latest packages/agents/pi-agent
-'''
+run = "scripts/resolve-image.sh build-or-reuse pi-agent -- packages/agents/pi-agent"
 
 ["agents:pi-agent:scan"]
 depends = ["agents:pi-agent:scan:*"]

@@ -38,7 +38,8 @@
       "Bash(gh pr diff*)",
       "Bash(gh run list*)",
       "Bash(gh run view*)"
-    ]
+    ],
+    "deny": []
   },
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
@@ -53,5 +54,29 @@
       },
       "autoUpdate": true
     }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/doc-size-hook.mjs"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bd prime"
+          }
+        ]
+      }
+    ]
   }
 }

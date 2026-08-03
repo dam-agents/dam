@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { transitionRestartingAgents } from "../../modules/agents/store.js";
+import {
+  transitionPausingAgents,
+  transitionRestartingAgents,
+} from "../../modules/agents/store.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import type { AgentView } from "../../types.js";
 
@@ -8,11 +11,18 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   id,
   name: id,
   templateId: null,
+  templateUpdate: null,
+  kbTemplateId: null,
   image: "x:latest",
+  hibernationTimeoutMin: 60,
+  grantedSecretIds: [],
+  grantedConnectionIds: [],
+  overBudget: false,
+  size: {},
   state,
   contributionFailures: [],
   channels: [],
-  allowedUserEmails: [],
+  spawnedBy: null,
 });
 
 describe("resolveAgentDisplay", () => {
@@ -32,10 +42,41 @@ describe("resolveAgentDisplay", () => {
     },
   );
 
-  test("restart override: state flips to restarting and actions are suppressed", () => {
+  test("restart override: state shows starting and actions are suppressed", () => {
     const out = resolveAgentDisplay(agent("a", "running"), new Set(["a"]));
-    expect(out.state).toBe("restarting");
+    expect(out.state).toBe("starting");
     expect(out.clickable).toBe(false);
+    expect(out.powerAction).toBe(null);
+  });
+
+  test("pause override: running agent shows hibernating and actions are suppressed", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "running"),
+      new Set(),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("hibernating");
+    expect(out.clickable).toBe(false);
+    expect(out.powerAction).toBe(null);
+  });
+
+  test("pause override only applies while running — a hibernated agent keeps Start", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "hibernated"),
+      new Set(),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("hibernated");
+    expect(out.powerAction).toBe("start");
+  });
+
+  test("restart wins over pause when an id is in both sets", () => {
+    const out = resolveAgentDisplay(
+      agent("a", "running"),
+      new Set(["a"]),
+      new Set(["a"]),
+    );
+    expect(out.state).toBe("starting");
     expect(out.powerAction).toBe(null);
   });
 });
@@ -87,6 +128,13 @@ describe("transitionRestartingAgents", () => {
     expect(next.has("a")).toBe(false);
   });
 
+  test("drops entry when the budget gate parks the agent — the denial is the attempt's outcome", () => {
+    const current = new Map([["a", entry(false)]]);
+    const parked = { ...agent("a", "starting"), overBudget: true };
+    const next = transitionRestartingAgents(current, [parked], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
   test("drops entry once it exceeds the TTL, even if state still looks running", () => {
     const current = new Map([["a", entry(false, 121_000)]]);
     const next = transitionRestartingAgents(
@@ -101,5 +149,64 @@ describe("transitionRestartingAgents", () => {
     const current = new Map([["a", entry(false)]]);
     const next = transitionRestartingAgents(current, [], NOW);
     expect(next.has("a")).toBe(false);
+  });
+});
+
+describe("transitionPausingAgents", () => {
+  const NOW = 1_000_000_000_000;
+  const entry = (ageMs = 0) => ({ clickedAt: NOW - ageMs });
+
+  test("keeps entry while the poll still reads running", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next.get("a")).toEqual(entry());
+  });
+
+  test("drops entry once the pod reports down — the real hibernated state carries the pill", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(
+      current,
+      [agent("a", "hibernating")],
+      NOW,
+    );
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry on error so the real failure surfaces", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "error")], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry once it exceeds the TTL, even if state still looks running", () => {
+    const current = new Map([["a", entry(31_000)]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("drops entry when the agent disappears", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [], NOW);
+    expect(next.has("a")).toBe(false);
+  });
+
+  test("returns the same reference when membership is unchanged (skips a re-render)", () => {
+    const current = new Map([["a", entry()]]);
+    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    expect(next).toBe(current);
+  });
+
+  test("returns a new map when an entry is dropped", () => {
+    const current = new Map([
+      ["a", entry()],
+      ["b", entry()],
+    ]);
+    const next = transitionPausingAgents(
+      current,
+      [agent("a", "running"), agent("b", "hibernated")],
+      NOW,
+    );
+    expect(next).not.toBe(current);
+    expect([...next.keys()]).toEqual(["a"]);
   });
 });

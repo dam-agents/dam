@@ -1,3 +1,10 @@
+---
+id: 041
+title: "Istio ambient mesh — SPIFFE identity for every internal hop"
+status: accepted
+subsystem: platform-topology
+summary: Adopt Istio ambient mesh with a per-instance ServiceAccount as the single SPIFFE identity, replacing the pair-key NetworkPolicy, the pod-IP resolver, and the trusted instance header.
+---
 # ADR-041: Istio ambient mesh — SPIFFE identity for every internal hop
 
 **Date:** 2026-05-07

@@ -1,17 +1,16 @@
-import { Link as Cable } from "@carbon/icons-react";
+import { Link } from "@carbon/icons-react";
+
+import { GithubIcon } from "@/components/brand-icons";
 
 /**
  * Per-app brand icon. Known app ids resolve to a brand SVG under
- * `/icons/`; everything else falls back to a `Cable` glyph — visually
+ * `/icons/`; everything else falls back to a `Link` glyph — visually
  * distinct from KeyRound (which generic app-connection rows use) and
- * Globe (MCP rows), and reads as "user-supplied integration." SVGs
- * carry their own `fill` so they render the same in light/dark themes
- * without runtime CSS gymnastics.
+ * Globe (MCP rows), and reads as "user-supplied integration."
  *
  * Brand SVGs are SimpleIcons-style canonical glyphs (Apache 2.0).
  */
 const ICON_BY_APP_ID: Record<string, string> = {
-  github: "/icons/github.svg",
   "github-enterprise": "/icons/github-enterprise.svg",
   spotify: "/icons/spotify.svg",
   gmail: "/icons/gmail.svg",
@@ -36,11 +35,14 @@ interface Props {
   appId: string;
   /** Alt text — usually the app's display name. */
   alt: string;
-  /** Pixel size; matches Lucide's default 16. */
+  /** Pixel size. */
   size?: number;
 }
 
 export function OAuthAppIcon({ appId, alt, size = 16 }: Props) {
+  if (appId === "github") {
+    return <GithubIcon width={size} height={size} aria-label={alt} />;
+  }
   const src = ICON_BY_APP_ID[appId];
   if (src) {
     return (
@@ -55,5 +57,5 @@ export function OAuthAppIcon({ appId, alt, size = 16 }: Props) {
       />
     );
   }
-  return <Cable size={size} aria-label={alt} />;
+  return <Link size={size} aria-label={alt} />;
 }

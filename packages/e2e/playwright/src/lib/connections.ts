@@ -15,8 +15,15 @@ export async function createCustomHeaderConnection(
   page: Page,
   input: CustomHeaderConnectionInput,
 ): Promise<void> {
-  await page.locator("#tour-nav-connections").click();
-  await page.getByTestId("connection-template-custom-header").click();
+  await page
+    .getByTestId("app-sidebar")
+    .getByRole("button", { name: "Settings" })
+    .click();
+  // The settings nav is a tablist, not a row of buttons.
+  await page.getByRole("tab", { name: "Connections", exact: true }).click();
+  await page.getByTestId("open-connection-catalog").click();
+  await page.getByTestId("catalog-tab-custom-headers").click();
+  await page.getByTestId("catalog-new-custom-header").click();
 
   await page.getByTestId("connection-field-name").fill(input.name);
   await page.getByTestId("connection-field-host").fill(input.host);
@@ -28,7 +35,8 @@ export async function createCustomHeaderConnection(
   await page.getByTestId("connection-field-envName").fill(input.envName);
 
   await page.getByTestId("connection-create-submit").click();
-  await expect(page.getByTestId("connection-create-submit")).toBeHidden();
+  // A successful create closes the whole catalogue modal.
+  await expect(page.getByTestId("catalog-close")).toBeHidden();
 }
 
 export async function getConnectionId(
@@ -39,4 +47,26 @@ export async function getConnectionId(
   const conn = connections.find((c) => c.name === connectionName);
   if (!conn) throw new Error(`connection ${connectionName} not found`);
   return conn.id;
+}
+
+export async function ensureCustomHeaderConnection(
+  api: ApiClient,
+  input: CustomHeaderConnectionInput,
+): Promise<string> {
+  const existing = (await api.connections.list.query()).find(
+    (c) => c.name === input.name,
+  );
+  if (existing) return existing.id;
+
+  const { id } = await api.connections.create.mutate({
+    templateId: "custom-header",
+    authKind: "header",
+    name: input.name,
+    host: input.host,
+    headerName: input.headerName,
+    valueFormat: input.valueFormat,
+    value: input.value,
+    envName: input.envName,
+  });
+  return id;
 }

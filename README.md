@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-  Run agent harnesses like Claude Code headless in the cloud.
+  Shared infrastructure for accelerating AI-native research
 </h3>
 
 <p align="center">

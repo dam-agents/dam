@@ -11,12 +11,14 @@ import { expandHome } from "../../../core/expand-home.js";
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 
-// MCP config is always a JSON object merged under `keyPath` — format and merge
-// strategy are intrinsic to the kind, not per-binding knobs.
+// MCP config is a JSON object merged under `keyPath`. `urlKey` covers harness
+// dialects: default entry is `{type:"http",url}`, but some harnesses key the
+// transport off the property name (Bob puts streamable-HTTP under `httpUrl`).
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),
   path: z.string().min(1),
   keyPath: z.string().optional(),
+  urlKey: z.string().min(1).optional(),
 });
 
 export function createMcpEntryPlugin(): Plugin {
@@ -37,7 +39,7 @@ export function createMcpEntryPlugin(): Plugin {
           `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
         );
       }
-      const { path, keyPath } = parsed.data;
+      const { path, keyPath, urlKey } = parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
       let stateStore: McpEntryStateStore | undefined;
 
@@ -48,11 +50,13 @@ export function createMcpEntryPlugin(): Plugin {
         const entries: Record<string, unknown> = {};
         for (const c of contributions) {
           if (c.kind !== "mcp-entry") continue;
-          entries[c.name] = {
-            type: "http",
-            url: c.url,
-            ...(c.headers ? { headers: c.headers } : {}),
-          };
+          entries[c.name] = urlKey
+            ? { [urlKey]: c.url, ...(c.headers ? { headers: c.headers } : {}) }
+            : {
+                type: "http",
+                url: c.url,
+                ...(c.headers ? { headers: c.headers } : {}),
+              };
         }
         const names = Object.keys(entries);
         const targetPath = expandHome(path, ctx.agentHome);
@@ -116,5 +120,3 @@ function readKeyedObject(
     return {};
   }
 }
-
-export const MCP_ENTRY_PLUGIN_NAME = IMPL_NAME;

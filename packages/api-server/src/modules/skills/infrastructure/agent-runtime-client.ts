@@ -1,6 +1,6 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
-import type { LocalSkill, Skill } from "api-server-api";
+import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface PublishSkillCall {
@@ -9,6 +9,7 @@ export interface PublishSkillCall {
   repo: string;
   title: string;
   body: string;
+  path?: string;
 }
 
 export interface PublishSkillResult {
@@ -37,7 +38,13 @@ export interface UpstreamGatewayError {
 export interface AgentRuntimeSkillsClient {
   listLocal(agentId: string): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
-  scan(agentId: string, source: string): Promise<Skill[]>;
+  scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
+  writeLocal(
+    agentId: string,
+    skills: { name: string; content: string }[],
+  ): Promise<LocalSkill[]>;
+  deleteLocal(agentId: string, name: string): Promise<void>;
+  readLocal(agentId: string, name: string): Promise<SkillLocalFiles>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -47,6 +54,54 @@ export class AgentRuntimeUpstreamError extends Error {
   ) {
     super(message);
     this.name = "AgentRuntimeUpstreamError";
+  }
+}
+
+/** The api-server → pod hop itself failed: no tRPC response ever arrived
+ *  (pod restarting, mesh outage). Distinct from errors the pod *returned* —
+ *  a transport failure inside the pod (e.g. GitHub egress blocked) comes
+ *  back as a structured `upstream_unreachable` envelope, never as this. */
+export class AgentRuntimeUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRuntimeUnreachableError";
+  }
+}
+
+/** The pod returned a tRPC CONFLICT — a writeLocal collision. Carries the
+ *  pod's message verbatim (`skill(s) already exist: <names>`, per the
+ *  agent-runtime contract) so the api-server can pass it through and the UI
+ *  can parse the offending names back out. */
+export class AgentRuntimeConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentRuntimeConflictError";
+  }
+}
+
+/** Pod verdicts that describe the *caller's* request, not a server fault, so
+ *  they must keep their code on the way out. CONFLICT is deliberately absent —
+ *  it has its own class above, which `createLocal` catches by type. */
+const PASSTHROUGH_CODES = new Set([
+  "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
+  "BAD_REQUEST",
+]);
+
+/** The pod returned a client-error verdict (missing skill, cap breach, invalid
+ *  name). Carries the code so the service re-throws it with the right status
+ *  instead of flattening a user error into a 500. */
+export class AgentRuntimeClientError extends Error {
+  constructor(
+    label: string,
+    /** The pod's own message, with none of this hop's internals — what a
+     *  caller may safely surface to the user. `message` keeps the labelled
+     *  form so api-server logs still say which call on which agent failed. */
+    public readonly podMessage: string,
+    public readonly code: "NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "BAD_REQUEST",
+  ) {
+    super(`${label}: ${podMessage}`);
+    this.name = "AgentRuntimeClientError";
   }
 }
 
@@ -75,8 +130,10 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
 /**
  * Run a tRPC call and translate `data.upstream` (set by agent-runtime's
  * errorFormatter for upstream gateway errors) into an
- * AgentRuntimeUpstreamError so callers can extract the CTA URL. Other tRPC
- * errors propagate as plain Error.
+ * AgentRuntimeUpstreamError so callers can extract the CTA URL. A response
+ * with no `data` at all means the pod never answered — the error envelope is
+ * built server-side, so its absence is a transport failure on this hop, not
+ * something the pod threw. Other tRPC errors propagate as plain Error.
  */
 async function runWithUpstreamMapping<T>(
   label: string,
@@ -86,8 +143,25 @@ async function runWithUpstreamMapping<T>(
     return await fn();
   } catch (e) {
     if (e instanceof TRPCClientError) {
-      const data = (e.data as { upstream?: unknown } | null) ?? null;
-      const upstream = data?.upstream;
+      const data =
+        (e.data as { upstream?: unknown; code?: unknown } | null) ?? null;
+      if (data === null) {
+        throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
+      }
+      // A pod-side CONFLICT (writeLocal collision) has no `.upstream` envelope
+      // and would otherwise flatten to a plain Error, losing the code. Preserve
+      // it with the message verbatim so the UI can mark the offending rows.
+      if (data.code === "CONFLICT") {
+        throw new AgentRuntimeConflictError(e.message);
+      }
+      if (typeof data.code === "string" && PASSTHROUGH_CODES.has(data.code)) {
+        throw new AgentRuntimeClientError(
+          label,
+          e.message,
+          data.code as AgentRuntimeClientError["code"],
+        );
+      }
+      const upstream = data.upstream;
       if (isUpstreamGatewayError(upstream)) {
         throw new AgentRuntimeUpstreamError(`${label}: ${e.message}`, upstream);
       }
@@ -112,12 +186,33 @@ export function createAgentRuntimeSkillsClient(
       runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
         makeClient(agentId, namespace).skills.publish.mutate(body),
       ),
-    scan: async (agentId, source) => {
+    scan: async (agentId, source, path) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime scan ${agentId}`,
-        () => makeClient(agentId, namespace).skills.scan.mutate({ source }),
+        () =>
+          makeClient(agentId, namespace).skills.scan.mutate({
+            source,
+            ...(path !== undefined ? { path } : {}),
+          }),
       );
       return skills as Skill[];
     },
+    writeLocal: async (agentId, skills) => {
+      const { skills: created } = await runWithUpstreamMapping(
+        `agent-runtime writeLocal ${agentId}`,
+        () =>
+          makeClient(agentId, namespace).skills.writeLocal.mutate({ skills }),
+      );
+      return created as LocalSkill[];
+    },
+    deleteLocal: async (agentId, name) => {
+      await runWithUpstreamMapping(`agent-runtime deleteLocal ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.deleteLocal.mutate({ name }),
+      );
+    },
+    readLocal: (agentId, name) =>
+      runWithUpstreamMapping(`agent-runtime readLocal ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readLocal.query({ name }),
+      ),
   };
 }

@@ -54,6 +54,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.redis) | nindent 2 }}
 spec:
   serviceName: {{ $redisName }}
   replicas: 1
@@ -66,14 +67,14 @@ spec:
       labels:
         app.kubernetes.io/component: redis
         app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.redis) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
           # AOF appendfsync everysec — relaxed durability matches the platform
-          # rule that Redis is allowed to lose recent ephemeral data on restart
-          # (see ADR-036).
+          # rule that Redis is allowed to lose recent ephemeral data on restart.
           command: ["sh", "-c"]
           args:
             - 'exec valkey-server --appendonly yes --appendfsync everysec --requirepass "$REDIS_PASSWORD"'

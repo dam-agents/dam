@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { ConnectionTemplateView } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -9,6 +9,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const HEADER = ["ID", "NAME", "CATEGORY", "AUTH", "DESCRIPTION"];
@@ -80,14 +81,15 @@ export function buildTemplatesCommand(deps: {
       const connectable = result.value.filter((t) => t.category !== "mcp");
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(connectable)}\n`);
-        process.exit(EXIT_SUCCESS);
+        return writeStdoutAndExit(
+          `${JSON.stringify(connectable)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
-      process.stdout.write(tableFor(connectable));
       process.stderr.write(
         "\nMCP servers are added by URL: dam connection connect https://your-mcp-server\n",
       );
-      process.exit(EXIT_SUCCESS);
+      return writeStdoutAndExit(tableFor(connectable), EXIT_SUCCESS);
     });
 }

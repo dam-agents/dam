@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+/** A repo-relative subdirectory to scan for skills: relative, no `..`
+ *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */
+export const skillSourcePathSchema = z
+  .string()
+  .transform((p) => p.trim().replace(/^\/+|\/+$/g, ""))
+  .refine((p) => !p.split("/").includes(".."), "path must not contain '..'");
+
 // --- Entity / output schemas ---
 
 /** A connected skill source (e.g. a public git repo). */
@@ -7,6 +14,7 @@ export const skillSourceSchema = z.object({
   id: z.string(),
   name: z.string(),
   gitUrl: z.string(),
+  path: z.string().optional(),
   /** True when the source is managed by the cluster admin
    *  (Helm-seeded). Users can't delete it. */
   system: z.boolean().optional(),
@@ -16,8 +24,6 @@ export const skillSourceSchema = z.object({
   fromTemplate: z
     .object({ templateId: z.string(), templateName: z.string() })
     .optional(),
-  /** True when the current user has a publish credential stored for
-   *  this source. */
   canPublish: z.boolean().optional(),
 });
 
@@ -48,6 +54,9 @@ export const skillRefSchema = z.object({
    *  Optional for backward compatibility with installs that pre-date
    *  this field. */
   contentHash: z.string().optional(),
+  /** Source subdir the skill was installed from, denormalized so the apply
+   *  path resolves the skill dir without re-reading the source. */
+  path: z.string().optional(),
 });
 
 /** A skill authored directly on the instance's PVC (not installed
@@ -56,6 +65,10 @@ export const localSkillSchema = z.object({
   name: z.string(),
   description: z.string(),
   skillPath: z.string(),
+  /** Provenance vs. the image's pristine copy: shipped untouched, shipped
+   *  but diverged, or created at runtime. Absent on pre-provenance pods —
+   *  treat as `user`. */
+  origin: z.enum(["system", "system-modified", "user"]).optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful
@@ -101,6 +114,7 @@ export const skillListSourcesInputSchema = z
 export const skillCreateSourceInputSchema = z.object({
   name: z.string().min(1).max(128),
   gitUrl: z.string().url(),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const skillDeleteSourceInputSchema = z.object({
@@ -114,6 +128,23 @@ export const skillRefreshSourceInputSchema = z.object({
 export const skillListInputSchema = z.object({
   sourceId: z.string().min(1),
   agentId: z.string().min(1).optional(),
+});
+
+/** Read one skill's `SKILL.md` from its source, keyed by source + name.
+ *  `agentId` targets the pod for private sources (public scan needs none). */
+export const skillGetContentInputSchema = z.object({
+  sourceId: z.string().min(1),
+  name: z.string().min(1),
+  agentId: z.string().min(1).optional(),
+});
+
+/** Raw `SKILL.md` text (frontmatter + markdown body); the UI renders it. */
+export const skillContentSchema = z.object({
+  content: z.string(),
+  /** Source-relative directory the SKILL.md was found in, when resolvable —
+   *  lets the UI build an accurate blob link instead of guessing the dir from
+   *  the (frontmatter) skill name. */
+  dir: z.string().optional(),
 });
 
 export const skillInstallInputSchema = z.object({
@@ -138,6 +169,33 @@ export const skillStateInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+/** Remove a standalone Local Skill's directory from every Skill Path on the
+ *  pod. `name` is what `state`/`listLocal` reported, which is the frontmatter
+ *  display name — the pod resolves it to a directory. */
+export const skillDeleteLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
+export const skillReadLocalInputSchema = z.object({
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+});
+
+/** Every file in a Local Skill's directory, plus the resolved directory
+ *  basename so the browser names the download from the on-disk identity. Caps
+ *  are enforced pod-side; `base64` marks a file whose content is binary. */
+export const skillLocalFilesSchema = z.object({
+  dir: z.string(),
+  files: z.array(
+    z.object({
+      relPath: z.string(),
+      content: z.string(),
+      base64: z.literal(true).optional(),
+    }),
+  ),
+});
+
 export const skillPublishInputSchema = z.object({
   agentId: z.string().min(1),
   sourceId: z.string().min(1),
@@ -145,3 +203,26 @@ export const skillPublishInputSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
 });
+
+/** Create standalone Local Skills from uploaded Markdown — one skill per file.
+ *  Caps mirror agent-runtime's MAX_FILE_BYTES/MAX_SKILL_BYTES as a cheap early
+ *  gate (character count, not bytes); agent-runtime stays the authoritative
+ *  byte-accurate enforcement. */
+export const skillCreateLocalInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    skills: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(128),
+          content: z.string().max(2 * 1024 * 1024),
+        }),
+      )
+      .min(1)
+      .max(50),
+  })
+  .refine(
+    (v) =>
+      v.skills.reduce((n, s) => n + s.content.length, 0) <= 5 * 1024 * 1024,
+    "batch exceeds 5 MB",
+  );

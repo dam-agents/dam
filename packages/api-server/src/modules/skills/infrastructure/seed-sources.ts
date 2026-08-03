@@ -1,10 +1,11 @@
 import { z } from "zod/v4";
-import type { SkillSource } from "api-server-api";
+import { skillSourcePathSchema, type SkillSource } from "api-server-api";
 
 const seedSchema = z.array(
   z.object({
     name: z.string().min(1).max(128),
     gitUrl: z.url(),
+    path: skillSourcePathSchema.optional(),
   }),
 );
 
@@ -12,6 +13,7 @@ export interface SkillSourceSeed {
   id: string;
   name: string;
   gitUrl: string;
+  path?: string;
 }
 
 const SEED_ID_PREFIX = "skill-src-seed-";
@@ -76,6 +78,7 @@ export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
       id: `${SEED_ID_PREFIX}${slug}`,
       name: entry.name,
       gitUrl: entry.gitUrl,
+      ...(entry.path ? { path: entry.path } : {}),
     };
   });
 }
@@ -83,5 +86,11 @@ export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
 /** Surface seeds as `SkillSource` views, tagged `system: true` so the UI's
  *  "Platform" badge and the protected-source delete check both fall out. */
 export function seedToSkillSource(seed: SkillSourceSeed): SkillSource {
-  return { id: seed.id, name: seed.name, gitUrl: seed.gitUrl, system: true };
+  return {
+    id: seed.id,
+    name: seed.name,
+    gitUrl: seed.gitUrl,
+    system: true,
+    ...(seed.path !== undefined ? { path: seed.path } : {}),
+  };
 }

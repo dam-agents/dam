@@ -1,0 +1,17 @@
+[Unit]
+Description=Trust the platform MITM CA (written by cloud-init)
+# write_files runs in the init stage — cloud-init.service before cloud-init
+# 24.3, cloud-init-network.service after (no alias). Naming both orders us
+# correctly on either; a non-existent unit in After= is ignored. Losing this
+# race skips the unit (ConditionPathExists) and the MITM CA never lands.
+After=cloud-init.service cloud-init-network.service
+Before=docker.service k3s.service agent-runtime.service
+ConditionPathExists=/etc/platform/ca/ca.crt
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'cp /etc/platform/ca/ca.crt /etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt && update-ca-trust extract'
+
+[Install]
+WantedBy=multi-user.target

@@ -29,7 +29,7 @@ export function createTomlConfigStore(filePath: string): ConfigStore {
       try {
         contents = await readFile(filePath, "utf-8");
       } catch (e) {
-        // ENOENT = no file yet; treat as empty config (per ADR-039 spec).
+        // ENOENT = no file yet; treat as empty config.
         if (errnoCode(e) === "ENOENT") return ok({});
         return err({
           kind: "malformed-config",

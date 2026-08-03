@@ -1,3 +1,10 @@
+---
+id: 049
+title: "Lazy per-directory workspace fetch"
+status: accepted
+subsystem: agent-lifecycle
+summary: The Workspace panel fetches only expanded directories via one batched per-poll request with independent per-directory failures, holding expansion state per-agent in page-session memory.
+---
 # ADR-049: Lazy per-directory workspace fetch
 
 **Date:** 2026-05-21

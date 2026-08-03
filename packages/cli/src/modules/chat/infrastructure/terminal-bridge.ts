@@ -8,9 +8,25 @@ import {
   OP_OUTPUT,
 } from "api-server-api";
 
+import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+
 export type BridgeResult =
   | { kind: "exited"; code: number }
   | { kind: "disconnected"; reason: string };
+
+// The remote TUI flips modes on the *local* terminal emulator (mouse tracking,
+// bracketed paste, alt screen, kitty keyboard, hidden cursor) and can't restore
+// them after an abrupt disconnect — without this the shell keeps receiving
+// mouse-event garbage like `[<35;62;20M`. Terminals ignore sequences they
+// don't support, so this is safe to emit unconditionally.
+export const TERMINAL_MODE_RESET =
+  "\x1b[<u" + // pop kitty keyboard protocol flags
+  "\x1b[?1049l" + // leave alternate screen
+  "\x1b[?1000;1002;1003;1005;1006;1015;1016l" + // mouse tracking off (all variants)
+  "\x1b[?1004l" + // focus reporting off
+  "\x1b[?2004l" + // bracketed paste off
+  "\x1b[?25h" + // show cursor
+  "\x1b[0m"; // reset SGR attributes
 
 export function connectTerminalBridge({
   host,
@@ -30,9 +46,8 @@ export function connectTerminalBridge({
     const proto = host.startsWith("https://") ? "wss:" : "ws:";
     const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
     const sep = terminalPath.includes("?") ? "&" : "?";
-    const ws = new WebSocket(
-      `${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`,
-    );
+    const url = `${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
 
     const onData = (chunk: Buffer) => {
       if (ws.readyState === WebSocket.OPEN)
@@ -53,6 +68,7 @@ export function connectTerminalBridge({
           stdin.setRawMode(false);
         } catch {}
       stdin.pause();
+      stdout.write(TERMINAL_MODE_RESET);
       if (
         ws.readyState === WebSocket.OPEN ||
         ws.readyState === WebSocket.CONNECTING

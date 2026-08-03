@@ -32,9 +32,9 @@ export interface PublishServiceDeps {
 
 /**
  * Publish orchestrator — thin proxy. Validates that the user owns the
- * instance + source and wakes a hibernated agent (ADR-032), then delegates
+ * instance + source and wakes a hibernated agent, then delegates
  * everything else to agent-runtime (which goes through the in-pod Envoy
- * sidecar's credential injector for the GitHub token swap, ADR-033).
+ * sidecar's credential injector for the GitHub token swap).
  *
  * Upstream gateway errors (app_not_connected / access_restricted) get
  * re-thrown as tRPC errors with the `connect_url` / `manage_url` carried
@@ -65,6 +65,30 @@ export async function publishSkill(
     });
   }
 
+  // Image-shipped skills aren't the user's to publish (#2828) — modified or
+  // not: divergence (a user edit, or an image upgrade moving the baked copy)
+  // doesn't transfer ownership, so the gate can't be disarmed by appending a
+  // byte or by a routine image bump. A skill tracked as installed from a
+  // Skill Source is exempt: install overwrites the directory, so it always
+  // diverges from a same-named baked copy, but it's governed by its source
+  // relationship, not by the image (publish-back-to-source must keep
+  // working). Missing origin (pre-provenance pod) stays publishable.
+  const [local, tracked] = await Promise.all([
+    deps.runtimeClient.listLocal(input.agentId),
+    deps.agentSkills.listSkills(input.agentId),
+  ]);
+  const origin = local.find((s) => s.name === input.name)?.origin;
+  const installedFromSource = tracked.some((s) => s.name === input.name);
+  if (
+    !installedFromSource &&
+    (origin === "system" || origin === "system-modified")
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `"${input.name}" is included with this sandbox's image and can't be published`,
+    });
+  }
+
   let result;
   try {
     result = await deps.runtimeClient.publish(input.agentId, {
@@ -75,6 +99,7 @@ export async function publishSkill(
       body:
         input.body?.trim() ||
         `Published from ${deps.brandName}.\n\n**Skill:** \`${input.name}\``,
+      ...(source.path !== undefined ? { path: source.path } : {}),
     });
   } catch (err) {
     if (err instanceof AgentRuntimeUpstreamError) {

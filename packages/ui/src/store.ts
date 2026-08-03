@@ -1,8 +1,15 @@
 import { create } from "zustand";
 
 import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
+import {
+  type ArtifactsSlice,
+  createArtifactsSlice,
+} from "./modules/artifacts/store.js";
+import {
+  createExperimentsSlice,
+  type ExperimentsSlice,
+} from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import { pathToState } from "./modules/platform/lib/routes.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -19,10 +26,6 @@ import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
-import {
-  createSessionConfigSlice,
-  type SessionConfigSlice,
-} from "./modules/sessions/store/session-config.js";
 import {
   createSessionsSlice,
   type SessionsSlice,
@@ -41,8 +44,9 @@ export type PlatformStore = DialogSlice &
   NavigationSlice &
   AgentsSlice &
   SessionsSlice &
-  SessionConfigSlice &
+  ExperimentsSlice &
   FilesSlice &
+  ArtifactsSlice &
   PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -51,10 +55,8 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createNavigationSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
-  ...createSessionConfigSlice(...a),
+  ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
+  ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
-
-// Reuse the path parser for browser back/forward hydration
-export { pathToState };

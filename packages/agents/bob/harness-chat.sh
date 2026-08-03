@@ -1,6 +1,6 @@
 #!/bin/sh
-# Bob's ACP doesn't support loadSession, so $HARNESS_SESSION_ID can't
-# resume — every session/new spawns a fresh bob.
+# The shim emulates session list/load/resume from Bob's on-disk chats
+# (see bob-acp-shim.mjs); $HARNESS_SESSION_ID resume is handled there.
 #
 # Tenant scoping / budget cap / chat mode are CLI-only, so translate
 # the platform env vars into flags here.

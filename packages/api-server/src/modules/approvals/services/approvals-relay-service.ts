@@ -11,7 +11,7 @@ import {
  *  in-process — there's no real timeout — but the column is NOT NULL. A row
  *  outliving its TTL stays visible in the inbox until the response goes
  *  through; a sweeper pass would mark inactive once we wire the wrapper
- *  heartbeat (ADR-035 §"Inbox"). */
+ *  heartbeat. */
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface RecordAcpNativePendingInput {

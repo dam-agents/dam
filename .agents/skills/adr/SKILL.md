@@ -2,14 +2,16 @@
 name: adr
 description: >
   Tracks Architecture Decision Records (ADRs) in docs/adrs/.
-  Creates, lists, and updates ADRs following project conventions.
-  TRIGGER when: user wants to record, review, or update an architectural decision.
+  Creates and updates ADRs following project conventions.
+  TRIGGER when: user wants to record or update an architectural decision.
 argument-hint: "[what you'd like to do]"
 ---
 
 # ADR Tracking
 
 Manage Architecture Decision Records in `docs/adrs/`. Interpret `$ARGUMENTS` as natural language.
+
+ADRs are human-first: for ordinary work the agent-facing source of truth is the architecture docs, not the log. Reading `docs/adrs/` is allowed only for the job this skill does — authoring or updating an ADR. When you do, read `docs/adrs/index.md` first, then open only the records it points you to. Never read the log to understand the current system.
 
 ## What an ADR is, and what it isn't
 
@@ -36,20 +38,42 @@ When creating or updating an ADR:
 3. Write `Consequences` before `Alternatives Considered`. Knowing the cost makes the alternative comparisons honest.
 4. Read the whole thing top to bottom and cut. Remove any sentence that doesn't change the decision or its cost. If two sentences say the same thing, keep the shorter one.
 
+## Frontmatter (required)
+
+Every ADR starts with a YAML frontmatter block. The index is *generated* from it, so the fields must be present and honest:
+
+```yaml
+---
+id: NNN                    # zero-padded, matches the filename; omit for DRAFT-
+title: Title
+status: accepted           # accepted | proposed | deprecated
+supersedes: NNN            # id this record replaces (optional)
+subsystem: gateway         # the architecture page this decision concerns
+tags: [envoy, secrets]     # optional free list
+summary: One line stating what was decided.
+---
+```
+
+- `supersedes` is a forward link only. The superseded record's status is *derived* by the generator — never hand-stamp the old file.
+- `subsystem` is page-granularity: name the architecture page the decision is about. It drives recompile scoping later.
+- `summary` is the one-liner the index shows; write it so a reader can decide whether to open the full record.
+
 ## Creating an ADR
 
-Ask the user for any missing information. You need at minimum: title, context, decision, and owner (@github-username).
+Ask the user for any missing information. You need at minimum: title, context, decision, owner (@github-username), and the frontmatter fields above.
 
-If the decision is made → create `docs/adrs/NNN-short-title.md` with status `Accepted`.
-If the decision is open → create `docs/adrs/DRAFT-short-title.md` with status `Proposed`.
+If the decision is made → create `docs/adrs/NNN-short-title.md` with status `accepted`.
+If the decision is open → create `docs/adrs/DRAFT-short-title.md` with status `proposed` (omit `id`).
 
-Assign the next number by reading `docs/adrs/index.md`. Always update the index after creating a file.
+Read `docs/adrs/index.md` for the next free number. After creating the file, regenerate the index with `mise run docs:generate:adr-index` — the index is generated, not hand-edited.
 
 ## Updating an ADR
 
-Valid status transitions: `Accepted`, `Deprecated`, `Superseded by ADR-NNN`.
+Valid status transitions: `accepted`, `deprecated`, and supersession via the *new* ADR's `supersedes` field (never edit the superseded file's body — its status is derived).
 
-When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` and move the row from Drafts to Accepted in the index.
+Read the target ADR directly. An accepted body is immutable: only its status changes, and only to superseded via the *new* ADR's `supersedes` field. `check:adr-immutable` enforces this at commit, so keep any edit to an accepted record inside that rule.
+
+When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` with `git mv`, set `id` and `status: accepted` in the frontmatter, then regenerate the index with `mise run docs:generate:adr-index`.
 
 ## Conventions
 
@@ -57,7 +81,7 @@ When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` a
 - **Drafts**: `DRAFT-short-title.md` — no number until accepted
 - **Owner**: the person accountable for the decision — drives it to resolution, revisits if context changes
 - File names: short kebab-case, 2-3 words max
-- Index: `docs/adrs/index.md` — always keep in sync
+- Index: `docs/adrs/index.md` — generated from frontmatter by `mise run docs:generate:adr-index`, never hand-edited
 
 ## Template
 

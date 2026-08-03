@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     agent-platform.ai/managed-by: platform
-    # ADR-041: opt the agent namespace into Istio ambient. ztunnel
+    # opt the agent namespace into Istio ambient. ztunnel
     # transparently mTLSes pod-to-pod traffic; AuthorizationPolicy on
     # the gateway / ext-authz / harness Services enforces per-agent
     # SPIFFE identity.

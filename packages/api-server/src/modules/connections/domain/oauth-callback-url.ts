@@ -9,7 +9,7 @@ export function applyCallbackAlias(
   );
 }
 
-export const DEFAULT_OAUTH_RETURN_TO = "/connections";
+export const DEFAULT_OAUTH_RETURN_TO = "/settings/connections";
 
 // The OAuth callback is public and unauthenticated; only same-origin relative
 // paths may be honored, so a stale or tampered state can never redirect off-site.

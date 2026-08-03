@@ -4,6 +4,7 @@ import {
   keycloakUrl,
   testUser,
 } from "../config.js";
+import type { ApiClient } from "./api-client.js";
 
 interface TokenResponse {
   access_token: string;
@@ -11,7 +12,9 @@ interface TokenResponse {
   expires_in: number;
 }
 
-export async function getAccessToken(): Promise<string> {
+export async function getAccessToken(
+  user: { username: string; password: string } = testUser,
+): Promise<string> {
   const url = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`;
   const res = await fetch(url, {
     method: "POST",
@@ -19,8 +22,8 @@ export async function getAccessToken(): Promise<string> {
     body: new URLSearchParams({
       grant_type: "password",
       client_id: keycloakClientId,
-      username: testUser.username,
-      password: testUser.password,
+      username: user.username,
+      password: user.password,
     }),
   });
   if (!res.ok) {
@@ -30,4 +33,13 @@ export async function getAccessToken(): Promise<string> {
   }
   const data = (await res.json()) as TokenResponse;
   return data.access_token;
+}
+
+/** Accept the current Terms of Use for the client's user. The terms gate
+ *  412s every non-terms API call until the user accepts, and only the UI
+ *  login flow (01-auth) does it implicitly — self-contained API specs
+ *  (the full-suite tier) must call this before anything else. */
+export async function acceptTerms(api: ApiClient): Promise<void> {
+  const current = await api.terms.current.query();
+  await api.terms.accept.mutate({ version: current.version });
 }

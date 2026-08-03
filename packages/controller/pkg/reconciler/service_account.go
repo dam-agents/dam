@@ -12,15 +12,10 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-041: per-agent ServiceAccount in the agent namespace, name == agent ID.
+// Per-agent ServiceAccount in the agent namespace, name == agent ID.
 //
 // Both pods of the long-lived pair (agent-runtime + gateway) mount this SA.
-// Fork pairs (ADR-027) get their **own** per-fork SA — distinct from the
-// parent's — rendered by the same `BuildServiceAccount` helper with the
-// fork name as `agentName`. The fork's narrower harness surface is
-// enforced by per-fork AuthorizationPolicies (see authorization_policy.go).
-// K8s GC reaps each SA on agent/fork delete via the owner reference to
-// the matching ConfigMap.
+// K8s GC reaps each SA on agent delete via the owner reference.
 //
 // `automountServiceAccountToken: false` is preserved: Istio workload identity
 // does not depend on SA-token mounts, and we keep the agent + gateway pods

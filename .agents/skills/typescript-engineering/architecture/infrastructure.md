@@ -166,6 +166,54 @@ export function composeOrdersModule(db: Database, slackClient: SlackClient, owne
 
 The composition root receives raw infrastructure dependencies (database connections, API clients) and returns fully wired services. See [modules.md](modules.md) for how this integrates with the module structure.
 
+### Required Dependencies — Never Optional
+
+Service dependencies are **required**, never optional. A dependency exists because the service genuinely needs it — there is no such thing as a dependency that is sometimes there and sometimes not. An optional dep (`notifier?: NotificationSender`) models a capability toggle as a wiring question, which is the wrong axis: it forces every call site to branch on presence (`if (deps.notifier) …`), hides a missing wiring as a silent skip instead of a type error, and leaves the reader unable to tell whether absence is intended or a bug.
+
+The consuming service also stays out of the on/off question: it calls its dependency unconditionally. Whether a dependency does anything — and every other knob on its behavior — is **owned by that dependency** and configured where it is built, at the composition root. Don't hoist a dependency's configuration up into the consumer's `deps`; the consumer must not even know the capability is toggleable.
+
+```typescript
+// Bad — optional dep; the consumer carries a toggle that isn't its concern
+export function createOrdersService(deps: {
+  repo: OrdersRepository;
+  notifier?: NotificationSender;
+}) {
+  return {
+    async create(input) {
+      const order = await deps.repo.create(input);
+      if (deps.notifier) await deps.notifier.send(/* … */); // absence intended, or a wiring bug?
+      return order;
+    },
+  };
+}
+
+// Good — required dep, called unconditionally; the consumer knows nothing about on/off
+export function createOrdersService(deps: {
+  repo: OrdersRepository;
+  notifier: NotificationSender;
+}) {
+  return {
+    async create(input) {
+      const order = await deps.repo.create(input);
+      await deps.notifier.send(/* … */);
+      return order;
+    },
+  };
+}
+```
+
+The on/off switch belongs to the sender, configured with the rest of its wiring at the root:
+
+```typescript
+// modules/orders/compose.ts — the sender owns its own config
+const notifier = createSlackNotificationSender(slackClient, {
+  enabled: config.notifyOnCreate,
+});
+return { orders: createOrdersService({ repo, owner, notifier }) };
+```
+
+The same rule covers tests: don't loosen a required dep to `optional` to ease setup — pass the real (or a stubbed) implementation.
+
 ## Multi-Storage Strategy
 
 Different bounded contexts can use different storage backends. A repository for one module might use a SQL database while another uses an API or file system. The service layer does not care — it depends on the repository interface.

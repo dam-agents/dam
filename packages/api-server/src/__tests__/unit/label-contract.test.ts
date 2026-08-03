@@ -10,9 +10,8 @@ import {
 // selectors and the api-server's pod-IP resolver both depend on. The Go
 // side has a mirror test in
 // `packages/controller/pkg/reconciler/gateway_test.go (TestLabelContract)`.
-// Drift between the two would silently break the credential boundary
-// (ADR-038 §Threat Model).
-describe("paired-pod label contract (ADR-038)", () => {
+// Drift between the two would silently break the credential boundary.
+describe("paired-pod label contract", () => {
   it("pins keys/values the controller's Go constants must equal", () => {
     expect(LABEL_AGENT_REF).toBe("agent-platform.ai/agent");
     expect(LABEL_ROLE).toBe("agent-platform.ai/role");

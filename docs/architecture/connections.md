@@ -1,18 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-05
-
-> **Status: Proposed — not yet implemented.** This page describes the target shape of the subsystem per [ADR-051](../adrs/051-connections-and-contributions.md), [ADR-052](../adrs/052-runtime-channel.md), and [ADR-053](../adrs/053-runtime-outbox-worker.md). The current system still uses the parallel OAuth-app / provider-preset registries, pod-files SSE (ADR-034), and exec-based trigger delivery (ADR-008). Other architecture pages that describe those retiring mechanisms are not updated yet — they will be revised in the implementation PR(s).
-
-## Motivated by
-
-- [ADR-051 — Connections, Connection Templates, and Contributions: unified configuration model](../adrs/051-connections-and-contributions.md) — the domain shape that replaces the parallel OAuth-app and provider-preset registries
-- [ADR-052 — Unified runtime channel](../adrs/052-runtime-channel.md) — the wire protocol between api-server and agent-runtime; supersedes pod-files SSE (ADR-034) and trigger files (ADR-008)
-- [ADR-053 — Transactional outbox + worker](../adrs/053-runtime-outbox-worker.md) — how mutations decouple from agent reachability
-- [ADR-036 — Redis as a platform primitive](../adrs/036-redis-platform-primitive.md) — the signal-path substrate the worker wakes on
-- [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — the restricted port the agent reaches; per-kind event handlers live here
-- [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — established the `env` Contribution and user-wins precedence; its render-into-pod delivery is superseded below
-- [ADR-DRAFT — Credential env via the runtime channel](../adrs/DRAFT-runtime-env-injection.md) — moves `env` delivery off the pod spec onto the runtime channel, injected at harness spawn; a grant change no longer rolls the agent pod
+Last verified: 2026-07-27
 
 ## Overview
 
@@ -21,7 +9,7 @@ A Connection is everything an agent needs to talk to one external integration �
 The subsystem cuts cleanly across three bounded contexts:
 
 - **api-server — Connections context** owns Connection Templates, Connections, grants. Computes per-agent Contribution sets. Routes Contributions to the right rail per kind.
-- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, the `runtime.hello` callback from agents, and the per-kind event handlers on the harness API.
+- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` callback from agents.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
 A grant of one Connection produces Contributions of several kinds. They don't all travel the same rail:
@@ -29,7 +17,7 @@ A grant of one Connection produces Contributions of several kinds. They don't al
 ```mermaid
 flowchart LR
   grant[Connection grant on Agent A]
-  hostRail[egress-host Contributions]
+  hostRail[egress-allow / egress-inject Contributions]
   rtRail[env / file / mcp-entry / skill-ref Contributions]
   envoy[egress_rules then Envoy ext_authz]
   channel[runtime channel]
@@ -40,9 +28,9 @@ flowchart LR
   rtRail -->|outbox row| channel
 ```
 
-After [ADR-DRAFT](../adrs/DRAFT-runtime-env-injection.md) there are two rails. `egress-host` Contributions sync into Postgres `egress_rules` and are read live by Envoy ([ADR-035](../adrs/035-unified-hitl-ux.md)) — unchanged. Everything else — `env` (formerly a controller-render/pod-roll rail, [ADR-040](../adrs/040-unified-secret-contributions.md)), `file`, `mcp-entry`, `skill-ref` — now travels the runtime channel and is what the rest of this page is about.
+There are two rails. `egress-allow` and `egress-inject` Contributions sync into Postgres `egress_rules` and are read live by Envoy; `egress-inject` additionally carries a credential the gateway injects on the wire (mechanics in [security and credentials](security-and-credentials.md)). Everything else — `env` (formerly a controller-render/pod-roll rail; moving it onto the runtime channel means a grant change no longer rolls the agent pod), `file`, `mcp-entry`, `skill-ref` — travels the runtime channel and is what the rest of this page is about.
 
-The runtime channel is two routes between api-server and agent-runtime, plus per-kind event handlers on the harness API:
+The runtime channel is two routes between api-server and agent-runtime:
 
 ```mermaid
 flowchart LR
@@ -50,20 +38,21 @@ flowchart LR
   worker[delivery worker]
   rt[agent-runtime]
   drivers[per-kind contribution drivers]
-  handlers[per-kind event handlers on harness API]
+  handlers[per-kind event handlers]
+  api[harness API]
 
   outbox --> worker
   worker -->|applyState| rt
   rt --> drivers
-  rt -->|hello| handlers
-  rt -->|invoke event work| handlers
+  rt --> handlers
+  rt -->|hello| api
 ```
 
 The wire payload carries:
 
 - **`version`** (top-level) — per-agent monotonic counter, the single ack cursor for the payload. Bumped on any contribution edit or event insert.
 - **`state`** — the agent's full desired configuration (Contributions). Reconciled by diff. `hash` short-circuits no-op pushes.
-- **`events`** — ordered one-shot directives the agent must execute (trigger fires today; more kinds later). Processed in order through per-kind handlers on the harness API.
+- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding, harness-config writes). Processed in order through per-kind handlers inside the agent-runtime.
 
 State changes write to the outbox, the worker reads and dispatches a fresh payload, the agent receives state + events and reconciles contributions + invokes event handlers, and the agent calls back on boot/wake to catch up.
 
@@ -84,58 +73,44 @@ Two display-axis attributes drive UI grouping:
 
 Templates are registered in code; adding a new integration is one entry. Schemas validate user input; the template's `build()` function projects inputs into the concrete `auth` + `contributions[]` of the Connection record.
 
+Beyond the auth credential, a template may declare optional **config inputs** that the user fills at connect time; each filled input projects into an additional `env` contribution, validated against the input's spec.
+
+#### Internal-only templates
+
+Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered (on both the Connections settings page and the sandbox creation wizard), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
+
 ### Connection
 
-A uniform shape — every Connection looks the same regardless of category or auth mode:
+A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the raw user inputs (kept for re-render), the auth credential state, and the projected contributions.
 
-```ts
-interface Connection {
-  id: string;
-  ownerId: string;            // K8s sub
-  templateId: string;         // which Template this was built from
-  name: string;               // user-visible label
-  inputs: Record<string, unknown>;   // raw user-typed values, for re-render
-  auth: AuthConfig;
-  contributions: Contribution[];
-}
+The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and the access tokens minted from it, no user consent step), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — the JWT-signed counterpart of client credentials, no user consent step), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Auth is kept separate from contributions because credentials have their own acquisition and refresh lifecycle. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
-type AuthConfig =
-  | { kind: "oauth"; clientId: string; refreshTokenRef: SecretRef; accessToken: SecretRef; scopes: string[]; ... }
-  | { kind: "header"; valueRef: SecretRef; headerName: string; valueFormat: string }
-  | { kind: "none" };
-```
+A header connection's stored credential can be **updated in place** — the value-rotation counterpart to OAuth refresh. The update re-bakes the connection's SDS files from its existing contributions and the new value and rewrites them, together with the credential, onto the same per-Connection Secret. It touches only the secret store: the connection's identity, contributions, and all its agent grants are preserved, and because the live value is read gateway-side via Envoy SDS (the `env` contribution carries only a placeholder), no Agent-spec patch or pod roll is needed. OAuth connections rotate through their refresh flow instead, not this path.
 
-The auth field carries credential-acquisition state (tokens, refresh schedules) separately from contributions, because credentials have their own lifecycle.
+A **client-credentials** connection resolves the token endpoint from the authorization server's published OAuth metadata at create time and mints its first access token synchronously — an undiscoverable issuer or invalid credentials fail the create before anything is persisted. The issuer URL is optional: when omitted, the authorization server is discovered from the API host itself (its protected-resource metadata naming the issuer, or the host serving issuer metadata directly). The same background loop that refreshes OAuth tokens re-mints it before expiry using the stored client secret. One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire. A connection whose re-mint keeps failing surfaces as **expired** once its token horizon passes.
+
+A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret. The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token (`ghs_…`) synchronously at create and again before each expiry. The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token, and past-expiry surfaces as **expired**.
 
 ### Contribution
 
-A typed unit a Connection emits when granted to an Agent. Discriminated union, extensible per [ADR-052's evolution rule](../adrs/052-runtime-channel.md):
+A typed unit a Connection emits when granted to an Agent — a discriminated union over `kind`. The kinds today:
 
-```ts
-type Contribution =
-  | { kind: "env";          name: string; placeholder: string }
-  | { kind: "egress-host";  host: string; pathPattern?: string; injection?: HostInjection }
-  | { kind: "file";         path: string; format: "yaml"|"json"|"text"|"ini"; mergeMode: MergeMode; content: unknown }
-  | { kind: "mcp-entry";    name: string; url: string; headers?: Record<string,string> }
-  | { kind: "skill-ref";    sourceUrl: string; name: string; version: string };
-```
+- **`env`** — an environment variable the harness merges in at spawn. For credential-derived env the value is a placeholder (the real secret is injected gateway-side); for user-typed and non-credential config env it is the literal value.
+- **`egress-allow`** — permission to reach a host (optionally path-scoped, optionally port-scoped for endpoints not on 443).
+- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
+- **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
+- **`mcp-entry`** — an MCP server to expose to the harness.
+- **`skill-ref`** — a skill source to install at a pinned version.
 
-Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)).
+Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)). Exact per-kind fields live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler on the harness API. Each event carries an `id` (stable across redeliveries), a `kind`, a `payload` (kind-specific), the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
-```ts
-type Event =
-  | { id: string; version: number; kind: "trigger";
-      scheduleId: string; task: string;
-      sessionMode?: "continuous" | "fresh"; mcpServers?: unknown[]; expiresAt: string };
-```
+`harness-config` is the model/mode/config-defaults mechanism: a user action in the Config panel fires one event, the agent-runtime writes the mapped keys into the harness's config file (claude-code: `~/.claude/settings.json`) once, and — like `workspace-seed` — never re-asserts, so the file stays the user's to edit (a hand-edit via the Files panel or SSH is never reconciled away). The Config panel is driven entirely outbound, not over an ACP session: the agent's manifest declares a `harness-config` driver entry carrying both the field → file-keyPath mapping and an option **catalog** (the available model/mode/config choices and their per-model validity), and the agent advertises that catalog on `hello` (alongside a `harnessConfig` capability flag) for the api-server to serve to the UI; the *current* values are read back live from the config file via the agent-runtime `harnessConfig.current` query. A manifest may instead declare a `modelDiscovery` source, in which case that same read fills the model list live from the provider rather than from the static catalog. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section.
 
-The `id` is the dedupe key. Each event kind's handler on the harness API holds a unique constraint on its side-effect table joining back to the event id, so a redelivered event finds the existing side-effect row and returns it without firing twice.
-
-The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`, …) opt-in per agent via the manifest's capabilities.
+All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events. (`harness-config` is the carve-out: every agent can receive the event, but only one whose manifest declares a `harness-config` driver has anywhere to write it — so it advertises a `harnessConfig` capability flag the UI gates on, and the handler no-ops without it.)
 
 ## Example Connections
 
@@ -151,13 +126,13 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
     "kind": "oauth",
     "clientId": "Iv1.…",
     "refreshTokenRef": { "secretName": "platform-secret-conn-7a8b", "key": "refresh_token" },
-    "accessToken":     { "secretName": "platform-secret-conn-7a8b", "key": "access_token" },
+    "accessTokenRef":  { "secretName": "platform-secret-conn-7a8b", "key": "access_token" },
     "scopes": ["repo", "read:user", "user:email"]
   },
   "contributions": [
-    { "kind": "egress-host", "host": "ghe.acme.com" },
-    { "kind": "env",         "name": "GH_TOKEN", "placeholder": "dummy-placeholder" },
-    { "kind": "env",         "name": "GH_HOST",  "placeholder": "ghe.acme.com" },
+    { "kind": "egress-allow", "host": "ghe.acme.com" },
+    { "kind": "env",          "name": "GH_TOKEN", "placeholder": "dummy-placeholder" },
+    { "kind": "env",          "name": "GH_HOST",  "placeholder": "ghe.acme.com" },
     { "kind": "file",
       "path": "$HOME/.config/gh/hosts.yml",
       "format": "yaml",
@@ -169,18 +144,41 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
 
 ### Custom MCP server
 
+An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry`
+carrying the server URL. OAuth adds a placeholder Authorization header on the
+`mcp-entry`; a static-header credential instead adds an `egress-inject` (as
+Custom Header does), keeping the secret gateway-side.
+
+### App preset: Kubernetes / OpenShift
+
+The external-cluster connection (#2314). The user supplies the cluster API
+endpoint, a service-account token, and — only when the API cert isn't publicly
+trusted — the cluster's CA. The build synthesizes an `egress-inject`, a `file`
+contribution writing a ready-to-use kubeconfig at a **per-connection path**, and
+a `KUBECONFIG` `env` pointing at it. The kubeconfig carries only an inert
+placeholder token; the gateway overwrites it with the real service-account token
+on the wire, so the token only ever exists gateway-side. Multiple cluster
+connections compose: each writes its own kubeconfig keyed by connection name, and
+the `env` driver joins their `KUBECONFIG` entries into the `:`-separated list
+`kubectl`/`oc` merge at load, so clusters that share a host on different ports
+stay distinct. The CA is optional, never reaches the agent, and configures
+gateway-side upstream validation only.
+
 ```jsonc
 {
-  "id": "conn-1d2e",
-  "templateId": "custom-mcp",
-  "name": "Acme internal MCP",
-  "inputs": { "url": "https://mcp.acme.internal/sse", "authMode": "oauth" },
-  "auth": { "kind": "oauth", "clientId": "…", "scopes": [], "…": "…" },
+  "id": "conn-9c1d",
+  "templateId": "kubernetes",
+  "name": "prod-cluster",
+  "inputs": { "host": "api.prod.example:6443", "value": "…", "caData": "…" },
+  "auth": { "kind": "header", "valueRef": { "…": "…" }, "headerName": "Authorization", "valueFormat": "Bearer {value}" },
   "contributions": [
-    { "kind": "egress-host", "host": "mcp.acme.internal" },
-    { "kind": "mcp-entry",   "name": "acme",
-      "url": "https://mcp.acme.internal/sse",
-      "headers": { "Authorization": "Bearer dummy-placeholder" } }
+    { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
+      "headerName": "Authorization", "valueFormat": "Bearer {value}",
+      "upgrades": true, "upstreamCa": true },
+    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/prod-cluster.config" },
+    { "kind": "file", "path": "$HOME/.kube/connections/prod-cluster.config", "format": "yaml",
+      "mergeMode": "overwrite",
+      "content": { "clusters": [ { "name": "prod-cluster", "cluster": { "server": "https://api.prod.example:6443", "certificate-authority": "/etc/platform/ca/ca.crt" } } ], "users": [ { "name": "prod-cluster", "user": { "token": "injected-by-gateway" } } ], "contexts": [ { "name": "prod-cluster", "context": { "cluster": "prod-cluster", "user": "prod-cluster" } } ], "current-context": "prod-cluster" } }
   ]
 }
 ```
@@ -200,7 +198,8 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
     "valueFormat": "{value}"
   },
   "contributions": [
-    { "kind": "egress-host", "host": "billing.acme.internal" }
+    { "kind": "egress-inject", "host": "billing.acme.internal",
+      "headerName": "X-API-Key", "valueFormat": "{value}" }
   ]
 }
 ```
@@ -211,13 +210,14 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
-| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env (user env wins). A change recycles the harness at an idle turn boundary — no pod roll. |
-| `egress-host` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
+| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env. Two sources feed this kind — user-typed env (the UI Environment editor, stored in Postgres `agent_env`, #1079) and connection-derived env — and the state-builder orders user env first so it wins on name collision (the driver is first-occurrence-wins). A change recycles the harness at an idle turn boundary — no pod roll. |
+| `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
+| `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [security and credentials](security-and-credentials.md)). Agent never sees these. |
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
 | `mcp-entry` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver dispatches to harness-specific path. |
 | `skill-ref` | Runtime channel `applyState` (state slice) | Sub-second push; per-version installer | Driver wraps existing skill-fetch helpers. |
 
-The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-host` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
+The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-allow` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
 
 ## The runtime channel
 
@@ -232,7 +232,6 @@ sequenceDiagram
   participant BQ as BullMQ
   participant WK as worker handler
   participant RT as agent-runtime
-  participant HS as harness API
 
   USER->>AS: grant Connection X to Agent A
   AS->>PG: BEGIN, write grant, bump version, upsert outbox row, COMMIT
@@ -246,50 +245,30 @@ sequenceDiagram
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
   loop per event in order
-    RT->>HS: per-kind handler — does the work, idempotent on event id
-    HS-->>RT: ok
+    RT->>RT: per-kind handler — does the work, dedup via local state store
   end
-  RT-->>WK: appliedVersion, appliedHash
-  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to appliedVersion
+  RT-->>WK: apply outcome (cursor, settled events, failures)
+  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to applied cursor
 ```
 
 ### `applyState` — state and events delivery (server → agent)
 
-Carries `version`, the **full desired state** in `state`, and the **currently pending events** in `events`. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers on the harness API.
+The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
 
-```ts
-runtime.v1.applyState({
-  version: number;                  // top-level cursor — per-agent monotonic
-  state: {
-    contributions: Contribution[];  // full snapshot, post-capability-filter
-    hash: string;                   // deterministic hash over contributions
-  };
-  events: Event[];                  // ordered; each carries its own version
-}) => {
-  appliedVersion: number;           // single ack marker for the whole payload
-  appliedHash: string;
-}
-```
+The reply is a discriminated outcome, not a bare ack:
 
-Concurrent dispatches from different replicas race naturally; the agent's `lastAppliedVersion` rejects older versions, last-version-wins. The hash is recorded on the agent's outbox row for the periodic sweep to compare against.
+- **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload.
+- **stale** — the agent's contributions were already at or beyond the requested version, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
+
+Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 ### `hello` — agent → api-server catch-up
 
-Called on boot, on wake from hibernation, and on any agent-side reconnect. Returns the same envelope as `applyState` if anything diverged.
+Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
-```ts
-runtime.v1.hello({
-  lastAppliedVersion?: number;
-  lastAppliedHash?: string;
-  protocolVersion: "v1";
-  agentRuntimeVersion: string;
-  capabilities: { contributions: ContributionKind[]; events: EventKind[] };
-}) => {
-  version?: number;
-  state?: { contributions: Contribution[]; hash: string };
-  events: Event[];
-}
-```
+The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply.
+
+The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
 
 ```mermaid
 sequenceDiagram
@@ -299,26 +278,24 @@ sequenceDiagram
   participant PG as Postgres
 
   RT->>HS: runtime.v1.hello (lastAppliedVersion, lastAppliedHash, capabilities)
-  HS->>PG: read current state for this agent
-  HS->>PG: read non-dispatched, non-expired events
-  HS-->>RT: version, state, events
-  RT->>RT: reconcile contributions
-  loop per event in order
-    RT->>HS: per-kind handler — does the work, idempotent on event id
-  end
+  HS->>PG: compare reported cursor with outbox version
+  HS->>HS: enqueue worker dispatch if behind
+  HS-->>RT: events: []
+  HS->>RT: applyState (state + pending events, via the worker)
+  RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
-`hello` is read-only with respect to the outbox — the worker's next dispatch (which fires because `last_applied_version` is still behind `version`) is what stamps `dispatched_at`. In practice an event delivered via `hello` is immediately followed by an applyState that empties it from the next snapshot.
+`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows.
 
-### Per-kind event handlers (harness API)
+### Per-kind event handlers (agent-side)
 
-Each event kind has a corresponding handler endpoint on the harness API server. The kind determines which endpoint; the request shape, the side effect, and the idempotency key are all kind-specific. The common contract:
+Each event kind has a built-in handler inside the agent-runtime's event loop. The kind selects the handler; the payload shape and the side effect are kind-specific. The common contract:
 
-- The handler accepts the event's `id` and `payload` fields.
-- It is idempotent on `id` — a unique constraint on its side-effect table catches duplicates and returns the existing row.
-- It does the work (e.g. start a session for `trigger`); it does NOT touch `runtime_events`.
+- The handler receives the event's `payload`; the loop owns `id`-based dedupe before the handler is ever invoked (applied-version cursor plus a per-key last-run timestamp in the agent's local state store).
+- It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
+- A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires.
 
-The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds a handler with a uniqueness constraint and doesn't have to know about the outbox at all.
+The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds an agent-side handler and doesn't have to know about the outbox at all.
 
 ## Event lifecycle
 
@@ -331,14 +308,12 @@ sequenceDiagram
   participant PG as Postgres
   participant WK as worker
   participant RT as agent-runtime
-  participant HS as harness API
 
   SCH->>PG: BEGIN, bump agent.version to V, INSERT runtime_events (id, agentId, kind, payload, version=V, expiresAt), upsert outbox row, COMMIT
   PG->>WK: BullMQ wakes — worker reads outbox and non-dispatched events
   WK->>RT: applyState (version=V, state, events=[E1])
   RT->>RT: reconcile contributions
-  RT->>HS: per-kind handler for E1.kind — does the work, idempotent on E1.id
-  HS-->>RT: ok
+  RT->>RT: per-kind handler for E1.kind — does the work, records E1's run in the local state store
   RT-->>WK: appliedVersion=V, appliedHash
   WK->>PG: UPDATE runtime_events SET dispatched_at = now() where version up to V AND dispatched_at IS NULL
   Note over WK: Next dispatch state-builder excludes E1
@@ -346,15 +321,15 @@ sequenceDiagram
 
 ### Crash between dispatch and ack
 
-If the agent calls the work handler but crashes before sending the apply response, the worker doesn't get an `appliedVersion` — no rows are stamped. The event reappears in the next snapshot; the agent re-invokes the handler; the handler's unique constraint on `id` catches the duplicate side effect; the next ack stamps `dispatched_at`. Net: at-most-once.
+If the agent runs the handler but crashes before sending the apply response, the worker doesn't get an `appliedVersion` — no rows are stamped. The event reappears in the next snapshot; the agent's event loop consults its local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) and settles the already-run event without re-firing; the next ack stamps `dispatched_at`.
 
-If the work handler call succeeds at the server but the response is lost, same path — the agent re-invokes on next push, the unique constraint dedupes, the cursor advances.
+If the handler ran but the apply response is lost, same path — redelivery settles from the state store and the cursor advances. Re-fire is possible only if the crash lands between the side effect and the state-store write.
 
-If the work handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
+If the handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
 
 ### Server-side `dispatched_at` stamping
 
-Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind work handler does not touch the outbox — its job is the side effect plus the side-effect-table uniqueness key.
+Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind handler does not touch the outbox — its job is the side effect; dedupe bookkeeping lives in the agent's local state store.
 
 ### Expiry
 
@@ -371,34 +346,9 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 
 ### Mutation transaction
 
-Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job:
+Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job keyed by a stable per-agent job id — pending dispatches for the same agent coalesce naturally, and the user-facing response returns immediately.
 
-```ts
-await db.transaction(async (tx) => {
-  const v = await tx.bumpAgentVersion(agentId);
-  await tx.connections.grant(agentId, connectionId);
-  await tx.runtime_state_outbox.upsert({ agentId, version: v, lastEnqueuedAt: now() });
-});
-await stateQueue.add(
-  "state",
-  { agentId },
-  { jobId: `state:${agentId}` },   // stable id → natural coalescing
-);
-return ok();   // user-facing response returns immediately
-```
-
-For a schedule firing:
-
-```ts
-await db.transaction(async (tx) => {
-  const v = await tx.bumpAgentVersion(agentId);
-  await tx.runtime_events.insert({
-    id, agentId, kind: "trigger", payload: { scheduleId, task, … }, version: v, expiresAt,
-  });
-  await tx.runtime_state_outbox.upsert({ agentId, version: v, lastEnqueuedAt: now() });
-});
-await stateQueue.add("state", { agentId }, { jobId: `state:${agentId}` });
-```
+A schedule firing follows the same shape, inserting a `runtime_events` row in place of the grant before the outbox upsert.
 
 The user-facing response does not depend on agent reachability. If BullMQ's enqueue fails or Redis drops the pending job, the cron sweep re-enqueues the row.
 
@@ -427,7 +377,7 @@ flowchart TD
   check -->|"no (plain)"| defer
   check -->|"no (hello-triggered)"| retry
   check -->|yes| compute --> dispatch
-  dispatch -->|appliedVersion, appliedHash| stamp --> ok
+  dispatch -->|apply outcome| stamp --> ok
   dispatch -->|error| fail
 ```
 
@@ -442,41 +392,32 @@ A scheduled job runs every minute and does two things:
 
 ### Agent-state cache
 
-The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running a plain dispatch exits clean and the outbox row waits for the cron sweep to re-enqueue once it transitions back to running. A `hello`-triggered dispatch instead fast-retries on the queue backoff: `hello` means the agent is up and Ready is imminent, so the brief miss resolves in ~a second rather than at the next sweep tick.
+The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call.
 
 ### Redis-down behavior
 
-Per ADR-036, Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
+Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
 
 ## Agent-side: drivers, manifest, event handlers
 
 ### The manifest
 
-Every agent image ships a `runtime-manifest.yaml` declaring (1) which impl handles each Contribution kind, (2) capabilities for advertisement on `hello`, (3) any custom impls registered by harness-specific code. Validated against a versioned schema at agent-runtime boot — fail-fast on malformed manifest.
+Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a kind — contribution **or** event — to an impl, resolved uniformly through the plugin registry. Built-in drivers are **on by default** with default bindings, so a manifest declares an entry only to *configure* a kind (e.g. `harness-config`'s file/keys/catalog), *override* its impl, or *disable* it with `false`; `impl` defaults to the kind name (so it's named only to override). The kinds advertised on `hello` are derived at boot from the resolved drivers — the built-in defaults, plus what the manifest declares, minus what it disables — never declared separately. Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
 ```yaml
 # packages/agents/example-agent/runtime-manifest.yaml
 manifestVersion: 1
 
+# env, file, mcp-entry, skill-ref, trigger, schedule-reset, workspace-seed are
+# all on by default — declare an entry only to configure, override, or disable.
 drivers:
-  mcp-entry:
-    impl: file                                # built-in
-    path: "$HOME/.claude/.mcp.json"
-    format: json
-    mergeMode: key-targeted
-    keyPath: "mcpServers"
-  skill-ref:
-    impl: skill-install                       # built-in
-    paths: ["$HOME/.claude/skills"]
-  file:
-    impl: file                                # built-in; per-Contribution params on the wire
-
-capabilities:
-  contributions: [file, mcp-entry, skill-ref]
-  events: [trigger]
+  harness-config:                             # config-bearing → active only when declared
+    file: "$HOME/.claude/settings.json"
+    keys: { model: "model", mode: "permissions.defaultMode" }
+  mcp-entry: false                            # opt a built-in out
 ```
 
-A harness that needs custom code declares it explicitly in the manifest under `extensions.impls`:
+A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name declared under `extensions.impls`:
 
 ```yaml
 # packages/agents/codex-agent/runtime-manifest.yaml
@@ -492,13 +433,11 @@ extensions:
     - name: codex-mcp-with-sighup
       module: "/usr/local/share/dam-runtime/codex-overrides.mjs"
       export: "codexMcpReloadImpl"
-
-capabilities:
-  contributions: [file, mcp-entry, skill-ref]
-  events: [trigger]
 ```
 
-Custom contribution impl names may not collide with built-in names (`file`, `skill-install`, …) — registration rejects collision; runtime-channel boot fails loud. Event handlers are built-in per kind and not user-pluggable.
+The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
+
+Custom impl names may not collide with a built-in name (`file`, `skill-install`, …) — registration rejects collision; boot fails loud. To override a built-in — whether a contribution kind (`file`, `mcp-entry`, …) or an event kind (`trigger`, `harness-config`, …) — rebind that kind to a fresh impl name supplied via `extensions.impls`; the built-in stays registered but unbound.
 
 ### Built-in contribution impls
 
@@ -511,7 +450,7 @@ Custom contribution impl names may not collide with built-in names (`file`, `ski
 
 `applyState` delivers the full Contribution snapshot. The driver dispatcher groups contributions by kind and calls each driver's `apply(contributions, ctx)`:
 
-1. Driver compares the desired set with what's on disk (or in its own state file under `$HOME/.platform/<kind>.json`).
+1. Driver compares the desired set with what's on disk (or in its own per-kind state file on the agent PVC).
 2. Adds new contributions, updates changed ones, removes anything no longer in the snapshot.
 3. Returns per-driver outcome.
 
@@ -523,12 +462,15 @@ After contribution reconciliation, the agent processes events in order:
 
 ```
 for each event E in payload.events:
+  if E.version <= lastAppliedVersion or E's dedupe key ran at >= E's fire ts:
+    settle and continue
   if E.expiresAt <= now():         # defense in depth — server may have raced
-    continue
-  POST to harness API: per-kind handler for E.kind, with E.id and E.payload
+    settle and continue
+  invoke per-kind handler with E.payload
+  record E's dedupe key + fire ts in the state store
 ```
 
-The handler call is what commits the event server-side. There is no agent-side state for "have I processed this event?" — a redelivered event hits the unique constraint at the harness handler and returns the existing side-effect row.
+Settled event ids ride back on the apply response, and the worker stamps `dispatched_at` from the ack cursor. The "have I run this?" state is the agent's own: the local state store records the applied cursor and per-key last-run timestamps, so a redelivered event settles without re-firing.
 
 ## Versioning
 
@@ -556,24 +498,25 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Substrate | What lives there | Notes |
 |---|---|---|
 | Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
+| Postgres `agent_env` | User-typed env per agent (`agent_id`, `name`, `value`) | The Environment editor's store since #1079 — read by the state-builder as `env` contributions (ordered first), replacing the Agent CR's `spec.env`. The CR field is retained but no longer read. |
 | Postgres `runtime_state_outbox` | One row per agent | `agent_id`, `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
 | Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
-| Per-kind side-effect table column | New column joining the kind's side-effect row back to `runtime_events.id`, with a unique constraint | The dedupe key for per-kind redelivery. Each event kind's harness handler owns one. |
-| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability per ADR-036; Postgres outbox + cron sweep is the recovery path. |
-| Postgres `egress_rules` | `egress-host` Contributions joined per grant | Existing table; same as today (ADR-035). |
+| Runtime-state file on the agent PVC | Applied cursor (`lastAppliedVersion`, `lastAppliedHash`) and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
+| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
+| Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
-| Per-agent PVC `$HOME/.platform/runtime-env.json` | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot; read by the harness/terminal spawn paths. |
+| Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
-| Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. No event-dedupe log — events dedupe server-side. |
-| Per-agent state file under `$HOME/.platform/<kind>.json` | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
+| Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
+| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
 
 ## Invariants
 
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path.
 - **State snapshots are idempotent; reapplying the latest snapshot is safe.** Drivers tolerate repeated apply. The agent's `lastAppliedVersion` rejects older state pushes; replay during disconnect/reconnect cannot regress state.
-- **Events fire at most once per id.** The unique constraint on each event kind's side-effect table is the single dedupe key, owned by the harness handler. The agent has no persistent dedupe state to keep in sync.
+- **Events fire once per dedupe key and version.** The agent's local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **One cursor for both slices.** The worker stamps `dispatched_at` for events with `version <= appliedVersion` in the same transaction that bumps `last_applied_version`. State and events share one ack marker.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello` and per-kind event handlers.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
 - **Every Contribution kind has exactly one rail.** The api-server's fan-out determines which rail per kind; drivers, controller-render, and Envoy never overlap responsibilities on the same kind.
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload.

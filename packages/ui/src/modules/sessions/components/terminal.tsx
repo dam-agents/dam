@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 
+import { ErrorFilled, Terminal as TerminalIcon } from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import {
@@ -10,8 +11,10 @@ import {
   OP_INPUT,
   OP_OUTPUT,
 } from "api-server-api";
-import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
 
@@ -23,6 +26,8 @@ export function Terminal({
   fresh,
   onConnected,
   onFirstOutput,
+  onFirstSubmit,
+  onSubmit,
   autoConnect = true,
 }: {
   agentId: string;
@@ -34,6 +39,10 @@ export function Terminal({
    *  `ensureReady`. Use this (not `onConnected`) to clear a "starting" overlay,
    *  since `onConnected` fires on the immediate relay handshake. */
   onFirstOutput?: () => void;
+  /** Fires on the first submitted line (CR/LF) — a sent message, not startup's device-report onData noise. */
+  onFirstSubmit?: () => void;
+  /** Fires on every submitted line. */
+  onSubmit?: () => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +82,7 @@ export function Terminal({
     let term: XTerm | null = null;
     let ro: ResizeObserver | null = null;
     let firstOutputSeen = false;
+    let firstSubmitSeen = false;
 
     (async () => {
       term = new XTerm({
@@ -143,6 +153,13 @@ export function Terminal({
       };
 
       term.onData((data) => {
+        if (/[\r\n]/.test(data)) {
+          onSubmit?.();
+          if (!firstSubmitSeen) {
+            firstSubmitSeen = true;
+            onFirstSubmit?.();
+          }
+        }
         if (ws?.readyState === WebSocket.OPEN)
           ws.send(encodeDataFrame(OP_INPUT, data));
       });
@@ -166,40 +183,36 @@ export function Terminal({
       termRef.current = null;
       container.innerHTML = "";
     };
-    // `fresh`, `onConnected`, and `onFirstOutput` are intentionally captured
-    // once at mount. `reconnectKey` triggers a full teardown+reconnect cycle.
+    // Callback props captured once at mount; `reconnectKey` forces reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, sessionId, reconnectKey]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">
       {state === "connecting" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 text-[14px] text-text-muted">
-            <Loader2 size={18} className="animate-spin" />
+        <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <Spinner size={18} />
             Connecting terminal...
           </div>
         </div>
       )}
       {state === "disconnected" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <XCircle size={24} className="text-danger" />
-            <p className="text-[14px] text-text-secondary">
+            <ErrorFilled size={24} className="text-danger" />
+            <p className="text-sm text-muted-foreground">
               Session disconnected
             </p>
-            <button
-              className="rounded-md border border-border-light bg-surface-raised px-4 py-2 text-[13px] text-text-primary hover:bg-surface-hover transition-colors"
-              onClick={handleReconnect}
-            >
+            <Button variant="outline" onClick={handleReconnect}>
               Reconnect
-            </button>
+            </Button>
           </div>
         </div>
       )}
       {state === "exited" && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-          <div className="flex items-center gap-2 rounded-full border border-border-light bg-surface-raised px-4 py-2 text-[12px] text-text-muted shadow-md">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-content">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-xs text-muted-foreground shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

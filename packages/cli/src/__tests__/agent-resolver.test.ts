@@ -16,7 +16,6 @@ function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
     image: "",
     state: "running",
     channels: [],
-    allowedUserEmails: [],
     ...overrides,
   };
 }

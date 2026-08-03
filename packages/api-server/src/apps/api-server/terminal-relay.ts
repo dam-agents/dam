@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
 
@@ -55,7 +56,7 @@ export function createTerminalRelay(
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
 
-    // Session mode is agent-owned metadata (ADR-055); the PTY runs the harness
+    // Session mode is agent-owned metadata; the PTY runs the harness
     // TUI against this session id regardless. The UI confirms the mode switch.
 
     wss.handleUpgrade(req, socket, head, (client) => {
@@ -179,7 +180,11 @@ export function createTerminalRelay(
           process.stderr.write(
             `[terminal-relay] failed to connect: ${err?.message ?? err}\n`,
           );
-          client.close(1011, "failed to connect to agent");
+          // Close reasons cap at 123 bytes — carry the short cause kind.
+          const reason = isAgentWakeTimeoutError(err)
+            ? `agent not ready: ${err.failure.kind}`
+            : "failed to connect to agent";
+          client.close(1011, reason);
         });
     });
   }

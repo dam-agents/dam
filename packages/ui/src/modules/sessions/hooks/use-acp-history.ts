@@ -1,16 +1,12 @@
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { LoadSessionResponse } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback } from "react";
 
-import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
 import {
   applyUpdate,
   finalizeAllStreaming,
 } from "../../acp/session-projection.js";
-import type { AcpUpdate, SessionConfigPayload } from "../../acp/types.js";
-import { getSavedPreferences } from "../components/session-config-popover.js";
 
 /**
  * Replay a session's history from the agent's runtime log into a fresh
@@ -31,16 +27,9 @@ import { getSavedPreferences } from "../components/session-config-popover.js";
  * here changes — `loadSession`+throwaway becomes a single SDK call with no
  * second WS — but the surface (`loadHistory(sid) → Message[]`) stays.
  */
-export function useAcpHistory(
-  selectedAgent: string | null,
-  captureSessionConfig: (response: SessionConfigPayload) => void,
-  handleConfigUpdate: (update: AcpUpdate) => void,
-): {
+export function useAcpHistory(selectedAgent: string | null): {
   loadHistory: (sid: string) => Promise<Message[]>;
 } {
-  const setSessionModes = useStore((s) => s.setSessionModes);
-  const setSessionModels = useStore((s) => s.setSessionModels);
-
   const loadHistory = useCallback(
     async (sid: string): Promise<Message[]> => {
       if (!selectedAgent) return [];
@@ -49,7 +38,6 @@ export function useAcpHistory(
       let ws: WebSocket | null = null;
       try {
         const conn = await openConnection(selectedAgent, (update) => {
-          handleConfigUpdate(update);
           replayed = applyUpdate(replayed, update);
         });
         ws = conn.ws;
@@ -59,40 +47,17 @@ export function useAcpHistory(
             fs: { readTextFile: true, writeTextFile: true },
           },
         });
-        const resp: LoadSessionResponse = await conn.connection.loadSession({
+        await conn.connection.loadSession({
           sessionId: sid,
           cwd: ".",
           mcpServers: [],
         });
-        captureSessionConfig(resp);
-
-        // Optimistic prefs nudge — real ACP `set*` calls fire when the
-        // orchestrator opens the live channel via applySavedPreferences.
-        const prefs = getSavedPreferences(selectedAgent);
-        if (
-          prefs.model &&
-          resp.models?.availableModels?.some((m) => m.modelId === prefs.model)
-        ) {
-          setSessionModels({ ...resp.models, currentModelId: prefs.model });
-        }
-        if (
-          prefs.mode &&
-          resp.modes?.availableModes?.some((m) => m.id === prefs.mode)
-        ) {
-          setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
-        }
       } finally {
         ws?.close();
       }
       return finalizeAllStreaming(replayed);
     },
-    [
-      selectedAgent,
-      captureSessionConfig,
-      handleConfigUpdate,
-      setSessionModes,
-      setSessionModels,
-    ],
+    [selectedAgent],
   );
 
   return { loadHistory };

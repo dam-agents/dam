@@ -1,0 +1,41 @@
+# Pi-agent manifest. Built-in drivers are on by default; this declares only the
+# Pi-specific harness-config: model -> defaultModel, thinking level -> the ACP
+# "mode" (defaultThinkingLevel). Pi's models are connection-dependent, so they're
+# discovered at runtime (modelDiscovery) rather than listed statically.
+manifestVersion: 1
+
+drivers:
+  harness-config:
+    file: "$HOME/.pi/agent/settings.json"
+    keys:
+      model: "defaultModel"
+      mode: "defaultThinkingLevel"
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: mode
+          name: Thinking
+          description: Reasoning effort level
+          category: thought_level
+          choices:
+            - value: "off"
+              name: "Off"
+              description: "No extended thinking"
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+    modelDiscovery:
+      urlEnv:
+        - OPENAI_PROXY_URL
+        - OPENAI_BASE_URL

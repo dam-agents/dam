@@ -9,6 +9,7 @@
     "postgres": "^3.4.7"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.4",
     "dev-config": "workspace:*",
     "typescript": "^6.0.2"

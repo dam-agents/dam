@@ -1,7 +1,7 @@
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
-# Public Service. ADR-041: carries only the public HTTP/tRPC port; harness
+# Public Service. Carries only the public HTTP/tRPC port; harness
 # moves to the -harness Service (waypoint-fronted) and ext-authz moves to
 # per-agent Services rendered by the controller. This Service therefore
 # never carries the istio.io/use-waypoint label — browser traffic continues
@@ -25,7 +25,7 @@ spec:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
 ---
-# Harness Service (ADR-041). The `istio.io/use-waypoint` LABEL (NOT
+# Harness Service. The `istio.io/use-waypoint` LABEL (NOT
 # annotation — Istio 1.21+ silently ignores the annotation form) routes
 # inbound traffic via the waypoint Gateway declared in waypoint.yaml. The
 # waypoint terminates HBONE and applies per-agent AuthorizationPolicies
@@ -60,6 +60,7 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
+  {{- include "platform.annotations" (dict "root" $ "component" .Values.apiServer) | nindent 2 }}
 spec:
   replicas: 1
   strategy:
@@ -73,16 +74,17 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
-      annotations:
-        # The api-server loads the mounted agent-templates once at boot (ADR-058),
-        # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
-        # the pod when the rendered templates change, making `helm upgrade` of a
-        # template take effect instead of serving stale ones until the next restart.
-        checksum/agent-templates: {{ include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum }}
-        checksum/git-repos: {{ include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum }}
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
+      # The api-server loads the mounted agent-templates once at boot,
+      # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
+      # the pod when the rendered templates change, making `helm upgrade` of a
+      # template take effect instead of serving stale ones until the next restart.
+      {{- $checksums := dict
+            "checksum/agent-templates" (include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum)
+            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
+      {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
@@ -118,12 +120,37 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.apiserver.db.password.secretName" . }}
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_APISERVER_PASSWORD
             - name: DATABASE_URL
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
+            {{- if .Values.apiServer.db.caCert }}
+            # Verify the external DB's TLS cert against this CA (sslmode=verify-*).
+            # The api-server passes it as the DB client's `ssl.ca`, scoping trust
+            # to the database connection rather than the whole process.
+            - name: DATABASE_CA_CERT_PATH
+              value: /etc/platform/pg-ca/ca.crt
+            {{- end }}
+            {{- if .Values.clickstack.enabled }}
+            # Agent-telemetry read path: HTTP-query the ClickStack ClickHouse
+            # store using the same credentials the collector writes with
+            # (clickstack-config/secret). Unset when clickstack is disabled, so
+            # the telemetry API fails closed. See docs/architecture/observability.md.
+            - name: CLICKHOUSE_URL
+              value: {{ include "platform.clickstack.clickhouse.httpUrl" . | quote }}
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clickstack-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickstack-secret
+                  key: CLICKHOUSE_PASSWORD
+            {{- end }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
-            # ADR-041: api-server parses agent ID out of the per-agent
+            # api-server parses agent ID out of the per-agent
             # ext-authz Service hostname Envoy dialled. The release name is
             # the prefix.
             - name: PLATFORM_RELEASE_NAME
@@ -140,6 +167,8 @@ spec:
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "platform.url.ui" . | quote }}
+            - name: PLATFORM_APP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
             {{- if .Values.apiServer.minClientCliVersion }}
             - name: MIN_CLIENT_CLI_VERSION
               value: {{ .Values.apiServer.minClientCliVersion | quote }}
@@ -152,12 +181,20 @@ spec:
             - name: SLACK_APP_TOKEN
               value: {{ .Values.apiServer.slackAppToken | quote }}
             {{- end }}
-            {{- if .Values.apiServer.telegramEnabled }}
-            - name: TELEGRAM_ENABLED
-              value: "true"
+            {{- if .Values.apiServer.telegramBotToken }}
+            - name: TELEGRAM_BOT_TOKEN
+              value: {{ .Values.apiServer.telegramBotToken | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.telegramBotName }}
+            - name: TELEGRAM_BOT_USERNAME
+              value: {{ .Values.apiServer.telegramBotName | quote }}
             {{- end }}
             {{- if .Values.e2e.enabled }}
             - name: E2E_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.virtualization.enabled }}
+            - name: VIRTUALIZATION_ENABLED
               value: "true"
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
@@ -169,6 +206,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "platform.fullname" . }}-apiserver-activity
                   key: ACTIVITY_HMAC_KEY
+            - name: API_KEY_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-apiserver-apikeys
+                  key: API_KEY_HMAC_KEY
+            - name: SHARE_BASE_URL
+              value: {{ include "platform.url.share" . | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -200,6 +244,21 @@ spec:
             {{- end }}
             - name: AGENT_HOME
               value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
+            - name: AGENT_IDLE_TIMEOUT
+              value: {{ .Values.controller.agent.base.idleTimeout | quote }}
+            # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
+            # so create-time resource stamping (#1900) cannot drift from the
+            # controller's render-time defaults.
+            - name: AGENT_DEFAULT_CPU_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
+            - name: AGENT_DEFAULT_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+            # Default per-user ceiling (#1900), same value the controller
+            # enforces with; display-only here (the meter's ceiling figure).
+            - name: DEFAULT_USER_CPU_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
+            - name: DEFAULT_USER_MEMORY_BUDGET
+              value: {{ .Values.controller.userBudgets.defaultMemory | quote }}
             {{- if .Values.skills.skillSources }}
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}
@@ -257,13 +316,48 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: ACP_TURN_CEILING_SECONDS
+              value: {{ .Values.apiServer.acpTurnCeilingSeconds | quote }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
             {{- end }}
+            {{- if .Values.apiServer.maxArtifactBytes }}
+            - name: MAX_ARTIFACT_BYTES
+              value: {{ .Values.apiServer.maxArtifactBytes | quote }}
+            {{- end }}
+            {{- if include "platform.objectstorage.enabled" . }}
+            # S3-compatible Candidate-artifact store.
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: {{ include "platform.objectstorage.endpoint" . | quote }}
+            - name: OBJECT_STORAGE_AGENT_ENDPOINT
+              value: {{ include "platform.objectstorage.agentEndpoint" . | quote }}
+            {{- if .Values.apiServer.objectStorage.publicEndpoint }}
+            - name: OBJECT_STORAGE_PUBLIC_ENDPOINT
+              value: {{ .Values.apiServer.objectStorage.publicEndpoint | quote }}
+            {{- end }}
+            - name: OBJECT_STORAGE_REGION
+              value: {{ .Values.apiServer.objectStorage.region | quote }}
+            - name: OBJECT_STORAGE_BUCKET
+              value: {{ .Values.apiServer.objectStorage.bucket | quote }}
+            - name: OBJECT_STORAGE_FORCE_PATH_STYLE
+              value: {{ .Values.apiServer.objectStorage.forcePathStyle | quote }}
+            {{- if include "platform.objectstorage.hasCredentials" . }}
+            - name: OBJECT_STORAGE_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: accessKeyId
+            - name: OBJECT_STORAGE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.objectstorage.credentials.secretName" . }}
+                  key: secretAccessKey
+            {{- end }}
+            {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
-            # ADR-058: agent templates are mounted from a ConfigMap and loaded
+            # agent templates are mounted from a ConfigMap and loaded
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
               value: /etc/platform/agent-templates
@@ -277,8 +371,8 @@ spec:
               value: {{ .Values.brand.name | quote }}
             - name: BRAND_SHORT
               value: {{ .Values.brand.short | quote }}
-            - name: BRAND_TAGLINE
-              value: {{ .Values.brand.tagline | quote }}
+            - name: BRAND_TITLE
+              value: {{ .Values.brand.title | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
@@ -299,23 +393,47 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            {{- if .Values.clickstack.enabled }}
+            # The api-server's own operational telemetry (request traces,
+            # per-procedure metrics, logs) exports OTLP straight to the
+            # bundled collector. In-mesh and plain http — ztunnel supplies
+            # mTLS; the collector's AuthorizationPolicy already admits this
+            # namespace. The SDK only activates when this endpoint env is
+            # present.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "platform-apiserver"
+            {{- end }}
           volumeMounts:
             - name: trusted-hosts
               mountPath: /etc/platform/trusted-hosts
               subPath: trusted-hosts
               readOnly: true
             # Whole-ConfigMap mount (no subPath): each `<id>.yaml` data key
-            # surfaces as a file the api-server loads at boot (ADR-058).
+            # surfaces as a file the api-server loads at boot.
             - name: git-repos
               mountPath: /etc/platform/git-repos
               readOnly: true
             - name: agent-templates
               mountPath: /etc/platform/agent-templates
               readOnly: true
+            {{- if .Values.apiServer.db.caCert }}
+            - name: pg-ca
+              mountPath: /etc/platform/pg-ca
+              readOnly: true
+            {{- end }}
           {{- if .Values.probes.enabled }}
+          # Readiness gates on the Keycloak JWKS warm-up (503 until the key
+          # set has been fetched once), so a rolling update keeps the old pod
+          # serving until this pod can verify tokens. Liveness stays on the
+          # static health route — an unreachable Keycloak must degrade, not
+          # restart the pod.
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -341,3 +459,8 @@ spec:
         - name: git-repos
           configMap:
             name: {{ include "platform.fullname" . }}-git-repos
+        {{- if .Values.apiServer.db.caCert }}
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-db-ca
+        {{- end }}

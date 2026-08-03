@@ -26,8 +26,10 @@ export type {
   LocalSkill,
   LocalSkillFile,
   ScannedSkill,
+  SkillDeleteLocalInput,
   SkillInstallInput,
   SkillInstallResult,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishResult,
   SkillReadLocalInput,
@@ -36,16 +38,38 @@ export type {
   SkillsDomainError,
   SkillsService,
   SkillUninstallInput,
+  SkillWriteLocalInput,
 } from "./modules/skills/types.js";
 export {
+  skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
+  skillWriteLocalInputSchema,
 } from "./modules/skills/schemas.js";
+export {
+  SKILL_SOURCE_ROOTS,
+  STAGED_SKILLS_DIR,
+  dedupeByName,
+} from "./modules/skills/source-roots.js";
+export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
+export type {
+  HarnessConfigCurrent,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
 export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
+export {
+  backgroundWorkItemSchema,
+  backgroundWorkReportSchema,
+} from "./modules/background-work/schemas.js";
+export type {
+  BackgroundWorkItem,
+  BackgroundWorkReport,
+  BackgroundWorkReporterContract,
+} from "./modules/background-work/types.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
 export {
@@ -54,6 +78,9 @@ export {
   event,
   eventKind,
   capabilities,
+  harnessConfigChoice,
+  harnessConfigOptionGroup,
+  harnessConfigCatalog,
   mergeMode,
   fileFormat,
   envContribution,
@@ -64,6 +91,10 @@ export {
   skillRefContribution,
   triggerEvent,
   triggerEventPayload,
+  experimentExecuteEvent,
+  experimentExecuteEventPayload,
+  harnessConfigEvent,
+  harnessConfigEventPayload,
   stateSlice,
   applyStateInput,
   applyStateResult,
@@ -77,10 +108,17 @@ export type {
   Event,
   EventKind,
   Capabilities,
+  HarnessConfigChoice,
+  HarnessConfigOptionGroup,
+  HarnessConfigCatalog,
   MergeMode,
   FileFormat,
   TriggerEventPayload,
+  ExperimentExecuteEventPayload,
+  ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
+  WorkspaceCommandEventPayload,
+  HarnessConfigEventPayload,
   StateSlice,
   ApplyStateInput,
   ApplyStateResult,
@@ -93,6 +131,7 @@ export {
   PLUGIN_PROTOCOL_VERSION,
   type DispatchContext,
   type DriverBinding,
+  type EventHandler,
   type KindHandler,
   type Plugin,
   type PluginModule,

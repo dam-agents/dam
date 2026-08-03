@@ -2,6 +2,7 @@ import type { Db } from "db";
 import { channels, eq, and, inArray, sql } from "db";
 import { ChannelType, type ChannelConfig } from "api-server-api";
 import type { Tx } from "../../../core/unit-of-work.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 
 function toChannelConfig(row: {
   type: string;
@@ -118,9 +119,17 @@ export function allChannelAgentIds(db: Db) {
 export function findBySlackChannelId(db: Db) {
   return async (
     slackChannelId: string,
-  ): Promise<{ agentId: string } | null> => {
+  ): Promise<{
+    agentId: string;
+    owner: string;
+    ambient?: boolean;
+  } | null> => {
     const rows = await db
-      .select({ agentId: channels.agentId })
+      .select({
+        agentId: channels.agentId,
+        owner: channels.owner,
+        ambient: sql<string | null>`${channels.config}->>'ambient'`,
+      })
       .from(channels)
       .where(
         and(
@@ -129,29 +138,56 @@ export function findBySlackChannelId(db: Db) {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      agentId: row.agentId,
+      owner: row.owner,
+      ...(row.ambient === "true" ? { ambient: true } : {}),
+    };
+  };
+}
+
+/** Flip ambient mode on a Slack binding in place. Keys on the globally-unique
+ *  Slack channel id (no owner scope): the in-chat toggle runs system-side and
+ *  authorizes the caller itself, like {@link deleteSlackChannelBinding}. */
+export function setSlackChannelAmbient(db: Db) {
+  return async (slackChannelId: string, ambient: boolean): Promise<void> => {
+    await db
+      .update(channels)
+      .set({
+        config: ambient
+          ? sql`${channels.config} || '{"ambient": true}'::jsonb`
+          : sql`${channels.config} - 'ambient'`,
+      })
+      .where(
+        and(
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      );
   };
 }
 
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
-  // Drizzle (>=0.44) wraps every driver failure in a DrizzleQueryError and
-  // stashes the original postgres.js error — the one carrying `code` and
-  // `constraint_name` — on `.cause`. Walk the cause chain so the guard matches
-  // whether it is handed the raw driver error or the Drizzle wrapper.
-  for (
-    let cur: unknown = e, depth = 0;
-    cur !== null && typeof cur === "object" && depth < 10;
-    cur = (cur as { cause?: unknown }).cause, depth++
-  ) {
-    const obj = cur as { code?: unknown; constraint_name?: unknown };
-    if (
-      obj.code === "23505" &&
-      obj.constraint_name === "channels_slack_channel_unique_idx"
-    ) {
-      return true;
-    }
-  }
-  return false;
+  return isUniqueViolation(e, "channels_slack_channel_unique_idx");
+}
+
+/** Delete the Slack binding for a channel id, regardless of owner. The in-chat
+ *  unbind runs system-side (it has no owner scope) and authorizes the caller
+ *  itself, so — unlike the owner-scoped `deleteChannelByType` — this keys only
+ *  on the globally-unique Slack channel id. */
+export function deleteSlackChannelBinding(db: Db) {
+  return async (slackChannelId: string): Promise<void> => {
+    await db
+      .delete(channels)
+      .where(
+        and(
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+        ),
+      );
+  };
 }
 
 export function findSlackChannelByAgent(db: Db) {

@@ -10,12 +10,6 @@ run = "pnpm exec keycloakify update-kc-gen"
 sources = ["vite.config.ts", "package.json"]
 outputs = ["src/kc.gen.tsx"]
 
-["keycloak-theme:dev"]
-description = "Vite dev server with mocked kcContext (uncomment block in src/main.tsx to preview a page)"
-dir = "{{config_root}}/packages/keycloak-theme"
-depends = ["keycloak-theme:gen"]
-run = "pnpm exec vite"
-
 ["keycloak-theme:build"]
 description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
 dir = "{{config_root}}/packages/keycloak-theme"
@@ -37,6 +31,8 @@ pnpm exec keycloakify build
 description = "Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"
 dir = "{{config_root}}/packages/keycloak-theme"
 depends = ["keycloak-theme:gen"]
+# Relies on the `build-keycloak-theme` script in package.json: start-keycloak
+# discovers the app-build step from it and refuses to run if it's absent.
 run = "pnpm exec keycloakify start-keycloak -p ./"
 
 ["keycloak-theme:eject-page"]

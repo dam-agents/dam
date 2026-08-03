@@ -34,7 +34,7 @@ func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
 }
 
 // applyAgentBaseScheduling stamps chart-level scheduling fields onto agent
-// and fork-agent pods. Only non-zero values apply.
+// and Run executor pods. Only non-zero values apply.
 func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	if len(base.NodeSelector) > 0 {
 		spec.NodeSelector = base.NodeSelector
@@ -54,6 +54,26 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	if base.RuntimeClassName != "" {
 		rc := base.RuntimeClassName
 		spec.RuntimeClassName = &rc
+	}
+}
+
+// applyTemplateScheduling layers per-template RuntimeClassName / NodeSelector
+// over the chart-wide base. NodeSelector keys merge (onto a fresh copy, never
+// the shared config map); RuntimeClassName replaces.
+func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
+	if agentSpec.RuntimeClassName != "" {
+		rc := agentSpec.RuntimeClassName
+		spec.RuntimeClassName = &rc
+	}
+	if len(agentSpec.NodeSelector) > 0 {
+		merged := make(map[string]string, len(spec.NodeSelector)+len(agentSpec.NodeSelector))
+		for k, v := range spec.NodeSelector {
+			merged[k] = v
+		}
+		for k, v := range agentSpec.NodeSelector {
+			merged[k] = v
+		}
+		spec.NodeSelector = merged
 	}
 }
 

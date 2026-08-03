@@ -8,8 +8,11 @@ interface PlatformMeta {
   mode?: string;
   type?: string;
   scheduleId?: string;
+  experimentId?: string;
   threadTs?: string;
   createdAt?: string;
+  running?: boolean;
+  seenAt?: string;
 }
 
 interface ListedSession {
@@ -20,7 +23,7 @@ interface ListedSession {
 }
 
 /**
- * Decode an ACP-listed session into a SessionView (ADR-055). A session with no
+ * Decode an ACP-listed session into a SessionView. A session with no
  * `_meta.platform` is harness-minted (e.g. a terminal/`/clear` session) and
  * defaults to terminal; an ACP-created session carries a (possibly empty)
  * entry and defaults to chat.
@@ -36,8 +39,12 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
       : SessionMode.Terminal,
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
+    experimentId: p?.experimentId ?? null,
+    threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
+    running: p?.running ?? false,
+    seenAt: p?.seenAt ?? null,
   };
 }
 
@@ -46,8 +53,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
 async function withConnection<T>(
   agentId: string,
   fn: (conn: ClientSideConnection) => Promise<T>,
+  opts?: { passive?: boolean },
 ): Promise<T> {
-  const { connection, ws } = await openConnection(agentId, () => {});
+  const { connection, ws } = await openConnection(agentId, () => {}, opts);
   try {
     await connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
@@ -65,17 +73,25 @@ async function withConnection<T>(
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
-  return withConnection(agentId, async (conn) => {
-    const r = await conn.listSessions({ cwd: "." });
-    // Harness `session/list` order is unspecified; sort newest-first to keep
-    // the prior DB-backed `ORDER BY created_at DESC` sidebar ordering (ADR-055
-    // dropped the server store that used to guarantee it).
-    return (r.sessions ?? [])
-      .map((s) => toSessionView(agentId, s as unknown as ListedSession))
-      .sort((a, b) =>
-        (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
-      );
-  });
+  // Passive: listing is a read and must not defer the agent's hibernation.
+  return withConnection(
+    agentId,
+    async (conn) => {
+      const r = await conn.listSessions({ cwd: "." });
+      // Most-recently-active first; sessionId breaks ties for a stable order.
+      return (r.sessions ?? [])
+        .map((s) => toSessionView(agentId, s as unknown as ListedSession))
+        .sort((a, b) => {
+          const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+            a.updatedAt ?? a.createdAt,
+          );
+          return byActivity !== 0
+            ? byActivity
+            : a.sessionId.localeCompare(b.sessionId);
+        });
+    },
+    { passive: true },
+  );
 }
 
 export async function deleteAgentSession(
@@ -87,7 +103,7 @@ export async function deleteAgentSession(
   );
 }
 
-/** Mode is metadata (ADR-055): a `session/resume` carrying
+/** Mode is metadata: a `session/resume` carrying
  *  `_meta.platform.mode` updates the stored entry via the runtime intercept. */
 export async function setSessionMode(
   agentId: string,

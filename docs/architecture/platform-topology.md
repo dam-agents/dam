@@ -1,26 +1,10 @@
 # Platform topology
 
-Last verified: 2026-06-02
-
-## Motivated by
-
-- [ADR-001 — Ephemeral containers + persistent workspace volumes](../adrs/001-ephemeral-containers.md) — agent pods are stateless; state lives in PVCs
-- [ADR-003 — Kubernetes from the start](../adrs/003-k8s-from-the-start.md) — k3s for local dev, K8s for production
-- [ADR-004 — ACP over A2A](../adrs/004-acp-over-a2a.md) — Agent Client Protocol for client↔agent traffic
-- [ADR-007 — ACP relay](../adrs/007-acp-relay.md) — all ACP traffic is proxied through the api-server
-- [ADR-009 — Go for controller, TypeScript for api-server](../adrs/009-go-and-typescript.md) — language split and its rationale
-- [ADR-012 — Runtime lifetime](../adrs/012-runtime-lifetime.md) — single-use spawn/hibernate model
-- [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — separate port with a restricted, internal-only surface
-- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — fixed-path harness-script contract
-- [ADR-037 — Remote terminal: split chat and terminal session modes](../adrs/037-remote-terminal.md) — sessions carry a mode; agent-runtime relays chat over ACP and terminal over a PTY
-- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy is the credential gateway; mounts owner-labelled K8s Secrets and injects credentials on the wire
-- [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods per agent
-- [ADR-041 — Istio ambient mesh](../adrs/041-istio-ambient-mesh.md) — SPIFFE identity for every internal hop; replaces the pair-key NetworkPolicy and the trusted `x-platform-instance` header
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — a single Agent ConfigMap carries both definition and runtime state; the `agent-instance` type is gone
+Last verified: 2026-07-30
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent and Run custom resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. Agent pods are stateless and ephemeral — durable state lives on per-agent persistent volumes, which is what makes the hibernate/wake cycle (scale to zero, scale back up) safe. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
 ## Diagram
 
@@ -39,50 +23,50 @@ flowchart LR
   ui -->|ACP / WS| api-server
   api-server -->|ACP relay / WS| agent-runtime
   api-server -->|tRPC proxy| agent-runtime
-  agent-runtime -->|trigger POST / MCP| api-server
+  agent-runtime -->|hello / MCP| api-server
   agent-runtime -->|HTTPS_PROXY| gateway
   gateway -->|ext_authz Check| api-server
   api-server -->|REST| k8s-api
   controller -->|watch + status writes| k8s-api
-  controller -.exec trigger.-> agent-runtime
 ```
 
 ## Components
 
 ### controller
 
-A stateless Go reconciler built on client-go. It watches ConfigMaps labelled `platform.ai/type` (template, agent, schedule, fork), reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, runs the schedule loop, and delivers trigger files to agent pods via `exec` (see [ADR-008](../adrs/008-trigger-files.md)). The controller writes only `status.yaml` on owned ConfigMaps; it never writes `spec.yaml`. See [`packages/controller/`](../../packages/controller/).
+A stateless Go reconciler built on client-go. It watches the `Agent` and `Run` custom resources (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
 
 ### api-server
 
-A TypeScript server that hosts the user-facing surface and the ACP relay. It runs two listeners ([ADR-022](../adrs/022-harness-api-server.md)):
+A TypeScript server that hosts the user-facing surface and the ACP relay. It runs two listeners:
 
 - **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket. The `version` endpoint is unauthenticated and powers the CLI's compatibility-floor check ([cli.md](cli.md)).
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
 
-The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated agents on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
+The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated agents on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the caller — either a Keycloak JWT or an API key, dispatched by token prefix in the same `Authorization: Bearer` slot — and check ownership at the public port, then rewrite `Authorization` to the per-agent runtime token before forwarding. Agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-A session's mode is agent-owned metadata ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected.
+Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); several older per-replica interval sweepers are still migrating onto this.
+
+A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this.
 
 ### agent-runtime
 
-The per-agent pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract ([ADR-023](../adrs/023-harness-agnostic-base-image.md), [ADR-037](../adrs/037-remote-terminal.md)). Its responsibilities are:
+The per-agent pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract. Its responsibilities are:
 
 - Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
-- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so a refresh within a 30 s grace window reattaches.
-- Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport ([ADR-062](../adrs/062-ssh-access.md)). Available only on images that ship `sshd`.
-- Watch a well-known trigger directory and forward scheduled triggers to the api-server's harness port.
+- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
+- Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport. Available only on images that ship `sshd`.
+- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers. See [connections](connections.md).
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
-- Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `PLATFORM_POD_FILES_EVENTS_URL` is unset (forks).
 - Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-agent PVC, then `rm`+`rename` each top-level entry into `<homeDir>/work` (top-level folders are atomic units; unrelated existing top-level entries in `work/` survive). One import per agent at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
 
-The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod ([ADR-038](../adrs/038-paired-gateway-pod.md)). Its `HTTPS_PROXY` value is the per-agent gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod. Its `HTTPS_PROXY` value is the per-agent gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
 ### gateway
 
-A per-agent Envoy pod paired with the agent-runtime pod ([ADR-038](../adrs/038-paired-gateway-pod.md)). Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap. Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler. NetworkPolicy admits ingress only from the paired agent pod and egress only to upstream services, the api-server's ext_authz port, and DNS. See [security-and-credentials](security-and-credentials.md).
+A per-agent Envoy pod paired with the agent-runtime pod. Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap. Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler. NetworkPolicy admits ingress only from the paired agent pod and egress only to upstream services, the api-server's ext_authz port, and DNS. See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
@@ -93,43 +77,44 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
 | ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | Resource CRUD and single-file uploads |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned, [ADR-055](../adrs/055-agent-owned-session-metadata.md)) |
-| ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
-| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP ([ADR-055](../adrs/055-agent-owned-session-metadata.md)); the CLI's terminal-resolution path still references the dropped `sessions.*` procedures and is pending migration |
+| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned) |
+| ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit |
+| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP; the CLI's terminal-resolution path still references the dropped `sessions.*` procedures and is pending migration |
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
-| agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, pod-files SSE, `/api/agents/:id/internal/trigger` (ADR-041) |
-| gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal (ADR-041) |
+| agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
+| agent (`dam-run`) → api-server (harness, via paired gateway → waypoint) | WebSocket (exec frames) | Ephemeral-executor stdio relay — the api-server stands up a `Run` executor pod and relays to it. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
+| gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
-| controller → agent-runtime | K8s `exec` | Atomic trigger-file delivery |
+| api-server → agent-runtime | HTTP (tRPC) | Runtime-channel `applyState` delivery from the outbox worker |
 
 ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 
 ## K8s resource model
 
-Platform models all of its domain state as ConfigMaps labelled `platform.ai/type` ([ADR-006](../adrs/006-configmaps-over-crds.md)). Each ConfigMap carries two keys:
+The controller-reconciled domain resources are CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
 
-- `spec.yaml` — user intent. Owned exclusively by the api-server.
-- `status.yaml` — observed state and scheduler bookkeeping. Owned exclusively by the controller.
+- `spec` — user intent. Owned exclusively by the api-server; validated by the K8s API server at admission.
+- `status` — observed state. Owned exclusively by the controller, written through the status subresource. Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` alone and never inspects pods itself. The user-facing state projection additionally reads the pod-level conditions so a gateway-only roll (a credential or L7-chain change) is not presented as an agent restart.
 
-| `platform.ai/type` | Purpose |
+| Kind | Purpose |
 |---|---|
-| `agent-template` | Template: image, command, default env, injection rules |
-| `agent` | Agent: image, command, env, skills, secret refs, allowed users, `desiredState`. Carries **both** `spec.yaml` (api-server) and `status.yaml` (controller) per [ADR-046](../adrs/046-eliminate-instance.md) |
-| `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
-| `agent-fork` | Forked run: parent agent ref + overrides |
+| `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
+| `Run` | Ephemeral single-command executor backing the in-pod `dam-run` CLI: parent agent ref only. One per invocation, reconciled to a bare executor pod. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
 
-For each `agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **three per-agent Istio AuthorizationPolicies** (gateway admission, harness path-prefix at the waypoint, ext-authz Service principal), and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md), [ADR-041](../adrs/041-istio-ambient-mesh.md)). ConfigMaps are chosen over CRDs for the domain types so Platform installs without cluster-admin; the controller does need write access to ServiceAccounts and Istio AuthorizationPolicies. See [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/) for the install layout.
+Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
+
+For each `Agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **two per-agent Istio AuthorizationPolicies** (harness path-prefix at the waypoint, ext-authz Service principal), and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate. Installing the CRDs requires cluster-admin at install time — moving to CRDs deliberately gave up the namespace-scoped install the earlier ConfigMap model allowed; the controller also needs write access to ServiceAccounts and Istio AuthorizationPolicies. See [`deploy/helm/platform/`](../../deploy/helm/platform/) for the install layout.
 
 ## Invariants
 
-- **Spec/status ownership.** Controller never writes `spec.yaml`; api-server never writes `status.yaml`. Write contention between the two is impossible by convention.
+- **Spec/status ownership.** Controller never writes `spec`; api-server never writes `status`. The status subresource makes the split structural — write contention between the two is impossible.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
-- **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)). See [security-and-credentials](security-and-credentials.md).
-- **SPIFFE identity per hop.** Three mesh hops, each gated by a per-agent Istio AuthorizationPolicy: (1) agent → gateway on the CONNECT proxy port, (2) gateway → harness via the waypoint (all agent egress traverses the paired gateway pod's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service. The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA ([ADR-041](../adrs/041-istio-ambient-mesh.md)). For long-lived pairs both pods share the per-agent SA, so the gateway hop is identity-equivalent to the agent. No app-layer header conveys identity.
-- **Atomic triggers.** Trigger files are delivered via write-temp + rename so the agent's trigger watcher never reads a partial file.
+- **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway. See [security-and-credentials](security-and-credentials.md).
+- **SPIFFE identity per hop.** Three hops, the latter two gated by per-agent Istio AuthorizationPolicies: (1) agent → gateway on the CONNECT proxy port (admitted by NetworkPolicy — the agent pod sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the paired gateway pod's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service. The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA. For long-lived pairs both pods share the per-agent SA, so the gateway hop is identity-equivalent to the agent. No app-layer header conveys identity.
+- **Durable triggers.** Schedule fires are Postgres rows in the runtime outbox, delivered over the runtime channel only when the agent is Ready; an undelivered fire survives pod and api-server restarts until it settles or expires (see [connections](connections.md)).

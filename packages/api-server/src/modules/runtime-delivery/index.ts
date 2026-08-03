@@ -6,4 +6,3 @@ export type {
 export { createBullConnection } from "./infrastructure/state-queue.js";
 export type { IsAgentRunning } from "./services/worker-handler.js";
 export type { RuntimeMutator } from "./services/runtime-mutator.js";
-export type { SecretEnvSource } from "./services/state-builder.js";

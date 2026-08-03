@@ -11,7 +11,6 @@ function harness() {
   return {
     sub,
     records: () => lines.map((l) => JSON.parse(l)),
-    raw: () => lines.join(""),
   };
 }
 
@@ -22,29 +21,6 @@ afterEach(() => {
 });
 
 describe("audit-log saga", () => {
-  it("logs a foreign-reply turn WITHOUT leaking the prompt", () => {
-    const h = harness();
-    active = h.sub;
-    emit({
-      type: EventType.ForeignReplyReceived,
-      replyId: "reply-1",
-      agentId: "agent-1",
-      foreignSub: "kc-foreign",
-      threadTs: "1700000000.0001",
-      prompt: "SUPER-SECRET-PROMPT-do-not-log",
-      slackContext: { channelId: "C123", userSlackId: "U999" },
-    });
-    const rec = h.records()[0]!;
-    expect(rec.msg).toBe("channel.foreign_turn.begin");
-    expect(rec.category).toBe("channel");
-    expect(rec.actor).toBe("kc-foreign");
-    expect(rec.agentId).toBe("agent-1");
-    expect(rec.correlationId).toBe("reply-1");
-    // The raw prompt must never appear anywhere on the audit stream.
-    expect(h.raw()).not.toContain("SUPER-SECRET-PROMPT");
-    expect(JSON.stringify(rec)).not.toContain("prompt");
-  });
-
   it("attributes a Telegram turn (no Keycloak sub) as an external actor", () => {
     const h = harness();
     active = h.sub;
@@ -63,6 +39,23 @@ describe("audit-log saga", () => {
     expect(rec.level).toBe("info");
   });
 
+  it("projects the messenger identity into detail, never into actor", () => {
+    const h = harness();
+    active = h.sub;
+    emit({
+      type: EventType.ChannelTurnRelayed,
+      channel: "telegram",
+      agentId: "agent-2",
+      actorSub: null,
+      externalActorId: "tg-777",
+      outcome: "success",
+    });
+    const rec = h.records()[0]!;
+    expect(rec.actor).toBe(null);
+    expect(rec.actorKind).toBe("external");
+    expect(rec.detail).toEqual({ externalActorId: "tg-777" });
+  });
+
   it("logs a failed channel turn at warn", () => {
     const h = harness();
     active = h.sub;
@@ -76,6 +69,22 @@ describe("audit-log saga", () => {
     const rec = h.records()[0]!;
     expect(rec.level).toBe("warn");
     expect(rec.result).toBe("failure");
+    expect(rec.reason).toBeUndefined();
+  });
+
+  it("projects the failure reason onto the channel.turn line", () => {
+    const h = harness();
+    active = h.sub;
+    emit({
+      type: EventType.ChannelTurnRelayed,
+      channel: "slack",
+      agentId: "agent-3",
+      actorSub: "kc-1",
+      outcome: "failure",
+      reason: "wake-timeout:agent-pod-failed:ImagePullFailure",
+    });
+    const rec = h.records()[0]!;
+    expect(rec.reason).toBe("wake-timeout:agent-pod-failed:ImagePullFailure");
   });
 
   it("does not log auth.login: per-request UserAuthenticated is intentionally ignored", () => {
@@ -90,21 +99,5 @@ describe("audit-log saga", () => {
     // The usage saga consumes this per-request event; the audit trail must not,
     // or an open UI's polling would flood it. Real logins live in Keycloak.
     expect(h.records()).toHaveLength(0);
-  });
-
-  it("flags a credential-mint fork failure as a credential event", () => {
-    const h = harness();
-    active = h.sub;
-    emit({
-      type: EventType.ForkFailed,
-      forkId: "fork-1",
-      replyId: "reply-9",
-      reason: "CredentialMintFailed",
-    });
-    const rec = h.records()[0]!;
-    expect(rec.msg).toBe("fork.failed");
-    expect(rec.category).toBe("credential");
-    expect(rec.level).toBe("warn");
-    expect(rec.reason).toBe("CredentialMintFailed");
   });
 });

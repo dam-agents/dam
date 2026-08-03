@@ -4,7 +4,10 @@ import { createScriptedMockService } from "./services/control-service.js";
 import { startAcpService } from "./services/acp-service.js";
 import { createTrpcDispatch } from "./services/trpc-dispatch.js";
 import type { AcpChannel } from "./services/ports.js";
+import { createHarnessSpawn } from "./infrastructure/harness-spawn.js";
+import { createProcessRunner } from "./infrastructure/process-runner.js";
 import { createProxyFetch } from "./infrastructure/proxy-fetch.js";
+import { createSlackReplyPoster } from "./infrastructure/slack-reply.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
 import { createWorkspaceWriter } from "./infrastructure/workspace-writer.js";
 
@@ -14,9 +17,11 @@ export interface ScriptedMockComposition {
 
 export function composeScriptedMock(): ScriptedMockComposition {
   const state = createInitialState();
+  const proxyFetch = createProxyFetch();
   const scriptedMock = createScriptedMockService({
     state,
-    proxyFetch: createProxyFetch(),
+    proxyFetch,
+    harnessSpawn: createHarnessSpawn(),
   });
   const stdio = createStdioChannel();
 
@@ -42,6 +47,9 @@ export function composeScriptedMock(): ScriptedMockComposition {
     channel: acpChannel,
     state,
     workspace: createWorkspaceWriter(process.cwd()),
+    proxyFetch,
+    processRunner: createProcessRunner(process.cwd()),
+    slackReply: createSlackReplyPoster(),
   });
 
   return { scriptedMock };

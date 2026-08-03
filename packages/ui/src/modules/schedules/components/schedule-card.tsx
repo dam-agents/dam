@@ -1,231 +1,175 @@
 import {
   ChevronDown,
-  ChevronRight,
-  Close as X,
-  Edit as Pencil,
-  Time as Clock,
+  ChevronUp,
+  Launch,
+  OverflowMenuVertical,
+  Time,
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 
 import { useStore } from "../../../store.js";
-import type { Schedule, SessionView } from "../../../types.js";
+import type { Schedule } from "../../../types.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
-import { rruleToText } from "../domain/rrule-builder.js";
-import { ScheduleSessionRow } from "./schedule-session-row.js";
+import {
+  relativeFromNow,
+  scheduleCadenceText,
+} from "../lib/schedule-format.js";
+import { ScheduleDetails } from "./schedule-details.js";
 
-// Render an ISO timestamp as a coarse "in N min / h / d" relative to now.
-// Used for surfacing `status.nextRun` in the card header — relative time is
-// what users ask about at a glance; the absolute time stays on hover/title.
-function relativeFromNow(iso: string): string {
-  const diff = new Date(iso).getTime() - Date.now();
-  if (diff <= 0) return "due";
-  const min = Math.round(diff / 60_000);
-  if (min < 1) return "< 1 min";
-  if (min < 60) return `in ${min} min`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `in ${hr} h`;
-  const d = Math.round(hr / 24);
-  return `in ${d} d`;
-}
+const NOT_EDITABLE_HINT =
+  "Cron and agent-created schedules can't be edited here.";
 
 interface Props {
   schedule: Schedule;
   isExpanded: boolean;
-  sessions: SessionView[];
   onToggleExpanded: () => void;
-  /** Shown only for rrule schedules — legacy cron schedules don't have an
-   *  update path in the controller yet, and the editor only builds RRULEs. */
-  onEdit?: () => void;
-  onResumeSession?: (sessionId: string) => void;
+  onEdit: () => void;
+  onViewResults: () => void;
 }
 
 export function ScheduleCard({
   schedule,
   isExpanded,
-  sessions,
   onToggleExpanded,
   onEdit,
-  onResumeSession,
+  onViewResults,
 }: Props) {
-  const {
-    id,
-    name,
-    type,
-    cron,
-    rrule,
-    timezone,
-    quietHours,
-    enabled,
-    sessionMode,
-    createdBy,
-    status,
-  } = schedule;
-  const scheduleSummary =
-    type === "rrule" && rrule ? rruleToText(rrule) : (cron ?? "");
-  const activeQuietHours = quietHours.filter((q) => q.enabled).length;
-  const lastResult = status?.lastResult ?? "";
-  const resultClass =
-    lastResult === "success" ? "text-success" : "text-destructive";
+  const { id, name, type, enabled, sessionMode, createdBy, status } = schedule;
   const showConfirm = useStore((s) => s.showConfirm);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
 
-  const handleToggleEnabled = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    toggleSchedule.mutate({ id });
-  };
+  const canEdit = type === "rrule" && createdBy !== "agent";
+  const cadence = scheduleCadenceText(schedule);
+  const nextRunHint =
+    enabled && status?.nextRun ? relativeFromNow(status.nextRun) : null;
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (await showConfirm(`Delete schedule "${name}"?`, "Delete Schedule")) {
-      deleteSchedule.mutate({ id });
-    }
-  };
-
-  const handleResetSession = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async () => {
     if (
       await showConfirm(
-        `Reset session for "${name}"? The next tick will start a fresh conversation.`,
-        "Reset Session",
+        "Are you sure you want to delete this schedule?",
+        `Delete ${name}?`,
+        { kind: "destructive", confirmLabel: "Delete Schedule" },
       )
-    ) {
+    )
+      deleteSchedule.mutate({ id });
+  };
+
+  const handleReset = async () => {
+    if (
+      await showConfirm(
+        `Reset the session for "${name}"? The next run starts a fresh conversation.`,
+        "Reset session",
+        { confirmLabel: "Reset session" },
+      )
+    )
       resetScheduleSession.mutate({ id });
-    }
   };
 
   return (
-    <div className="border-b border-border">
-      <div
-        className={`flex flex-col gap-1.5 px-4 py-3 cursor-pointer transition-colors hover:bg-muted ${isExpanded ? "bg-muted" : ""}`}
-        onClick={onToggleExpanded}
-      >
-        <div className="flex items-center gap-2">
-          {isExpanded ? (
-            <ChevronDown size={12} className="text-muted-foreground shrink-0" />
-          ) : (
-            <ChevronRight
-              size={12}
-              className="text-muted-foreground shrink-0"
-            />
-          )}
-          <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info">
-            {type}
-          </span>
-          {createdBy === "agent" && (
-            <span
-              title="Scheduled by the agent itself"
-              className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-amber-50 text-amber-700 border-amber-300"
-            >
-              agent
-            </span>
-          )}
-          {sessionMode === "continuous" && (
-            <span className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-purple-50 text-purple-600 border-purple-300">
-              continuous
-            </span>
-          )}
-          {activeQuietHours > 0 && (
-            <span
-              className="text-[10px] font-bold uppercase tracking-[0.03em] border rounded-full px-2 py-0.5 bg-background text-muted-foreground border-border"
-              title="Quiet-hours windows silence this schedule"
-            >
-              🌙 {activeQuietHours}
-            </span>
-          )}
-          <span className="text-[13px] font-semibold text-foreground flex-1 truncate">
+    <Card>
+      <div className="flex items-center gap-3 p-4">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold text-foreground">
             {name}
-          </span>
-          {enabled && status?.nextRun && (
-            <span
-              className="text-[11px] font-semibold text-foreground/80 flex items-center gap-1 shrink-0"
-              title={`next run: ${new Date(status.nextRun).toLocaleString()}`}
-            >
-              <Clock size={11} />
-              {relativeFromNow(status.nextRun)}
-            </span>
-          )}
-          <span
-            className="text-[11px] font-mono text-muted-foreground truncate max-w-[30%]"
-            title={scheduleSummary}
-          >
-            {scheduleSummary}
-          </span>
-          <button
-            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${enabled ? "bg-success-light text-success border-success" : "bg-background text-muted-foreground border-border"} hover:opacity-80`}
-            onClick={handleToggleEnabled}
-          >
-            {enabled ? "On" : "Off"}
-          </button>
-          {onEdit && type === "rrule" && (
+          </p>
+          <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+            {cadence && <span className="truncate">{cadence}</span>}
+            {nextRunHint && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className="inline-flex items-center gap-1 whitespace-nowrap"
+                  title={
+                    status?.nextRun &&
+                    `Next run: ${new Date(status.nextRun).toLocaleString()}`
+                  }
+                >
+                  <Time size={12} /> {nextRunHint}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          className="h-8 px-3 text-sm font-normal"
+          onClick={onViewResults}
+        >
+          <Launch size={14} /> View results
+        </Button>
+
+        <Switch
+          checked={enabled}
+          onCheckedChange={() => toggleSchedule.mutate({ id })}
+          label={enabled ? "Disable schedule" : "Enable schedule"}
+        />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-primary"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              title="Edit schedule"
+              size="icon-sm"
+              className="text-muted-foreground"
+              aria-label="Schedule actions"
             >
-              <Pencil size={13} />
+              <OverflowMenuVertical size={16} />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-muted-foreground hover:text-destructive"
-            onClick={handleDelete}
-          >
-            <X size={14} />
-          </Button>
-        </div>
-        {(status || timezone) && (
-          <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground pl-5">
-            {timezone && <span>{timezone}</span>}
-            {status?.lastRun && (
-              <span>last: {new Date(status.lastRun).toLocaleString()}</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {canEdit ? (
+              <DropdownMenuItem onSelect={onEdit}>
+                Edit schedule
+              </DropdownMenuItem>
+            ) : (
+              <span title={NOT_EDITABLE_HINT}>
+                <DropdownMenuItem disabled>Edit schedule</DropdownMenuItem>
+              </span>
             )}
-            {status?.nextRun && (
-              <span>next: {new Date(status.nextRun).toLocaleString()}</span>
+            {sessionMode === "continuous" && (
+              <DropdownMenuItem onSelect={handleReset}>
+                Reset session
+              </DropdownMenuItem>
             )}
-            {lastResult && <span className={resultClass}>{lastResult}</span>}
-          </div>
-        )}
+            <DropdownMenuItem tone="danger" onSelect={handleDelete}>
+              Delete schedule
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {isExpanded && (
-        <div className="border-t border-border bg-background/50">
-          {sessions.length === 0 && (
-            <p className="px-4 py-3 text-[11px] text-muted-foreground pl-9">
-              No sessions yet
-            </p>
-          )}
-          {sessions.map((session) => (
-            <ScheduleSessionRow
-              key={session.sessionId}
-              session={session}
-              onResume={onResumeSession}
-            />
-          ))}
-          {sessionMode === "continuous" && sessions.length > 0 && (
-            <div className="px-4 py-2 pl-9">
-              <button
-                className="text-[10px] font-bold uppercase tracking-[0.03em] border border-border rounded px-1.5 py-0.5 text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
-                onClick={handleResetSession}
-              >
-                Reset
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        className="flex w-full items-center gap-1 border-t border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
+      >
+        {isExpanded ? (
+          <>
+            Hide details <ChevronUp size={14} />
+          </>
+        ) : (
+          <>
+            View details <ChevronDown size={14} />
+          </>
+        )}
+      </button>
+
+      {isExpanded && <ScheduleDetails schedule={schedule} />}
+    </Card>
   );
 }

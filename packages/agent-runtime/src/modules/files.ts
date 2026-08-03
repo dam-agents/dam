@@ -20,15 +20,17 @@ import type {
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
+import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
+
 // Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
-// is JSON-base64 — ~10 MB fits well below the 32 MB tRPC body ceiling.
+// is JSON-base64 — ~50 MB fits well below the 70 MB tRPC body ceiling.
 // Larger transfers want a streaming endpoint, not this surface.
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 /** Platform-reserved paths under the working directory. The controller writes
- *  trigger payloads to `.triggers/` (ADR-008) and uses `.initialized` as a
+ *  trigger payloads to `.triggers/` and uses `.initialized` as a
  *  setup marker; user reads/writes against either would break agent lifecycle.
- *  See ADR-050. Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
+ *  Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
 const RESERVED = new Set([".triggers", ".initialized"]);
 
 /** Fallback check for binary content when magic-byte detection fails. Null bytes in the first 8 KB are a reliable signal. */
@@ -85,7 +87,11 @@ async function listDir(
   try {
     const ents = await readdir(abs, { withFileTypes: true });
     const entries: DirEntry[] = ents
-      .filter((ent) => !RESERVED.has(ent.name))
+      .filter(
+        (ent) =>
+          !RESERVED.has(ent.name) &&
+          !ent.name.startsWith(IMPORT_STAGING_PREFIX),
+      )
       .map(
         (ent): DirEntry => ({
           name: ent.name,
@@ -248,7 +254,21 @@ export function createFilesService(workingDir: string): FilesService {
         }
       }
       await mkdir(dirname(toAbs2), { recursive: true });
-      await rename(fromAbs, toAbs2);
+      try {
+        await rename(fromAbs, toAbs2);
+      } catch (e) {
+        // rename(2) can't replace a non-empty directory — surface it as a
+        // domain error instead of an internal one.
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM") {
+          return err(
+            forbidden(
+              `can't overwrite "${to}" — the destination folder is not empty`,
+            ),
+          );
+        }
+        throw e;
+      }
       return ok({ ok: true });
     },
     deleteSafe: async (

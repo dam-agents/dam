@@ -23,13 +23,20 @@ import {
 import { buildConnection } from "../domain/build-connection.js";
 import {
   buildConnectionSdsFields,
+  connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
+import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
+import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
+import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
+import { mintClientCredentialsToken } from "./client-credentials.js";
+import { mintGitHubAppToken } from "./github-app.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -38,6 +45,8 @@ export function createConnectionsService(deps: {
   secretStore: SecretStore;
   fanOut: ContributionFanOut;
   oauthFlow: OAuthFlowService;
+  oauthEngine: OAuthEngine;
+  githubAppEngine: GitHubAppEngine;
   oauthCallbackUrl: string;
   brandName: string;
 }): ConnectionsService {
@@ -54,10 +63,14 @@ export function createConnectionsService(deps: {
       )
       .map((c) => c.host);
     const oauthExtras =
-      conn.auth.kind === "oauth"
+      conn.auth.kind === "oauth" ||
+      conn.auth.kind === "client-credentials" ||
+      conn.auth.kind === "github-app"
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
-            ...(conn.auth.appSlug ? { appSlug: conn.auth.appSlug } : {}),
+            ...(conn.auth.kind === "oauth" && conn.auth.appSlug
+              ? { appSlug: conn.auth.appSlug }
+              : {}),
             ...(conn.auth.connectedAt
               ? {
                   connectedAt: new Date(
@@ -164,6 +177,32 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
+    async update(id: string, value: string): Promise<void> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (conn.auth.kind !== "header") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only header-credential connections support value update",
+        });
+      }
+
+      const sdsFields = buildConnectionSdsFields(conn.contributions, value);
+      await deps.secretStore.putFields(conn.auth.valueRef, {
+        value,
+        ...sdsFields,
+      });
+
+      securityLog("info", "connection.update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: { templateId: conn.templateId, authKind: conn.auth.kind },
+      });
+    },
+
     async deleteConnection(id: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
@@ -177,6 +216,14 @@ export function createConnectionsService(deps: {
           if (conn.auth.refreshTokenRef) {
             paths.add(conn.auth.refreshTokenRef.path);
           }
+          break;
+        case "client-credentials":
+          paths.add(conn.auth.accessTokenRef.path);
+          paths.add(conn.auth.clientSecretRef.path);
+          break;
+        case "github-app":
+          paths.add(conn.auth.accessTokenRef.path);
+          paths.add(conn.auth.privateKeyRef.path);
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
@@ -192,16 +239,35 @@ export function createConnectionsService(deps: {
 
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
-        const allOwnerConnectionIds = new Set(ownerConnsAfter.map((c) => c.id));
+        // The fan-out's egress sweep only revokes rules whose source id is in
+        // this owned set; `id` is already gone from `ownerConnsAfter`, so keep
+        // it here or the deleted connection's egress-allow rows would leak onto
+        // every affected agent.
+        const allOwnerConnectionIds = new Set([
+          ...ownerConnsAfter.map((c) => c.id),
+          id,
+        ]);
         for (const agentId of affectedAgents) {
-          const grantedConnections =
-            await deps.repo.listConnectionsForAgent(agentId);
-          await deps.fanOut.apply({
-            agentId,
-            ownerId: deps.ownerId,
-            grantedConnections,
-            allOwnerConnectionIds,
-          });
+          try {
+            const grantedConnections =
+              await deps.repo.listConnectionsForAgent(agentId);
+            await deps.fanOut.apply({
+              agentId,
+              ownerId: deps.ownerId,
+              grantedConnections,
+              allOwnerConnectionIds,
+            });
+          } catch (err) {
+            securityLog("warn", "connection.delete.fanout_failed", {
+              category: "credential",
+              actor: deps.ownerId,
+              actorKind: "user",
+              agentId,
+              target: conn.id,
+              result: "failure",
+              reason: err instanceof Error ? err.message : "unknown",
+            });
+          }
         }
       }
 
@@ -311,12 +377,84 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      const id = newConnectionId();
+      // The migration supplies a deterministic id (derived from the legacy
+      // secret) so re-runs are idempotent; interactive callers omit it.
+      const id = input.id ?? newConnectionId();
       const contributions = built.contributions.map(
         (c): Contribution =>
           c.kind === "mcp-entry" ? { ...c, name: input.name } : c,
       );
       const secretPath = connectionSecretPath(built.auth);
+
+      // Client-credentials mints its first access token here, synchronously:
+      // bad credentials fail the create before anything is persisted, and the
+      // real token + SDS land in the initial secret write below.
+      let auth = built.auth;
+      if (auth.kind === "client-credentials" && secretPath) {
+        const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
+        if (!clientSecret) {
+          throw new Error(`template ${template.id}: missing clientSecret`);
+        }
+        const minted = await mintClientCredentialsToken(deps.oauthEngine, {
+          connectionRef: `connection:${id}:${template.id}`,
+          auth,
+          clientSecret,
+        });
+        auth = {
+          ...auth,
+          connectedAt: Math.floor(Date.now() / 1000),
+          expiresAt: minted.expiresAt,
+        };
+        built.secrets.set(secretPath, {
+          ...(built.secrets.get(secretPath) ?? {}),
+          access_token: minted.accessToken,
+          ...buildConnectionSdsFields(contributions, minted.accessToken),
+        });
+        securityLog("info", "oauth.token_mint", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: id,
+          result: "success",
+          detail: { templateId: template.id, grant: "client_credentials" },
+        });
+      }
+
+      // GitHub App mints its first installation token here, synchronously:
+      // a bad key/app/installation fails the create before anything is
+      // persisted, mirroring the client-credentials path above.
+      if (auth.kind === "github-app" && secretPath) {
+        const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
+        if (!privateKeyPem) {
+          throw new Error(`template ${template.id}: missing privateKey`);
+        }
+        const minted = await mintGitHubAppToken(deps.githubAppEngine, {
+          connectionRef: `connection:${id}:${template.id}`,
+          auth,
+          privateKeyPem,
+        });
+        auth = {
+          ...auth,
+          connectedAt: Math.floor(Date.now() / 1000),
+          expiresAt: minted.expiresAt,
+        };
+        built.secrets.set(secretPath, {
+          ...(built.secrets.get(secretPath) ?? {}),
+          access_token: minted.accessToken,
+          ...buildConnectionSdsFields(contributions, minted.accessToken),
+        });
+        securityLog("info", "oauth.token_mint", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: id,
+          result: "success",
+          detail: {
+            templateId: template.id,
+            grant: "github_app_installation",
+          },
+        });
+      }
 
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
@@ -345,7 +483,7 @@ export function createConnectionsService(deps: {
           templateId: template.id,
           name: input.name,
           inputs: stripSecretsFromInputs(input),
-          auth: built.auth,
+          auth,
           contributions,
         });
       } catch (err) {
@@ -380,14 +518,18 @@ export function createConnectionsService(deps: {
         return { auth: "none" };
       }
     },
+
+    probeClusterCa(input) {
+      return probeClusterCa(input.host);
+    },
   };
 }
 
 function stripSecretsFromInputs(input: {
-  authKind: "oauth" | "header" | "none";
+  authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = ["value", "clientSecret"];
+  const SECRET_KEYS = ["value", "clientSecret", "privateKey"];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (SECRET_KEYS.includes(k)) continue;
@@ -404,6 +546,22 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
       return conn.auth.connectedAt || conn.auth.expiresAt
         ? "active"
         : "pending";
+    case "client-credentials":
+      // expiresAt is always stamped at mint (provider expiry or the 1h
+      // fallback) — the unset guard is defensive. Past-expiry means the
+      // refresh loop has been failing to re-mint (it retries every tick
+      // and re-mints before expiry when healthy).
+      return conn.auth.expiresAt &&
+        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
+        ? "expired"
+        : "active";
+    case "github-app":
+      // Same horizon logic as client-credentials: past-expiry means the
+      // refresh loop has been failing to re-mint the installation token.
+      return conn.auth.expiresAt &&
+        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
+        ? "expired"
+        : "active";
     case "header":
       return "active";
     case "none":
@@ -415,56 +573,15 @@ function newConnectionId(): string {
   return `conn-${randomBytes(6).toString("hex")}`;
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; cause?: { code?: unknown } };
-  return e.code === "23505" || e.cause?.code === "23505";
-}
-
 function connectionSecretPath(auth: Connection["auth"]): string | null {
   switch (auth.kind) {
     case "oauth":
+    case "client-credentials":
+    case "github-app":
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;
     case "none":
       return null;
   }
-}
-
-function connectionSecretAnnotations(
-  contributions: Connection["contributions"],
-): Record<string, string> {
-  const envMappings = contributions
-    .filter(
-      (c): c is Extract<Connection["contributions"][number], { kind: "env" }> =>
-        c.kind === "env",
-    )
-    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
-
-  const injectionHosts = contributions
-    .filter(
-      (
-        c,
-      ): c is Extract<
-        Connection["contributions"][number],
-        { kind: "egress-inject" }
-      > => c.kind === "egress-inject",
-    )
-    .map((c) => ({
-      host: c.host,
-      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
-      headerName: c.headerName,
-      valueFormat: c.valueFormat,
-      ...(c.encoding ? { encoding: c.encoding } : {}),
-    }));
-
-  const out: Record<string, string> = {};
-  if (envMappings.length > 0) {
-    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
-  }
-  if (injectionHosts.length > 0) {
-    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
-  }
-  return out;
 }

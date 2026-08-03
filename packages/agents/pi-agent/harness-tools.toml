@@ -1,0 +1,10 @@
+# Harness tool pins, shipped as system-level mise config (/etc/mise/conf.d/) so
+# the pinned versions always match the installs baked into the image — a pin
+# persisted in the workspace would go stale on template upgrade.
+# Format contract: [tools] entries only, one `"key" = "version"` per line —
+# agent-entrypoint parses this file to strip legacy workspace-seeded pins.
+# keep pi-coding-agent in sync with the pi-dynamic-providers extension's devDependency
+[tools]
+"npm:@earendil-works/pi-coding-agent" = "0.79.10"
+"npm:pi-acp" = "0.0.28"
+"npm:@zhafron/pi-memory" = "1.0.2"

@@ -1,0 +1,224 @@
+import { describe, it, expect } from "vitest";
+import type { AgentsService } from "api-server-api";
+import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
+import {
+  createFakeSlackGateway,
+  type FakeSlackChannel,
+} from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import type { AcpClient } from "../../core/acp-client.js";
+import { configureLogger } from "../../core/logger.js";
+import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
+
+const OWNER = "kc|owner-1";
+const BOUND = "C-BOUND";
+configureLogger({ level: "error", write: () => {} });
+
+function harness(opts: {
+  /** null = agent has no Slack binding. */
+  boundChannelId: string | null;
+  /** Workspace channel directory; unlisted ids resolve as not found. */
+  channels?: FakeSlackChannel[];
+  /** Make the gateway fail to start, so ensureGateway yields null. */
+  gatewayDown?: boolean;
+}) {
+  const gw = createFakeSlackGateway();
+  gw.setChannels(opts.channels ?? []);
+  if (opts.gatewayDown) {
+    gw.start = async () => false;
+  }
+  const acp = {
+    listSessions: async () => [],
+    sendPrompt: async () => "x",
+    triggerSession: () => Promise.reject(new Error("unused")),
+  } as unknown as AcpClient;
+  const agents = {
+    ensureReady: async () => {},
+  } as unknown as AgentsService;
+
+  const worker = createSlackWorker(
+    () => acp,
+    () => gw,
+    () => agents,
+    { resolve: async () => null } as never,
+    { authUrl: "http://kc", clientId: "c" } as never,
+    new Map(),
+    async () => OWNER,
+    {
+      resolveSlackBinding: async () => null,
+      resolveSlackChannelByInstance: async () => opts.boundChannelId,
+    },
+    async () => {},
+    async () => {},
+    { name: "DAM", short: "dam" },
+    async () => true,
+    "http://ui",
+    () => {},
+  );
+
+  return {
+    gw,
+    worker,
+    async post(
+      text: string,
+      options?: Parameters<typeof worker.postMessage>[2],
+    ) {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+      return worker.postMessage("agent-1", text, options);
+    },
+    async list() {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+      return worker.listConversations("agent-1");
+    },
+    messages: () => gw.readOutbound().filter((r) => r.kind === "message"),
+    uploads: () => gw.readOutbound().filter((r) => r.kind === "upload"),
+  };
+}
+
+const workspace: FakeSlackChannel[] = [
+  { id: BOUND, name: "agent-home", botIsMember: true },
+  { id: "C-GENERAL", name: "general", botIsMember: true },
+  { id: "C-ALERTS", name: "alerts", botIsMember: true },
+  // A visible channel the bot is not in (public, not yet invited). Private
+  // channels are invisible to the bot entirely and resolve as not found.
+  { id: "C-STAFF", name: "staff", botIsMember: false },
+];
+
+describe("slack outbound — cross-workspace reach", () => {
+  it("unbound agent: post errors and lists nothing — the binding is the gate", async () => {
+    const h = harness({ boundChannelId: null, channels: workspace });
+    expect(await h.post("hi")).toEqual({ error: "no channel connected" });
+    expect(await h.list()).toEqual([]);
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("gateway down: post errors as a value", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      gatewayDown: true,
+    });
+    expect(await h.post("hi")).toEqual({ error: "slack bot not running" });
+  });
+
+  it("omitted chatId still posts to the bound channel", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.post("hello")).toEqual({ ok: true });
+    expect(h.messages()).toMatchObject([{ channel: BOUND, text: "hello" }]);
+  });
+
+  it("bound-channel chatId short-circuits — works even when discovery knows nothing", async () => {
+    // Empty directory = conversations.info would fail (e.g. missing scopes);
+    // the bound channel must keep working regardless.
+    const h = harness({ boundChannelId: BOUND, channels: [] });
+    expect(await h.post("hello", { conversationId: BOUND })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: BOUND }]);
+  });
+
+  it("posts into another channel the bot is a member of", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.post("update", { conversationId: "C-GENERAL" })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
+  });
+
+  it("refuses a channel the bot is not a member of, pointing at /invite", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const result = await h.post("nope", { conversationId: "C-STAFF" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("not a member"),
+    });
+    expect((result as { error: string }).error).toContain("/invite");
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("refuses an unknown or invisible (private) conversation", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const result = await h.post("nope", { conversationId: "C-NOWHERE" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("conversation C-NOWHERE not found"),
+    });
+    expect((result as { error: string }).error).toContain("/invite");
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("a user id opens a direct message and posts into it", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.post("psst", { conversationId: "UTEAMMATE" })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: "D-UTEAMMATE" }]);
+  });
+
+  it("refuses a comma-separated user list — DMs are single-user, never group DMs", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const result = await h.post("psst", { conversationId: "UAAA,UBBB" });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("not found"),
+    });
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("refuses an empty send — no DM gets opened as a side effect", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.post("", { conversationId: "UTEAMMATE" })).toEqual({
+      error: "nothing to send — pass text or an attachment",
+    });
+    expect(h.gw.readOutbound()).toHaveLength(0);
+  });
+
+  it("an existing DM conversation id passes through untouched", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.post("again", { conversationId: "D-EXISTING" })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: "D-EXISTING" }]);
+  });
+
+  it("attachments follow the resolved target", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const result = await h.post("report attached", {
+      conversationId: "C-ALERTS",
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
+    expect(h.uploads()).toMatchObject([
+      { channelId: "C-ALERTS", filename: "report.md" },
+    ]);
+  });
+
+  it("a failed upload after a delivered text message says the text landed", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    h.gw.uploadFile = async () => {
+      throw new Error("upload_error");
+    };
+    const result = await h.post("report attached", {
+      conversationId: "C-ALERTS",
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(result).toMatchObject({
+      error: expect.stringContaining("message posted, but"),
+    });
+    expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
+  });
+
+  it("listConversations: bound channel first with its #name, then member channels by name", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    expect(await h.list()).toEqual([
+      { id: BOUND, title: "#agent-home" },
+      { id: "C-ALERTS", title: "#alerts" },
+      { id: "C-GENERAL", title: "#general" },
+    ]);
+  });
+
+  it("listConversations degrades to the bound channel when discovery fails", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    h.gw.listBotChannels = async () => {
+      throw new Error("missing_scope");
+    };
+    expect(await h.list()).toEqual([{ id: BOUND, title: BOUND }]);
+  });
+});

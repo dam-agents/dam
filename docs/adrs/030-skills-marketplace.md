@@ -1,3 +1,11 @@
+---
+id: 030
+title: Skills — connectable sources and install
+status: accepted
+subsystem: skills
+supersedes: 011
+summary: Skills are transported from external connectable git sources (user, system, template) into instance PVCs, with publish via GitHub REST through the credential gateway.
+---
 # ADR-030: Skills — connectable sources and install
 
 **Date:** 2026-04-17

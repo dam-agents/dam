@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,18 +31,21 @@ import (
 var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}
 
 // newFakeDynamic returns a dynamic fake that knows the AuthorizationPolicy CRD
-// shape the controller writes (ADR-041) and the Agent CRD (ADR-058) so agents
+// shape the controller writes and the Agent CRD so agents
 // can be Get/UpdateStatus'd. `objects` seeds the tracker (unstructured CRs).
 func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 	scheme := runtime.NewScheme()
 	gvrToListKind := map[schema.GroupVersionResource]string{
 		authzPolicyListGVR: "AuthorizationPolicyList",
 		AgentsGVR:          "AgentList",
+		RunsGVR:            "RunList",
+		UserBudgetsGVR:     "UserBudgetList",
+		VirtualMachinesGVR: "VirtualMachineList",
 	}
 	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }
 
-// agentCR returns a typed Agent CR (ADR-058). Most tests inherit the default
+// agentCR returns a typed Agent CR. Most tests inherit the default
 // activity-less agent (no last-activity annotation → shouldRun fails open to
 // running); hibernation tests override Annotations.
 func agentCR() *apiv1.Agent {
@@ -77,7 +81,6 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
 		AgentBase: config.AgentBase{
-			AccessMode:             "ReadWriteMany",
 			TerminationGracePeriod: 5,
 			IdleTimeout:            config.Duration(time.Hour),
 			ContainerSecurityContext: &corev1.SecurityContext{
@@ -89,6 +92,15 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 			ImagePullPolicy: "IfNotPresent",
 			StorageSize:     "10Gi",
 		},
+		// Generous ceiling so only budget-specific tests (which set their
+		// own) exercise a denial.
+		DefaultUserCPUBudget:    resource.MustParse("4"),
+		DefaultUserMemoryBudget: resource.MustParse("8Gi"),
+		RequestsFraction:        0.5,
+		RequestsMinCPU:          resource.MustParse("100m"),
+		RequestsMinMemory:       resource.MustParse("128Mi"),
+		LegacyAgentCPULimit:     resource.MustParse("1"),
+		LegacyAgentMemoryLimit:  resource.MustParse("2Gi"),
 	}
 	var dynObjs []runtime.Object
 	if agent != nil {
@@ -101,7 +113,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 }
 
 // readyPod is a pod reporting Ready=True, used to drive the readiness
-// conditions (ADR-059) — the fake has no StatefulSet controller, so tests
+// conditions — the fake has no StatefulSet controller, so tests
 // stand pods up directly.
 func readyPod(name string) *corev1.Pod {
 	return &corev1.Pod{
@@ -128,7 +140,7 @@ func agentCondition(t *testing.T, r *AgentReconciler, name, condType string) (st
 }
 
 func TestReconcile_RunningWhenBothPodsReady(t *testing.T) {
-	// Both pods Ready → Ready condition True (ADR-059).
+	// Both pods Ready → Ready condition True.
 	agent := agentCR()
 	r, _ := setupReconciler(t, agent, readyPod("my-agent-0"), readyPod("my-agent-gateway-0"))
 
@@ -188,7 +200,7 @@ func TestPodCurrentAndReady(t *testing.T) {
 	// The desired revision (ss.Status.UpdateRevision) and the pod's actual
 	// revision (controller-revision-hash) are both read live; readiness is true
 	// only when they match, the StatefulSet has observed the latest generation,
-	// and the pod is Ready. Anything mid-rollout reads as not-ready (ADR-059).
+	// and the pod is Ready. Anything mid-rollout reads as not-ready.
 	cases := []struct {
 		name string
 		ss   *appsv1.StatefulSet
@@ -219,7 +231,7 @@ func TestPodCurrentAndReady(t *testing.T) {
 
 func TestReconcile_StampsRollRev(t *testing.T) {
 	// An api-server-set roll-rev lands on both pod templates so bumping it
-	// rolls the pair (ADR-058).
+	// rolls the pair.
 	agent := agentCR()
 	agent.Annotations = map[string]string{annRollRev: "v1"}
 	r, client := setupReconciler(t, agent)
@@ -263,7 +275,7 @@ func TestReconcile_CreateResources(t *testing.T) {
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 
 	// Proxy URL is the paired gateway's ClusterIP literal — IP-direct so
-	// the egress NP can deny DNS entirely (ADR-038).
+	// the egress NP can deny DNS entirely.
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
 
@@ -322,7 +334,7 @@ func TestReconcile_CreateResources(t *testing.T) {
 func TestReconcile_IdleAgentScalesToZero(t *testing.T) {
 	// An idle agent (stale activity, no active session) reconciles to zero
 	// replicas — run state is derived from activity, not a stored desiredState
-	// (ADR-058). The reconciler does not publish readiness for an idle agent;
+	// The reconciler does not publish readiness for an idle agent;
 	// the hibernated status is the idle checker's to write.
 	agent := agentCR()
 	agent.Annotations = map[string]string{
@@ -341,12 +353,18 @@ func TestReconcile_IdleAgentScalesToZero(t *testing.T) {
 	_, found := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
 	assert.False(t, found,
 		"reconciler must not publish readiness for an idle agent; that is the idle checker's job")
+
+	// Rendering still succeeded, so Reconciled is published — an idle agent must
+	// not keep a stale error condition.
+	reconciled, found := agentCondition(t, r, "my-agent", apiv1.ConditionReconciled)
+	require.True(t, found, "idle agent must still record the Reconciled condition")
+	assert.Equal(t, string(metav1.ConditionTrue), reconciled)
 }
 
 func TestReconcile_PreservesHibernation(t *testing.T) {
 	// An idle agent the idle checker already scaled to zero must stay at zero
 	// across a reconcile: the reconciler scales up only on activity and never
-	// force-wakes a hibernated agent (ADR-058).
+	// force-wakes a hibernated agent.
 	agent := agentCR()
 	agent.Annotations = map[string]string{
 		annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339),

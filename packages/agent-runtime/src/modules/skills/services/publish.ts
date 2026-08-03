@@ -6,7 +6,7 @@ import type {
 } from "agent-runtime-api";
 import { ok } from "agent-runtime-api";
 import { branchTimestamp } from "../domain/branch-timestamp.js";
-import type { SkillName } from "../domain/skill-name.js";
+import { makeSkillSlug, type SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
 import type { GitHubRestClient } from "../infrastructure/github-rest-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
@@ -52,6 +52,10 @@ export async function runPublish(
   if (!headRef.ok) return headRef;
   const headSha = headRef.value.sha;
 
+  // Publish back into the source's configured subdir so its scanner — which
+  // reads that subdir exclusively — finds the skill; default `skills/` when unset.
+  const baseDir = input.path && input.path.length > 0 ? input.path : "skills";
+
   // 1. Blob per file.
   const blobs: { path: string; sha: string }[] = [];
   for (const f of files) {
@@ -62,7 +66,10 @@ export async function runPublish(
         : { content: f.content, encoding: "utf-8" },
     );
     if (!blob.ok) return blob;
-    blobs.push({ path: `skills/${name}/${f.relPath}`, sha: blob.value.sha });
+    blobs.push({
+      path: `${baseDir}/${name}/${f.relPath}`,
+      sha: blob.value.sha,
+    });
   }
 
   // 2. Tree referencing the blobs, parented on the default-branch HEAD tree.
@@ -93,8 +100,15 @@ export async function runPublish(
   });
   if (!commit.ok) return commit;
 
-  // 4. Create the branch ref.
-  const branch = `platform/publish-${name}-${branchTimestamp(deps.now())}`;
+  // 4. Create the branch ref. Slugify the name for the ref segment: a Local
+  // Skill's name is a *display* name, and git refnames forbid spaces — so
+  // "My Cool Skill" would otherwise build an invalid ref and fail at createRef,
+  // after the blobs/tree/commit above already landed upstream. An
+  // already-slug-shaped name slugifies to itself, so branches for skills that
+  // could publish before keep their exact names.
+  const slug = makeSkillSlug(name);
+  const refName = slug.ok ? slug.value : "skill";
+  const branch = `platform/publish-${refName}-${branchTimestamp(deps.now())}`;
   const refRes = await deps.github.createRef(host, {
     ref: `refs/heads/${branch}`,
     sha: commit.value.sha,

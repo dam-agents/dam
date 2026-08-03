@@ -5,6 +5,11 @@
   "packageManager": "pnpm@10.33.4+sha512.1c67b3b359b2d408119ba1ed289f34b8fc3c6873412bec6fd264fbdc82489e510fcbecb9ce9d22dae7f3b76269d8441046014bdca53b9979cd7a561ad631b800",
   "pnpm": {
     "packageExtensions": {
+      "drizzle-kit": {
+        "peerDependencies": {
+          "drizzle-orm": "*"
+        }
+      },
       "@hookform/resolvers": {
         "peerDependencies": {
           "zod": "*"
@@ -14,19 +19,49 @@
             "optional": true
           }
         }
+      },
+      "keycloakify": {
+        "peerDependencies": {
+          "react": "*",
+          "react-dom": "*",
+          "@types/react": "*",
+          "@types/react-dom": "*"
+        },
+        "peerDependenciesMeta": {
+          "@types/react": {
+            "optional": true
+          },
+          "@types/react-dom": {
+            "optional": true
+          }
+        }
       }
     },
     "overrides": {
       "@anthropic-ai/sdk@<0.91.1": "0.91.1",
-      "brace-expansion@5.0.5": "5.0.6",
+      "@babel/core@<7.29.6": "7.29.6",
+      "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0",
+      "axios@<1.18.0": "1.18.0",
+      "body-parser@<2.3.0": "2.3.0",
+      "brace-expansion@2": "2.1.3",
+      "brace-expansion@5": "5.0.8",
       "esbuild@<0.25.0": "0.25.12",
-      "protobufjs@<7.5.8": "7.5.8",
+      "esbuild@>=0.27.3 <0.28.1": "0.28.1",
+      "fast-uri@<3.1.4": "3.1.4",
+      "form-data@<4.0.6": "4.0.6",
+      "@hono/node-server@<2.0.10": "2.0.12",
+      "ip-address@<10.2.1": "10.2.1",
+      "js-yaml@<4.3.0": "4.3.0",
+      "postcss@<8.5.18": "8.5.18",
+      "protobufjs@<7.6.5": "7.6.5",
       "qs@<6.15.2": "6.15.2",
       "serialize-javascript@<7.0.5": "7.0.5",
-      "ws@8.20.0": "8.20.1"
+      "tar@<7.5.21": "7.5.21",
+      "ws@<8.21.0": "8.21.0"
     },
     "onlyBuiltDependencies": [
       "@google/genai",
+      "argon2",
       "esbuild",
       "grpc-tools",
       "koffi",

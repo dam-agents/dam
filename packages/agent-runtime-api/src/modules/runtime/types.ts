@@ -14,6 +14,9 @@ export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
   "workspace-seed",
+  "workspace-command",
+  "experiment-execute",
+  "harness-config",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -25,7 +28,7 @@ export const mergeMode = z.enum([
 ]);
 export type MergeMode = z.infer<typeof mergeMode>;
 
-export const fileFormat = z.enum(["yaml", "json", "text", "ini"]);
+export const fileFormat = z.enum(["yaml", "json", "text", "ini", "toml"]);
 export type FileFormat = z.infer<typeof fileFormat>;
 
 export const envContribution = z.object({
@@ -34,9 +37,14 @@ export const envContribution = z.object({
   placeholder: z.string(),
 });
 
+// Upstream port; omit for 443. Only L7 chains honor it — the L4 catch-all
+// always dials 443 (a CONNECT's authority port is lost at the tunnel handoff).
+const egressPort = z.number().int().min(1).max(65535).optional();
+
 export const egressAllowContribution = z.object({
   kind: z.literal("egress-allow"),
   host: z.string().min(1),
+  port: egressPort,
   pathPattern: z.string().optional(),
 });
 
@@ -47,6 +55,21 @@ export const egressInjectContribution = z.object({
   headerName: z.string().min(1),
   valueFormat: z.string().min(1),
   encoding: z.literal("basic-x-access-token").optional(),
+  // Moves the value into this query param instead of the header; restricted to unreserved chars since the Lua treats it as a trusted literal.
+  queryParamName: z
+    .string()
+    .regex(/^[A-Za-z0-9_.~-]+$/)
+    .optional(),
+  // Terminate this host's gateway chain as HTTP/2 so injection lands on a gRPC
+  // stream (e.g. Modal's x-modal-token-* metadata). Flows to the injection-hosts
+  // annotation the controller reads. Omit for HTTP/1.1 REST hosts.
+  http2: z.boolean().optional(),
+  port: egressPort,
+  // Tunnel WebSocket/SPDY upgrades (kubectl streaming); keeps the chain h1.
+  upgrades: z.boolean().optional(),
+  // Validate the upstream against the CA in the connection Secret, not the
+  // system store (self-signed cluster CAs).
+  upstreamCa: z.boolean().optional(),
 });
 
 export const fileContribution = z.object({
@@ -54,7 +77,7 @@ export const fileContribution = z.object({
   path: z.string().min(1),
   format: fileFormat,
   mergeMode: mergeMode,
-  content: z.unknown(),
+  content: z.unknown().optional(),
 });
 
 export const mcpEntryContribution = z.object({
@@ -69,6 +92,7 @@ export const skillRefContribution = z.object({
   sourceUrl: z.string().min(1),
   name: z.string().min(1),
   version: z.string().min(1),
+  path: z.string().optional(),
 });
 
 export const contribution = z.discriminatedUnion("kind", [
@@ -132,16 +156,117 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
+// One-shot shell command run in the work dir. Like workspace-seed: fire once
+// on create, run, forget — never re-asserted; the command's effects are the
+// user's mutable workspace. The command is composed server-side (e.g. a
+// Knowledge Base's bootstrap installer), never user-supplied free text.
+// Run-to-success at-most-once is enforced in-pod by a sentinel; a failed run
+// stays pending and retries until it succeeds or the event's TTL lapses.
+export const workspaceCommandEventPayload = z.object({
+  command: z.string().min(1),
+});
+export type WorkspaceCommandEventPayload = z.infer<
+  typeof workspaceCommandEventPayload
+>;
+
+export const workspaceCommandEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("workspace-command"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: workspaceCommandEventPayload,
+});
+
+// Experiments v2 (#2942): the user pressed Execute on a draft Experiment. The
+// payload's task is the composed launch prompt — the harness backgrounds the
+// script and ends its turn; the script reports to the platform on its own.
+export const experimentExecuteEventPayload = z.object({
+  experimentId: z.string().min(1),
+  task: z.string().min(1),
+});
+export type ExperimentExecuteEventPayload = z.infer<
+  typeof experimentExecuteEventPayload
+>;
+
+export const experimentExecuteEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("experiment-execute"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: experimentExecuteEventPayload,
+});
+
+// One-shot apply of a per-agent harness config change (model / mode / config
+// options) into the harness's own config file. Like workspace-seed: fire once on
+// a user action, apply, forget — never re-asserted, so the file stays the user's
+// to edit. `unset` lists logical fields to remove (a "Not set" / clear in the
+// UI). The agent's manifest owns the field → file/keyPath mapping.
+export const harnessConfigEventPayload = z.object({
+  model: z.string().min(1).optional(),
+  mode: z.string().min(1).optional(),
+  configOptions: z.record(z.string().min(1), z.string()).optional(),
+  unset: z.array(z.string().min(1)).optional(),
+});
+export type HarnessConfigEventPayload = z.infer<
+  typeof harnessConfigEventPayload
+>;
+
+export const harnessConfigEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("harness-config"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: harnessConfigEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
+  workspaceCommandEvent,
+  experimentExecuteEvent,
+  harnessConfigEvent,
 ]);
 export type Event = z.infer<typeof event>;
+
+// The config catalog a harness offers (model/mode/effort/…), declared in its
+// manifest. Mirrors the ACP select-option shape so the UI renders it unchanged.
+export const harnessConfigChoice = z.object({
+  value: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+});
+export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
+
+export const harnessConfigOptionGroup = z.object({
+  // "model", "mode", or a configOption id (e.g. "effort").
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  // ACP-style category: "model" | "mode" | "thought_level" | …
+  category: z.string().min(1),
+  choices: z.array(harnessConfigChoice),
+});
+export type HarnessConfigOptionGroup = z.infer<typeof harnessConfigOptionGroup>;
+
+export const harnessConfigCatalog = z.object({
+  options: z.array(harnessConfigOptionGroup),
+  // Per-model validity: allowed choice values per gated group. Model absent =
+  // all allowed; empty array = group hidden for that model (e.g. Haiku effort).
+  modelConstraints: z
+    .record(z.string().min(1), z.record(z.string().min(1), z.array(z.string())))
+    .optional(),
+});
+export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
 
 export const capabilities = z.object({
   contributions: z.array(contributionKind),
   events: z.array(eventKind),
+  // Whether the harness declares a config mapping (gates the UI panel). Optional
+  // for forward-compat with agents that predate it.
+  harnessConfig: z.boolean().optional(),
+  // The option catalog from the harness's manifest (absent → UI hides the panel).
+  harnessConfigCatalog: harnessConfigCatalog.optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
 

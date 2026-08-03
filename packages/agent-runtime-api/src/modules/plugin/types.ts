@@ -14,12 +14,20 @@ export type KindHandler = (
   ctx: DispatchContext,
 ) => Promise<void>;
 
+/** Handles one one-shot event. Payload is `unknown` at the boundary, narrowed by the impl. */
+export type EventHandler = (
+  payload: unknown,
+  ctx: DispatchContext,
+) => Promise<void>;
+
 export type DriverBinding = Readonly<{ impl: string }> &
   Readonly<Record<string, unknown>>;
 
+/** Handles contribution kinds (`bind`), event kinds (`bindEvent`), or both; at least one must be present. */
 export interface Plugin {
   readonly name: string;
-  bind(kind: string, binding: DriverBinding): KindHandler;
+  bind?(kind: string, binding: DriverBinding): KindHandler;
+  bindEvent?(kind: string, binding: DriverBinding): EventHandler;
 }
 
 export interface PluginModule {

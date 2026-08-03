@@ -23,6 +23,43 @@ export const oauthAuth = z.object({
   appSlug: z.string().min(1).optional(),
 });
 
+// Client-credentials grant: the platform exchanges the stored client secret
+// for short-lived access tokens (at create and again before each expiry);
+// only the access token ever reaches the gateway's injection path.
+// `tokenUrl` is resolved from the issuer's OAuth metadata at create time.
+export const clientCredentialsAuth = z.object({
+  kind: z.literal("client-credentials"),
+  clientId: z.string(),
+  clientSecretRef: secretRef,
+  accessTokenRef: secretRef,
+  issuerUrl: z.string().url(),
+  tokenUrl: z.string().url(),
+  scopes: z.array(z.string()).default([]),
+  audience: z.string().min(1).optional(),
+  expiresAt: z.number().int().optional(),
+  connectedAt: z.number().int().optional(),
+  tokenEndpointAcceptJson: z.boolean().optional(),
+  host: z.string().min(1).optional(),
+});
+
+// GitHub App installation grant: the platform signs a short-lived JWT with the
+// app's private key and exchanges it at GitHub for an installation access token
+// (ghs_…) — at create and again before each expiry. Only the minted
+// installation token ever reaches the gateway's injection path; the private key
+// stays at rest in the per-Connection Secret. `apiBaseUrl` is the GitHub REST
+// base the installation-token endpoint hangs off (api.github.com for github.com).
+export const githubAppAuth = z.object({
+  kind: z.literal("github-app"),
+  appId: z.string().min(1),
+  installationId: z.string().min(1),
+  privateKeyRef: secretRef,
+  accessTokenRef: secretRef,
+  apiBaseUrl: z.string().url(),
+  expiresAt: z.number().int().optional(),
+  connectedAt: z.number().int().optional(),
+  host: z.string().min(1).optional(),
+});
+
 export const headerAuth = z.object({
   kind: z.literal("header"),
   valueRef: secretRef,
@@ -36,6 +73,8 @@ export const noneAuth = z.object({
 
 export const authConfig = z.discriminatedUnion("kind", [
   oauthAuth,
+  clientCredentialsAuth,
+  githubAppAuth,
   headerAuth,
   noneAuth,
 ]);
@@ -61,6 +100,15 @@ export const connectionStatus = z.enum([
 ]);
 export type ConnectionStatus = z.infer<typeof connectionStatus>;
 
+export const authKind = z.enum([
+  "oauth",
+  "client-credentials",
+  "github-app",
+  "header",
+  "none",
+]);
+export type AuthKind = z.infer<typeof authKind>;
+
 export const connectionView = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -68,7 +116,7 @@ export const connectionView = z.object({
   category: connectionCategory,
   name: z.string(),
   status: connectionStatus,
-  authKind: z.enum(["oauth", "header", "none"]),
+  authKind: authKind,
   contributions: z.array(contribution),
   connectedAt: z.string().optional(),
   hosts: z.array(z.string()),
@@ -76,9 +124,6 @@ export const connectionView = z.object({
   appSlug: z.string().min(1).optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
-
-export const authKind = z.enum(["oauth", "header", "none"]);
-export type AuthKind = z.infer<typeof authKind>;
 
 export const templateInputState = z.enum([
   "required",
@@ -92,6 +137,16 @@ export const templateInput = z.object({
   state: templateInputState,
   presetValue: z.string().optional(),
   secret: z.boolean().optional(),
+  // Renders as a multi-line textarea rather than a single-line input (e.g. a PEM private key).
+  multiline: z.boolean().optional(),
+  // Marks a config input the form packs into `configInputs` rather than the typed auth fields.
+  configInput: z.boolean().optional(),
+  label: z.string().optional(),
+  hint: z.string().optional(),
+  // Validation a config input declares, surfaced so clients can validate before submit (the server enforces the same).
+  pattern: z.string().optional(),
+  patternHint: z.string().optional(),
+  enumValues: z.array(z.string()).optional(),
 });
 export type TemplateInput = z.infer<typeof templateInput>;
 
@@ -119,6 +174,15 @@ export const agentConnections = z.object({
 });
 export type AgentConnections = z.infer<typeof agentConnections>;
 
+/** Cluster API TLS probe. `trusted`: chains to a public root (no CA needed).
+ *  `reachable && !trusted`: self-signed/private CA — user must supply it.
+ *  `!reachable`: dial failed. */
+export interface ClusterCaProbe {
+  reachable: boolean;
+  trusted: boolean;
+  error?: string;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -126,16 +190,30 @@ export interface ConnectionsService {
 
   getConnection(id: string): Promise<ConnectionView | null>;
 
-  createFromTemplate(input: ConnectionCreateInput): Promise<string>;
+  // The optional `id` lets the secrets→connections migration supply a
+  // deterministic id (derived from the legacy secret) for idempotent re-runs;
+  // the router never sets it (the create schema has no `id`), so interactive
+  // callers always get a random id.
+  createFromTemplate(
+    input: ConnectionCreateInput & { id?: string },
+  ): Promise<string>;
 
   discoverMcp(input: { url: string }): Promise<{
     auth: "oauth" | "none";
   }>;
 
+  // Dials a cluster API endpoint with full TLS validation and reports whether
+  // its serving cert is publicly trusted, so the caller can require an explicit
+  // CA paste for an untrusted endpoint rather than trusting it blindly. `host`
+  // may include a `:port`. See ClusterCaProbe.
+  probeClusterCa(input: { host: string }): Promise<ClusterCaProbe>;
+
   startOAuth(
     connectionId: string,
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
+
+  update(id: string, value: string): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 

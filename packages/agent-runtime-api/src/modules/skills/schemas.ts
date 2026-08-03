@@ -5,6 +5,7 @@ export const skillInstallInputSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   skillPaths: z.array(z.string().min(1)).min(1),
+  path: z.string().optional(),
 });
 
 export const skillUninstallInputSchema = z.object({
@@ -14,6 +15,7 @@ export const skillUninstallInputSchema = z.object({
 
 export const skillScanInputSchema = z.object({
   source: z.string().min(1),
+  path: z.string().optional(),
 });
 
 // No skillPaths: the agent-runtime resolves them from its manifest.
@@ -23,8 +25,32 @@ export const skillPublishInputSchema = z.object({
   repo: z.string().min(1),
   title: z.string().min(1),
   body: z.string(),
+  // Source subdir the skill is published into; mirrors the scanner so a
+  // subdir source's own scan finds what was published back to it.
+  path: z.string().optional(),
 });
 
 export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
+});
+
+// No skillPaths: the runtime resolves them from its manifest, same as
+// readLocal/writeLocal. (Contrast skillUninstallInputSchema, whose paths come
+// from the driver applying a declarative install.)
+export const skillDeleteLocalInputSchema = z.object({
+  name: z.string().min(1),
+});
+
+export const skillWriteLocalInputSchema = z.object({
+  skills: z
+    .array(
+      z.object({
+        /** Confirmed display name — becomes frontmatter `name:`; the dir is its slug. */
+        name: z.string().min(1).max(128),
+        /** Raw Markdown file content; lands as SKILL.md. */
+        content: z.string(),
+      }),
+    )
+    .min(1)
+    .max(50),
 });

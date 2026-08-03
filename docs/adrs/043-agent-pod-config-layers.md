@@ -1,3 +1,10 @@
+---
+id: 043
+title: "Three-layer agent pod configuration"
+status: accepted
+subsystem: agent-lifecycle
+summary: Split agent pod config into chart-only base platform policy, chart-wide template defaults, and per-template overrides, with the controller falling back per field at reconcile.
+---
 # ADR-043: Three-layer agent pod configuration
 
 **Date:** 2026-05-12

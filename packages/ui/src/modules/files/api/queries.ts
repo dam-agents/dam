@@ -11,6 +11,7 @@ import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { fileKeys } from "./keys.js";
 
 const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
@@ -55,20 +56,21 @@ function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
 }
 
 /** Subscribe to one directory's slice of the batched poll. The sorted paths
- *  set is part of the key (ADR-049), so an expand/collapse swaps to a new
+ *  set is part of the key, so an expand/collapse swaps to a new
  *  entry and React Query refetches without any explicit invalidation. Returns null
  *  until the slice is present; null is the right answer for "the user just
  *  expanded this dir and the next poll hasn't arrived yet". */
 export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
+  const operable = useIsAgentOperable(agentId);
   return useQuery({
     queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
     queryFn: async (): Promise<ListDirsResponse> => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
-    enabled: !!agentId,
+    enabled: !!agentId && operable,
     refetchInterval: 2000,
     staleTime: 2000,
     placeholderData: keepPreviousData,
@@ -81,10 +83,11 @@ export function useFileContentQuery(
   agentId: string | null,
   path: string | null,
 ) {
+  const operable = useIsAgentOperable(agentId);
   return useQuery({
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
     queryFn: async () => readFileContent(agentId!, path!),
-    enabled: !!agentId && !!path,
+    enabled: !!agentId && !!path && operable,
     refetchInterval: 2000,
     staleTime: 2000,
     // No retry — transient errors resolve on the next 2 s poll tick, and we
@@ -146,6 +149,8 @@ function invalidateFiles(
 export function useFileWriteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       path: string;
       content: string;
@@ -163,6 +168,8 @@ export function useFileWriteMutation(agentId: string | null) {
 export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string; content?: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.create.mutate({
@@ -179,6 +186,8 @@ export function useFileCreateMutation(agentId: string | null) {
 export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.mkdir.mutate(input);
@@ -192,6 +201,8 @@ export function useFolderCreateMutation(agentId: string | null) {
 export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       from: string;
       to: string;
@@ -214,6 +225,8 @@ export function useFileRenameMutation(agentId: string | null) {
 export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.remove.mutate(input);
@@ -227,7 +240,7 @@ export function useFileDeleteMutation(agentId: string | null) {
 // Client-side pre-flight cap so oversized uploads fail in the UI before
 // hitting the wire. Server-side enforcement lives in agent-runtime and
 // surfaces as PAYLOAD_TOO_LARGE — this value can drift up to but not past it.
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const MESSAGE_UPLOAD_ROOT = ".uploads";
 
@@ -268,6 +281,8 @@ export async function uploadMessageAttachment(
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
+    // Callers surface errors themselves (conflict confirms, custom toasts).
+    meta: { suppressErrorToast: true },
     mutationFn: (input: {
       path: string;
       contentBase64: string;

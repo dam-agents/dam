@@ -23,37 +23,86 @@ export { templateGetInputSchema } from "./modules/templates/schemas.js";
 export { repoSchema } from "./modules/repos/schemas.js";
 export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
 
+export {
+  spawnInvocationRequestSchema,
+  spawnInvocationResponseSchema,
+  invocationViewSchema,
+  DEFAULT_INVOCATION_TTL_MS,
+  MIN_INVOCATION_TTL_MS,
+  MAX_INVOCATION_TTL_MS,
+} from "./modules/invocations/schemas.js";
+export type {
+  SpawnInvocationRequest,
+  SpawnInvocationResponse,
+  InvocationView,
+  InvocationStatus,
+  InvocationTarget,
+  InvocationsQueryService,
+} from "./modules/invocations/types.js";
+
+export type {
+  HarnessConfigChange,
+  HarnessConfigStatus,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
+export {
+  agentConfigOptionsSchema,
+  harnessConfigApplyInputSchema,
+} from "./modules/harness-config/schemas.js";
+
 export type {
   Agent,
+  AgentKind,
   AgentSpec,
   AgentState,
   AgentsService,
   AgentCreateInput,
   AgentUpdateInput,
+  TemplateUpdate,
+  UpgradeAgentError,
+  UpgradeAgentResult,
   ConnectSlackError,
   ConnectSlackResult,
+  BindSlackChannelError,
+  BindSlackChannelResult,
+  BindTelegramChatError,
+  BindTelegramChatResult,
+  ListTelegramChatsError,
+  TelegramChatView,
+  ListTelegramChatsResult,
+  UnbindTelegramChatError,
+  UnbindTelegramChatResult,
   Channel,
   SlackChannel,
-  TelegramChannel,
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
+  agentBindSlackChannelInputSchema,
+  agentBindTelegramChatInputSchema,
+  agentListTelegramChatsInputSchema,
+  agentUnbindTelegramChatInputSchema,
   agentConnectSlackInputSchema,
-  agentConnectTelegramInputSchema,
   agentCreateInputSchema,
+  agentKindSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
-  agentDisconnectTelegramInputSchema,
   agentGetInputSchema,
   agentRestartInputSchema,
   agentUpdateInputSchema,
+  agentPauseInputSchema,
+  agentStopInputSchema,
+  agentUpgradeInputSchema,
   agentWakeInputSchema,
 } from "./modules/agents/schemas.js";
 export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
-export type { AgentSpecCR, ForkSpecCR } from "./crd-types.gen.js";
+export type {
+  BudgetReserved,
+  BudgetsService,
+} from "./modules/budgets/types.js";
+export type { AgentSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,
@@ -73,6 +122,81 @@ export type {
   ScheduleUpdateRRuleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
+export type {
+  ExperimentStatus,
+  SpanStatus,
+  Skeleton,
+  TraceEvent,
+  PlanRegisterInput,
+  FinishInput,
+  AppendEventsInput,
+  Experiment,
+  ExperimentDriverSummary,
+  ExperimentSandboxCreateInput,
+  ExperimentSpan,
+  TraceFeed,
+  TraceFeedStage,
+  TraceFeedInvocation,
+  ScoreSeriesPoint,
+  ExperimentsService,
+} from "./modules/experiments/types.js";
+export {
+  skeletonSchema,
+  traceEventSchema,
+  planRegisterRequestSchema,
+  planRegisterResponseSchema,
+  appendEventsRequestSchema,
+  appendEventsResponseSchema,
+  finishRequestSchema,
+  experimentIdInputSchema,
+  experimentSandboxCreateInputSchema,
+  EXPERIMENT_SKILL_NAME,
+  SCRIPT_CONTENT_MAX_BYTES,
+  DASHBOARD_CONTENT_MAX_BYTES,
+  CUSTOM_DATA_MAX_BYTES,
+  EXPERIMENT_FEED_MESSAGE_TYPE,
+  EXPERIMENT_FOLDER_PREFIX,
+  experimentFolderName,
+} from "./modules/experiments/schemas.js";
+export type {
+  KnowledgeBaseCreateInput,
+  KnowledgeBaseTemplateId,
+  KnowledgeBasesService,
+} from "./modules/knowledge-bases/types.js";
+export {
+  knowledgeBaseCreateInputSchema,
+  knowledgeBaseTemplateIdSchema,
+} from "./modules/knowledge-bases/schemas.js";
+export type {
+  ArtifactKind,
+  ArtifactVisibility,
+  ArtifactFolder,
+  LibraryArtifact,
+  ArtifactVersionInfo,
+  ArtifactContent,
+  ArtifactListFilter,
+  ArtifactCreateInput,
+  ArtifactUpdateInput,
+  ArtifactSharingInput,
+  FolderUpdateInput,
+  ArtifactUploadTicket,
+  ArtifactLibraryService,
+} from "./modules/artifact-library/types.js";
+export {
+  artifactKindSchema,
+  artifactVisibilitySchema,
+  INLINE_CONTENT_MAX_BYTES,
+} from "./modules/artifact-library/schemas.js";
+export {
+  ARTIFACT_INTERNAL_LINK_PREFIX,
+  artifactInternalLink,
+} from "./modules/artifact-library/types.js";
+export type {
+  FeatureId,
+  FeatureFlags,
+  FeaturesService,
+} from "./modules/features/types.js";
+export { featureIdSchema } from "./modules/features/schemas.js";
 export {
   quietWindowSchema,
   scheduleCreateCronInputSchema,
@@ -83,58 +207,64 @@ export {
   scheduleToggleInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./modules/schedules/schemas.js";
+export {
+  ALL_DAYS,
+  buildRRule,
+  detectPreset,
+  detectTimezone,
+  hasVisibleOccurrence,
+  isInQuietHours,
+  rruleToText,
+} from "./modules/schedules/rrule.js";
+export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
-  SecretType,
   ProviderPreset,
   ProviderPresetMode,
   ProviderPresetType,
-  SecretView,
-  SecretCreateInput,
-  SecretCreateGithubPatInput,
-  CreateGithubPatOutput,
-  SecretUpdateGithubPatInput,
-  UpdateGithubPatOutput,
-  SecretUpdateInput,
-  AgentAccess,
-  SecretsService,
   EnvMapping,
   InjectionConfig,
-  IbmLitellmModelPins,
   BobModelPins,
-} from "./modules/secrets/types.js";
-export {
-  secretCreateGithubPatInputSchema,
-  secretCreateInputSchema,
-  secretDeleteInputSchema,
-  secretGetAgentAccessInputSchema,
-  secretSetAgentAccessInputSchema,
-  secretTestAnthropicInputSchema,
-  secretUpdateGithubPatInputSchema,
-  secretUpdateInputSchema,
-} from "./modules/secrets/schemas.js";
-export { ENV_NAME_RE } from "./modules/shared.js";
+} from "./modules/connections/providers.js";
+export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
-  isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
   isProviderPresetType,
-  IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
-  ibmLitellmPinsFromEnvMappings,
+  openaiEnvMappings,
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
-} from "./modules/secrets/types.js";
-export { hostPatternSchema } from "./modules/secrets/schemas.js";
+  IBM_LITELLM_HOST,
+  BOB_HOST,
+  PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
+  templateIdForProvider,
+} from "./modules/connections/providers.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
+
+export type {
+  MetricsService,
+  MetricsQuery,
+  MetricsSpendQuery,
+  MetricsSpendBreakdownQuery,
+  MetricsOverview,
+  SpendBreakdown,
+  TokenSpendByModel,
+  SpendByAgent,
+  SpendByDay,
+  SessionRuntime,
+  CallContext,
+} from "./modules/metrics/types.js";
 
 export type {
   AgentAppConnections,
   AppConnectionStatus,
   AppConnectionView,
+  ClusterCaProbe,
   ConnectionsService,
   Connection,
   ConnectionStatus,
@@ -159,16 +289,24 @@ export {
 export {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
+  connectionProbeClusterCaInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionNameSchema,
   connectionSetAgentConnectionsInputSchema,
+  connectionUpdateInputSchema,
 } from "./modules/connections/schemas.js";
-export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
+export type {
+  ConnectionCreateInput,
+  ConnectionUpdateInput,
+} from "./modules/connections/schemas.js";
 
 export {
   SessionType,
   SessionMode,
   sessionModeSchema,
+  AMBIENT_THREAD_KEY_PREFIX,
+  ambientThreadKey,
+  isAmbientThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 
@@ -202,11 +340,16 @@ export type {
 export type {
   LocalSkill,
   Skill,
+  SkillCreateLocalInput,
   SkillCreateSourceInput,
+  SkillDeleteLocalInput,
   SkillInstallInput,
+  SkillLocalFiles,
+  SkillOrigin,
   SkillPublishInput,
   SkillPublishRecord,
   SkillPublishResult,
+  SkillReadLocalInput,
   SkillRef,
   SkillSource,
   SkillsService,
@@ -227,6 +370,7 @@ export {
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
+  skillSourcePathSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,
@@ -251,8 +395,11 @@ export type {
   ApprovalView,
   ApprovalsService,
   ApprovalListOptions,
+  ApprovalActionOutcome,
 } from "./modules/approvals/types.js";
 export {
+  approvalActionOutcomeSchema,
+  approvalActionRuleSchema,
   approvalApproveHostInputSchema,
   approvalApproveOnceInputSchema,
   approvalApprovePermanentInputSchema,
@@ -263,6 +410,7 @@ export {
   approvalListOptionsSchema,
   approvalStatusSchema,
 } from "./modules/approvals/schemas.js";
+export { describeApprovalPayload } from "./modules/approvals/format.js";
 
 export type {
   RuleVerdict,
@@ -324,7 +472,15 @@ export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 
 // E2E
-export type { E2eService } from "./modules/e2e/types.js";
+export type {
+  E2eService,
+  SlackFireCommandInput,
+  SlackFireCommandResult,
+  SlackFireMentionInput,
+  SlackFireMessageInput,
+  SlackOutboundRecord,
+  SlackReadOutboundResult,
+} from "./modules/e2e/types.js";
 export {
   e2eAgentIdInputSchema,
   e2eSetScriptInputSchema,
@@ -367,3 +523,31 @@ export type {
   DriverFailure,
   StateSlice,
 } from "agent-runtime-api";
+
+// API keys
+export {
+  AGENT_SCOPES,
+  ALL_SCOPES,
+  API_KEY_PREFIX,
+  CREDENTIAL_SCOPES,
+} from "./modules/api-keys/types.js";
+// auth-procedures.ts (readAgentProcedure, operateAgentsProcedure,
+// manageAgentsProcedure, …, checkAgentBinding) is deliberately NOT re-exported
+// here. It calls `initTRPC.create()` at module load via `t.procedure.use(...)`,
+// which pulls @trpc/server into any consumer. Browser bundles must not load it;
+// routers in this package import it directly via `../../auth-procedures.js`.
+export type {
+  AgentBinding,
+  ApiKeyCreateInput,
+  ApiKeyCreateResult,
+  ApiKeyRevokeInput,
+  ApiKeyView,
+  ApiKeysService,
+  Scope,
+} from "./modules/api-keys/types.js";
+export {
+  agentBindingSchema,
+  apiKeyCreateInputSchema,
+  apiKeyRevokeInputSchema,
+  scopeSchema,
+} from "./modules/api-keys/schemas.js";

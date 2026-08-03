@@ -7,7 +7,8 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { printTrpcError } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -93,27 +94,13 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        if (opts.json) {
-          process.stdout.write(`${JSON.stringify(entries)}\n`);
-        } else {
-          for (const e of entries) {
-            if (e.type === "file") process.stdout.write(`${e.path}\n`);
-          }
-        }
-        process.exit(EXIT_SUCCESS);
+        const out = opts.json
+          ? `${JSON.stringify(entries)}\n`
+          : entries
+              .filter((e) => e.type === "file")
+              .map((e) => `${e.path}\n`)
+              .join("");
+        return writeStdoutAndExit(out, EXIT_SUCCESS);
       },
     );
-}
-
-function printTrpcError(e: unknown, host: string): void {
-  const classified = classifyTrpcError(e);
-  if (!classified.ok && classified.error.kind === "auth-required") {
-    process.stderr.write(
-      `error: not authenticated: ${classified.error.reason}\n` +
-        "hint: run `dam auth login` first\n",
-    );
-    return;
-  }
-  const msg = e instanceof Error ? e.message : String(e);
-  process.stderr.write(`error: cannot reach server \`${host}\`: ${msg}\n`);
 }

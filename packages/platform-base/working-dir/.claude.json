@@ -24,5 +24,6 @@
       "hasClaudeMdExternalIncludesApproved": false,
       "hasClaudeMdExternalIncludesWarningShown": false
     }
-  }
+  },
+  "hasSeenAutoModeEntryWarning": true
 }

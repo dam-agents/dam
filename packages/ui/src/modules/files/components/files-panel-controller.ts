@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
 import { useDirSnapshot, useFileContentQuery } from "../api/queries.js";
@@ -16,18 +17,17 @@ import {
   type FileEntryKind,
   useFileMutations,
 } from "../hooks/use-file-mutations.js";
-import type { FileRowMenuAction } from "./file-row-menu.js";
+import {
+  type DragSource,
+  MOVE_MIME,
+  readMoveSource,
+} from "../hooks/use-file-row-drag.js";
+import { downloadFileAt } from "../lib/download.js";
+import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
 export interface PendingNew {
   kind: FileEntryKind;
   dir: string;
-}
-
-export interface MenuState {
-  path: string;
-  type: "file" | "dir";
-  x: number;
-  y: number;
 }
 
 /** Internal panel state + handlers shared with every `<DirContents>` and
@@ -39,22 +39,22 @@ export interface FilesPanelContextValue {
   pendingNew: PendingNew | null;
   renamingPath: string | null;
   dragTargetPath: string | null;
-  menu: MenuState | null;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
   onToggleDir: (path: string) => void;
   onCommitRename: (from: string, nextName: string) => void;
   onCancelRename: () => void;
   onCommitNew: (rawName: string) => void;
   onCancelNew: () => void;
-  onRequestMenu: (
+  onAction: (
+    action: FileRowMenuAction,
     path: string,
     type: "file" | "dir",
-    x: number,
-    y: number,
   ) => void;
   onRowDragEnter: (targetDir: string) => void;
   onRowDragLeave: (targetDir: string) => void;
+  onRowDragEnd: () => void;
   onRowDrop: (targetDir: string, files: FileList) => void;
+  onRowMove: (targetDir: string, source: DragSource) => void;
 }
 
 export const FilesPanelContext = createContext<FilesPanelContextValue | null>(
@@ -80,7 +80,7 @@ function hasDirectoryItem(items: DataTransferItemList): boolean {
 export function useFilesPanelController({
   onOpenFile,
 }: {
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
@@ -94,8 +94,15 @@ export function useFilesPanelController({
 
   const rootSnapshot = useDirSnapshot(selectedAgent, "");
 
-  const { createEntry, renameEntry, deleteEntry, uploadFiles, uploadBundle } =
-    useFileMutations(selectedAgent);
+  const {
+    createEntry,
+    renameEntry,
+    moveEntry,
+    deleteEntry,
+    uploadFiles,
+    uploadBundle,
+    isUploading,
+  } = useFileMutations(selectedAgent);
   const { data: openFile, error: openFileError } = useFileContentQuery(
     selectedAgent,
     openFilePath,
@@ -111,7 +118,6 @@ export function useFilesPanelController({
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
   const [panelDragActive, setPanelDragActive] = useState(false);
   const [dragTargetPath, setDragTargetPath] = useState<string | null>(null);
-  const [menu, setMenu] = useState<MenuState | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -166,6 +172,26 @@ export function useFilesPanelController({
     setDragTargetPath((prev) => (prev === targetDir ? null : prev));
   }, []);
 
+  // Drag cancel (Escape / drop outside the window) doesn't reliably fire a
+  // final dragleave, so the source's dragend clears any stuck highlight.
+  const handleRowDragEnd = useCallback(() => {
+    setDragTargetPath(null);
+    setPanelDragActive(false);
+  }, []);
+
+  const handleRowMove = useCallback(
+    (targetDir: string, source: DragSource) => {
+      setDragTargetPath(null);
+      setPanelDragActive(false);
+      void moveEntry({
+        from: source.path,
+        toDir: targetDir,
+        kind: source.type,
+      });
+    },
+    [moveEntry],
+  );
+
   const handleRowDrop = useCallback(
     (targetDir: string, files: FileList) => {
       setDragTargetPath(null);
@@ -175,19 +201,26 @@ export function useFilesPanelController({
     [uploadFiles],
   );
 
-  const handleRequestMenu = useCallback(
-    (path: string, type: "file" | "dir", x: number, y: number) => {
-      setMenu((prev) => (prev?.path === path ? null : { path, type, x, y }));
-    },
-    [],
-  );
-
-  const handleMenuAction = useCallback(
-    (action: FileRowMenuAction) => {
-      if (!menu) return;
-      const { path, type } = menu;
+  const handleAction = useCallback(
+    (action: FileRowMenuAction, path: string, type: "file" | "dir") => {
       const isDir = type === "dir";
       switch (action) {
+        case "edit":
+          if (!isDir) onOpenFile(path, { edit: true });
+          return;
+        case "download":
+          if (!isDir && selectedAgent) {
+            void downloadFileAt(selectedAgent, path).catch((err) =>
+              emitToast({
+                kind: "error",
+                message:
+                  err instanceof Error
+                    ? `${err.message}: ${path}`
+                    : `Couldn't download ${path}`,
+              }),
+            );
+          }
+          return;
         case "new-file":
           if (isDir) startNewIn("file", path);
           return;
@@ -206,7 +239,7 @@ export function useFilesPanelController({
           return;
       }
     },
-    [menu, startNewIn, openFilePickerFor, deleteEntry],
+    [selectedAgent, onOpenFile, startNewIn, openFilePickerFor, deleteEntry],
   );
 
   const handleCommitRename = useCallback(
@@ -229,7 +262,6 @@ export function useFilesPanelController({
 
   const handleCancelRename = useCallback(() => setRenamingPath(null), []);
   const handleCancelNew = useCallback(() => setPendingNew(null), []);
-  const closeMenu = useCallback(() => setMenu(null), []);
   const closeFile = useCallback(() => setOpenFilePath(null), [setOpenFilePath]);
 
   const handleFileInputChange = useCallback(
@@ -269,6 +301,11 @@ export function useFilesPanelController({
     if (e.dataTransfer?.types?.includes("Files")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
+    } else if (e.dataTransfer?.types?.includes(MOVE_MIME)) {
+      // In-tree move dropped on empty panel space targets the root; no
+      // upload overlay for these.
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
     }
   }, []);
 
@@ -285,7 +322,12 @@ export function useFilesPanelController({
       setPanelDragActive(false);
       setDragTargetPath(null);
       // Row handlers stopPropagation before this fires, so reaching here
-      // means the drop happened on empty panel space → upload to root.
+      // means the drop happened on empty panel space → root.
+      const moved = readMoveSource(e);
+      if (moved) {
+        void moveEntry({ from: moved.path, toDir: "", kind: moved.type });
+        return;
+      }
       const items = e.dataTransfer.items;
       if (items && hasDirectoryItem(items)) {
         void (async () => {
@@ -296,7 +338,7 @@ export function useFilesPanelController({
       }
       if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
     },
-    [uploadBundle, uploadFiles],
+    [moveEntry, uploadBundle, uploadFiles],
   );
 
   const ctxValue = useMemo<FilesPanelContextValue | null>(
@@ -308,17 +350,18 @@ export function useFilesPanelController({
             pendingNew,
             renamingPath,
             dragTargetPath,
-            menu,
             onOpenFile,
             onToggleDir: handleToggleDir,
             onCommitRename: handleCommitRename,
             onCancelRename: handleCancelRename,
             onCommitNew: handleCommitNew,
             onCancelNew: handleCancelNew,
-            onRequestMenu: handleRequestMenu,
+            onAction: handleAction,
             onRowDragEnter: handleRowDragEnter,
             onRowDragLeave: handleRowDragLeave,
+            onRowDragEnd: handleRowDragEnd,
             onRowDrop: handleRowDrop,
+            onRowMove: handleRowMove,
           }
         : null,
     [
@@ -327,17 +370,17 @@ export function useFilesPanelController({
       pendingNew,
       renamingPath,
       dragTargetPath,
-      menu,
       onOpenFile,
       handleToggleDir,
       handleCommitRename,
       handleCancelRename,
       handleCommitNew,
       handleCancelNew,
-      handleRequestMenu,
+      handleAction,
       handleRowDragEnter,
       handleRowDragLeave,
       handleRowDrop,
+      handleRowMove,
     ],
   );
 
@@ -354,17 +397,15 @@ export function useFilesPanelController({
     ctxValue,
     openFile,
     pendingNew,
-    menu,
     rootIsLoadedEmpty,
     showPanelOverlay,
+    isUploading,
     fileInputRef,
     folderInputRef,
     closeFile,
-    closeMenu,
     startNewIn,
     openFilePickerFor,
     openFolderPicker,
-    handleMenuAction,
     handleCommitNew,
     handleCancelNew,
     handleFileInputChange,

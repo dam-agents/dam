@@ -6,7 +6,7 @@ import {
   type ConnectionTemplateView,
   connectionNameSchema,
 } from "api-server-api";
-import { printServiceError } from "../../agent/commands/errors.js";
+import { printServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -17,6 +17,10 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCancelled } from "../../shared/prompt.js";
+import {
+  type ConfigFlagError,
+  resolveConfigInputFlags,
+} from "../domain/config-inputs.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const POLL_INTERVAL_MS = 2000;
@@ -29,10 +33,19 @@ interface ConnectOpts {
   host?: string;
   clientId?: string;
   clientSecret?: string;
+  issuerUrl?: string;
+  scopes?: string;
+  audience?: string;
   appSlug?: string;
+  appId?: string;
+  installationId?: string;
+  privateKey?: string;
   headerName?: string;
   valueFormat?: string;
+  envName?: string;
   value?: string;
+  caData?: string;
+  config?: string[];
   server?: string;
   json?: boolean;
   browser?: boolean;
@@ -63,10 +76,45 @@ export function buildConnectCommand(deps: {
     .option("--host <host>", "input: host")
     .option("--client-id <id>", "input: OAuth client id")
     .option("--client-secret <secret>", "input: OAuth client secret")
+    .option(
+      "--issuer-url <url>",
+      "input: OAuth issuer URL — the token endpoint is discovered from its metadata (client credentials)",
+    )
+    .option(
+      "--scopes <scopes>",
+      "input: OAuth scopes, space- or comma-separated (client credentials)",
+    )
+    .option(
+      "--audience <audience>",
+      "input: OAuth audience (client credentials)",
+    )
     .option("--app-slug <slug>", "input: GitHub App slug")
+    .option("--app-id <id>", "input: GitHub App ID (GitHub App installation)")
+    .option(
+      "--installation-id <id>",
+      "input: GitHub App installation ID (GitHub App installation)",
+    )
+    .option(
+      "--private-key <pem>",
+      'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
+    )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
+    .option(
+      "--env-name <name>",
+      "input: expose the credential to the agent as this env var (custom header credentials)",
+    )
     .option("--value <value>", "input: header secret value")
+    .option(
+      "--ca-data <data>",
+      "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
+    )
+    .option(
+      "-c, --config <key=value>",
+      "set an optional template config input (e.g. -c model=premium-shell), repeatable",
+      (val: string, prev: string[]) => [...prev, val],
+      [] as string[],
+    )
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -88,6 +136,13 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
+        "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
+        "  dam connection connect github-app --app-id 123456 --installation-id 987654 \\\n" +
+        '      --private-key "$(cat app.pem)"\n' +
+        "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
+        '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
+        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
@@ -140,9 +195,32 @@ export function buildConnectCommand(deps: {
             json,
           });
 
-      const payload = buildPayload(template, name, values);
+      const configRes = resolveConfigInputFlags(template, opts.config ?? []);
+      if (!configRes.ok) {
+        process.stderr.write(
+          `error: ${formatConfigFlagError(configRes.error)}\n`,
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      const payload = buildPayload(template, name, {
+        ...values,
+        ...configRes.value,
+      });
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      // Probe (unless a CA was pasted) so a private-CA cluster fails here, not
+      // cryptically at use time.
+      if (
+        template.id === "kubernetes" &&
+        payload.authKind === "header" &&
+        !payload.caData &&
+        values.host &&
+        !checkClusterTrust(await svc.probeClusterCa(values.host), values.host)
+      ) {
         process.exit(EXIT_INVALID_INPUT);
       }
 
@@ -365,8 +443,12 @@ async function collectInputs(
 
   for (const input of missing) {
     const prompt = input.secret ? password : text;
+    const label = input.label ?? labelFor(input.name);
+    // Surface the input's hint inline — the prompt is single-line, so a
+    // multi-line secret (e.g. a PEM key) needs the hint's base64 guidance to be
+    // enterable here rather than only via the flag.
     const answer = await prompt({
-      message: labelFor(input.name),
+      message: input.hint ? `${label} — ${input.hint}` : label,
       validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
     });
     if (isCancel(answer)) exitCancelled({ json });
@@ -396,15 +478,58 @@ function buildPayload(
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
       };
+    case "client-credentials":
+      return {
+        ...common,
+        authKind: "client-credentials",
+        ...(v("host") ? { host: v("host")! } : {}),
+        ...(v("issuerUrl") ? { issuerUrl: v("issuerUrl")! } : {}),
+        ...(v("clientId") ? { clientId: v("clientId")! } : {}),
+        ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
+        ...(v("scopes") ? { scopes: v("scopes")! } : {}),
+        ...(v("audience") ? { audience: v("audience")! } : {}),
+        ...(v("headerName") ? { headerName: v("headerName")! } : {}),
+        ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
+        ...(v("envName") ? { envName: v("envName")! } : {}),
+      };
+    case "github-app": {
+      const appId = v("appId");
+      const installationId = v("installationId");
+      const privateKey = v("privateKey");
+      if (!appId) return { error: "the App ID is required (--app-id)" };
+      if (!installationId) {
+        return { error: "the installation ID is required (--installation-id)" };
+      }
+      if (!privateKey) {
+        return { error: "the private key is required (--private-key)" };
+      }
+      return {
+        ...common,
+        authKind: "github-app",
+        ...(v("host") ? { host: v("host")! } : {}),
+        appId,
+        installationId,
+        privateKey,
+      };
+    }
     case "header": {
       const value = v("value");
       if (!value) return { error: "the secret value is required (--value)" };
+      const configInputs: Record<string, string> = {};
+      for (const input of template.inputs) {
+        if (!input.configInput) continue;
+        const ov = v(input.name);
+        if (ov) configInputs[input.name] = ov;
+      }
       return {
         ...common,
         authKind: "header",
         ...(v("host") ? { host: v("host")! } : {}),
         ...(v("headerName") ? { headerName: v("headerName")! } : {}),
         ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
+        ...(v("envName") ? { envName: v("envName")! } : {}),
+        ...(v("caData") ? { caData: v("caData")! } : {}),
+        ...(Object.keys(configInputs).length > 0 ? { configInputs } : {}),
         value,
       };
     }
@@ -415,6 +540,31 @@ function buildPayload(
         ...(v("url") ? { url: v("url")! } : {}),
       };
   }
+}
+
+// Returns whether to proceed: trusted proceeds; reachable-but-untrusted blocks
+// (must paste a CA); unreachable/probe-failure warns and proceeds.
+function checkClusterTrust(
+  probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
+  host: string,
+): boolean {
+  if (!probeRes.ok) return true;
+  const probe = probeRes.value;
+  if (probe.trusted) return true;
+  if (probe.reachable) {
+    process.stderr.write(
+      `error: the API server at ${host} presents a certificate that isn't ` +
+        `publicly trusted${probe.error ? ` (${probe.error})` : ""}.\n` +
+        "  Pass --ca-data with the cluster CA — the certificate-authority-data " +
+        "value from your kubeconfig (base64 or PEM).\n",
+    );
+    return false;
+  }
+  process.stderr.write(
+    `warning: couldn't reach ${host} to check its certificate` +
+      `${probe.error ? ` (${probe.error})` : ""}; continuing.\n`,
+  );
+  return true;
 }
 
 async function pollUntilActive(
@@ -516,16 +666,39 @@ function flagListFor(inputs: readonly ConnectionTemplateInput[]): string {
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
+  issuerUrl: "Issuer URL",
   headerName: "Header name",
   valueFormat: "Value format",
   value: "Secret value",
   clientId: "Client ID",
   clientSecret: "Client secret",
+  scopes: "Scopes (space-separated)",
+  audience: "Audience",
   appSlug: "GitHub App slug",
+  appId: "GitHub App ID",
+  installationId: "GitHub App installation ID",
+  privateKey: "GitHub App private key (PEM)",
+  envName: "Env var name",
+  caData: "Cluster CA certificate",
 };
 
 function labelFor(key: string): string {
   return FIELD_LABELS[key] ?? key;
+}
+
+function formatConfigFlagError(e: ConfigFlagError): string {
+  switch (e.kind) {
+    case "missing-equals":
+      return `invalid --config value \`${e.input}\`; expected key=value`;
+    case "unknown-key": {
+      const accepts = e.validKeys.map((k) => `\`${k}\``).join(", ");
+      return accepts
+        ? `unknown --config key \`${e.key}\`; this template accepts: ${accepts}`
+        : `unknown --config key \`${e.key}\`; this template has no config inputs`;
+    }
+    case "invalid-value":
+      return e.message;
+  }
 }
 
 // Generic by design: the CLI can't tell an operator default from a family

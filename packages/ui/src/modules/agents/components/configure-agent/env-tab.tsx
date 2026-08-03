@@ -1,4 +1,8 @@
-import { AlertTriangle, KeyRound, Lock } from "lucide-react";
+import { Locked, Password, WarningAlt } from "@carbon/icons-react";
+
+import { Callout } from "@/components/ui/callout";
+import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { EnvVarsEditor } from "../../../../components/env-vars-editor.js";
 import type { EnvVar } from "../../../../types.js";
@@ -9,8 +13,8 @@ export interface InheritedEnv {
   source: "system" | { secretName: string } | { appLabel: string };
 }
 
-// Inherited entries that a user-typed env shadows by name. Per ADR-040,
-// user-typed wins on collision; this surfaces the shadow so it isn't silent.
+// Inherited entries that a user-typed env shadows by name.
+// User-typed wins on collision; this surfaces the shadow so it isn't silent.
 // System entries (PORT etc.) are excluded — those have their own protection.
 function shadowWarnings(
   envVars: EnvVar[],
@@ -45,21 +49,18 @@ export function EnvTab({
 }) {
   const warnings = shadowWarnings(envVars, inherited);
   return (
-    <>
-      <p className="text-[12px] text-text-muted">
-        Applied to every instance of this agent. Restart the instance pod to
-        pick up changes.
+    <div className="flex flex-col gap-6">
+      <p className="text-xs text-muted-foreground">
+        Variables added here are sent directly to the agent as plaintext. Use
+        them only for non-sensitive stubs and config — never secrets, which
+        belong in Connections. Changes apply to this agent; restart it to pick
+        them up.
       </p>
 
       {inherited.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-              Inherited
-            </span>
-            <span className="text-[10px] text-text-muted">
-              · managed elsewhere
-            </span>
+            <SectionLabel>Inherited</SectionLabel>
           </div>
           <div className="flex flex-col gap-1">
             {inherited.map((e, i) => (
@@ -70,18 +71,20 @@ export function EnvTab({
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
-          Custom
-        </span>
+        <SectionLabel>Custom</SectionLabel>
         {warnings.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-md border-2 border-warning bg-warning-light px-3 py-2 text-[12px]">
+          <Callout
+            tone="warning"
+            size="sm"
+            className="flex flex-col gap-1 text-xs"
+          >
             <div className="flex items-center gap-2 text-warning">
-              <AlertTriangle size={12} />
+              <WarningAlt size={12} />
               <span className="font-bold uppercase tracking-[0.05em] text-[10px]">
                 Shadowing inherited values
               </span>
             </div>
-            <ul className="list-disc pl-5 text-text-muted">
+            <ul className="list-disc pl-5 text-muted-foreground">
               {warnings.map((w) => (
                 <li key={w.envName}>
                   <span className="font-mono">{w.envName}</span> shadows{" "}
@@ -89,7 +92,7 @@ export function EnvTab({
                 </li>
               ))}
             </ul>
-          </div>
+          </Callout>
         )}
         <EnvVarsEditor
           value={envVars}
@@ -97,7 +100,7 @@ export function EnvTab({
           disabled={saving}
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -110,25 +113,25 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         ? entry.source.secretName
         : entry.source.appLabel;
   return (
-    <div className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]">
+    <div className="group flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
       <span
-        className={`shrink-0 ${isSystem ? "text-text-muted" : "text-accent"}`}
+        className={cn("shrink-0", isSystem && "text-muted-foreground")}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
-        {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
+        {isSystem ? <Locked size={12} /> : <Password size={12} />}
       </span>
-      <span className="font-mono font-semibold text-text truncate">
+      <span className="font-mono font-semibold text-foreground truncate">
         {entry.name}
       </span>
-      <span className="text-text-muted">=</span>
+      <span className="text-muted-foreground">=</span>
       <span
-        className="font-mono text-text-muted truncate flex-1"
+        className="font-mono text-muted-foreground truncate flex-1"
         title={entry.value}
       >
         {entry.value}
       </span>
       {!isSystem && (
-        <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">
+        <span className="text-xs text-muted-foreground truncate max-w-[160px]">
           {sourceName}
         </span>
       )}

@@ -1,0 +1,18 @@
+[settings]
+lockfile = true
+minimum_release_age = "7d"
+python.compile = false
+
+[tools]
+node = "24"
+jq = "latest"
+fd = "latest"
+rg = "latest"
+gh = "latest"
+uv = "latest"
+python = "3.12"
+"npm:@googleworkspace/cli" = "latest"
+# Kubernetes/OpenShift connection (#2314): kubeconfig lands via a file
+# contribution; these make it usable out of the box.
+kubectl = "latest"
+oc = "latest"

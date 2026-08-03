@@ -16,7 +16,7 @@ depends = ["*:scan"]
 depends = ["*:test"]
 
 ["e2e"]
-description = "Run Playwright e2e: spin up fresh test cluster, run specs, tear down. Options: --headed"
+description = "Run Playwright e2e: spin up fresh test cluster, run the smoke suite, tear down. Options: --headed --full"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -27,6 +27,7 @@ PLAYWRIGHT_TASK="e2e-playwright:run"
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
   esac
 done
 
@@ -71,6 +72,19 @@ cleanup() {
         echo ""
       done
     done
+    echo ""
+    echo "--- Mesh cert-expiry check (ztunnel) ---"
+    # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+    # keep the regex in sync. Rules mesh certs in or out as the failure cause.
+    CERT_HITS=$(kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs \
+        -l app=ztunnel --since=6h --tail=5000 --prefix 2>/dev/null \
+      | grep -iE 'certificate expired|AlertReceived\(CertificateExpired\)' | tail -5 || true)
+    if [ -n "$CERT_HITS" ]; then
+      echo "expired-cert signature PRESENT — mesh certs are a likely failure cause:"
+      printf '%s\n' "$CERT_HITS"
+    else
+      echo "no expired-cert signature (mesh certs are not the failure cause)"
+    fi
     echo "=== End diagnostics ==="
   fi
 
@@ -163,14 +177,13 @@ else
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
-# 1. Delete agents + forks (now custom resources — ADR-058) so the controller
+# 1. Delete agents (custom resources) so the controller
 # stops reconciling them, plus the remaining durable ConfigMaps, then sweep the
 # StatefulSets/pods it owns and the PVCs k8s retains (StatefulSet
 # volumeClaimTemplates are never GC'd with their owner). Templates are
 # helm-managed — leave them.
 echo "Deleting agents in platform-agents..."
 "${KCTL[@]}" -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
-"${KCTL[@]}" -n platform-agents delete forks.agent-platform.ai --all --ignore-not-found
 "${KCTL[@]}" -n platform-agents delete configmap \
   -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' \
   --ignore-not-found
@@ -186,12 +199,17 @@ echo "Deleting agents in platform-agents..."
 echo "Dropping + recreating the platform database..."
 "${KCTL[@]}" scale deployment platform-apiserver --replicas=0
 "${KCTL[@]}" wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
+# Recreate owned by the api-server's NOSUPERUSER role so it can run its
+# migrations ($POSTGRES_USER is the admin superuser; $POSTGRES_APISERVER_USER
+# is the platform DB's owning role — both are set on the postgres pod).
 "${KCTL[@]}" exec platform-postgres-0 -- bash -c \
   'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
      -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
-     -c "CREATE DATABASE platform;"'
+     -c "CREATE DATABASE platform OWNER $POSTGRES_APISERVER_USER;"'
 "${KCTL[@]}" scale deployment platform-apiserver --replicas=1
-"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=120s
+# Readiness now gates on the first Keycloak JWKS fetch (warm-up gives up at
+# ~240s); allow headroom past that bound for a fresh pod to become Available.
+"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=300s
 
 # 3. Clear stored Playwright auth so 01-auth re-runs the login + terms flow
 # (terms acceptance lived in the platform DB we just dropped; a fresh browser
@@ -203,7 +221,7 @@ echo "e2e data reset complete."
 '''
 
 ["e2e:loop"]
-description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run specs. Options: --headed --rebuild=apiserver,ui,controller,keycloak,mock-agent"
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -224,6 +242,9 @@ REBUILD_SET=false
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    # Full suite: smoke plus the slow on-demand specs under src/tests/full/.
+    # The pipeline default is smoke only; this flag is the manual trigger.
+    --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
   esac
 done
@@ -282,7 +303,13 @@ done
 if [ "$READY" != true ]; then
   echo "ERROR: warm e2e cluster is up but not routing on http://localhost:5555." >&2
   echo "Traefik/ingress likely failed to install. e2e:loop does not auto-heal —" >&2
-  echo "reprovision with 'mise run e2e', or check 'mise run cluster:fix-certs'." >&2
+  echo "reprovision with 'mise run e2e', or check 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
+  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+  # keep the regex in sync. Turns the generic advice above into a verdict.
+  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
+      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun e2e:loop." >&2
+  fi
   exit 1
 fi
 
@@ -379,6 +406,12 @@ description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"
 run = "zizmor --min-confidence medium .github/workflows/"
 
+["common:check:resolve-image"]
+description = "Assert the image dependency graph in scripts/resolve-image.sh (build-vs-reuse logic)"
+dir = "{{config_root}}"
+sources = ["scripts/resolve-image.sh"]
+run = "scripts/resolve-image.sh --self-check"
+
 ["common:check:lockfile-age"]
 description = "Verify no lockfile dependency is newer than 7 days"
 dir = "{{config_root}}"
@@ -436,6 +469,51 @@ if [[ $(wc -l <<<"$version") -ne 1 ]]; then echo "ERROR: Version mismatch detect
 if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then echo "ERROR: $version is not valid semver (X.Y.Z or X.Y.Z-rcN)" >&2; exit 1; fi
 if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$version" ]]; then echo "ERROR: GITHUB_REF '$GITHUB_REF' does not match 'refs/tags/v$version'" >&2; exit 1; fi
 echo "OK: version $version"
+'''
+
+# -- Docs --
+
+["docs:check"]
+depends = ["docs:check:*"]
+
+# Regenerate docs/adrs/index.md from ADR frontmatter. The index is a projection
+# of the ADR log, never hand-maintained: edit an ADR, run this, commit both.
+["docs:generate:adr-index"]
+dir = "{{config_root}}"
+run = "node scripts/adr-index.mjs"
+
+# Guard: the committed ADR index must match what regeneration produces. Same
+# shape as db:check:generated — pure files, no services, fail closed on drift.
+["docs:check:adr-index"]
+dir = "{{config_root}}"
+sources = ["docs/adrs/*.md", "scripts/adr-index.mjs"]
+run = "node scripts/adr-index.mjs --check"
+
+# Guard: architecture docs stay within their character budget. The cap is a
+# forcing function (consolidate prose, push rationale into an ADR), not a byte
+# limit. Same shape as the other docs guards — pure files, no services, fail
+# closed. The PreToolUse hook (scripts/doc-size-hook.mjs) shares this
+# measurement front-line; this gate is the authoritative, unbypassable layer.
+["docs:check:doc-size"]
+dir = "{{config_root}}"
+sources = ["docs/architecture.md", "docs/architecture/*.md", "scripts/doc-size.mjs"]
+run = "node scripts/doc-size.mjs --check"
+
+# Deterministic, unbypassable gate for the one invariant the ADR read model
+# rests on: an accepted ADR's decision is never rewritten. Precommit diffs the
+# staged tree against HEAD (fast local loop); CI diffs the branch against its
+# origin/main merge-base (authoritative, survives amends and rebases). Same
+# script, different base.
+["docs:check:adr-immutable"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+  node scripts/adr-immutable.mjs --merge-base
+else
+  node scripts/adr-immutable.mjs --staged
+fi
 '''
 
 # -- Release --
@@ -500,23 +578,33 @@ echo "What will happen:"
 echo -e "  - Nothing will be published yet."
 echo -e "  - Tip of the \x1b[36mmain\x1b[0m branch will be prepared for release $current_version in \x1b[36m$release_branch\x1b[0m branch."
 echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be bumped to ${current_version}-rc1."
-echo -e "  - Pending version in \x1b[36mmain\x1b[0m branch will be bumped to $next_version. (This can be bumped more if the next release needs to be minor/major.)"
+echo -e "  - A PR bumping pending version in \x1b[36mmain\x1b[0m to $next_version will be opened — it needs one approval, then merge it. (This can be bumped more if the next release needs to be minor/major.)"
 echo -e "Want to release a different version than $current_version? Cancel, run \x1b[36mmise run release:set-version <version>\x1b[0m on the \x1b[36mmain\x1b[0m branch and then re-run this task."
 gum confirm "Proceed?"
 
 set -x
-git checkout -B $release_branch origin/main
+git checkout -B $release_branch main
 {{ mise_bin }} run release:set-version "${current_version}-rc1"
 git push --set-upstream origin $release_branch
 set +x
 echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
 
+bump_branch="bump/v$next_version"
+bump_namespace="${bump_branch%%/*}"
 set -x
-git checkout main
+if git show-ref --verify --quiet "refs/heads/$bump_namespace"; then
+  git branch -D "$bump_namespace"
+fi
+if git ls-remote --exit-code --heads origin "$bump_namespace" >/dev/null 2>&1; then
+  git push origin --delete "$bump_namespace"
+fi
+git checkout -B "$bump_branch" main
 {{ mise_bin }} run release:set-version "$next_version"
-git push
+git push --force --set-upstream origin "$bump_branch"
 set +x
-echo -e "\x1b[36mmain\x1b[0m pending version bumped to $next_version."
+pr_url=$(gh pr create --base main --head "$bump_branch" --title "bump: v$next_version" --body "Bump pending version on \`main\` to $next_version after opening \`$release_branch\`." \
+  || gh pr view "$bump_branch" --json url --jq .url)
+echo -e "Opened $pr_url bumping \x1b[36mmain\x1b[0m pending version to $next_version. Merge it once approved."
 
 git checkout $release_branch
 
@@ -653,7 +741,7 @@ git fetch origin --tags --quiet
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Latest release branch:  $(git branch -r --sort=-version:refname --format "%(refname:short)" | grep 'origin/release-v' | head -n1 | sed 's|origin/||')"
-echo "Latest released tag:    $(git ls-remote --tags origin 'v*' | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?$' | sed 's|refs/tags/||' | sort -V | tail -n 1)"
+echo "Latest released tag:    $(git ls-remote --tags origin 'v*' | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?$' | sed 's|refs/tags/||;s|-rc|~rc|' | sort -V | tail -n 1 | sed 's|~rc|-rc|')"
 echo "CD status:              https://github.com/dam-agents/dam/actions/workflows/cd.yml"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 '''

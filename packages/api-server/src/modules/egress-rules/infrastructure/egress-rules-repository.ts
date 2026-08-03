@@ -1,4 +1,4 @@
-import { and, desc, eq, sql, type Db } from "db";
+import { and, desc, eq, inArray, sql, type Db } from "db";
 import { egressRules } from "db";
 import type {
   EgressPreset,
@@ -41,6 +41,16 @@ export interface EgressRulesRepository {
    *  preset is not stored on the spec — its rules' sources are the truth. */
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
+  /** Exact lookup on the active-row unique index (`egress_rules_lookup_idx`).
+   *  Used as the insert conflict fallback so callers get *the* conflicting
+   *  row, not a best-match — `findMatch` treats the path as a request path,
+   *  not a pattern. */
+  getActiveByTuple(
+    agentId: string,
+    host: string,
+    method: string,
+    pathPattern: string,
+  ): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Insert-or-promote variant used by the connection-rules sync. If an
    *  existing active row for `(agent, host, method, pathPattern)` is a
@@ -51,11 +61,20 @@ export interface EgressRulesRepository {
    *  Returns the active row (newly inserted, promoted, or pre-existing
    *  user-owned row that we left alone). */
   insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
-  /** Promotes the row's source to `manual` regardless of prior origin. */
-  updatePromoteToManual(
-    input: PromoteToManualInput,
-  ): Promise<EgressRuleRow | null>;
+  /** Reassigns the row to an explicit user-decision source (`manual` or
+   *  `inbox`) regardless of prior origin. */
+  updateTakeOwnership(input: TakeOwnershipInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
+  /** Reassign an agent's active rules from any of `fromSources` to `toSource`,
+   *  in place. The secrets→connections migration uses this to hand a legacy
+   *  secret's egress rows to the new connection without a revoke-then-insert
+   *  coverage gap; `source` isn't in the active-row unique index, so the
+   *  relabel can't collide. */
+  reassignActiveSource(
+    agentId: string,
+    fromSources: string[],
+    toSource: EgressRuleSource,
+  ): Promise<void>;
   revoke(id: string): Promise<void>;
   /** Hard-delete all rows for an agent. Used by the cleanup hook on agent
    *  delete and by the orphan sweeper. Revoked rows are also removed —
@@ -65,12 +84,28 @@ export interface EgressRulesRepository {
    *  enough at the row counts we expect; the sweeper compares this set
    *  against the live K8s agent CM list. */
   listDistinctAgentIds(): Promise<string[]>;
+  /** Every ACTIVE rule's promotion-relevant fields, across all agents.
+   *  Consumed once at startup by the L7-promotion backfill (#2865); the
+   *  promoted-host predicate stays in the domain, not in SQL. `source` lets
+   *  the domain exclude connection-derived rows (already TLS-terminated by
+   *  their own credential chain). */
+  listActiveForPromotionScan(): Promise<
+    Array<{
+      agentId: string;
+      host: string;
+      method: string;
+      pathPattern: string;
+      port?: number;
+      source: string;
+    }>
+  >;
 }
 
 export interface NewEgressRule {
   id: string;
   agentId: string;
   host: string;
+  port?: number;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;
@@ -78,23 +113,27 @@ export interface NewEgressRule {
   source: EgressRuleSource;
 }
 
-export interface PromoteToManualInput {
+export interface TakeOwnershipInput {
   id: string;
   method: string;
   pathPattern: string;
   verdict: RuleVerdict;
   decidedBy: string;
+  source: Extract<EgressRuleSource, "manual" | "inbox">;
 }
 
 type RawRule = {
   id: string;
   agentId: string;
   host: string;
+  port: number | null;
   method: string;
   pathPattern: string;
   verdict: string;
   decidedBy: string;
-  decidedAt: Date;
+  // Raw `db.execute(sql...)` reads bypass drizzle's timestamptz mapper and
+  // yield strings; typed `.select()`/`.returning()` reads yield Dates.
+  decidedAt: Date | string;
   status: string;
   source: string;
 } & Record<string, unknown>;
@@ -104,11 +143,13 @@ function toRow(r: RawRule): EgressRuleRow {
     id: r.id,
     agentId: r.agentId,
     host: r.host,
+    ...(r.port ? { port: r.port } : {}),
     method: r.method,
     pathPattern: r.pathPattern,
     verdict: r.verdict as RuleVerdict,
     decidedBy: r.decidedBy,
-    decidedAt: r.decidedAt,
+    decidedAt:
+      r.decidedAt instanceof Date ? r.decidedAt : new Date(r.decidedAt),
     status: r.status as "active" | "revoked",
     source: r.source as EgressRuleSource,
   };
@@ -124,9 +165,27 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
+    async getActiveByTuple(agentId, host, method, pathPattern) {
+      // No LIMIT needed — the partial unique index guarantees at most one
+      // active row per tuple.
+      const rows = await db
+        .select()
+        .from(egressRules)
+        .where(
+          and(
+            eq(egressRules.agentId, agentId),
+            eq(egressRules.host, host),
+            eq(egressRules.method, method),
+            eq(egressRules.pathPattern, pathPattern),
+            eq(egressRules.status, "active"),
+          ),
+        );
+      return rows.length ? toRow(rows[0] as RawRule) : null;
+    },
+
     async findMatch(agentId, host, method, path) {
       const rows = await db.execute<RawRule>(sql`
-        SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
@@ -160,7 +219,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
 
     async listConnectionDerivedForAgent(agentId) {
       const rows = await db.execute<RawRule>(sql`
-        SELECT id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
@@ -205,6 +264,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           id: row.id,
           agentId: row.agentId,
           host: row.host,
+          port: row.port ?? null,
           method: row.method,
           pathPattern: row.pathPattern,
           verdict: row.verdict,
@@ -214,7 +274,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         .onConflictDoNothing()
         .returning();
       if (inserted.length) return toRow(inserted[0] as RawRule);
-      const existing = await this.findMatch(
+      const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
         row.method,
@@ -234,6 +294,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           id: row.id,
           agentId: row.agentId,
           host: row.host,
+          port: row.port ?? null,
           method: row.method,
           pathPattern: row.pathPattern,
           verdict: row.verdict,
@@ -256,12 +317,12 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND path_pattern = ${row.pathPattern}
           AND status = 'active'
           AND source LIKE 'preset:%'
-        RETURNING id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+        RETURNING id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                   verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
       `);
       const promotedRows = promoted as unknown as RawRule[];
       if (promotedRows.length) return toRow(promotedRows[0]!);
-      const existing = await this.findMatch(
+      const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
         row.method,
@@ -272,7 +333,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return existing;
     },
 
-    async updatePromoteToManual(input) {
+    async updateTakeOwnership(input) {
       const updated = await db
         .update(egressRules)
         .set({
@@ -280,7 +341,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           pathPattern: input.pathPattern,
           verdict: input.verdict,
           decidedBy: input.decidedBy,
-          source: "manual",
+          source: input.source,
         })
         .where(
           and(eq(egressRules.id, input.id), eq(egressRules.status, "active")),
@@ -301,6 +362,42 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         )
         .orderBy(desc(egressRules.decidedAt));
       return rows.map((r) => toRow(r as RawRule));
+    },
+
+    async listActiveForPromotionScan() {
+      const rows = await db
+        .select({
+          agentId: egressRules.agentId,
+          host: egressRules.host,
+          method: egressRules.method,
+          pathPattern: egressRules.pathPattern,
+          port: egressRules.port,
+          source: egressRules.source,
+        })
+        .from(egressRules)
+        .where(eq(egressRules.status, "active"));
+      return rows.map((r) => ({
+        agentId: r.agentId,
+        host: r.host,
+        method: r.method,
+        pathPattern: r.pathPattern,
+        source: r.source,
+        ...(r.port != null ? { port: r.port } : {}),
+      }));
+    },
+
+    async reassignActiveSource(agentId, fromSources, toSource) {
+      if (fromSources.length === 0) return;
+      await db
+        .update(egressRules)
+        .set({ source: toSource })
+        .where(
+          and(
+            eq(egressRules.agentId, agentId),
+            eq(egressRules.status, "active"),
+            inArray(egressRules.source, fromSources),
+          ),
+        );
     },
 
     async revoke(id) {

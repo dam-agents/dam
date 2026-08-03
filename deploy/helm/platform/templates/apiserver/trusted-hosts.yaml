@@ -1,5 +1,5 @@
 {{/*
-Trusted-host preset list (ADR-035). Mounted into the api-server
+Trusted-host preset list. Mounted into the api-server
 as a single newline-delimited file at /etc/platform/trusted-hosts. The api-server
 reads it once at boot and uses it as seed data for the `trusted` egress preset
 when creating agents. Rules seeded with `source=preset:trusted` are owned by

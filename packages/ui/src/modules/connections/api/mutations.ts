@@ -12,6 +12,19 @@ export function useCreateConnection() {
   });
 }
 
+export function useUpdateConnection() {
+  return useMutation({
+    ...trpc.connections.update.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      errorToast: "Couldn't update connection",
+    },
+  });
+}
+
 export function useDeleteConnection() {
   return useMutation({
     ...trpc.connections.delete.mutationOptions(),
@@ -25,16 +38,31 @@ export function useDeleteConnection() {
   });
 }
 
-export function useStartOAuth() {
+// `silent` for background detection (the debounced URL probe), where a
+// transient failure shouldn't pop a global toast.
+export function useDiscoverMcp(opts?: { silent?: boolean }) {
   return useMutation({
-    ...trpc.connections.startOAuth.mutationOptions(),
-    meta: { errorToast: "Couldn't start OAuth" },
+    ...trpc.connections.discoverMcp.mutationOptions(),
+    meta: opts?.silent
+      ? { suppressErrorToast: true }
+      : { errorToast: "Couldn't reach MCP server" },
   });
 }
 
-export function useDiscoverMcp() {
+export function useProbeClusterCa() {
   return useMutation({
-    ...trpc.connections.discoverMcp.mutationOptions(),
-    meta: { errorToast: "Couldn't reach MCP server" },
+    ...trpc.connections.probeClusterCa.mutationOptions(),
+    meta: { errorToast: "Couldn't reach the cluster API" },
+  });
+}
+
+/**
+ * Verifies an Anthropic credential against Anthropic before save. Returns
+ * `{ ok: true } | { ok: false; message }` rather than throwing — callers
+ * render the result inline, so no errorToast / invalidation here.
+ */
+export function useTestAnthropic() {
+  return useMutation({
+    ...trpc.connections.testAnthropic.mutationOptions(),
   });
 }

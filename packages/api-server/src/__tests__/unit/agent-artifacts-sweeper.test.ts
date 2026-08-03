@@ -5,7 +5,7 @@ import type {
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
 
-// Live agents are Agent custom resources now (ADR-058), listed via
+// Live agents are Agent custom resources now, listed via
 // listCustomObjects — not ConfigMaps.
 function fakeK8s(liveAgents: string[]): K8sClient {
   return {
@@ -40,7 +40,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 
@@ -72,7 +71,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 2,
     });
 
@@ -104,7 +102,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 
@@ -127,7 +124,6 @@ describe("agent-artifacts-sweeper", () => {
           },
         },
       ],
-      intervalMs: 30_000,
       batchSize: 100,
     });
 

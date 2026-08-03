@@ -29,7 +29,6 @@ var testConfig = &config.Config{
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
 	AgentBase: config.AgentBase{
-		AccessMode:             "ReadWriteMany",
 		TerminationGracePeriod: 5,
 		ContainerSecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
@@ -41,9 +40,12 @@ var testConfig = &config.Config{
 		StorageSize:     "10Gi",
 	},
 	AgentProbesEnabled: true,
+	RequestsFraction:   0.5,
+	RequestsMinCPU:     resource.MustParse("100m"),
+	RequestsMinMemory:  resource.MustParse("128Mi"),
 }
 
-// testAgent carries the merged Agent fields (ADR-046): image/mounts/env
+// testAgent carries the merged Agent fields: image/mounts/env
 // from the former AgentSpec PLUS the runtime fields (DesiredState,
 // SecretRef) that used to live on the retired InstanceSpec. Most tests
 // inherit "running" — hibernation-specific tests override with a local
@@ -72,12 +74,13 @@ var testOwnerCM = &corev1.ConfigMap{
 
 func credSecret(name, host string) corev1.Secret {
 	ann := map[string]string{
-		"agent-platform.ai/host-pattern":          host,
-		"agent-platform.ai/injection-header-name": "Authorization",
+		"agent-platform.ai/injection-hosts": `[{"host":"` + host +
+			`","headerName":"Authorization","valueFormat":"Bearer {value}","sdsKey":"` +
+			sdsFileKeyForHost(host) + `"}]`,
 	}
 	// Fixtures targeting github hosts also declare GH_TOKEN in their
 	// env-mappings — mirrors what the api-server's github descriptor
-	// stamps, so `hasGHTokenEnv` returns true for these Secrets.
+	// stamps, so `credentialEnvVars` synthesizes GH_TOKEN for these Secrets.
 	if host == "api.github.com" || host == "github.com" || host == "raw.githubusercontent.com" {
 		ann["agent-platform.ai/env-mappings"] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
 	}
@@ -85,16 +88,24 @@ func credSecret(name, host string) corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: ann,
-			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
+			Labels: map[string]string{
+				"agent-platform.ai/owner":       "owner-1",
+				"agent-platform.ai/managed-by":  "api-server",
+				"agent-platform.ai/secret-type": "connection",
+				"agent-platform.ai/connection":  name,
+			},
 		},
-		Data: map[string][]byte{"value": []byte("Bearer abc")},
+		// Real api-server-written Secrets always carry the SDS file the
+		// bootstrap references; chain rendering degrades to allow-only
+		// without it.
+		Data: map[string][]byte{sdsFileKeyForHost(host): []byte("resources: []")},
 	}
 }
 
 // --- Agent StatefulSet tests ---
 
 func TestBuildAgentStatefulSet_Running(t *testing.T) {
-	// ADR-046: env + secretRef live on the merged AgentSpec — extend a
+	// Env + secretRef live on the merged AgentSpec — extend a
 	// copy of testAgent rather than carrying a separate InstanceSpec.
 	agent := *testAgent
 	agent.Env = append([]types.EnvVar{}, testAgent.Env...)
@@ -124,7 +135,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.NotContains(t, ss.Spec.Selector.MatchLabels, "istio.io/dataplane-mode",
 		"selector must remain minimal so ambient enrolment can be flipped without selector churn")
 
-	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod (ADR-038)")
+	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod")
 	c := ss.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "agent", c.Name)
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", c.Image)
@@ -144,17 +155,21 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
-	// Node gets the CA via NODE_EXTRA_CA_CERTS; SSL_CERT_FILE / GIT_SSL_CAINFO
-	// stay unset because the entrypoint installs the CA into the system trust
-	// store for the other tools. See resources.go.
+	// Node gets the CA via NODE_EXTRA_CA_CERTS. SSL_CERT_FILE / GIT_SSL_CAINFO
+	// stay unset at the pod level: the base image points Python at the merged
+	// system bundle, and a pod-level value aimed at the bare CA file would
+	// override it and drop the public CAs. See resources.go.
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
-	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the entrypoint")
+	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
-	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the entrypoint")
+	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the system trust store")
 	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
-	assert.Equal(t, "8080", envMap["ACP_PORT"])
-	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
+	// User env (spec.env) is no longer projected — it rides the runtime channel.
+	_, hasACPPort := envMap["ACP_PORT"]
+	assert.False(t, hasACPPort, "spec.env must not be projected into the container")
+	_, hasGithubOrg := envMap["GITHUB_ORG"]
+	assert.False(t, hasGithubOrg, "spec.env must not be projected into the container")
 
 	require.Len(t, c.EnvFrom, 1)
 	assert.Equal(t, "my-secrets", c.EnvFrom[0].SecretRef.LocalObjectReference.Name)
@@ -166,6 +181,55 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	require.NotNil(t, c.SecurityContext)
 	require.NotNil(t, c.SecurityContext.Capabilities)
 	assert.Equal(t, []corev1.Capability{"ALL"}, c.SecurityContext.Capabilities.Drop)
+}
+
+// Limits are the stamped "size" (#1900); requests derive from them at
+// render: max(limit × fraction, floor), clamped to the limit. Chart-default
+// limits fill missing dimensions so no agent renders unbounded.
+func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentTemplateDefaults.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
+	spec := *testAgent
+	spec.Resources = types.ResourceSpec{
+		Limits: map[string]string{"cpu": "2", "memory": "2Gi"},
+	}
+	ss := BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c := ss.Spec.Template.Spec.Containers[0]
+	// String comparison: derived Quantities are numerically canonical but
+	// carry a different internal scale than MustParse.
+	assert.Equal(t, "2", c.Resources.Limits.Cpu().String())
+	assert.Equal(t, "2Gi", c.Resources.Limits.Memory().String())
+	assert.Equal(t, "1", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "1Gi", c.Resources.Requests.Memory().String())
+
+	// Floors: a tiny size derives the floor, clamped to the limit so the
+	// pod stays valid.
+	spec.Resources = types.ResourceSpec{
+		Limits: map[string]string{"cpu": "150m", "memory": "64Mi"},
+	}
+	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c = ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "100m", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "64Mi", c.Resources.Requests.Memory().String())
+
+	// Partial limits fill per dimension from the chart default — a CPU-only
+	// size must not leave memory unbounded; spec-set requests bypass
+	// derivation (operator escape hatch).
+	spec.Resources = types.ResourceSpec{
+		Limits:   map[string]string{"cpu": "500m"},
+		Requests: map[string]string{"cpu": "250m"},
+	}
+	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	c = ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "500m", c.Resources.Limits.Cpu().String())
+	assert.Equal(t, "1Gi", c.Resources.Limits.Memory().String())
+	assert.Equal(t, "250m", c.Resources.Requests.Cpu().String())
+	assert.Equal(t, "512Mi", c.Resources.Requests.Memory().String())
 }
 
 func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
@@ -180,7 +244,7 @@ func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_DefaultsToRunningReplicas(t *testing.T) {
-	// Replicas are owned by the reconciler's applyStatefulSet (ADR-058): the
+	// Replicas are owned by the reconciler's applyStatefulSet: the
 	// builder always renders the running default of 1. Hibernation scales the
 	// live StatefulSet to zero — it is not a property of the rendered spec.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
@@ -209,7 +273,7 @@ func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
 	assert.Equal(t, "home-agent", pvc.Name)
-	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, pvc.Spec.AccessModes)
+	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, pvc.Spec.AccessModes)
 	assert.Nil(t, pvc.Spec.StorageClassName, "unset StorageClass → PVC gets cluster-default class")
 
 	volMap := make(map[string]corev1.Volume)
@@ -282,7 +346,7 @@ func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_NoCredentialMountsOnAgent(t *testing.T) {
-	// ADR-038: the agent's only platform-issued data is the CA cert (ca.crt
+	// The agent's only platform-issued data is the CA cert (ca.crt
 	// projection of the leaf). No credential Secrets, no bootstrap CM, no tls.key.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
 
@@ -326,7 +390,7 @@ func TestBuildAgentService(t *testing.T) {
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// ADR-041: per-instance pair-key NetworkPolicy is gone (mesh
+// Per-instance pair-key NetworkPolicy is gone (mesh
 // AuthorizationPolicy handles pair isolation cryptographically). The
 // previous TestBuildAgentNetworkPolicy is no longer applicable.
 
@@ -363,16 +427,16 @@ func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
 	yaml := cm.Data["envoy.yaml"]
-	// ADR-038: gateway listener binds 0.0.0.0; reach is gated by NetworkPolicy.
+	// Gateway listener binds 0.0.0.0; reach is gated by NetworkPolicy.
 	assert.Contains(t, yaml, "0.0.0.0")
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
-	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
+	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/"+sdsFileKeyForHost("api.example.com"))
 	// path_config_source must declare `watched_directory` pointing at the
 	// Secret-volume mount root — otherwise Envoy never observes the kubelet
 	// symlink swap that delivers a rotated token. Regression for the
@@ -411,7 +475,7 @@ func podClaimName(ss *appsv1.StatefulSet, volName string) (string, bool) {
 }
 
 func TestBuildAgentStatefulSet_PersistedVCTCarriesMountLabel(t *testing.T) {
-	// #692: every persisted PVC must carry the (agent, mount) labels so a fork
+	// #692: every persisted PVC must carry the (agent, mount) labels so a Run executor
 	// can resolve it by label instead of reconstructing its name.
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
 	var vct *corev1.PersistentVolumeClaim

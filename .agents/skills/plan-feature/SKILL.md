@@ -2,68 +2,67 @@
 name: plan-feature
 description: >
   Turn a GitHub issue into an implementation plan under docs/plan/<feature>/: a feature spec
-  decomposed into self-contained, independently-shippable sub-issues. Use when the user wants to
-  plan a feature, decompose a GitHub issue into sub-issues, or produce an implementation plan from
-  an issue.
+  decomposed into context-window-sized sub-issues, committed as the first commit of the feature
+  branch with a draft PR. Use when the user wants to plan a feature, decompose a GitHub issue
+  into sub-issues, or produce an implementation plan from an issue.
 ---
+
+<what-to-do>
 
 This skill turns a GitHub issue into a feature spec and implementation plan: a `README.md`
 plus one Markdown file per sub-issue, written under `docs/plan/<feature-slug>/`.
 
-**The plan files are temporary.** They are working artifacts for the implementation phase, not
-permanent docs. Write them to disk, but **never `git add` or commit them, and never add them to
-`.gitignore`.** They will show as untracked — that is intended. A separate skill,
-`implement-feature`, consumes them and cleans them up at the end.
+**The plan is committed and starts the feature branch.** The plan files are working artifacts
+for the implementation phase, not permanent docs — but they live in git: planning ends by
+creating the feature branch, committing the plan as its **first commit**, and opening a **draft
+PR** (step 4). The plan never merges: the `Plan check` CI job fails while `docs/plan/` exists,
+so the PR stays blocked until the cleanup commit deletes the folder.
+
+The implementation phase completes this flow. `/implement-feature` picks up the branch this
+skill created and ends by landing a commit that deletes `docs/plan/<feature-slug>/` before the
+PR is marked ready — the `Plan check` gate keeps the PR unmergeable until the folder is gone.
 
 A sub-issue is "self-contained" in the sense that **README + that sub-issue together** give a
-fresh agent (plus the linked issue/ADR) everything needed to implement the slice cold. Shared
+fresh agent (plus the linked issue) everything needed to implement the slice cold. Shared
 context lives once in the README; each sub-issue carries only what is specific to it.
 
 ## Steps
 
-### 1. Gather context
+### 1. Assess context, fill the gaps
 
-- Fetch the issue with `gh` (accept a URL or a number). Read the title, body, and discussion.
-- If the issue links an ADR, read it. Don't write ADRs here — if the work hinges on an
-  undocumented, hard-to-reverse decision, the grill step (below) is where it surfaces and an ADR
-  gets filed.
-- Read the relevant architecture page(s) under [`docs/architecture/`](../../../docs/architecture/),
-  starting from [`docs/architecture.md`](../../../docs/architecture.md). The docs are the source
-  of truth for *why* the system is shaped the way it is.
-- Explore the codebase to ground the plan in real files, modules, and seams. Use the `Explore`
-  agent for breadth.
+**Prerequisite:** know the problem being solved. If the issue isn't in context yet, fetch it
+with `gh` (accept a URL or a number) and read the title, body, and discussion.
 
-### 2. Grill — mandatory gate
+This skill usually runs on top of a conversation where the feature has already been discussed.
+With the issue in hand, assess whether the context is enough to decompose — don't redo work
+the conversation already did.
 
-**This is a hard gate. You MUST run a grilling session and get the user's explicit sign-off
-before step 3. Create nothing under `docs/plan/` until then — no decomposition outline, no
-files.** This holds even when the plan feels obvious: a short session confirming shared
-understanding is the floor, never a step to skip.
+Enough means: no open question (scope, boundaries, edge cases, where things live, naming)
+could change the decomposition, and the plan is grounded in the relevant architecture page(s)
+under [`docs/architecture/`](../../../docs/architecture/) and real files, modules, and seams
+in the codebase.
 
-Invoke `/grill-with-adr` to run it — that skill is the canonical procedure. But the gate does
-**not** depend on the nested call landing: if it doesn't fire, run the session yourself, one
-question at a time, recommending an answer to each. Either way the session must:
+**If the context falls short, stop.** Don't gather it yourself — tell the user you don't have
+enough context to decompose, list what's missing or undecided, and let them supply it or
+discuss it first. Offer `/grill-me` as one way to close the gaps — a grilling session working
+through the open questions — but leave the choice to the user. Proceed to step 2 only when the
+context is sufficient.
 
-- Resolve scope, boundaries, edge cases, where things live, and naming — walking each branch of
-  the decision tree. Prefer exploring the codebase over asking whenever a question is answerable
-  there.
-- Challenge the plan's vocabulary against [`docs/ubiquitous-language.md`](../../../docs/ubiquitous-language.md),
-  sharpen fuzzy terms to canonical ones, and cross-reference claims against the code.
-- File or amend an ADR (via `/adr`) — sparingly, only when a decision is hard to reverse,
-  surprising without context, and the result of a real trade-off.
-
-**Exit condition:** every branch of the decision tree is resolved and the user confirms they're
-satisfied. Only then proceed to step 3.
-
-### 3. Decompose and get sign-off
+### 2. Decompose and get sign-off
 
 Decide how the feature splits into sub-issues:
 
-- **Split only along independently-shippable seams** — e.g. one slice for tRPC methods, one for
-  API endpoints, one for UI. (Illustrative, not a fixed taxonomy.)
-- **Do not split artificially.** If the feature is small, a single sub-issue is correct. Each
-  sub-issue should be sized to roughly one atomic commit's worth of work — big enough to be
-  meaningful, small enough for an agent to implement comfortably.
+- **Size for one context window.** Each sub-issue is roughly one atomic commit's worth of work
+  that a fresh agent can implement comfortably in a single context window. Slices don't need to
+  be independently shippable — the feature lands as one PR — but each must leave the branch
+  green and be concretely verifiable on its own.
+- **Prefer vertical slices when the feature splits into separate behaviors** — each behavior
+  (e.g. list view, delete action) is one slice cutting through all the layers it needs.
+- **Split horizontally when a single behavior is too deep for one window.** Cut along the tRPC
+  contract, pin the contract in the README so both sides implement against it, and order the
+  backend slice before the UI slice. A backend-only slice is still verifiable (a tRPC/CLI call
+  with expected output); end-to-end verification moves to the whole-feature smoke test.
+- **Do not split artificially.** If the feature is small, a single sub-issue is correct.
 
 Present the **decomposition outline** to the user and wait for explicit approval before writing
 the detailed files:
@@ -71,7 +70,7 @@ the detailed files:
 - Feature summary (1–2 sentences).
 - The sub-issue list: number, title, one-line scope, and dependency order.
 
-### 4. Write the files
+### 3. Write the files
 
 Create `docs/plan/<feature-slug>/`. Derive the slug from the issue title, prefixed with the
 issue number for traceability (e.g. `docs/plan/344-egress-cli/`). Write `README.md` and one
@@ -87,25 +86,59 @@ While drafting, keep the plan architecturally sound and consistent with existing
   **manual** smoke test. Call for a new test only when behavior is otherwise unverifiable (e.g. a
   pure algorithm with tricky edges and no manual smoke path) — and flag it as the exception.
 
+### 4. Branch, commit, open a draft PR
+
+Create the feature branch from `main`, named `<type>/<NNN-slug>` where the slug matches the plan
+folder (e.g. plan `docs/plan/344-egress-cli/` → branch `feat/344-egress-cli`) and `<type>`
+follows the issue's nature per the branch convention. This is the same derivation
+`implement-feature` uses, so it finds the branch by name.
+
+Commit the plan files as the branch's first commit: `docs(plan): 344-egress-cli`, with
+`git commit -s` and a body line `Refs #NNN`.
+
+Push the branch and open a **draft** PR with `gh pr create --draft`. The title is the feature
+title; the body follows the template below — a product-level overview plus one checkbox per
+sub-issue, so reviewers see the feature's shape at a glance.
+
+If the user asks for plan changes after reading the files, amend the commit and force-push —
+safe while the branch carries only the plan commit.
+
 ### 5. Report
 
-Print where the plan lives and a one-paragraph summary of the sub-issues and their order. Remind
-the user the files are uncommitted working artifacts, and that `/implement-feature` is the next
-step.
+Print the branch name, the draft PR link, where the plan lives, and a one-paragraph summary of
+the sub-issues and their order. Remind the user the plan is the branch's first commit and will
+be removed before the feature ships, and that `/implement-feature` is the next step.
+
+## PR body template
+
+```markdown
+<Overview: what's being built and why, product-level, from the README's Goal. No file paths,
+no implementation detail.>
+
+Closes #NNN
+
+## Sub-issues
+
+- [ ] 01 — <title>
+- [ ] 02 — <title>
+```
+
+</what-to-do>
+
+<supporting-info>
 
 ## README.md template
 
 ```markdown
 # <Feature title>
 
-> Working plan — uncommitted, temporary. Delete once the feature ships.
+> Working plan — temporary, committed on the feature branch. Deleted once the feature ships.
 
 **Issue:** <link>
-**ADR:** <link, or "none">
 
 ## Goal
 
-<What we're building and why, from the issue + grill. User-visible outcome.>
+<What we're building and why, from the issue and conversation. User-visible outcome.>
 
 ## Approach
 
@@ -173,3 +206,5 @@ tests.>
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the
 user can confirm it by hand.
 ```
+
+</supporting-info>

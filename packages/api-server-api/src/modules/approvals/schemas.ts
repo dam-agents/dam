@@ -22,3 +22,15 @@ export const approvalApprovePermanentInputSchema = idSchema;
 export const approvalApproveHostInputSchema = idSchema;
 export const approvalDenyForeverInputSchema = idSchema;
 export const approvalDismissInputSchema = idSchema;
+
+export const approvalActionRuleSchema = z.object({
+  host: z.string(),
+  method: z.string(),
+  pathPattern: z.string(),
+  verdict: z.enum(["allow", "deny"]),
+});
+
+export const approvalActionOutcomeSchema = z.object({
+  outcome: z.enum(["applied", "rule_written_expired", "not_actionable"]),
+  rule: approvalActionRuleSchema.nullable(),
+});

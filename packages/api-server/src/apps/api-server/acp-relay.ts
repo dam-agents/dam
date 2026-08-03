@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../modules/approvals/compose.js";
 import type { SessionPresence } from "./session-presence.js";
@@ -122,6 +123,13 @@ export function createAcpRelay(
         } catch {}
       });
 
+      // A passive connection (the sessions-list status poll) is a read that
+      // must not defer hibernation: skip presence and the last-activity bump.
+      const passive =
+        new URL(req.url ?? "", "http://localhost").searchParams.get(
+          "passive",
+        ) === "1";
+
       // Resolve identity once per upgrade. The instance's owner/agent
       // can't change for the lifetime of this WS — capturing here avoids
       // a K8s ConfigMap GET per permission-request mirror. Failure to
@@ -173,7 +181,7 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      const release = presence.acquire(agentId);
+      const release = passive ? () => {} : presence.acquire(agentId);
       client.once("close", release);
 
       const pending: {
@@ -195,7 +203,18 @@ export function createAcpRelay(
           }
           identity = resolved;
         })
-        .then(() => repo.ensureReady(agentId))
+        .then(async () => {
+          // Passive: never wake or bump activity. Read-only readiness gate;
+          // fail closed if the pod isn't already up.
+          if (passive) {
+            if (!(await repo.isReady(agentId))) {
+              client.close(1011, "agent not ready");
+              throw new Error("agent not ready");
+            }
+            return;
+          }
+          await repo.ensureReady(agentId);
+        })
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
           for (const msg of pending) {
@@ -209,7 +228,7 @@ export function createAcpRelay(
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
 
-            if (shouldUpdateActivity(agentId)) {
+            if (!passive && shouldUpdateActivity(agentId)) {
               repo
                 .patchAnnotation(
                   agentId,
@@ -226,7 +245,7 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
 
-            // Dumb proxy (ADR-007/055): the agent owns session existence; the
+            // Dumb proxy: the agent owns session existence; the
             // server learns of sessions via session/list, not by writing here.
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
@@ -246,25 +265,23 @@ export function createAcpRelay(
           });
 
           upstream.on("close", (code, reason) => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(
-                  sanitizeCloseCode(code),
-                  reason.toString() || "upstream closed",
-                );
-              } catch {
-                client.terminate();
-              }
+            if (client.readyState !== WebSocket.OPEN) return;
+            try {
+              client.close(
+                sanitizeCloseCode(code),
+                reason.toString() || "upstream closed",
+              );
+            } catch {
+              client.terminate();
             }
           });
 
           upstream.on("error", () => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(1011, "upstream error");
-              } catch {
-                client.terminate();
-              }
+            if (client.readyState !== WebSocket.OPEN) return;
+            try {
+              client.close(1011, "upstream error");
+            } catch {
+              client.terminate();
             }
           });
 
@@ -277,8 +294,15 @@ export function createAcpRelay(
             }
           });
         })
-        .catch(() => {
-          client.close(1011, "failed to connect to agent");
+        .catch((err: unknown) => {
+          if (client.readyState !== WebSocket.OPEN) return;
+          try {
+            // Close reasons cap at 123 bytes — carry the short cause kind.
+            const reason = isAgentWakeTimeoutError(err)
+              ? `agent not ready: ${err.failure.kind}`
+              : "failed to connect to agent";
+            client.close(1011, reason);
+          } catch {}
         });
     });
   }

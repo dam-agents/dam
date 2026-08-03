@@ -3,7 +3,9 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
+import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "./git-host.js";
 
 /**
@@ -114,29 +116,54 @@ export async function computeContentHash(absDir: string): Promise<string> {
   return h.digest("hex");
 }
 
-async function findSkillDirs(repoDir: string): Promise<string[]> {
-  const found: string[] = [];
-  const candidates = [path.join(repoDir, "skills"), repoDir];
-  for (const root of candidates) {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch {
-      continue;
+function subPathEscapes(subPath: string): boolean {
+  return subPath.startsWith("/") || subPath.split("/").includes("..");
+}
+
+async function findSkillDirs(
+  repoDir: string,
+  subPath?: string,
+): Promise<string[]> {
+  // An explicit subdir is scanned exclusively — no source-root union or root
+  // fallback, so the user gets exactly the directory they pointed at. The path
+  // is api-validated at source creation; guard here too so a stray
+  // `..`/absolute path can never escape the extracted archive.
+  if (subPath) {
+    if (subPathEscapes(subPath)) {
+      throw new Error(`skill source path rejected: ${subPath}`);
     }
-    for (const ent of entries) {
-      if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-      const dir = path.join(root, ent.name);
-      try {
-        await fs.access(path.join(dir, "SKILL.md"));
-        found.push(path.relative(repoDir, dir));
-      } catch {
-        /* no SKILL.md → not a skill dir */
-      }
-    }
-    if (found.length > 0) return found;
+    return skillDirsUnder(repoDir, path.join(repoDir, subPath));
   }
-  return found;
+  const found: string[] = [];
+  for (const root of SKILL_SOURCE_ROOTS) {
+    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
+  }
+  if (found.length > 0) return found;
+  return skillDirsUnder(repoDir, repoDir);
+}
+
+async function skillDirsUnder(
+  repoDir: string,
+  root: string,
+): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+    const dir = path.join(root, ent.name);
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+      out.push(path.relative(repoDir, dir));
+    } catch {
+      /* no SKILL.md → not a skill dir */
+    }
+  }
+  return out;
 }
 
 /**
@@ -146,6 +173,7 @@ async function findSkillDirs(repoDir: string): Promise<string[]> {
  */
 export async function scanPublicGithubArchive(
   gitUrl: string,
+  subPath?: string,
 ): Promise<Skill[]> {
   const host = detectHost(gitUrl);
   if (!host)
@@ -187,8 +215,8 @@ export async function scanPublicGithubArchive(
       throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
-    const skillDirs = await findSkillDirs(repoDir);
-    const out = await Promise.all(
+    const skillDirs = await findSkillDirs(repoDir, subPath);
+    const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);
         const content = await fs.readFile(
@@ -206,7 +234,68 @@ export async function scanPublicGithubArchive(
         };
       }),
     );
-    return out.sort((a, b) => a.name.localeCompare(b.name));
+    const { kept, dropped } = dedupeByName(scanned);
+    for (const d of dropped) {
+      getLogger().warn(
+        { source: gitUrl, name: d.name },
+        "skills scan: dropped same-name skill from a later source root",
+      );
+    }
+    return kept.sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Read one skill's raw `SKILL.md` from a public GitHub repo. Mirrors the scan's
+ * fetch + Source-Root resolution and name identity (frontmatter `name`, else
+ * the directory basename), returning the matching skill's file text plus the
+ * source-relative directory it lives in — or null if the source has no skill by
+ * that name. Throws `PublicArchiveNotFoundError` on 404 so the caller can
+ * distinguish a private repo.
+ */
+export async function readPublicGithubSkill(
+  gitUrl: string,
+  subPath: string | undefined,
+  name: string,
+): Promise<{ content: string; dir: string } | null> {
+  const host = detectHost(gitUrl);
+  if (!host)
+    throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
+
+  const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/HEAD.tar.gz`;
+  const res = await fetch(archiveUrl, { redirect: "follow" });
+  if (res.status === 404) throw new PublicArchiveNotFoundError(gitUrl);
+  if (!res.ok) throw new Error(`github archive ${res.status} for ${gitUrl}`);
+
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "platform-public-read-"));
+  try {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > MAX_TARBALL_BYTES) {
+      throw new Error(`tarball too large: ${buf.byteLength} bytes`);
+    }
+    const tgz = path.join(tmp, "src.tgz");
+    await fs.writeFile(tgz, buf);
+    await tar.x({ file: tgz, cwd: tmp });
+    await fs.rm(tgz);
+
+    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
+      (e) => e.isDirectory(),
+    );
+    if (extracted.length === 0) return null;
+    const repoDir = path.join(tmp, extracted[0].name);
+
+    for (const rel of await findSkillDirs(repoDir, subPath)) {
+      const content = await fs.readFile(
+        path.join(repoDir, rel, "SKILL.md"),
+        "utf8",
+      );
+      const skillName =
+        parseFrontmatter(content).name?.trim() || path.basename(rel);
+      if (skillName === name) return { content, dir: rel };
+    }
+    return null;
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

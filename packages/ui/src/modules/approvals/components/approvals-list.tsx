@@ -1,15 +1,19 @@
-import type { ApprovalView } from "api-server-api";
 import {
-  Check,
-  CheckCheck,
+  Checkmark,
+  CheckmarkFilled,
+  Close,
   Globe,
-  Settings2,
-  ShieldOff,
-  X,
-} from "lucide-react";
+  Misuse,
+  SettingsAdjust,
+} from "@carbon/icons-react";
+import { type ApprovalView, describeApprovalPayload } from "api-server-api";
 import { useMemo } from "react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -17,31 +21,13 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { isHeldCallStillLive } from "../lib/hold.js";
 
 const STATUS_LABEL: Record<ApprovalView["status"], string> = {
   pending: "pending",
   resolved: "resolved",
   expired: "timed out",
 };
-
-function isHeldCallStillLive(row: ApprovalView): boolean {
-  return (
-    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
-  );
-}
-
-function describePayload(row: ApprovalView): {
-  title: string;
-  subtitle: string;
-} {
-  if (row.payload.kind === "ext_authz") {
-    return {
-      title: `${row.payload.method} ${row.payload.host}`,
-      subtitle: row.payload.path,
-    };
-  }
-  return { title: row.payload.toolName ?? "tool call", subtitle: "" };
-}
 
 export interface ApprovalsListProps {
   rows: readonly ApprovalView[];
@@ -64,7 +50,7 @@ export function ApprovalsList({
   );
   if (sorted.length === 0) {
     return (
-      <p className="px-4 py-5 text-[12px] text-text-muted">{emptyLabel}</p>
+      <p className="px-4 py-5 text-xs text-muted-foreground">{emptyLabel}</p>
     );
   }
   return (
@@ -88,8 +74,9 @@ function ApprovalRow({
   const approveHost = useApproveHost();
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToAgentEgress = useStore((s) => s.navigateToAgentEgress);
-  const { title, subtitle } = describePayload(row);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const agentName = useAgentDisplayName(row.agentId);
+  const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
     approveOnce.isPending ||
@@ -109,33 +96,41 @@ function ApprovalRow({
   const showHostActions = hostLabel !== null;
 
   return (
-    <li className="border-b border-border-light px-3 py-3 flex flex-col gap-2">
+    <li className="border-b border-border px-3 py-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium text-text truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {title}
             </span>
             {row.status !== "pending" && (
-              <span className="text-[10px] uppercase tracking-wider text-text-muted bg-border-light rounded px-1.5 py-0.5">
+              <Badge
+                size="sm"
+                variant="muted"
+                className="uppercase tracking-wider"
+              >
                 {STATUS_LABEL[row.status]}
-              </span>
+              </Badge>
             )}
           </div>
           {subtitle && (
-            <p className="text-[11px] text-text-muted truncate">{subtitle}</p>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {subtitle}
+            </p>
           )}
           {density === "full" && (
-            <p className="text-[10px] text-text-muted mt-0.5">
-              agent {row.agentId}
+            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+              agent {agentName}
             </p>
           )}
         </div>
       </div>
       {row.status !== "resolved" && (
         <div className="flex flex-wrap gap-1.5">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             disabled={inflight || allowOnceDisabled}
             onClick={() => approveOnce.mutate({ id: row.id })}
             title={
@@ -143,32 +138,38 @@ function ApprovalRow({
                 ? "Original request already failed; pick Allow permanently to allow future retries"
                 : "Allow this single request"
             }
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <Check size={11} /> Allow once
-          </button>
-          <button
+            <Checkmark size={11} /> Allow once
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             disabled={inflight}
             onClick={() => approvePermanent.mutate({ id: row.id })}
             title="Allow this exact path on this host (writes a rule)"
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <CheckCheck size={11} /> Allow permanently
-          </button>
+            <CheckmarkFilled size={11} /> Allow permanently
+          </Button>
           {showHostActions && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
+              className="min-w-0 max-w-full"
               disabled={inflight}
               onClick={() => approveHost.mutate({ id: row.id })}
               title={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
-              className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <Globe size={11} /> Allow {hostLabel}
-            </button>
+              <Globe size={11} />
+              <span className="truncate">Allow {hostLabel}</span>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            tone="danger"
+            size="xs"
             disabled={inflight || !live}
             onClick={() => dismiss.mutate({ id: row.id })}
             title={
@@ -176,34 +177,36 @@ function ApprovalRow({
                 ? "Original request already failed; nothing to dismiss"
                 : "Deny this single request — re-prompts on the next attempt"
             }
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <X size={11} /> Dismiss
-          </button>
-          <button
+            <Close size={11} /> Dismiss
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            tone="danger"
+            size="xs"
             disabled={inflight}
             onClick={() => denyForever.mutate({ id: row.id })}
             title="Deny this exact path on this host (writes a deny rule)"
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            <ShieldOff size={11} /> Deny forever
-          </button>
+            <Misuse size={11} /> Deny forever
+          </Button>
           {showHostActions && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               disabled={inflight}
-              onClick={() => navigateToAgentEgress(row.agentId)}
-              title="Manage all network access rules for this agent"
-              className="h-7 inline-flex items-center gap-1 rounded-md px-2 text-[11px] text-text-muted hover:text-text transition-colors"
+              onClick={() => navigateToSandboxHome(row.agentId)}
+              title="Open this sandbox's settings (connections, network access, environment)"
             >
-              <Settings2 size={11} /> Customize…
-            </button>
+              <SettingsAdjust size={11} /> Customize…
+            </Button>
           )}
         </div>
       )}
       {expired && row.type === "ext_authz" && (
-        <p className="text-[11px] text-text-muted">
+        <p className="text-[11px] text-muted-foreground">
           The original request already failed. Allow permanently writes a rule
           that future retries match.
         </p>

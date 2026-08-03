@@ -165,4 +165,44 @@ describe("scanPublicGithubArchive", () => {
     ).rejects.toThrow(/only GitHub/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("scans an explicit subPath exclusively, ignoring the standard source roots", async () => {
+    const sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";
+    const tarball = await makeTarball("acme-mono-a1b2c3d", {
+      "skills/root-skill/SKILL.md": "---\nname: root-skill\n---\nbody",
+      "packages/tools/skills/sub-skill/SKILL.md":
+        "---\nname: sub-skill\ndescription: From a subdir\n---\nbody",
+    });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/mono/tar.gz/${sha}`,
+      ),
+    );
+
+    const skills = await scanPublicGithubArchive(
+      "https://github.com/acme/mono",
+      "packages/tools/skills",
+    );
+
+    // Only the subdir's skill — the standard `skills/` root is not consulted.
+    expect(skills.map((s) => s.name)).toEqual(["sub-skill"]);
+  });
+
+  it("rejects a traversal subPath", async () => {
+    const sha = "b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1";
+    const tarball = await makeTarball("acme-mono-b0a9f8e", {
+      "skills/ok/SKILL.md": "---\nname: ok\n---\nbody",
+    });
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/mono/tar.gz/${sha}`,
+      ),
+    );
+
+    await expect(
+      scanPublicGithubArchive("https://github.com/acme/mono", "../../etc"),
+    ).rejects.toThrow(/path rejected/);
+  });
 });
