@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { labelVariants } from "@/components/ui/label";
@@ -30,18 +28,27 @@ interface Props {
   value: RegistryCredential;
   onChange: (value: RegistryCredential) => void;
   partial: boolean;
+  disclosureOverride: boolean | null;
+  onDisclosureOverride: (override: boolean) => void;
 }
 
-export function RegistryCredentialSection({ value, onChange, partial }: Props) {
+export function RegistryCredentialSection({
+  value,
+  onChange,
+  partial,
+  disclosureOverride,
+  onDisclosureOverride,
+}: Props) {
   // The credentials outlive this section, which unmounts on every step change —
-  // so disclosure follows whether there is anything to show unless the user says
-  // otherwise (null = follow the fields). Editing pins it open, or clearing the
-  // last field would collapse it mid-edit. `partial` outranks the user: its hint
-  // renders in here, and blocking Continue with the reason hidden is worse.
-  const [override, setOverride] = useState<boolean | null>(null);
-  const expanded = partial || (override ?? registryFilledCount(value) > 0);
+  // so disclosure lives next to them in the wizard and follows whether there is
+  // anything to show unless the user says otherwise (null = follow the fields).
+  // Editing pins it open, or clearing the last field would collapse it mid-edit.
+  // `partial` outranks the user: its hint renders in here, and blocking Continue
+  // with the reason hidden is worse.
+  const expanded =
+    partial || (disclosureOverride ?? registryFilledCount(value) > 0);
   const set = (key: keyof RegistryCredential, next: string) => {
-    setOverride(true);
+    onDisclosureOverride(true);
     onChange({ ...value, [key]: next });
   };
 
@@ -49,7 +56,7 @@ export function RegistryCredentialSection({ value, onChange, partial }: Props) {
     <div>
       <DisclosureToggle
         open={expanded}
-        onToggle={() => setOverride(!expanded)}
+        onToggle={() => onDisclosureOverride(!expanded)}
         chevronSize={12}
         className={cn(labelVariants(), "gap-1.5 hover:text-foreground")}
       >
