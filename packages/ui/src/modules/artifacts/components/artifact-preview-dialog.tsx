@@ -9,8 +9,8 @@ import {
   Modal,
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
-import { formatBytes } from "@/lib/format-size";
 import { externalLinkProps } from "@/lib/external-link";
+import { formatBytes } from "@/lib/format-size";
 
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";

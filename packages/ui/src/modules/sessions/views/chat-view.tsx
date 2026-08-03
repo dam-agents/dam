@@ -30,8 +30,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
-import { formatBytes } from "@/lib/format-size";
 import { Tooltip } from "@/components/ui/tooltip";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";

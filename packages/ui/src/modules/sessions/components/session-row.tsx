@@ -20,8 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatTimestamp } from "@/lib/format-time";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
