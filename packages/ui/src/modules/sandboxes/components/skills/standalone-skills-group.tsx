@@ -177,7 +177,7 @@ export function StandaloneSkillsGroup({
                     aria-label="Skill actions"
                     className="shrink-0 text-muted-foreground"
                   >
-                    <OverflowMenuHorizontal size={18} />
+                    <OverflowMenuHorizontal size={16} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>

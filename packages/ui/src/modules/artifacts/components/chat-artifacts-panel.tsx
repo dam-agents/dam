@@ -119,7 +119,7 @@ function ArtifactListRow({
       )}
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
-          {/* Kept mounted at opacity-0 so hovering doesn't reflow the row. */}
+          {/* Kept mounted so hovering doesn't reflow the row. */}
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
