@@ -8,6 +8,7 @@ import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
@@ -113,8 +114,7 @@ export function BobForm({
             : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."}{" "}
           <a
             href="https://bob.ibm.com/admin/apikeys"
-            target="_blank"
-            rel="noopener noreferrer"
+            {...externalLinkProps}
             className="text-primary hover:underline inline-flex items-center gap-1"
           >
             Manage keys <Launch size={11} />

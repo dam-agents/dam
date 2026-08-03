@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -143,8 +144,7 @@ export function StandaloneSkillsGroup({
               {pub ? (
                 <a
                   href={pub.prUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  {...externalLinkProps}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-info-light px-2.5 py-1 text-xs font-medium text-info transition-opacity hover:opacity-80"
                   title={`Pull request open on ${pub.sourceName}`}
                 >

@@ -4,6 +4,7 @@ import type { Skill, SkillSource } from "api-server-api";
 
 import { Markdown } from "@/components/markdown";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { externalLinkProps } from "@/lib/external-link";
 import { gitBlobUrl } from "@/lib/git-source";
 
 import { trpc } from "../../../../trpc.js";
@@ -49,8 +50,7 @@ export function SkillRenderModal({
           link && (
             <a
               href={link}
-              target="_blank"
-              rel="noopener noreferrer"
+              {...externalLinkProps}
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
               title="View SKILL.md on GitHub"
             >

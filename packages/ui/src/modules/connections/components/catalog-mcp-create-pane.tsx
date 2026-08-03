@@ -5,6 +5,7 @@ import { type Control, Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "@/lib/toast";
 
 import { MCP_DOCS_URL } from "../../../constants.js";
@@ -197,8 +198,7 @@ export function McpCreatePane({
                 See{" "}
                 <a
                   href={MCP_DOCS_URL}
-                  target="_blank"
-                  rel="noreferrer"
+                  {...externalLinkProps}
                   className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
                 >
                   documentation

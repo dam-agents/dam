@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -112,12 +113,7 @@ export function SkillsSurface({
           // newline whitespace that would otherwise separate them.
           <>
             {" The "}
-            <a
-              href={pub.prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
+            <a href={pub.prUrl} {...externalLinkProps} className="underline">
               pull request
             </a>{" "}
             you published to {pub.sourceName} isn't withdrawn.

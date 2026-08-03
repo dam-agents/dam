@@ -4,6 +4,7 @@ import type { Skill } from "api-server-api";
 import { badgeVariants } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -75,8 +76,7 @@ export function SkillRow({
           {hasDrift && compareUrl && (
             <a
               href={compareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              {...externalLinkProps}
               title="View changes on GitHub"
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >

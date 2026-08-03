@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { CLI_REFERENCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
@@ -65,8 +66,7 @@ function CliQuickstartNote() {
       First time? Installing the CLI and logging in is covered in the{" "}
       <a
         href={CLI_REFERENCE_URL}
-        target="_blank"
-        rel="noreferrer"
+        {...externalLinkProps}
         className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
       >
         CLI quickstart <Launch size={13} />
