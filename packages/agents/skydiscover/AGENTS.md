@@ -168,7 +168,11 @@ So at the **start of each turn**, check any run you care about: if its
 (the venv reset) and relaunch with `--checkpoint` pointing at the **latest**
 checkpoint under `output/checkpoints/`. Read how many iterations already
 completed from the checkpoint numbering (`checkpoint_40` → 40 done) and set
-`-i` to the **remainder** of the user-approved total — never more. A run that's reached
+`-i` to the **remainder** of the user-approved total — never more. If **no
+checkpoint exists yet** (evox writes its first only at iteration 10), a
+relaunch restarts from scratch and re-spends the lost iterations — that
+exceeds the originally approved spend, so say so and wait for a fresh
+go-ahead instead of silently relaunching. A run that's reached
 its budget is done; raising the budget is a new, re-gated decision, not a
 resume.
 

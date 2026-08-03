@@ -190,6 +190,13 @@ skydiscover-run INITIAL_PROGRAM EVALUATOR --search <type> \
 done — set `-i` to the approved total minus that, never more; a bigger total
 is a budget increase, a new re-gated decision.
 
+**Checkpoint cadence differs by strategy**: `adaevolve` writes one per
+iteration; `evox` writes its first only at iteration 10. A run interrupted
+before its first checkpoint has nothing to resume from — relaunching
+restarts from scratch and re-spends the lost iterations, which exceeds the
+originally approved spend: say so and get a fresh go-ahead. For short evox
+runs, warn up front that a hibernation before iteration 10 loses the run.
+
 **Monitoring:** tail `run.log`; read `output/best/best_program_info.json` and
 list `output/checkpoints/` to count completed iterations. Leave the live dashboard (`monitor.enabled`) off and skip
 `skydiscover-viewer` — this pod exposes no UI ports. A run doesn't advance
