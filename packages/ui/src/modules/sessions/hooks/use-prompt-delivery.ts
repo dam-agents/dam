@@ -37,6 +37,10 @@ export interface PromptDelivery {
   handleUpdate: (update: AcpUpdate) => void;
   /** Stop tracking a prompt, clearing whichever deadline is still pending. */
   endSend: (promptId: string) => void;
+  /** Stop tracking every prompt. For connection loss, which settles the fate of
+   *  all of them at once: the projection fails the ones the runtime dropped, so
+   *  no deadline has anything left to decide. */
+  cancelAll: () => void;
 }
 
 /**
@@ -118,9 +122,14 @@ export function usePromptDelivery(): PromptDelivery {
     [clearTimer],
   );
 
+  const cancelAll = useCallback(() => {
+    for (const record of recordsRef.current.values()) clearTimer(record);
+    recordsRef.current.clear();
+  }, [clearTimer]);
+
   // Stable object identity: `sendPrompt`'s useCallback deps include it.
   return useMemo(
-    () => ({ beginSend, handleUpdate, endSend }),
-    [beginSend, handleUpdate, endSend],
+    () => ({ beginSend, handleUpdate, endSend, cancelAll }),
+    [beginSend, handleUpdate, endSend, cancelAll],
   );
 }

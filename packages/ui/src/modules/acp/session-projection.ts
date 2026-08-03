@@ -188,17 +188,82 @@ function appendNotice(messages: Message[], text: string): Message[] {
 }
 
 /**
- * Mark every streaming assistant bubble as no-longer-streaming. Call this on
- * WebSocket disconnect or at the end of history replay to flush bubbles that
- * won't receive any further updates. Queued bubbles are finalized too — they
- * have no content, so the UI just shows an empty closed bubble.
+ * Mark every streaming assistant bubble as no-longer-streaming. Call this at
+ * the end of history replay, or when the user stops the agent, to flush bubbles
+ * that won't receive any further updates. Queued bubbles are finalized too —
+ * they have no content, so the UI just shows an empty closed bubble.
+ *
+ * Losing the connection is *not* this case: a queued prompt is genuinely lost
+ * then, so that path uses `failQueuedOnDisconnect` instead.
  */
 export function finalizeAllStreaming(messages: Message[]): Message[] {
-  return messages.map((m) =>
-    m.role === "assistant" && m.streaming
-      ? { ...m, streaming: false, queued: false }
-      : m,
+  return messages.map(finalizeStreaming);
+}
+
+function finalizeStreaming(m: Message): Message {
+  return m.role === "assistant" && m.streaming
+    ? { ...m, streaming: false, queued: false }
+    : m;
+}
+
+/** Shown on a prompt the platform dropped because our channel went away. The
+ *  only delivery failure the runtime cannot report — by the time it happens
+ *  there is no channel left to report it on. */
+export const QUEUED_LOST_MESSAGE =
+  "Couldn't deliver — the connection dropped while this prompt was still waiting in the queue.";
+
+/**
+ * Finalize on connection loss, failing the prompts the loss actually destroyed.
+ * The runtime drops a channel's queued prompts when it detaches, so a bubble of
+ * ours still parked behind an earlier turn will never be answered: it flips to
+ * the error card with Retry rather than closing quietly, which is how this loss
+ * used to pass unnoticed. Hidden sends fail silently as everywhere else, so
+ * theirs is dropped instead.
+ *
+ * Only bubbles carrying a `promptId` are ours to fail. Another viewer's queued
+ * prompt (or a replayed one) belongs to a channel that is still attached, so it
+ * merely finalizes — as does any bubble that already holds content, since
+ * content is proof the turn started and content already streamed is not
+ * something to retract (the same rule the `queued` flag follows elsewhere here).
+ */
+export function failQueuedOnDisconnect(messages: Message[]): Message[] {
+  return messages.flatMap<Message>((m) => {
+    const lost =
+      m.role === "assistant" &&
+      m.streaming &&
+      m.queued &&
+      m.promptId !== undefined &&
+      m.parts.length === 0;
+    if (!lost) return [finalizeStreaming(m)];
+    // Hidden sends stash no payload and never surface a failure.
+    if (!m.retryWith) return [];
+    return [
+      {
+        ...m,
+        streaming: false,
+        queued: false,
+        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
+      },
+    ];
+  });
+}
+
+/**
+ * Rebuild the message list from replayed history while keeping failures the
+ * client raised on its own. The runtime's log is authoritative about what the
+ * agent did, but it cannot describe a prompt that never ran: it holds the
+ * dropped prompt's user-message echo and no reply, so replacing the list
+ * wholesale would erase the failure and its Retry and leave the user staring at
+ * a question the agent will never answer.
+ */
+export function mergeLocalFailures(
+  rebuilt: Message[],
+  previous: Message[],
+): Message[] {
+  const carried = previous.filter(
+    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
   );
+  return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
 
 /** True if any assistant bubble is still streaming (either active or queued). */

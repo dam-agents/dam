@@ -48,6 +48,14 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
+/** Everything needed to send a prompt again. A retry is always a fresh send —
+ *  the runtime is never asked to re-deliver, since a prompt that did arrive
+ *  would then run twice. */
+export interface RetryPayload {
+  text: string;
+  attachments?: Attachment[];
+}
+
 /** Client-minted record of a tool-approval verdict, anchored where the user
  *  decided it. Not part of the runtime log — it vanishes on session replay. */
 export interface VerdictPart {
@@ -81,6 +89,11 @@ export interface Message {
    *  runtime's per-prompt delivery notifications back to this bubble; bubbles
    *  from replay or from another viewer's prompt have none. */
   promptId?: string;
+  /** What to re-send if this prompt has to be retried, stashed at send time on
+   *  the sender's own optimistic bubble. Failures raised outside `sendPrompt`'s
+   *  closure — the WebSocket dying under a queued prompt — have no other way to
+   *  reach the text; absent on hidden sends, which fail silently. */
+  retryWith?: RetryPayload;
   /** System-style placeholder rendered as dim centered text — used for the
    *  `<clipped-conversation>` marker the runtime injects at the start of a
    *  catch-up when the session log has been truncated. Invisible to the
@@ -91,8 +104,10 @@ export interface Message {
   error?: {
     message: string;
     /** Cleared once any subsequent send starts, so the Retry button only lives
-     *  on the most recent failure. */
-    retryWith?: { text: string; attachments?: Attachment[] };
+     *  on the most recent failure. Its presence also marks a bubble as failed
+     *  *locally* — the reconnect rebuild carries those over, since the replayed
+     *  log has no record of a prompt the platform dropped. */
+    retryWith?: RetryPayload;
   };
 }
 

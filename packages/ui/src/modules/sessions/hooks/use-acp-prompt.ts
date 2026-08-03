@@ -187,6 +187,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
+        // Stashed on the bubble, not just captured here: the connection dying
+        // under a queued prompt fails it from the WS close handler, which has
+        // no access to this closure. Hidden sends carry none — they never offer
+        // a retry.
+        ...(hidden ? {} : { retryWith: { text, attachments } }),
       };
       // Drop Retry buttons on any prior failed send — only the latest failure
       // should offer a retry. The error text itself stays for history.
@@ -220,7 +225,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                   queued: false,
                   error: {
                     message: "Couldn't deliver — the agent didn't respond.",
-                    retryWith: { text, attachments },
+                    retryWith: m.retryWith,
                   },
                 }
               : m,
@@ -303,17 +308,26 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           if (!detached) {
             emitToast({ kind: "error", message: outcome.message });
           }
-        } else {
+        } else if (!bubble.error) {
+          // Unless the bubble already carries a failure. Losing the connection
+          // rejects this call with a connection-closed error *and* runs the WS
+          // close handler, which reports the far more specific "dropped from
+          // the queue" — don't overwrite it with the generic wording.
+          //
           // Whatever already streamed stays put — an interruption is not a
           // lost turn, and the error card renders below it. A hidden turn
           // keeps its content but still surfaces no error.
-          const error = hidden
-            ? undefined
-            : { message: outcome.message, retryWith: { text, attachments } };
           setMessages((p) =>
             p.map((m) =>
               m.id === aId
-                ? { ...m, streaming: false, queued: false, error }
+                ? {
+                    ...m,
+                    streaming: false,
+                    queued: false,
+                    error: hidden
+                      ? undefined
+                      : { message: outcome.message, retryWith: m.retryWith },
+                  }
                 : m,
             ),
           );

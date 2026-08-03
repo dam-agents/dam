@@ -5,9 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
-import { finalizeAllStreaming } from "../../acp/session-projection.js";
+import {
+  failQueuedOnDisconnect,
+  mergeLocalFailures,
+} from "../../acp/session-projection.js";
 import type { UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export interface LiveConnection {
   connection: ClientSideConnection;
@@ -46,6 +50,9 @@ interface UseAcpConnectionOptions {
   clearEngagement: () => void;
   loadHistory: (sid: string) => Promise<Message[]>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+  /** Delivery deadlines for prompts still in flight. Losing the WebSocket
+   *  decides all of them, so the close handler stands them down. */
+  delivery: PromptDelivery;
 }
 
 /** An open connection and the session it is engaged to. */
@@ -101,7 +108,10 @@ export interface UseAcpConnectionResult {
  *   3. On unexpected WS close with an active session, schedules a reload-
  *      then-reconnect: the runtime appended events while we were offline,
  *      so we must `loadSession` before `unstable_resumeSession` (the latter
- *      only attaches the channel for *future* events).
+ *      only attaches the channel for *future* events). The close is also the
+ *      one delivery failure the server can't report — it drops our queued
+ *      prompts as we detach — so the close handler fails them locally and the
+ *      reload carries those failures across the rebuild.
  *   4. The keep-alive effect makes sure a live WS exists whenever the user
  *      is viewing a session — without it, sidebar-click resume opens a
  *      throwaway socket and never re-engages.
@@ -125,6 +135,7 @@ export function useAcpConnection(
     clearEngagement,
     loadHistory,
     setMessages,
+    delivery,
   } = opts;
 
   const connectionRef = useRef<LiveConnection | null>(null);
@@ -186,13 +197,16 @@ export function useAcpConnection(
         if (useStore.getState().sessionId) pendingReloadRef.current = true;
         // Any in-flight stream is now dead. Finalize streaming bubbles so
         // busy clears and the next turn opens a fresh bubble instead of
-        // merging into a stale one.
-        setMessages((prev) => finalizeAllStreaming(prev));
+        // merging into a stale one — and fail our own still-queued prompts,
+        // which the runtime discards as our channel detaches. No deadline can
+        // add anything to that, so they all stand down.
+        delivery.cancelAll();
+        setMessages((prev) => failQueuedOnDisconnect(prev));
         setState("idle");
         reconnectFnRef.current?.();
       });
     },
-    [clearEngagement, setMessages],
+    [clearEngagement, setMessages, delivery],
   );
 
   /** Stop offering a started session for sharing, so no send can join it later. */
@@ -329,7 +343,11 @@ export function useAcpConnection(
           const fresh = await loadHistory(sid);
 
           if (useStore.getState().sessionId !== sid) return null;
-          setMessages(fresh);
+          // Not a plain swap: a prompt the runtime dropped when we detached
+          // has an echo in the replayed log but will never have a reply, so
+          // the failure the close handler raised for it has to outlive the
+          // rebuild — otherwise reconnecting silently swallows it.
+          setMessages((prev) => mergeLocalFailures(fresh, prev));
         } catch (e) {
           // Network still unreachable — restore the flag so the next
           // ensureLive (likely the next reconnect-timer fire) tries again.

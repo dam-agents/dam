@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   applyUpdate,
+  failQueuedOnDisconnect,
   finalizeAllStreaming,
   hasStreamingAssistant,
+  mergeLocalFailures,
 } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
@@ -503,5 +505,107 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
     expect(hasStreamingAssistant([assistantMsg("a1", "", true, true)])).toBe(
       true,
     );
+  });
+});
+
+describe("failQueuedOnDisconnect", () => {
+  /** The sender's own queued bubble: promptId + stashed retry payload. */
+  function ourQueued(id: string, text: string): Message {
+    return {
+      ...assistantMsg(id, "", true, true),
+      promptId: `p-${id}`,
+      retryWith: { text },
+    };
+  }
+
+  test("fails our queued prompt with a retryable error, finalizing the rest", () => {
+    const out = failQueuedOnDisconnect([
+      userMsg("u1", "first"),
+      assistantMsg("a1", "partial reply", true, false),
+      userMsg("u2", "second"),
+      ourQueued("a2", "second"),
+    ]);
+    // The interrupted turn merely closes — it was delivered, and its partial
+    // content is real.
+    expect(out[1].streaming).toBe(false);
+    expect(out[1].error).toBeUndefined();
+    expect(firstTextPart(out[1])).toBe("partial reply");
+    // The queued one was dropped by the runtime, so it fails with Retry.
+    expect(out[3].streaming).toBe(false);
+    expect(out[3].queued).toBe(false);
+    expect(out[3].error?.message).toMatch(/couldn't deliver/i);
+    expect(out[3].error?.retryWith).toEqual({ text: "second" });
+  });
+
+  test("behaves as finalizeAllStreaming when nothing of ours is queued", () => {
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "reply", true, false),
+    ];
+    expect(failQueuedOnDisconnect(start)).toEqual(finalizeAllStreaming(start));
+  });
+
+  test("drops a hidden queued send instead of failing it", () => {
+    // Hidden sends stash no retry payload — they fail silently everywhere.
+    const hidden: Message = {
+      ...assistantMsg("a1", "", true, true),
+      promptId: "p-a1",
+    };
+    expect(failQueuedOnDisconnect([userMsg("u1", "x"), hidden])).toHaveLength(
+      1,
+    );
+  });
+
+  test("only finalizes a queued bubble that isn't ours to fail", () => {
+    // No promptId: another viewer's parked prompt, or one from replay. Their
+    // channel is still attached, so the runtime hasn't dropped it.
+    const out = failQueuedOnDisconnect([assistantMsg("a1", "", true, true)]);
+    expect(out).toHaveLength(1);
+    expect(out[0].streaming).toBe(false);
+    expect(out[0].error).toBeUndefined();
+  });
+
+  test("finalizes a queued bubble that already has content", () => {
+    // Content beats a stale queued flag: the turn started, so it wasn't dropped.
+    const started: Message = {
+      ...assistantMsg("a1", "already talking", true, true),
+      promptId: "p-a1",
+      retryWith: { text: "x" },
+    };
+    const out = failQueuedOnDisconnect([started]);
+    expect(out[0].error).toBeUndefined();
+    expect(firstTextPart(out[0])).toBe("already talking");
+  });
+});
+
+describe("mergeLocalFailures", () => {
+  const failed: Message = {
+    ...assistantMsg("a1", "", false),
+    error: { message: "Couldn't deliver", retryWith: { text: "dropped" } },
+  };
+
+  test("carries a locally-failed bubble across the reconnect rebuild", () => {
+    // The replayed log holds the dropped prompt's echo but never a reply, so
+    // the failure and its Retry have to survive.
+    const rebuilt = [userMsg("u1", "first"), assistantMsg("a1r", "reply")];
+    const out = mergeLocalFailures(rebuilt, [...rebuilt, failed]);
+    expect(out).toHaveLength(3);
+    expect(out[2]).toBe(failed);
+  });
+
+  test("returns the rebuilt list untouched when nothing failed locally", () => {
+    const rebuilt = [userMsg("u1", "hi"), assistantMsg("a1", "reply")];
+    const previous = [
+      ...rebuilt,
+      // A failure with no retry payload is history, not a live failure —
+      // a later send already stripped its Retry.
+      { ...assistantMsg("a2", "", false), error: { message: "old" } },
+    ];
+    expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);
+  });
+
+  test("does not duplicate a failed bubble the rebuild already contains", () => {
+    const rebuilt = [userMsg("u1", "first"), failed];
+    expect(mergeLocalFailures(rebuilt, [failed])).toBe(rebuilt);
   });
 });
