@@ -1,10 +1,12 @@
 # Channels
 
-Last verified: 2026-07-29
+Last verified: 2026-08-03
 
 ## Overview
 
 A **channel** is a messenger surface (Slack, Telegram) that lets users drive an Agent from outside the UI. Channels are pluggable adapters that live inside the api-server process — no separate Deployment, no sidecar in the agent pod. Each adapter (the _worker_) owns its inbound socket, its outbound API, and its thread-to-session bookkeeping; a `ChannelManager` service composes the workers and reacts to lifecycle events on the in-process event bus.
+
+Channels are a **standard Agent surface**, not a pre-release one: every Agent exposes it, with no per-user opt-in in front of it. What can be bound there is the install's own decision — a worker exists only where its token is configured — and an install with no messenger says so on the surface rather than withdrawing it. Slack as a *Connection* is a separate surface, still withheld from regular users; a channel needs nothing from it ([connections](connections.md)).
 
 Channel bindings are **1:1 with Agent**: a Slack conversation may be bound to at most one Agent globally, and an Agent has at most one Slack binding — Agent delete or Slack disconnect releases it. A Slack "conversation" is any surface the bot is party to: a public/private **channel**, a **group DM**, or a **1:1 DM**. The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale — same table, same resolution, same in-chat bind flow.
 
