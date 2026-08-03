@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useCopy } from "@/hooks/use-copy";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
 
@@ -37,7 +38,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
     artifact.expiresAt === null ? "never" : "keep",
   );
   const [shareUrl, setShareUrl] = useState(artifact.shareUrl);
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopy();
   const sharing = useSetArtifactSharing();
 
   const save = () => {
@@ -88,11 +89,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 variant="outline"
                 size="icon-sm"
                 title="Copy link"
-                onClick={() => {
-                  void navigator.clipboard.writeText(shareUrl);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
-                }}
+                onClick={() => void copy(shareUrl)}
               >
                 {copied ? (
                   <Checkmark size={14} className="text-success" />

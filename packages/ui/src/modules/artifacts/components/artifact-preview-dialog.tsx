@@ -9,6 +9,7 @@ import {
   Modal,
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { formatBytes } from "@/lib/format-size";
 
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
@@ -17,7 +18,6 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
-import { formatBytes } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";

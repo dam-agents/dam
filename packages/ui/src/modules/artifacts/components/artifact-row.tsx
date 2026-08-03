@@ -6,7 +6,6 @@ import {
   View,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,12 +14,14 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCopy } from "@/hooks/use-copy";
+import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { usePrefetchArtifactPreview } from "../api/queries.js";
-import { expiryState, timeAgo } from "../lib/format.js";
+import { expiryState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
@@ -153,19 +154,14 @@ function ShareLinkButton({
   artifact: LibraryArtifact;
   onShare: (artifact: LibraryArtifact) => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopy();
   const url = artifact.shareUrl;
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       title={copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"}
-      onClick={() => {
-        if (!url) return onShare(artifact);
-        void navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      }}
+      onClick={() => (url ? void copy(url) : onShare(artifact))}
     >
       <Link size={16} className={cn(copied && "text-success")} />
     </Button>

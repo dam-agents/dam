@@ -1,7 +1,7 @@
 import { Checkmark, Copy } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useCopy } from "@/hooks/use-copy";
 
 import {
   DialogBody,
@@ -14,24 +14,8 @@ interface Props {
   onClose: () => void;
 }
 
-type CopyState = "idle" | "copied" | "failed";
-
 export function RevealToken({ plaintext, onClose }: Props) {
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(plaintext);
-      setCopyState("copied");
-      setTimeout(() => setCopyState("idle"), 2000);
-    } catch {
-      // clipboard API rejects in non-secure contexts and when the
-      // browser blocks programmatic copy. Surface the failure so the
-      // user falls back to manual select.
-      setCopyState("failed");
-      setTimeout(() => setCopyState("idle"), 3000);
-    }
-  }
+  const { copy, state: copyState } = useCopy();
 
   return (
     <>
@@ -47,7 +31,7 @@ export function RevealToken({ plaintext, onClose }: Props) {
             type="button"
             variant="ghost"
             size="icon-sm"
-            onClick={handleCopy}
+            onClick={() => void copy(plaintext)}
             aria-label={
               copyState === "copied"
                 ? "Copied to clipboard"

@@ -2,6 +2,7 @@ import { Close, Download, Edit, Maximize, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { getErrorMessage } from "@/lib/errors";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
@@ -90,7 +91,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       setEditMode(false);
       emitToast({ kind: "success", message: `Saved ${path}` });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Save failed";
+      const msg = getErrorMessage(err, "Save failed");
       if (/conflict|changed on disk/i.test(msg)) {
         const ok = await showConfirm(
           "This file changed on disk since you opened it. Overwrite with your changes?",
@@ -110,7 +111,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         } catch (err2) {
           emitToast({
             kind: "error",
-            message: err2 instanceof Error ? err2.message : "Save failed",
+            message: getErrorMessage(err2, "Save failed"),
           });
         }
         return;

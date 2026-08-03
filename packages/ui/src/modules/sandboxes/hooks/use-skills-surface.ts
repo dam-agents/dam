@@ -8,6 +8,8 @@ import type {
 } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import { api } from "../../../api.js";
 import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
@@ -131,8 +133,7 @@ export function useSkillsSurface(
         const list = await api.skills.list.query({ sourceId, agentId });
         setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Failed to load skills";
+        const msg = getErrorMessage(err, "Failed to load skills");
         setErrorBySource((e) => ({ ...e, [sourceId]: msg }));
         setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
       } finally {
@@ -304,8 +305,7 @@ export function useSkillsSurface(
         });
         return { ok: true as const };
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to add skills";
+        const message = getErrorMessage(err, "Failed to add skills");
         // CONFLICT message shape from slice 01: `skill(s) already exist: A, B`.
         // Intersect the parsed tail with the submitted names so a name that is a
         // substring of another can't mis-mark the wrong row. A name containing a
@@ -432,10 +432,7 @@ export function useSkillsSurface(
         void refreshSource(input.sourceId);
         return true;
       } catch (err) {
-        const raw =
-          err instanceof Error
-            ? err.message
-            : `Failed to publish ${input.name}`;
+        const raw = getErrorMessage(err, `Failed to publish ${input.name}`);
         const { message, cta } = parsePlatformCta(raw);
         emitToast({
           kind: "error",

@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -759,9 +760,7 @@ export function ChatView() {
                                     </span>
                                     {p.size !== undefined && (
                                       <span className="text-[10px] text-muted-foreground">
-                                        {p.size < 1024
-                                          ? `${p.size} B`
-                                          : `${(p.size / 1024).toFixed(1)} KB`}
+                                        {formatBytes(p.size)}
                                       </span>
                                     )}
                                   </div>
