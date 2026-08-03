@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-31
+Last verified: 2026-08-03
 
 ## Overview
 
@@ -225,6 +225,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   pair plus a structured **host list** describing every wire position
   the token should be injected on. The refresh-token loop re-mints
   access tokens before expiry; the agent never sees the refresh token.
+  Re-running login and consent against an existing connection replaces its
+  tokens in place, keeping the connection's identity and grants. When the
+  connection stores the OAuth app's *client* secret itself (rather than
+  inheriting the deployment's), that secret is replaceable in place too — the
+  api-server immediately tries the stored refresh token with it, so a rotation
+  upstream usually revives the connection with no user consent at all, and where
+  it can't, re-authentication is unblocked by it. A client secret supplied by the
+  operator is deploy config and is rotated there.
 - **User-supplied secrets** (Anthropic API keys, generic API tokens) —
   the Connections subsystem writes them as a **header Connection** per
   credential, built from its template and stored with the same labels and
@@ -238,7 +246,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   create), then again before each expiry via the same refresh loop that
   renews OAuth tokens. Only the minted access token reaches the gateway's
   injection path; the client secret stays at rest and is never sent to the
-  connection's hosts.
+  connection's hosts. The stored client secret is replaceable in place when it
+  rotates upstream — the api-server mints with the new one before writing it, so
+  a wrong secret is rejected rather than stored.
 - **GitHub personal access tokens** — a PAT is one **`github-pat`
   Connection** whose template re-bakes, from the bare PAT, the three host
   injections it needs into a single per-Connection Secret:
@@ -255,7 +265,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   installation-token endpoint (once at connect, then before each expiry via
   the same refresh loop), and re-bakes the same three GitHub host injections
   as the PAT template. The private key stays at rest and is never sent to any
-  host; only the installation token reaches the gateway's injection path.
+  host; only the installation token reaches the gateway's injection path. Like
+  the client secret above, a rotated private key is pasted in place and proven by
+  minting before it is stored.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per

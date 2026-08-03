@@ -4,6 +4,7 @@ export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
 
+// `value` is whichever secret the connection's auth kind stores.
 export const connectionUpdateInputSchema = z.object({
   id: z.string().min(1),
   value: z.string().min(1),

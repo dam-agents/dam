@@ -4,7 +4,10 @@ import { CARD_SURFACE } from "@/components/ui/card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
-import type { RowGrantControls } from "./catalog-connection-row.js";
+import type {
+  RowGrantControls,
+  RowMaintenanceActions,
+} from "./catalog-connection-row.js";
 import { CatalogConnectionRow } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import { GithubAppInstallHint } from "./github-app-install-hint.js";
@@ -17,6 +20,10 @@ interface Props {
   onManage?: () => void;
   onDelete?: (id: string, name: string) => void;
   deletingId?: string | null;
+  /** Per-row credential maintenance; omit to offer none. */
+  maintenance?: (
+    connection: ConnectionView,
+  ) => RowMaintenanceActions | undefined;
 }
 
 /** Provider group card listing existing connections — the "My connections"
@@ -29,6 +36,7 @@ export function ConnectionGroupCard({
   onManage,
   onDelete,
   deletingId = null,
+  maintenance,
 }: Props) {
   const { provider, connections } = group;
   return (
@@ -63,6 +71,7 @@ export function ConnectionGroupCard({
             onManage={onManage}
             onDelete={onDelete && (() => onDelete(c.id, c.name))}
             deleting={deletingId === c.id}
+            maintenance={maintenance?.(c)}
           />
         ))}
       </div>

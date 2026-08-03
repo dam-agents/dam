@@ -224,11 +224,62 @@ describe("client-credentials connection create", () => {
     expect(view?.hosts).toEqual(["api.example.com"]);
   });
 
-  it("rejects a value update — rotation stays header-only", async () => {
-    const { svc } = makeService();
-    const id = await svc.createFromTemplate(createInput());
-    await expect(svc.update(id, "new-secret")).rejects.toThrow(
-      /header-credential/,
+  it("rotates the client secret, minting with the new one", async () => {
+    let token = "tok-1";
+    const { svc, rows, stored, tokenCalls } = makeService(
+      () =>
+        new Response(JSON.stringify({ access_token: token, expires_in: 120 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
     );
+    const id = await svc.createFromTemplate(createInput());
+
+    // The rotation must clear the marker, or the revived connection stays parked.
+    const created = rows.get(id)!;
+    if (created.auth.kind !== "client-credentials") throw new Error("kind");
+    rows.set(id, {
+      ...created,
+      auth: { ...created.auth, refreshFailedAt: 1700000000 },
+    });
+
+    token = "tok-2";
+    await svc.update(id, "rotated");
+
+    expect(tokenCalls[1].get("client_secret")).toBe("rotated");
+    const fields = stored.get(SECRET_PATH)!;
+    expect(fields.client_secret).toBe("rotated");
+    expect(fields.access_token).toBe("tok-2");
+    expect(fields[sdsFileKeyForHost("api.example.com")]).toContain(
+      "Bearer tok-2",
+    );
+
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "client-credentials") throw new Error("kind");
+    expect(auth.refreshFailedAt).toBeUndefined();
+    expect(auth.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 120);
+    expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("leaves the connection untouched when the new secret is rejected", async () => {
+    let reject = false;
+    const { svc, rows, stored } = makeService(() =>
+      reject
+        ? new Response("invalid_client", { status: 401 })
+        : new Response(
+            JSON.stringify({ access_token: "tok-1", expires_in: 120 }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    const authBefore = rows.get(id)!.auth;
+
+    reject = true;
+    await expect(svc.update(id, "wrong")).rejects.toThrow(/401/);
+
+    const fields = stored.get(SECRET_PATH)!;
+    expect(fields.client_secret).toBe("csecret");
+    expect(fields.access_token).toBe("tok-1");
+    expect(rows.get(id)!.auth).toEqual(authBefore);
   });
 });

@@ -11,12 +11,15 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionGroupCard } from "../components/connection-group-card.js";
+import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
+import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
 
 export function ConnectionsView() {
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
+  const maintenance = useConnectionMaintenance();
   const [catalogOpen, setCatalogOpen] = useState(false);
 
   const { populated: groups, templateById } = useCatalogGroups(
@@ -58,6 +61,7 @@ export function ConnectionsView() {
                 templateById={templateById}
                 onDelete={(id, name) => void confirmAndDelete(id, name)}
                 deletingId={deletingId}
+                maintenance={maintenance.rowActions}
               />
             ))}
           </Inset>
@@ -79,6 +83,8 @@ export function ConnectionsView() {
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />
       )}
+
+      <ConnectionMaintenanceDialog maintenance={maintenance} />
     </div>
   );
 }

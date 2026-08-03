@@ -20,7 +20,14 @@ import {
   inheritsFamily,
   templateToView,
 } from "../domain/connection-template.js";
-import { buildConnection } from "../domain/build-connection.js";
+import {
+  buildConnection,
+  normalizePrivateKeyPem,
+} from "../domain/build-connection.js";
+import {
+  tokenRejectionOf,
+  withoutRefreshFailureMarker,
+} from "../domain/refresh-failure-marker.js";
 import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
@@ -34,6 +41,7 @@ import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { mintGitHubAppToken } from "./github-app.js";
+import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -70,6 +78,9 @@ export function createConnectionsService(deps: {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
             ...(conn.auth.kind === "oauth" && conn.auth.appSlug
               ? { appSlug: conn.auth.appSlug }
+              : {}),
+            ...(conn.auth.kind === "oauth" && conn.auth.clientSecretRef
+              ? { hasClientSecret: true }
               : {}),
             ...(conn.auth.connectedAt
               ? {
@@ -144,6 +155,146 @@ export function createConnectionsService(deps: {
     };
   }
 
+  // Each rotation is one merge onto the connection's single Secret, plus an auth
+  // update for the minting kinds. Identity, contributions, and grants stay put.
+
+  async function rotateHeaderValue(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "header" }>,
+    value: string,
+  ): Promise<void> {
+    await deps.secretStore.putFields(auth.valueRef, {
+      value,
+      ...buildConnectionSdsFields(conn.contributions, value),
+    });
+  }
+
+  async function rotateClientSecret(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "client-credentials" }>,
+    clientSecret: string,
+  ): Promise<void> {
+    const minted = await rejectIfInvalid(() =>
+      mintClientCredentialsToken(deps.oauthEngine, {
+        connectionRef: `connection:${conn.id}:${conn.templateId}`,
+        auth,
+        clientSecret,
+      }),
+    );
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      [auth.clientSecretRef.field]: clientSecret,
+      access_token: minted.accessToken,
+      ...buildConnectionSdsFields(conn.contributions, minted.accessToken),
+    });
+    await deps.repo.updateAuth(conn.id, {
+      ...withoutRefreshFailureMarker(auth),
+      expiresAt: minted.expiresAt,
+    });
+  }
+
+  async function rotatePrivateKey(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "github-app" }>,
+    rawPrivateKey: string,
+  ): Promise<void> {
+    const rotated = await rejectIfInvalid(async () => {
+      const privateKeyPem = normalizePrivateKeyPem(rawPrivateKey);
+      const minted = await mintGitHubAppToken(deps.githubAppEngine, {
+        connectionRef: `connection:${conn.id}:${conn.templateId}`,
+        auth,
+        privateKeyPem,
+      });
+      return { privateKeyPem, minted };
+    });
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      [auth.privateKeyRef.field]: rotated.privateKeyPem,
+      access_token: rotated.minted.accessToken,
+      ...buildConnectionSdsFields(
+        conn.contributions,
+        rotated.minted.accessToken,
+      ),
+    });
+    await deps.repo.updateAuth(conn.id, {
+      ...withoutRefreshFailureMarker(auth),
+      expiresAt: rotated.minted.expiresAt,
+    });
+  }
+
+  // The *client* secret, not the tokens: without this a rotated app secret is
+  // unfixable, since refresh and re-consent both die at the token exchange.
+  async function rotateOAuthClientSecret(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "oauth" }>,
+    clientSecret: string,
+  ): Promise<void> {
+    if (!auth.clientSecretRef) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection uses the OAuth client secret configured for the whole deployment. Rotate it there; it can't be replaced per connection.",
+      });
+    }
+    // Never injected on the wire, so no SDS to re-bake.
+    await deps.secretStore.putFields(auth.clientSecretRef, {
+      [auth.clientSecretRef.field]: clientSecret,
+    });
+
+    // An app-secret rotation doesn't revoke issued tokens, so the stored refresh
+    // token usually still works — trying it revives the connection with no
+    // consent at all. On failure the secret is still stored and the row's
+    // re-authenticate action, now unblocked, is the way back.
+    try {
+      const next = await refreshOAuthAccessToken({
+        conn,
+        auth,
+        engine: deps.oauthEngine,
+        templates: deps.templates,
+        secretStore: deps.secretStore,
+      });
+      await deps.repo.updateAuth(conn.id, {
+        ...withoutRefreshFailureMarker(auth),
+        expiresAt: next.expiresAt,
+      });
+    } catch (err) {
+      // Swallowed by design, but never silent: otherwise the operator sees a
+      // successful update next to a still-expired connection and no reason.
+      securityLog("warn", "connection.client_secret_revive_failed", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "failure",
+        reason: reviveFailureReason(err),
+        detail: { templateId: conn.templateId, authKind: conn.auth.kind },
+      });
+    }
+  }
+
+  // Validated by use: nothing is written until the provider accepts it, and its
+  // own rejection is the most useful thing to show, so it rides the BAD_REQUEST.
+  // Only the OAuth error code, though — a token-endpoint message embeds the
+  // provider's raw body, which could echo credential material.
+  async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
+    try {
+      return await mint();
+    } catch (err) {
+      const rejection = tokenRejectionOf(err);
+      if (rejection) {
+        process.stderr.write(
+          `[connections] credential rejected: ${(err as Error).message}\n`,
+        );
+      }
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: rejection
+          ? `The provider rejected the credential (${reviveFailureReason(err)}).`
+          : err instanceof Error
+            ? err.message
+            : "The credential was rejected.",
+      });
+    }
+  }
+
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
@@ -180,18 +331,26 @@ export function createConnectionsService(deps: {
     async update(id: string, value: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
-      if (conn.auth.kind !== "header") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Only header-credential connections support value update",
-        });
-      }
 
-      const sdsFields = buildConnectionSdsFields(conn.contributions, value);
-      await deps.secretStore.putFields(conn.auth.valueRef, {
-        value,
-        ...sdsFields,
-      });
+      switch (conn.auth.kind) {
+        case "header":
+          await rotateHeaderValue(conn, conn.auth, value);
+          break;
+        case "client-credentials":
+          await rotateClientSecret(conn, conn.auth, value);
+          break;
+        case "github-app":
+          await rotatePrivateKey(conn, conn.auth, value);
+          break;
+        case "oauth":
+          await rotateOAuthClientSecret(conn, conn.auth, value);
+          break;
+        case "none":
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This connection stores no credential to update.",
+          });
+      }
 
       securityLog("info", "connection.update", {
         category: "credential",
@@ -525,6 +684,18 @@ export function createConnectionsService(deps: {
   };
 }
 
+// Metadata only: a provider's raw body could echo credential material.
+function reviveFailureReason(err: unknown): string {
+  const rejection = tokenRejectionOf(err);
+  if (rejection) {
+    return (
+      rejection.oauthError ??
+      `token endpoint status ${rejection.status ?? "unknown"}`
+    );
+  }
+  return err instanceof Error ? err.name : "unknown";
+}
+
 function stripSecretsFromInputs(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
@@ -541,32 +712,40 @@ function stripSecretsFromInputs(input: {
 function deriveStatus(conn: Connection): ConnectionView["status"] {
   switch (conn.auth.kind) {
     case "oauth":
-      // `expiresAt` stays in the OR for back-compat: connections created
-      // before `connectedAt` existed have an expiry but no marker.
-      return conn.auth.connectedAt || conn.auth.expiresAt
-        ? "active"
-        : "pending";
+      // Never authorized — `expiresAt` stays in the OR for back-compat:
+      // connections created before `connectedAt` existed have an expiry but no
+      // `connectedAt`.
+      if (!conn.auth.connectedAt && !conn.auth.expiresAt) return "pending";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "client-credentials":
       // expiresAt is always stamped at mint (provider expiry or the 1h
       // fallback) — the unset guard is defensive. Past-expiry means the
       // refresh loop has been failing to re-mint (it retries every tick
       // and re-mints before expiry when healthy).
-      return conn.auth.expiresAt &&
-        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
-        ? "expired"
-        : "active";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "github-app":
       // Same horizon logic as client-credentials: past-expiry means the
       // refresh loop has been failing to re-mint the installation token.
-      return conn.auth.expiresAt &&
-        conn.auth.expiresAt < Math.floor(Date.now() / 1000)
-        ? "expired"
-        : "active";
+      return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
       return "active";
     case "none":
       return "active";
   }
+}
+
+// The marker is definitive. A past horizon is the fallback: refresh renews well
+// ahead of expiry, so a token outliving it has no working refresh path. Providers
+// issuing no `expires_in` (GitHub) carry no horizon and stay active.
+function isExpiredAuth(auth: {
+  expiresAt?: number;
+  refreshFailedAt?: number;
+}): boolean {
+  if (auth.refreshFailedAt !== undefined) return true;
+  return (
+    auth.expiresAt !== undefined &&
+    auth.expiresAt < Math.floor(Date.now() / 1000)
+  );
 }
 
 function newConnectionId(): string {

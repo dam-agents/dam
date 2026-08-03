@@ -10,6 +10,7 @@ import { buildConnectCommand } from "./commands/connect.js";
 import { buildDisconnectCommand } from "./commands/disconnect.js";
 import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildReauthCommand } from "./commands/reauth.js";
 import { buildRevokeCommand } from "./commands/revoke.js";
 import { buildTemplatesCommand } from "./commands/templates.js";
 import { buildUpdateCommand } from "./commands/update.js";
@@ -80,6 +81,14 @@ export function composeConnectionModule(
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,
+    }),
+  );
+  parent.addCommand(
+    buildReauthCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createConnectionService: createService,
+      browserOpener: opts.browserOpener,
     }),
   );
   parent.addCommand(buildGrantCommand(agentScoped));

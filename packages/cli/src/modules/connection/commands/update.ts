@@ -1,5 +1,6 @@
 import { cancel, isCancel } from "@clack/prompts";
 import { Command } from "commander";
+import type { ConnectionAuthKind } from "api-server-api";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -13,20 +14,32 @@ import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
+/** What `value` means per auth kind — the server dispatches on the same
+ *  distinction, so the prompt has to name the right secret. */
+const SECRET_LABELS: Record<Exclude<ConnectionAuthKind, "none">, string> = {
+  header: "New credential value",
+  "client-credentials": "New client secret",
+  "github-app": "New private key (PEM)",
+  // Its own client secret, not its tokens — those come from `reauth`. Only
+  // connections carrying their own qualify; the server rejects the rest.
+  oauth: "New OAuth client secret",
+};
+
 export function buildUpdateCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createConnectionService: (host: string) => ConnectionService;
 }): Command {
   return new Command("update")
-    .description("Replace a connection's stored credential value")
+    .description("Replace a connection's stored credential")
     .argument(
       "<id-or-name>",
       "Connection id ('conn-…') or unique name (from `dam connection list`)",
     )
     .option(
       "--value <value>",
-      "the new credential value (prompts securely if omitted)",
+      "the new secret — the injected value, client secret, or private key, " +
+        "depending on the connection's auth kind (prompts securely if omitted)",
     )
     .option(
       "--server <url>",
@@ -37,7 +50,13 @@ export function buildUpdateCommand(deps: {
       "after",
       "\nExamples:\n" +
         "  dam connection update conn-61cc7b9137b0 --value sk-ant-...\n" +
-        "  dam connection update anthropic   # prompts for the value\n",
+        "  dam connection update anthropic   # prompts for the value\n" +
+        '  dam connection update my-github-app --value "$(cat app.pem)"\n' +
+        "\nA multi-line secret (a PEM private key) can't be typed at the\n" +
+        "prompt — pass it with --value, as in the last example.\n" +
+        "\nOn an OAuth connection this rotates its *client secret* (only when the\n" +
+        "connection carries its own). To replace expired tokens, re-consent:\n" +
+        "  dam connection reauth <id-or-name>\n",
     )
     .action(
       async (
@@ -70,9 +89,12 @@ export function buildUpdateCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        if (match.authKind !== "header") {
+        // The server is the authority on which kinds accept an update (and
+        // rejects the rest with its own message); only "nothing is stored" is
+        // decidable here.
+        if (match.authKind === "none") {
           process.stderr.write(
-            `error: only header-credential connections can be updated; '${match.name}' uses ${match.authKind} auth\n`,
+            `error: '${match.name}' stores no credential to update\n`,
           );
           process.exit(EXIT_INVALID_INPUT);
         }
@@ -85,9 +107,14 @@ export function buildUpdateCommand(deps: {
             );
             process.exit(EXIT_INVALID_INPUT);
           }
-          const entered = await promptSecret(
-            `New credential value for ${match.name}`,
-          );
+          if (match.authKind === "github-app") {
+            process.stderr.write(
+              "note: a PEM key can't be typed at the prompt — " +
+                'pass --value "$(cat app.pem)" instead\n',
+            );
+          }
+          const label = SECRET_LABELS[match.authKind];
+          const entered = await promptSecret(`${label} for ${match.name}`);
           if (isCancel(entered)) {
             cancel("Cancelled");
             process.exit(EXIT_SUCCESS);

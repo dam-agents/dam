@@ -1,11 +1,13 @@
 import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
+import type { ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
+import type { RowMaintenanceActions } from "./catalog-connection-row.js";
 import { CatalogConnectionRow } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import { GithubAppInstallHint } from "./github-app-install-hint.js";
@@ -22,6 +24,10 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string, name: string) => void;
   deletingId: string | null;
+  /** Per-row credential maintenance; omit to offer none. */
+  maintenance?: (
+    connection: ConnectionView,
+  ) => RowMaintenanceActions | undefined;
 }
 
 export function CatalogProviderCard({
@@ -31,6 +37,7 @@ export function CatalogProviderCard({
   onNew,
   onDelete,
   deletingId,
+  maintenance,
 }: Props) {
   const { provider, templates, connections } = group;
 
@@ -83,6 +90,7 @@ export function CatalogProviderCard({
                 }
                 onDelete={() => onDelete(c.id, c.name)}
                 deleting={deletingId === c.id}
+                maintenance={maintenance?.(c)}
               />
             ))}
           </div>

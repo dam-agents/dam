@@ -20,8 +20,15 @@ import type {
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
+import {
+  isPermanentTokenRejection,
+  tokenRejectionOf,
+  withoutRefreshFailureMarker,
+} from "../domain/refresh-failure-marker.js";
+import { securityLog } from "../../../core/security-log.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
+import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { mintGitHubAppToken } from "./github-app.js";
 
 export interface OAuthRefreshLoop {
@@ -116,6 +123,14 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           refreshed++;
         } catch (err) {
           failed++;
+          // Parked, not retried. A failed marker write falls through to the
+          // backoff below, so the connection never goes quiet.
+          if (
+            isPermanentAuthFailure(err, conn.auth) &&
+            (await markRefreshFailure(conn, err, deps, now(), log))
+          ) {
+            continue;
+          }
           const failures = (state?.failures ?? 0) + 1;
           const delay = backoffDelayMs(failures, backoffBaseMs, backoffMaxMs);
           backoff.set(conn.id, { failures, nextAttempt: startedAt + delay });
@@ -158,6 +173,8 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
           "client-credentials",
           "github-app",
         ]),
+        // Marked connections are parked; clearing the marker re-admits them.
+        sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
           AND ((${connectionsTable.auth} ->> 'expiresAt')::int - extract(epoch from now())::int) <= ${skewSec}
@@ -176,6 +193,99 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
   return rows
     .map((r) => parseRow(r))
     .filter((c): c is Connection => c !== null);
+}
+
+function isPermanentAuthFailure(
+  err: unknown,
+  auth: ConnectionAuthConfig,
+): boolean {
+  const rejection = tokenRejectionOf(err);
+  if (!rejection) return false;
+  return isPermanentTokenRejection({
+    ...rejection,
+    ownsClientSecret: ownsClientSecret(auth),
+  });
+}
+
+function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
+  switch (auth.kind) {
+    // Absent ref means the operator supplies the secret, fixed centrally.
+    case "oauth":
+      return auth.clientSecretRef !== undefined;
+    case "client-credentials":
+    case "github-app":
+      return true;
+    case "header":
+    case "none":
+      return false;
+  }
+}
+
+/** Persists the marker. False when nothing was marked, so the caller falls back
+ *  to the backoff rather than giving up on the connection. */
+async function markRefreshFailure(
+  conn: Connection,
+  err: unknown,
+  deps: { db: Db },
+  nowMs: number,
+  log: (msg: string) => void,
+): Promise<boolean> {
+  if (conn.auth.kind === "header" || conn.auth.kind === "none") return false;
+  const auth = conn.auth;
+  let markedRows: number;
+  try {
+    // This verdict is as old as the tick's read. Merge the one key server-side
+    // rather than replacing `auth`, and only while `expiresAt`/`connectedAt`
+    // still match what the tick saw — every successful credential write bumps
+    // one of them, so a fix that landed since wins and this marks nothing.
+    const result = await deps.db
+      .update(connectionsTable)
+      .set({
+        auth: sql`jsonb_set(${connectionsTable.auth}, '{refreshFailedAt}', to_jsonb(${Math.floor(nowMs / 1000)}::bigint))`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(connectionsTable.id, conn.id),
+          sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${auth.expiresAt === undefined ? null : String(auth.expiresAt)}`,
+          sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
+        ),
+      );
+    markedRows = (result as unknown as { rowCount?: number }).rowCount ?? 0;
+  } catch (writeErr) {
+    log(
+      `connection ${conn.id} refresh-failure marker write failed: ` +
+        `${(writeErr as Error).message}`,
+    );
+    return false;
+  }
+  // A credential fix landed between the tick's read and this write — nothing
+  // was marked, so nothing is parked (and there is no failure to audit).
+  if (markedRows === 0) return false;
+  const rejection = tokenRejectionOf(err);
+  securityLog("warn", "connection.refresh_permanent_failure", {
+    category: "credential",
+    actor: "system:oauth-refresh",
+    actorKind: "system",
+    target: conn.id,
+    result: "failure",
+    decision: "expired",
+    detail: {
+      templateId: conn.templateId,
+      authKind: conn.auth.kind,
+      ...(rejection
+        ? {
+            ...(rejection.oauthError
+              ? { oauthError: rejection.oauthError }
+              : {}),
+            ...(rejection.status !== undefined
+              ? { status: rejection.status }
+              : {}),
+          }
+        : {}),
+    },
+  });
+  return true;
 }
 
 function parseRow(row: {
@@ -215,49 +325,15 @@ async function refreshOne(
     db: Db;
   },
 ): Promise<void> {
-  if (!auth.refreshTokenRef) {
-    throw new Error("no refresh token ref");
-  }
-  const refreshToken = await deps.secretStore.getField(auth.refreshTokenRef);
-  if (!refreshToken) {
-    throw new Error(`refresh token missing at ${auth.refreshTokenRef.path}`);
-  }
-
-  const template = deps.templates.get(conn.templateId);
-  let clientSecret =
-    template && template.authKind === "oauth"
-      ? template.clientSecret
-      : undefined;
-  if (auth.clientSecretRef) {
-    const dyn = await deps.secretStore.getField(auth.clientSecretRef);
-    if (dyn) clientSecret = dyn;
-  }
-  const provider: OAuthProvider = {
-    id: `connection:${conn.id}:${conn.templateId}`,
-    authorizationUrl: auth.authorizationUrl,
-    tokenEndpoint: auth.tokenUrl,
-    clientId: auth.clientId,
-    ...(clientSecret ? { clientSecret } : {}),
-    scopes: auth.scopes,
-    ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
-  };
-
-  const next = await deps.engine.refresh({ provider, refreshToken });
-
-  const sdsFields = buildConnectionSdsFields(
-    conn.contributions,
-    next.accessToken,
-  );
-  const fields: Record<string, string> = {
-    access_token: next.accessToken,
-    ...sdsFields,
-  };
-  if (next.refreshToken && auth.refreshTokenRef) {
-    fields.refresh_token = next.refreshToken;
-  }
-  await deps.secretStore.putFields(auth.accessTokenRef, fields);
+  const next = await refreshOAuthAccessToken({
+    conn,
+    auth,
+    engine: deps.engine,
+    templates: deps.templates,
+    secretStore: deps.secretStore,
+  });
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db
@@ -293,7 +369,7 @@ export async function remintOne(
     ...buildConnectionSdsFields(conn.contributions, next.accessToken),
   });
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db
@@ -329,7 +405,7 @@ export async function remintGitHubAppOne(
     ...buildConnectionSdsFields(conn.contributions, next.accessToken),
   });
   const updatedAuth: ConnectionAuthConfig = {
-    ...auth,
+    ...withoutRefreshFailureMarker(auth),
     expiresAt: next.expiresAt,
   };
   await deps.db

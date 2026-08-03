@@ -17,6 +17,49 @@ export interface OAuthProvider {
   extraAuthParams?: Record<string, string>;
 }
 
+/** A token-endpoint rejection. GitHub returns its errors in a **200**
+ *  form-encoded body, so `oauthError` — not `status` — is the reliable
+ *  discriminator of a dead credential. */
+export class OAuthTokenEndpointError extends Error {
+  readonly status: number | undefined;
+  readonly oauthError: string | undefined;
+  /** The response body was OAuth-shaped (JSON or form-encoded). False for an
+   *  HTML error page from a proxy/WAF, whose status says nothing about the
+   *  credential. */
+  readonly oauthShapedBody: boolean;
+
+  constructor(
+    message: string,
+    opts: {
+      status?: number;
+      oauthError?: string;
+      oauthShapedBody?: boolean;
+    } = {},
+  ) {
+    super(message);
+    this.name = "OAuthTokenEndpointError";
+    this.status = opts.status;
+    this.oauthError = opts.oauthError;
+    this.oauthShapedBody = opts.oauthShapedBody ?? false;
+  }
+}
+
+// RFC 6749 delimits the `scope` response field with spaces; GitHub uses commas.
+function parseScopeList(raw: string | undefined): string[] {
+  return raw?.split(/[\s,]+/).filter(Boolean) ?? [];
+}
+
+// A non-2xx body usually still carries the code — JSON for most providers,
+// form-encoded for a few. An unparseable body leaves only the status.
+function parseOAuthErrorCode(body: string): string | undefined {
+  try {
+    const json = JSON.parse(body) as { error?: unknown };
+    return typeof json.error === "string" ? json.error : undefined;
+  } catch {
+    return new URLSearchParams(body).get("error") ?? undefined;
+  }
+}
+
 export interface PendingFlow<Ctx = unknown> {
   provider: OAuthProvider;
   ctx: Ctx;
@@ -31,6 +74,8 @@ export interface TokenSet {
   refreshToken?: string;
   /** Unix seconds. Absent when the provider didn't return `expires_in`. */
   expiresAt?: number;
+  /** What the provider granted — a user can decline scopes at consent. */
+  scopes?: string[];
 }
 
 export interface OAuthEngine {
@@ -104,8 +149,18 @@ export function createOAuthEngine(
     });
     if (!res.ok) {
       const txt = await res.text();
-      throw new Error(
+      const oauthError = parseOAuthErrorCode(txt);
+      const errCt = res.headers.get("content-type") ?? "";
+      throw new OAuthTokenEndpointError(
         `OAuth token endpoint ${provider.id}: ${res.status} ${txt.slice(0, 500)}`,
+        {
+          status: res.status,
+          ...(oauthError ? { oauthError } : {}),
+          oauthShapedBody:
+            oauthError !== undefined ||
+            errCt.includes("application/json") ||
+            errCt.includes("application/x-www-form-urlencoded"),
+        },
       );
     }
     const ct = res.headers.get("content-type") ?? "";
@@ -121,6 +176,7 @@ export function createOAuthEngine(
         expires_in: parsed.get("expires_in")
           ? Number(parsed.get("expires_in"))
           : undefined,
+        scope: parsed.get("scope") ?? undefined,
         error: parsed.get("error") ?? undefined,
         error_description: parsed.get("error_description") ?? undefined,
       };
@@ -134,14 +190,21 @@ export function createOAuthEngine(
       const detail =
         data.error_description ?? data.error ?? "no access_token in response";
       const code = data.error ? `${data.error}: ` : "";
-      throw new Error(
+      throw new OAuthTokenEndpointError(
         `OAuth ${provider.id} rejected by provider — ${code}${detail}`,
+        {
+          status: res.status,
+          ...(data.error ? { oauthError: data.error } : {}),
+          oauthShapedBody: true,
+        },
       );
     }
     const tokens: TokenSet = { accessToken: data.access_token };
     if (data.refresh_token) tokens.refreshToken = data.refresh_token;
     if (data.expires_in)
       tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
+    const grantedScopes = parseScopeList(data.scope);
+    if (grantedScopes.length > 0) tokens.scopes = grantedScopes;
     return tokens;
   }
 

@@ -17,6 +17,9 @@ export const oauthAuth = z.object({
   clientSecretRef: secretRef.optional(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  // Epoch seconds, set only on a *permanent* token rejection: derives
+  // `expired` and parks the connection. Any successful token write clears it.
+  refreshFailedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
@@ -38,6 +41,7 @@ export const clientCredentialsAuth = z.object({
   audience: z.string().min(1).optional(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  refreshFailedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   host: z.string().min(1).optional(),
 });
@@ -57,6 +61,7 @@ export const githubAppAuth = z.object({
   apiBaseUrl: z.string().url(),
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
+  refreshFailedAt: z.number().int().optional(),
   host: z.string().min(1).optional(),
 });
 
@@ -122,6 +127,9 @@ export const connectionView = z.object({
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
+  // Only for an OAuth connection storing its own client secret — an
+  // operator-supplied one is deploy config, not replaceable per connection.
+  hasClientSecret: z.boolean().optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
 
@@ -213,6 +221,10 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
+  // Replaces the stored credential in place, preserving identity and grants.
+  // `value` is the injected value (header), the client secret
+  // (client-credentials/oauth), or the PEM private key (github-app). The minting
+  // kinds validate first, so an invalid secret changes nothing.
   update(id: string, value: string): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
