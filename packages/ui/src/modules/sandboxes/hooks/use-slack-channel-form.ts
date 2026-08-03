@@ -7,6 +7,7 @@ import {
   useConnectSlack,
   useDisconnectSlack,
 } from "../../agents/api/mutations.js";
+import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type SlackChannel = Extract<
   AgentView["channels"][number],
@@ -29,8 +30,7 @@ export function findSlackChannels(
 }
 
 /** Drives the connect/edit modal for a single Slack binding: `channel` is the
- *  one being edited, undefined when connecting a new one. An agent may hold
- *  several bindings, so every write here names its channel. */
+ *  one being edited, undefined when connecting a new one. */
 export function useSlackChannelForm(
   agent: AgentView,
   channel: SlackChannel | undefined,
@@ -49,26 +49,16 @@ export function useSlackChannelForm(
     },
   });
 
-  const onSubmit = form.handleSubmit(async ({ channelId, ambient }) => {
-    const connectPayload = {
-      id: agent.id,
-      slackChannelId: channelId,
-      ...(ambient ? { ambient: true } : {}),
-    };
-    if (!channel) {
-      await connectSlack.mutateAsync(connectPayload);
-    } else if (channelId !== channel.slackChannelId) {
-      // A channel change is a rebind: disconnect the old channel — and only
-      // that one — so it gets a clean unbind before the new one is connected.
-      await disconnectSlack.mutateAsync({
-        id: agent.id,
-        slackChannelId: channel.slackChannelId,
-      });
-      await connectSlack.mutateAsync(connectPayload);
-    } else if (ambient !== (channel.ambient ?? false)) {
-      // Ambient is the one mutable toggle: a same-channel re-connect updates
-      // the existing binding in place.
-      await connectSlack.mutateAsync(connectPayload);
+  const onSubmit = form.handleSubmit(async (values) => {
+    // Sequential by design: a step only runs once the one before it landed, so
+    // a failure stops the save with the binding set still coherent.
+    for (const step of planSlackChannelSave({
+      agentId: agent.id,
+      channel,
+      values,
+    })) {
+      if (step.kind === "connect") await connectSlack.mutateAsync(step.input);
+      else await disconnectSlack.mutateAsync(step.input);
     }
     onSaved();
   });
