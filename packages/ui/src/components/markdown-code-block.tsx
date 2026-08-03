@@ -1,43 +1,21 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
+import { Checkmark, Copy, Warning } from "@carbon/icons-react";
 import type { ComponentPropsWithoutRef } from "react";
 import type { ExtraProps } from "react-markdown";
 
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/hooks/use-copy";
+import { codeBlockText } from "@/lib/code-block-text";
 import { cn } from "@/lib/utils";
 
-type HastElement = NonNullable<ExtraProps["node"]>;
-type HastChild = HastElement["children"][number];
-
-/** Raw source text of a rendered code block. rehype-highlight wraps every
- *  token in nested <span>s, so the text only exists at the leaves — walk the
- *  hast node instead of reading React children. */
-export function codeBlockText(node: HastElement | undefined): string {
-  if (!node) return "";
-  // Strip all trailing newlines (LF or CRLF) so pasting into a terminal
-  // doesn't auto-execute the last line.
-  return collectText(node).replace(/[\r\n]+$/, "");
-}
-
-function collectText(node: HastElement | HastChild): string {
-  if (node.type === "text") return node.value;
-  if (node.type === "element") return node.children.map(collectText).join("");
-  return "";
-}
-
-const LABELS = {
-  idle: "Copy code",
+const STATUS = {
+  idle: "",
   copied: "Copied",
   failed: "Copy failed",
 } as const;
 
-type MarkdownCodeBlockProps = ComponentPropsWithoutRef<"pre"> & ExtraProps;
+type Props = ComponentPropsWithoutRef<"pre"> & ExtraProps;
 
-export function MarkdownCodeBlock({
-  node,
-  children,
-  ...preProps
-}: MarkdownCodeBlockProps) {
+export function MarkdownCodeBlock({ node, children, ...preProps }: Props) {
   const { copy, state } = useCopy();
   const code = codeBlockText(node);
 
@@ -47,21 +25,39 @@ export function MarkdownCodeBlock({
         {children}
       </pre>
       {code !== "" && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          onClick={() => void copy(code)}
-          aria-label={LABELS[state]}
-          title={LABELS[state]}
-          className={cn(
-            "absolute right-2 top-2 transition-opacity opacity-100 md:opacity-0 md:group-hover/code-block:opacity-100 focus-visible:opacity-100",
-            state === "copied" && "text-success",
-            state === "failed" && "text-danger",
-          )}
-        >
-          {state === "copied" ? <Checkmark size={14} /> : <Copy size={14} />}
-        </Button>
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            onClick={() => void copy(code)}
+            aria-label="Copy code"
+            title="Copy code"
+            className={cn(
+              // Gate the reveal on hover capability, not width: a touch device
+              // wider than `md` would hide the button with no way to show it.
+              "absolute right-2 top-2 transition-opacity",
+              "hover-capable:opacity-0 group-hover/code-block:opacity-100 focus-visible:opacity-100",
+              // The `outline` variant's own hover colour outranks these tints,
+              // and after a click the pointer is still on the button.
+              state === "copied" && "text-success hover:text-success",
+              state === "failed" && "text-danger hover:text-danger",
+            )}
+          >
+            {state === "copied" ? (
+              <Checkmark size={14} />
+            ) : state === "failed" ? (
+              <Warning size={14} />
+            ) : (
+              <Copy size={14} />
+            )}
+          </Button>
+          {/* A changing button name isn't reliably announced, so carry the
+              outcome in a live region instead. */}
+          <span role="status" aria-live="polite" className="sr-only">
+            {STATUS[state]}
+          </span>
+        </>
       )}
     </div>
   );
