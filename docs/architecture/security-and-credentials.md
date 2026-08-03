@@ -135,6 +135,12 @@ The user agent flow:
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
 
+Two interstitials can take the browser off the page the user asked for:
+the login redirect above, and the Terms-of-Use gate. Both park that
+destination and resume it once cleared, so a deep link survives them —
+an in-chat bind link ([channels](channels.md)) is single-use, so losing
+its target would cost the user a fresh bind command rather than a retry.
+
 If the key set itself cannot be retrieved (Keycloak unreachable, fetch
 timeout, non-200 response), verification fails closed with **503** and
 reason `jwks-unavailable` — never 401: a transient infrastructure failure

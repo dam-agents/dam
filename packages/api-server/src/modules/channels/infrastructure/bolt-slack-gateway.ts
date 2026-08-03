@@ -265,6 +265,9 @@ export function createBoltSlackGateway(
     },
 
     async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
+      // A 2xx here does not mean the bytes are the file: Slack answers a
+      // request it won't serve with a 200 and a sign-in page. The caller
+      // classifies what actually arrived rather than trusting the status.
       const res = await fetch(urlPrivate, {
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });

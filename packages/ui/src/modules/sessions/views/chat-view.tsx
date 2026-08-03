@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -38,6 +39,7 @@ import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { describeSendError } from "../../acp/errors.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
@@ -689,7 +691,7 @@ export function ChatView() {
                           </span>
                           {m.error ? (
                             <SendErrorCard
-                              error={m.error.message}
+                              rawError={m.error.message}
                               onRetry={
                                 m.error.retryWith
                                   ? () =>
@@ -758,9 +760,7 @@ export function ChatView() {
                                     </span>
                                     {p.size !== undefined && (
                                       <span className="text-[10px] text-muted-foreground">
-                                        {p.size < 1024
-                                          ? `${p.size} B`
-                                          : `${(p.size / 1024).toFixed(1)} KB`}
+                                        {formatBytes(p.size)}
                                       </span>
                                     )}
                                   </div>
@@ -976,12 +976,13 @@ function SessionErrorCard({
 }
 
 function SendErrorCard({
-  error,
+  rawError,
   onRetry,
 }: {
-  error: string;
+  rawError: string;
   onRetry?: () => void;
 }) {
+  const { message, hint } = describeSendError(rawError);
   return (
     <Callout
       tone="danger"
@@ -991,8 +992,11 @@ function SendErrorCard({
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="text-sm text-foreground break-words">
-          <span className="font-bold text-danger">Send failed:</span> {error}
+          <span className="font-bold text-danger">Send failed:</span> {message}
         </div>
+        {hint && (
+          <p className="text-xs text-muted-foreground break-words">{hint}</p>
+        )}
         {onRetry && (
           <Button
             variant="outline"

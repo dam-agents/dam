@@ -2,26 +2,33 @@ import { Controller } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../../types.js";
+import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
 
 export function SlackChannelModal({
   agent,
+  channel,
   onClose,
 }: {
   agent: AgentView;
+  /** The binding being edited; omitted when connecting a new channel. */
+  channel?: SlackChannel;
   onClose: () => void;
 }) {
-  const { form, editing, onSubmit } = useSlackChannelForm(agent, onClose);
+  const { form, editing, onSubmit } = useSlackChannelForm(
+    agent,
+    channel,
+    onClose,
+  );
   const {
     register,
     control,
@@ -31,8 +38,13 @@ export function SlackChannelModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
+        {/* Dismissal is gated while submitting: changing the channel
+            disconnects the old one before connecting the new, so leaving in
+            between drops that binding with nothing on screen saying so. */}
         <DialogHeader
           title={editing ? "Edit Slack channel" : "Connect a Slack channel"}
+          onClose={onClose}
+          closeDisabled={isSubmitting}
         />
 
         <DialogBody className="flex flex-col gap-4">
@@ -61,23 +73,14 @@ export function SlackChannelModal({
           />
         </DialogBody>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            data-testid="slack-save"
-          >
-            {isSubmitting ? "Saving…" : editing ? "Save" : "Connect"}
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          onCancel={onClose}
+          label={editing ? "Save" : "Connect"}
+          pendingLabel={editing ? "Saving…" : "Connecting…"}
+          pending={isSubmitting}
+          cancelDisabled={isSubmitting}
+          testId="slack-save"
+        />
       </form>
     </Modal>
   );

@@ -58,6 +58,8 @@ export const artifactCreateInputSchema = z
     path: ["content"],
   });
 
+// No kind: an artifact's format is settled at create and cannot be changed by
+// an update — see ArtifactUpdateInput for why. The file name stays editable.
 export const artifactUpdateInputSchema = z
   .object({
     id: z.string().min(1),
@@ -65,7 +67,6 @@ export const artifactUpdateInputSchema = z
     folderId: z.string().min(1).nullish(),
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
-    kind: artifactKindSchema.optional(),
     contentType: z.string().trim().min(1).max(200).optional(),
   })
   .refine((v) => !(v.content != null && v.uploadRef != null), {

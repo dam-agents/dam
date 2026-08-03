@@ -4,12 +4,11 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
@@ -99,14 +98,14 @@ export function PublishSkillModal({
           </div>
         </DialogBody>
 
-        <DialogFooter className="border-t border-border">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={!isValid || isSubmitting}>
-            {isSubmitting ? "Publishing…" : "Publish"}
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          className="border-t border-border"
+          onCancel={onClose}
+          label="Publish"
+          pendingLabel="Publishing…"
+          pending={isSubmitting}
+          disabled={!isValid}
+        />
       </form>
     </Modal>
   );

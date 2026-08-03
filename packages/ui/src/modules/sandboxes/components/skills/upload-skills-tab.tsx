@@ -1,7 +1,7 @@
 import { Edit, TrashCan, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
-import { DialogBody, DialogFooter } from "@/components/modal";
+import { DialogActions, DialogBody } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -63,9 +63,8 @@ export function UploadSkillsTab({
     !hasUnsluggable &&
     !submitting;
 
-  const submitLabel = submitting
-    ? "Adding…"
-    : staged.length === 0
+  const submitLabel =
+    staged.length === 0
       ? "Add skills"
       : `Add ${staged.length} skill${staged.length === 1 ? "" : "s"}`;
 
@@ -139,19 +138,15 @@ export function UploadSkillsTab({
         )}
       </DialogBody>
 
-      <DialogFooter className="border-t border-border">
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          className={cn(!canSubmit && "opacity-50")}
-          disabled={!canSubmit}
-          onClick={() => void staging.submit()}
-        >
-          {submitLabel}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        className="border-t border-border"
+        onCancel={onClose}
+        label={submitLabel}
+        pendingLabel="Adding…"
+        pending={submitting}
+        disabled={!canSubmit}
+        onSubmit={() => void staging.submit()}
+      />
     </>
   );
 }

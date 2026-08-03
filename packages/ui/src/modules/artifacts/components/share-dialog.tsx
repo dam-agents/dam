@@ -3,8 +3,8 @@ import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useCopy } from "@/hooks/use-copy";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
 
@@ -37,7 +38,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
     artifact.expiresAt === null ? "never" : "keep",
   );
   const [shareUrl, setShareUrl] = useState(artifact.shareUrl);
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopy();
   const sharing = useSetArtifactSharing();
 
   const save = () => {
@@ -60,7 +61,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader title={`Share “${artifact.title}”`} />
+      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
       <DialogBody>
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between gap-3">
@@ -88,11 +89,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 variant="outline"
                 size="icon-sm"
                 title="Copy link"
-                onClick={() => {
-                  void navigator.clipboard.writeText(shareUrl);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
-                }}
+                onClick={() => void copy(shareUrl)}
               >
                 {copied ? (
                   <Checkmark size={14} className="text-success" />
@@ -128,14 +125,14 @@ export function ShareDialog({ artifact, onClose }: Props) {
           )}
         </div>
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-        <Button onClick={save} disabled={sharing.isPending}>
-          {sharing.isPending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        cancelLabel="Close"
+        label="Save"
+        pendingLabel="Saving…"
+        pending={sharing.isPending}
+        onSubmit={save}
+      />
     </Modal>
   );
 }

@@ -721,10 +721,8 @@ apiServer:
     - cdn.mise.run
     # Bob Shell (IBM)
     - api.us-east.bob.ibm.com
-    # DuckDuckGo — backend for the claude-code harness's `websearch` skill, the
-    # replacement for the built-in WebSearch tool on non-Anthropic backends
-    # (#1087). `lite.duckduckgo.com` is the only host the bundle contacts.
-    - lite.duckduckgo.com
+    # arXiv API
+    - export.arxiv.org
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -1452,6 +1450,11 @@ gitRepos:
     url: https://github.com/dam-agents/link-guardian.git
     description: "Monitor and validate links to guard against broken or malicious URLs"
     compatibleTemplates: [claude-code, bob]
+  - id: arxiv-scanner
+    name: arXiv Scanner
+    url: https://github.com/willallstet/arxiv-scanner.git
+    description: "Onboards a GitHub repo and scans arXiv for related work"
+    compatibleTemplates: [claude-code]
 
 # -- DEPRECATED in-cluster NFS server + external provisioner (#2988). Nothing
 # needs shared-writable storage any more: workspace volumes are ReadWriteOnce

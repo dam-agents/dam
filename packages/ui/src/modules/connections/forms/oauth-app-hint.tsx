@@ -1,8 +1,8 @@
 import { Checkmark, Copy, Launch } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { useCopy } from "@/hooks/use-copy";
 
 /** Bring-your-own-OAuth-app instructions: provider setup link plus the exact
  *  redirect URI to register. */
@@ -13,14 +13,11 @@ export function OAuthAppHint({
   callbackUrl?: string;
   setupUrl?: string;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copy: copyText, copied } = useCopy();
   if (!callbackUrl && !setupUrl) return null;
 
   const copy = () => {
-    if (!callbackUrl) return;
-    navigator.clipboard.writeText(callbackUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (callbackUrl) void copyText(callbackUrl);
   };
 
   return (

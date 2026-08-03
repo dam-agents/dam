@@ -222,7 +222,12 @@ export interface AgentsService {
     slackChannelId: string,
     ambient?: boolean,
   ) => Promise<ConnectSlackResult>;
-  disconnectSlack: (id: string) => Promise<Agent | null>;
+  /** Release a Slack binding. An agent may hold several, so `slackChannelId`
+   *  names the conversation to release; omitting it releases all of them. */
+  disconnectSlack: (
+    id: string,
+    slackChannelId?: string,
+  ) => Promise<Agent | null>;
   /** Consume a Slack bind flow (minted by the in-chat bind OAuth callback) and
    *  bind that channel to the caller's agent in shared mode. */
   bindSlackChannel: (

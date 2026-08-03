@@ -72,6 +72,9 @@ export type SlackConnected = {
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
+  /** The conversation released. Absent when every one of the agent's Slack
+   *  bindings went at once (agent delete, or a disconnect that named none). */
+  slackChannelId?: string;
 };
 
 export type ChannelTurnRelayed = {

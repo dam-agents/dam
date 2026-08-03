@@ -23,6 +23,7 @@ import {
   listChannelsByAgent,
   upsertChannel,
   deleteChannelByType,
+  deleteSlackChannelByAgent,
   deleteChannelsByAgentIds,
   findBySlackChannelId,
   upsertChannelTx,
@@ -104,6 +105,7 @@ export function composeAgentsModule(deps: {
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),
       deleteChannelByType: deleteChannelByType(deps.db, owner),
+      deleteSlackChannelByAgent: deleteSlackChannelByAgent(deps.db, owner),
       deleteChannelsByAgentIds: deleteChannelsByAgentIds(deps.db, owner),
       unitOfWork: createUnitOfWork(deps.db),
       channelsTxRepo: {

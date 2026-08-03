@@ -5,7 +5,12 @@ import {
   Time,
   TrashCan,
 } from "@carbon/icons-react";
-import { SessionMode, SessionType, type SessionView } from "api-server-api";
+import {
+  SessionMode,
+  type SessionRuntime,
+  SessionType,
+  type SessionView,
+} from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,9 +20,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatSessionTimestamp } from "../lib/format-session-timestamp.js";
+import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -29,6 +35,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -39,6 +46,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  cost,
   onResume,
   onDelete,
 }: Props) {
@@ -140,7 +148,16 @@ export function SessionRow({
           {slackKind
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
-          {formatSessionTimestamp(s.updatedAt ?? s.createdAt)}
+          {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {cost && (
+            <span
+              className="tabular-nums"
+              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+            >
+              {" · "}
+              {formatUsdCell(cost.costUsd)}
+            </span>
+          )}
         </span>
       </div>
       {/* Desktop: hover-visible overflow menu */}

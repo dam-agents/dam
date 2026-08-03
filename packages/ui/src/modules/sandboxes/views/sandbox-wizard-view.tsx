@@ -63,6 +63,11 @@ export function SandboxWizardView() {
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
   );
+  // Disclosure lives here too — the section unmounts on every step change,
+  // and the credentials it shows must not outlive their own visibility toggle.
+  const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
+    boolean | null
+  >(null);
   const isCustomImage = snapshot.startingPoint === "custom";
 
   const imageLabel = useMemo(() => {
@@ -184,6 +189,7 @@ export function SandboxWizardView() {
       });
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
+      setRegistryDisclosureOverride(null);
       selectAgent(agent.id);
     } catch {
       // Mutation surfaces its own error toast; stay on Step 3 to retry.
@@ -236,6 +242,8 @@ export function SandboxWizardView() {
                   value: registryCredential,
                   onChange: setRegistryCredential,
                   partial: registryPartial,
+                  disclosureOverride: registryDisclosureOverride,
+                  onDisclosureOverride: setRegistryDisclosureOverride,
                 }
               : undefined
           }

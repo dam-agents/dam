@@ -1,11 +1,16 @@
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
+  slackThreadKey,
   ChannelType,
   SessionType,
   type AgentsService,
 } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
+import {
+  classifyInboundAttachment,
+  type InboundAttachment,
+} from "../inbound-image.js";
 import type {
   ChannelReaction,
   ChannelReply,
@@ -239,13 +244,47 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
+/** Why a downloaded attachment never became a prompt block, in words the
+ *  sender can act on. A rejected attachment is worth explaining rather than
+ *  dropping: the harness would otherwise hand the model an unreadable blob and
+ *  the agent would answer with an internal resize error (#3008). */
+async function unreadableImageCopy(
+  gw: SlackGateway,
+  attachment: Exclude<InboundAttachment, { kind: "image" }>,
+): Promise<string> {
+  if (attachment.kind === "unreadable") {
+    return attachment.retryable
+      ? `it is ${attachment.description}, so the upload arrived incomplete. Try resending.`
+      : `it is ${attachment.description}. The agent reads PNG, JPEG, GIF and WebP images.`;
+  }
+  const scopes = await grantedScopes(gw);
+  return scopes && !scopes.has("files:read")
+    ? "Slack returned a web page instead of the file — this install lacks the " +
+        "`files:read` permission, so it cannot download attachments. Reinstall " +
+        "the app with that scope and send the image again."
+    : "Slack returned a web page instead of the file, so the agent never saw " +
+        "the image. That usually means the app cannot download attachments in " +
+        "this conversation — check that it is still installed and can read files.";
+}
+
+/** Whether an attachment is worth downloading and letting the bytes judge.
+ *  Slack's `mimetype` decides that much, but it is the uploading client's claim,
+ *  not a fact — so a generic or absent label with an image extension is taken
+ *  seriously too, rather than dropping a real screenshot unread on the strength
+ *  of a bad label. Anything else (a PDF, a spreadsheet) is still left alone. */
+const GENERIC_MIME_TYPES = ["application/octet-stream", "binary/octet-stream"];
+
+function mayBeImageAttachment(f: SlackImageFile): boolean {
+  if (f.mimetype?.startsWith("image/")) return true;
+  if (f.mimetype && !GENERIC_MIME_TYPES.includes(f.mimetype)) return false;
+  return /\.(png|jpe?g|gif|webp)$/i.test(f.name ?? "");
+}
+
 async function fetchSlackImages(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
 ): Promise<FetchImagesResult> {
-  const imageFiles = (files ?? []).filter((f) =>
-    f.mimetype?.startsWith("image/"),
-  );
+  const imageFiles = (files ?? []).filter(mayBeImageAttachment);
   const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
   if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
     return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
@@ -257,20 +296,62 @@ async function fetchSlackImages(
     const failures: FetchedFailure[] = [];
     for (const f of imageFiles) {
       try {
-        const buf = await gateway.downloadFile(f.url_private);
-        const data = Buffer.from(buf).toString("base64");
+        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        // A 2xx download is not proof it returned the file, and `image/*`
+        // covers formats no harness decodes. Trust the bytes — and their
+        // sniffed type, so a mislabelled upload still reaches the agent.
+        const attachment = classifyInboundAttachment(bytes);
+        if (attachment.kind !== "image") {
+          getLogger().warn(
+            {
+              file: f.name,
+              claimedMimeType: f.mimetype,
+              bytes: bytes.length,
+              verdict: attachment.kind,
+            },
+            "slack.image.unreadable",
+          );
+          failures.push({
+            name: f.name,
+            reason: await unreadableImageCopy(gateway, attachment),
+          });
+          continue;
+        }
         images.push({
-          block: { type: "image", data, mimeType: f.mimetype },
+          block: {
+            type: "image",
+            data: bytes.toString("base64"),
+            mimeType: attachment.mimeType,
+          },
           meta: { name: f.name, size: f.size },
         });
       } catch (err) {
-        failures.push({ name: f.name, reason: formatError(err) });
+        failures.push({
+          name: f.name,
+          reason: `${formatError(err)}. Try resending.`,
+        });
       }
     }
     return { kind: "ok", images, failures };
   } finally {
     release();
   }
+}
+
+/** The accepted images for a turn, plus a line naming any attachment that was
+ *  withheld. The note goes into the prompt, not just the sender's notice: an
+ *  agent that is asked about a picture it never received would otherwise answer
+ *  blind, which reads as a worse failure than saying it couldn't see the file. */
+type TurnImages = { images: FetchedImage[]; withheldNote: string };
+
+function renderWithheldNote(failures: FetchedFailure[]): string {
+  if (failures.length === 0) return "";
+  const list = failures.map((f) => `${f.name} (${f.reason})`).join("; ");
+  return (
+    `\n\nAn attachment on this message could not be read and was not ` +
+    `included: ${list} Say so plainly if the question depends on seeing it — ` +
+    `do not guess at its contents.`
+  );
 }
 
 function renderTurnFiles(images: FetchedImage[]): string {
@@ -318,7 +399,9 @@ export interface ChannelRegistry {
     owner: string;
     ambient?: boolean;
   } | null>;
-  resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
+  /** Every Slack conversation bound to the agent (#3086), in a stable order.
+   *  Empty means the agent has no Slack reach at all. */
+  resolveSlackChannelsByInstance(agentId: string): Promise<string[]>;
 }
 
 export interface SlackWorker {
@@ -384,17 +467,30 @@ export interface SlackOAuthPending {
 }
 
 /** Resolve an outbound conversationId to the Slack conversation to post into.
- *  The bound channel passes untouched; a user id opens a DM; any other
+ *  A bound conversation passes untouched; a user id opens a DM; any other
  *  channel must have the bot as a member. The one workspace bot is shared by
  *  all Agents, so its membership — governed Slack-side via /invite — is the
- *  reach boundary. */
+ *  reach boundary.
+ *
+ *  With no conversationId there is a default only while the Agent holds a
+ *  single binding. Bound to several (#3086), the call is refused rather than
+ *  posted into an arbitrary one — the same refuse-don't-guess rule the id-less
+ *  `reply`/`react` follow when several turns are in flight. */
 async function resolveOutboundTarget(
   gateway: SlackGateway,
-  boundChannelId: string,
+  boundChannelIds: string[],
   conversationId: string | undefined,
 ): Promise<{ id: string } | { error: string }> {
-  if (!conversationId || conversationId === boundChannelId) {
-    return { id: boundChannelId };
+  if (!conversationId) {
+    if (boundChannelIds.length === 1) return { id: boundChannelIds[0]! };
+    return {
+      error:
+        `this agent is connected to ${boundChannelIds.length} Slack conversations ` +
+        `(${boundChannelIds.join(", ")}) — pass chatId to say which one`,
+    };
+  }
+  if (boundChannelIds.includes(conversationId)) {
+    return { id: conversationId };
   }
   // Exactly one well-formed user id — conversations.open would accept a
   // comma-separated list and mint a group DM, which is not on offer here.
@@ -487,6 +583,50 @@ async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
 async function canReadReactions(gw: SlackGateway): Promise<boolean> {
   const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("reactions:read");
+}
+
+/** What each scope the Slack features rely on actually buys, in the words an
+ *  operator would use to describe the capability going missing. Declared here
+ *  rather than read from the app manifest because the manifest describes a
+ *  *fresh* install: a scope added to it later never reaches a workspace that
+ *  installed earlier — the app keeps the scopes it was installed with — so the
+ *  two drift apart silently, and this is the side that knows what the running
+ *  features need. */
+const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
+  { scope: "app_mentions:read", backs: "answering mentions" },
+  { scope: "chat:write", backs: "posting replies" },
+  { scope: "files:read", backs: "reading images people attach" },
+  { scope: "files:write", backs: "sending files into a channel" },
+  { scope: "channels:history", backs: "reading channel history for context" },
+  { scope: "im:history", backs: "answering direct messages" },
+  { scope: "reactions:write", backs: "the agent's own emoji reactions" },
+  { scope: "users:read", backs: "telling the agent who people are" },
+  { scope: "reactions:read", backs: "reading the reactions on a message" },
+  { scope: "channels:read", backs: "posting outside the bound channel" },
+];
+
+/** Say once, at startup, which granted permissions are missing and what stops
+ *  working without them. A withheld scope otherwise has no symptom of its own:
+ *  the capability simply behaves as though it were broken, and the agent is the
+ *  one that looks wrong. Nothing here changes behaviour — an unknown or
+ *  unreachable probe stays silent rather than guessing at a gap. */
+async function reportMissingPermissions(gw: SlackGateway): Promise<void> {
+  const scopes = await grantedScopes(gw);
+  if (!scopes) return;
+  const missing = SCOPE_CAPABILITIES.filter((c) => !scopes.has(c.scope));
+  if (missing.length === 0) return;
+  getLogger().warn(
+    {
+      missing: missing.map((m) => m.scope),
+      affects: missing.map((m) => m.backs),
+    },
+    `slack.permissions.missing: the Slack app lacks ${missing
+      .map((m) => `${m.scope} (${m.backs})`)
+      .join(
+        ", ",
+      )}. Reinstall the app to grant them — an app already installed ` +
+      `keeps the permissions it was installed with.`,
+  );
 }
 
 /** The two Slack-dependent turn-contract inputs, resolved together. The scope
@@ -763,14 +903,30 @@ export function createSlackWorker(
     }
   }
 
-  async function findThreadSession(acp: AcpClient, threadTs: string) {
+  /** The session for a thread key, preferring the channel-qualified key that
+   *  every session now carries. `legacyKey` is the bare `thread_ts` sessions
+   *  minted before conversations were part of the key (#3086); matching it
+   *  keeps threads that were mid-conversation at upgrade time resumable instead
+   *  of restarting them cold. Those old keys carry the cross-channel ambiguity
+   *  the qualified key exists to remove, so they are only ever a fallback and
+   *  the set drains as those threads go quiet. */
+  async function findThreadSession(
+    acp: AcpClient,
+    threadKey: string,
+    legacyKey?: string,
+  ) {
     const sessions = await acp.listSessions().catch((err) => {
       process.stderr.write(
         `[slack] listSessions failed: ${formatError(err)}\n`,
       );
       return [];
     });
-    return sessions.find((s) => s.platform?.threadTs === threadTs) ?? null;
+    return (
+      sessions.find((s) => s.platform?.threadTs === threadKey) ??
+      (legacyKey
+        ? (sessions.find((s) => s.platform?.threadTs === legacyKey) ?? null)
+        : null)
+    );
   }
 
   /** One turn at a time per (agent, thread-session). Concurrent prompts on one
@@ -820,6 +976,10 @@ export function createSlackWorker(
      *  being re-run on a fresh session. The caller must keep the turn's ref
      *  resolvable past its own settlement. */
     onGhostTurn?: () => void;
+    /** The pre-#3086 unqualified key for this thread, matched only when the
+     *  qualified one finds nothing. Absent on ambient channel sessions, whose
+     *  key was already channel-scoped. */
+    legacyThreadKey?: string;
   }): Promise<string> {
     const platformMeta = {
       type: SessionType.ChannelSlack,
@@ -835,7 +995,11 @@ export function createSlackWorker(
         onWaking: args.onWaking,
       });
       const acp = makeAcpClient(args.instanceName);
-      const existing = await findThreadSession(acp, args.threadKey);
+      const existing = await findThreadSession(
+        acp,
+        args.threadKey,
+        args.legacyThreadKey,
+      );
       if (existing) {
         try {
           return await acp.sendPrompt(args.resumePrompt, {
@@ -941,7 +1105,8 @@ export function createSlackWorker(
       // during the turn. We only need to know the turn completed.
       await runSessionTurn({
         instanceName,
-        threadKey: ctx.threadTs,
+        threadKey: slackThreadKey(ctx.channel, ctx.threadTs),
+        legacyThreadKey: ctx.threadTs,
         resumePrompt,
         buildFreshPrompt: () => buildThreadPrompt(gw, ctx, contract),
         onWaking,
@@ -1321,7 +1486,7 @@ export function createSlackWorker(
   async function fetchTurnImages(
     event: SlackMentionEvent,
     slackUserId: string,
-  ): Promise<FetchedImage[] | null> {
+  ): Promise<TurnImages | null> {
     if (!gateway) return null;
     const fetchResult = await fetchSlackImages(gateway, event.files);
     if (fetchResult.kind === "cap_exceeded") {
@@ -1341,10 +1506,10 @@ export function createSlackWorker(
         event.channel,
         slackUserId,
         event.threadTs,
-        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
+        `Couldn't use attached image '${f.name}': ${f.reason}`,
       );
     }
-    return images;
+    return { images, withheldNote: renderWithheldNote(failures) };
   }
 
   /** Copy for an inbound message that hit an unbound conversation. Channels
@@ -1386,19 +1551,19 @@ export function createSlackWorker(
       return;
     }
 
-    const images = await fetchTurnImages(event, slackUserId);
-    if (images === null) return;
+    const fetched = await fetchTurnImages(event, slackUserId);
+    if (fetched === null) return;
     await relaySharedTurn({
       channel: event.channel,
       threadTs,
       eventTs: event.ts,
-      text: event.text,
+      text: event.text + fetched.withheldNote,
       hasThread: !!event.threadTs,
       slackUserId,
       instanceName: binding.instanceName,
       owner: binding.owner,
       teamId: event.teamId,
-      images,
+      images: fetched.images,
       // A 1:1 DM has exactly one human speaker, so labelling the prompt with
       // their Slack mention is redundant — keep the private DM prompt clean.
       speakerLabel: !opts.directMessage,
@@ -1489,9 +1654,13 @@ export function createSlackWorker(
   async function relayAmbientTurn(args: {
     instanceName: string;
     channel: string;
-    /** `_meta.platform.threadTs` session key: the real thread_ts for thread
-     *  replies, the synthetic ambient key for top-level channel flow. */
+    /** `_meta.platform.threadTs` session key: the channel-qualified thread key
+     *  for thread replies, the synthetic ambient key for top-level channel
+     *  flow. Not a Slack id — see `replyThreadTs` for that. */
     threadKey: string;
+    /** The thread's pre-#3086 unqualified session key, for resuming a thread
+     *  that was already going at upgrade time. Absent top-level. */
+    legacyThreadKey?: string;
     /** Where a reply (if the agent chimes in) is threaded by default: the
      *  thread's ts in a thread, the batch's newest message top-level. */
     replyThreadTs: string;
@@ -1551,6 +1720,9 @@ export function createSlackWorker(
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        ...(args.legacyThreadKey
+          ? { legacyThreadKey: args.legacyThreadKey }
+          : {}),
         resumePrompt,
         buildFreshPrompt: () =>
           buildThreadPrompt(
@@ -1558,7 +1730,10 @@ export function createSlackWorker(
             {
               instanceName: args.instanceName,
               channel: args.channel,
-              threadTs: args.threadKey,
+              // History injection reads Slack, so this is the thread's real
+              // `thread_ts` (only consulted when `hasThread`), never the
+              // session key — the two diverged once keys became qualified.
+              threadTs: args.replyThreadTs,
               eventTs: args.eventTs,
               text,
               hasThread: args.hasThread,
@@ -1714,8 +1889,9 @@ export function createSlackWorker(
           instanceName: binding.instanceName,
           channel: queue.channelId,
           threadKey: inThread
-            ? queue.threadTs!
+            ? slackThreadKey(queue.channelId, queue.threadTs!)
             : ambientThreadKey(queue.channelId),
+          ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
           replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
           eventTs: last.eventTs,
           hasThread: inThread,
@@ -1766,9 +1942,12 @@ export function createSlackWorker(
     }
 
     // Images ride along when they fit; ambient turns never post error
-    // ephemerals, so oversized or unfetchable attachments just drop.
+    // ephemerals, so oversized or unfetchable attachments just drop — but the
+    // agent is still told, in the prompt, that one was withheld.
     const fetchResult = await fetchSlackImages(gateway, event.files);
     const images = fetchResult.kind === "ok" ? fetchResult.images : [];
+    const withheldNote =
+      fetchResult.kind === "ok" ? renderWithheldNote(fetchResult.failures) : "";
 
     securityLog("info", "channel.authz", {
       category: "channel",
@@ -1790,7 +1969,7 @@ export function createSlackWorker(
     // racing concurrent prompts into the shared session. A thread reply keys on
     // its own thread_ts (the same session a mention there resumes); top-level
     // flow keys on the channel's rolling ambient session.
-    const text = `<@${slackUserId}>: ${event.text}`;
+    const text = `<@${slackUserId}>: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
       eventTs: event.ts,
@@ -1829,6 +2008,7 @@ export function createSlackWorker(
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
+      await reportMissingPermissions(gw);
       return gateway;
     } finally {
       gatewayStarting = null;
@@ -1865,14 +2045,14 @@ export function createSlackWorker(
     },
 
     async listConversations(instanceName: string) {
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) return [];
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0) return [];
 
-      // The bound channel leads (agents treat chats[0] as their home
+      // The bound conversations lead (agents treat chats[0] as their home
       // surface), then every other channel the bot is a member of.
       // Discovery failure (bot down, missing scopes) degrades to the
-      // bound channel alone. ensureGateway: like outbound posts, a
+      // bound conversations alone. ensureGateway: like outbound posts, a
       // describe_channel can arrive before any inbound event started
       // the gateway.
       let botChannels: SlackChannelInfo[] = [];
@@ -1886,22 +2066,22 @@ export function createSlackWorker(
           );
         }
       }
-      const bound = botChannels.find((c) => c.id === slackChannelId);
+      const bound = boundChannelIds.map((id) => {
+        const info = botChannels.find((c) => c.id === id);
+        return {
+          id,
+          title: info
+            ? `#${info.name}`
+            : isDirectMessageId(id)
+              ? "Direct message"
+              : id,
+        };
+      });
       const others = botChannels
-        .filter((c) => c.id !== slackChannelId)
+        .filter((c) => !boundChannelIds.includes(c.id))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((c) => ({ id: c.id, title: `#${c.name}` }));
-      return [
-        {
-          id: slackChannelId,
-          title: bound
-            ? `#${bound.name}`
-            : isDirectMessageId(slackChannelId)
-              ? "Direct message"
-              : slackChannelId,
-        },
-        ...others,
-      ];
+      return [...bound, ...others];
     },
 
     async postMessage(
@@ -1911,9 +2091,9 @@ export function createSlackWorker(
     ) {
       // The binding is the Agent's membership card into the workspace: no
       // binding, no Slack outbound — even though the workspace bot exists.
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0) {
         return { error: "no channel connected" };
       }
 
@@ -1933,7 +2113,7 @@ export function createSlackWorker(
       }
       const target = await resolveOutboundTarget(
         gw,
-        slackChannelId,
+        boundChannelIds,
         conversationId,
       );
       if ("error" in target) {
@@ -1984,9 +2164,10 @@ export function createSlackWorker(
     },
 
     async reply(instanceName: string, args: ChannelReply) {
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) return { error: "no channel connected" };
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
       if (!args.text) return { error: "nothing to send — reply needs text" };
@@ -2019,7 +2200,7 @@ export function createSlackWorker(
       }
       const target = await resolveOutboundTarget(
         gw,
-        slackChannelId,
+        boundChannelIds,
         args.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;
@@ -2044,9 +2225,10 @@ export function createSlackWorker(
     },
 
     async react(instanceName: string, args: ChannelReaction) {
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) return { error: "no channel connected" };
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
@@ -2075,7 +2257,7 @@ export function createSlackWorker(
       }
       const target = await resolveOutboundTarget(
         gw,
-        slackChannelId,
+        boundChannelIds,
         args.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;
@@ -2098,9 +2280,10 @@ export function createSlackWorker(
       // Same gate as every outbound affordance: the binding is the Agent's
       // membership card into the workspace, so an unbound Agent reads no
       // directory even though the workspace bot exists.
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) return { error: "no channel connected" };
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
@@ -2160,9 +2343,10 @@ export function createSlackWorker(
     ) {
       // Same gate as every outbound affordance: the binding is the Agent's
       // membership card into the workspace.
-      const slackChannelId =
-        await channelRegistry.resolveSlackChannelByInstance(instanceName);
-      if (!slackChannelId) return { error: "no channel connected" };
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
@@ -2190,7 +2374,7 @@ export function createSlackWorker(
       }
       const target = await resolveOutboundTarget(
         gw,
-        slackChannelId,
+        boundChannelIds,
         query.conversationId ?? turnChannel,
       );
       if ("error" in target) return target;

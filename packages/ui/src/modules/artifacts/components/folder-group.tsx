@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
@@ -62,6 +63,7 @@ export function FolderGroup({
   ...rowActions
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const { copy } = useCopy();
   const sharedCount = artifacts.filter((a) => a.visibility === "public").length;
   const Wrapper = nested ? "div" : Card;
 
@@ -117,11 +119,11 @@ export function FolderGroup({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   disabled={sharedCount === 0}
-                  onSelect={() => {
-                    void onCopyFolderLink?.(folder).then((url) => {
-                      if (url) void navigator.clipboard.writeText(url);
-                    });
-                  }}
+                  onSelect={() =>
+                    void copy(
+                      () => onCopyFolderLink?.(folder) ?? Promise.resolve(null),
+                    )
+                  }
                 >
                   <Link size={14} />
                   Copy folder link

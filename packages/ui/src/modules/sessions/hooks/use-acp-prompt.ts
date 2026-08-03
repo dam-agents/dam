@@ -4,11 +4,12 @@ import { useCallback, useRef } from "react";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
+import { extractErrorMessage } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
-import { buildPromptBlocks, extractErrorMessage } from "../../acp/utils.js";
+import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/queries.js";
 
 const DELIVERY_TIMEOUT_MS = 60_000;

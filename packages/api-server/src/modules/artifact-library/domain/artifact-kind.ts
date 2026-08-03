@@ -128,6 +128,14 @@ export function isTextKind(kind: ArtifactKind): boolean {
   return kind !== "binary";
 }
 
+/** Strip characters that would break out of a quoted Content-Disposition
+ *  filename — the name is used verbatim in download headers and baked into
+ *  presigned download links. */
+export function downloadFileName(name: string): string {
+  const cleaned = name.replace(/[\r\n"\\]/g, "").trim();
+  return cleaned.length > 0 ? cleaned : "artifact";
+}
+
 /** File name fallback when the caller supplied none — derived from the title
  *  so downloads and highlighting have something sensible to key off. */
 export function defaultFileName(title: string, kind: ArtifactKind): string {

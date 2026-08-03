@@ -18,6 +18,7 @@ import type {
   ArtifactRow,
   FolderRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 describe("share-crypto — slugs", () => {
   it("generates unguessable url-safe slugs", () => {
@@ -173,9 +174,30 @@ function fakeRepo(
   };
 }
 
-const fakeArtifacts = {
-  get: () => Promise.resolve(null),
-} as never;
+/** Typed blob-store stub — overrides only what a test exercises, but keeps the
+ *  port's shape so a signature change breaks the tests that depend on it. */
+function stubArtifacts(
+  overrides: Partial<ArtifactService> = {},
+): ArtifactService {
+  const notImplemented = () => {
+    throw new Error("not implemented in stub");
+  };
+  return {
+    maxBytes: 10 * 1024 * 1024,
+    put: notImplemented,
+    get: () => Promise.resolve(null),
+    getStream: notImplemented,
+    exists: notImplemented,
+    delete: () => Promise.resolve(),
+    createUploadUrl: notImplemented,
+    verifyUpload: notImplemented,
+    createDownloadUrl: notImplemented,
+    createAgentDownloadUrl: notImplemented,
+    ...overrides,
+  };
+}
+
+const fakeArtifacts = stubArtifacts();
 
 describe("share viewer resolution", () => {
   it("resolves only public artifacts — private reads as not-found", async () => {
@@ -237,7 +259,7 @@ describe("share viewer — meta and content cap", () => {
   const row = artifactRow({ sizeBytes: 40 });
   const viewer = createShareViewerService({
     repo: fakeRepo([row]),
-    artifacts: {
+    artifacts: stubArtifacts({
       get: () =>
         Promise.resolve({
           key: row.storageRef,
@@ -246,7 +268,7 @@ describe("share viewer — meta and content cap", () => {
           sizeBytes: 40,
           createdAt: new Date(),
         }),
-    } as never,
+    }),
   });
 
   it("meta reads size and type without fetching the blob", async () => {
@@ -275,8 +297,8 @@ describe("library service — getPreviewHtml", () => {
       repo: fakeRepo([row]),
       owner: row.owner,
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        get: (key: string) =>
+      artifacts: stubArtifacts({
+        get: (key) =>
           Promise.resolve(
             key === row.storageRef
               ? {
@@ -288,7 +310,7 @@ describe("library service — getPreviewHtml", () => {
                 }
               : null,
           ),
-      } as never,
+      }),
     });
   }
 
@@ -313,6 +335,163 @@ describe("library service — getPreviewHtml", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The kind is fixed at create: the share slug outlives every revision, so no
+// update may turn a link that served inert text into one that executes.
+
+describe("library service — the kind cannot move", () => {
+  async function serviceOver(rows: ArtifactRow[], keys: string[] = []) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      repo: {
+        ...fakeRepo(rows),
+        advanceVersion: (id, owner, _snapshot, patch) => {
+          const row = rows.find((a) => a.id === id && a.owner === owner);
+          if (!row) return Promise.resolve(null);
+          Object.assign(row, patch);
+          return Promise.resolve(row);
+        },
+      },
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: stubArtifacts({
+        put: (input) => {
+          keys.push(input.key);
+          return Promise.resolve();
+        },
+      }),
+    });
+  }
+
+  // `kind` is not an update input at all, so the only ways to reach for it are
+  // the back doors: bytes that sniff differently, or a rename into another
+  // extension. Neither may move it.
+  it("keeps the kind when a new version's bytes sniff as something else", async () => {
+    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
+    const service = await serviceOver(rows);
+
+    await expect(
+      service.update("a1", { content: "<!DOCTYPE html><html></html>" }),
+    ).resolves.toMatchObject({ kind: "markdown", version: 2 });
+  });
+
+  it("keeps the kind across a rename into an executable extension", async () => {
+    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
+    const keys: string[] = [];
+    const service = await serviceOver(rows, keys);
+
+    // The rename lands (it is only a label) but the artifact still renders as
+    // markdown — the share link cannot start executing under its viewers.
+    await expect(
+      service.update("a1", {
+        content: "<script>alert(1)</script>",
+        fileName: "report.html",
+      }),
+    ).resolves.toMatchObject({ kind: "markdown", fileName: "report.html" });
+    expect(keys).toEqual(["library/o1/a1/v2/report.html"]);
+  });
+
+  it("renames in place without publishing a version", async () => {
+    const rows = [artifactRow({ kind: "code", fileName: "loop.py" })];
+    const service = await serviceOver(rows);
+
+    // What the experiments module does when a driver renames a draft script.
+    await expect(
+      service.update("a1", { fileName: "optimize.py" }),
+    ).resolves.toMatchObject({
+      fileName: "optimize.py",
+      kind: "code",
+      version: 1,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent download tickets — the direct-transfer path in reverse.
+
+describe("library service — createAgentDownloadUrl", () => {
+  async function serviceOver(
+    rows: ArtifactRow[],
+    opts?: {
+      getVersion?: ArtifactLibraryRepository["getVersion"];
+      link?: { url: string; expiresSeconds: number } | null;
+      minted?: Array<{ key: string; filename: string }>;
+    },
+  ) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      repo: {
+        ...fakeRepo(rows),
+        ...(opts?.getVersion ? { getVersion: opts.getVersion } : {}),
+      },
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: stubArtifacts({
+        createAgentDownloadUrl: (key, filename) => {
+          opts?.minted?.push({ key, filename });
+          return Promise.resolve(
+            opts?.link === undefined
+              ? { url: "https://store/get", expiresSeconds: 900 }
+              : opts.link,
+          );
+        },
+      }),
+    });
+  }
+
+  it("mints a ticket for the head version with a header-safe file name", async () => {
+    const minted: Array<{ key: string; filename: string }> = [];
+    const service = await serviceOver(
+      [artifactRow({ fileName: 'evil"name\n.html', sizeBytes: 7 })],
+      { minted },
+    );
+    await expect(service.createAgentDownloadUrl("a1")).resolves.toEqual({
+      url: "https://store/get",
+      fileName: "evilname.html",
+      contentType: "text/html",
+      sizeBytes: 7,
+      version: 1,
+      expiresSeconds: 900,
+    });
+    expect(minted).toEqual([
+      { key: "library/o1/a1/v1/t.html", filename: "evilname.html" },
+    ]);
+  });
+
+  it("resolves a past version's blob; an unknown version reads as not-found", async () => {
+    const service = await serviceOver([artifactRow({ version: 2 })], {
+      getVersion: (id, version) =>
+        Promise.resolve(
+          id === "a1" && version === 1
+            ? {
+                artifactId: "a1",
+                version: 1,
+                storageRef: "library/o1/a1/v1/old.html",
+                contentType: "text/html",
+                sizeBytes: 3,
+                createdAt: new Date(),
+              }
+            : null,
+        ),
+    });
+    await expect(
+      service.createAgentDownloadUrl("a1", 1),
+    ).resolves.toMatchObject({ version: 1, sizeBytes: 3 });
+    await expect(service.createAgentDownloadUrl("a1", 9)).rejects.toThrow(
+      /not found/,
+    );
+  });
+
+  it("fails closed when no object store is configured", async () => {
+    const service = await serviceOver([artifactRow({})], { link: null });
+    await expect(service.createAgentDownloadUrl("a1")).rejects.toThrow(
+      /No object store is configured/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Owner scoping — the service must pass its bound owner into every repo call,
 // so a service composed for one user can never touch another user's rows.
 
@@ -324,10 +503,7 @@ describe("library service — owner scoping", () => {
       repo: fakeRepo(rows),
       owner: "intruder",
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        get: () => Promise.resolve(null),
-        delete: () => Promise.resolve(),
-      } as never,
+      artifacts: stubArtifacts(),
     });
   }
 
@@ -337,6 +513,9 @@ describe("library service — owner scoping", () => {
     await expect(service.list()).resolves.toEqual([]);
     await expect(service.resolveContentRef("a1")).resolves.toBeNull();
     await expect(service.getContent("a1")).resolves.toBeNull();
+    await expect(service.createAgentDownloadUrl("a1")).rejects.toThrow(
+      /not found/,
+    );
   });
 
   it("cannot mutate, share, or delete another owner's artifact", async () => {
@@ -387,12 +566,12 @@ describe("expiry sweeper", () => {
     };
     const sweeper = createArtifactExpirySweeper({
       repo,
-      artifacts: {
-        delete: (key: string) => {
+      artifacts: stubArtifacts({
+        delete: (key) => {
           deletedBlobs.push(key);
           return Promise.resolve();
         },
-      } as never,
+      }),
       batchSize: 10,
     });
     return { sweeper, deletedBlobs, rows };

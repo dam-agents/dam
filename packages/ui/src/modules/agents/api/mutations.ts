@@ -1,6 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import type { AgentConnections } from "api-server-api";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
@@ -109,7 +111,7 @@ export function useCreateAgent() {
         } catch (err) {
           emitToast({
             kind: "error",
-            message: `Agent created, but import failed: ${err instanceof Error ? err.message : String(err)}`,
+            message: `Agent created, but import failed: ${getErrorMessage(err)}`,
           });
         }
       }

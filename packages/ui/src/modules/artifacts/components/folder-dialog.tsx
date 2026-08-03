@@ -2,12 +2,11 @@ import type { ArtifactFolder } from "api-server-api";
 import { useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { useCreateFolder, useUpdateFolder } from "../api/mutations.js";
@@ -36,7 +35,10 @@ export function FolderDialog({ folder, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader title={folder ? "Edit folder" : "New folder"} />
+      <DialogHeader
+        onClose={onClose}
+        title={folder ? "Edit folder" : "New folder"}
+      />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -53,14 +55,14 @@ export function FolderDialog({ folder, onClose }: Props) {
           </div>
         </div>
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button onClick={save} disabled={!name.trim() || pending}>
-          {pending ? "Saving…" : folder ? "Save" : "Create"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        label={folder ? "Save" : "Create"}
+        pendingLabel="Saving…"
+        pending={pending}
+        disabled={!name.trim()}
+        onSubmit={save}
+      />
     </Modal>
   );
 }
