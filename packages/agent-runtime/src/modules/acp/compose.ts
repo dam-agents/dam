@@ -10,6 +10,10 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
 import {
+  createBackgroundWorkRegistry,
+  type BackgroundWorkRegistry,
+} from "./services/background-work-registry.js";
+import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
@@ -20,6 +24,8 @@ export interface ComposeAcpOptions {
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   isTerminalSessionActive?: (sessionId: string) => boolean;
+  /** False refuses every background-work hold (the feature's kill switch). */
+  backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -27,8 +33,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
   runtime: AcpRuntime;
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
+  backgroundWork: BackgroundWorkRegistry;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
+  // Sessions report their in-flight background work here (the contract lives in
+  // agent-runtime-api). The runtime reads it when deciding whether to close a
+  // session or to call itself idle; the server exposes the reporting route.
+  const backgroundWork = createBackgroundWorkRegistry({
+    enabled: opts.backgroundWorkHolds,
+    log: opts.log,
+  });
   const runtime = createAcpRuntime({
     // Env read fresh per spawn; process.env wins (user env > placeholders).
     spawnAgent: () =>
@@ -37,6 +51,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         workingDir: opts.workingDir,
         env: mergedSpawnEnv(opts.envReader),
       }),
+    backgroundWork,
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
@@ -48,5 +63,5 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata };
+  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
 }

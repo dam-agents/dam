@@ -20,6 +20,7 @@ import {
   DEFAULT_CONTENT_TYPE,
   defaultFileName,
   detectKind,
+  downloadFileName,
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateId, generateSlug } from "../domain/share-crypto.js";
@@ -39,6 +40,19 @@ const LIST_LIMIT = 500;
 /** In-app preview ceiling — mirrors the file viewer's 10 MB cap. */
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
+/** Short-lived direct-download link for the agent surface — the mirror of the
+ *  contract's ArtifactUploadTicket, but server-internal: browsers download
+ *  through the authenticated app-origin route instead. */
+export interface ArtifactAgentDownloadTicket {
+  url: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  /** The version the link serves — the head version when none was asked. */
+  version: number;
+  expiresSeconds: number;
+}
+
 /** Server-internal surface on top of the contract: the download route and the
  *  MCP layer need the storage ref resolution the tRPC router never sees. */
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
@@ -55,7 +69,16 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     fileName: string;
     contentType: string;
     sizeBytes: number;
+    version: number;
   } | null>;
+  /** Mint a short-lived direct-download link signed for the agent-dialed
+   *  store authority (direct transfer — the bytes go store → sandbox without
+   *  transiting the conversation). Fails when no object store is
+   *  configured. */
+  createAgentDownloadUrl(
+    id: string,
+    version?: number,
+  ): Promise<ArtifactAgentDownloadTicket>;
 }
 
 export interface ArtifactLibraryDeps {
@@ -136,6 +159,42 @@ export function createArtifactLibraryService(
     return row;
   }
 
+  /** Resolve the stored blob behind an artifact — the head row's own ref, or a
+   *  snapshot from its version history. Name and kind always come from the head
+   *  row: the kind is fixed at create, and the name is a label for the
+   *  artifact rather than for one revision, so both describe every version. */
+  async function resolveRef(
+    id: string,
+    version?: number,
+  ): Promise<{
+    storageRef: string;
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    version: number;
+  } | null> {
+    const row = await repo.getArtifact(id, owner);
+    if (!row) return null;
+    if (version === undefined || version === row.version) {
+      return {
+        storageRef: row.storageRef,
+        fileName: row.fileName,
+        contentType: row.contentType,
+        sizeBytes: row.sizeBytes,
+        version: row.version,
+      };
+    }
+    const past = await repo.getVersion(id, version);
+    if (!past) return null;
+    return {
+      storageRef: past.storageRef,
+      fileName: row.fileName,
+      contentType: past.contentType,
+      sizeBytes: past.sizeBytes,
+      version: past.version,
+    };
+  }
+
   /** Resolve the incoming bytes: inline utf-8 content is stored by us at
    *  `key`; a direct upload is verified in place (its staged key becomes the
    *  version's ref). Returns the stored ref + stat. */
@@ -192,7 +251,7 @@ export function createArtifactLibraryService(
     },
 
     async getContent(id, version) {
-      const ref = await this.resolveContentRef(id, version);
+      const ref = await resolveRef(id, version);
       if (!ref) return null;
       const row = await repo.getArtifact(id, owner);
       const kind = (row?.kind ?? "binary") as ArtifactKind;
@@ -224,7 +283,7 @@ export function createArtifactLibraryService(
     async getPreviewHtml(id, version) {
       const row = await repo.getArtifact(id, owner);
       if (!row || row.kind === "binary") return null;
-      const ref = await this.resolveContentRef(id, version);
+      const ref = await resolveRef(id, version);
       if (!ref || ref.sizeBytes > PREVIEW_MAX_BYTES) return null;
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
@@ -303,15 +362,10 @@ export function createArtifactLibraryService(
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
-        const contentBuffer =
-          input.content != null
-            ? Buffer.from(input.content, "utf8")
-            : undefined;
-        const kind = detectKind({
-          explicit: input.kind,
-          fileName: input.fileName ?? row.fileName,
-          content: contentBuffer,
-        });
+        // The kind is the artifact's, fixed at create: never re-detected from
+        // the incoming bytes or from a new extension, so no revision can turn
+        // an already-shared link into one that executes.
+        const kind = row.kind as ArtifactKind;
         const fileName = input.fileName ?? row.fileName;
         const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
         const nextVersion = row.version + 1;
@@ -327,7 +381,6 @@ export function createArtifactLibraryService(
         patch.sizeBytes = stored.sizeBytes;
         patch.contentType = stored.contentType;
         patch.fileName = fileName;
-        patch.kind = kind;
         // Snapshot the outgoing current version and advance the head row in
         // one transaction.
         const advanced = await repo.advanceVersion(
@@ -346,7 +399,6 @@ export function createArtifactLibraryService(
         return toLibraryArtifact(advanced, shareBaseUrl);
       } else {
         if (input.fileName !== undefined) patch.fileName = input.fileName;
-        if (input.kind !== undefined) patch.kind = input.kind;
         if (input.contentType !== undefined)
           patch.contentType = input.contentType;
       }
@@ -434,24 +486,34 @@ export function createArtifactLibraryService(
       return shared > 0 ? folderShareUrlFor(shareBaseUrl, folder.slug) : null;
     },
 
-    async resolveContentRef(id, version) {
-      const row = await repo.getArtifact(id, owner);
-      if (!row) return null;
-      if (version === undefined || version === row.version) {
-        return {
-          storageRef: row.storageRef,
-          fileName: row.fileName,
-          contentType: row.contentType,
-          sizeBytes: row.sizeBytes,
-        };
+    resolveContentRef: resolveRef,
+
+    async createAgentDownloadUrl(id, version) {
+      const ref = await resolveRef(id, version);
+      if (!ref)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "artifact or version not found",
+        });
+      const fileName = downloadFileName(ref.fileName);
+      const link = await artifacts.createAgentDownloadUrl(
+        ref.storageRef,
+        fileName,
+      );
+      if (!link) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "No object store is configured — the artifact library requires one.",
+        });
       }
-      const past = await repo.getVersion(id, version);
-      if (!past) return null;
       return {
-        storageRef: past.storageRef,
-        fileName: row.fileName,
-        contentType: past.contentType,
-        sizeBytes: past.sizeBytes,
+        url: link.url,
+        fileName,
+        contentType: ref.contentType,
+        sizeBytes: ref.sizeBytes,
+        version: ref.version,
+        expiresSeconds: link.expiresSeconds,
       };
     },
   };

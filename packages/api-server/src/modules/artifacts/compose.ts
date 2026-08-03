@@ -10,9 +10,10 @@ import { createArtifactService } from "./services/artifact-service.js";
 
 /** Three endpoints because SigV4 binds the Host header — a link only works
  *  on the authority it was signed for: api-server's own (`endpoint`), the
- *  agents' (`agentEndpoint`, upload links), the browsers' (`publicEndpoint`,
- *  download links; null relays downloads). null credentials = SDK default
- *  provider chain (IRSA, instance profile). */
+ *  agents' (`agentEndpoint`, direct up- and downloads through the gateway),
+ *  the browsers' (`publicEndpoint`, download links; null relays browser
+ *  downloads). null credentials = SDK default provider chain (IRSA, instance
+ *  profile). */
 export interface ObjectStorageConfig {
   endpoint: string;
   agentEndpoint: string;
@@ -57,11 +58,11 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
   const store = createS3ArtifactStore({
     client,
     bucket: common.bucket,
-    uploadSigner:
+    agentSigner:
       agentEndpoint === endpoint
         ? client
         : new S3Client(clientConfig(agentEndpoint)),
-    downloadSigner: publicEndpoint
+    browserSigner: publicEndpoint
       ? publicEndpoint === endpoint
         ? client
         : new S3Client(clientConfig(publicEndpoint))

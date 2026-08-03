@@ -6,7 +6,8 @@ const idSchema = z.object({ id: z.string().min(1) });
 
 // CPU as cores ("2") or millicores ("500m"); memory as Mi/Gi. Deliberately
 // narrower than the full K8s quantity grammar — these are slider outputs,
-// not operator YAML. Floors keep a chosen size schedulable.
+// not operator YAML. The memory floor is what the agent needs to actually
+// run (~384Mi for Claude Code), not just be schedulable.
 const cpuQuantitySchema = z
   .string()
   .regex(/^\d+(\.\d+)?m?$/, "CPU must look like '2', '0.5' or '500m'")
@@ -16,8 +17,8 @@ const cpuQuantitySchema = z
 const memoryQuantitySchema = z
   .string()
   .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '2Gi'")
-  .refine((v) => toMemoryMi(v) >= 128, {
-    message: "memory must be at least 128Mi",
+  .refine((v) => toMemoryMi(v) >= 384, {
+    message: "memory must be at least 384Mi",
   });
 
 function toCpuMilli(v: string): number {

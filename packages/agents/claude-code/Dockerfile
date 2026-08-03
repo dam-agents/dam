@@ -31,6 +31,9 @@ ENV DISABLE_TELEMETRY=1 \
     DISABLE_AUTOUPDATER=1
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
+# Implements the platform's background-work contract from Claude Code's Stop
+# hook, so a session that left a job running is not reaped out from under it.
+COPY report-background-work.mjs /usr/local/lib/report-background-work.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
@@ -38,11 +41,13 @@ COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 
-# empty managed-settings stub: legacy allowedMcpServers shape breaks Claude Code 2.x startup
+# managed-settings.json carries the Stop/SubagentStop background-work report;
+# keep it otherwise minimal — a legacy allowedMcpServers shape breaks Claude
+# Code 2.x startup.
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
-    echo '{}' > /etc/claude-code/managed-settings.json &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
+COPY managed-settings.json /etc/claude-code/managed-settings.json
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
