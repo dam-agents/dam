@@ -19,6 +19,7 @@ export type Interstitial = keyof typeof SLOTS;
 const INTERSTITIAL_PATHS = ["/auth/callback", "/terms"];
 
 export interface LocationLike {
+  origin: string;
   pathname: string;
   search: string;
   hash: string;
@@ -31,23 +32,61 @@ export interface ReturnPathStore {
   removeItem(key: string): void;
 }
 
-/** Stored values are untrusted on the way out: only same-origin paths pass. */
-export function isSafeReturnPath(value: string): boolean {
-  // Validate what the browser will act on, not the raw text: it drops tab/LF/CR
-  // anywhere while parsing ("/<tab>/host" ends up protocol-relative) and trims
-  // C0 controls and spaces at the ends ("/terms<FF>" ends up on the gate).
-  // Stripping the whole class judges a little more than the parser removes,
-  // which only ever rejects — the safe direction.
-  const parsed = value.replace(/[\0-\x20]/g, "");
-  // "//host" and "/\host" are protocol-relative URLs, not paths.
-  if (!parsed.startsWith("/") || /^\/[/\\]/.test(parsed)) return false;
-  return !INTERSTITIAL_PATHS.includes(parsed.split(/[?#]/)[0]!);
+/**
+ * Resolve an untrusted destination the way the browser will, or null when it
+ * must not be navigated to.
+ *
+ * The URL parser is the authority, and everything below hands back *its* output
+ * rather than the caller's text. That is the point: the parser drops control
+ * characters, trims C0 and spaces, collapses dot segments and percent-encodes,
+ * so any check against the raw string judges something the browser has already
+ * rewritten — which is how `/<tab>/host` reached another origin and
+ * `/a/../terms` reached the gate. There is no verdict-only entry point for the
+ * same reason: validating one string and navigating to another is the bug.
+ */
+function resolve(value: string, origin: string): URL | null {
+  // Every parse sits inside the guard: this runs at boot and on the way out of
+  // the Terms gate, so an unparseable value has to read as "no destination"
+  // rather than throw into either path.
+  try {
+    const base = new URL(origin);
+    const url = new URL(value, base);
+    if (url.origin !== base.origin) return null;
+    // Schemes without a hierarchical path (blob:, data:) can still report our
+    // origin, and their "pathname" is not a path.
+    if (!url.pathname.startsWith("/")) return null;
+    if (INTERSTITIAL_PATHS.includes(url.pathname)) return null;
+    // The output has to survive being used as a reference again, because that is
+    // what callers do with it. A resolved path can begin with "//" — dot segments
+    // collapse "/a/..//host" to "//host" — which reads as another origin the
+    // second time around, or fails to parse at all. Re-resolving proves the
+    // verdict instead of arguing it.
+    return new URL(pathOf(url), base).href === url.href ? url : null;
+  } catch {
+    return null;
+  }
 }
 
-/** The location as a return path, or null when it isn't a destination. */
-export function toReturnPath(loc: LocationLike): string | null {
-  const path = `${loc.pathname}${loc.search}${loc.hash}`;
-  return isSafeReturnPath(path) ? path : null;
+function pathOf(url: URL): string {
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** The whole destination — path, query and fragment — canonicalized. */
+export function resolveReturnPath(
+  value: string,
+  origin: string,
+): string | null {
+  const url = resolve(value, origin);
+  return url ? pathOf(url) : null;
+}
+
+/** The path alone, for routing: a query or fragment riding along in a stored
+ *  value would otherwise be read as part of an id or tab. */
+export function resolveReturnPathname(
+  value: string,
+  origin: string,
+): string | null {
+  return resolve(value, origin)?.pathname ?? null;
 }
 
 export function rememberReturnPath(
@@ -55,21 +94,28 @@ export function rememberReturnPath(
   loc: LocationLike = window.location,
   store: ReturnPathStore = sessionStorage,
 ): void {
-  const path = toReturnPath(loc);
+  const path = resolveReturnPath(
+    `${loc.pathname}${loc.search}${loc.hash}`,
+    loc.origin,
+  );
   // Clearing on a non-destination stops a stale target resurfacing later.
   if (path) store.setItem(SLOTS[which], path);
   else store.removeItem(SLOTS[which]);
 }
 
-/** Reads and clears the stashed destination — one-shot, dashboard as fallback. */
+/** Reads and clears the stashed destination — one-shot, dashboard as fallback.
+ *  Re-resolved on the way out: the slot is attacker-writable, so what the
+ *  caller navigates to is the parser's verdict, never the stored text. */
 export function takeReturnPath(
   which: Interstitial,
   store: ReturnPathStore = sessionStorage,
+  origin: string = window.location.origin,
 ): string {
   const stashed = store.getItem(SLOTS[which]);
   store.removeItem(SLOTS[which]);
   if (!stashed) return "/";
-  if (isSafeReturnPath(stashed)) return stashed;
+  const path = resolveReturnPath(stashed, origin);
+  if (path) return path;
   console.warn(`[return-path] ignoring unusable ${which} return:`, stashed);
   return "/";
 }
