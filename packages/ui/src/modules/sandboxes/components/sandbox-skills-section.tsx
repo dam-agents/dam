@@ -32,7 +32,7 @@ export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
     <section className="mb-8">
       {!operable && (
         <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-          <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Locked size={14} /> Skills are read-only while the agent is stopped
           </span>
           <WakeToEditButton agentId={agent.id} comingUp={comingUp} />

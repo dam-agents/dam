@@ -17,7 +17,7 @@ interface Props {
   selected: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  /** Pull-credential controls; present once a custom image is entered. */
+  /** Pull-credential controls; present whenever Custom is the starting point. */
   registry?: RegistryControls;
 }
 
@@ -36,16 +36,16 @@ export function CustomImageCard({
       )}
     >
       <div className="flex items-center gap-2">
-        <p className="text-[16px] font-semibold text-foreground">Custom</p>
+        <p className="text-base font-semibold text-foreground">Custom</p>
         <Badge variant="accent">Advanced</Badge>
       </div>
-      <p className="mt-1 text-[14px] text-muted-foreground">
+      <p className="mt-1 text-sm text-muted-foreground">
         Bring your own ACP-compatible image{" "}
         <a
           href={CUSTOM_IMAGE_DOCS_URL}
           target="_blank"
           rel="noreferrer"
-          className="text-[14px] text-muted-foreground underline underline-offset-2 hover:text-primary"
+          className="text-sm text-muted-foreground underline underline-offset-2 hover:text-primary"
         >
           Learn more
         </a>

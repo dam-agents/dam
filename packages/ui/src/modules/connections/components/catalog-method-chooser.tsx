@@ -41,9 +41,7 @@ function MethodCard({
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-medium text-foreground">{title}</p>
         {description && (
-          <p className="mt-1 text-[14px] text-muted-foreground">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
       <ArrowRight size={16} className="shrink-0 text-muted-foreground" />

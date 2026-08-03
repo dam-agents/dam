@@ -119,7 +119,7 @@ export function ScheduleFormModal({
         <DialogBody className="flex flex-col gap-4">
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
-              className="h-[40px]"
+              className="h-10"
               variant={errors.name ? "invalid" : undefined}
               placeholder={`eg. "Daily brief"`}
               {...register("name")}
@@ -128,7 +128,7 @@ export function ScheduleFormModal({
 
           <div className="flex flex-col gap-2">
             <SectionLabel>Run</SectionLabel>
-            <Select className="h-[40px]" {...register("kind")}>
+            <Select className="h-10" {...register("kind")}>
               {RUN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -140,7 +140,7 @@ export function ScheduleFormModal({
           {values.kind === "daily" && (
             <div className="flex flex-col gap-2">
               <SectionLabel>Time</SectionLabel>
-              <Select className="h-[40px]" {...register("time")}>
+              <Select className="h-10" {...register("time")}>
                 {timeOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -152,12 +152,12 @@ export function ScheduleFormModal({
 
           {(values.kind === "minutely" || values.kind === "hourly") && (
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-[13px] text-foreground">
+              <div className="flex items-center gap-2 text-sm text-foreground">
                 <span>Every</span>
                 <Input
                   type="number"
                   min={1}
-                  className="h-[40px] w-[80px]"
+                  className="h-10 w-[80px]"
                   variant={errors.interval ? "invalid" : undefined}
                   {...register("interval")}
                 />
@@ -180,7 +180,7 @@ export function ScheduleFormModal({
                         key={d.iso}
                         type="button"
                         className={cn(
-                          "rounded-full px-3 py-1 text-[12px] font-medium",
+                          "rounded-full px-3 py-1 text-xs font-medium",
                           field.value.includes(d.iso)
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted text-muted-foreground",
@@ -207,7 +207,7 @@ export function ScheduleFormModal({
             <div className="flex flex-col gap-2">
               <SectionLabel>RRULE</SectionLabel>
               <Input
-                className="h-[40px] font-mono text-[12px]"
+                className="h-10 font-mono text-xs"
                 variant={cadence.error ? "invalid" : undefined}
                 placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
                 {...register("customRRule")}
@@ -219,7 +219,7 @@ export function ScheduleFormModal({
             <FormError message={cadence.error} />
           ) : (
             cadence.summary && (
-              <p className="-mt-1 text-[13px] text-muted-foreground">
+              <p className="-mt-1 text-sm text-muted-foreground">
                 {cadence.summary}
               </p>
             )
@@ -278,7 +278,7 @@ export function ScheduleFormModal({
                       key={mode}
                       type="button"
                       className={cn(
-                        "rounded-full px-3 py-1 text-[12px] font-medium capitalize",
+                        "rounded-full px-3 py-1 text-xs font-medium capitalize",
                         field.value === mode
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground",

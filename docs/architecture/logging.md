@@ -22,13 +22,13 @@ The logger's first and primary consumer is a **security audit trail**: a structu
 
 **Level mapping:** deny/fail → `warn`, allow/success/mutation → `info`, internal failure on a security path → `error`.
 
-**Redaction is the caller's contract.** Records never carry token/secret/PAT values, refresh tokens, raw JWTs, or raw prompts — only metadata (`hasRefresh`, `secretId`, env key *names*, byte counts, a resolved file path). The bus saga projects explicit fields per event rather than spreading a domain event (which would leak `ForeignReplyReceived.prompt`). The logger also censors a few well-known credential keys as defense-in-depth, and the WS edge strips `?token=` before logging a path.
+**Redaction is the caller's contract.** Records never carry token/secret/PAT values, refresh tokens, raw JWTs, or raw prompts — only metadata (`hasRefresh`, `secretId`, env key *names*, byte counts, a resolved file path). The bus saga projects explicit fields per event rather than spreading a domain event, so payload content can never leak into a record. The logger also censors a few well-known credential keys as defense-in-depth, and the WS edge strips `?token=` before logging a path.
 
 ## How the trail is produced
 
 Two disjoint mechanisms feed the one logger:
 
-- **Bus saga** ([`modules/audit`](../../packages/api-server/src/modules/audit)) — subscribes the in-process domain event bus for the discrete success/observation events that already carry a real actor: `ChannelTurnRelayed`, `ScheduleFired`, `FilesImported`, `ForeignReplyReceived` (cross-identity turn, prompt omitted), and the `Fork*` events. It mirrors the usage `persist-activity` saga shape, but only for events that occur at most once per action — it deliberately does **not** subscribe `UserAuthenticated`, which fires on every authenticated request (the usage saga consumes that one, collapsing it to a single row per day).
+- **Bus saga** ([`modules/audit`](../../packages/api-server/src/modules/audit)) — subscribes the in-process domain event bus for the discrete success/observation events that already carry a real actor: `ChannelTurnRelayed`, `ScheduleFired`, and `FilesImported`. It mirrors the usage `persist-activity` saga shape, but only for events that occur at most once per action — it deliberately does **not** subscribe `UserAuthenticated`, which fires on every authenticated request (the usage saga consumes that one, collapsing it to a single row per day).
 - **Direct calls** at every decision/denial/mutation site not on the bus — the majority, and all denials. Each site logs at the application/service layer or the transport edge, where the actor is in scope; never in the pure domain layer.
 
 ## Coverage
@@ -39,9 +39,9 @@ Two disjoint mechanisms feed the one logger:
 | HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.authn_unavailable` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (terminal/ACP attach to a credentialed pod) |
 | Credentialed egress (HITL) | `egress.decision` (every allow/deny/expired), `egress.hold`; identity-unresolved and ext-authz transport denials |
 | Approvals | `approval.verdict` (approve/deny once/permanent/host), `approval.verdict_conflict` (permanent verdict refused because an equivalent rule with the opposite verdict exists — the approval stays unresolved, so no `approval.verdict` line follows) |
-| Authorization lists | `agent.allowed_users_set` (with added/removed diff), `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
+| Authorization lists | `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
 | Credentials | `secret.create|update|delete`, `oauth.token_mint`, `connection.create|delete`, `secret.orphan_cleanup_failed` |
-| Channels | `channel.authz` / `channel.authz_deny` (Slack unlinked + allowed-users gate; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; Telegram driver id in detail), `channel.foreign_turn.begin` (non-owner driving another owner's agent under their own credentials, prompt omitted), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (Telegram binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
+| Channels | `channel.authz` / `channel.authz_deny` (in-chat command authorization; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; messenger-native driver id in detail), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
 | Privileged | `skill.install` / `skill.uninstall` / `skill.publish`, `schedule.create|toggle|delete` (incl. agent-driven), `usage.inspect` / `usage.inspect.deny`, `agent.create|update|delete|restart|wake` |
 
 ## Invariants

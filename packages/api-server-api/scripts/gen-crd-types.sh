@@ -20,8 +20,6 @@ emit() { # <crd-file> <TypeName> — the CRD's .spec subschema as a TS interface
   echo
   emit agent-platform.ai_agents.yaml AgentSpecCR
   echo
-  emit agent-platform.ai_forks.yaml ForkSpecCR
-  echo
   emit agent-platform.ai_runs.yaml RunSpecCR
 } >"$out"
 

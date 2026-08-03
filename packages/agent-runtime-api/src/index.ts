@@ -61,6 +61,15 @@ export type {
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
 export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
+export {
+  backgroundWorkItemSchema,
+  backgroundWorkReportSchema,
+} from "./modules/background-work/schemas.js";
+export type {
+  BackgroundWorkItem,
+  BackgroundWorkReport,
+  BackgroundWorkReporterContract,
+} from "./modules/background-work/types.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
 export {

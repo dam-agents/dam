@@ -27,7 +27,7 @@ export function CatalogPaneHeader({
       <div>
         <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
         {subtitle && (
-          <p className="mt-0.5 text-[14px] text-muted-foreground">{subtitle}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
         )}
       </div>
     </div>

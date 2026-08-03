@@ -63,8 +63,7 @@ export function SandboxWizardView() {
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
   );
-  const isCustomImage =
-    !snapshot.templateId && snapshot.customImage.trim().length > 0;
+  const isCustomImage = snapshot.startingPoint === "custom";
 
   const imageLabel = useMemo(() => {
     // The image is pinned and hidden on these paths — name the kind instead.
@@ -207,7 +206,7 @@ export function SandboxWizardView() {
             variant="link"
             size="inline"
             onClick={() => update({ step: 1 })}
-            className="whitespace-normal text-left text-[13px] text-destructive underline"
+            className="whitespace-normal text-left text-sm text-destructive underline"
           >
             Finish the private-registry credentials on step 1
           </Button>

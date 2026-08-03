@@ -47,7 +47,7 @@ function isRelativePath(href: string) {
 function FrontmatterBlock({ source }: { source: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="not-prose mb-3 text-[12px]">
+    <div className="not-prose mb-3 text-xs">
       <DisclosureToggle
         open={open}
         onToggle={() => setOpen((v) => !v)}

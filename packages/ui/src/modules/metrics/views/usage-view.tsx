@@ -84,7 +84,7 @@ export function UsageView() {
             >
               <ChevronLeft size={16} className="text-muted-foreground" />
             </Button>
-            <span className="min-w-[120px] text-center text-[14px] font-medium">
+            <span className="min-w-[120px] text-center text-sm font-medium">
               {monthLabel}
             </span>
             <Button
@@ -104,7 +104,7 @@ export function UsageView() {
         <Card
           className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
         >
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Usage metrics are unavailable on this deployment.
           </p>
         </Card>
@@ -114,7 +114,7 @@ export function UsageView() {
         <div className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
-            <div className="font-mono text-[48px] font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+            <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
               {formatUsdCents(total)}
             </div>
           </section>
@@ -124,7 +124,7 @@ export function UsageView() {
               <Card
                 className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
               >
-                <p className="text-[14px] text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   No LLM calls in {monthLabel}.
                 </p>
               </Card>
@@ -166,7 +166,7 @@ function UsageSkeleton() {
     <div className="space-y-10">
       <section>
         <SectionLabel spaced>Total spend</SectionLabel>
-        <div className="h-[48px] w-40 animate-pulse rounded bg-muted" />
+        <div className="h-12 w-40 animate-pulse rounded bg-muted" />
       </section>
       <section>
         <SectionLabel spaced>Spend by day</SectionLabel>

@@ -1,0 +1,30 @@
+# This repository (the {{AGENT_NAME}} definition) is checked out at the agent's HOME
+# root (/home/agent), which also contains secrets and runtime state (.ssh, .claude,
+# .config, work/, ...). To make `git add -A` safe and never capture those, ignore
+# EVERYTHING at the top level by default, then re-include only the definition files this
+# repo actually tracks.
+#
+# NOTE: NOTHING under work/ is tracked — it is all runtime state, seeded on a fresh
+# volume from the templates in ONBOARDING.md, not from this repo. The `/*` rule hides
+# every untracked top-level path; only the re-included definition files are versioned.
+# This lets a deployed instance update the definition (`git reset --hard origin/main`)
+# without ever colliding with its live work/ state.
+
+/*
+
+!/.gitignore
+!/CLAUDE.md
+!/README.md
+!/ONBOARDING.md
+!/VERSION
+!/CHANGELOG.md
+!/LICENSE
+!/docs/
+!/scripts/
+
+# TODO(creator): if the design adds top-level definition files, re-include them above —
+# nothing else at $HOME top level may ever become trackable. Then delete this comment.
+
+# Never track these even if a future allowlist entry would pull them in.
+.DS_Store
+.claude/settings.local.json

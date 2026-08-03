@@ -185,7 +185,7 @@ export function ArtifactsView() {
       )}
 
       {artifacts.length > 0 && (
-        <p className="mt-5 text-[13px] text-muted-foreground">
+        <p className="mt-5 text-sm text-muted-foreground">
           {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"} ·{" "}
           {formatBytes(totalBytes)} stored
         </p>

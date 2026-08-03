@@ -14,7 +14,6 @@ function fakeAgent(id: string): Agent {
     overBudget: false,
     contributionFailures: [],
     channels: [],
-    allowedUserEmails: [],
     kind: "experiment",
   };
 }

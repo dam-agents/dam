@@ -65,6 +65,10 @@ spec:
             # agent claims instantly. Disabled by default; see controller.warmPool.
             - name: WARM_POOL
               value: {{ .Values.controller.warmPool | toJson | quote }}
+            # One-time RWX -> RWO workspace migration (#2988); see
+            # controller.storageMigration.
+            - name: STORAGE_MIGRATION
+              value: {{ .Values.controller.storageMigration | toJson | quote }}
             # KubeVirt vm backend (backend.type=vm); see `virtualization` in
             # values.yaml. scratchGi ships as a K8s quantity string.
             - name: AGENT_VM

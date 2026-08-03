@@ -148,15 +148,12 @@ export interface AgentView {
     | {
         type: "slack";
         slackChannelId: string;
-        /** Access mode; absent = person-scoped. */
-        mode?: "shared" | "person-scoped";
-        /** Ambient mode (shared only): the agent reads along and may chime
-         *  in without being mentioned; absent = off. */
+        /** Ambient mode: the agent reads along and may chime in without
+         *  being mentioned; absent = off. */
         ambient?: boolean;
       }
     | { type: "telegram" }
   )[];
-  allowedUserEmails: string[];
   /** The KB template a Knowledge Base was created from. Null on plain
    *  sandboxes and on Knowledge Bases created before the id was stamped. */
   kbTemplateId: string | null;

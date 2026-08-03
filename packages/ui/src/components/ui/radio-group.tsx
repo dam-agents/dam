@@ -21,7 +21,6 @@ interface RadioGroupItemProps extends Omit<
 > {
   label: string;
   description?: string;
-  size?: "default" | "sm";
   testId?: string;
 }
 
@@ -32,7 +31,6 @@ interface RadioGroupItemProps extends Omit<
 function RadioGroupItem({
   label,
   description,
-  size = "default",
   testId,
   className,
   "aria-describedby": describedBy,
@@ -54,30 +52,13 @@ function RadioGroupItem({
       )}
       {...props}
     >
-      {/* Fixed px, not rem: the root font-size is 15px, so rem sizes land the
-          dot on half device pixels and it reads as off-centre. */}
-      <span className="mt-0.5 flex size-[16px] shrink-0 items-center justify-center rounded-full border border-primary">
-        <RadioGroupPrimitive.Indicator className="size-[8px] rounded-full bg-primary" />
+      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-primary">
+        <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-primary" />
       </span>
       <span className="flex flex-1 flex-col gap-0.5">
-        <span
-          className={cn(
-            "text-foreground",
-            size === "sm"
-              ? "text-[13px] font-semibold"
-              : "text-[14px] font-medium",
-          )}
-        >
-          {label}
-        </span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
         {description && (
-          <span
-            id={descriptionId}
-            className={cn(
-              "text-muted-foreground",
-              size === "sm" ? "text-[12px]" : "text-[13px]",
-            )}
-          >
+          <span id={descriptionId} className="text-sm text-muted-foreground">
             {description}
           </span>
         )}

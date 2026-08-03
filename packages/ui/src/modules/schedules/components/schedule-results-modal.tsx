@@ -20,10 +20,10 @@ function ResultRow({ session, onOpen }: RowProps) {
       onClick={onOpen}
       className="flex w-full items-center gap-3 border-t border-border px-5 py-3 text-left hover:bg-muted md:px-7"
     >
-      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
         {summary}
       </span>
-      <span className="shrink-0 text-[14px] text-muted-foreground">{when}</span>
+      <span className="shrink-0 text-sm text-muted-foreground">{when}</span>
       <Launch size={14} className="shrink-0 text-muted-foreground" />
     </button>
   );
@@ -64,14 +64,14 @@ export function ScheduleResultsModal({
       />
       <DialogBody flush className="min-h-[50vh]">
         {sessionsQuery.isError && (
-          <p className="px-5 py-6 text-center text-[14px] text-muted-foreground md:px-7">
+          <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-7">
             Couldn't load past runs — the agent may be asleep.
           </p>
         )}
         {!sessionsQuery.isPending &&
           !sessionsQuery.isError &&
           sessions.length === 0 && (
-            <p className="px-5 py-6 text-center text-[14px] text-muted-foreground md:px-7">
+            <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-7">
               No runs yet.
             </p>
           )}

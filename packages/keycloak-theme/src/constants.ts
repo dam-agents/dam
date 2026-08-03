@@ -1,1 +1,1 @@
-export const LOGIN_DOCS_URL = "https://pages.github.ibm.com/dam-agents/docs/";
+export const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";

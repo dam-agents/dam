@@ -6,7 +6,7 @@ import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
 } from "../../agents/api/harness-config.js";
-import { useAgentConnections } from "../../agents/api/queries.js";
+import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import { useSkillsState } from "../../agents/api/skills.js";
 import {
   type SandboxSubtitleLookup,
@@ -97,15 +97,20 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return formatNameList([...standalone, ...installed]);
   }, [skillsState.data]);
 
+  const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {
-    if (!agent) return undefined;
+    if (!agent || !availableChannels) return undefined;
+    // Nothing to connect when the install wired up no messenger — say that
+    // instead of implying an empty list the user could fill.
+    if (!availableChannels.slack && !availableChannels.telegram)
+      return "No messenger configured";
     const kinds = [
       ...new Set(
         agent.channels.map((c) => (c.type === "slack" ? "Slack" : "Telegram")),
       ),
     ];
     return kinds.length > 0 ? kinds.join(", ") : "No channels connected";
-  }, [agent]);
+  }, [agent, availableChannels]);
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;

@@ -61,7 +61,7 @@ export function OpenInMenu({ agent }: { agent: AgentView }) {
 
 function CliQuickstartNote() {
   return (
-    <p className="text-[13px] text-muted-foreground">
+    <p className="text-sm text-muted-foreground">
       First time? Installing the CLI and logging in is covered in the{" "}
       <a
         href={CLI_REFERENCE_URL}
@@ -96,7 +96,7 @@ function OpenInTerminalDialog({
         }
       />
       <DialogBody className="flex flex-col gap-3">
-        <span className="text-[13px] font-medium text-foreground">
+        <span className="text-sm font-medium text-foreground">
           Attach to the sandbox
         </span>
         <CopyableCommand command={`dam chat ${agent.id}`} />
@@ -128,11 +128,11 @@ function OpenInIdeDialog({
         }
       />
       <DialogBody className="flex flex-col gap-3">
-        <span className="text-[13px] font-medium text-foreground">
+        <span className="text-sm font-medium text-foreground">
           Open in VS Code
         </span>
         <CopyableCommand command={`dam ssh connect -x code ${agent.id}`} />
-        <span className="mt-1 text-[13px] font-medium text-foreground">
+        <span className="mt-1 text-sm font-medium text-foreground">
           Open in Zed
         </span>
         <CopyableCommand command={`dam ssh connect -x zed ${agent.id}`} />

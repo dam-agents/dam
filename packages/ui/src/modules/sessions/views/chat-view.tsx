@@ -468,7 +468,7 @@ export function ChatView() {
           size="inline"
           aria-label="Back to sandboxes"
           onClick={handleBack}
-          className="md:hidden gap-1 text-[13px] font-medium text-muted-foreground hover:bg-transparent"
+          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
         >
           <ArrowLeft size={14} />
         </Button>
@@ -477,7 +477,7 @@ export function ChatView() {
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
           />
-          <h1 className="text-[14px] font-bold text-foreground truncate">
+          <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
           <DropdownMenu>
@@ -617,7 +617,7 @@ export function ChatView() {
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
                     {loadingSession && (
-                      <div className="py-20 flex items-center justify-center gap-3 text-[14px] text-muted-foreground">
+                      <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
                         Loading session...
                       </div>
@@ -644,10 +644,10 @@ export function ChatView() {
                       (launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
                           <Spinner size={22} className="mb-3" />
-                          <p className="text-[16px] font-bold text-foreground mb-2">
+                          <p className="text-base font-bold text-foreground mb-2">
                             Starting the run…
                           </p>
-                          <p className="text-[14px] text-muted-foreground">
+                          <p className="text-sm text-muted-foreground">
                             Waking the agent and opening the launch session —
                             this can take up to a minute. The conversation
                             appears here as soon as it&apos;s up.
@@ -655,10 +655,10 @@ export function ChatView() {
                         </div>
                       ) : (
                         <div className="py-24 text-center">
-                          <p className="text-[16px] font-bold text-foreground mb-2">
+                          <p className="text-base font-bold text-foreground mb-2">
                             Start a conversation
                           </p>
-                          <p className="text-[14px] text-muted-foreground">
+                          <p className="text-sm text-muted-foreground">
                             Send a message to begin a new session with this
                             agent
                           </p>
@@ -705,7 +705,7 @@ export function ChatView() {
                             <div
                               className={
                                 m.role === "user"
-                                  ? "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[14px] text-foreground"
+                                  ? "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
                                   : "flex flex-col gap-4 w-full max-w-full"
                               }
                             >
@@ -754,7 +754,7 @@ export function ChatView() {
                                       size={14}
                                       className="text-muted-foreground shrink-0"
                                     />
-                                    <span className="text-[12px] text-muted-foreground">
+                                    <span className="text-xs text-muted-foreground">
                                       {p.name}
                                     </span>
                                     {p.size !== undefined && (
@@ -770,7 +770,7 @@ export function ChatView() {
                               {m.streaming &&
                                 m.queued &&
                                 m.parts.length === 0 && (
-                                  <span className="text-[12px] text-muted-foreground italic">
+                                  <span className="text-xs text-muted-foreground italic">
                                     Waiting for previous prompt…
                                   </span>
                                 )}
@@ -796,7 +796,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-[14px] font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
@@ -804,7 +804,7 @@ export function ChatView() {
                 )}
               </div>
 
-              <div className="pb-[16px]">
+              <div className="pb-4">
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -819,7 +819,7 @@ export function ChatView() {
                         type="button"
                         onClick={handleConfigureSandbox}
                         title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+                        className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
                         {harnessCurrent.model}
                         <Settings size={12} />
@@ -955,7 +955,7 @@ function SessionErrorCard({
           <h3 className="text-[15px] font-bold text-foreground mb-1">
             {title}
           </h3>
-          <p className="text-[13px] text-muted-foreground break-words">
+          <p className="text-sm text-muted-foreground break-words">
             {error.message}
           </p>
         </div>
@@ -989,7 +989,7 @@ function SendErrorCard({
     >
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="text-[13px] text-foreground break-words">
+        <div className="text-sm text-foreground break-words">
           <span className="font-bold text-danger">Send failed:</span> {error}
         </div>
         {onRetry && (

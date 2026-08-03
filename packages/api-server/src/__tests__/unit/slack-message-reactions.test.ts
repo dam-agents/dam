@@ -45,7 +45,6 @@ function harness(opts: {
   } as unknown as AcpClient;
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -58,14 +57,14 @@ function harness(opts: {
     async () => OWNER,
     {
       resolveSlackBinding: async () => null,
-      resolveSlackChannelByInstance: async () => opts.boundChannelId,
+      resolveSlackChannelsByInstance: async () =>
+        opts.boundChannelId ? [opts.boundChannelId] : [],
     },
     async () => {},
     async () => {},
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     () => {},
   );
 

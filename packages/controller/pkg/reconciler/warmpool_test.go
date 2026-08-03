@@ -19,7 +19,6 @@ func warmCfg(sizes ...config.WarmPoolSize) *config.Config {
 		Namespace:   "test-agents",
 		ReleaseName: "platform",
 		// The pool inherits the cluster workspace access mode from AgentBase.
-		AgentBase: config.AgentBase{AccessMode: "ReadWriteMany"},
 		WarmPool: config.WarmPool{
 			Enabled:      true,
 			StorageClass: "platform-rwx-immediate",
@@ -72,7 +71,7 @@ func TestWarmPool_ReplenishToTarget(t *testing.T) {
 	for _, p := range spares {
 		require.NotNil(t, p.Spec.StorageClassName)
 		assert.Equal(t, "platform-rwx-immediate", *p.Spec.StorageClassName)
-		assert.Equal(t, corev1.ReadWriteMany, p.Spec.AccessModes[0])
+		assert.Equal(t, corev1.ReadWriteOnce, p.Spec.AccessModes[0])
 		req := p.Spec.Resources.Requests[corev1.ResourceStorage]
 		assert.Equal(t, "10Gi", req.String())
 		assert.NotContains(t, p.Labels, LabelAgent, "an unclaimed spare must not carry the agent label")

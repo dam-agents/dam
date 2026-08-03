@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
@@ -18,14 +17,8 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const f = useSandboxSettingsForm();
-  const rawSection = useStore((s) => s.sandboxSection);
+  const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const { data: flags } = useFeatures();
-  // Channels rides the advanced-connections feature flag: messenger channel
-  // bindings are not a regular-user surface yet.
-  const showChannels = flags?.["advanced-connections"] ?? false;
-  const section =
-    rawSection === "channels" && !showChannels ? "setup" : rawSection;
 
   const display = useResolvedAgentDisplay(f.agent);
 
@@ -35,14 +28,10 @@ export function SandboxHomeView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
-          <p className="text-[13px] text-muted-foreground">
-            No sandbox selected.
-          </p>
+          <p className="text-sm text-muted-foreground">No sandbox selected.</p>
         )}
         {f.status === "not-found" && (
-          <p className="text-[13px] text-muted-foreground">
-            Sandbox not found.
-          </p>
+          <p className="text-sm text-muted-foreground">Sandbox not found.</p>
         )}
       </div>
     );
@@ -55,7 +44,7 @@ export function SandboxHomeView() {
       {f.wildcardHostInScope && (
         <span
           role="alert"
-          className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
+          className="mr-auto inline-flex items-center gap-1.5 text-xs text-warning"
           title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
         >
           <span aria-hidden="true">⚠</span>
@@ -77,7 +66,6 @@ export function SandboxHomeView() {
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
-          showChannels={showChannels}
         />
       }
     >

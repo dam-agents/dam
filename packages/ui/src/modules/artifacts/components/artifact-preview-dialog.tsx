@@ -62,7 +62,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
       <Modal widthClass="w-[860px]">
         <DialogHeader title={artifact.title} />
         <DialogBody>
-          <div className="mb-3 flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
+          <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">
             <span className="truncate">{artifact.fileName}</span>
             <span>·</span>
             <span>{formatBytes(artifact.sizeBytes)}</span>
@@ -101,7 +101,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
             // arrives, so the open animation has nothing to fight.
             <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
               {!preview.isLoading && !preview.data ? (
-                <p className="py-6 text-center text-[13px] text-muted-foreground">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   No preview available.
                 </p>
               ) : (

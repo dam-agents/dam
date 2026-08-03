@@ -5,8 +5,8 @@ import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName, echoUrl, sentinel } from "../../lib/fixtures.js";
 
-// Mode is fixed per binding, so shared coverage gets its own
-// channel; rebinding replaces the agent's single Slack binding from 07.
+// The binding is the authorization: anyone the channel admits drives the
+// agent under the agent's own credentials.
 const sharedChannelId = "C-E2E-SHARED";
 // Never logs in, links no account, holds no platform identity — channel
 // membership is this user's only credential.
@@ -22,11 +22,10 @@ test("any channel member drives the agent through a shared binding", async () =>
 
   const agentId = await waitForAgentRunning(api, agentName);
 
-  await test.step("owner binds the channel in shared mode", async () => {
+  await test.step("owner binds the channel", async () => {
     await api.agents.connectSlack.mutate({
       id: agentId,
       slackChannelId: sharedChannelId,
-      mode: "shared",
     });
   });
 

@@ -75,7 +75,7 @@ export function SkillRenderModal({
             <div className="h-3 w-2/3 animate-pulse rounded bg-muted/60" />
           </div>
         ) : isError || !data ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             An in-product preview isn&rsquo;t available for this skill yet.
             {link ? " Open it on GitHub from the link above." : ""}
           </p>

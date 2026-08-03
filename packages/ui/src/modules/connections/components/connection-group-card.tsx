@@ -47,7 +47,7 @@ export function ConnectionGroupCard({
           {provider.title}
         </h3>
         {showCount && (
-          <span className="text-[14px] text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {connections.length} connection{connections.length === 1 ? "" : "s"}
           </span>
         )}

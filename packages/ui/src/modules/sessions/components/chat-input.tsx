@@ -181,7 +181,7 @@ export function ChatInput({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="shrink-0 mb-[9px] h-[40px] w-[40px] text-muted-foreground hover:text-primary disabled:opacity-40"
+              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
               disabled={loadingSession}
               title="Attach file"
@@ -190,7 +190,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -204,7 +204,7 @@ export function ChatInput({
                 variant="ghost"
                 tone="danger"
                 size="icon-sm"
-                className="shrink-0 mb-[9px] h-[40px] w-[40px]"
+                className="shrink-0 mb-[9px] h-10 w-10"
                 onClick={onStop}
                 title="Stop"
               >
@@ -215,7 +215,7 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className={`shrink-0 mb-[9px] h-[40px] w-[40px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+                className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
                 title={isComputing ? "Queue" : "Send"}

@@ -16,7 +16,7 @@ export function SkillRowsSkeleton({ rows = 3 }: { rows?: number }) {
             <p className="text-[15px] font-medium">
               <span className="inline-block h-[0.7em] w-32 rounded bg-muted align-middle" />
             </p>
-            <p className="text-[13px]">
+            <p className="text-sm">
               <span className="inline-block h-[0.7em] w-48 rounded bg-muted/60 align-middle" />
             </p>
           </div>
@@ -38,7 +38,7 @@ export function SkillSourcesSkeleton({ cards = 2 }: { cards?: number }) {
             <p className="text-[15px] font-semibold">
               <span className="inline-block h-[0.7em] w-40 rounded bg-muted align-middle" />
             </p>
-            <p className="text-[13px]">
+            <p className="text-sm">
               <span className="inline-block h-[0.7em] w-56 rounded bg-muted/60 align-middle" />
             </p>
           </div>

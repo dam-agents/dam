@@ -38,7 +38,7 @@ export function GithubSourceTab({
             placeholder="My skills"
             {...register("name")}
           />
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             All .md skill files in this repo will be added under this group.
           </p>
         </div>
@@ -51,9 +51,7 @@ export function GithubSourceTab({
             {...register("gitUrl")}
           />
           {errors.gitUrl?.message === INVALID_URL_MESSAGE && (
-            <p className="text-[13px] text-destructive">
-              {errors.gitUrl.message}
-            </p>
+            <p className="text-sm text-destructive">{errors.gitUrl.message}</p>
           )}
         </div>
         <div className="flex flex-col gap-1.5">

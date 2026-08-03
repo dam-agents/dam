@@ -6,6 +6,7 @@ import {
   type LibraryArtifact,
 } from "api-server-api";
 
+import { securityLog } from "../../core/security-log.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
 /** Internal link the platform UI renders as an inline preview chip that
@@ -28,6 +29,14 @@ function json(value: unknown): ToolContent {
 
 function errorResult(text: string): ToolContent {
   return { content: [{ type: "text", text }], isError: true };
+}
+
+/** Quote a value for a single-quoted POSIX shell argument: end the quote,
+ *  emit an escaped quote, reopen. Keeps the name exact — spaces, accents and
+ *  `$` included — while making it impossible for an artifact named by another
+ *  publisher to break out of the example command's quoting. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
@@ -164,6 +173,61 @@ export function registerArtifactLibraryTools(
   );
 
   server.tool(
+    "create_artifact_download_url",
+    "PREFERRED way to get an artifact's bytes INTO your sandbox when your runtime can make outbound HTTP requests (e.g. curl) — works for any artifact in the owner's library, text or binary, any size. Returns a short-lived presigned URL: GET it and save the response to a file. Pass `version` to fetch a past version. (For small text artifacts get_artifact already returns the source inline.)",
+    {
+      id: z.string().min(1),
+      version: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Version to download; omit for the current one."),
+    },
+    ({ id, version }) =>
+      run(async () => {
+        // A presigned link is a bearer capability to the bytes, so both
+        // outcomes are audited: logging only the successes would make a refused
+        // mint (an id the owner does not have) invisible in the trail.
+        let ticket;
+        try {
+          ticket = await lib.createAgentDownloadUrl(id, version);
+        } catch (err) {
+          securityLog("warn", "artifact_library.download", {
+            category: "resource",
+            actor: deps.agentId,
+            actorKind: "agent",
+            surface: "mcp",
+            agentId: deps.agentId,
+            target: id,
+            result: "failure",
+            reason: err instanceof Error ? err.message : String(err),
+            detail: { mode: "direct", ...(version ? { version } : {}) },
+          });
+          throw err;
+        }
+        securityLog("info", "artifact_library.download", {
+          category: "resource",
+          actor: deps.agentId,
+          actorKind: "agent",
+          surface: "mcp",
+          agentId: deps.agentId,
+          target: id,
+          result: "success",
+          detail: {
+            mode: "direct",
+            version: ticket.version,
+            sizeBytes: ticket.sizeBytes,
+          },
+        });
+        return json({
+          ...ticket,
+          instructions: `GET the URL and save the body, e.g.: curl -fL -o ${shellQuote(ticket.fileName)} ${shellQuote(ticket.url)} — the link expires in ${ticket.expiresSeconds}s.`,
+        });
+      }),
+  );
+
+  server.tool(
     "list_artifacts",
     "List artifacts in the owner's library (metadata only). Filter by folder or search by title/file name.",
     {
@@ -187,7 +251,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "get_artifact",
-    "Get an artifact's metadata and (for text kinds) its full source content.",
+    "Get an artifact's metadata and (for text kinds) its full source content. For binary or large artifacts use create_artifact_download_url instead.",
     {
       id: z.string().min(1),
       version: z.number().int().positive().optional(),
@@ -205,7 +269,7 @@ export function registerArtifactLibraryTools(
               : undefined,
           contentOmitted:
             !content || content.binary || content.tooLarge
-              ? "binary or too large — use the UI or a download link"
+              ? "binary or too large — call create_artifact_download_url to fetch the bytes into your sandbox"
               : undefined,
         });
       }),
@@ -213,24 +277,27 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
       title: z.string().min(1).max(300).optional(),
       content: z.string().optional(),
       upload_ref: z.string().optional(),
-      file_name: z.string().optional(),
-      type: artifactKindSchema.optional(),
+      file_name: z
+        .string()
+        .optional()
+        .describe(
+          "Renames the artifact — every version downloads under this name. Does not change its type.",
+        ),
       folder_id: folderIdInput,
     },
-    ({ id, title, content, upload_ref, file_name, type, folder_id }) =>
+    ({ id, title, content, upload_ref, file_name, folder_id }) =>
       run(async () => {
         const artifact = await lib.update(id, {
           title,
           content,
           uploadRef: upload_ref,
           fileName: file_name,
-          kind: type,
           folderId: folder_id === "" ? null : folder_id,
         });
         return json(withInternalLink(artifact));

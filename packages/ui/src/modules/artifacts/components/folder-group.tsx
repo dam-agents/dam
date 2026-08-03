@@ -92,13 +92,13 @@ export function FolderGroup({
         )}
         <span
           className={cn(
-            "text-[14px] font-semibold",
+            "text-sm font-semibold",
             folder ? "text-foreground" : "text-muted-foreground",
           )}
         >
           {displayName ?? folder?.name ?? "Ungrouped"}
         </span>
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
         </span>
         {folder && sharedCount > 0 && (
@@ -148,7 +148,7 @@ export function FolderGroup({
       {!collapsed && (
         <div>
           {artifacts.length === 0 ? (
-            <p className="border-t border-border px-4 py-4 text-[12px] text-muted-foreground">
+            <p className="border-t border-border px-4 py-4 text-xs text-muted-foreground">
               No artifacts in this folder yet.
             </p>
           ) : sections ? (

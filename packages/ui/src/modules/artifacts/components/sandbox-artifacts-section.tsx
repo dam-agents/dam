@@ -11,6 +11,14 @@ import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
 import { ShareDialog } from "./share-dialog.js";
 
+function ToolChip({ name }: { name: string }) {
+  return (
+    <code className="rounded bg-muted px-1 py-px font-mono text-xs text-foreground">
+      {name}
+    </code>
+  );
+}
+
 /** The sandbox-home "Artifacts" section: everything this agent has published
  *  to the owner's library, with the same share/preview/delete actions as the
  *  top-level Artifacts page. */
@@ -24,35 +32,31 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   return (
     <section className="mb-8">
       <SectionLabel spaced>Artifacts</SectionLabel>
-      <p className="mb-3 text-[14px] text-muted-foreground">
+      <p className="mb-3 text-sm text-muted-foreground">
         Pages and files this agent has published to your artifact library.
       </p>
 
       <Callout
         tone="info"
         size="sm"
-        className="mb-4 flex items-start gap-2.5 text-[13px] text-muted-foreground"
+        className="mb-4 flex items-start gap-2.5 text-sm text-muted-foreground"
       >
         <Information size={16} className="mt-0.5 shrink-0 text-accent" />
         <span>
           Agents publish through the built-in platform MCP tools —{" "}
-          <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">
-            create_artifact
-          </code>{" "}
-          for inline content,{" "}
-          <code className="rounded bg-muted px-1 py-px font-mono text-[12px] text-foreground">
-            create_artifact_upload_url
-          </code>{" "}
-          for direct-to-storage uploads. No extra credentials needed in the
-          sandbox.
+          <ToolChip name="create_artifact" /> for inline content,{" "}
+          <ToolChip name="create_artifact_upload_url" /> for direct-to-storage
+          uploads. They read artifacts back the same way, with{" "}
+          <ToolChip name="create_artifact_download_url" /> to pull any file into
+          the sandbox. No extra credentials needed in the sandbox.
         </span>
       </Callout>
 
       {isLoading ? (
-        <p className="text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : artifacts.length === 0 ? (
         <Card className="px-5 py-8 text-center">
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Nothing published yet — ask the agent to share its work as an
             artifact.
           </p>

@@ -17,6 +17,8 @@ import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { useSessionCosts } from "../../metrics/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -99,6 +101,12 @@ export function SessionsSidebar({
     [visibleSessions],
   );
 
+  const { data: features } = useFeatures();
+  const { data: sessionCosts } = useSessionCosts(
+    selectedAgent,
+    features?.["session-costs"] ?? false,
+  );
+
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
@@ -148,6 +156,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
@@ -164,7 +173,7 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="text-[14px] font-normal text-muted-foreground"
+            className="text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
             {sessionFilter.length === SESSION_CATEGORIES.length
@@ -187,7 +196,7 @@ export function SessionsSidebar({
       </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs" className="text-[14px]">
+          <Button variant="outline" size="xs" className="text-sm">
             <Add size={12} /> New
           </Button>
         </DropdownMenuTrigger>
@@ -227,12 +236,12 @@ export function SessionsSidebar({
       <div className="flex-1 overflow-y-auto">
         {loading && <SessionListSkeleton />}
         {!loading && sessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No sessions yet
           </p>
         )}
         {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No sessions match the filter
           </p>
         )}
@@ -246,7 +255,7 @@ export function SessionsSidebar({
           <button
             type="button"
             onClick={focusPendingLaunch}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
             <Spinner />

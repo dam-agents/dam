@@ -68,7 +68,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           </span>
           {/* Just the run count: invocation counts belong on the run rows, where
               they say which run they describe. */}
-          <span className="truncate text-[13px] text-muted-foreground">
+          <span className="truncate text-sm text-muted-foreground">
             {lineage.runCount} run{lineage.runCount === 1 ? "" : "s"}
           </span>
         </div>

@@ -60,7 +60,7 @@ export function AgentRow({
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-[16px] font-medium text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+          <h2 className="truncate text-base font-medium text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
             {agent.name}
           </h2>
           {/* Beside the name, not with the status pills: the Kind is part of what
@@ -71,11 +71,11 @@ export function AgentRow({
             </Badge>
           )}
         </div>
-        <p className="mt-1 truncate text-[14px] text-muted-foreground">
+        <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}
         </p>
         {temporaryDraw && temporaryDraw.count > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-[12px] text-muted-foreground">
+          <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
             <Chemistry size={12} className="shrink-0 text-accent" />
             <span className="truncate">
               {temporaryDraw.count} temporary sandbox

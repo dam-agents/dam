@@ -62,7 +62,7 @@ function OverlayFrame({
         variant="ghost"
         size="inline"
         onClick={onBack}
-        className="absolute left-4 top-3 gap-1 text-[13px] font-medium text-muted-foreground hover:bg-transparent"
+        className="absolute left-4 top-3 gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
       >
         <ArrowLeft size={14} />
         Sandboxes
@@ -99,8 +99,8 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <h2 className="text-[18px] font-bold text-foreground">{name}</h2>
-        <p className="max-w-105 text-[14px] text-muted-foreground">
+        <h2 className="text-lg font-bold text-foreground">{name}</h2>
+        <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
       </OverlayFrame>
@@ -114,12 +114,10 @@ export function AgentUnavailableOverlay({
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
         <div className="flex flex-col items-center gap-2">
-          <h2 className="text-[18px] font-bold text-foreground">
-            {agent.name}
-          </h2>
+          <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
           <Badge variant="warning">Reconnecting</Badge>
         </div>
-        <p className="max-w-105 text-[14px] text-muted-foreground">
+        <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
       </OverlayFrame>
@@ -141,14 +139,12 @@ export function AgentUnavailableOverlay({
         <Spinner size={40} />
       )}
       <div className="flex flex-col items-center gap-2">
-        <h2 className="text-[18px] font-bold text-foreground">{agent.name}</h2>
+        <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
         <StatusBadge state={state} />
       </div>
-      <p className="max-w-105 text-[14px] text-muted-foreground">
-        {description}
-      </p>
+      <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {agent.podTerminationReason && (
-        <p className="flex items-center gap-1.5 max-w-105 font-mono text-[13px] text-danger">
+        <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
           {agent.podTerminationReason}
         </p>

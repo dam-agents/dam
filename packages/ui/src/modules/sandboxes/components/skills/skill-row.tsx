@@ -86,7 +86,7 @@ export function SkillRow({
         </div>
         {skill.description && (
           <p
-            className="truncate text-[13px] text-muted-foreground"
+            className="truncate text-sm text-muted-foreground"
             title={skill.description}
           >
             {skill.description}

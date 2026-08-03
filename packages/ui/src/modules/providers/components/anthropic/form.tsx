@@ -116,7 +116,7 @@ export function AnthropicForm({
     >
       {lockMode ? (
         <div className="flex items-center gap-4 border-b border-border">
-          <span className="-mb-px flex h-10 items-center border-b-2 border-foreground px-4 text-[13px] font-medium text-foreground">
+          <span className="-mb-px flex h-10 items-center border-b-2 border-foreground px-4 text-sm font-medium text-foreground">
             {MODES[initialMode].label}
           </span>
         </div>
@@ -162,17 +162,17 @@ export function AnthropicForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">
+          <div className="text-xs font-medium text-destructive">
             {errors.value.message}
           </div>
         )}
       {!errors.value && testResult?.ok && (
-        <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
+        <div className="text-xs font-medium text-success flex items-center gap-1.5">
           <Checkmark size={13} /> Credential is valid.
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-[12px] font-medium text-destructive">
+        <div className="text-xs font-medium text-destructive">
           {testResult.message}
         </div>
       )}
@@ -184,7 +184,7 @@ function QuickSetupHint() {
   const { copy: copyText, copied } = useCopy();
   const copy = () => void copyText("claude setup-token");
   return (
-    <div className="text-[13px] text-foreground/80">
+    <div className="text-sm text-foreground/80">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
         <code className="font-mono font-semibold text-primary">

@@ -33,17 +33,15 @@ export function StartingPointRow({
     >
       <Icon size={22} className="mt-0.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
-        <span className="block text-[16px] font-medium text-foreground leading-[1.2]">
+        <span className="block text-base font-medium text-foreground leading-[1.2]">
           {name}
         </span>
-        <span className="mt-1 block text-[14px] text-muted-foreground">
+        <span className="mt-1 block text-sm text-muted-foreground">
           {description}
         </span>
       </span>
       {tag && (
-        <span className="shrink-0 text-[12px] text-muted-foreground">
-          {tag}
-        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{tag}</span>
       )}
     </CardButton>
   );

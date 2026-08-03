@@ -25,10 +25,8 @@ export interface Channel {
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
-  /** Access mode of the binding; absent = person-scoped. */
-  mode?: "shared" | "person-scoped";
-  /** Ambient mode (shared bindings only): the agent reads along in the
-   *  channel and may chime in without being mentioned; absent = off. */
+  /** Ambient mode: the agent reads along in the channel and may chime in
+   *  without being mentioned; absent = off. */
   ambient?: boolean;
 }
 
@@ -88,9 +86,6 @@ export interface Agent {
   contributionFailures: { kind: string; message: string }[];
   /** External communication pathways bound to this agent. */
   channels: ChannelConfig[];
-  /** Emails of users (other than the owner) allowed to message this agent
-   *  from a connected channel. */
-  allowedUserEmails: string[];
   /** Agent Kind: which first-class surface owns this agent (a Knowledge Base
    *  is an Agent + this marker). Absent on plain sandboxes. */
   kind?: AgentKind;
@@ -137,9 +132,7 @@ export type UpgradeAgentResult =
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
-  | { type: "ChannelAlreadyBound" }
-  /** Mode is fixed per binding: switching requires disconnect + reconnect. */
-  | { type: "ModeChangeRequiresRebind" };
+  | { type: "ChannelAlreadyBound" };
 
 export type ConnectSlackResult =
   | { ok: true; value: Agent }
@@ -227,10 +220,14 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
-    mode?: "shared" | "person-scoped",
     ambient?: boolean,
   ) => Promise<ConnectSlackResult>;
-  disconnectSlack: (id: string) => Promise<Agent | null>;
+  /** Release a Slack binding. An agent may hold several, so `slackChannelId`
+   *  names the conversation to release; omitting it releases all of them. */
+  disconnectSlack: (
+    id: string,
+    slackChannelId?: string,
+  ) => Promise<Agent | null>;
   /** Consume a Slack bind flow (minted by the in-chat bind OAuth callback) and
    *  bind that channel to the caller's agent in shared mode. */
   bindSlackChannel: (
@@ -251,5 +248,4 @@ export interface AgentsService {
     agentId: string,
     conversationId: string,
   ) => Promise<UnbindTelegramChatResult>;
-  isAllowedUser: (agentId: string, keycloakSub: string) => Promise<boolean>;
 }

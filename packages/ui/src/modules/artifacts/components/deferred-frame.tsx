@@ -47,7 +47,7 @@ export function DeferredFrame({
     <div className={cn("relative", className)}>
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <p className="text-[13px] text-muted-foreground">Loading preview…</p>
+          <p className="text-sm text-muted-foreground">Loading preview…</p>
         </div>
       )}
       {mounted && (

@@ -50,9 +50,7 @@ export function ApprovalsList({
   );
   if (sorted.length === 0) {
     return (
-      <p className="px-4 py-5 text-[12px] text-muted-foreground">
-        {emptyLabel}
-      </p>
+      <p className="px-4 py-5 text-xs text-muted-foreground">{emptyLabel}</p>
     );
   }
   return (
@@ -102,7 +100,7 @@ function ApprovalRow({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium text-foreground truncate">
+            <span className="text-sm font-medium text-foreground truncate">
               {title}
             </span>
             {row.status !== "pending" && (

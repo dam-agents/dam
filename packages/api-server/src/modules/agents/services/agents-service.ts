@@ -57,7 +57,6 @@ import {
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
-import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
@@ -260,7 +259,7 @@ export function executeTelegramUnbind(deps: {
 
 /**
  * Port consumed by `bindSlackChannel()`. Unlike Telegram, the durable write
- * is the shared `channels` row (owner + config.mode), so the port only carries
+ * is the shared `channels` row, so the port only carries
  * the bind-flow bearer store and the confirmation post; the ownership check
  * and the write reuse the service's own `connectSlack` path.
  */
@@ -535,6 +534,12 @@ export function createAgentsService(deps: {
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
+  /** Release one of the agent's Slack bindings; false when it held none for
+   *  that conversation. */
+  deleteSlackChannelByAgent: (
+    agentId: string,
+    slackChannelId: string,
+  ) => Promise<boolean>;
   deleteChannelsByAgentIds: (agentIds: string[]) => Promise<void>;
   unitOfWork: UnitOfWork;
   channelsTxRepo: {
@@ -549,7 +554,6 @@ export function createAgentsService(deps: {
    *  Slack bindings are unique across the whole install. */
   findSlackChannelBinding: (slackChannelId: string) => Promise<{
     agentId: string;
-    mode?: "shared" | "person-scoped";
     ambient?: boolean;
   } | null>;
   /** Absent in the system-wide composition — binding is a user-facing flow. */
@@ -557,37 +561,7 @@ export function createAgentsService(deps: {
   /** Absent in the system-wide composition — the in-chat Slack bind is a
    *  user-facing flow driven from the authenticated UI picker. */
   slackBinding?: SlackBindingPort;
-  listAllowedUsersByOwner: () => Promise<Map<string, string[]>>;
-  listAllowedUsersByAgent: (agentId: string) => Promise<string[]>;
-  setAllowedUsers: (agentId: string, subs: string[]) => Promise<void>;
-  deleteAllowedUsersByAgentIds: (agentIds: string[]) => Promise<void>;
-  userDirectory: KeycloakUserDirectory;
 }): AgentsService {
-  async function subsToEmails(subs: string[]): Promise<string[]> {
-    if (subs.length === 0) return [];
-    const map = await deps.userDirectory.resolveManyBySub(subs);
-    return subs.map((s) => map.get(s) ?? s);
-  }
-
-  async function emailsToSubs(emails: string[]): Promise<string[]> {
-    const resolved = await Promise.all(
-      emails.map(async (e) => ({
-        email: e,
-        sub: await deps.userDirectory.resolveByEmail(e),
-      })),
-    );
-    const missing = resolved.filter((r) => r.sub === null).map((r) => r.email);
-    if (missing.length > 0) {
-      // Bad input, not a server fault — surface as BAD_REQUEST so clients
-      // (CLI/UI) can report it as an input error rather than a 500.
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `User not found: ${missing.join(", ")}`,
-      });
-    }
-    return resolved.map((r) => r.sub!);
-  }
-
   // Fail-soft: a transient outbox-DB error must never 500 an agent read.
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
@@ -611,19 +585,15 @@ export function createAgentsService(deps: {
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, allowedSubs, status, userEnv, templateUpdate] =
-      await Promise.all([
-        deps.listChannelsByAgent(infra.id),
-        deps.listAllowedUsersByAgent(infra.id),
-        safeStatus(infra.id),
-        deps.agentEnvRepo.list(infra.id),
-        templateUpdateFor(infra),
-      ]);
-    const emails = await subsToEmails(allowedSubs);
+    const [channels, status, userEnv, templateUpdate] = await Promise.all([
+      deps.listChannelsByAgent(infra.id),
+      safeStatus(infra.id),
+      deps.agentEnvRepo.list(infra.id),
+      templateUpdateFor(infra),
+    ]);
     return assembleAgent(
       withUserEnv(infra, userEnv),
       channels,
-      emails,
       status.failures,
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
@@ -632,11 +602,10 @@ export function createAgentsService(deps: {
   }
 
   // Shared by the public connectSlack method and the in-chat bind flow, so
-  // both take the same transactional-uniqueness, mode-guard, and event path.
+  // both take the same transactional-uniqueness and event path.
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
-    mode?: "shared" | "person-scoped",
     ambient?: boolean,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
@@ -652,23 +621,13 @@ export function createAgentsService(deps: {
     if (existing && existing.agentId !== id)
       return err({ type: "ChannelAlreadyBound" as const });
 
-    // Mode is fixed per binding: flipping it must be a deliberate
-    // disconnect + reconnect, never a side effect of re-connecting.
-    const requestedMode = mode ?? "person-scoped";
-    if (existing && (existing.mode ?? "person-scoped") !== requestedMode)
-      return err({ type: "ModeChangeRequiresRebind" as const });
-
-    // The router schema already enforces ambient ⇒ shared; re-derived here so
-    // a direct service caller can't mint an ambient person-scoped binding.
-    const requestedAmbient = requestedMode === "shared" && ambient === true;
+    const requestedAmbient = ambient === true;
 
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
         await deps.channelsTxRepo.upsertChannel(tx, id, {
           type: ChannelType.Slack,
           slackChannelId,
-          // Only the non-default is stored; absent = person-scoped.
-          ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
         });
       } catch (e) {
@@ -687,7 +646,6 @@ export function createAgentsService(deps: {
       type: EventType.SlackConnected,
       agentId: id,
       slackChannelId,
-      ...(requestedMode === "shared" ? { mode: "shared" as const } : {}),
     });
 
     // An ambient change is audited so the flip stays diagnosable after the
@@ -707,14 +665,11 @@ export function createAgentsService(deps: {
       });
     }
 
-    const allowedSubs = await deps.listAllowedUsersByAgent(id);
-    const emails = await subsToEmails(allowedSubs);
     const status = await safeStatus(id);
     return ok(
       assembleAgent(
         infra,
         txResult.value.channels,
-        emails,
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
@@ -725,41 +680,27 @@ export function createAgentsService(deps: {
 
   return {
     async list() {
-      const [infraAgents, channelMap, allowedUsersMap] = await Promise.all([
+      const [infraAgents, channelMap] = await Promise.all([
         deps.repo.list(deps.owner),
         deps.listChannelsByOwner(),
-        deps.listAllowedUsersByOwner(),
       ]);
 
       const infraIds = new Set(infraAgents.map((a) => a.id));
-      const psqlAgentIds = [
-        ...new Set([...channelMap.keys(), ...allowedUsersMap.keys()]),
-      ];
-      const orphans = psqlAgentIds.filter((id) => !infraIds.has(id));
+      const orphans = [...channelMap.keys()].filter((id) => !infraIds.has(id));
       if (orphans.length > 0) {
-        // Clearing an authorization list as a side-effect of a read — flag it
-        // so a transient K8s read returning empty can't silently mass-purge.
-        securityLog("warn", "agent.allowed_users.orphan_purge", {
+        // Clearing bindings as a side-effect of a read — flag it so a
+        // transient K8s read returning empty can't silently mass-purge.
+        securityLog("warn", "agent.channels.orphan_purge", {
           category: "authz-list",
           actor: deps.owner ?? null,
           actorKind: "user",
           detail: { agentIds: orphans },
         });
-        await Promise.all([
-          deps.deleteChannelsByAgentIds(orphans),
-          deps.deleteAllowedUsersByAgentIds(orphans),
-        ]);
+        await deps.deleteChannelsByAgentIds(orphans);
         for (const id of orphans) {
           channelMap.delete(id);
-          allowedUsersMap.delete(id);
         }
       }
-
-      const allSubs = [...new Set([...allowedUsersMap.values()].flat())];
-      const subEmailMap =
-        allSubs.length > 0
-          ? await deps.userDirectory.resolveManyBySub(allSubs)
-          : new Map<string, string>();
 
       const [failuresMap, envMap] = await Promise.all([
         deps.contributionsSettled
@@ -782,8 +723,6 @@ export function createAgentsService(deps: {
       );
 
       return infraAgents.map((infra) => {
-        const subs = allowedUsersMap.get(infra.id) ?? [];
-        const emails = subs.map((s) => subEmailMap.get(s) ?? s);
         const status = failuresMap.get(infra.id);
         const templateImage = infra.templateId
           ? templateImages.get(infra.templateId)
@@ -791,7 +730,6 @@ export function createAgentsService(deps: {
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
           channelMap.get(infra.id) ?? [],
-          emails,
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
@@ -945,20 +883,6 @@ export function createAgentsService(deps: {
       if (userEnv.length > 0)
         await deps.agentEnvRepo.replace(infra.id, userEnv);
 
-      const emails = input.allowedUserEmails ?? [];
-      if (emails.length > 0) {
-        const subs = await emailsToSubs(emails);
-        await deps.setAllowedUsers(infra.id, subs);
-        securityLog("info", "agent.allowed_users_set", {
-          category: "authz-list",
-          actor: owner || null,
-          actorKind: "user",
-          agentId: infra.id,
-          result: "success",
-          detail: { added: subs, removed: [], resultUnrestricted: false },
-        });
-      }
-
       // Bulk-seed the requested preset (default `trusted`). `none` is a
       // no-op; the trusted host list is captured at boot, so reseeding on
       // retry is idempotent against the lookup index.
@@ -996,12 +920,11 @@ export function createAgentsService(deps: {
       const agent = assembleAgent(
         withUserEnv(infra, userEnv),
         [],
-        emails,
         [],
         deps.agentIdleTimeoutMinutes,
       );
       // Records the agent's initial security posture (preset, secret ref,
-      // allow-list size, env key names — never env values).
+      // env key names — never env values).
       securityLog("info", "agent.create", {
         category: "resource",
         actor: owner || null,
@@ -1011,7 +934,6 @@ export function createAgentsService(deps: {
         detail: {
           ...(templateId ? { templateId } : {}),
           egressPreset: input.egressPreset ?? "trusted",
-          allowedUserCount: emails.length,
           secretRefSet: input.secretRef !== undefined,
           registryCredentialSet: input.registryCredential !== undefined,
           envKeys: (input.env ?? []).map((e) => e.name),
@@ -1121,28 +1043,6 @@ export function createAgentsService(deps: {
         });
       }
 
-      if (input.allowedUserEmails !== undefined) {
-        // Diff against the prior list so an attacker silently inserting their
-        // own sub (or emptying the list to make it unrestricted) is visible.
-        const prior = await deps.listAllowedUsersByAgent(input.id);
-        const subs = await emailsToSubs(input.allowedUserEmails);
-        const priorSet = new Set(prior);
-        const nextSet = new Set(subs);
-        await deps.setAllowedUsers(input.id, subs);
-        securityLog("info", "agent.allowed_users_set", {
-          category: "authz-list",
-          actor: deps.owner ?? null,
-          actorKind: "user",
-          agentId: input.id,
-          result: "success",
-          detail: {
-            added: subs.filter((s) => !priorSet.has(s)),
-            removed: prior.filter((s) => !nextSet.has(s)),
-            resultUnrestricted: subs.length === 0,
-          },
-        });
-      }
-
       emit({ type: EventType.AgentUpdated, agentId: input.id });
       return project(infra);
     },
@@ -1150,7 +1050,6 @@ export function createAgentsService(deps: {
     async delete(id) {
       const deleted = await deps.repo.delete(id, deps.owner);
       if (!deleted) return;
-      await deps.deleteAllowedUsersByAgentIds([id]);
       // Run cleanup hooks sequentially. Each hook is best-effort: a thrown
       // hook is logged and skipped so a single module's failure doesn't
       // strand the others. The sweeper saga catches anything missed here.
@@ -1306,17 +1205,34 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, mode, ambient) {
-      return connectSlackImpl(id, slackChannelId, mode, ambient);
+    async connectSlack(id, slackChannelId, ambient) {
+      return connectSlackImpl(id, slackChannelId, ambient);
     },
 
-    async disconnectSlack(id) {
+    // An agent may hold several Slack bindings (#3086), so a disconnect names
+    // the conversation to release. Omitting it releases them all — the
+    // pre-#3086 meaning, kept so an older client's `disconnectSlack(id)` still
+    // does what it always did rather than silently releasing one of many.
+    async disconnectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
 
-      await deps.deleteChannelByType(id, ChannelType.Slack);
-      emit({ type: EventType.SlackDisconnected, agentId: id });
+      if (slackChannelId === undefined) {
+        await deps.deleteChannelByType(id, ChannelType.Slack);
+        emit({ type: EventType.SlackDisconnected, agentId: id });
+        return project(infra);
+      }
 
+      // Idempotent like the release-all path: an unbound conversation is not
+      // an error, it just emits nothing.
+      const released = await deps.deleteSlackChannelByAgent(id, slackChannelId);
+      if (released) {
+        emit({
+          type: EventType.SlackDisconnected,
+          agentId: id,
+          slackChannelId,
+        });
+      }
       return project(infra);
     },
 
@@ -1368,18 +1284,9 @@ export function createAgentsService(deps: {
         },
         findChannelBinding: deps.findSlackChannelBinding,
         connectShared: (id, slackChannelId) =>
-          connectSlackImpl(id, slackChannelId, "shared"),
+          connectSlackImpl(id, slackChannelId),
         binding,
       })(agentId, flowId);
-    },
-
-    async isAllowedUser(agentId, keycloakSub) {
-      const subs = await deps.listAllowedUsersByAgent(agentId);
-      // Empty list means unrestricted — the UI surfaces this as
-      // "any linked Slack user can interact." A non-empty list flips
-      // the gate into allow-listed mode.
-      if (subs.length === 0) return true;
-      return subs.includes(keycloakSub);
     },
   };
 }

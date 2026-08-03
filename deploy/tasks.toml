@@ -85,8 +85,7 @@ if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
   HELM_VALUES="$DEV_VALUES"
   echo "Using dev overrides: $DEV_VALUES"
 fi
-# Value flags that can flip an agentTemplate's `enabled` (btrfs --sets added
-# later don't touch agentTemplates).
+# Value flags that can flip an agentTemplate's `enabled`.
 AGENT_VALUE_FLAGS=()
 [ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
@@ -139,27 +138,16 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   if [ ! -d /var/lib/rancher/k3s ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
-    echo "Installing NFS client for RWX PVC support..."
-    # Sandbox host distro varies (Ubuntu / Fedora / Alpine in Locki); pick
-    # the package manager that's actually present rather than assume Debian.
-    if command -v apt-get >/dev/null 2>&1; then
-      sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
-    elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y nfs-utils
-      # Lima provision scripts shell out to apt-get; stub it so the loop
-      # below doesn't fail on a non-Debian host. Idempotent.
+    # Lima provision scripts may shell out to apt-get; stub it so the loop
+    # below doesn't fail on a non-Debian host. Idempotent.
+    if ! command -v apt-get >/dev/null 2>&1 && command -v dnf >/dev/null 2>&1; then
       [ -x /usr/local/bin/apt-get ] || (
         sudo install -m 0755 /dev/stdin /usr/local/bin/apt-get <<'SHIM'
 #!/bin/sh
 exit 0
 SHIM
       )
-    else
-      echo "FATAL: neither apt-get nor dnf found; install nfs-common/nfs-utils manually." >&2
-      exit 1
     fi
-    echo "mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
     for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
       yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
     done
@@ -543,25 +531,6 @@ else
 fi
 
 # 4. Helm install or upgrade.
-# Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
-# the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write
-# against a btrfs export (userspace ganesha hits ENOSYS on handle-based
-# syscalls). Switch to the cluster's default RWO local-path instead.
-# ext4/xfs hosts (lima Ubuntu and most production storage) are unaffected.
-if [ -n "${IS_SANDBOX:-}" ]; then
-  ROOT_FSTYPE=$(df -T / 2>/dev/null | awk 'NR==2 {print $2}')
-else
-  ROOT_FSTYPE=$(limactl shell "$LIMA_INSTANCE" df -T / 2>/dev/null | awk 'NR==2 {print $2}')
-fi
-if [ "$ROOT_FSTYPE" = "btrfs" ]; then
-  echo "Detected btrfs root — bypassing nfs-ganesha (broken on btrfs), using RWO local-path."
-  HELM_EXTRA_ARGS+=(
-    --set controller.agent.base.storageClass=local-path
-    --set controller.agent.base.accessMode=ReadWriteOnce
-    --set nfsProvisioner.enabled=false
-  )
-fi
-
 echo "Installing/upgrading Platform chart..."
 # Helm never upgrades the chart's crds/ on an existing release — on
 # this single-env local cluster the freeze has no value, so apply them directly.
@@ -936,12 +905,14 @@ else
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
-# Drain RWX-mounting workloads BEFORE helm uninstall. The chart ships the NFS
-# provisioner that backs `platform-rwx`; once helm uninstall removes it, any
-# pod still mounting one of its PVCs hangs in Terminating (kubelet can't
-# unmount from the dead NFS server) and blocks namespace deletion forever.
+# Drain agent workloads BEFORE helm uninstall. On a transitional install
+# still running the deprecated NFS provisioner (#2988), removing it while a
+# pod mounts one of its PVCs leaves the pod hanging in Terminating (kubelet
+# can't unmount from the dead NFS server) and blocks namespace deletion
+# forever; on RWO-only installs the pre-drain is merely tidy. Prunable with
+# the nfsProvisioner block.
 if "${KCTL[@]}" get ns platform-agents >/dev/null 2>&1; then
-  echo "Draining platform-agents while NFS provisioner is still alive..."
+  echo "Draining platform-agents before uninstall..."
   "${KCTL[@]}" -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
   "${KCTL[@]}" -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
   "${KCTL[@]}" -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
@@ -951,7 +922,7 @@ fi
 helm --kubeconfig="$KUBECONFIG" uninstall platform || true
 
 # Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
-# nfs-provisioner export). These aren't owned by the helm release, so helm
+# and on transitional installs the nfs-provisioner export). These aren't owned by the helm release, so helm
 # leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
 # so pvc-protection finalizers clear immediately.
 "${KCTL[@]}" delete pvc --all --ignore-not-found 2>/dev/null || true

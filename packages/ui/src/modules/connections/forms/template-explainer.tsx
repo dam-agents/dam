@@ -16,7 +16,7 @@ function GithubAuthExplainer() {
       defaultOpen
       bodyClassName="bg-muted/40"
     >
-      <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted-foreground">
+      <div className="flex flex-col gap-3 text-sm leading-relaxed text-muted-foreground">
         <p>
           Signing in confirms who you are — it does <strong>not</strong>, by
           itself, grant access to your repositories. Installing the app is what

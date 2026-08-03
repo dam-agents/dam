@@ -183,9 +183,9 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-4 h-[48px] border-b border-border shrink-0">
+      <div className="flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
         <TruncateStart
-          className="text-[14px] font-medium text-foreground flex-1"
+          className="text-sm font-medium text-foreground flex-1"
           title={path}
         >
           {pathLabel}
@@ -195,7 +195,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Button
               variant="ghost"
               size="xs"
-              className="text-[14px]"
+              className="text-sm"
               onClick={cancelEdit}
               title="Cancel"
             >
@@ -204,7 +204,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Button
               variant="outline"
               size="xs"
-              className="text-[14px]"
+              className="text-sm"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
               title="Save (Cmd/Ctrl+S)"
@@ -218,7 +218,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <Button
                 variant="outline"
                 size="xs"
-                className="text-[14px]"
+                className="text-sm"
                 onClick={() => setEditMode(true)}
                 title="Edit file"
               >
@@ -229,7 +229,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <Button
                 variant="outline"
                 size="xs"
-                className="text-[14px]"
+                className="text-sm"
                 onClick={downloadFile}
                 title="Download file"
               >
@@ -289,7 +289,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         }
       >
         {isExpanded ? (
-          <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             Opened in fullscreen
           </div>
         ) : (

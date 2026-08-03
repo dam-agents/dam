@@ -144,11 +144,10 @@ func logLevel() slog.Level {
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
-	// Agents, Forks, and Runs are custom resources — watched via dynamic
+	// Agents and Runs are custom resources — watched via dynamic
 	// informers off a shared factory.
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
-	forkInformer := dynFactory.ForResource(reconciler.ForksGVR)
 	runInformer := dynFactory.ForResource(reconciler.RunsGVR)
 
 	// Pod informer: pod readiness transitions re-enqueue the owning
@@ -165,7 +164,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
 	agentResolver := reconciler.NewAgentResolver(agentGetter)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
-	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 	runReconciler := reconciler.NewRunReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
@@ -176,6 +174,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	// Leader-only and a no-op when disabled.
 	warmPool := reconciler.NewWarmPoolManager(client, cfg)
 	go warmPool.RunLoop(ctx)
+
+	// One-time RWX -> RWO workspace migration (#2988): drains every
+	// ReadWriteMany workspace volume onto ordinary single-writer storage.
+	// Leader-only; a no-op loop once no RWX volume remains.
+	storageMigration := reconciler.NewStorageMigrationManager(client, dynClient, cfg)
+	go storageMigration.RunLoop(ctx)
 
 	// Periodic GC for resources whose Agent has been removed out-of-band
 	// (issue #244). The Delete event handler covers the happy path; this
@@ -189,9 +193,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
-	forkQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
-		workqueue.TypedRateLimitingQueueConfig[string]{Name: "fork"})
-	defer forkQueue.ShutDown()
 	runQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "run"})
 	defer runQueue.ShutDown()
@@ -204,18 +205,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
 				agentReconciler.Delete(ctx, u.GetName())
-			}
-		},
-	})
-
-	forkInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) { enqueueObjectName(obj, forkQueue) },
-		UpdateFunc: func(_, newObj interface{}) {
-			enqueueObjectName(newObj, forkQueue)
-		},
-		DeleteFunc: func(obj interface{}) {
-			if u := unstructuredFrom(obj); u != nil {
-				forkReconciler.Delete(ctx, u.GetName())
 			}
 		},
 	})
@@ -246,13 +235,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, forkInformer.Informer().HasSynced, runInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, runInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
 		slog.Error("failed to sync informer caches")
 		return
 	}
 	slog.Info("informer caches synced")
 
-	go runCachedWorker(ctx, "fork", forkInformer.Lister(), cfg.Namespace, forkQueue, reconciler.FromCacheObject[apiv1.Fork], forkReconciler.Reconcile)
 	go runCachedWorker(ctx, "run", runInformer.Lister(), cfg.Namespace, runQueue, reconciler.FromCacheObject[apiv1.Run], runReconciler.Reconcile)
 	// Exactly ONE agent worker: budget enforcement (#1900) relies on agent
 	// reconciles never interleaving — see the race note on budgetAllows
@@ -315,9 +303,9 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 }
 
 // runCachedWorker drains a queue, decoding each name from the informer cache
-// and reconciling the typed CR. Shared by the Fork and Run workers (the Agent
-// worker resolves via a getter, not a lister). Blocks until the queue shuts
-// down. A missing object is forgotten (deleted out from under us); a decode or
+// and reconciling the typed CR. Used by the Run worker (the Agent worker
+// resolves via a getter, not a lister). Blocks until the queue shuts down. A
+// missing object is forgotten (deleted out from under us); a decode or
 // reconcile error is logged, with reconcile errors re-queued rate-limited.
 func runCachedWorker[T any](ctx context.Context, kind string, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string], decode func(any) (*T, error), reconcile func(context.Context, *T) error) {
 	for {
@@ -378,7 +366,7 @@ func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterfa
 
 // enqueuePodOwner re-enqueues the Agent that owns a pod (via the
 // agent-platform.ai/agent label) when the pod's readiness may have changed, so
-// the reconciler recomputes its Ready conditions. Fork pods carry
+// the reconciler recomputes its Ready conditions. Run executor pods carry
 // the parent agent's label; re-reconciling the parent is harmless (idempotent).
 func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
 	pod, ok := obj.(*corev1.Pod)

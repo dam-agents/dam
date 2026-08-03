@@ -20,11 +20,16 @@ controller:
     pullPolicy: Never
   logLevel: debug
   agent:
-    base:
-      storageClass: platform-rwx
     templateDefaults:
       imagePullPolicy: IfNotPresent
 
+# Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
+# upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
+# agent volumes still live on it — the storage migration needs the source
+# volumes readable to drain them. New agents never touch it (workspaces are
+# ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
+# it so the e2e cluster proves the no-shared-filesystem path. Drops together
+# with the chart's nfsProvisioner block once dev clusters are drained.
 nfsProvisioner:
   enabled: true
 

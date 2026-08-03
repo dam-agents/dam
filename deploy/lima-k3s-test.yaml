@@ -26,12 +26,6 @@ provision:
     script: |
       #!/bin/sh
       set -e
-      # nfs-common is required so the kubelet can mount the platform-rwx
-      # PVCs served by the in-cluster NFS provisioner. Without this
-      # package, agent pods fail with "bad option; … you might need a
-      # /sbin/mount.<type> helper program."
-      DEBIAN_FRONTEND=noninteractive apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
       mkdir -p /etc/rancher/k3s
       cat > /etc/rancher/k3s/config.yaml << 'EOF'
       kubelet-arg:

@@ -29,7 +29,7 @@ export function AgentBindingField({
   return (
     <div className="mb-4">
       <SectionLabel className="mb-1 block">Agent access</SectionLabel>
-      <p className="text-[12px] text-muted-foreground mb-2">
+      <p className="text-xs text-muted-foreground mb-2">
         {lockedToAll ? (
           <>
             <code>agents:manage</code> keys must cover every agent — per-agent
@@ -49,14 +49,12 @@ export function AgentBindingField({
       >
         <RadioGroupItem
           value="all"
-          size="sm"
           label="All agents"
           description="Every agent you own, now and in the future."
           className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
         />
         <RadioGroupItem
           value="specific"
-          size="sm"
           label="Specific agents"
           description="Only the agents you pick below."
           disabled={lockedToAll}
@@ -67,7 +65,7 @@ export function AgentBindingField({
       {effectiveMode === "specific" && (
         <div className="mt-2 ml-6 space-y-1.5">
           {agents.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               You have no agents yet — create one first, or choose “All agents”.
             </p>
           ) : (
@@ -82,7 +80,7 @@ export function AgentBindingField({
                   checked={selectedAgentIds.has(agent.id)}
                   onCheckedChange={() => onToggleAgent(agent.id)}
                 />
-                <span className="truncate text-[13px]">{agent.name}</span>
+                <span className="truncate text-sm">{agent.name}</span>
               </label>
             ))
           )}

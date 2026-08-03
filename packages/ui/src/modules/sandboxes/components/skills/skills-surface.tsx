@@ -203,7 +203,7 @@ export function SkillsSurface({
           <Callout variant="dashed">
             <div className="flex flex-col items-center gap-4 py-10 text-center">
               <Upload size={22} className="text-muted-foreground" />
-              <p className="text-[14px] text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Drop a .md file here to create a skill, or add a GitHub repo as
                 a source.
               </p>
@@ -242,7 +242,7 @@ export function SkillsSurface({
             {!sourcesLoaded ? (
               <SkillSourcesSkeleton />
             ) : sources.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 No skill sources connected.
               </p>
             ) : (

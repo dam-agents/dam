@@ -102,7 +102,7 @@ export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
-export type { AgentSpecCR, ForkSpecCR, RunSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR, RunSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,
@@ -307,6 +307,7 @@ export {
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
+  slackThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 

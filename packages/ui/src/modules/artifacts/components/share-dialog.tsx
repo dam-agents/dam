@@ -66,10 +66,10 @@ export function ShareDialog({ artifact, onClose }: Props) {
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between gap-3">
             <span>
-              <span className="block text-[14px] font-medium text-foreground">
+              <span className="block text-sm font-medium text-foreground">
                 Public link
               </span>
-              <span className="block text-[12px] text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 Anyone with the link can view — no platform account needed.
               </span>
             </span>
@@ -102,7 +102,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
 
           {isPublic && (
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium text-foreground">
+              <span className="text-sm font-medium text-foreground">
                 Expiry
               </span>
               <Select
@@ -117,7 +117,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                   </option>
                 ))}
               </Select>
-              <span className="text-[12px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 An expired artifact is permanently deleted after a 7-day grace
                 period — even if it was made private again.
               </span>

@@ -31,7 +31,6 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
   };
   const agents = {
     ensureReady,
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -53,7 +52,6 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     (e) => events.push(e),
   );
 

@@ -27,6 +27,28 @@
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
+  /* Spacing step in absolute pixels, so the whole scale stays on whole
+     device pixels no matter what the root font size becomes. */
+  --spacing: 4px;
+
+  /* Type scale in absolute pixels, each step paired with its leading. Body
+     sizes share the app's 1.55 leading; display sizes tighten as they grow.
+     Leading is unitless so nested text at another size scales with it.
+     These six steps are the whole scale — Tailwind's other steps keep their own
+     rem sizes and leading, so reach for text-2xl rather than text-xl. */
+  --text-xs: 12px;
+  --text-xs--line-height: 1.55;
+  --text-sm: 14px;
+  --text-sm--line-height: 1.55;
+  --text-base: 16px;
+  --text-base--line-height: 1.55;
+  --text-lg: 18px;
+  --text-lg--line-height: 1.3333;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 1.25;
+  --text-5xl: 48px;
+  --text-5xl--line-height: 1;
+
   /* ── shadcn/ui token mapping (see :root below for source values) ── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -188,7 +210,7 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: 15px;
+    font-size: 16px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
@@ -383,6 +405,7 @@
 
 /* ── Markdown / Prose ── */
 .prose {
+  /* Long-form reading size, deliberately a step below the UI base. */
   font-size: 15px;
   line-height: 1.72;
   color: var(--foreground);

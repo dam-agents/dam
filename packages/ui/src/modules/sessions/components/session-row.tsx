@@ -5,7 +5,12 @@ import {
   Time,
   TrashCan,
 } from "@carbon/icons-react";
-import { SessionMode, SessionType, type SessionView } from "api-server-api";
+import {
+  SessionMode,
+  type SessionRuntime,
+  SessionType,
+  type SessionView,
+} from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +23,7 @@ import {
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -29,6 +35,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -39,6 +46,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  cost,
   onResume,
   onDelete,
 }: Props) {
@@ -123,6 +131,7 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
+          {/* The one 13px step in the design; every other size is on the scale. */}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -140,6 +149,15 @@ export function SessionRow({
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {cost && (
+            <span
+              className="tabular-nums"
+              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+            >
+              {" · "}
+              {formatUsdCell(cost.costUsd)}
+            </span>
+          )}
         </span>
       </div>
       {/* Desktop: hover-visible overflow menu */}

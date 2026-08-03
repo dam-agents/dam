@@ -68,10 +68,10 @@ export function ArtifactRow({
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-[14px] font-medium text-foreground">
+        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
           {artifact.title}
         </span>
-        <span className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+        <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
           {artifact.version > 1 && <VersionBadge version={artifact.version} />}
           <span className="inline-flex items-center gap-1">

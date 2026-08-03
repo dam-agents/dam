@@ -57,16 +57,15 @@ func leafPlaceholderDNS(instanceName string) string {
 }
 
 // BuildEnvoyLeafCertificate renders the per-instance Envoy leaf Certificate.
-// alwaysIssue=true (long-lived agent) issues even with no hosts (placeholder
-// SAN) so the leaf Secret — and the agent's mounted ca.crt — always exists;
-// false (forks) returns nil when there's nothing to MITM. `l7Hosts` (the
-// Agent spec's per-agent promotion list, #2865) extends the SAN list the
-// same way allow-only Secrets do.
-func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, alwaysIssue bool) *cmv1.Certificate {
+// It issues even with no hosts (placeholder SAN) so the leaf Secret — and the
+// agent's mounted ca.crt — always exists. `l7Hosts` (the Agent spec's
+// per-agent promotion list, #2865) extends the SAN list the same way
+// allow-only Secrets do.
+func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) *cmv1.Certificate {
 	hosts := dnsNamesFromChains(chainsFromSecrets(secrets, l7Hosts))
 	// When telemetry is on, the gateway MITM-terminates the collector host to
 	// stamp the trusted agent id, so the leaf must cover it — even for an
-	// instance (or fork) with no credential Secrets. Dedupe in case the host
+	// instance with no credential Secrets. Dedupe in case the host
 	// also appears as a credentialed chain (the collision-guarded chain in
 	// envoy.go is suppressed in that case, but the SAN is still needed).
 	if cfg.TelemetryEnabled() && !containsHost(hosts, cfg.TelemetryCollectorHost) {
@@ -74,9 +73,6 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef
 		sort.Strings(hosts)
 	}
 	if len(hosts) == 0 {
-		if !alwaysIssue {
-			return nil
-		}
 		hosts = []string{leafPlaceholderDNS(instanceName)}
 	}
 	cert := &cmv1.Certificate{

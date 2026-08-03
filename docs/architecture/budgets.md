@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-07-27
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -16,7 +16,7 @@ Enforcement lives in the **controller, at the 0→1 scale transition**. The reco
 - **Requests are derived scheduling internals.** The controller computes them at render: `max(limit × fraction, floor)` per dimension (`controller.requestsFromLimits`, default fraction 0.5, floors 100m/128Mi, clamped to the limit). The cluster packs on `Σ Sizes × fraction` — a fixed, operator-chosen overcommit ratio. A template that sets `requests` explicitly bypasses derivation (operator escape hatch).
 - **Straight off the spec.** The api-server stamps a concrete Size onto every Agent CR at create (slider wins, else template, else default) — user intent stays api-server-written. The controller **materializes** the chart's `legacyAgentSize` — the limits pre-Sizes agents actually ran with (default 1 CPU / 2Gi), so convergence records reality rather than silently shrinking a workload — into any spec missing a dimension: fill-if-absent on reconcile, never touching a set value (the same license the K8s scheduler takes with `spec.nodeName`). The watch-driven fill is what makes limits effectively *required* without schema-level enforcement: every Agent converges to a concrete Size within one reconcile of existing, however it was created (api-server, kubectl, GitOps), and the filling reconcile itself already renders and budgets with the filled values. An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
-- **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-turn Fork/Run pods (a known undercount, unchanged from the original design).
+- **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run pods (a known undercount, unchanged from the original design).
 
 ## The Ceiling
 

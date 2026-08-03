@@ -58,7 +58,7 @@ func BuildVMWorkspacePVCs(name string, agentSpec *types.AgentSpec, cfg *config.C
 		}
 		volName := types.SanitizeMountName(m.Path)
 		spec := corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(effectiveMountSize(m, agentSpec, defaults))},
 			},

@@ -15,7 +15,7 @@ configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
 
-// A shared binding: a mention relays straight to the main pod, and — because
+// A bound channel: a mention relays straight to the main pod, and — because
 // listSessions returns [] — always mints a fresh session, so the injected
 // thread history runs through the attribution relabeling.
 function harness(boundChannelId = "C1") {
@@ -31,7 +31,6 @@ function harness(boundChannelId = "C1") {
   };
   const agents = {
     ensureReady: async () => {},
-    isAllowedUser: async () => false,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -46,16 +45,14 @@ function harness(boundChannelId = "C1") {
       resolveSlackBinding: async () => ({
         instanceName: "agent-1",
         owner: OWNER,
-        mode: "shared" as const,
       }),
-      resolveSlackChannelByInstance: async () => boundChannelId,
+      resolveSlackChannelsByInstance: async () => [boundChannelId],
     } as never,
     async () => {},
     async () => {},
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
-    () => acp,
     () => {},
   );
 

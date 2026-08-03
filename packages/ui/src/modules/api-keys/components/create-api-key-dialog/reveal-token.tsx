@@ -21,11 +21,11 @@ export function RevealToken({ plaintext, onClose }: Props) {
     <>
       <DialogHeader title="Save this token now" />
       <DialogBody>
-        <p className="text-[13px] text-muted-foreground mb-4">
+        <p className="text-sm text-muted-foreground mb-4">
           This is the only time the token will be shown. If you lose it, revoke
           this key and create a new one.
         </p>
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border font-mono text-[12px]">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border font-mono text-xs">
           <code className="flex-1 break-all">{plaintext}</code>
           <Button
             type="button"
@@ -47,12 +47,12 @@ export function RevealToken({ plaintext, onClose }: Props) {
           </Button>
         </div>
         {copyState === "failed" && (
-          <p className="text-[12px] text-danger mt-2">
+          <p className="text-xs text-danger mt-2">
             Couldn't copy automatically. Select the token above and copy it
             manually.
           </p>
         )}
-        <p className="text-[12px] text-muted-foreground mt-3">
+        <p className="text-xs text-muted-foreground mt-3">
           Use as the bearer credential when calling the API. See the CLI
           documentation for the exact environment variable name.
         </p>

@@ -68,10 +68,10 @@ export function IbmLitellmForm({
         className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
       >
         <div className="flex flex-col gap-0.5">
-          <span className="text-[14px] font-bold text-foreground">
+          <span className="text-sm font-bold text-foreground">
             Need an API key?
           </span>
-          <span className="text-[14px] text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Follow the guide and generate your LiteLLM token
           </span>
         </div>
