@@ -43,7 +43,10 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 
 # managed-settings.json carries the Stop/SubagentStop background-work report;
 # keep it otherwise minimal — a legacy allowedMcpServers shape breaks Claude
-# Code 2.x startup.
+# Code 2.x startup. Leaving WebSearch/WebFetch undenied is deliberate: Anthropic
+# backends serve them natively, and a LiteLLM-fronted proxy keys on the tool
+# declaration to run the search itself (proxy-side limitations: #3092). The old
+# cc-websearch DDG fallback is intentionally gone, not pending (#1087 revert).
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
