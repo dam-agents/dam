@@ -135,32 +135,6 @@ function toFolder(row: FolderRow & { artifactCount: number }): ArtifactFolder {
   };
 }
 
-/** An artifact's file name and kind are settled at create and describe *every*
- *  version: the versions table snapshots bytes (ref, type, size), never a name,
- *  and the viewer renders each version through the artifact's kind. Letting
- *  either move would retroactively relabel versions already published — an
- *  older revision would download under a name it never had, or render through
- *  the wrong renderer. A revision that is genuinely a different file is a
- *  different work product: it belongs in its own artifact, with its own share
- *  link. Editing the human-facing label is what `title` is for. */
-function requireStableIdentity(
-  row: ArtifactRow,
-  input: ArtifactUpdateInput,
-): void {
-  if (input.kind !== undefined && input.kind !== row.kind) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `this artifact is ${row.kind} and an artifact's format cannot change; publish a new artifact for ${input.kind} content`,
-    });
-  }
-  if (input.fileName !== undefined && input.fileName !== row.fileName) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `this artifact's file is "${row.fileName}" and cannot be renamed; edit its title instead, or publish a new artifact for "${input.fileName}"`,
-    });
-  }
-}
-
 function expiresAtFrom(expiresInHours: number | null | undefined): Date | null {
   if (expiresInHours == null) return null;
   return new Date(Date.now() + expiresInHours * 3600_000);
@@ -187,8 +161,8 @@ export function createArtifactLibraryService(
 
   /** Resolve the stored blob behind an artifact — the head row's own ref, or a
    *  snapshot from its version history. Name and kind always come from the head
-   *  row: both are settled at create (see requireStableIdentity), so they
-   *  describe every version. */
+   *  row: the kind is fixed at create, and the name is a label for the
+   *  artifact rather than for one revision, so both describe every version. */
   async function resolveRef(
     id: string,
     version?: number,
@@ -382,17 +356,17 @@ export function createArtifactLibraryService(
     async update(id, input: ArtifactUpdateInput) {
       const row = await requireArtifact(id);
       if (input.folderId != null) await requireOwnedFolder(input.folderId);
-      requireStableIdentity(row, input);
 
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.title !== undefined) patch.title = input.title;
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
-        // Name and format belong to the artifact, not to this revision — never
-        // re-detected from the incoming bytes.
+        // The kind is the artifact's, fixed at create: never re-detected from
+        // the incoming bytes or from a new extension, so no revision can turn
+        // an already-shared link into one that executes.
         const kind = row.kind as ArtifactKind;
-        const fileName = row.fileName;
+        const fileName = input.fileName ?? row.fileName;
         const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
         const nextVersion = row.version + 1;
         const key = versionKey(owner, id, nextVersion, fileName);
@@ -406,6 +380,7 @@ export function createArtifactLibraryService(
         patch.storageRef = stored.storageRef;
         patch.sizeBytes = stored.sizeBytes;
         patch.contentType = stored.contentType;
+        patch.fileName = fileName;
         // Snapshot the outgoing current version and advance the head row in
         // one transaction.
         const advanced = await repo.advanceVersion(
@@ -422,8 +397,10 @@ export function createArtifactLibraryService(
         );
         if (!advanced) throw new TRPCError({ code: "NOT_FOUND" });
         return toLibraryArtifact(advanced, shareBaseUrl);
-      } else if (input.contentType !== undefined) {
-        patch.contentType = input.contentType;
+      } else {
+        if (input.fileName !== undefined) patch.fileName = input.fileName;
+        if (input.contentType !== undefined)
+          patch.contentType = input.contentType;
       }
 
       const updated = await repo.updateArtifact(id, owner, patch);

@@ -67,13 +67,37 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     const rawVersion = c.req.query("v");
     const version = rawVersion ? Number.parseInt(rawVersion, 10) : undefined;
 
+    // Access to the bytes is audited whichever way it ends — a refusal is the
+    // line worth having, so the agent surface records both outcomes too.
+    const audit = (
+      result: "success" | "failure",
+      detail: Record<string, unknown>,
+      reason?: string,
+    ) =>
+      securityLog(
+        result === "success" ? "info" : "warn",
+        "artifact_library.download",
+        {
+          category: "resource",
+          actor: user.sub,
+          actorKind: "user",
+          target: id,
+          result,
+          ...(reason ? { reason } : {}),
+          detail,
+        },
+      );
+
     const ref = await deps
       .artifactLibraryFor(user.sub)
       .resolveContentRef(
         id,
         Number.isInteger(version) && version! >= 1 ? version : undefined,
       );
-    if (!ref) return c.json({ error: "not found" }, 404);
+    if (!ref) {
+      audit("failure", {}, "artifact or version not found");
+      return c.json({ error: "not found" }, 404);
+    }
 
     const filename = downloadFileName(ref.fileName);
     // Direct link as JSON rather than a 302 — the UI fetches with a bearer
@@ -82,18 +106,17 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       ref.storageRef,
       filename,
     );
-    securityLog("info", "artifact_library.download", {
-      category: "resource",
-      actor: user.sub,
-      actorKind: "user",
-      target: id,
-      result: "success",
-      detail: { mode: directUrl ? "direct" : "relay" },
-    });
-    if (directUrl) return c.json({ url: directUrl });
+    if (directUrl) {
+      audit("success", { mode: "direct", version: ref.version });
+      return c.json({ url: directUrl });
+    }
 
     const blob = await deps.artifacts.getStream(ref.storageRef);
-    if (!blob) return c.json({ error: "not found" }, 404);
+    if (!blob) {
+      audit("failure", { mode: "relay" }, "blob missing from the store");
+      return c.json({ error: "not found" }, 404);
+    }
+    audit("success", { mode: "relay", version: ref.version });
     return new Response(blob.stream, {
       headers: {
         "Content-Type": ref.contentType || "application/octet-stream",

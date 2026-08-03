@@ -47,7 +47,11 @@ export interface ArtifactStore {
       filename: string;
       expiresSeconds: number;
       /** Who will dial the link — agents reach the store through their
-       *  gateway, browsers on the public endpoint. */
+       *  gateway, browsers on the public endpoint. What a null result means
+       *  follows from this: for `browser` the deployment has no
+       *  browser-reachable endpoint and the caller relays the bytes instead;
+       *  for `agent` it can only mean no store is configured at all, since a
+       *  configured store is always agent-reachable. */
       audience: "agent" | "browser";
     },
   ): Promise<string | null>;

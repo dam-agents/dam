@@ -193,7 +193,7 @@ export function registerArtifactLibraryTools(
         try {
           ticket = await lib.createAgentDownloadUrl(id, version);
         } catch (err) {
-          securityLog("info", "artifact_library.download", {
+          securityLog("warn", "artifact_library.download", {
             category: "resource",
             actor: deps.agentId,
             actorKind: "agent",
@@ -277,20 +277,27 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's file name and type are settled at creation and describe every version — they cannot be changed here, so a revision that is a different file needs its own create_artifact call. Retitling is always fine.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
       title: z.string().min(1).max(300).optional(),
       content: z.string().optional(),
       upload_ref: z.string().optional(),
+      file_name: z
+        .string()
+        .optional()
+        .describe(
+          "Renames the artifact — every version downloads under this name. Does not change its type.",
+        ),
       folder_id: folderIdInput,
     },
-    ({ id, title, content, upload_ref, folder_id }) =>
+    ({ id, title, content, upload_ref, file_name, folder_id }) =>
       run(async () => {
         const artifact = await lib.update(id, {
           title,
           content,
           uploadRef: upload_ref,
+          fileName: file_name,
           folderId: folder_id === "" ? null : folder_id,
         });
         return json(withInternalLink(artifact));

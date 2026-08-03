@@ -18,6 +18,7 @@ import type {
   ArtifactRow,
   FolderRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
+import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 describe("share-crypto — slugs", () => {
   it("generates unguessable url-safe slugs", () => {
@@ -173,9 +174,30 @@ function fakeRepo(
   };
 }
 
-const fakeArtifacts = {
-  get: () => Promise.resolve(null),
-} as never;
+/** Typed blob-store stub — overrides only what a test exercises, but keeps the
+ *  port's shape so a signature change breaks the tests that depend on it. */
+function stubArtifacts(
+  overrides: Partial<ArtifactService> = {},
+): ArtifactService {
+  const notImplemented = () => {
+    throw new Error("not implemented in stub");
+  };
+  return {
+    maxBytes: 10 * 1024 * 1024,
+    put: notImplemented,
+    get: () => Promise.resolve(null),
+    getStream: notImplemented,
+    exists: notImplemented,
+    delete: () => Promise.resolve(),
+    createUploadUrl: notImplemented,
+    verifyUpload: notImplemented,
+    createDownloadUrl: notImplemented,
+    createAgentDownloadUrl: notImplemented,
+    ...overrides,
+  };
+}
+
+const fakeArtifacts = stubArtifacts();
 
 describe("share viewer resolution", () => {
   it("resolves only public artifacts — private reads as not-found", async () => {
@@ -237,7 +259,7 @@ describe("share viewer — meta and content cap", () => {
   const row = artifactRow({ sizeBytes: 40 });
   const viewer = createShareViewerService({
     repo: fakeRepo([row]),
-    artifacts: {
+    artifacts: stubArtifacts({
       get: () =>
         Promise.resolve({
           key: row.storageRef,
@@ -246,7 +268,7 @@ describe("share viewer — meta and content cap", () => {
           sizeBytes: 40,
           createdAt: new Date(),
         }),
-    } as never,
+    }),
   });
 
   it("meta reads size and type without fetching the blob", async () => {
@@ -275,8 +297,8 @@ describe("library service — getPreviewHtml", () => {
       repo: fakeRepo([row]),
       owner: row.owner,
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        get: (key: string) =>
+      artifacts: stubArtifacts({
+        get: (key) =>
           Promise.resolve(
             key === row.storageRef
               ? {
@@ -288,7 +310,7 @@ describe("library service — getPreviewHtml", () => {
                 }
               : null,
           ),
-      } as never,
+      }),
     });
   }
 
@@ -313,20 +335,11 @@ describe("library service — getPreviewHtml", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Name and format are settled at create — they describe every version, so the
-// head row stays a truthful label for the bytes of older versions.
+// The kind is fixed at create: the share slug outlives every revision, so no
+// update may turn a link that served inert text into one that executes.
 
-describe("library service — stable identity across versions", () => {
-  async function serviceOver(
-    rows: ArtifactRow[],
-    keys: string[] = [],
-  ): Promise<
-    Awaited<
-      ReturnType<
-        typeof import("../../modules/artifact-library/services/artifact-library-service.js").createArtifactLibraryService
-      >
-    >
-  > {
+describe("library service — the kind cannot move", () => {
+  async function serviceOver(rows: ArtifactRow[], keys: string[] = []) {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
@@ -341,57 +354,55 @@ describe("library service — stable identity across versions", () => {
       },
       owner: "o1",
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        put: (input: { key: string }) => {
+      artifacts: stubArtifacts({
+        put: (input) => {
           keys.push(input.key);
           return Promise.resolve();
         },
-      } as never,
+      }),
     });
   }
 
-  it("refuses to rename or re-type an artifact, writing nothing", async () => {
-    const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
-    const service = await serviceOver(rows);
-
-    await expect(service.update("a1", { kind: "html" })).rejects.toThrow(
-      /format cannot change/,
-    );
-    await expect(
-      service.update("a1", { fileName: "report.html" }),
-    ).rejects.toThrow(/cannot be renamed/);
-    expect(rows[0]!.kind).toBe("markdown");
-    expect(rows[0]!.fileName).toBe("report.md");
-  });
-
-  it("accepts the unchanged name and type, so an echoing client still works", async () => {
+  // `kind` is not an update input at all, so the only ways to reach for it are
+  // the back doors: bytes that sniff differently, or a rename into another
+  // extension. Neither may move it.
+  it("keeps the kind when a new version's bytes sniff as something else", async () => {
     const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
     const service = await serviceOver(rows);
 
     await expect(
-      service.update("a1", {
-        title: "Renamed title",
-        fileName: "report.md",
-        kind: "markdown",
-      }),
-    ).resolves.toMatchObject({ title: "Renamed title" });
+      service.update("a1", { content: "<!DOCTYPE html><html></html>" }),
+    ).resolves.toMatchObject({ kind: "markdown", version: 2 });
   });
 
-  it("holds name and kind steady when a new version's bytes sniff differently", async () => {
+  it("keeps the kind across a rename into an executable extension", async () => {
     const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
     const keys: string[] = [];
     const service = await serviceOver(rows, keys);
 
-    // Content detectKind would call html, plus a name the caller would prefer:
-    // the artifact stays markdown/report.md and the new blob key follows it.
+    // The rename lands (it is only a label) but the artifact still renders as
+    // markdown — the share link cannot start executing under its viewers.
     await expect(
-      service.update("a1", { content: "<!DOCTYPE html><html></html>" }),
+      service.update("a1", {
+        content: "<script>alert(1)</script>",
+        fileName: "report.html",
+      }),
+    ).resolves.toMatchObject({ kind: "markdown", fileName: "report.html" });
+    expect(keys).toEqual(["library/o1/a1/v2/report.html"]);
+  });
+
+  it("renames in place without publishing a version", async () => {
+    const rows = [artifactRow({ kind: "code", fileName: "loop.py" })];
+    const service = await serviceOver(rows);
+
+    // What the experiments module does when a driver renames a draft script.
+    await expect(
+      service.update("a1", { fileName: "optimize.py" }),
     ).resolves.toMatchObject({
-      kind: "markdown",
-      fileName: "report.md",
-      version: 2,
+      fileName: "optimize.py",
+      kind: "code",
+      version: 1,
     });
-    expect(keys).toEqual(["library/o1/a1/v2/report.md"]);
   });
 });
 
@@ -416,8 +427,8 @@ describe("library service — createAgentDownloadUrl", () => {
       },
       owner: "o1",
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        createAgentDownloadUrl: (key: string, filename: string) => {
+      artifacts: stubArtifacts({
+        createAgentDownloadUrl: (key, filename) => {
           opts?.minted?.push({ key, filename });
           return Promise.resolve(
             opts?.link === undefined
@@ -425,7 +436,7 @@ describe("library service — createAgentDownloadUrl", () => {
               : opts.link,
           );
         },
-      } as never,
+      }),
     });
   }
 
@@ -492,10 +503,7 @@ describe("library service — owner scoping", () => {
       repo: fakeRepo(rows),
       owner: "intruder",
       shareBaseUrl: "http://share.localhost",
-      artifacts: {
-        get: () => Promise.resolve(null),
-        delete: () => Promise.resolve(),
-      } as never,
+      artifacts: stubArtifacts(),
     });
   }
 
@@ -558,12 +566,12 @@ describe("expiry sweeper", () => {
     };
     const sweeper = createArtifactExpirySweeper({
       repo,
-      artifacts: {
-        delete: (key: string) => {
+      artifacts: stubArtifacts({
+        delete: (key) => {
           deletedBlobs.push(key);
           return Promise.resolve();
         },
-      } as never,
+      }),
       batchSize: 10,
     });
     return { sweeper, deletedBlobs, rows };

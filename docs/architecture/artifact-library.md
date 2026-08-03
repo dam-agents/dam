@@ -13,12 +13,16 @@ uploads), and outlives both the sandbox and the agent that produced it.
 Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through.
 
-An artifact's **file name and kind are settled when it is created** and
-describe every version: the history snapshots bytes, never a name, and each
-version renders through the artifact's kind and downloads under its name.
-Letting either move would retroactively relabel revisions already published,
-so a revision that is genuinely a different file belongs in its own artifact
-with its own share link — the editable human-facing label is the **title**.
+An artifact's **kind is settled when it is created** and no revision can move
+it — neither by declaring one nor by renaming into another extension. The
+share link outlives every revision, so a mutable kind would let a URL vetted
+while it served inert text later serve executing HTML or JSX to the same
+audience; publishing executable content is fine, silently changing what an
+already-shared link *does* is not. It also keeps a version history coherent,
+since every version renders through the artifact's one kind. Title and file
+name stay editable, and both describe the whole artifact rather than one
+revision: the history snapshots bytes, so a past version downloads under the
+artifact's current name.
 
 The design is a port of a proven external tool (the "slop" artifact vault)
 onto platform rails: content bytes live in the S3-compatible object store
