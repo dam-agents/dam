@@ -32,7 +32,7 @@ export interface SkillsSurface {
   errorBySource: Record<string, string | null>;
   installed: SkillRef[];
   standalone: LocalSkill[];
-  /** Publish records for this agent — drives the "In review" pill. */
+  /** Publish records for this agent — drives the "Published" pill. */
   publishes: SkillPublishRecord[];
   /** Row currently mid-install/uninstall, so its toggle can show a spinner. */
   busyKey: string | null;
@@ -414,7 +414,7 @@ export function useSkillsSurface(
           },
           ttl: 10_000,
         });
-        // Optimistically record the publish so the "In review" pill shows now,
+        // Optimistically record the publish so the "Published" pill shows now,
         // ahead of the next state poll; drop the target's scan cache so the
         // merged skill surfaces on the next list.
         const src = sources.find((s) => s.id === input.sourceId);

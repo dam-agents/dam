@@ -102,8 +102,8 @@ export function SkillsSurface({
     skill: LocalSkill,
     pub?: SkillPublishRecord,
   ) => {
-    // State-neutral wording about the PR: the "In review" pill is never
-    // refreshed against GitHub, so we can't claim the PR is still open (#3019).
+    // Nothing here knows the PR's state, so the wording stays state-neutral —
+    // "isn't withdrawn", not "is still open" (#3019).
     const ok = await showConfirm(
       <>
         This skill will be removed from the sandbox.
