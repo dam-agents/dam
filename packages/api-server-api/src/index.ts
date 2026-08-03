@@ -307,6 +307,7 @@ export {
   AMBIENT_THREAD_KEY_PREFIX,
   ambientThreadKey,
   isAmbientThreadKey,
+  slackThreadKey,
 } from "./modules/sessions/types.js";
 export type { SessionView } from "./modules/sessions/types.js";
 

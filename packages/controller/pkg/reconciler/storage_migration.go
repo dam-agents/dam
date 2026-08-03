@@ -10,6 +10,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +83,17 @@ const (
 	// migrationFallbackUID runs the copy when the chart doesn't pin the
 	// agent container's uid. Matches the platform images' agent user.
 	migrationFallbackUID = int64(65532)
+	// migrationFallbackGID pairs with migrationFallbackUID when the chart
+	// pins no group; the platform images run 65532:65532.
+	migrationFallbackGID = int64(65532)
+	// migrationServiceAccount is the Job's dedicated identity — the target
+	// of the ops-managed SCC grant on OpenShift. Ensured by the manager.
+	migrationServiceAccount = "platform-migration"
+	// migrationChecksumParallelism is how many md5sum workers read the tree
+	// at once. Small-file verification over a network filesystem is bound by
+	// per-file round-trips, not bandwidth or CPU, so concurrency buys close
+	// to linear speedup; 8 keeps well inside an IOPS-capped share's budget.
+	migrationChecksumParallelism = 8
 )
 
 // StorageMigrationManager runs the migration loop. Leader-only, like the
@@ -93,17 +105,23 @@ type StorageMigrationManager struct {
 	config  *config.Config
 	now     func() time.Time
 	// skippedVM de-dupes the vm-backend warning so it logs once per agent
-	// per process, not once per tick.
-	skippedVM map[string]bool
+	// per process, not once per tick. warnedSameClass and loggedReason do the
+	// same for the misconfigured-target refusal and the per-agent reason.
+	skippedVM       map[string]bool
+	warnedSameClass map[string]bool
+	loggedReason    map[string]bool
+	warnedResolve   bool
 }
 
 func NewStorageMigrationManager(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *StorageMigrationManager {
 	return &StorageMigrationManager{
-		client:    client,
-		dynamic:   dyn,
-		config:    cfg,
-		now:       time.Now,
-		skippedVM: map[string]bool{},
+		client:          client,
+		dynamic:         dyn,
+		config:          cfg,
+		now:             time.Now,
+		skippedVM:       map[string]bool{},
+		warnedSameClass: map[string]bool{},
+		loggedReason:    map[string]bool{},
 	}
 }
 
@@ -164,12 +182,18 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 		slog.Warn("storage migration: listing agents to release gates failed", "error", err)
 		return
 	}
+	// "Source still present" — by the same rule Reconcile admits work with,
+	// so a workspace pending only a storage-class move is recognised as an
+	// un-flipped source rather than mistaken for a completed migration.
+	targetClass, _ := m.resolveTargetClass(ctx)
+	allowSame := m.config.StorageMigration.AllowSameStorageClass
 	rwx := map[string]bool{}
 	if pvcs, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent,
 	}); err == nil {
-		for _, p := range pvcs.Items {
-			if isRWX(p.Spec.AccessModes) {
+		for i := range pvcs.Items {
+			p := pvcs.Items[i]
+			if _, needed := migrationReason(&p, targetClass, allowSame); needed {
 				rwx[p.Labels[LabelAgent]] = true
 			}
 		}
@@ -213,6 +237,35 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 	}
 }
 
+// ensureServiceAccount creates the copy Job's dedicated identity if it is
+// missing. Idempotent, called only while there is work to admit. The SA
+// carries no role bindings and its token is never mounted — it exists so an
+// OpenShift install can scope the runs-as-root SCC grant to exactly this
+// workload (an ops-side, out-of-band binding, like every cluster-scoped
+// security object).
+func (m *StorageMigrationManager) ensureServiceAccount(ctx context.Context) error {
+	_, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Get(ctx, migrationServiceAccount, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return fmt.Errorf("checking migration service account: %w", err)
+	}
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      migrationServiceAccount,
+			Namespace: m.config.Namespace,
+			Labels:    map[string]string{"agent-platform.ai/managed-by": "platform-controller"},
+		},
+		AutomountServiceAccountToken: ptrBool(false),
+	}
+	if _, err := m.client.CoreV1().ServiceAccounts(m.config.Namespace).Create(ctx, sa, metav1.CreateOptions{}); err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating migration service account: %w", err)
+	}
+	slog.Info("storage migration: service account ensured", "name", migrationServiceAccount)
+	return nil
+}
+
 // Reconcile advances every in-flight migration one step and admits new
 // agents up to the concurrency cap. Exported for tests; RunLoop drives it.
 func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
@@ -224,15 +277,35 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		return
 	}
 
-	// Agents that still own an RWX workspace volume, plus agents already
-	// gated (annotation set) whose source volume may already be stripped —
-	// the union is the resumable work list.
+	targetClass, explicitClass := m.resolveTargetClass(ctx)
+	allowSame := m.config.StorageMigration.AllowSameStorageClass
+
+	// Agents whose workspace volume is on the wrong access mode or the wrong
+	// storage class, plus agents already gated (annotation set) whose source
+	// may already be stripped — the union is the resumable work list.
 	rwxByAgent := map[string][]corev1.PersistentVolumeClaim{}
-	for _, p := range pvcs.Items {
-		if !isRWX(p.Spec.AccessModes) {
+	for i := range pvcs.Items {
+		p := pvcs.Items[i]
+		reason, needed := migrationReason(&p, targetClass, allowSame)
+		agent := p.Labels[LabelAgent]
+		if !needed {
+			// Distinguish "nothing to do" from "refused": a shared-writable
+			// volume already sitting on the target class means the target is
+			// the shared filesystem itself, which the migration exists to
+			// leave. Say so, once per agent per process.
+			if isRWX(p.Spec.AccessModes) && !m.warnedSameClass[agent] {
+				m.warnedSameClass[agent] = true
+				slog.Warn("storage migration: refusing to migrate onto the volume's own storage class — the access mode would change but the backend would not",
+					"agent", agent, "pvc", p.Name, "class", targetClass,
+					"remedy", "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended")
+			}
 			continue
 		}
-		agent := p.Labels[LabelAgent]
+		if !m.loggedReason[agent] {
+			m.loggedReason[agent] = true
+			slog.Info("storage migration: workspace needs migrating", "agent", agent, "pvc", p.Name,
+				"reason", reason, "target", map[bool]string{true: targetClass, false: targetClass + " (cluster default)"}[explicitClass])
+		}
 		rwxByAgent[agent] = append(rwxByAgent[agent], p)
 	}
 
@@ -268,6 +341,17 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 	}
 	sort.Strings(names)
 
+	if len(names) > 0 {
+		// Without the SA the Job would be admitted but its pods would never
+		// schedule (ServiceAccount not found) -- a quiet 4h stall behind the
+		// deadline. Fail the pass instead: nothing is gated or created this
+		// tick, and the next tick retries.
+		if err := m.ensureServiceAccount(ctx); err != nil {
+			slog.Warn("storage migration: skipping pass, service account unavailable", "error", err)
+			return
+		}
+	}
+
 	slots := m.concurrency() - len(inFlight)
 	for _, name := range names {
 		agent, ok := known[name]
@@ -292,10 +376,119 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 			}
 			slots--
 		}
-		if err := m.migrateAgent(ctx, agent, rwxByAgent[name]); err != nil {
+		if err := m.migrateAgent(ctx, agent, rwxByAgent[name], targetClass); err != nil {
 			slog.Warn("storage migration: agent migration step failed", "agent", name, "error", err)
 		}
 	}
+}
+
+// resolveTargetClass returns the storage class migrated workspaces land on,
+// and whether the chart named it explicitly. Empty-and-inexplicit means the
+// cluster default: the target PVC then omits storageClassName so ordinary
+// default storage applies, while the resolved NAME is still needed to tell a
+// workspace that has already arrived from one that has not.
+//
+// Deliberately independent of AgentBase.StorageClass: on an install that has
+// not migrated yet, that value still names the shared filesystem being
+// drained, so inheriting it would copy every byte to reach the same backend.
+func (m *StorageMigrationManager) resolveTargetClass(ctx context.Context) (name string, explicit bool) {
+	if c := m.config.StorageMigration.TargetStorageClass; c != "" {
+		return c, true
+	}
+	classes, err := m.client.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		// Without the default class's name the class comparison can't run;
+		// the RWX rule still does, so the drain degrades rather than stops.
+		m.warnResolveOnce("storage migration: cannot resolve the cluster default storage class; migrating on access mode only", err)
+		return "", false
+	}
+	// Same tie-break as the DefaultStorageClass admission plugin: with
+	// several classes annotated default, the NEWEST wins. Diverging from
+	// admission here would discard-and-recreate targets forever — admission
+	// stamps one class, this comparison expects another.
+	var picked *storagev1.StorageClass
+	for i := range classes.Items {
+		sc := &classes.Items[i]
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] != "true" {
+			continue
+		}
+		if picked == nil || sc.CreationTimestamp.After(picked.CreationTimestamp.Time) {
+			picked = sc
+		}
+	}
+	if picked != nil {
+		return picked.Name, false
+	}
+	m.warnResolveOnce("storage migration: no default storage class found; migrating on access mode only", nil)
+	return "", false
+}
+
+// warnResolveOnce keeps the per-tick resolution warnings from repeating every
+// 30s for the lifetime of a misconfigured install.
+func (m *StorageMigrationManager) warnResolveOnce(msg string, err error) {
+	if m.warnedResolve {
+		return
+	}
+	m.warnedResolve = true
+	if err != nil {
+		slog.Warn(msg, "error", err)
+		return
+	}
+	slog.Warn(msg)
+}
+
+// migrationReason says why a workspace needs migrating, or "" if it does not.
+// Two triggers: a shared-writable access mode, and sitting on the wrong
+// storage class — the second is what moves a workspace that was already
+// flipped to ReadWriteOnce but left on the shared filesystem.
+func migrationReason(pvc *corev1.PersistentVolumeClaim, targetClass string, allowSame bool) (string, bool) {
+	srcClass := ""
+	if pvc.Spec.StorageClassName != nil {
+		srcClass = *pvc.Spec.StorageClassName
+	}
+	sameClass := targetClass != "" && srcClass == targetClass
+	if isRWX(pvc.Spec.AccessModes) {
+		if sameClass && !allowSame {
+			// Refuse rather than drain a fleet to no purpose: the operator
+			// has pointed the migration at the very filesystem it exists to
+			// leave. Changing the access mode alone buys nothing.
+			return "", false
+		}
+		return "shared-writable access mode", true
+	}
+	// Already single-writer: only the destination is left to fix. A volume
+	// with no class at all is left alone — it is statically provisioned, and
+	// "converge it onto the default class" is not a call this should make.
+	if targetClass != "" && srcClass != "" && srcClass != targetClass {
+		return "storage class " + srcClass + " is not the migration target " + targetClass, true
+	}
+	return "", false
+}
+
+// targetReusable says whether an existing, unclaimed migration target may
+// receive this configuration's copy. Class must match the resolved
+// destination (unknown destination — lookup failed — accepts anything rather
+// than churn), and the size must meet the configured floor so a floor added
+// after a failed attempt takes effect on the retry.
+func (m *StorageMigrationManager) targetReusable(existing *corev1.PersistentVolumeClaim, targetClass string) bool {
+	if targetClass != "" && ptrClassString(existing.Spec.StorageClassName) != targetClass {
+		return false
+	}
+	if floor := m.config.StorageMigration.MinTargetSize; floor != "" {
+		if q, err := resource.ParseQuantity(floor); err == nil {
+			if size := existing.Spec.Resources.Requests[corev1.ResourceStorage]; size.Cmp(q) < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func ptrClassString(sc *string) string {
+	if sc == nil {
+		return ""
+	}
+	return *sc
 }
 
 func isRWX(modes []corev1.PersistentVolumeAccessMode) bool {
@@ -327,7 +520,7 @@ func migrationJobName(agentName string) string {
 
 // migrateAgent advances one agent's migration by one step. Every step is
 // idempotent; the caller re-invokes each tick until nothing is left to do.
-func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1.Agent, rwxPVCs []corev1.PersistentVolumeClaim) error {
+func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1.Agent, rwxPVCs []corev1.PersistentVolumeClaim, targetClass string) error {
 	name := agent.Name
 
 	// Step 1 — gate the agent down. The annotation is a shouldRun negative
@@ -367,7 +560,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 				// PVC-name prefix by the `<mount>-<agent>-0` convention.
 				mount = strings.TrimSuffix(old.Name, "-"+name+"-0")
 			}
-			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef)
+			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef, targetClass)
 			if err != nil {
 				return err
 			}
@@ -424,11 +617,44 @@ type migrationPair struct {
 // Size follows the source's request; class is the agents' configured class
 // (empty = cluster default, WaitForFirstConsumer binding lands it on the
 // copy Job's node).
-func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference) (string, error) {
+func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference, targetClass string) (string, error) {
 	targetName := migrationTargetName(old.Name)
-	_, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
+	existing, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
 	if err == nil {
-		return targetName, nil
+		// A pre-existing target is only reusable if it is where THIS
+		// configuration wants the data to land. The wrong-class incident
+		// left exactly the counterexample behind: targets provisioned on
+		// the shared-filesystem class by the old inherit-the-agents'-class
+		// bug — reusing one would copy every byte straight back onto the
+		// backend being drained, silently defeating a corrected config.
+		if existing.DeletionTimestamp != nil {
+			return "", fmt.Errorf("stale migration target %s is still terminating; retrying next tick", targetName)
+		}
+		if m.targetReusable(existing, targetClass) {
+			return targetName, nil
+		}
+		// Refuse to touch anything claimed: LabelAgent appears on the
+		// target only at flip, when it becomes the agent's LIVE volume.
+		// An unclaimed target is garbage by construction — but if this
+		// ever disagrees, erring on "migration stalls" beats "volume
+		// deleted".
+		if existing.Labels[LabelAgent] != "" {
+			return "", fmt.Errorf("target %s does not match the configured destination but is already claimed; refusing to replace it", targetName)
+		}
+		slog.Warn("storage migration: discarding stale target provisioned for a different destination",
+			"agent", agentName, "pvc", targetName,
+			"have", ptrClassString(existing.Spec.StorageClassName), "want", targetClass)
+		// The copy Job (if any) mounts the stale target by name; it must go
+		// first or pvc-protection pins the PVC until the pod exits anyway.
+		prop := metav1.DeletePropagationBackground
+		if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, migrationJobName(agentName),
+			metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !errors.IsNotFound(err) {
+			return "", err
+		}
+		if err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Delete(ctx, targetName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("discarded stale migration target %s; recreating next tick", targetName)
 	}
 	if !errors.IsNotFound(err) {
 		return "", err
@@ -438,13 +664,29 @@ func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName
 	if size.IsZero() {
 		size = resource.MustParse(m.config.AgentTemplateDefaults.StorageSize)
 	}
+	// Floor the request where the target class ties IOPS to capacity: a
+	// faithfully-sized small volume would inherit a proportionally tiny IOPS
+	// budget and make the copy — which is per-file bound — crawl.
+	if floor := m.config.StorageMigration.MinTargetSize; floor != "" {
+		if q, err := resource.ParseQuantity(floor); err != nil {
+			slog.Warn("storage migration: minTargetSize is not a valid quantity; ignoring", "value", floor, "error", err)
+		} else if size.Cmp(q) < 0 {
+			slog.Info("storage migration: raising target size to the configured floor",
+				"agent", agentName, "requested", size.String(), "floor", q.String())
+			size = q
+		}
+	}
 	spec := corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{
 			Requests: corev1.ResourceList{corev1.ResourceStorage: size},
 		},
 	}
-	if sc := m.config.AgentBase.StorageClass; sc != "" {
+	// The migration's own destination — NOT AgentBase.StorageClass, which on
+	// an unmigrated install still names the shared filesystem being drained.
+	// Left unset when the chart names no class, so the cluster default
+	// applies exactly as it would for any ordinary PVC.
+	if sc := m.config.StorageMigration.TargetStorageClass; sc != "" {
 		spec.StorageClassName = &sc
 	}
 	pvc := &corev1.PersistentVolumeClaim{
@@ -633,9 +875,10 @@ func jobFailed(job *batchv1.Job) bool {
 // (source read-only, target read-write) pair, running a copy + two-pass
 // checksum verification per pair.
 //
-// The copy runs as the AGENT's uid, unprivileged and needing no
-// capabilities: an agent's workspace is single-owner by construction
-// (everything in it is written as the agent user), so the agent uid can
+// The copy runs with SPLIT IDENTITY. Everything that touches the SOURCE
+// runs as the AGENT's uid (dropped into via setpriv): the source may live
+// on a root-squashing share, where uid 0 is remapped to nobody server-side
+// and is the weakest identity on the mount, while the agent uid can
 // read every file — including 0600 files and
 // 0700 dirs — even on shared-filesystem classes that squash root, where a
 // root-running copy would EACCES on the first private file. Ownership on
@@ -654,116 +897,174 @@ func buildMigrationJob(agentName string, pairs []migrationPair, cfg *config.Conf
 	var volumes []corev1.Volume
 	var mounts []corev1.VolumeMount
 	var script strings.Builder
-	// The copy runs as the agent uid — resolved from the chart's container
-	// security context, which is the identity the agent itself runs with.
-	uid := migrationFallbackUID
-	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil && sc.RunAsUser != nil {
-		uid = *sc.RunAsUser
+	// The reader identity: the agent's own uid and gid from the chart's
+	// container security context — the one identity a root-squashing source
+	// share always honors for the workspace it owns.
+	uid, gid := migrationFallbackUID, migrationFallbackGID
+	if sc := cfg.AgentBase.ContainerSecurityContext; sc != nil {
+		if sc.RunAsUser != nil {
+			uid = *sc.RunAsUser
+		}
+		if sc.RunAsGroup != nil {
+			gid = *sc.RunAsGroup
+		}
 	}
-	gid := int64(0)
-
-	// The ownership preflight and the uid column of the metadata comparison
-	// move together: normalizing ownership (opt-in) means the target's uids
-	// legitimately differ from the source's, so comparing them would fail by
-	// design. Everything else — type, mode, path, symlink target, content —
-	// is verified either way.
-	metaFmt := "%y|%m|%U|%p|%l"
-	if cfg.StorageMigration.AllowOwnershipRemap {
-		metaFmt = "%y|%m|%p|%l"
-	}
-	fmt.Fprintf(&script, "set -euo pipefail\nAGENT_UID=%d\nALLOW_OWNERSHIP_REMAP=%s\nMETA_FMT=%q\n",
-		uid, map[bool]string{true: "1", false: "0"}[cfg.StorageMigration.AllowOwnershipRemap], metaFmt)
+	fmt.Fprintf(&script, "set -euo pipefail\nAGENT_UID=%d\nAGENT_GID=%d\nPAR=%d\n",
+		uid, gid, migrationChecksumParallelism)
 	script.WriteString(`
+T0=$(date +%s)
+phase() { echo "phase: $1 (+$(( $(date +%s) - T0 ))s)"; }
+
+# SPLIT IDENTITY, one rule: whoever touches the SOURCE is the agent,
+# whoever touches the TARGET is root. The source may live on a
+# root-squashing share, where uid 0 is remapped to nobody server-side and
+# is the weakest identity on the mount (root got EACCES on the agent's own
+# 0600 files in production); the agent uid reads everything it owns. The
+# target is a local block filesystem, where root's ownership of the fresh
+# volume root, exact ownership restore, and wiping a prior attempt's
+# read-only residue all just work. No fsGroup is involved anywhere, so the
+# volume root carries no setgid bit and the kernel inherits nothing:
+# modes land exactly as tar records them.
+AS_AGENT="setpriv --reuid=${AGENT_UID} --regid=${AGENT_GID} --clear-groups"
+
+# Both identities share one private scratch dir (root-created, sticky,
+# world-writable): the agent-side workers and the root-side collectors
+# never collide with anything pre-existing, and Linux protected_regular
+# never refuses a redirect over a file the other identity created.
+W=$(mktemp -d)
+chgrp "${AGENT_GID}" "$W"
+chmod 0770 "$W"
+
+# Source-side pipelines run under $AS_AGENT via this helper script (a
+# fresh process cannot inherit shell functions).
+cat > "$W"/srcside.sh <<'EOS'
+set -euo pipefail
+src="$1"; what="$2"; PAR="$3"; W="$4"
+case "$what" in
+walk)
+  # One deep walk of the source; every source-side check derives from it.
+  # -prune, not ! -path: exclusion by path still DESCENDS, and a 0700
+  # root-owned lost+found aborts the walk with permission denied. The r/x
+  # prefix records readability by THIS uid — the identity that will read
+  # the data.
+  cd "$src" && find . -mindepth 1 \( -path ./lost+found -prune \) -o \
+     \( \( -readable -printf "r|%y|%m|%U|%p|%l\n" \) -o -printf "x|%y|%m|%U|%p|%l\n" \) ;;
+sums)
+  # Content checksums, read in parallel: small-file verification is
+  # latency-bound, so workers overlap round-trips. Each worker batch
+  # appends to its own file — a shared stdout tears lines once a batch
+  # exceeds one atomic pipe write. md5 is integrity checking of our own
+  # quiesced copy, not defense against crafted collisions.
+  cd "$src" && rm -f "$W"/sums.src.*
+  find . \( -path ./lost+found -prune \) -o -type f -print0 \
+    | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.src.$$"' _
+  cat "$W"/sums.src.* 2>/dev/null || true ;;
+esac
+EOS
+
 copy_verify() {
   src="$1"; dst="$2"
   echo "migrate: $src -> $dst"
-  # Everything here runs as the AGENT's uid — no root, no capabilities.
-  # Privilege is not available to rely on: OpenShift's restricted SCC strips
-  # CAP_CHOWN/CAP_DAC_OVERRIDE (so even uid 0 cannot chown or bypass a mode),
-  # and a Kata sandbox's virtiofs refuses guest-side chown outright. What the
-  # agent uid always has is OWNERSHIP of the whole workspace, and an owner may
-  # chmod its own entries — which is all this needs.
 
-  # Preflight: an entry its OWNER cannot read is unreadable to every uid on a
-  # root-squashing share — no copier can move it. Fail fast with the exact
-  # list (the fix is chmod u+rX on the source) instead of a mid-copy error.
-  # Dangling symlinks are excluded: -readable follows links, and a dangling
-  # link is legitimate workspace content that the copy recreates fine.
-  unreadable="$(cd "$src" && find . ! -type l ! -readable | head -20)"
+  $AS_AGENT bash "$W"/srcside.sh "$src" walk "$PAR" "$W" > "$W"/src.walk
+  entries=$(wc -l < "$W"/src.walk)
+  phase "walked source: $entries entries"
+
+  # The walk is line-based with | separators: a path containing either
+  # character cannot be represented and would corrupt every check derived
+  # from the walk. Refuse it by name — rename on the source is the remedy.
+  # Field count is exact: flag|type|mode|uid|path|link.
+  malformed="$(awk -F'|' 'NF!=6 && n<20 {print; n++}' "$W"/src.walk)"
+  if [ -n "$malformed" ]; then
+    echo "migration blocked: source paths contain | or newline, which the inventory cannot represent (rename them; list may be truncated):"
+    echo "$malformed"
+    exit 1
+  fi
+
+  # An entry the READER cannot open is unmovable: on a squashing share no
+  # identity in this pod can read it — not the agent, and root least of
+  # all. This subsumes the old foreign-owner gate: a READABLE root-owned
+  # stray now copies faithfully (the writer preserves ownership exactly),
+  # and an unreadable one is caught here with its path. Dangling symlinks
+  # are exempt: -readable follows links, and the copy recreates them fine.
+  unreadable="$(awk -F'|' '$1=="x" && $2!="l" && n<20 {print $5; n++}' "$W"/src.walk)"
   if [ -n "$unreadable" ]; then
-    echo "migration blocked: owner-unreadable entries on the source (list may be truncated):"
+    echo "migration blocked: entries the agent uid cannot read on the source (chmod u+rX them; list may be truncated):"
     echo "$unreadable"
     exit 1
   fi
-  echo "source size: $(du -sh "$src" | cut -f1)"
 
-  # Ownership: an unprivileged copy recreates entries as the agent uid, so it
-  # is only faithful while the workspace is single-owner — which it is by
-  # construction (the agent writes its own workspace). Anything owned by
-  # another uid is reported and blocks the copy rather than being silently
-  # re-owned. Remedy: chown it to the agent uid on the source, or set
-  # controller.storageMigration.allowOwnershipRemap to accept the
-  # normalization. Privilege is not an option here: a restricted SCC strips
-  # CAP_CHOWN and Kata virtiofs refuses guest chown outright.
-  foreign="$(cd "$src" && find . ! -uid ${AGENT_UID} ! -path './lost+found*' | head -20)"
-  if [ -n "$foreign" ]; then
-    if [ "${ALLOW_OWNERSHIP_REMAP}" = "1" ]; then
-      echo "note: re-owning these source entries to uid ${AGENT_UID} (allowOwnershipRemap; list may be truncated):"
-      echo "$foreign"
-    else
-      echo "migration blocked: source entries owned by another uid, which an unprivileged copy cannot reproduce (list may be truncated):"
-      echo "$foreign"
-      echo "remedy: chown them to uid ${AGENT_UID} on the source, or set controller.storageMigration.allowOwnershipRemap=true to accept the normalization"
-      exit 1
-    fi
-  fi
+  # Verification baseline at FULL fidelity — the uid column is compared,
+  # not excused, because the root writer preserves ownership exactly.
+  cut -d'|' -f2- "$W"/src.walk | LC_ALL=C sort > "$W"/src.meta
+  # Source checksums before the copy: the source is quiesced, so before
+  # and after are indistinguishable, and this keeps every source read
+  # under the squash-safe identity.
+  $AS_AGENT bash "$W"/srcside.sh "$src" sums "$PAR" "$W" | LC_ALL=C sort > "$W"/src.sum
+  phase "hashed source"
 
-  # Per-attempt wipe so retries are deterministic. Restoring u+rwX first is
-  # what makes it possible as the owner: a prior attempt faithfully
-  # reproduced the workspace's read-only directories (0500/0555 — Go module
-  # caches, site-packages), and removing an entry needs write+execute on its
-  # parent. LOST+FOUND is skipped: it is a fresh ext4 volume's own artifact,
-  # root-owned and not ours to delete — the verification excludes it too.
-  find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec chmod -R u+rwX {} +
+  # Wipe as root: a prior attempt's read-only directories are plain rm.
+  # lost+found stays — a fresh ext4 volume's own artifact, excluded from
+  # verification on both sides.
   find "$dst" -mindepth 1 -maxdepth 1 ! -name lost+found -exec rm -rf {} +
+  # Neutralize the ROOT itself on every attempt: a previous attempt's
+  # success-shaping (or the kubelet, on installs that ever ran fsGroup on
+  # the Job) may have left it setgid, and extracting under a setgid root
+  # lets the kernel stamp the bit into every 0700-style directory tar
+  # creates -- turning one transient failure into a permanently failing
+  # retry loop. chmod 00755, five digits: GNU chmod PRESERVES dir setgid
+  # for numeric modes under five digits ("755" and "0755" both keep it).
+  # Agent ownership here is also what lets the agent-identity write test
+  # below pass before the success-shaping runs.
+  chown "${AGENT_UID}:${AGENT_GID}" "$dst"
+  chmod 00755 "$dst"
+  phase "wiped target"
 
-  # tar, not "cp -a src/. dst/": cp applies the SOURCE ROOT's ownership and
-  # timestamps to the TARGET ROOT, which no unprivileged process can do (the
-  # root belongs to the provisioner; fsGroup, not us, makes it writable).
-  # --no-overwrite-dir leaves the target root's own metadata alone; -p keeps
-  # every mode including setuid; tar preserves hard links natively (a
-  # hard-link-heavy pnpm store must not inflate past the volume size) and
-  # --sparse keeps sparse files sparse. Ownership needs no preserving: the
-  # workspace has a single owner and we are it.
-  tar -C "$src" --sparse -cf - . | tar -C "$dst" -xpf - --no-overwrite-dir
-  sync
+  if [ "$entries" -gt 0 ]; then
+    # Reader as the agent (squash-safe), writer as root: exact modes
+    # including setuid, exact OWNERSHIP (--same-owner --numeric-owner —
+    # readable foreign-uid strays land as themselves), hard links (a
+    # hard-link-heavy pnpm store must not inflate past the volume size),
+    # and sparseness. The "." member restores the volume root's own mode,
+    # owner, and times — a root writer may apply all of it.
+    # --exclude=./lost+found: the archive walks everything including a
+    # source ext4 root-owned 0700 lost+found, which the agent-identity
+    # reader cannot open -- and the inventory walk prunes it, so the
+    # unreadable gate never names it either. Anchored (leading ./), so a
+    # nested lost+found the workspace owns still copies, matching the
+    # walks. The "." member itself stays in the archive.
+    $AS_AGENT tar -C "$src" --sparse --exclude=./lost+found -cf - . | tar -C "$dst" -xpf - --same-owner --numeric-owner
+    sync
+  else
+    echo "source is empty; nothing to copy"
+  fi
+  phase "copied"
 
-  # The target root must be writable by the agent — the property the copy
-  # cannot assert for itself (its mode belongs to the provisioner/fsGroup,
-  # so comparing it against the source root would fail spuriously).
-  touch "$dst/.migration-writable" && rm -f "$dst/.migration-writable"
+  # The AGENT must be able to use the volume it wakes up on.
+  $AS_AGENT touch "$dst/.migration-writable"
+  rm -f "$dst/.migration-writable"
 
-  # Two-pass verification against the quiesced source; the old volume is
-  # deleted at flip on the strength of these comparisons, so both fail
-  # closed on any difference.
-  #
-  # Pass 1 — metadata: type, mode, owner uid, path, and symlink target for
-  # every entry. A mode that failed to carry over blocks the migration just
-  # like corrupt content would. Deliberate exclusions: gid (agent images run
-  # uid:0, while an fsGroup-managed target assigns its own gid — group
-  # identity is not part of the workspace contract), the volume root itself,
-  # and lost+found.
-  meta() { (cd "$1" && find . -mindepth 1 ! -path './lost+found*' -printf "${META_FMT}\n" | LC_ALL=C sort); }
-  meta "$src" > /tmp/src.meta
-  meta "$dst" > /tmp/dst.meta
-  cmp /tmp/src.meta /tmp/dst.meta
-  # Pass 2 — content checksums. md5 is deliberate: this is integrity
-  # checking of our own quiesced copy, not defense against an adversary
-  # crafting collisions — and it is the fastest digest coreutils ships.
-  sums() { (cd "$1" && find . -type f ! -path './lost+found*' -print0 | LC_ALL=C sort -z | xargs -0 -r md5sum); }
-  sums "$src" > /tmp/src.sum
-  sums "$dst" > /tmp/dst.sum
-  cmp /tmp/src.sum /tmp/dst.sum
+  # Two-pass verification; the old volume is deleted at flip on the
+  # strength of these comparisons, so both fail closed on any difference.
+  (cd "$dst" && find . -mindepth 1 \( -path ./lost+found -prune \) -o -printf "%y|%m|%U|%p|%l\n") \
+    | LC_ALL=C sort > "$W"/dst.meta
+  cmp "$W"/src.meta "$W"/dst.meta
+  phase "verified metadata"
+
+  rm -f "$W"/sums.dst.*
+  (cd "$dst" && find . \( -path ./lost+found -prune \) -o -type f -print0 \
+     | xargs -0 -r -P"$PAR" -n64 sh -c 'md5sum "$@" >> "'"$W"'/sums.dst.$$"' _)
+  { cat "$W"/sums.dst.* 2>/dev/null || true; } | LC_ALL=C sort > "$W"/dst.sum
+  cmp "$W"/src.sum "$W"/dst.sum
+  phase "verified content"
+
+  # Success-shaping, strictly LAST: only a fully verified copy gets the
+  # root signature the agent pods fsGroup + OnRootMismatch expect (agent
+  # group, setgid, group-rwx), so the first post-migration mount skips
+  # the kubelet recursive ownership pass. A failed attempt never reaches
+  # this line, and the wipe above re-neutralizes the root anyway --
+  # extraction always happens under a setgid-free root.
+  chmod 2770 "$dst"
   echo "verified (content + metadata): $src -> $dst"
 }
 `)
@@ -794,6 +1095,7 @@ copy_verify() {
 	backoff := int32(2)
 	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
+	rootUID := int64(0)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            migrationJobName(agentName),
@@ -818,22 +1120,29 @@ copy_verify() {
 					},
 				},
 				Spec: corev1.PodSpec{
-					// Never, not OnFailure: an in-place container restart
-					// would skip the init containers, and every attempt
-					// needs the root init's wipe first. With Never each
-					// retry is a fresh pod (BackoffLimit still bounds them).
-					RestartPolicy:                corev1.RestartPolicyNever,
+					// Never, not OnFailure: each retry must be a fresh pod
+					// so every attempt starts from the same script state
+					// (BackoffLimit still bounds them).
+					RestartPolicy: corev1.RestartPolicyNever,
+					// Dedicated identity so the pod-runs-as-root grant is
+					// scoped to exactly this Job. On OpenShift, ops binds an
+					// SCC permitting uid 0 (e.g. anyuid) to THIS service
+					// account, out of band like all cluster-scoped security
+					// objects; forgetting that rejects the pod at admission,
+					// loudly, rather than failing anything subtly. The token
+					// is not mounted — the pod talks to no API.
+					ServiceAccountName:           migrationServiceAccount,
 					AutomountServiceAccountToken: ptrBool(false),
+					// Root, with split identity inside (see the script): the
+					// process starts as root for the target side and drops
+					// to the agent uid via setpriv for every source read —
+					// a root-squashing source share never honors uid 0. No
+					// fsGroup: the writer owns the target root outright, and
+					// its absence is what keeps the volume root free of the
+					// setgid bit the kernel would otherwise propagate into
+					// every directory the copy creates.
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser: &uid,
-						// Group 0, matching the agent images' own uid:0
-						// convention, so anything the copy creates carries
-						// the identity the agent itself runs with.
-						RunAsGroup: &gid,
-						// fsGroup covers CSI block backends; hostPath-backed
-						// classes (local-path) skip it, which is what the
-						// chown init container below is for.
-						FSGroup: &uid,
+						RunAsUser: &rootUID,
 					},
 					Containers: []corev1.Container{{
 						Name:         "copy",

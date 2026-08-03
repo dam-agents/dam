@@ -34,6 +34,9 @@ RUN --mount=type=cache,target=/root/.cache/mise mise install node
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
 RUN --mount=type=cache,target=/root/.cache/mise mise install python
+# mise's CPython bundles pip 26.0.1 (CVE-2026-3219); self-upgrade until a
+# python release bundles pip >= 26.1.
+RUN mise exec python -- python -m pip install --upgrade pip==26.1
 # node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
 # (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
 # node release bundles npm >= 11.17.0.

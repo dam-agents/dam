@@ -6,9 +6,10 @@ description: >
   docs/plan/<feature>/ plan or a planned GitHub issue.
 ---
 
-This skill implements a feature that `plan-feature` has already planned. It consumes the
-ephemeral plan under `docs/plan/<NNN-slug>/` (README + one file per sub-issue) and turns it into
-code: a feature branch, one atomic commit per sub-issue, and a single PR for the whole feature.
+This skill implements a feature that `plan-feature` has already planned. It consumes the plan
+committed under `docs/plan/<NNN-slug>/` (README + one file per sub-issue) and turns it into
+code: one atomic commit per sub-issue on the branch `plan-feature` created, a cleanup commit
+that deletes the plan, and the draft PR flipped to ready. The whole feature lands as one PR.
 
 **Core rhythm:** read everything first and clear up confusion *before* writing code; implement
 one sub-issue at a time; after each, **pause for the user to smoke-test and review** before
@@ -32,14 +33,14 @@ Before touching code, read the full context:
 
 ### 2. Resume check
 
-Derive the feature branch name deterministically (see step 4) and check whether it already
-exists:
+Derive the feature branch name deterministically (see step 4) and check its state:
 
-- **Branch exists** — this is a resumed run. Read the README's sub-issue checkmarks and verify
-  them against the branch's `git log` to find which sub-issues are already done. If the working
-  tree has **uncommitted changes** from a sub-issue that was implemented but not yet
-  approved/committed, offer to continue *that* sub-issue rather than restart it.
-- **No branch** — fresh start.
+- **Sub-issue commits on the branch** (anything beyond the plan commit) — this is a resumed
+  run. Read the README's sub-issue checkmarks and verify them against the branch's `git log` to
+  find which sub-issues are already done. If the working tree has **uncommitted changes** from a
+  sub-issue that was implemented but not yet approved/committed, offer to continue *that*
+  sub-issue rather than restart it.
+- **Only the plan commit** — fresh start.
 
 ### 3. Upfront blocking-questions pass
 
@@ -47,12 +48,13 @@ In one consolidated pass, surface every contradiction, ambiguity, or gap you fou
 issue, plan, ADR, and architecture. **Write no code until the user clears the blockers** — or
 state explicitly that there are none and proceed.
 
-### 4. Create the feature branch
+### 4. Check out the feature branch
 
-If fresh, branch from `main`. Name it `<type>/<NNN-slug>`, where the slug matches the plan
-folder name (e.g. plan `docs/plan/344-egress-cli/` → branch `feat/344-egress-cli`) and `<type>`
-follows the issue's nature (`feat`, `fix`, …) per the branch convention. Work in the **main
-working tree** — not a git worktree — so manual smoke-testing happens in the normal checkout.
+`plan-feature` already created the branch, with the plan as its first commit and a draft PR
+open. It is named `<type>/<NNN-slug>`, where the slug matches the plan folder name (e.g. plan
+`docs/plan/344-egress-cli/` → branch `feat/344-egress-cli`) and `<type>` follows the issue's
+nature (`feat`, `fix`, …) per the branch convention. Check it out in the **main working tree** —
+not a git worktree — so manual smoke-testing happens in the normal checkout.
 
 ### 5. Per sub-issue, in dependency order
 
@@ -95,17 +97,17 @@ Once every sub-issue is approved and committed:
 
 - Run the **full** `mise run test` to catch cross-slice regressions.
 - Run a final review pass on the whole branch diff with `/code-review`. Fix blocking findings by
-  **amending the relevant sub-issue's commit** — safe because nothing is pushed yet, so the
-  one-commit-per-sub-issue history stays intact.
+  **amending the relevant sub-issue's commit** — safe because the sub-issue commits aren't
+  pushed yet, so the one-commit-per-sub-issue history stays intact.
 
-### 7. Open the PR
+### 7. Clean up the plan
 
-Only after the user confirms the final sub-issue is done: push the branch and open the PR via
-`gh`. The PR description is **brief and product-level** — what the feature does for the user, no
-implementation details, no file paths; it reads like the issue, not the plan. Include `Closes
-#NNN` so the issue closes on merge.
+Only after the user confirms the final sub-issue is done: delete the `docs/plan/<NNN-slug>/`
+folder in one final commit (`chore(plan): drop <NNN-slug> plan`). This is **mandatory**, not
+optional — the `Plan check` CI job keeps the PR unmergeable while the folder exists.
 
-### 8. Clean up
+### 8. Mark the PR ready
 
-Ask the user whether to delete the `docs/plan/<NNN-slug>/` folder now or keep it until the PR
-merges. This is the **last** action — so an interrupted run always leaves the plan in place.
+Push the branch and flip the draft PR that `plan-feature` opened to ready (`gh pr ready`).
+Verify the body still reads **brief and product-level** (like the issue, not the plan), tick
+every sub-issue checkbox, and confirm `Closes #NNN` is present so the issue closes on merge.

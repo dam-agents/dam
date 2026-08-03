@@ -12,86 +12,118 @@ import {
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
-import { findSlackChannel } from "../../hooks/use-slack-channel-form.js";
+import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
+import { findSlackChannels } from "../../hooks/use-slack-channel-form.js";
 import { ChannelCard } from "./channel-card.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 
+/** Which binding the modal is editing: a channel, or `"new"` for a connect. */
+type ModalTarget = SlackChannel | "new" | null;
+
 export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
-  const slackChannel = findSlackChannel(agent);
+  const slackChannels = findSlackChannels(agent);
+  const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
+
+  return (
+    <ChannelCard iconSlug="slack" title="Slack">
+      <div className="flex flex-col items-start gap-3 px-4 py-4">
+        {agent && slackChannels.length > 0 ? (
+          <div className="flex w-full flex-col gap-2">
+            {slackChannels.map((channel) => (
+              <SlackChannelRow
+                key={channel.slackChannelId}
+                agentId={agent.id}
+                channel={channel}
+                onEdit={() => setModalTarget(channel)}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No channels connected yet. Mentions of the bot in a connected
+            channel drive this sandbox.
+          </p>
+        )}
+        <Button
+          variant="outline"
+          className="h-8 px-3 text-sm font-normal"
+          onClick={() => setModalTarget("new")}
+          disabled={!agent}
+          data-testid="slack-connect"
+        >
+          <Add size={16} />
+          Connect channel
+        </Button>
+      </div>
+      {modalTarget && agent && (
+        <SlackChannelModal
+          agent={agent}
+          channel={modalTarget === "new" ? undefined : modalTarget}
+          onClose={() => setModalTarget(null)}
+        />
+      )}
+    </ChannelCard>
+  );
+}
+
+function SlackChannelRow({
+  agentId,
+  channel,
+  onEdit,
+}: {
+  agentId: string;
+  channel: SlackChannel;
+  onEdit: () => void;
+}) {
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectSlack = useDisconnectSlack();
-  const [modalOpen, setModalOpen] = useState(false);
 
   const handleDisconnect = async () => {
-    if (!agent) return;
     if (
       await showConfirm(
-        "Mentions in the channel will stop reaching this sandbox.",
+        `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.`,
         "Disconnect Slack channel?",
         { kind: "destructive", confirmLabel: "Disconnect" },
       )
     )
-      disconnectSlack.mutate({ id: agent.id });
+      disconnectSlack.mutate({
+        id: agentId,
+        slackChannelId: channel.slackChannelId,
+      });
   };
 
   return (
-    <ChannelCard iconSlug="slack" title="Slack">
-      {agent && slackChannel ? (
-        <div className="flex items-center gap-2 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] text-foreground">
-              {slackChannel.slackChannelId}
-            </p>
-            <p className="truncate text-sm text-muted-foreground">
-              {slackChannel.ambient ? "Ambient on" : "Ambient off"}
-            </p>
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Slack channel actions"
-                data-testid="slack-channel-menu"
-              >
-                <OverflowMenuHorizontal size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={() => setModalOpen(true)}>
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                tone="danger"
-                disabled={disconnectSlack.isPending}
-                onSelect={() => void handleDisconnect()}
-              >
-                Disconnect
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ) : (
-        <div className="flex flex-col items-start gap-3 px-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            No channel connected yet. Mentions of the bot in the connected
-            channel drive this sandbox.
-          </p>
+    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] text-foreground">
+          {channel.slackChannelId}
+        </p>
+        <p className="truncate text-sm text-muted-foreground">
+          {channel.ambient ? "Ambient on" : "Ambient off"}
+        </p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
-            className="h-8 px-3 text-sm font-normal"
-            onClick={() => setModalOpen(true)}
-            disabled={!agent}
-            data-testid="slack-connect"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Slack channel ${channel.slackChannelId} actions`}
+            data-testid="slack-channel-menu"
           >
-            <Add size={16} />
-            Connect channel
+            <OverflowMenuHorizontal size={16} />
           </Button>
-        </div>
-      )}
-      {modalOpen && agent && (
-        <SlackChannelModal agent={agent} onClose={() => setModalOpen(false)} />
-      )}
-    </ChannelCard>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
+          <DropdownMenuItem
+            tone="danger"
+            disabled={disconnectSlack.isPending}
+            onSelect={() => void handleDisconnect()}
+          >
+            Disconnect
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

@@ -1,0 +1,87 @@
+<!-- TODO(creator): the human-facing document — operators and teammates read this, the
+     agent rarely does. Fill every TODO from the approved design, delete TODO comments.
+     Keep tables in sync with CLAUDE.md → Runtime configuration and with ONBOARDING. -->
+
+# {{AGENT_NAME}}
+
+<!-- TODO(creator): 2-3 sentences: what the agent does, on which unit of work, where its
+     output lands. Mention that instance targets are supplied at runtime (env var /
+     config), not baked in. -->
+
+## How it works
+
+<!-- TODO(creator): one bullet per run type (schedule, what the pre-flight detects, what
+     the agent does) and one for the reactive surface when the design has one. State the
+     detect-vs-act split: scripts only compute the worklist; the agent performs all
+     actions per docs/. Close with: the definition is split so the always-loaded core
+     stays small (CLAUDE.md = contracts + invariants; docs/ read on demand), and the
+     definition is versioned (VERSION + CHANGELOG.md with per-version upgrade steps). -->
+
+## Setup
+
+Bringing up a new {{AGENT_NAME}} agent:
+
+1. **Create the agent** on the DAM platform, granting the connections it needs:
+   <!-- TODO(creator): list connections (GitHub, Slack, Telegram, …) and why each. -->
+2. **Set the environment variables** — see the table below.
+3. **Grab the link to [`ONBOARDING.md`](ONBOARDING.md)** — **from the repo (or fork) you
+   actually deploy from**; the agent derives its definition repo from this URL, so a
+   fork's agent stays pinned to the fork.
+4. **Tell the agent**, in its first message:
+
+   > Here is a file — read it and set yourself up according to it:
+   > `https://github.com/<your-org>/{{AGENT_NAME}}/blob/main/ONBOARDING.md`
+
+The agent reads the runbook and, in one pass, checks out its definition, wires up
+`work/`, walks you through the configuration dialog, registers the schedules, and marks
+itself onboarded.
+
+## Configuration
+
+### Environment variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+<!-- TODO(creator): one row per env var from the design (target identifier, state-backup
+     repo, …), incl. what happens when unset and that the env var wins over the stored
+     config copy. -->
+
+### `work/CONFIG.md` — instance configuration
+
+The definition is project-agnostic: everything specific to one deployment lives in
+`work/CONFIG.md`, filled interactively at onboarding. Exact per-key semantics:
+`CLAUDE.md` → **Runtime configuration**. Summary:
+
+| Key | Filled at onboarding by | Purpose |
+| --- | --- | --- |
+<!-- TODO(creator): one row per config key (asked / auto-detected / defaulted), marking
+     immutable-once-used keys and opt-in keys (default off). -->
+
+## Runtime requirements
+
+- **Platform:** the DAM agent infrastructure — `$HOME` at `/home/agent` on a persistent
+  volume, the platform's outbound auth proxy for tokens, and the
+  `mcp__platform-outbound__*` tools for schedules and channel messages.
+- **Identity:** the agent acts as the account behind its token — use a **dedicated
+  machine/bot account**, never a personal one.
+  <!-- TODO(creator): name the required scopes/permissions per integration, minimal set. -->
+- **External surfaces:** <!-- TODO(creator): list every surface the agent publishes to
+     and its visibility caveats (e.g. "unlisted ≠ private"), or state "none". -->
+
+## Persistence
+
+<!-- TODO(creator): two short paragraphs — state-backup mode (git-backed work/ with
+     end-of-run commit & push, or local-only + what is reconstructable from external
+     markers), and the definition-update story (git reset --hard origin/main never
+     touches work/). Link docs/persistence.md. -->
+
+## Files
+
+- [`CLAUDE.md`](CLAUDE.md) — the slim core manual loaded on every run.
+- [`ONBOARDING.md`](ONBOARDING.md) — first-run setup runbook (also carries the `work/`
+  seed templates).
+- [`docs/`](docs/) — detailed procedures, read on demand.
+- [`VERSION`](VERSION) + [`CHANGELOG.md`](CHANGELOG.md) — definition semver and
+  per-version upgrade steps.
+<!-- TODO(creator): add scripts/ when the agent has scheduled runs; add LICENSE when one
+     was chosen. -->

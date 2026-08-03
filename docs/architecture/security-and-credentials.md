@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-07-29
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -522,6 +522,18 @@ The agent and the gateway are gated by different mechanisms — they live
 on opposite sides of the credential boundary, so the threat models
 differ:
 
+- **`platform-migration` ServiceAccount** in the agent namespace — the
+  identity of the one-time storage-migration copy Job, and the only
+  workload on the platform that runs as **uid 0**. The Job needs root
+  solely for the target side of the copy (owning a freshly provisioned
+  volume root, restoring exact file ownership); every read of the agent's
+  data drops to the agent's own uid, so a root-squashing source share
+  never sees uid 0. The SA carries no role bindings and its token is
+  never mounted (`automountServiceAccountToken: false` on both the SA and
+  the pod), so it cannot act against the API; its sole purpose is to
+  scope the OpenShift SCC grant that permits uid 0 to exactly this
+  workload — an ops-side, out-of-band binding. The pod joins no mesh and
+  mounts no credentials.
 - **Per-Agent ServiceAccount** in the agent namespace, name ==
   Agent ID. Both pods of the long-lived pair run as this SA, but
   only the *gateway* pod is a mesh participant — istiod stamps it with

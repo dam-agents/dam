@@ -534,6 +534,12 @@ export function createAgentsService(deps: {
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
+  /** Release one of the agent's Slack bindings; false when it held none for
+   *  that conversation. */
+  deleteSlackChannelByAgent: (
+    agentId: string,
+    slackChannelId: string,
+  ) => Promise<boolean>;
   deleteChannelsByAgentIds: (agentIds: string[]) => Promise<void>;
   unitOfWork: UnitOfWork;
   channelsTxRepo: {
@@ -1203,13 +1209,30 @@ export function createAgentsService(deps: {
       return connectSlackImpl(id, slackChannelId, ambient);
     },
 
-    async disconnectSlack(id) {
+    // An agent may hold several Slack bindings (#3086), so a disconnect names
+    // the conversation to release. Omitting it releases them all — the
+    // pre-#3086 meaning, kept so an older client's `disconnectSlack(id)` still
+    // does what it always did rather than silently releasing one of many.
+    async disconnectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
 
-      await deps.deleteChannelByType(id, ChannelType.Slack);
-      emit({ type: EventType.SlackDisconnected, agentId: id });
+      if (slackChannelId === undefined) {
+        await deps.deleteChannelByType(id, ChannelType.Slack);
+        emit({ type: EventType.SlackDisconnected, agentId: id });
+        return project(infra);
+      }
 
+      // Idempotent like the release-all path: an unbound conversation is not
+      // an error, it just emits nothing.
+      const released = await deps.deleteSlackChannelByAgent(id, slackChannelId);
+      if (released) {
+        emit({
+          type: EventType.SlackDisconnected,
+          agentId: id,
+          slackChannelId,
+        });
+      }
       return project(infra);
     },
 

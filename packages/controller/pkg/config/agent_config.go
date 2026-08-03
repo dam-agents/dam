@@ -238,14 +238,34 @@ type StorageMigration struct {
 	// Interval between reconcile passes. Zero falls back to a built-in
 	// default.
 	Interval Duration `json:"interval,omitempty"`
-	// AllowOwnershipRemap lets the copy proceed when the source workspace
-	// holds entries owned by a uid other than the agent's. The copy is
-	// unprivileged (chown is unavailable under a restricted SCC and on a
-	// Kata sandbox's virtiofs), so those entries are recreated owned by the
-	// agent uid — a deliberate normalization, not a faithful copy, which is
-	// why it is opt-in. Default false: such entries are reported and block
-	// the migration, so an operator decides rather than discovering the
-	// remap later.
+	// TargetStorageClass is the class migrated workspaces land on. Empty
+	// (the default) means the CLUSTER DEFAULT class — deliberately NOT
+	// AgentBase.StorageClass, which on a pre-migration install still names
+	// the shared filesystem being drained: inheriting it would move a
+	// workspace from RWX to RWO on the same NFS backend, changing the access
+	// mode and nothing else. The migration exists to leave that backend, so
+	// its destination is configured independently and defaults to ordinary
+	// cluster-default storage.
+	TargetStorageClass string `json:"targetStorageClass,omitempty"`
+	// AllowSameStorageClass permits a migration whose target class is the
+	// class the workspace already sits on. Default false: that combination is
+	// almost always a misconfiguration — it force-restarts every agent and
+	// copies every byte to arrive at the same backend — so it is refused with
+	// a loud log naming the remedy.
+	AllowSameStorageClass bool `json:"allowSameStorageClass,omitempty"`
+	// MinTargetSize floors the size of a migrated workspace volume. Empty
+	// (the default) keeps the source's request verbatim. Set it where the
+	// target class prices IOPS PER GIGABYTE — IBM's block tiers do — because
+	// there a faithfully-sized 1Gi volume also inherits a 1Gi share of IOPS
+	// and the copy crawls; such classes also tend to have a minimum volume
+	// size of their own, which a smaller request is silently rounded up to
+	// anyway.
+	MinTargetSize string `json:"minTargetSize,omitempty"`
+	// AllowOwnershipRemap is deprecated and ignored: the copy preserves
+	// ownership exactly now that the writer side runs privileged on the
+	// target (readable foreign-owned entries copy faithfully instead of
+	// requiring remap consent). Kept so strict config decoding accepts
+	// values files from the release that introduced it.
 	AllowOwnershipRemap bool `json:"allowOwnershipRemap,omitempty"`
 	// JobImage runs the copy script. It must provide bash, GNU tar and GNU
 	// coreutils (find -printf, md5sum): the copy relies on tar's hard-link

@@ -1,0 +1,107 @@
+<!-- TODO(creator): adjust the state-repo env var name and the allowlisted paths to the
+     design; delete the commit & push section for local-only designs (keep the version
+     and evolution sections always); delete TODO comments. -->
+
+# Persisting `work/` & evolving the definition
+
+Read this file when you need the details behind the end-of-run commit, when the operator
+asks to update the agent or check its version, or when the operator asks for a change to
+the agent definition itself.
+
+## Two repos, one inside the other
+
+| Path | Remote | Tracks |
+| --- | --- | --- |
+| `/home/agent` (outer) | `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
+| `/home/agent/work` (inner) | `$GITHUB_REPO_WORK` | Runtime state. Exists as a repo only when the var is set. |
+
+The outer `.gitignore` is an allowlist (`/*` then re-include the definition files), so
+**all** of `work/` and the HOME secrets (`.ssh`, `.claude`, `.config`) are invisible to
+the outer repo. A fresh volume seeds state files from the templates in `ONBOARDING.md`;
+this keeps a definition update (`git reset --hard origin/main`) from ever colliding with
+live runtime state. Scope commands: inner state → `git -C /home/agent/work`, definition →
+`git -C /home/agent`. **Never run `git clean` in `/home/agent`** and never `git add`
+outside the allowlist.
+
+## Commit & push (end of run)
+
+Scripts never commit or push — their local bookkeeping sits uncommitted until the next
+agent-active run. At the end of every run where the agent did work, it commits & pushes
+as the very last action (this sweeps up script bookkeeping too; quiet runs stay durable
+on the volume until then):
+
+```bash
+if [ -n "$GITHUB_REPO_WORK" ] && [ -d /home/agent/work/.git ]; then
+  cd /home/agent/work || exit 1
+  git config user.name  "{{AGENT_NAME}}" 2>/dev/null || true
+  git config user.email "{{AGENT_NAME}}@agents.local" 2>/dev/null || true
+  git add -A
+  if git diff --cached --quiet; then
+    echo "work/: nothing to persist."
+  else
+    git commit -m "chore(work): persist state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    git pull --rebase --autostash origin "$(git rev-parse --abbrev-ref HEAD)" \
+      && git push origin "$(git rev-parse --abbrev-ref HEAD)" \
+      || echo "WARNING: work/ push failed; committed locally, retry next run."
+  fi
+fi
+```
+
+Never force-push; a lost race or failed push is retried next run and is not a run
+failure.
+
+## Definition version & upgrade
+
+`VERSION` (repo root, one line, semver) identifies the definition; `work/VERSION` is the
+version this instance last adopted (missing = `1.0.0`). Scheduled runs never touch
+versioning (the weekly audit only *reports* drift); acting happens **in the direct
+session only**: an operator-requested update or version check, and always before any
+self-modification (self-modification.md §8).
+
+**Check:**
+
+```bash
+git -C /home/agent fetch -q origin main
+git -C /home/agent show origin/main:VERSION 2>/dev/null | head -1   # latest
+head -1 /home/agent/VERSION                                         # checked out
+head -1 /home/agent/work/VERSION 2>/dev/null                        # adopted
+```
+
+Checked-out < latest → **tell the operator the agent is not up to date** (state both
+versions); update only when they ask, never silently —
+`git -C /home/agent reset --hard origin/main` (never `git clean`), then migrate in the
+same session. Adopted ≠ checked-out → migrate now. All equal → report "up to date".
+
+**Migration** (`from` = adopted, `to` = checked-out):
+
+1. Apply the `CHANGELOG.md` **Upgrade** blocks of every version in `(from, to]`, oldest
+   first. Steps are idempotent (check before create), so re-running a partial attempt is
+   safe; an operator-only step is surfaced, never guessed at.
+2. Only after every applicable step succeeded, write `to` into `work/VERSION` and log
+   `definition upgraded <from> → <to> (<n> step(s))`. A failed step: log + tell the
+   operator, leave `work/VERSION` unchanged (re-offered at the next check).
+3. Rollback (`to` < `from`) → apply nothing; just write `to`.
+
+Commit & push `work/` afterwards (section above).
+
+## Evolving the agent definition (outer repo)
+
+**First read [self-modification.md](self-modification.md)** — it defines the rules every
+definition change must obey.
+
+Definition changes go through **branch + PR on `$DEFINITION_REPO` — never a direct push
+to `main`, never auto-merge**, and only when deliberately asked — never as part of a
+scheduled run:
+
+```bash
+git -C /home/agent fetch origin main
+git -C /home/agent checkout -b "fix/<short-slug>" origin/main
+git -C /home/agent add -- CLAUDE.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore LICENSE docs scripts
+git -C /home/agent commit -m "<describe the change>"
+git -C /home/agent push -u origin "fix/<short-slug>"
+gh pr create --repo "$DEFINITION_REPO" --base main --head "fix/<short-slug>" \
+  --title "<title>" --body "<what and why>"
+```
+
+The agent's job ends at "PR opened". Use fresh descriptive branch names; runtime state
+never goes to this repo.

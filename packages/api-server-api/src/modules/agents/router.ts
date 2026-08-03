@@ -193,7 +193,10 @@ export const agentsRouter = t.router({
   disconnectSlack: manageAgentsProcedure
     .input(agentDisconnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.disconnectSlack(input.id);
+      const agent = await ctx.agents.disconnectSlack(
+        input.id,
+        input.slackChannelId,
+      );
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),

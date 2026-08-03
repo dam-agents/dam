@@ -17,7 +17,7 @@ interface Props {
   selected: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  /** Pull-credential controls; present once a custom image is entered. */
+  /** Pull-credential controls; present whenever Custom is the starting point. */
   registry?: RegistryControls;
 }
 

@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-27
+Last verified: 2026-07-30
 
 ## Overview
 
@@ -12,6 +12,17 @@ attributed to the Agent that published it (or to the user, for manual
 uploads), and outlives both the sandbox and the agent that produced it.
 Publishing a new revision keeps the same identity and share link and appends
 to a per-artifact **version history** viewers can flip through.
+
+An artifact's **kind is settled when it is created** and no revision can move
+it — neither by declaring one nor by renaming into another extension. The
+share link outlives every revision, so a mutable kind would let a URL vetted
+while it served inert text later serve executing HTML or JSX to the same
+audience; publishing executable content is fine, silently changing what an
+already-shared link *does* is not. It also keeps a version history coherent,
+since every version renders through the artifact's one kind. Title and file
+name stay editable, and both describe the whole artifact rather than one
+revision: the history snapshots bytes, so a past version downloads under the
+artifact's current name.
 
 The design is a port of a proven external tool (the "slop" artifact vault)
 onto platform rails: content bytes live in the S3-compatible object store
@@ -92,7 +103,7 @@ warrants it; it lives in the api-server today because the planned
 agent-calling bridge for interactive artifacts needs the relay machinery
 that already lives there.
 
-## Publishing paths
+## Publishing and download paths
 
 ```mermaid
 flowchart LR
@@ -100,7 +111,7 @@ flowchart LR
   browser[browser] -->|tRPC + upload route| api-server
   api-server -->|metadata| postgres[(postgres)]
   api-server <-->|blobs + presigned links| store[(object store)]
-  harness -->|direct PUT via gateway| store
+  harness -->|direct PUT/GET via gateway| store
   visitor[external visitor] -->|share host| api-server
 ```
 
@@ -115,6 +126,11 @@ flowchart LR
   own staging namespace reads as unknown. Attribution is the mesh-verified
   agent identity — a harness cannot publish as another agent, and the
   owner-scoped service means it can only ever touch its owner's library.
+  Reads mirror this: small text content returns inline, and a download tool
+  mints a short-lived presigned link — signed for the same agent-dialed
+  store authority — that the harness GETs straight into its sandbox (any
+  kind or size, current or a past version), so work products published from
+  one sandbox are consumable in another without transiting the conversation.
 - **Users** publish from the Artifacts page in the UI: bytes go through an
   authenticated upload route on the app origin (avoiding browser↔store CORS),
   then the same create call. Downloads answer with a presigned direct link
