@@ -7,7 +7,7 @@ import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 
 // Floors mirror the server-side slider validation (agentSizeSchema).
 const CPU_FLOOR_MILLI = 100;
-const MEMORY_FLOOR_MI = 128;
+const MEMORY_FLOOR_MI = 384;
 const CPU_STEP_MILLI = 100;
 const MEMORY_STEP_MI = 128;
 
