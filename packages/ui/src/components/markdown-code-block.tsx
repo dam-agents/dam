@@ -14,9 +14,9 @@ type HastChild = HastElement["children"][number];
  *  hast node instead of reading React children. */
 export function codeBlockText(node: HastElement | undefined): string {
   if (!node) return "";
-  // A fence always ends in a newline; strip exactly one so pasting into a
-  // terminal doesn't auto-execute the last line.
-  return collectText(node).replace(/\n$/, "");
+  // Strip all trailing newlines (LF or CRLF) so pasting into a terminal
+  // doesn't auto-execute the last line.
+  return collectText(node).replace(/[\r\n]+$/, "");
 }
 
 function collectText(node: HastElement | HastChild): string {
@@ -53,7 +53,7 @@ export function MarkdownCodeBlock({
           aria-label={LABELS[state]}
           title={LABELS[state]}
           className={cn(
-            "absolute right-2 top-2 transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100",
+            "absolute right-2 top-2 transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100",
             state === "copied" && "text-success",
             state === "failed" && "text-danger",
           )}
