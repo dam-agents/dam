@@ -8,7 +8,10 @@ import {
   useDisconnectSlack,
 } from "../../agents/api/mutations.js";
 
-type SlackChannel = Extract<AgentView["channels"][number], { type: "slack" }>;
+export type SlackChannel = Extract<
+  AgentView["channels"][number],
+  { type: "slack" }
+>;
 
 export const slackChannelFormSchema = z.object({
   channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
@@ -17,15 +20,23 @@ export const slackChannelFormSchema = z.object({
 
 export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
-export function findSlackChannel(
+export function findSlackChannels(
   agent: AgentView | undefined,
-): SlackChannel | undefined {
-  return agent?.channels.find((c): c is SlackChannel => c.type === "slack");
+): SlackChannel[] {
+  return (
+    agent?.channels.filter((c): c is SlackChannel => c.type === "slack") ?? []
+  );
 }
 
-export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
-  const slackChannel = findSlackChannel(agent);
-  const editing = !!slackChannel;
+/** Drives the connect/edit modal for a single Slack binding: `channel` is the
+ *  one being edited, undefined when connecting a new one. An agent may hold
+ *  several bindings, so every write here names its channel. */
+export function useSlackChannelForm(
+  agent: AgentView,
+  channel: SlackChannel | undefined,
+  onSaved: () => void,
+) {
+  const editing = !!channel;
 
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
@@ -33,8 +44,8 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema),
     defaultValues: {
-      channelId: slackChannel?.slackChannelId ?? "",
-      ambient: slackChannel?.ambient ?? false,
+      channelId: channel?.slackChannelId ?? "",
+      ambient: channel?.ambient ?? false,
     },
   });
 
@@ -44,14 +55,17 @@ export function useSlackChannelForm(agent: AgentView, onSaved: () => void) {
       slackChannelId: channelId,
       ...(ambient ? { ambient: true } : {}),
     };
-    if (!slackChannel) {
+    if (!channel) {
       await connectSlack.mutateAsync(connectPayload);
-    } else if (channelId !== slackChannel.slackChannelId) {
-      // A channel change is a rebind: disconnect first so the old channel
-      // gets a clean unbind before the new one is connected.
-      await disconnectSlack.mutateAsync({ id: agent.id });
+    } else if (channelId !== channel.slackChannelId) {
+      // A channel change is a rebind: disconnect the old channel — and only
+      // that one — so it gets a clean unbind before the new one is connected.
+      await disconnectSlack.mutateAsync({
+        id: agent.id,
+        slackChannelId: channel.slackChannelId,
+      });
       await connectSlack.mutateAsync(connectPayload);
-    } else if (ambient !== (slackChannel.ambient ?? false)) {
+    } else if (ambient !== (channel.ambient ?? false)) {
       // Ambient is the one mutable toggle: a same-channel re-connect updates
       // the existing binding in place.
       await connectSlack.mutateAsync(connectPayload);

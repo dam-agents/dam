@@ -46,7 +46,7 @@ function harness(boundChannelId = "C1") {
         instanceName: "agent-1",
         owner: OWNER,
       }),
-      resolveSlackChannelByInstance: async () => boundChannelId,
+      resolveSlackChannelsByInstance: async () => [boundChannelId],
     } as never,
     async () => {},
     async () => {},

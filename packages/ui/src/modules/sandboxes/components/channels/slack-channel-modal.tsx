@@ -12,16 +12,24 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
 import type { AgentView } from "../../../../types.js";
+import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
 
 export function SlackChannelModal({
   agent,
+  channel,
   onClose,
 }: {
   agent: AgentView;
+  /** The binding being edited; omitted when connecting a new channel. */
+  channel?: SlackChannel;
   onClose: () => void;
 }) {
-  const { form, editing, onSubmit } = useSlackChannelForm(agent, onClose);
+  const { form, editing, onSubmit } = useSlackChannelForm(
+    agent,
+    channel,
+    onClose,
+  );
   const {
     register,
     control,
