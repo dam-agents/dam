@@ -32,6 +32,9 @@ export function DisclosureChevron({
 export function DisclosureToggle({
   open,
   onToggle,
+  /** For a section held open by something else, so `aria-expanded` doesn't
+   *  advertise a state this button can't change. */
+  disabled,
   chevronSize,
   chevronClassName,
   testId,
@@ -40,6 +43,7 @@ export function DisclosureToggle({
 }: {
   open: boolean;
   onToggle: () => void;
+  disabled?: boolean;
   chevronSize?: number;
   chevronClassName?: string;
   testId?: string;
@@ -50,6 +54,7 @@ export function DisclosureToggle({
     <button
       type="button"
       onClick={onToggle}
+      disabled={disabled}
       aria-expanded={open}
       data-testid={testId}
       className={cn("flex items-center gap-2 text-left", className)}

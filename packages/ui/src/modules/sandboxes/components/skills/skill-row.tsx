@@ -8,6 +8,9 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
+const DRIFT_HINT =
+  "Upstream changed since install — update to the latest version";
+
 /**
  * One skill inside a source card: name (+ drift "Update" affordance) and
  * description on the left, an immediate install/uninstall toggle on the right.
@@ -61,11 +64,14 @@ export function SkillRow({
             </p>
           )}
           {hasDrift && (
-            <Tooltip content="Upstream changed since install — update to the latest version">
+            <Tooltip content={DRIFT_HINT}>
               <button
                 type="button"
                 onClick={onUpdate}
                 disabled={disabled}
+                /* A disabled button opens no tooltip, so the hint falls back to
+                   `title` exactly where "why can't I click this?" is asked. */
+                title={disabled ? DRIFT_HINT : undefined}
                 className={cn(
                   badgeVariants({ variant: "info", size: "sm" }),
                   "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",

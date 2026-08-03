@@ -634,10 +634,8 @@ function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
 
 function SourceTag({ label, hint }: { label: string; hint: string }) {
   return (
-    <HintTooltip label={label} content={hint}>
-      <Badge size="sm" variant="muted">
-        {label}
-      </Badge>
-    </HintTooltip>
+    <Badge size="sm" variant="muted" title={hint}>
+      {label}
+    </Badge>
   );
 }

@@ -262,6 +262,7 @@ function AttachmentChip({
         variant="destructive"
         size="icon"
         onClick={onRemove}
+        aria-label="Remove attachment"
         className={cn(
           "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
           HOVER_ACTION,

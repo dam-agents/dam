@@ -124,6 +124,7 @@ export function ExperimentsSection({
       <DisclosureToggle
         open={expanded}
         onToggle={() => setOpen((o) => !o)}
+        disabled={searching}
         chevronClassName="text-muted-foreground"
         className="w-full cursor-pointer select-none gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
       >

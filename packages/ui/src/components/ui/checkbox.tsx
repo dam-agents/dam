@@ -37,7 +37,8 @@ interface CheckboxItemProps extends Omit<
 }
 
 /** The multi-select counterpart of `RadioGroupItem`. `className` styles the
- *  row, not the box. */
+ *  row, not the box. `aria-label` keeps the description out of the accessible
+ *  name, which the wrapping `<label>` would otherwise run together with it. */
 function CheckboxItem({
   label,
   labelClassName,
@@ -45,6 +46,7 @@ function CheckboxItem({
   testId,
   className,
   id,
+  "aria-describedby": describedBy,
   ...props
 }: CheckboxItemProps) {
   const generatedId = React.useId();
@@ -61,7 +63,12 @@ function CheckboxItem({
       <Checkbox
         id={controlId}
         className="mt-0.5"
-        aria-describedby={description ? descriptionId : undefined}
+        aria-label={label}
+        aria-describedby={
+          [description ? descriptionId : null, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         data-testid={testId}
         {...props}
       />
