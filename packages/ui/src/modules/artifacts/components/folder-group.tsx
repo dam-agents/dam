@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,7 @@ export function FolderGroup({
           )}
         </DisclosureToggle>
         {folder && (
-          <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
+          <div className={cn("ml-auto", HOVER_ACTION)}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" title="Folder actions">

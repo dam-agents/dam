@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 
 import { useStore } from "../../../store.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
@@ -104,7 +105,7 @@ export function FileRow({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+                  className={HOVER_ACTION}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                   title="More actions"

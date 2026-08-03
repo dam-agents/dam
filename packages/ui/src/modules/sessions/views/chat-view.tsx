@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
@@ -487,7 +488,7 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-xs"
                 aria-label={surfaceCopy.actionsAria}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                className={HOVER_ACTION}
               >
                 <OverflowMenuVertical size={14} />
               </Button>

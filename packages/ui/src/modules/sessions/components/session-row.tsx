@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatTimestamp } from "@/lib/format-time";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
@@ -167,7 +168,7 @@ export function SessionRow({
             data-testid="session-menu-button"
             variant="ghost"
             size="icon-xs"
-            className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+            className={cn("shrink-0", HOVER_ACTION)}
             onClick={(e) => e.stopPropagation()}
             title="More actions"
           >

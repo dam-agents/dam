@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCopy } from "@/hooks/use-copy";
 import { timeAgo } from "@/lib/format-time";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +95,7 @@ export function ArtifactRow({
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ArtifactStatusBadge artifact={artifact} />
         <div
-          className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+          className={cn("flex gap-0.5", HOVER_ACTION)}
           onClick={(e) => e.stopPropagation()}
         >
           <ShareLinkButton artifact={artifact} onShare={onShare} />

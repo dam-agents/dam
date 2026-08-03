@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -122,7 +123,7 @@ function ArtifactListRow({
             <Button
               variant="ghost"
               size="icon-xs"
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+              className={HOVER_ACTION}
               title="More actions"
             >
               <OverflowMenuVertical size={13} />

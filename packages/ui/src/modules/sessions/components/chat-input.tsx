@@ -8,7 +8,9 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
@@ -257,7 +259,10 @@ function AttachmentChip({
         variant="destructive"
         size="icon"
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+        className={cn(
+          "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
+          HOVER_ACTION,
+        )}
       >
         <Close size={10} />
       </Button>
