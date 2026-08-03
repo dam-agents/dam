@@ -3,7 +3,7 @@ import type { ConnectionTemplateView } from "api-server-api";
 import type { ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { CARD_SURFACE } from "@/components/ui/card";
+import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
@@ -54,22 +54,19 @@ export function CatalogProviderCard({
   );
 
   return (
-    <section
-      data-testid={`catalog-provider-${provider.id}`}
-      className={CARD_SURFACE}
-    >
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
+    <PanelCard
+      testId={`catalog-provider-${provider.id}`}
+      title={provider.title}
+      icon={
         <ConnectionIcon
           iconSlug={provider.iconSlug}
           alt=""
           size={16}
           className="shrink-0 text-foreground/80"
         />
-        <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">
-          {provider.title}
-        </h3>
-        {connections.length > 0 && newButton}
-      </header>
+      }
+      headerRight={connections.length > 0 && newButton}
+    >
       {connections.length > 0 ? (
         <>
           <GithubAppInstallHint connections={connections} />
@@ -103,6 +100,6 @@ export function CatalogProviderCard({
           {newButton}
         </div>
       )}
-    </section>
+    </PanelCard>
   );
 }
