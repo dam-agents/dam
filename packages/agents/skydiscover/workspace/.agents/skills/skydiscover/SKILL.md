@@ -84,7 +84,18 @@ Then wire the run with three rules:
   header on the wire, but the client refuses to send a request with no key at
   all.
 - If the endpoint can't list models, fall back to a pinned known-good id (for
-  IBM LiteLLM: `aws/claude-sonnet-4-6`).
+  IBM LiteLLM: `aws/claude-sonnet-4-6` — but see the sampling-params quirk
+  below before using it for the loop).
+
+**Known quirk — sampling params:** SkyDiscover's LLM client sends both
+`temperature` and `top_p` on every call, and some proxied backends reject
+that combination — Bedrock-hosted Claude models (`aws/claude-*` on IBM
+LiteLLM) return 400 "temperature and top_p cannot both be specified". The
+retry loop cannot fix a deterministic 400: if every proposal call fails this
+way, kill the run and relaunch with a model whose backend accepts both (on
+IBM LiteLLM the `rits/…` models do). Only reuse `--checkpoint` state if some
+iterations actually completed; a run that never got past the first proposal
+is cleaner started fresh.
 
 **Model ensemble** (optional): a weighted mix goes in a config YAML instead of
 `-m` — `--api-base` still applies to all of them, so every name must be served
