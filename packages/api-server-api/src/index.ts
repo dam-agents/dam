@@ -448,10 +448,20 @@ export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
+  platformPromptAcceptedNotificationSchema,
+  platformPromptAcceptedParamsSchema,
+  buildPlatformPromptAcceptedNotification,
+  platformPromptStartedNotificationSchema,
+  platformPromptStartedParamsSchema,
+  buildPlatformPromptStartedNotification,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
+  PlatformPromptAcceptedNotification,
+  PlatformPromptAcceptedParams,
+  PlatformPromptStartedNotification,
+  PlatformPromptStartedParams,
 } from "./modules/acp/types.js";
 
 // Brand

@@ -1,5 +1,9 @@
 import { performance } from "node:perf_hooks";
-import { buildPlatformTurnEndedNotification } from "api-server-api";
+import {
+  buildPlatformPromptAcceptedNotification,
+  buildPlatformPromptStartedNotification,
+  buildPlatformTurnEndedNotification,
+} from "api-server-api";
 
 import {
   isRequest,
@@ -142,6 +146,9 @@ interface QueuedPrompt {
   originalId: JsonRpcId;
   /** Rewritten frame ready to forward to the agent. */
   frame: unknown;
+  /** Client-generated id from `_meta.platform.promptId`, when the sender wants
+   * delivery notifications. Null for senders that don't (CLI, workers). */
+  promptId: string | null;
 }
 
 interface OutboundMapping {
@@ -874,6 +881,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   // ── Prompt queue ──
 
+  /**
+   * Tell the sender the runtime has the prompt and what it did with it. Like
+   * `platform/promptStarted`, this goes to the originating channel only and
+   * deliberately not through `appendAndFanOut`: delivery feedback is the
+   * sender's business, and putting it in the session log would replay a stale
+   * "accepted" to every later loader. A prompt with no `promptId` (CLI, channel
+   * workers, older clients) gets nothing.
+   */
+  function notifyPromptAccepted(
+    channel: ClientChannel,
+    sessionId: string,
+    promptId: string | null,
+    queued: boolean,
+  ): void {
+    if (promptId === null) return;
+    sendToChannel(
+      channel,
+      JSON.stringify(
+        buildPlatformPromptAcceptedNotification({
+          sessionId,
+          promptId,
+          queued,
+        }),
+      ),
+    );
+  }
+
   function forwardPromptToAgent(
     a: AgentProcess,
     sessionId: string,
@@ -882,6 +916,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       outboundId: number;
       originalId: JsonRpcId;
       frame: unknown;
+      promptId: string | null;
     },
   ): void {
     activePromptBySession.set(sessionId, {
@@ -891,6 +926,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       originalId: entry.originalId,
     });
     a.send(entry.frame);
+    // The prompt is now the agent's problem — delivery is real. Sender-only and
+    // ephemeral: never through the log, so it's neither replayed nor seen by
+    // other viewers. Fires for direct sends and for `advanceQueue` promotions.
+    if (entry.promptId !== null) {
+      sendToChannel(
+        entry.channel,
+        JSON.stringify(
+          buildPlatformPromptStartedNotification({
+            sessionId,
+            promptId: entry.promptId,
+          }),
+        ),
+      );
+    }
   }
 
   function advanceQueue(a: AgentProcess, sessionId: string): void {
@@ -1309,8 +1358,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       const platformMeta =
         method === "session/new" ? extractPlatformMeta(frame) : null;
+      // A prompt's `_meta.platform.promptId` opts the sender into the delivery
+      // notifications below; like session/new's meta it is platform-internal,
+      // so it's stripped before the frame reaches the agent.
+      const promptId =
+        method === "session/prompt" ? extractPromptId(frame) : null;
+      // Stripped for every prompt, not just ones carrying a promptId: whatever
+      // a client puts under `platform` is ours, and the agent never sees it.
       const forwardFrame =
-        platformMeta !== null ? stripPlatformMeta(frame) : frame;
+        platformMeta !== null || method === "session/prompt"
+          ? stripPlatformMeta(frame)
+          : frame;
 
       const rewritten = rewriteCwd(
         { ...forwardFrame, id: outboundId },
@@ -1373,15 +1431,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             outboundId,
             originalId: frame.id,
             frame: rewritten,
+            promptId,
           });
           promptQueueBySession.set(promptSessionId, queue);
+          // Parked, not lost — tell the sender so it stops waiting for content
+          // that legitimately can't arrive until the prior turn ends. Only
+          // after the push succeeded: the queue-full path above is already
+          // covered by its error response.
+          notifyPromptAccepted(channel, promptSessionId, promptId, true);
           return;
         }
+        notifyPromptAccepted(channel, promptSessionId, promptId, false);
         forwardPromptToAgent(a, promptSessionId, {
           channel,
           outboundId,
           originalId: frame.id,
           frame: rewritten,
+          promptId,
         });
         return;
       }
@@ -1497,6 +1563,23 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   if (!isNonNullObject(meta) || !("platform" in meta)) return null;
   const parsed = platformSessionMetaSchema.safeParse(meta.platform);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Pull a `session/prompt`'s client-generated prompt id out of
+ * `params._meta.platform.promptId`. Null — no id, or anything but a non-empty
+ * string there — means the sender didn't ask for delivery notifications.
+ */
+function extractPromptId(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const promptId = platform.promptId;
+  return typeof promptId === "string" && promptId.length > 0 ? promptId : null;
 }
 
 function stripPlatformMeta(frame: unknown): object {
