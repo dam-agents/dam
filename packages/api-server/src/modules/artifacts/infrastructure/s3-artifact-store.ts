@@ -20,13 +20,14 @@ import type {
 
 /** S3-compatible ArtifactStore. Separate signer clients because SigV4 binds
  *  the Host header — links must be signed against the authority their
- *  audience dials (agents for uploads, browsers for downloads). No size
+ *  audience dials (agents through their gateway, browsers on the public
+ *  endpoint). Only agents upload directly; both audiences download. No size
  *  policy here — that is the service's job. */
 export function createS3ArtifactStore(deps: {
   client: S3Client;
   bucket: string;
-  uploadSigner: S3Client;
-  downloadSigner: S3Client | null;
+  agentSigner: S3Client;
+  browserSigner: S3Client | null;
 }): ArtifactStore {
   async function head(key: string): Promise<ArtifactStat | null> {
     try {
@@ -109,16 +110,18 @@ export function createS3ArtifactStore(deps: {
 
     presignUpload(key, opts): Promise<string | null> {
       return getSignedUrl(
-        deps.uploadSigner,
+        deps.agentSigner,
         new PutObjectCommand({ Bucket: deps.bucket, Key: key }),
         { expiresIn: opts.expiresSeconds },
       );
     },
 
     async presignDownload(key, opts): Promise<string | null> {
-      if (!deps.downloadSigner) return null;
+      const signer =
+        opts.audience === "agent" ? deps.agentSigner : deps.browserSigner;
+      if (!signer) return null;
       return getSignedUrl(
-        deps.downloadSigner,
+        signer,
         new GetObjectCommand({
           Bucket: deps.bucket,
           Key: key,
