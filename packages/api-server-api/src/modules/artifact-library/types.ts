@@ -97,6 +97,14 @@ export interface ArtifactCreateInput {
   expiresInHours?: number | null;
 }
 
+/** No `kind`: an artifact's format is settled at create and no update can move
+ *  it — not by passing one, and not by renaming into a different extension.
+ *  The share slug survives every revision, so a mutable kind would let a link
+ *  vetted while it served inert text later serve executing HTML or JSX at the
+ *  same URL. Publishing executable content is allowed; silently changing what
+ *  an already-shared URL *does* is not. It also keeps rendering consistent
+ *  across a version history, since the viewer renders every version through
+ *  the artifact's one kind. */
 export interface ArtifactUpdateInput {
   title?: string;
   /** null moves the artifact out of its folder. */
@@ -104,8 +112,9 @@ export interface ArtifactUpdateInput {
   /** Either field publishes a new version. */
   content?: string;
   uploadRef?: string;
+  /** A label, not an identity: the current name is what every version
+   *  downloads as. Renaming never changes the artifact's kind. */
   fileName?: string;
-  kind?: ArtifactKind;
   contentType?: string;
 }
 

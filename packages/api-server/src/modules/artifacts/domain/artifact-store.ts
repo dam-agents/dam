@@ -15,8 +15,9 @@ export interface ArtifactStat {
 }
 
 /** Storage port for Candidate artifacts. The presign methods mint short-lived
- *  single-object direct-transfer links; a backend that can't (no
- *  browser-reachable endpoint) returns null and callers relay the bytes. */
+ *  single-object direct-transfer links, signed for the authority the audience
+ *  dials; a backend that can't serve an audience (no browser-reachable
+ *  endpoint) returns null and callers relay the bytes. */
 export interface ArtifactStore {
   /** Store the blob at `key`, overwriting any existing blob there. */
   put(input: {
@@ -42,6 +43,16 @@ export interface ArtifactStore {
   ): Promise<string | null>;
   presignDownload(
     key: string,
-    opts: { filename: string; expiresSeconds: number },
+    opts: {
+      filename: string;
+      expiresSeconds: number;
+      /** Who will dial the link — agents reach the store through their
+       *  gateway, browsers on the public endpoint. What a null result means
+       *  follows from this: for `browser` the deployment has no
+       *  browser-reachable endpoint and the caller relays the bytes instead;
+       *  for `agent` it can only mean no store is configured at all, since a
+       *  configured store is always agent-reachable. */
+      audience: "agent" | "browser";
+    },
   ): Promise<string | null>;
 }

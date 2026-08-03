@@ -18,13 +18,19 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "advanced-connections",
     label: "Advanced connections",
     description:
-      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials) and the sandbox Channels section.",
+      "Reveals the pre-release connection catalog (Google services, Slack, Spotify, custom client-credentials).",
   },
   {
     id: "vm-sandboxes",
     label: "VM sandboxes",
     description:
       "Adds the “Run as a virtual machine” switch to the create-sandbox wizard, revealing images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container.",
+  },
+  {
+    id: "session-costs",
+    label: "Session costs",
+    description:
+      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
   },
 ];
 
