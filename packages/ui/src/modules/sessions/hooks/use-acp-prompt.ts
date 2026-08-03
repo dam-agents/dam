@@ -1,8 +1,6 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useRef } from "react";
 
-import { getErrorMessage } from "@/lib/errors";
-
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
@@ -173,7 +171,7 @@ export function useAcpPrompt(
         if (hidden) {
           dropBubble();
         } else {
-          const errMsg = getErrorMessage(err);
+          const errMsg = extractErrorMessage(err);
           setMessages((p) =>
             p.map((m) =>
               m.id === aId

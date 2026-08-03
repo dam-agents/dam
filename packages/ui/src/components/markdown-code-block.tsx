@@ -42,8 +42,10 @@ export function MarkdownCodeBlock({
   const code = codeBlockText(node);
 
   return (
-    <div className="code-block group">
-      <pre {...preProps}>{children}</pre>
+    <div className="code-block group/code-block relative">
+      <pre {...preProps} className={cn("m-0", preProps.className)}>
+        {children}
+      </pre>
       {code !== "" && (
         <Button
           type="button"
@@ -53,7 +55,7 @@ export function MarkdownCodeBlock({
           aria-label={LABELS[state]}
           title={LABELS[state]}
           className={cn(
-            "absolute right-2 top-2 transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100",
+            "absolute right-2 top-2 transition-opacity opacity-100 md:opacity-0 md:group-hover/code-block:opacity-100 focus-visible:opacity-100",
             state === "copied" && "text-success",
             state === "failed" && "text-danger",
           )}

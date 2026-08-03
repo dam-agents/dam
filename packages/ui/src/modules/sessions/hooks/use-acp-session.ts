@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getErrorMessage } from "@/lib/errors";
-
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/errors.js";
@@ -128,7 +126,7 @@ export function useAcpSession(
         }
         useStore.getState().setSessionError({
           sessionId: sid,
-          message: getErrorMessage(e),
+          message: extractErrorMessage(e),
           kind,
         });
       } finally {
