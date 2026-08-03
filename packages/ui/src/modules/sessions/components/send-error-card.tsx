@@ -26,6 +26,7 @@ export function SendErrorCard({ rawError, interrupted, onRetry }: Props) {
         interrupted && "mt-2",
       )}
       role="alert"
+      data-testid="prompt-delivery-error"
     >
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
@@ -44,6 +45,7 @@ export function SendErrorCard({ rawError, interrupted, onRetry }: Props) {
             size="sm"
             onClick={onRetry}
             className="self-start"
+            data-testid="prompt-retry-button"
           >
             <Renew size={11} /> Retry
           </Button>

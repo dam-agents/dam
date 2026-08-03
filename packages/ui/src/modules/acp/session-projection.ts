@@ -21,11 +21,15 @@ import type { AcpUpdate } from "./types.js";
  *
  * Routing model: updates flow into the "active" assistant bubble — the last
  * streaming, non-queued assistant after the last user. `sendPrompt` appends
- * an assistant bubble with `queued: true` while a prior turn is in flight;
- * the first agent content arriving for that prompt promotes the queued
- * bubble to active. Turn boundaries (`platform_turn_ended`, or a fresh
- * `user_message_chunk`) close the active bubble, so the next agent content
- * picks the earliest remaining queued bubble (or opens one on demand).
+ * an assistant bubble carrying its `promptId`; the runtime's
+ * `platform_prompt_accepted { queued: true }` marks it queued behind a prior
+ * in-flight turn and `platform_prompt_started` promotes it, so the sender's
+ * "Waiting for previous prompt…" indicator is server truth rather than a local
+ * guess. Bubbles with no `promptId` (another viewer's prompt, replayed history)
+ * are still promoted by the first agent content arriving for them. Turn
+ * boundaries (`platform_turn_ended`, or a fresh `user_message_chunk`) close the
+ * active bubble, so the next agent content picks the earliest remaining queued
+ * bubble (or opens one on demand).
  *
  * Queued background prompts: a `user_message_chunk` carrying
  * `_meta.queued === true` is a prompt the runtime parked behind the active
@@ -117,6 +121,16 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     case "platform_turn_ended":
       return closeActiveAssistant(messages);
 
+    case "platform_prompt_accepted":
+      // `queued: false` means the runtime handed the prompt straight on, which
+      // is the bubble's existing (non-queued) shape — nothing to render.
+      return update.queued
+        ? setQueuedByPromptId(messages, update.promptId, true)
+        : messages;
+
+    case "platform_prompt_started":
+      return setQueuedByPromptId(messages, update.promptId, false);
+
     case "platform_clipped_replay":
       return appendNotice(messages, "Older conversation not loaded");
 
@@ -138,6 +152,26 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     default:
       return messages;
   }
+}
+
+/**
+ * Flip the `queued` flag on the bubble the runtime is reporting about. Only the
+ * sender's own optimistic bubble carries a `promptId`, so an unknown id (a
+ * notification arriving after the bubble was finalized, or on a reconnected
+ * client that rebuilt its list from the log) is a no-op. A bubble that already
+ * has content is left alone: content is stronger evidence of "active" than a
+ * late `accepted` frame.
+ */
+function setQueuedByPromptId(
+  messages: Message[],
+  promptId: string,
+  queued: boolean,
+): Message[] {
+  return messages.map((m) =>
+    m.promptId === promptId && m.streaming && m.parts.length === 0
+      ? { ...m, queued }
+      : m,
+  );
 }
 
 function appendNotice(messages: Message[], text: string): Message[] {

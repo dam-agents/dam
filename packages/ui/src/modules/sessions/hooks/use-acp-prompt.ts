@@ -22,8 +22,7 @@ import type {
   LiveSession,
   StartedSession,
 } from "./use-acp-connection.js";
-
-const DELIVERY_TIMEOUT_MS = 60_000;
+import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export interface SendPromptOptions {
   /** Send the prompt to the agent without rendering a user bubble, and drop
@@ -42,6 +41,7 @@ export interface UseAcpPromptOptions {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  delivery: PromptDelivery;
 }
 
 /**
@@ -58,6 +58,12 @@ export interface UseAcpPromptOptions {
  *
  *   - `stopAgent()` finalizes every streaming bubble locally so the UI
  *     reacts even if `cancel` hangs, then calls SDK cancel best-effort.
+ *
+ * Delivery feedback is not decided here: each send stamps a `promptId` the
+ * runtime echoes back on `platform/promptAccepted` / `platform/promptStarted`,
+ * and `delivery` (from `usePromptDelivery`) owns the deadlines those frames
+ * arm and disarm. This hook only supplies the per-prompt failure callback,
+ * because it owns the bubble.
  */
 export function useAcpPrompt(opts: UseAcpPromptOptions): {
   sendPrompt: (
@@ -74,6 +80,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     engagedSessionIdRef,
     connectionRef,
     textareaRef,
+    delivery,
   } = opts;
   const setMessages = useStore((s) => s.setMessages);
   // Assigned on mount, not only cleared: StrictMode runs setup → cleanup → setup
@@ -157,13 +164,17 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       // acknowledgement as the protocol offers.
       let delivered = false;
 
-      // If a prior turn is still streaming, this bubble starts `queued: true`
-      // — the projection will promote it to active once prompt N's content
-      // actually arrives. The user sees a "Waiting for previous prompt…"
-      // indicator meanwhile.
+      // Only a fallback for the error copy when the bubble is gone: whether the
+      // prompt is actually parked behind a running turn is the server's call
+      // (`promptAccepted`), not a guess from local streaming state — guessing
+      // is what made #829 lie after a mid-turn reload dropped that state.
       const startingQueued = hasStreamingAssistant(
         useStore.getState().messages,
       );
+      // Travels in `session/prompt`'s `_meta.platform` and comes back on the
+      // runtime's delivery notifications, which is what keys them to this
+      // bubble.
+      const promptId = crypto.randomUUID();
       const uMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -175,7 +186,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         role: "assistant",
         parts: [],
         streaming: true,
-        queued: startingQueued,
+        promptId,
       };
       // Drop Retry buttons on any prior failed send — only the latest failure
       // should offer a retry. The error text itself stays for history.
@@ -189,11 +200,12 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         aMsg,
       ]);
 
-      // Per send, not shared: two sends can be in flight at once (the runtime
-      // queues them), and one finishing must not disarm the other's deadline.
-      const watchdog = setTimeout(() => {
+      // Shared by both delivery deadlines. Agent content having arrived (or
+      // the bubble having closed) makes it a no-op, so a deadline that fires
+      // after the prompt succeeded can't retract a good turn. Not a part
+      // count: a verdict can land on a bubble the agent never wrote.
+      const failDelivery = () => {
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
-        // Not a part count: a verdict can land on a bubble the agent never wrote.
         if (!bubble?.streaming || hasAgentContent(bubble)) return;
         if (hidden) {
           dropBubble();
@@ -214,7 +226,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
               : m,
           ),
         );
-      }, DELIVERY_TIMEOUT_MS);
+      };
+      delivery.beginSend(promptId, failDelivery);
 
       let started: StartedSession | null = null;
       let detached = false;
@@ -245,7 +258,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           attachments,
         );
         // Resolves at end of turn, so the send is issued here, not on the await.
-        const turn = connection.prompt({ sessionId, prompt: promptBlocks });
+        const turn = connection.prompt({
+          sessionId,
+          prompt: promptBlocks,
+          _meta: { platform: { promptId } },
+        });
         // A browser discards a send on a closing socket without telling anyone,
         // so an open socket is as close to delivery as the client can observe.
         delivered = isOpen();
@@ -302,7 +319,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           );
         }
       } finally {
-        clearTimeout(watchdog);
+        // The turn has settled, so whichever deadline is still pending for
+        // this prompt has nothing left to guard.
+        delivery.endSend(promptId);
         if (startedRef.current === started) startedRef.current = null;
         // Only here: the turn has settled, so nothing of ours is still queued on
         // that socket.
@@ -320,6 +339,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       viewerStillHere,
       setMessages,
       textareaRef,
+      delivery,
     ],
   );
 

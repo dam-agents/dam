@@ -71,9 +71,16 @@ export interface Message {
   parts: MessagePart[];
   streaming: boolean;
   /** True while this assistant message is waiting behind an earlier in-flight
-   *  prompt on the server queue. Flipped to false when the server starts
-   *  streaming content to it. */
+   *  prompt on the server queue. Server-driven for bubbles that carry a
+   *  `promptId` (`platform/promptAccepted` sets it, `platform/promptStarted`
+   *  clears it); for bubbles built from another viewer's logged echo it is
+   *  cleared by the projection on first content. */
   queued?: boolean;
+  /** Client-generated id of the `session/prompt` this assistant bubble is the
+   *  reply to, set only on the optimistic bubble the sender writes. It keys the
+   *  runtime's per-prompt delivery notifications back to this bubble; bubbles
+   *  from replay or from another viewer's prompt have none. */
+  promptId?: string;
   /** System-style placeholder rendered as dim centered text — used for the
    *  `<clipped-conversation>` marker the runtime injects at the start of a
    *  catch-up when the session log has been truncated. Invisible to the
