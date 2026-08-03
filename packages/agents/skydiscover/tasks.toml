@@ -7,7 +7,7 @@ run = '''
 set -euo pipefail
 
 build_args=()
-[ -n "${SKYDISCOVER_VERSION:-}" ] && build_args+=(--build-arg "SKYDISCOVER_VERSION=${SKYDISCOVER_VERSION}")
+[ -n "${SKYDISCOVER_REF:-}" ] && build_args+=(--build-arg "SKYDISCOVER_REF=${SKYDISCOVER_REF}")
 
 # empty-array guard for bash 3.2 `set -u`
 exec scripts/resolve-image.sh build-or-reuse skydiscover -- ${build_args[@]+"${build_args[@]}"} packages/agents/skydiscover

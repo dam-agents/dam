@@ -97,6 +97,13 @@ IBM LiteLLM the `rits/…` models do). Only reuse `--checkpoint` state if some
 iterations actually completed; a run that never got past the first proposal
 is cleaner started fresh.
 
+**Known quirk — EvoX label generation:** EvoX's auxiliary label-generation
+calls don't honor `--api-base` and try the default OpenAI endpoint, which
+this pod's gateway blocks. EvoX degrades gracefully — you'll see retry
+warnings ending in "setting labels to empty strings" in the log. That is
+benign: the main proposal/evaluation loop still routes through `--api-base`.
+Don't kill a run over these warnings.
+
 **Model ensemble** (optional): a weighted mix goes in a config YAML instead of
 `-m` — `--api-base` still applies to all of them, so every name must be served
 by the endpoint:

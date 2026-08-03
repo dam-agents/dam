@@ -8,7 +8,14 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG SKYDISCOVER_VERSION=0.1.0
+# Pinned git ref, not a PyPI pin: the 0.1.0 wheel (latest release) predates
+# EvoX's config data files — its code loads search/evox/config/search.yaml,
+# which landed upstream only after the release, so `--search evox` crashes at
+# startup on every released wheel. The repo's package-data now ships the
+# config, so a source install at a pinned commit gives consistent code +
+# config. Switch back to `skydiscover==<version>` on the next release that
+# carries search/evox/config/.
+ARG SKYDISCOVER_REF=e221cde39a787351df7e52c656ad3f00add402fe
 
 # shared location so the agent user (uid 65532) can use it at runtime
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
@@ -21,9 +28,20 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 # venv per run when a task actually needs it.
 RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$SKYDISCOVER_VENV" &&\
-    uv pip install --python "$SKYDISCOVER_VENV/bin/python" "skydiscover==${SKYDISCOVER_VERSION}" &&\
+    uv pip install --python "$SKYDISCOVER_VENV/bin/python" \
+      "skydiscover @ git+https://github.com/skydiscover-ai/skydiscover@${SKYDISCOVER_REF}" &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/skydiscover-venv /opt/uv
+
+# fail the build if the installed package misses EvoX's config data files
+# (the exact gap the git-ref install exists to close)
+RUN "$SKYDISCOVER_VENV/bin/python" - <<'EOF'
+import pathlib, yaml, skydiscover
+cfg = pathlib.Path(skydiscover.__file__).parent / "search/evox/config"
+assert yaml.safe_load((cfg / "search.yaml").read_text()), "empty search.yaml"
+assert (cfg / "evox_search_sys_prompt.txt").stat().st_size > 0, "empty sys prompt"
+print("evox config ok")
+EOF
 
 ENV PATH="/opt/skydiscover-venv/bin:${PATH}"
 

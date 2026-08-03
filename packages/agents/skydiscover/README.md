@@ -42,10 +42,16 @@ it authors the run inputs, runs the search, and reports the winning program
 Built **FROM the `claude-code` image** (`ARG BASE_IMAGE=platform-claude-code`)
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
 holds no credentials. On top it adds Python 3.11 + the `skydiscover` package
-in a venv at `/opt/skydiscover-venv` (installed with `uv` from PyPI, pinned
-via `ARG SKYDISCOVER_VERSION`) — base package only: AdaEvolve and EvoX need no
-extras, the `external` extra (wrapped backends) is deliberately absent, and
-the heavy `math` extra is runtime-installed per run when a task needs it. Both
+in a venv at `/opt/skydiscover-venv` (installed with `uv` from the upstream
+git repo at a pinned commit, `ARG SKYDISCOVER_REF`) — base package only:
+AdaEvolve and EvoX need no extras, the `external` extra (wrapped backends) is
+deliberately absent, and the heavy `math` extra is runtime-installed per run
+when a task needs it. The install is a git ref rather than a PyPI pin because
+the 0.1.0 wheel (latest release) predates EvoX's config data files — its code
+loads `search/evox/config/search.yaml`, which landed upstream only after the
+release, so `--search evox` crashes on every released wheel; a build-time
+assertion keeps the gap from regressing. Switch back to a version pin on the
+next release that carries the config. Both
 harnesses (chat and terminal) are inherited unchanged from the base;
 SkyDiscover customizes behavior via `AGENTS.md` + the `skydiscover` skill, not
 the harness scripts.
@@ -61,10 +67,10 @@ mise run agents:skydiscover:image            # plain docker build (pip-installs 
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 
-Override the pinned release with `SKYDISCOVER_VERSION`:
+Override the pinned upstream commit with `SKYDISCOVER_REF`:
 
 ```sh
-SKYDISCOVER_VERSION=0.1.0 mise run agents:skydiscover:image
+SKYDISCOVER_REF=<commit-sha> mise run agents:skydiscover:image
 ```
 
 `values-local.yaml` points the adaevolve/evox templates at the locally-built
