@@ -19,7 +19,8 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
       </p>
       {!available.slack && !available.telegram ? (
         <p className="text-sm text-muted-foreground">
-          No channels are configured for this installation.
+          No messenger is set up on this platform, so there is nothing to
+          connect yet. Ask your operator to configure Slack or Telegram.
         </p>
       ) : (
         <Inset className="flex flex-col gap-4">
