@@ -107,7 +107,8 @@ estimate, but an informed user may pre-authorize it (see below).
 4. **You've presented an iteration/cost estimate.** State the iteration budget
    (`-i`), the resulting rough LLM-call count (≈ one proposal plus one
    evaluation per iteration; EvoX adds occasional strategy-evolution calls),
-   that it runs autonomously, and the keep-awake tradeoff (below). Then **wait
+   that it runs autonomously, and that the running work holds the pod awake
+   (no scale-to-zero) until it finishes. Then **wait
    for an explicit go-ahead — unless the user already pre-authorized this
    run** ("just launch it," "don't ask"): pre-authorization waives the *wait*,
    never the estimate — show the numbers, then launch. (Resuming an
@@ -116,19 +117,28 @@ estimate, but an informed user may pre-authorize it (see below).
 
 ## Run discipline
 
-- **Launch backgrounded** so you stay conversational and can poll while it
-  runs. Keep the PID and log in the run directory:
+- **Launch as a harness background task** (your backgrounded-Bash facility),
+  never a bare detached `nohup … &`. The platform's background-work contract
+  reports harness-registered tasks to the runtime: the pod is held awake for
+  as long as the run lives, and the finishing task wakes you for a follow-up
+  turn — **report the result to the user then** (best `combined_score`, the
+  objective metric, and the `output/best/` path), don't wait to be asked. A
+  detached `nohup` process is invisible to that contract, so the pod can
+  hibernate mid-run. Still keep the PID and log in the run directory for
+  monitoring and crash recovery:
 
   ```sh
+  # run this script AS a backgrounded harness task
   dir="$SKYDISCOVER_OUTPUT_ROOT/<run-id>"
   cd "$dir"
   export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"   # gateway overwrites it on the wire
-  nohup skydiscover-run task/initial.py task/evaluator.py \
+  skydiscover-run task/initial.py task/evaluator.py \
     --search "$SKYDISCOVER_SEARCH" \
     -i <N> -m <model-id> --api-base "$base/v1" \
     -o "$dir/output" \
     > run.log 2>&1 &
   echo $! > run.pid
+  wait
   ```
 
 - **Always pass an explicit `-o`** on the **persisted** workspace
@@ -158,10 +168,12 @@ restart — it's fast.
 
 ## Surviving hibernation (resume-on-wake)
 
-The pod **scales to zero when the session goes idle** — no active turn, no
-queued prompt, no open terminal/SSH session. That kills any background
-`skydiscover-run`. The output dir lives on persistent `$HOME`, so the run is
-recoverable but **does not progress while you're not engaged**.
+With the launch discipline above, a running search **holds the pod awake**
+(reported background work) and hibernation mid-run is the exception, not the
+rule. It can still happen — a pod restart or eviction, a crash, or a run
+launched the legacy detached way — and then the pod scales to zero once the
+session goes idle. The output dir lives on persistent `$HOME`, so the run is
+recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its
 `run.pid` is dead and it hasn't reached its budget, reinstall the run's deps
@@ -176,12 +188,11 @@ go-ahead instead of silently relaunching. A run that's reached
 its budget is done; raising the budget is a new, re-gated decision, not a
 resume.
 
-**Keep-awake escape hatch:** for a long search that must progress
-continuously (e.g. overnight), tell the user to keep a **terminal or SSH
-session open** to this agent — that pins the pod awake, so a backgrounded run
-completes without hibernation gaps. Genuinely unattended overnight progress is
-a future capability; today a run advances only while you're engaged or a
-session is open.
+**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
+the background-work contract (launched detached, or the report was refused),
+an open **terminal or SSH session** pins the pod awake until it finishes —
+but the primary mechanism is launching as a reported harness task in the
+first place.
 
 ## Hard guardrails
 
