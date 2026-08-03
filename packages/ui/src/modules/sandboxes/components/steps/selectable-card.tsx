@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { cardSelectionVariants } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export function SelectableCard({
@@ -16,14 +17,7 @@ export function SelectableCard({
   children: ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "relative rounded-lg border p-4 transition-colors",
-        selected
-          ? "border-foreground bg-muted/60"
-          : "border-border bg-card hover:bg-muted/40",
-      )}
-    >
+    <div className={cn(cardSelectionVariants({ selected }), "relative p-4")}>
       {/* Stretched overlay so a nested link can sit above it, which a real <button> can't wrap. */}
       <button
         type="button"

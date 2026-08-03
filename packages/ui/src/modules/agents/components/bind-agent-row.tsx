@@ -1,3 +1,4 @@
+import { CardButton } from "@/components/ui/card-button";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
@@ -21,13 +22,12 @@ export function BindAgentRow({
   onPick,
 }: Props) {
   return (
-    <button
-      type="button"
+    <CardButton
       disabled={disabled}
       onClick={onPick}
       className={cn(
-        "flex flex-col items-start gap-0.5 rounded-lg border bg-background px-4 py-3 text-left hover:border-foreground/40 disabled:opacity-60",
-        highlighted ? "border-foreground" : "border-border",
+        "flex flex-col items-start gap-0.5 px-4 py-3",
+        highlighted && "border-foreground",
       )}
     >
       <span className="text-sm font-semibold text-foreground">
@@ -43,6 +43,6 @@ export function BindAgentRow({
           {agent.templateId}
         </span>
       )}
-    </button>
+    </CardButton>
   );
 }

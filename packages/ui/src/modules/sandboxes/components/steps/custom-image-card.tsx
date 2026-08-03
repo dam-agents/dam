@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CUSTOM_IMAGE_DOCS_URL } from "@/constants";
 import { externalLinkProps } from "@/lib/external-link";
@@ -34,7 +35,8 @@ export function CustomImageCard({
   return (
     <div
       className={cn(
-        "rounded-lg border px-4 py-4",
+        CARD_SURFACE,
+        "px-4 py-4 transition-colors",
         selected ? "border-foreground" : "border-border",
       )}
     >
