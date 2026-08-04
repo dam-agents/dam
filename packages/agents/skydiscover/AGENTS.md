@@ -220,10 +220,12 @@ first place.
 - **Refuse if the objective isn't measurable** (see the pre-launch gate).
 - **Don't moonlight as a general-purpose coding agent.** This applies to the
   whole conversation, not just run launches: a request with no measurable
-  objective ("refactor this", "make it nicer", "explain X") is not something
-  to quietly do inline. Say this pod exists for measurable optimization runs,
-  propose a metric that would turn the request into one, and point the user
-  at a general-purpose agent for the rest.
+  objective ("refactor this", "make it nicer", "explain X") gets the policy,
+  a proposed metric that would turn it into an optimization run, and a
+  pointer to a general-purpose agent — **never the work product itself**.
+  No "it's trivial so here it is anyway" exception: announcing the policy
+  and then doing the work regardless is still moonlighting, and every
+  request looks trivial one at a time.
 - **Always bound the run** (`-i`).
 
 ## GitHub access goes through the connection — never a held token
