@@ -1,62 +1,31 @@
-import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
-import type { SpendByDay } from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
-import { formatDate } from "@/lib/format-time";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendTable } from "../components/model-spend-table.js";
+import { MonthSwitcher } from "../components/month-switcher.js";
 import {
   CHART_HEIGHT_CLASS,
   SpendByDayChart,
 } from "../components/spend-by-day-chart.js";
 import { formatUsdCents } from "../lib/format.js";
-
-// Month boundaries are computed in the browser's timezone; the API takes the
-// resulting instants, so "calendar month" means the user's wall-clock month.
-const monthStart = (base: Date, offset: number) =>
-  new Date(base.getFullYear(), base.getMonth() + offset, 1);
-
-// The browser owns calendar semantics: from the sparse per-day rows the server
-// returns, build the full day list for the selected month, zero-filling days
-// with no spend. For the current month we stop at today so there are no empty
-// future columns. Keys are local `YYYY-MM-DD`, matching the server's buckets.
-const pad = (n: number) => String(n).padStart(2, "0");
-function fillMonthDays(
-  month: Date,
-  isCurrentMonth: boolean,
-  rows: SpendByDay[] | undefined,
-): SpendByDay[] {
-  const byDay = new Map((rows ?? []).map((r) => [r.day, r.costUsd]));
-  const year = month.getFullYear();
-  const m = month.getMonth();
-  const daysInMonth = new Date(year, m + 1, 0).getDate();
-  const lastDay = isCurrentMonth ? new Date().getDate() : daysInMonth;
-  const days: SpendByDay[] = [];
-  for (let d = 1; d <= lastDay; d++) {
-    const day = `${year}-${pad(m + 1)}-${pad(d)}`;
-    days.push({ day, costUsd: byDay.get(day) ?? 0 });
-  }
-  return days;
-}
+import {
+  fillMonthDays,
+  monthLabel,
+  monthRange,
+  monthStart,
+} from "../lib/month-range.js";
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
 export function UsageView() {
   const [month, setMonth] = useState(() => monthStart(new Date(), 0));
-  const isCurrentMonth = month >= monthStart(new Date(), 0);
-  const monthLabel = formatDate(month, {
-    month: "long",
-    year: "numeric",
-  });
+  const { from, to, isCurrentMonth } = monthRange(month);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const from = month.toISOString();
-  const to = monthStart(month, 1).toISOString();
   // One query backs the whole tab, so per-model / per-agent / per-day spend
   // land together under a single loading/error state — the chart never renders
   // an all-zero month while its data is still in flight.
@@ -75,28 +44,11 @@ export function UsageView() {
           </span>
         }
         actions={
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous month"
-              onClick={() => setMonth(monthStart(month, -1))}
-            >
-              <ChevronLeft size={16} className="text-muted-foreground" />
-            </Button>
-            <span className="min-w-[120px] text-center text-sm font-medium">
-              {monthLabel}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next month"
-              disabled={isCurrentMonth}
-              onClick={() => setMonth(monthStart(month, 1))}
-            >
-              <ChevronRight size={16} className="text-muted-foreground" />
-            </Button>
-          </div>
+          <MonthSwitcher
+            month={month}
+            isCurrentMonth={isCurrentMonth}
+            onChange={setMonth}
+          />
         }
       />
 
@@ -125,7 +77,7 @@ export function UsageView() {
                 className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
               >
                 <p className="text-sm text-muted-foreground">
-                  No LLM calls in {monthLabel}.
+                  No LLM calls in {monthLabel(month)}.
                 </p>
               </Card>
             </section>
