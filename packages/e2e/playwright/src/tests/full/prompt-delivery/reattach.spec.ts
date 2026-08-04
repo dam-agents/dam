@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { chatInput, setMockLongTurnReply } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
-import { getAccessToken } from "../../lib/auth.js";
+import { chatInput, setMockLongTurnReply } from "../../../lib/agents.js";
+import { createApiClient } from "../../../lib/api-client.js";
+import { getAccessToken } from "../../../lib/auth.js";
 import {
   expectMilestoneBeforeFailure,
   LONG_TURN_MS,
@@ -10,7 +10,7 @@ import {
   queuedIndicator,
   restoreMockDefaultReply,
   sendPrompt,
-} from "../../lib/delivery.js";
+} from "./delivery.js";
 
 // Full-suite-only spec (see playwright.config.ts): crosses the UI's 60s
 // delivery deadline, so it takes minutes.

@@ -193,7 +193,7 @@ export default defineConfig({
             // so they are safe in any order but must not overlap — `workers:
             // 1` above already guarantees that.
             name: "prompt-delivery-full",
-            testMatch: /full\/prompt-delivery-.*\.spec\.ts$/,
+            testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
         ]

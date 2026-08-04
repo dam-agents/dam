@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { setMockLongTurnReply } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
-import { getAccessToken } from "../../lib/auth.js";
+import { setMockLongTurnReply } from "../../../lib/agents.js";
+import { createApiClient } from "../../../lib/api-client.js";
+import { getAccessToken } from "../../../lib/auth.js";
 import {
   deliveryError,
   LONG_TURN_MS,
@@ -11,8 +11,8 @@ import {
   restoreMockDefaultReply,
   retryButton,
   sendPrompt,
-} from "../../lib/delivery.js";
-import { dropWebSockets, trackWebSockets } from "../../lib/network.js";
+} from "./delivery.js";
+import { dropWebSockets, trackWebSockets } from "../../../lib/network.js";
 
 // Full-suite-only spec (see playwright.config.ts). The other side of the
 // feature: the delivery indicator must not lie in EITHER direction, so a

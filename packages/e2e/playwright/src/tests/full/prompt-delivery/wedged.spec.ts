@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { setMockLongTurnReply } from "../../lib/agents.js";
-import { createApiClient } from "../../lib/api-client.js";
-import { getAccessToken } from "../../lib/auth.js";
+import { setMockLongTurnReply } from "../../../lib/agents.js";
+import { createApiClient } from "../../../lib/api-client.js";
+import { getAccessToken } from "../../../lib/auth.js";
 import {
   deliveryError,
   DELIVERY_TIMEOUT_MS,
@@ -12,7 +12,7 @@ import {
   restoreMockDefaultReply,
   retryButton,
   sendPrompt,
-} from "../../lib/delivery.js";
+} from "./delivery.js";
 
 // Full-suite-only spec (see playwright.config.ts): waits out the UI's 60s
 // deadline on purpose.

@@ -8,10 +8,10 @@ import {
   gotoAgentDetail,
   setMockAgentReply,
   waitForAgentRunning,
-} from "./agents.js";
-import type { ApiClient } from "./api-client.js";
-import { acceptTerms, loginViaUi } from "./auth.js";
-import { harnessName } from "./fixtures.js";
+} from "../../../lib/agents.js";
+import type { ApiClient } from "../../../lib/api-client.js";
+import { acceptTerms, loginViaUi } from "../../../lib/auth.js";
+import { harnessName } from "../../../lib/fixtures.js";
 
 /** This project's own mock agent. Deliberately NOT the smoke chain's shared
  *  `e2e-agent`: full-tier projects carry no dependency edges, so Playwright
