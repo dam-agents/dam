@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -121,7 +122,7 @@ export function SessionRow({
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
-      onClick={handleClick}
+      {...clickableProps(handleClick)}
       onTouchStart={startPress}
       onTouchEnd={endPress}
       onTouchCancel={endPress}
