@@ -25,6 +25,7 @@ func vmAgentCR() *apiv1.Agent {
 		{Path: "/home/agent", Persist: true, Size: "10Gi"},
 		{Path: "/scratchpad", Persist: false},
 	}
+	a.Spec.Init = "touch $HOME/.initialized"
 	return a
 }
 
@@ -167,6 +168,11 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 		"mount -t virtiofs 'scratchpad'",
 		"ephemeral mounts have no virtiofs device to mount",
 	)
+	// The init script must ride the userdata — it is what seeds $HOME
+	// (Claude Code onboarding state, settings, the work dir); the container
+	// backend runs it as an init container, the VM has only cloud-init.
+	assert.Contains(t, userdata, "HOME=/home/agent")
+	assert.Contains(t, userdata, ".initialized")
 	// The ~/.cache swap must be pre-created by root: on unprivileged virtiofs
 	// a non-root guest cannot create symlinks (virtiofsd lacks CAP_CHOWN), so
 	// the entrypoint's own `ln` would fail with EPERM.
