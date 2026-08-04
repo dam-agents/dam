@@ -229,7 +229,9 @@ done — set `-i` to the approved total minus that, never more; a bigger total
 is a budget increase, a new re-gated decision.
 
 **Checkpoint cadence differs by strategy**: `adaevolve` writes one per
-iteration; `evox` writes its first only at iteration 10. A run interrupted
+iteration; `evox` writes every 10 iterations plus one at run completion —
+so a *completed* short evox run has a resume point, but one interrupted
+mid-flight before iteration 10 does not. A run interrupted
 before its first checkpoint has nothing to resume from — relaunching
 restarts from scratch and re-spends the lost iterations, which exceeds the
 originally approved spend: say so and get a fresh go-ahead. For short evox

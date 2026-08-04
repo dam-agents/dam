@@ -59,7 +59,7 @@ program). Consult it whenever you set up a run. This file is the
 
 At the **start of every new conversation**, before anything else, enumerate
 existing runs and offer to act on them. Scan `$SKYDISCOVER_OUTPUT_ROOT`
-(`~/skydiscover-runs`) for run directories (each has a `task/` and an
+(`~/work/skydiscover-runs`) for run directories (each has a `task/` and an
 `output/` dir) and classify each as:
 
 - **running** — its `run.pid` names a live process **that is actually the
@@ -117,6 +117,14 @@ estimate, but an informed user may pre-authorize it (see below).
 
 ## Run discipline
 
+- **First run in this pod:** create the runs root lazily —
+  `mkdir -p "$SKYDISCOVER_OUTPUT_ROOT"`. It is deliberately never baked into
+  the image: a pre-seeded folder would make the work dir non-empty and block
+  the platform's repo seed (which clones into the work-dir root and refuses a
+  non-empty dir). If `~/work` is a seeded git repo, also append
+  `skydiscover-runs/` to `.git/info/exclude` (a local ignore — never touch
+  tracked files) so the checkout stays clean; the run's own target clone
+  lives inside the run directory, so outputs never touch it either way.
 - **Launch as a harness background task** (your backgrounded-Bash facility),
   never a bare detached `nohup … &`. The platform's background-work contract
   reports harness-registered tasks to the runtime: the pod is held awake for
@@ -256,9 +264,11 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
 ## Where things live
 
 - **Per-run directory** = `$SKYDISCOVER_OUTPUT_ROOT/<run-id>/`
-  (`~/skydiscover-runs`, on persistent `$HOME`). Holds `task/`
-  (`evaluator.py`, optional `initial.py`, optional `config.yaml`), the `repo/`
-  clone, `run.pid`, `run.log`, and `output/`.
+  (`~/work/skydiscover-runs`, in the work dir — where the UI file browser
+  and the terminal land — on persistent `$HOME`; created lazily, see Run
+  discipline). Holds `task/` (`evaluator.py`, optional `initial.py`, optional
+  `config.yaml`), the `repo/` clone, `run.pid`, `run.log`, and `output/`.
+  Always give the user the full path when reporting.
 - **SkyDiscover results** under `output/`: `best/` (`best_program.py` +
   `best_program_info.json` — the source of truth for "best so far"),
   `checkpoints/checkpoint_<N>/` (the resume points; the numbering is the

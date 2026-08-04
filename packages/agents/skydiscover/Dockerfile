@@ -58,9 +58,11 @@ COPY AGENTS.md /etc/AGENTS.md
 # AGENTS.md documents the adaevolve fallback for preset-less runs.
 
 # /app/working-dir is seeded onto persistent $HOME on first boot
-ENV SKYDISCOVER_OUTPUT_ROOT=/home/agent/skydiscover-runs
-RUN mkdir -p /app/working-dir/skydiscover-runs &&\
-    chown -R 65532:0 /app/working-dir/skydiscover-runs
+# Runs live in the work dir (where the UI and terminal look), created lazily
+# by the agent at first run — NEVER pre-baked here: the first-boot seed would
+# make the work dir non-empty and the platform's repo seed (which clones into
+# the work-dir root and refuses a non-empty dir) would fail.
+ENV SKYDISCOVER_OUTPUT_ROOT=/home/agent/work/skydiscover-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
