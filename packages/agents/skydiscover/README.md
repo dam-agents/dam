@@ -46,7 +46,9 @@ in a venv at `/opt/skydiscover-venv` (installed with `uv` from the upstream
 git repo at a pinned commit, `ARG SKYDISCOVER_REF`) — base package only:
 AdaEvolve and EvoX need no extras, the `external` extra (wrapped backends) is
 deliberately absent, and the heavy `math` extra is runtime-installed per run
-when a task needs it. The install is a git ref rather than a PyPI pin because
+when a task needs it — except `scipy`, which is baked in (the venv resets
+with every pod restart, and nearly every numerical task was paying a
+minutes-long runtime install for it). The install is a git ref rather than a PyPI pin because
 the 0.1.0 wheel (latest release) predates EvoX's config data files — its code
 loads `search/evox/config/search.yaml`, which landed upstream only after the
 release, so `--search evox` crashes on every released wheel; a build-time

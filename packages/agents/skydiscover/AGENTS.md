@@ -158,13 +158,13 @@ estimate, but an informed user may pre-authorize it (see below).
 ## Run dependencies
 
 Candidate code runs in the SkyDiscover venv (`$SKYDISCOVER_VENV`), which has
-only `skydiscover` and its base deps (numpy, pyyaml, tqdm, the openai client).
-PyPI egress is open, so install whatever the run needs into that venv
+`skydiscover`, its base deps (numpy, pyyaml, tqdm, the openai client), and
+`scipy` pre-baked. PyPI egress is open, so install anything else the run
+needs into that venv
 (`uv pip install --python "$SKYDISCOVER_VENV/bin/python" …`) — and anticipate
 what the **evolved** code will reach for, not just the initial program's
-imports (e.g. `scipy` for a numerical-optimization task). The venv is
-ephemeral but the uv cache is on persistent `$HOME`, so reinstall after a
-restart — it's fast.
+imports. The venv is ephemeral but the uv cache is on persistent `$HOME`, so
+reinstall extras after a restart — it's fast.
 
 ## Surviving hibernation (resume-on-wake)
 

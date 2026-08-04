@@ -38,17 +38,17 @@ Both are installed, so you can suggest the other when the budget clearly fits
 it — the user decides. The wrapped external backends
 (`openevolve|gepa|shinkaevolve|*_native`) are **not** installed here.
 
-Candidate code runs in the SkyDiscover venv (`$SKYDISCOVER_VENV`). Install
-whatever else a run needs (PyPI egress is allowed; `scipy` is the usual one
-for numerical work):
+Candidate code runs in the SkyDiscover venv (`$SKYDISCOVER_VENV`); numpy and
+scipy are pre-baked. Install whatever else a run needs (PyPI egress is
+allowed):
 
 ```sh
-uv pip install --python "$SKYDISCOVER_VENV/bin/python" scipy
+uv pip install --python "$SKYDISCOVER_VENV/bin/python" pandas
 ```
 
 The venv is ephemeral but the uv cache is on persistent `$HOME`, so reinstall
-on resume (fast, from cache). Install what the **evolved** code will reach for
-up front, not just the initial program's imports.
+extras on resume (fast, from cache). Install what the **evolved** code will
+reach for up front, not just the initial program's imports.
 
 The pod-level workflow — the mandatory pre-launch gate, per-run directories,
 backgrounding runs, resume-on-wake, and the hard guardrails — is defined in

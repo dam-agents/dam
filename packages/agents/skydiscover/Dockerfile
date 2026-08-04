@@ -24,12 +24,15 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 # Base package only: AdaEvolve and EvoX are SkyDiscover's own strategies and
 # need no extras. The `external` extra (openevolve/gepa/shinkaevolve wrappers)
 # is deliberately not installed — those backends ship as their own workload
-# images; the heavy `math` extra (torch, jax, …) is runtime-installed into the
-# venv per run when a task actually needs it.
+# images. scipy IS baked in: the venv resets with every pod restart and
+# nearly every numerical task reaches for it, so runtime-installing it cost
+# minutes on each fresh pod; the rest of the heavy `math` extra (torch, jax,
+# …) stays runtime-installed per run when a task actually needs it.
 RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$SKYDISCOVER_VENV" &&\
     uv pip install --python "$SKYDISCOVER_VENV/bin/python" \
-      "skydiscover @ git+https://github.com/skydiscover-ai/skydiscover@${SKYDISCOVER_REF}" &&\
+      "skydiscover @ git+https://github.com/skydiscover-ai/skydiscover@${SKYDISCOVER_REF}" \
+      scipy &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/skydiscover-venv /opt/uv
 
