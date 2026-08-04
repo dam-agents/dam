@@ -99,7 +99,12 @@ export function SettingsView() {
         variant="pill"
         size="sm"
         orientation="vertical"
-        className="flex-row md:flex-col md:w-[180px] shrink-0"
+        // Mobile lays the strip out as a row. It owns its horizontal overflow
+        // so a long tab set scrolls the strip instead of the whole view, the
+        // triggers keep their full label instead of shrinking into wraps, and
+        // the vertical padding leaves room for a focus ring inside the scroll
+        // box. Desktop stays the plain vertical sidebar.
+        className="flex-row overflow-x-auto py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:py-0 md:w-[180px] shrink-0"
       />
 
       <div className="flex-1 min-w-0">
