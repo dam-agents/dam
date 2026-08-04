@@ -12,6 +12,7 @@ import {
   retryButton,
   sendPrompt,
 } from "../../lib/delivery.js";
+import { dropWebSockets, trackWebSockets } from "../../lib/network.js";
 
 // Full-suite-only spec (see playwright.config.ts). The other side of the
 // feature: the delivery indicator must not lie in EITHER direction, so a
@@ -37,7 +38,6 @@ const replyRetry = "Answer to the retried prompt.";
 
 test("a prompt queued when the connection drops fails with Retry, and the failure survives reconnect (#829)", async ({
   page,
-  context,
 }) => {
   // The longest spec in the set: boot + login, a turn past the 60s deadline,
   // then a reconnect that runs on a backoff ladder (1s…30s) and has to replay
@@ -47,6 +47,12 @@ test("a prompt queued when the connection drops fails with Retry, and the failur
 
   const token = await getAccessToken();
   const api = createApiClient(token);
+
+  // Before any navigation: the connection is severed below by closing the
+  // page's WebSockets directly. `context.setOffline` can't do it — Chromium's
+  // offline emulation leaves established sockets open, so the close handler
+  // under test would never run.
+  await trackWebSockets(page);
 
   const agentId = await openMockAgentChat(page, api);
 
@@ -66,10 +72,10 @@ test("a prompt queued when the connection drops fails with Retry, and the failur
   });
 
   await test.step("losing the connection fails the queued prompt with Retry", async () => {
-    // Killing the network closes the WS, which is what makes the runtime
-    // detach this channel and drop prompt B — the real loss, not a simulated
-    // one. The client's close handler is what turns it into a visible failure.
-    await context.setOffline(true);
+    // Closing the WS is what makes the runtime detach this channel and drop
+    // prompt B — the real loss, not a simulated one. The client's close
+    // handler is what turns it into a visible failure.
+    await dropWebSockets(page);
 
     await expect(deliveryError(page)).toBeVisible({ timeout: 60_000 });
     await expect(deliveryError(page)).toContainText("Send failed");
@@ -87,11 +93,12 @@ test("a prompt queued when the connection drops fails with Retry, and the failur
   });
 
   await test.step("the failure is still there after the tab reconnects", async () => {
-    await context.setOffline(false);
-    // The reconnect replays history and rebuilds the message list. The card
-    // has to outlive that rebuild — the assertion that `mergeLocalFailures`
-    // is doing its job. Generous: reconnect runs on a backoff (1s…30s) and
-    // has to wait for the long turn's socket work to settle.
+    // The network never actually went down, so the client reconnects on its
+    // own backoff — no flag to flip. The reconnect replays history and
+    // rebuilds the message list. The card has to outlive that rebuild — the
+    // assertion that `mergeLocalFailures` is doing its job. Generous:
+    // reconnect runs on a backoff (1s…30s) and has to wait for the long
+    // turn's socket work to settle.
     await expect(deliveryError(page)).toBeVisible({ timeout: 180_000 });
     await expect(retryButton(page)).toBeVisible();
     // Not just surviving the first rebuild — still there once the replayed
