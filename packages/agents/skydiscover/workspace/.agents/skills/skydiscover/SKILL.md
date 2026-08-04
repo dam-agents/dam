@@ -108,7 +108,13 @@ self-evolving strategy layer is dead, eroding EvoX's long-horizon advantage
 over AdaEvolve. **Workaround:** copy the shipped yaml into the task dir,
 replace its model ids with endpoint-served ones, and point
 `search.database.config_path` at the copy via a run config (`-c
-task/config.yaml`). Even then the strategy layer's LLM-generated code can
+task/config.yaml`) — and the config's `search:` block **must carry
+`type: "evox"`**: without it the parser defaults to `topk`, builds the wrong
+database-config class, and silently discards `config_path` (the `--search
+evox` flag alone doesn't back-fill it and would replace a mismatched
+database config wholesale). Verify the fix took — after a couple of
+iterations the `gpt-5`/`gpt-5-mini` 403 retries must be gone from the run
+log; if they persist, the strategy layer is still on the shipped yaml. Even then the strategy layer's LLM-generated code can
 crash on upstream bugs (`name 'EvolveProgram' is not defined`-class errors)
 — still non-fatal for the solution loop, but if the run wedges, apply the
 stall guardrail (kill + resume from the latest checkpoint). Mention the
@@ -148,7 +154,18 @@ def evaluate(program_path):
 ```
 
 Extra metrics are fine for visibility, but only `combined_score` drives
-selection — every evaluator must return it. (The default config enables
+selection — every evaluator must return it.
+
+**Constrain the candidate space, or the search will cheat.** The search
+optimizes the score you wrote, not the task you meant: an evaluator that
+scores "approximate sin(x)" without *enforcing* "…as a polynomial" will
+happily crown `return math.sin(x)`. Encode every structural constraint as a
+hard reject (score 0 with an explanatory `error`) — banned imports/calls,
+required form — and treat a **perfect or too-good score as a finding to
+verify, never a result to report**: read the winning candidate's source
+before trusting it. The Step 3 smoke-eval must include at least one
+**cheat case** (the degenerate solution scoring 0), not just the baseline
+and a known-good candidate. (The default config enables
 cascade evaluation and logs a warning when `evaluate_stage1` is absent —
 that's a harmless fallback to direct evaluation; define `evaluate_stage1`
 only when you actually want a cheap pre-filter stage.)

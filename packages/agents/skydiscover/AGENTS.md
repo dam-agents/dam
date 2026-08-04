@@ -128,7 +128,9 @@ estimate, but an informed user may pre-authorize it (see below).
   monitoring and crash recovery:
 
   ```sh
-  # run this script AS a backgrounded harness task
+  # run this script AS a backgrounded harness task (your Bash tool's
+  # run_in_background) — NEVER as a foreground command: the tool's timeout
+  # would SIGTERM the whole process group, run included, mid-flight
   dir="$SKYDISCOVER_OUTPUT_ROOT/<run-id>"
   cd "$dir"
   export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"   # gateway overwrites it on the wire
@@ -184,7 +186,10 @@ completed from the checkpoint numbering (`checkpoint_40` → 40 done) and set
 checkpoint exists yet** (evox writes its first only at iteration 10), a
 relaunch restarts from scratch and re-spends the lost iterations — that
 exceeds the originally approved spend, so say so and wait for a fresh
-go-ahead instead of silently relaunching. A run that's reached
+go-ahead instead of silently relaunching. The same rule covers a run you
+killed yourself (a defective evaluator, a wedged process): announcing the
+relaunch is not enough — re-state the total spend it implies and get the
+go-ahead, unless the user pre-authorized re-runs. A run that's reached
 its budget is done; raising the budget is a new, re-gated decision, not a
 resume.
 
