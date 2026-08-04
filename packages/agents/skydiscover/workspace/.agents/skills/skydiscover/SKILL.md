@@ -235,6 +235,15 @@ restarts from scratch and re-spends the lost iterations, which exceeds the
 originally approved spend: say so and get a fresh go-ahead. For short evox
 runs, warn up front that a hibernation before iteration 10 loses the run.
 
+**Triage errors by class, not by count.** Deterministic 4xx bodies (403
+"team not allowed…", 400 "temperature and top_p…") mean a wrong model or
+config — retries can't fix them, rewire and relaunch. Connection-class
+errors ("upstream connect error", "no healthy upstream", "connection
+timeout") mean the endpoint is unreachable right now — a VPN or network-path
+drop, not a config problem: the run's own retries usually ride it out, and a
+run that died on them resumes from the latest checkpoint once the endpoint
+answers again. Never rewire models over a transient.
+
 **Monitoring:** tail `run.log`; read `output/best/best_program_info.json` and
 list `output/checkpoints/` to count completed iterations. Leave the live dashboard (`monitor.enabled`) off and skip
 `skydiscover-viewer` — this pod exposes no UI ports. A run doesn't advance
