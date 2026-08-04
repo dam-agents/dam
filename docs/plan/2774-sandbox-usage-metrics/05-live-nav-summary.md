@@ -1,6 +1,6 @@
-# 04 — Live month-to-date figure on the Usage nav line
+# 05 — Live month-to-date figure on the Usage nav line
 
-**Depends on:** 03-sandbox-usage-section
+**Depends on:** 04-sandbox-usage-section
 **Part of:** Sandbox-level usage metrics — see [README](./README.md)
 
 ## Context
@@ -52,11 +52,13 @@ Apply the **`/react-ui-engineering`** skill.
    `../../metrics/lib/format.js` — always two decimals, so the nav never shows a bare `$0` next to
    precise figures.
 
-2. **Failure behaviour — verify, don't add code.** `useSpendBreakdown` sets `retry: false`, and on a
-   deployment without the telemetry store every read throws `PRECONDITION_FAILED`. `data` stays
-   `undefined`, the summary stays `undefined`, and `SectionNavItem` already renders `—`. Confirm this
-   is what happens rather than adding an error branch: the hook returns `isError`, which this summary
-   deliberately ignores because a missing line is the correct degradation.
+2. **Failure behaviour — verify, don't add code.** On a deployment without the telemetry store the
+   read throws `PRECONDITION_FAILED`, `data` stays `undefined`, the summary stays `undefined`, and
+   `SectionNavItem` already renders `—`. Confirm that rather than adding an error branch: a missing
+   line is the correct degradation, so this summary deliberately ignores `isError`.
+
+   Slice 03 made that verdict sticky and stops querying once it is known, so the nav costs at most one
+   doomed request per session — check it doesn't reintroduce a per-render one.
 
 ## Acceptance criteria
 

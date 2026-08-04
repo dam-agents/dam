@@ -1,6 +1,7 @@
-# 03 — Sandbox Usage section, reachable from the sandbox nav
+# 04 — Sandbox Usage section, reachable from the sandbox nav
 
-**Depends on:** 01-scope-breakdown-to-one-agent, 02-share-month-period-plumbing
+**Depends on:** 01-scope-breakdown-to-one-agent, 02-share-month-period-plumbing,
+03-fix-usage-query-states
 **Part of:** Sandbox-level usage metrics — see [README](./README.md)
 
 ## Context
@@ -72,9 +73,11 @@ Apply the **`/react-ui-engineering`** skill.
    - Header row: `SectionLabel spaced` "Usage" with `MonthSwitcher` on the trailing edge.
    - One line of muted intro copy stating the scope — this sandbox's LLM spend, including work it
      delegated through Invocations. Keep it to one sentence.
-   - `isError` → the same *unavailable on this deployment* `Card` the global view shows, reserving
-     `CHART_HEIGHT_CLASS` so the layout doesn't jump.
-   - `isPending` → a skeleton shaped at the final heights, same technique as `UsageSkeleton`.
+   - Unavailable → the sticky verdict slice 03 introduced, replacing the section body and its month
+     switcher. Reuse that mechanism; do not re-derive it from `isError` per month.
+   - `isPending` → a skeleton shaped at the final heights, same technique as `UsageSkeleton`. With
+     slice 03's `keepPreviousData` in place this is the genuine first load only; a month change dims
+     the existing figures instead.
    - `data.byModel.length === 0` → an empty-month `Card`: "No LLM calls in {monthLabel}." Do not
      render zeroed stat cards or an all-zero chart.
    - Otherwise → `SpendStatCards`, then Spend by model in a `Card className="p-0"` wrapping
@@ -115,8 +118,9 @@ Apply the **`/react-ui-engineering`** skill.
 - [ ] A sandbox with no LLM calls in the month shows the empty-month message — not zeroed stat cards,
       not an all-zero chart, not an error.
 - [ ] With the metrics backend disabled, the section shows the *unavailable on this deployment*
-      message, the same as the global view.
-- [ ] The month switcher steps back and forward, with Next disabled on the current month.
+      message, the same as the global view, once and without a skeleton flash.
+- [ ] The month switcher steps back and forward, with Next disabled on the current month, and a change
+      dims the existing figures rather than replacing them with a skeleton.
 - [ ] Settings › Usage is unchanged, and its query key did not change (its cache entry is shared with
       nothing new).
 

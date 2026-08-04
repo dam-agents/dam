@@ -107,16 +107,24 @@ has no rows for the month.
 |----|-------|-------|------------|
 | 01 | Narrow the spend breakdown to one agent, add model time | Contract, service, router and ClickHouse reader; architecture page | — |
 | 02 | Extract the month-period plumbing both Usage surfaces share | Pure refactor of the global Usage view | — |
-| 03 | Sandbox Usage section, reachable from the sandbox nav | Stat cards, section component, query hook, route + nav wiring | 01, 02 |
-| 04 | Live month-to-date figure on the Usage nav line | `use-section-summaries` | 03 |
+| 03 | Stop the Usage tab flashing a skeleton on every month change | `keepPreviousData` + a sticky unavailable verdict, in the shared query hook and the global view. Fixes [#3148](https://github.com/ibm/dam/issues/3148) | 02 |
+| 04 | Sandbox Usage section, reachable from the sandbox nav | Stat cards, section component, query hook, route + nav wiring | 01, 02, 03 |
+| 05 | Live month-to-date figure on the Usage nav line | `use-section-summaries` | 04 |
 
-01 and 02 are independent and may land in either order; both precede 03.
+01 is independent of 02–03 and may land at any point before 04.
+
+Slice 03 fixes a **pre-existing** bug rather than one this feature introduces. It is in scope because
+04 adds a second surface with the same query-state branching: fixing it first means the sandbox section
+inherits the corrected behaviour instead of duplicating the wart, which is what "reuse the global
+view's components" was chosen for. It is kept out of 02 so that slice stays a provably
+behaviour-preserving refactor.
 
 ```mermaid
 flowchart LR
-  s01[01 contract + reader] --> s03[03 sandbox usage section]
-  s02[02 month plumbing] --> s03
-  s03 --> s04[04 live nav line]
+  s01[01 contract + reader] --> s04[04 sandbox usage section]
+  s02[02 month plumbing] --> s03[03 fix query states]
+  s03 --> s04
+  s04 --> s05[05 live nav line]
 ```
 
 ## Conventions & glossary
@@ -144,6 +152,25 @@ deploying to the dev cluster.
 
 ## Whole-feature smoke test
 
+**Prerequisite for every numeric check:** the telemetry store must be up. It is `enabled: false` by
+default, so a dev cluster shows *unavailable* until it is brought up — no credentials or external
+accounts needed, one env var on a task that skips image builds:
+
+```
+CLICKSTACK=1 mise run cluster:helm
+```
+
+That installs the ClickHouse + MongoDB operators from ClickStack's public chart repo, sets
+`clickstack.enabled=true`, and restarts HyperDX onto a ready Mongo. It is a heavy stack (ClickHouse
+server + Keeper + MongoDB + HyperDX + collector, 20Gi PVC), and the third-party images are mirrored to
+`quay.io/dam-agents` **by hand** — a missing tag surfaces as `ImagePullBackOff`. Afterwards, run an
+agent turn so there is spend to read.
+
+Without the store, everything structural is still verifiable — routing, the nav entry, the month
+switcher, the unavailable and empty states, the nav line's `—` fallback — and slice 03 is verifiable in
+full, since its symptom is what a store-less deployment shows. Only the figures themselves are
+blocked; record those checks as outstanding rather than passing them.
+
 With the branch checked out and the dev server running:
 
 1. `mise run check` and `mise run test` — both green.
@@ -156,7 +183,10 @@ With the branch checked out and the dev server running:
    The sandbox's total appears as its own bar in Spend by agent, and the global total is ≥ it.
 5. Open Usage on a sandbox that has never run a turn → the empty-month message, not an error and
    not a zeroed-out chart.
-6. Confirm Settings › Usage is visually and behaviourally unchanged (slice 02 refactored it).
+6. Confirm Settings › Usage still works as before slice 02's refactor, and that stepping the month
+   there dims the figures rather than flashing a skeleton (slice 03).
+7. On a store-less deployment, confirm both Usage surfaces show *unavailable* once, with a single
+   `spendBreakdown` request between them and no month switcher.
 
 ## Delivery
 
