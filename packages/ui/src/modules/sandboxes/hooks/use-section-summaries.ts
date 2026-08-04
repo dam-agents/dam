@@ -15,6 +15,8 @@ import {
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
+import { useAgentMonthSpend } from "../../metrics/api/queries.js";
+import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
@@ -132,6 +134,16 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);
 
+  // Undefined while loading, and on deployments without a telemetry store where
+  // the read fails closed — the nav's placeholder is the right answer to both.
+  const { data: monthSpend } = useAgentMonthSpend(agent?.id ?? null);
+  const usageSummary = useMemo(() => {
+    if (monthSpend === undefined) return undefined;
+    return monthSpend > 0
+      ? `${formatUsdCents(monthSpend)} this month`
+      : "No spend this month";
+  }, [monthSpend]);
+
   return {
     setup,
     connections,
@@ -139,5 +151,6 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     skills,
     schedules: schedulesSummary,
     artifacts: artifactsSummary,
+    usage: usageSummary,
   };
 }

@@ -1,6 +1,7 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
+import { monthRange, monthStart } from "../lib/month-range.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend over
  *  [from, to) — across all of the user's agents, or one of them when `agentId`
@@ -31,6 +32,24 @@ export function useSpendBreakdown(
     staleTime: 60_000,
     retry: false,
     placeholderData: keepPreviousData,
+  });
+}
+
+/** This calendar month's total spend for one sandbox, for the Configure Sandbox
+ *  nav's summary line. Deliberately built from the same inputs the Usage
+ *  section's current-month read uses, so the two share one cache entry and
+ *  opening the section costs no extra request. Skipped while no sandbox is
+ *  selected — without that it would read every agent the caller owns. */
+export function useAgentMonthSpend(agentId: string | null) {
+  const { from, to } = monthRange(monthStart(new Date(), 0));
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return useQuery({
+    ...trpc.metrics.spendBreakdown.queryOptions(
+      agentId ? { from, to, timeZone, agentId } : skipToken,
+    ),
+    staleTime: 60_000,
+    retry: false,
+    select: (data) => data.byModel.reduce((sum, row) => sum + row.costUsd, 0),
   });
 }
 

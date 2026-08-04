@@ -109,7 +109,7 @@ has no rows for the month.
 | 02 ✅ | Extract the month-period plumbing both Usage surfaces share | Pure refactor of the global Usage view | — |
 | 03 ✅ | Stop the Usage tab flashing a skeleton on every month change | `keepPreviousData` + a sticky unavailable verdict, in the shared query hook and the global view. Fixes [#3148](https://github.com/ibm/dam/issues/3148) | 02 |
 | 04 ✅ | Sandbox Usage section, reachable from the sandbox nav | Stat cards, section component, query hook, route + nav wiring | 01, 02, 03 |
-| 05 | Live month-to-date figure on the Usage nav line | `use-section-summaries` | 04 |
+| 05 ✅ | Live month-to-date figure on the Usage nav line | `use-section-summaries` | 04 |
 
 01 is independent of 02–03 and may land at any point before 04.
 
