@@ -2,15 +2,26 @@ import { createHash } from "node:crypto";
 import type { Contribution } from "api-server-api";
 
 export function contributionHash(contributions: Contribution[]): string {
+  // Duplicate keys tie-break on content, so the hash never depends on input
+  // order — even where the stable sort would otherwise preserve it.
   const sorted = [...contributions]
     .map(canonicalize)
-    .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));
+    .sort((a, b) => cmp(a.k, b.k) || cmp(a.json, b.json));
   const json = JSON.stringify(sorted.map((s) => s.value));
   return createHash("sha256").update(json).digest("hex");
 }
 
-function canonicalize(c: Contribution): { k: string; value: unknown } {
-  return { k: keyFor(c), value: sortKeys(c) };
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function canonicalize(c: Contribution): {
+  k: string;
+  json: string;
+  value: unknown;
+} {
+  const value = sortKeys(c);
+  return { k: keyFor(c), json: JSON.stringify(value), value };
 }
 
 function keyFor(c: Contribution): string {
