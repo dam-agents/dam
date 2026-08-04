@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
+import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
@@ -12,6 +13,7 @@ import {
   CHART_HEIGHT_CLASS,
   SpendByDayChart,
 } from "../components/spend-by-day-chart.js";
+import { useSettledMonth } from "../hooks/use-settled-month.js";
 import { formatUsdCents } from "../lib/format.js";
 import {
   fillMonthDays,
@@ -19,6 +21,7 @@ import {
   monthRange,
   monthStart,
 } from "../lib/month-range.js";
+import { isMetricsUnavailable } from "../lib/unavailable.js";
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
@@ -29,9 +32,16 @@ export function UsageView() {
   // One query backs the whole tab, so per-model / per-agent / per-day spend
   // land together under a single loading/error state — the chart never renders
   // an all-zero month while its data is still in flight.
-  const { data, isPending, isError } = useSpendBreakdown(from, to, timeZone);
+  const { data, isPending, isError, isPlaceholderData, error } =
+    useSpendBreakdown(from, to, timeZone);
+  const unavailable = isMetricsUnavailable(error);
+  const shownMonth = useSettledMonth(month, isPlaceholderData);
   const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
-  const dailyDays = fillMonthDays(month, isCurrentMonth, data?.byDay);
+  const dailyDays = fillMonthDays(
+    shownMonth,
+    monthRange(shownMonth).isCurrentMonth,
+    data?.byDay,
+  );
 
   return (
     <div>
@@ -44,11 +54,13 @@ export function UsageView() {
           </span>
         }
         actions={
-          <MonthSwitcher
-            month={month}
-            isCurrentMonth={isCurrentMonth}
-            onChange={setMonth}
-          />
+          unavailable ? undefined : (
+            <MonthSwitcher
+              month={month}
+              isCurrentMonth={isCurrentMonth}
+              onChange={setMonth}
+            />
+          )
         }
       />
 
@@ -62,8 +74,13 @@ export function UsageView() {
         </Card>
       )}
       {isPending && !isError && <UsageSkeleton />}
-      {data && (
-        <div className="space-y-10">
+      {data && !isError && (
+        <div
+          className={cn(
+            "space-y-10 transition-opacity",
+            isPlaceholderData && "opacity-40",
+          )}
+        >
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
@@ -77,7 +94,7 @@ export function UsageView() {
                 className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
               >
                 <p className="text-sm text-muted-foreground">
-                  No LLM calls in {monthLabel(month)}.
+                  No LLM calls in {monthLabel(shownMonth)}.
                 </p>
               </Card>
             </section>

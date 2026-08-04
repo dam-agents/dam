@@ -1,16 +1,22 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend
  *  across all of the user's agents over [from, to). Per-day rows are bucketed
  *  into the browser's local calendar days and are sparse — the caller zero-fills
- *  the month. One query so the page has a single loading/error state. */
+ *  the month. One query so the page has a single loading/error state.
+ *
+ *  The range is part of the key, so paging months would otherwise be a cache
+ *  miss and blank the whole tab; the previous month's rows stay put until the
+ *  next arrive. Callers must dim on `isPlaceholderData`, or the figures read as
+ *  belonging to the month just picked. */
 export function useSpendBreakdown(from: string, to: string, timeZone: string) {
   return useQuery({
     ...trpc.metrics.spendBreakdown.queryOptions({ from, to, timeZone }),
     staleTime: 60_000,
     retry: false,
+    placeholderData: keepPreviousData,
   });
 }
 
