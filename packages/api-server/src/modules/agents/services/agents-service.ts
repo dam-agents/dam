@@ -13,6 +13,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
+  type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -33,6 +34,12 @@ export interface ContributionsStatus {
 export interface ContributionsSettledPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+}
+
+/** Port: live read of a pod's status surface (#2965). Passive — never wakes
+ *  a pod or bumps its activity. */
+export interface PodStatusPort {
+  backgroundWork(agentId: string): Promise<SessionBackgroundWork[]>;
 }
 import {
   assembleAgent,
@@ -203,6 +210,25 @@ export function executeTelegramBind(deps: {
     }
 
     return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+/** The read behind `agents.backgroundWork` (#2965): a hibernated agent
+ *  short-circuits to `[]` without touching the pod, an unreachable pod reads
+ *  the same. Extracted like the bind flows for narrow-deps tests. */
+export function executeBackgroundWorkRead(deps: {
+  getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
+  podStatus: PodStatusPort;
+}) {
+  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return null;
+    if (infra.hibernated) return [];
+    try {
+      return await deps.podStatus.backgroundWork(id);
+    } catch {
+      return [];
+    }
   };
 }
 
@@ -494,6 +520,8 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Live pod status reads (#2965); passive by contract. */
+  podStatus: PodStatusPort;
   /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: DefaultResourceLimits;
   /** KubeVirt vm backend available in this install; absent = false. */
@@ -732,6 +760,11 @@ export function createAgentsService(deps: {
       if (!infra) return null;
       return project(infra);
     },
+
+    backgroundWork: executeBackgroundWorkRead({
+      getAgent: (id) => deps.repo.get(id, deps.owner),
+      podStatus: deps.podStatus,
+    }),
 
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;

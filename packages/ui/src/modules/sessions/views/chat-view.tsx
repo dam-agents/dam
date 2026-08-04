@@ -65,11 +65,13 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
+import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -514,6 +516,7 @@ export function ChatView() {
             agents={agents}
             busy={busy}
             connectionState={connectionState}
+            sessionId={sessionId}
           />
         </div>
       </header>
@@ -905,25 +908,30 @@ export function ChatView() {
 }
 
 /** Exceptional-state badges in the chat header — nothing renders while the
- *  agent is healthy. A transient WS hiccup on a still-running agent shows a
- *  "Reconnecting" pill; full lifecycle outages are handled by the takeover
- *  overlay, not here. */
+ *  agent is healthy and quiet. A transient WS hiccup on a still-running agent
+ *  shows a "Reconnecting" pill; background work the open session reported
+ *  shows the slow-dots indicator; full lifecycle outages are handled by the
+ *  takeover overlay, not here. */
 function ChatHeaderStatus({
   selectedAgent,
   agents,
   busy,
   connectionState,
+  sessionId,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
+  sessionId: string | null;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
+  const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
   const reconnecting =
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
+      <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (

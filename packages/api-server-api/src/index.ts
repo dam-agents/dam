@@ -58,6 +58,8 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentUpdateInput,
+  BackgroundWorkItemView,
+  SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
   UpgradeAgentResult,
@@ -77,6 +79,7 @@ export type {
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
+  agentBackgroundWorkInputSchema,
   agentBindSlackChannelInputSchema,
   agentBindTelegramChatInputSchema,
   agentListTelegramChatsInputSchema,

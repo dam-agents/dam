@@ -6,6 +6,7 @@ import {
   TrashCan,
 } from "@carbon/icons-react";
 import {
+  type BackgroundWorkItemView,
   SessionMode,
   type SessionRuntime,
   SessionType,
@@ -25,9 +26,12 @@ import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { slackSessionKind } from "../lib/session-category.js";
+import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
+
+const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
 interface Props {
   session: SessionView;
@@ -35,6 +39,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
@@ -46,6 +51,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  backgroundWork = NO_WORK,
   cost,
   onResume,
   onDelete,
@@ -142,6 +148,7 @@ export function SessionRow({
             ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
+            backgroundWork={backgroundWork}
           />
         </div>
         <span className="text-[11px] text-muted-foreground">
@@ -216,6 +223,7 @@ function SessionIndicators({
   ambient,
   needsApproval,
   working,
+  backgroundWork,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -223,8 +231,17 @@ function SessionIndicators({
   ambient: boolean;
   needsApproval: boolean;
   working: boolean;
+  backgroundWork: readonly BackgroundWorkItemView[];
 }) {
-  if (!scheduled && !terminal && !channel && !needsApproval && !working)
+  const hasBackgroundWork = backgroundWork.length > 0;
+  if (
+    !scheduled &&
+    !terminal &&
+    !channel &&
+    !needsApproval &&
+    !working &&
+    !hasBackgroundWork
+  )
     return null;
   return (
     <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
@@ -257,6 +274,7 @@ function SessionIndicators({
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
+      {/* One activity marker per row, most urgent first. */}
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"
@@ -265,6 +283,11 @@ function SessionIndicators({
         />
       ) : working ? (
         <WorkingDots className="text-accent" title="Working" />
+      ) : hasBackgroundWork ? (
+        <WorkingDots
+          className="working-dots-slow text-success"
+          title={backgroundWorkLabel(backgroundWork)}
+        />
       ) : null}
     </span>
   );

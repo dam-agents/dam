@@ -36,6 +36,7 @@ export const agentSizeSchema = z.object({
 });
 
 export const agentGetInputSchema = idSchema;
+export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
