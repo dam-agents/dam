@@ -13,7 +13,14 @@ slice 01's contract, so it can land before or after 02 — until 02 is in, every
 Everything rendered lives in
 [`standalone-skills-group.tsx:143`](../../../packages/ui/src/modules/sandboxes/components/skills/standalone-skills-group.tsx:143).
 
-Apply the `/react-ui-engineering` skill.
+Apply the `/react-ui-engineering` skill — which, note, forces an extraction here. Its
+list-item rule is **CRITICAL**: anything non-trivial inside a `.map(...)` becomes its own
+component, where non-trivial means >~10 lines of JSX, *any* conditional branch, or *any* local
+derivation. The existing map body is ~80 lines of JSX with a conditional, and this slice adds a
+second branch (pill *and* button) plus a `pill` derivation. Combined with the skill's
+touch-it-=-migrate-it rule, the row moves to a sibling `standalone-skill-row.tsx` — matching the
+`skill-row.tsx` already in that folder — and the group keeps only the section, header slot, and
+publish-record lookup. `PR_STATE_PILL` lives at module scope in the row file.
 
 ## Implementation plan
 
@@ -118,9 +125,12 @@ mise run ui:fix && mise run check
 - [ ] `Publish again` appears **only** when `prState === "closed"`, alongside the pill rather than
       replacing it; `Publish` still appears when there is no record at all.
 - [ ] No button appears for `draft`, `open`, `merged` or `unknown`.
-- [ ] At a narrow viewport the skill name truncates and the controls do not wrap.
+- [ ] At a narrow viewport the skill name truncates and the controls do not wrap — the text block
+      keeps `min-w-0 flex-1` and the pill and button keep `shrink-0`.
 - [ ] `mise run check` and `mise run test` pass, with no new test files.
 - [ ] The diff touches nothing outside `packages/ui/src/modules/sandboxes/`.
+- [ ] The row is extracted to `standalone-skill-row.tsx` per the skill's list-item rule, and the
+      group is back under the JSX weight target.
 
 ## Smoke test
 
