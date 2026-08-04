@@ -57,6 +57,9 @@ COPY --from=agent /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=agent /usr/local/share/lazy-tools/ /usr/local/share/lazy-tools/
 COPY --from=agent /etc/mise/ /etc/mise/
 COPY --from=agent /etc/AGENTS.md /etc/AGENTS.md
+# Managed settings carry the Stop/SubagentStop background-work hooks — without
+# them a VM session's running jobs are reaped out from under it.
+COPY --from=agent /etc/claude-code/ /etc/claude-code/
 COPY --from=agent /etc/profile.d/model-gateway.sh /etc/profile.d/model-gateway.sh
 COPY --from=agent /app/ /app/
 COPY --from=agent /opt/ /opt/
