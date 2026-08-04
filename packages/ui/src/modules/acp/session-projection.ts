@@ -458,6 +458,15 @@ function closeActiveAssistant(messages: Message[]): Message[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
+      // Never close an empty sender placeholder. At promotion the runtime
+      // sends `promptStarted` (stripping the bubble's queued protection)
+      // BEFORE it fans out the previous turn's `platform_turn_ended`, and the
+      // sender's own bubble for that turn is already closed by its prompt
+      // response — so this boundary would land on the just-promoted, still
+      // empty bubble, orphaning it: the reply would then open a fresh bubble.
+      // The placeholder's own lifecycle closes it instead: content arriving,
+      // its own prompt response, or the delivery deadline.
+      if (m.promptId !== undefined && m.parts.length === 0) continue;
       return messages.map((x, j) => (j === i ? { ...x, streaming: false } : x));
     }
   }

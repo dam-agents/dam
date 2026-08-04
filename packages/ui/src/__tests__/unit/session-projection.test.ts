@@ -483,6 +483,47 @@ describe("queued prompt scenarios", () => {
     });
     expect(m[3].streaming).toBe(false);
   });
+
+  test("turn boundary after promotion leaves the empty promoted bubble open for its reply", () => {
+    // The real wire order at promotion (#3127 Code Guardian finding): the
+    // sender's bubble for turn 1 is already closed by its own prompt
+    // response, `promptStarted` then strips the queued protection from the
+    // second bubble, and only AFTERWARDS does turn 1's `platform_turn_ended`
+    // fan out. That boundary must not close the just-promoted, still-empty
+    // placeholder — the reply would otherwise open a fresh bubble and orphan
+    // the user's message behind an empty "Agent" ghost.
+    let m: Message[] = [
+      userMsg("u1", "first"),
+      { ...assistantMsg("a1", "done with turn one", false), promptId: "p1" },
+      userMsg("u2", "second"),
+      { ...assistantMsg("a2", "", true, true), promptId: "p2" },
+    ];
+
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_prompt_started",
+      sessionId: "test-sid",
+      promptId: "p2",
+    });
+    expect(m[3].queued).toBe(false);
+
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(m[3].streaming).toBe(true);
+
+    // The reply lands in the promoted bubble, not a fresh one.
+    m = applyUpdate(m, txtChunk("answer to second"));
+    expect(m).toHaveLength(4);
+    expect(firstTextPart(m[3])).toBe("answer to second");
+
+    // Its own turn boundary closes it now that it has content.
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(m[3].streaming).toBe(false);
+  });
 });
 
 describe("finalizeAllStreaming + hasStreamingAssistant", () => {
