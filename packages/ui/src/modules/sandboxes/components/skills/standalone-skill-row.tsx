@@ -3,6 +3,7 @@ import {
   Launch,
   OverflowMenuHorizontal,
   PullRequest,
+  Renew,
 } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
@@ -56,6 +57,8 @@ export function StandaloneSkillRow({
   onPublish,
   onDownload,
   onDelete,
+  onTrack,
+  trackUnavailable,
 }: {
   skill: LocalSkill;
   /** Latest publish record for this skill, when it has ever been published. */
@@ -67,6 +70,12 @@ export function StandaloneSkillRow({
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
+  /** Hand the skill over to its source, so it becomes governed by the normal
+   *  source → install → drift → Update loop. Offered only once merged. */
+  onTrack?: () => void;
+  /** The source hasn't been scanned yet (or is unreachable), so we can't tell
+   *  whether the local copy diverged — disable rather than guess. */
+  trackUnavailable?: boolean;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
   const canRepublish = !publish || publish.prState === "closed";
@@ -142,6 +151,20 @@ export function StandaloneSkillRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {publish?.prState === "merged" && onTrack && (
+            <DropdownMenuItem
+              disabled={trackUnavailable}
+              onSelect={onTrack}
+              title={
+                trackUnavailable
+                  ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
+                  : undefined
+              }
+            >
+              <Renew size={14} />
+              <span className="flex-1">Track from {publish.sourceName}</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={onDownload}>
             <Download size={14} />
             <span className="flex-1">Download skill</span>

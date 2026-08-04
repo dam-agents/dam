@@ -180,7 +180,7 @@ toggle, so the page needs a note rather than a reversal.
 | 03 ✅ | Render the five states | Badge mapping and tones; `Submitted` replaces the unknown-case `Published`; `Publish again` in the `closed` state only. | 01 |
 | 04 ✅ | Resolve private state through a warm pod | `getPullRequest` on the runtime's GitHub port, tRPC procedure, api-server delegation only when the pod is already running. | 01, 02 |
 | 05 ✅ | Expose the local content hash and de-duplicate the merged row | Lazy `contentHash` on local skills; suppress the source-group entry for an identical merged standalone skill. | 01 |
-| 06 | Hand a merged skill over to its source | `Track from {source}` kebab action with a divergence-aware confirm; architecture-doc update and `Last verified` bump. | 03, 05 |
+| 06 ✅ | Hand a merged skill over to its source | `Track from {source}` kebab action with a divergence-aware confirm; architecture-doc update and `Last verified` bump. | 03, 05 |
 
 ```mermaid
 graph LR

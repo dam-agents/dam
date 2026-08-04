@@ -85,6 +85,8 @@ export function StandaloneSkillsGroup({
   onPublish,
   onDownload,
   onDelete,
+  onTrack,
+  trackUnavailableNames,
   action,
 }: {
   skills: LocalSkill[];
@@ -97,6 +99,10 @@ export function StandaloneSkillsGroup({
   /** The row's latest publish record is passed along so the confirm dialog can
    *  mention the PR without re-deriving it in the parent. */
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
+  /** Hand a merged skill over to its source. */
+  onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
+  /** Names whose source hasn't been scanned, so tracking can't be offered yet. */
+  trackUnavailableNames: ReadonlySet<string>;
   /** Header-right slot (e.g. the "+ Add source" button). */
   action?: ReactNode;
 }) {
@@ -121,6 +127,8 @@ export function StandaloneSkillsGroup({
               onPublish={() => onPublish(skill)}
               onDownload={() => onDownload(skill)}
               onDelete={() => onDelete(skill, pub)}
+              onTrack={pub ? () => onTrack(skill, pub) : undefined}
+              trackUnavailable={trackUnavailableNames.has(skill.name)}
             />
           );
         })}

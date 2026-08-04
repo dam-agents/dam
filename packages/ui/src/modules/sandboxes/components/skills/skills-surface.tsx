@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { externalLinkProps } from "@/lib/external-link";
+import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -144,6 +145,25 @@ export function SkillsSurface({
     [standalone, publishes, skillsBySource],
   );
 
+  // Tracking stays gated on `merged`, unlike the suppression above: it *writes*
+  // — install overwrites the local copy — so waiting until the pull request is
+  // known to have landed is worth it, where hiding a redundant row is not.
+  //
+  // A merged skill whose source hasn't produced a listing yet: we can't tell
+  // whether the local copy diverged, so tracking is disabled rather than
+  // guessed at.
+  const trackUnavailableNames = useMemo(() => {
+    const out = new Set<string>();
+    for (const p of publishes) {
+      if (p.prState !== "merged") continue;
+      const scanned = skillsBySource[p.sourceId]?.find(
+        (s) => s.name === p.skillName,
+      );
+      if (!scanned) out.add(p.skillName);
+    }
+    return out;
+  }, [publishes, skillsBySource]);
+
   const deleteWithConfirm = async (
     skill: LocalSkill,
     pub?: SkillPublishRecord,
@@ -169,6 +189,51 @@ export function SkillsSurface({
       { kind: "destructive", confirmLabel: "Delete skill" },
     );
     if (ok) await deleteStandalone(skill);
+  };
+
+  /**
+   * Hand a merged skill over to its source. This is a governance change, not
+   * housekeeping — once tracked, a future install overwrites the local copy —
+   * so it is an explicit action with a confirm that states what will happen,
+   * rather than something that fires on a schedule.
+   */
+  const trackWithConfirm = async (
+    skill: LocalSkill,
+    pub: SkillPublishRecord,
+  ) => {
+    const scanned = skillsBySource[pub.sourceId]?.find(
+      (s) => s.name === skill.name,
+    );
+    // The kebab item is disabled in this case; guard anyway rather than guess.
+    if (!scanned) return;
+    const diverged = skill.contentHash !== scanned.contentHash;
+    const ok = await showConfirm(
+      diverged ? (
+        <>
+          Your local copy differs from the version in {pub.sourceName}. Tracking
+          replaces it with the published version and your local changes are
+          lost. To contribute them instead, use <strong>Publish again</strong>.
+        </>
+      ) : (
+        <>
+          This skill will be tracked from {pub.sourceName}. Updates published
+          there will keep it current.
+        </>
+      ),
+      `Track ${skill.name} from ${pub.sourceName}?`,
+      diverged
+        ? { kind: "destructive", confirmLabel: "Replace and track" }
+        : { confirmLabel: "Track skill" },
+    );
+    if (!ok) return;
+    // The existing install path is the migration: it fetches the skill at a
+    // version, writes it into every Skill Path, and upserts the agent_skills
+    // row — so no second writer of that row is introduced.
+    await update(scanned);
+    emitToast({
+      kind: "success",
+      message: `Tracking ${skill.name} from ${pub.sourceName}`,
+    });
   };
 
   const removeWithConfirm = async (src: SkillSource) => {
@@ -263,6 +328,8 @@ export function SkillsSurface({
               onPublish={setPublishFor}
               onDownload={(skill) => void downloadStandalone(skill)}
               onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
+              onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
+              trackUnavailableNames={trackUnavailableNames}
               action={addSourceButton}
             />
           ) : readOnly ? (
