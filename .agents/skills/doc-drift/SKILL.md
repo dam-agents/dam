@@ -105,9 +105,9 @@ verdict.
 This skill may run as one sub-step of a longer process — for example, one section of a broader
 code review whose caller embeds the report and continues with its own remaining steps. The
 report is then an intermediate result, not the final deliverable, and what the caller does
-with it is not this skill's concern. Nothing in the report may read as a completion or
-termination signal, and it must carry no imperatives aimed at the caller — no "done", "no
-further action needed", "present this to the user", "stop here", or the like.
+with it is not this skill's concern. The report contains findings only: a verdict, drift
+entries, and possible-drift questions. It states no conclusion about the surrounding process
+and addresses no instruction to the caller.
 
 ## Guidelines
 
