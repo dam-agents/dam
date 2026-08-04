@@ -36,6 +36,20 @@ export async function waitForAgentRunning(
   return agentId;
 }
 
+/** Create an agent by name from a template unless one already exists. Lets a
+ *  self-contained full-tier spec stand up the shared mock agent the smoke
+ *  chain would otherwise have created (03-agent, via the UI), while a full run
+ *  — where 03-agent got there first — finds it and creates nothing. */
+export async function ensureAgentExists(
+  api: ApiClient,
+  agentName: string,
+  templateId: string,
+): Promise<void> {
+  const list = await api.agents.list.query();
+  if (list.some((a) => a.name === agentName)) return;
+  await api.agents.create.mutate({ name: agentName, templateId });
+}
+
 // HACK: UI doesn't pick up new agent without a reload (bug)
 export async function reloadUntilAgentVisible(page: Page): Promise<void> {
   await page.reload();

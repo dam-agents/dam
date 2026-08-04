@@ -3,13 +3,14 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import {
   agentCardStatus,
   chatInput,
+  ensureAgentExists,
   gotoAgentDetail,
   setMockAgentReply,
   waitForAgentRunning,
 } from "./agents.js";
 import type { ApiClient } from "./api-client.js";
-import { loginViaUi } from "./auth.js";
-import { agentName } from "./fixtures.js";
+import { acceptTerms, loginViaUi } from "./auth.js";
+import { agentName, harnessName } from "./fixtures.js";
 
 /** The UI's own delivery deadline (`DELIVERY_TIMEOUT_MS` in
  *  use-prompt-delivery.ts). Not restated as a bare literal at the call sites:
@@ -56,6 +57,13 @@ export async function openMockAgentChat(
   page: Page,
   api: ApiClient,
 ): Promise<string> {
+  // Self-contained also in the API sense: on a fresh DB nothing has accepted
+  // the terms (the gate 412s every other call) and the shared agent does not
+  // exist yet — the smoke chain provides both, but no dependency edge orders
+  // it before this project, so a filtered run arrives first. Re-accepting is
+  // idempotent, and a full run finds the agent already there.
+  await acceptTerms(api);
+  await ensureAgentExists(api, agentName, harnessName);
   const agentId = await waitForAgentRunning(api, agentName);
   await loginViaUi(page);
   await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
