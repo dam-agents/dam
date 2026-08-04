@@ -171,8 +171,11 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 	// CAP_CHOWN; the guest kernel returns EPERM) — so root pre-creates the
 	// link here and the entrypoint's `[ ! -L ]` check skips its own attempt.
 	// Runs after the mount bootcmds above so the workspace share is in place.
+	// `ln -sfn` into an existing real directory nests the link instead of
+	// swapping — clear a non-symlink first so the pre-create is authoritative
+	// on volumes that already carry a real ~/.cache.
 	cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
-		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
+		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && { [ -L %[2]s/.cache ] || rm -rf %[2]s/.cache; } && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
 		vmAgentUID, shellQuote(agentHome),
 	)})
 

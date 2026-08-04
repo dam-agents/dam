@@ -24,10 +24,14 @@ export function createChildAgentProcess(
   // A missing cwd fails the spawn as a misleading ENOENT on the *binary*
   // (e.g. before the workspace init script has created WORK_DIR on a fresh
   // volume). Creating it here is always safe — it's the harness's cwd.
+  // Non-fatal: the spawn below still runs, but its own error reports ENOENT
+  // on the *binary*, so the mkdir failure here is the only actionable line.
   try {
     mkdirSync(opts.workingDir, { recursive: true });
-  } catch {
-    // unwritable workspace surfaces as the spawn error below
+  } catch (err) {
+    process.stderr.write(
+      `[agent-process] could not create workingDir ${opts.workingDir}: ${(err as Error).message}\n`,
+    );
   }
 
   const child = spawn(cmd, args, {

@@ -36,9 +36,16 @@ mkdir -p /tmp/agent-cache
 # EPERM); the VM userdata pre-creates the link as root, and if that ever
 # misses, a real ~/.cache on the share is a perf wart — never a boot failure.
 if [ ! -L "$home/.cache" ]; then
-	rm -rf "$home/.cache"
-	ln -sfn /tmp/agent-cache "$home/.cache" \
-		|| echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
+	# Probe with a scratch link first so a failing swap (e.g. non-root on
+	# unprivileged virtiofs, which EPERMs symlink creation) leaves any
+	# existing cache directory intact instead of deleting it with no
+	# replacement.
+	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
+		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
+	else
+		rm -f "$home/.cache.tmp"
+		echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
+	fi
 fi
 
 # Harness tool pins ship in the image's system-level mise config
