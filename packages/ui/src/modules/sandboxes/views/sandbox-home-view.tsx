@@ -45,7 +45,6 @@ export function SandboxHomeView() {
         <span
           role="alert"
           className="mr-auto inline-flex items-center gap-1.5 text-xs text-warning"
-          title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
         >
           <span aria-hidden="true">⚠</span>
           Allow everything is on — narrow with deny rules or remove the

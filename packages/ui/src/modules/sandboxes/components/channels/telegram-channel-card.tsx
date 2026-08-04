@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../../brand.js";
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
@@ -25,8 +26,7 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
             <a
               className="font-medium text-accent hover:underline"
               href={`https://t.me/${handle}`}
-              target="_blank"
-              rel="noreferrer"
+              {...externalLinkProps}
             >
               @{handle}
             </a>

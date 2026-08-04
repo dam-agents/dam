@@ -89,7 +89,7 @@ export function KeyValueEditor({
               onClick={() => remove(i)}
               disabled={disabled}
               className="shrink-0 text-muted-foreground"
-              title="Remove"
+              aria-label="Remove"
             >
               <Close size={13} />
             </Button>

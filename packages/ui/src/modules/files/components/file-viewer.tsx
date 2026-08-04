@@ -197,7 +197,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               size="xs"
               className="text-sm"
               onClick={cancelEdit}
-              title="Cancel"
             >
               <Close size={14} /> Cancel
             </Button>
@@ -207,7 +206,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               className="text-sm"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
-              title="Save (Cmd/Ctrl+S)"
+              tooltip="Save (Cmd/Ctrl+S)"
             >
               <Save size={14} /> {writeMutation.isPending ? "Saving…" : "Save"}
             </Button>
@@ -220,7 +219,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 size="xs"
                 className="text-sm"
                 onClick={() => setEditMode(true)}
-                title="Edit file"
               >
                 <Edit size={14} /> Edit
               </Button>
@@ -231,7 +229,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 size="xs"
                 className="text-sm"
                 onClick={downloadFile}
-                title="Download file"
               >
                 <Download size={14} /> Download
               </Button>
@@ -240,24 +237,18 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
-                rawTitle="Show raw SVG"
-                renderTitle="Render SVG"
               />
             )}
             {isMarkdown && (
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
-                rawTitle="Show raw"
-                renderTitle="Render markdown"
               />
             )}
             {isHtml && (
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
-                rawTitle="Show raw HTML"
-                renderTitle="Render HTML"
               />
             )}
             {isRenderedPreview && (
@@ -266,7 +257,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 size="icon-sm"
                 className="shrink-0"
                 onClick={() => setIsExpanded(true)}
-                title="Open fullscreen"
+                aria-label="Open fullscreen"
+                tooltip="Open fullscreen"
               >
                 <Maximize size={14} />
               </Button>
@@ -278,7 +270,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           size="icon-sm"
           className="shrink-0"
           onClick={onClose}
-          title="Close"
+          aria-label="Close"
         >
           <Close size={16} />
         </Button>

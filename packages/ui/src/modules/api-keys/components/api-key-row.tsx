@@ -48,7 +48,8 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
         onClick={() => onRevoke(id, name)}
         disabled={revoking}
         className="shrink-0 text-muted-foreground"
-        title="Revoke"
+        aria-label="Revoke"
+        tooltip="Revoke"
       >
         <TrashCan size={14} />
       </Button>

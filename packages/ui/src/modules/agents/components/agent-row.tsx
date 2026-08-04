@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
@@ -53,7 +54,7 @@ export function AgentRow({
   return (
     <Card
       data-testid="agent-row"
-      onClick={onSelect}
+      {...clickableProps(onSelect)}
       // The guard keeps the card flat while a nested action is hovered, so the
       // two hover states don't stack.
       className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
@@ -112,7 +113,7 @@ export function AgentRow({
         <span onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" title="Sandbox actions">
+              <Button variant="ghost" size="icon" aria-label="Sandbox actions">
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>

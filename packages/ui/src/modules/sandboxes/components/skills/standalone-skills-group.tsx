@@ -19,6 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Tooltip } from "@/components/ui/tooltip";
+import { externalLinkProps } from "@/lib/external-link";
 import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -147,29 +149,31 @@ export function StandaloneSkillsGroup({
               </div>
 
               {pub ? (
-                <a
-                  href={pub.prUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    badgeVariants({ variant: "muted" }),
-                    // border-border, because the readOnly card is bg-muted too
-                    // and the pill would otherwise vanish into it.
-                    "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
-                  )}
-                  title={`Published to ${pub.sourceName} on ${formatDateTime(
+                <Tooltip
+                  content={`Published to ${pub.sourceName} on ${formatDateTime(
                     pub.publishedAt,
                   )} — opens the pull request`}
                 >
-                  <PullRequest size={13} /> Published · {pub.sourceName}
-                </a>
+                  <a
+                    href={pub.prUrl}
+                    {...externalLinkProps}
+                    className={cn(
+                      badgeVariants({ variant: "muted" }),
+                      // border-border, because the readOnly card is bg-muted too
+                      // and the pill would otherwise vanish into it.
+                      "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
+                    )}
+                  >
+                    <PullRequest size={13} /> Published · {pub.sourceName}
+                  </a>
+                </Tooltip>
               ) : (
                 <Button
                   variant="outline"
                   size="xs"
                   disabled={!canPublish}
                   onClick={() => onPublish(skill)}
-                  title={
+                  tooltip={
                     canPublish
                       ? "Publish this skill as a pull request"
                       : "Add a GitHub source first to publish there"
@@ -185,10 +189,10 @@ export function StandaloneSkillsGroup({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    title="Skill actions"
+                    aria-label="Skill actions"
                     className="shrink-0 text-muted-foreground"
                   >
-                    <OverflowMenuHorizontal size={18} />
+                    <OverflowMenuHorizontal size={16} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>

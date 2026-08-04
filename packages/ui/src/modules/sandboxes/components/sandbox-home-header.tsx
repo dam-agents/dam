@@ -91,7 +91,11 @@ export function SandboxHomeHeader({ agent, display }: Props) {
           <OpenInMenu agent={agent} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" title="Sandbox actions">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Sandbox actions"
+              >
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>

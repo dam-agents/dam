@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { clickableProps } from "@/lib/clickable";
 
 import { useStore } from "../../../store.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
@@ -88,9 +90,11 @@ export function FileRow({
         <div
           className={`group relative flex items-center h-8 text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
           style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
-          onClick={
-            isDir ? () => panel.onToggleDir(path) : () => panel.onOpenFile(path)
-          }
+          {...clickableProps(
+            isDir
+              ? () => panel.onToggleDir(path)
+              : () => panel.onOpenFile(path),
+          )}
           {...drag}
         >
           <div
@@ -104,10 +108,10 @@ export function FileRow({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+                  className={HOVER_ACTION}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
-                  title="More actions"
+                  aria-label="More actions"
                 >
                   <OverflowMenuHorizontal size={13} />
                 </Button>

@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { externalLinkProps } from "@/lib/external-link";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
 import { cn } from "@/lib/utils";
@@ -49,8 +50,7 @@ function SourceError({
       {cta ? (
         <a
           href={cta}
-          target="_blank"
-          rel="noopener noreferrer"
+          {...externalLinkProps}
           className="shrink-0 font-semibold underline hover:opacity-80"
         >
           Fix it →
@@ -181,10 +181,10 @@ export function SkillSourceCard({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                title="Source actions"
+                aria-label="Source actions"
                 className="shrink-0 text-muted-foreground"
               >
-                <OverflowMenuHorizontal size={18} />
+                <OverflowMenuHorizontal size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>

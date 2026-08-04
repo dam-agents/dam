@@ -8,6 +8,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -98,12 +100,7 @@ function ArtifactListRow({
 }) {
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onClick();
-      }}
+      {...clickableProps(onClick)}
       title={artifact.title}
       className={cn(
         "group flex h-8 w-full cursor-pointer items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
@@ -115,23 +112,20 @@ function ArtifactListRow({
       {artifact.version > 1 && <VersionBadge version={artifact.version} />}
       {artifact.visibility === "public" && (
         <span
+          role="img"
+          aria-label="Shared"
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-          title="Shared"
         />
       )}
-      <div
-        className="shrink-0"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-      >
+      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
-          {/* Kept mounted at opacity-0 so hovering doesn't reflow the row. */}
+          {/* Kept mounted so hovering doesn't reflow the row. */}
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon-xs"
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
-              title="More actions"
+              className={HOVER_ACTION}
+              aria-label="More actions"
             >
               <OverflowMenuVertical size={13} />
             </Button>

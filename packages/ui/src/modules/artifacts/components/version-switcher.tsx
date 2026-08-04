@@ -21,7 +21,8 @@ export function VersionSwitcher({
       <Button
         variant="ghost"
         size="icon-xs"
-        title="Older version"
+        aria-label="Older version"
+        tooltip="Older version"
         disabled={current <= 1}
         onClick={() => onChange(current - 1)}
       >
@@ -33,7 +34,8 @@ export function VersionSwitcher({
       <Button
         variant="ghost"
         size="icon-xs"
-        title="Newer version"
+        aria-label="Newer version"
+        tooltip="Newer version"
         disabled={current >= total}
         onClick={() => onChange(current + 1)}
       >

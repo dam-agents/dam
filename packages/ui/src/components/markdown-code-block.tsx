@@ -32,7 +32,7 @@ export function MarkdownCodeBlock({ node, children, ...preProps }: Props) {
             size="icon-sm"
             onClick={() => void copy(code)}
             aria-label="Copy code"
-            title="Copy code"
+            tooltip="Copy code"
             className={cn(
               // Gate the reveal on hover capability, not width: a touch device
               // wider than `md` would hide the button with no way to show it.

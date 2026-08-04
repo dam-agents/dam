@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -120,7 +122,7 @@ export function SessionRow({
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
-      onClick={handleClick}
+      {...clickableProps(handleClick)}
       onTouchStart={startPress}
       onTouchEnd={endPress}
       onTouchCancel={endPress}
@@ -167,9 +169,9 @@ export function SessionRow({
             data-testid="session-menu-button"
             variant="ghost"
             size="icon-xs"
-            className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100"
+            className={cn("shrink-0", HOVER_ACTION)}
             onClick={(e) => e.stopPropagation()}
-            title="More actions"
+            aria-label="More actions"
           >
             <OverflowMenuVertical size={16} />
           </Button>
@@ -260,8 +262,9 @@ function SessionIndicators({
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"
+          role="img"
+          aria-label="Needs your approval"
           className="w-2 h-2 rounded-full bg-accent shrink-0"
-          title="Needs your approval"
         />
       ) : working ? (
         <WorkingDots className="text-accent" title="Working" />

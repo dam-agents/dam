@@ -1,4 +1,4 @@
-import { Checkbox } from "@/components/ui/checkbox";
+import { CheckboxItem } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -70,18 +70,14 @@ export function AgentBindingField({
             </p>
           ) : (
             agents.map((agent) => (
-              <label
+              <CheckboxItem
                 key={agent.id}
-                htmlFor={`api-key-agent-${agent.id}`}
-                className="flex cursor-pointer items-center gap-2"
-              >
-                <Checkbox
-                  id={`api-key-agent-${agent.id}`}
-                  checked={selectedAgentIds.has(agent.id)}
-                  onCheckedChange={() => onToggleAgent(agent.id)}
-                />
-                <span className="truncate text-sm">{agent.name}</span>
-              </label>
+                id={`api-key-agent-${agent.id}`}
+                label={agent.name}
+                labelClassName="truncate"
+                checked={selectedAgentIds.has(agent.id)}
+                onCheckedChange={() => onToggleAgent(agent.id)}
+              />
             ))
           )}
         </div>

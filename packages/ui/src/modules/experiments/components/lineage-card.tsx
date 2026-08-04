@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { LineageRow } from "../lib/sandbox-groups.js";
@@ -32,10 +33,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
   return (
     <Card className="overflow-hidden">
       <div
-        role={openable ? "button" : undefined}
-        tabIndex={openable ? 0 : undefined}
-        onClick={openable ? onOpen : undefined}
-        onKeyDown={(e) => openable && e.key === "Enter" && onOpen()}
+        {...clickableProps(openable ? onOpen : undefined)}
         className={cn(
           "flex items-center gap-3 px-[18px] py-4",
           openable && "cursor-pointer transition-colors hover:bg-muted",
@@ -45,7 +43,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
             obvious without reading the runs below. */}
         <button
           type="button"
-          title={expanded ? "Collapse runs" : "Show runs"}
+          aria-label={expanded ? "Collapse runs" : "Show runs"}
           aria-expanded={expanded}
           onClick={(e) => {
             e.stopPropagation();
@@ -76,13 +74,10 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
         <span className="ml-auto shrink-0">
           <ExperimentStatusBadge status={lineage.badge} />
         </span>
-        <div
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
+        <div onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" title="More actions">
+              <Button variant="ghost" size="icon-sm" aria-label="More actions">
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>

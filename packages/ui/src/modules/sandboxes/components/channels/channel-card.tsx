@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { CARD_SURFACE } from "@/components/ui/card";
+import { PanelCard } from "@/components/ui/panel-card";
 
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 
@@ -16,20 +16,20 @@ export function ChannelCard({
   children: ReactNode;
 }) {
   return (
-    <section data-testid={`channel-card-${iconSlug}`} className={CARD_SURFACE}>
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
+    <PanelCard
+      testId={`channel-card-${iconSlug}`}
+      title={title}
+      headerRight={headerRight}
+      icon={
         <ConnectionIcon
           iconSlug={iconSlug}
           alt=""
           size={16}
           className="shrink-0"
         />
-        <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground">
-          {title}
-        </h3>
-        {headerRight}
-      </header>
+      }
+    >
       {children}
-    </section>
+    </PanelCard>
   );
 }

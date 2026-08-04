@@ -33,7 +33,7 @@ export function ProviderFormShell({
         {onCancel && (
           <IconButton
             onClick={onCancel}
-            title="Cancel"
+            label="Cancel"
             hoverTone="neutral"
             className="-mt-2 -mr-2 shrink-0"
           >
