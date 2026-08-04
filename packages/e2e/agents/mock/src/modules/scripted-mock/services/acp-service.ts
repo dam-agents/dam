@@ -70,6 +70,16 @@ export function startAcpService(deps: AcpServiceDeps): void {
           respond(id, {});
           return;
         }
+        case "session/list":
+          // Bare ids are enough: the runtime enriches each entry with its
+          // stored `_meta.platform` (mode, activity, running) on the way out,
+          // which is what the sessions sidebar decodes. Without this a
+          // reloaded tab can never pick a session back up on a mock agent —
+          // the sidebar stays "No sessions yet" forever.
+          respond(id, {
+            sessions: [...knownSessions].map((sessionId) => ({ sessionId })),
+          });
+          return;
         case "session/prompt":
           await handlePrompt(id, params);
           return;
