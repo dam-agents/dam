@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import readline from "node:readline";
 import type { AgentProcess } from "./agent-process.js";
 
@@ -19,6 +20,15 @@ export function createChildAgentProcess(
       ([k]) => !k.startsWith("npm_"),
     ),
   );
+
+  // A missing cwd fails the spawn as a misleading ENOENT on the *binary*
+  // (e.g. before the workspace init script has created WORK_DIR on a fresh
+  // volume). Creating it here is always safe — it's the harness's cwd.
+  try {
+    mkdirSync(opts.workingDir, { recursive: true });
+  } catch {
+    // unwritable workspace surfaces as the spawn error below
+  }
 
   const child = spawn(cmd, args, {
     stdio: ["pipe", "pipe", "inherit"],

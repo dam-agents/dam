@@ -12,8 +12,10 @@
 #   - platform-scratch mounts the "scratch" disk under docker/k3s image stores.
 #   - platform-ca installs the MITM CA into the OS trust store.
 #   - platform-boot-gate blocks agent-runtime until the paired gateway answers.
-#   - agent-runtime runs as uid 65532 (same as the pod image, so PVC content
-#     ownership carries over), spawning harness-chat/-terminal like in a pod.
+#   - agent-runtime runs as root (unprivileged virtiofsd EPERMs creates from
+#     any other guest uid — see agent-runtime.service), spawning
+#     harness-chat/-terminal like in a pod. The agent user still exists for
+#     SSH sessions and image-baked $HOME content.
 ARG AGENT_IMAGE=platform-claude-code:latest
 FROM ${AGENT_IMAGE} AS agent
 

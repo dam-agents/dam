@@ -254,7 +254,13 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	// else the first chart-wide default. (The pod path lists all defaults as
 	// fallbacks; KubeVirt's API takes one — a multi-secret install needs the
 	// matching secret first.)
-	bootDisk := map[string]any{"image": agentSpec.Image, "imagePullPolicy": pullPolicy}
+	// Unlike a pod's container, containerDisk validates imagePullPolicy as a
+	// strict enum — the chart's default "" (tag-based K8s behavior) must be
+	// omitted, not passed through, or admission rejects the VM.
+	bootDisk := map[string]any{"image": agentSpec.Image}
+	if pullPolicy != "" {
+		bootDisk["imagePullPolicy"] = pullPolicy
+	}
 	if ref := agentSpec.ImagePullSecretRef; ref != "" {
 		bootDisk["imagePullSecret"] = ref
 	} else if len(base.ImagePullSecrets) > 0 {

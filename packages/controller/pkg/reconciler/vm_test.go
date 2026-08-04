@@ -94,6 +94,22 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.NotContains(t, names, "scratchpad")
 	boot := names["boot"]["containerDisk"].(map[string]any)
 	assert.Equal(t, agent.Spec.Image, boot["image"])
+	assert.Equal(t, "IfNotPresent", boot["imagePullPolicy"])
+
+	// containerDisk validates imagePullPolicy as a strict enum — an unset
+	// policy must be omitted, not rendered as "" (KubeVirt admission rejects
+	// the VM outright).
+	bare := vmAgentCR()
+	bare.Spec.ImagePullPolicy = ""
+	r.config.AgentTemplateDefaults.ImagePullPolicy = ""
+	bareVM, err := BuildAgentVirtualMachine("my-agent", &bare.Spec, r.config, agentOwnerRef(bare), "10.96.42.42")
+	require.NoError(t, err)
+	bareVolumes, _, _ := unstructured.NestedSlice(bareVM.Object, "spec", "template", "spec", "volumes")
+	for _, v := range bareVolumes {
+		if m := v.(map[string]any); m["name"] == "boot" {
+			assert.NotContains(t, m["containerDisk"].(map[string]any), "imagePullPolicy")
+		}
+	}
 
 	// virtiofs filesystem for the persisted mount; PVC created with the
 	// StatefulSet-convention name and agent labels.

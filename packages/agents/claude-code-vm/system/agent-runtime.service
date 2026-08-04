@@ -12,7 +12,13 @@ After=cloud-init.service cloud-init-network.service platform-ca.service platform
 Requires=platform-boot-gate.service
 
 [Service]
-User=agent
+# root, not the agent user: the workspace is unprivileged virtiofs
+# (virtiofsd runs as the launcher pod's qemu uid with all caps dropped —
+# the OpenShift Virtualization default), which EPERMs every create from
+# any other guest uid. Root creates are accepted (ownership squashes to
+# the daemon's uid). Isolation is the VM boundary itself, same stance as
+# docker/k3s already running as root in this guest.
+User=root
 WorkingDirectory=/app
 EnvironmentFile=/etc/platform/env
 Environment=PORT=8080
