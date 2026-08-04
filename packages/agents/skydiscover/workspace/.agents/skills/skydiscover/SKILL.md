@@ -297,7 +297,7 @@ Run it (after Step 1 resolved `$base` and a model id):
 ```sh
 export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"
 skydiscover-run task/initial.py task/evaluator.py \
-  --search "$SKYDISCOVER_SEARCH" \
+  --search "${SKYDISCOVER_SEARCH:-adaevolve}" \
   -i 10 -m <model-id> --api-base "$base/v1" \
   -o "$SKYDISCOVER_OUTPUT_ROOT/sin-approx/output"
 ```

@@ -143,12 +143,12 @@ estimate, but an informed user may pre-authorize it (see below).
   cd "$dir"
   export OPENAI_API_KEY="${OPENAI_API_KEY:-placeholder}"   # gateway overwrites it on the wire
   skydiscover-run task/initial.py task/evaluator.py \
-    --search "$SKYDISCOVER_SEARCH" \
+    --search "${SKYDISCOVER_SEARCH:-adaevolve}" \
     -i <N> -m <model-id> --api-base "$base/v1" \
     -o "$dir/output" \
     > run.log 2>&1 &
-  echo $! > run.pid
-  wait
+  pid=$!; echo "$pid" > run.pid
+  wait "$pid"
   ```
 
 - **Always pass an explicit `-o`** on the **persisted** workspace
