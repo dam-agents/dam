@@ -1,7 +1,10 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { Skill, SkillsService } from "api-server-api";
-import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import {
+  createAgentsRepository,
+  type AgentsRepository,
+} from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
@@ -11,6 +14,7 @@ import {
 } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
+import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
 import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
@@ -75,11 +79,18 @@ function invalidateScanCache(gitUrl: string, path: string | undefined): void {
  */
 export function composePrStateResolver(deps: {
   db: Db;
+  agents: AgentsRepository;
+  namespace: string;
   log: (msg: string) => void;
 }): PrStateResolver {
   return createPrStateResolver({
     agentSkills: createAgentSkillsRepository(deps.db),
     reader: createGitHubPrStateReader(),
+    podReader: createPodPrStateReader({
+      agents: deps.agents,
+      runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
+      log: deps.log,
+    }),
     log: deps.log,
   });
 }

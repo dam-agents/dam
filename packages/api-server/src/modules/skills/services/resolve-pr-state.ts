@@ -34,6 +34,7 @@ import type {
   PrStateCandidate,
 } from "../infrastructure/agent-skills-repository.js";
 import type { PrStateReader } from "../infrastructure/pr-state-reader.js";
+import { derivePrState, type PodPrStateReader } from "../domain/pr-state.js";
 import { parsePrUrl } from "../domain/pr-url.js";
 
 /** Every record is re-read at most once an hour — the same span as the
@@ -59,6 +60,12 @@ export interface PrStateResolver {
 export function createPrStateResolver(deps: {
   agentSkills: AgentSkillsRepository;
   reader: PrStateReader;
+  /** Authenticated fallback for private sources, through the agent's own pod.
+   *  Required, not optional: the adapter already expresses "cannot read right
+   *  now" by returning null (stopped agent, failed call), so an absent port
+   *  would only add a second way to say the same thing — one that fails silently
+   *  as "private sources never resolve" instead of failing to compile. */
+  podReader: PodPrStateReader;
   log: (msg: string) => void;
 }): PrStateResolver {
   return {
@@ -113,6 +120,27 @@ export function createPrStateResolver(deps: {
             `anonymous rate limit exhausted; ${resolved} record(s) resolved before stopping`,
           );
           return resolved;
+        }
+        // A 404 means "not resolvable anonymously" — private as much as gone.
+        // Escalate to the owning agent's pod, whose gateway holds the token.
+        // Only `not-found`: an error or a rate limit says nothing about the
+        // source being private.
+        if (result.reason === "not-found") {
+          const disposition = await deps.podReader.read(
+            candidate.agentId,
+            coords,
+          );
+          if (disposition) {
+            await deps.agentSkills.setPrState(candidate.prUrl, {
+              prState: derivePrState(disposition),
+              checkedAt: now,
+              // The pod path reads no ETag back, and the anonymous validator is
+              // for a resource we just failed to see.
+              etag: null,
+            });
+            resolved += 1;
+            continue;
+          }
         }
         // Unavailable: keep whatever state is already known — a blip must not
         // erase a resolved `merged` — but discard the validator, which belongs

@@ -51,6 +51,19 @@ export interface PullRequest {
   htmlUrl: string;
 }
 
+/**
+ * Read shape of an existing pull request — distinct from {@link PullRequest},
+ * which is the *create* response. Deliberately the three raw fields rather than
+ * a `draft | open | merged | closed` verdict: that derivation is application
+ * concern and the api-server owns the single copy of it, so duplicating it here
+ * is how "merged beats closed" would eventually drift.
+ */
+export interface PullRequestState {
+  state: "open" | "closed";
+  draft: boolean;
+  mergedAt: string | null;
+}
+
 export interface GithubFetchOpts {
   withAuth?: boolean;
 }
@@ -73,6 +86,10 @@ export interface GitHubRestClient {
     host: DetectedOwnerRepo,
     opts?: GithubFetchOpts,
   ) => Promise<Result<CommitObject, SkillsDomainError>>;
+  getPullRequest: (
+    host: DetectedOwnerRepo,
+    number: number,
+  ) => Promise<Result<PullRequestState, SkillsDomainError>>;
   fetchTarball: (
     host: DetectedOwnerRepo,
     sha: string,
@@ -148,6 +165,23 @@ export function createGitHubRestClient(): GitHubRestClient {
       );
       if (!r.ok) return r;
       return ok({ sha: r.value.sha });
+    },
+    async getPullRequest(host, number) {
+      // Authenticated by default, which is the point: the gateway injects the
+      // owner's token for api.github.com, so a private repo resolves here when
+      // the api-server's anonymous read could only 404.
+      const r = await ghJson<{
+        state: string;
+        draft?: boolean;
+        merged_at?: string | null;
+      }>("GET", `/repos/${host.owner}/${host.repo}/pulls/${number}`);
+      if (!r.ok) return r;
+      return ok({
+        state:
+          r.value.state === "closed" ? ("closed" as const) : ("open" as const),
+        draft: r.value.draft ?? false,
+        mergedAt: r.value.merged_at ?? null,
+      });
     },
     async fetchTarball(host, sha, opts) {
       return await ghBytes(

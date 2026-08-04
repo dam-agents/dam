@@ -34,6 +34,15 @@ export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
 });
 
+// Coordinates, not the pull-request URL: the api-server has already parsed it
+// (and resolves owner/repo the same way for publish), so parsing it a second
+// time in the pod would be a duplicate implementation waiting to drift.
+export const skillReadPullRequestInputSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  number: z.number().int().positive(),
+});
+
 // No skillPaths: the runtime resolves them from its manifest, same as
 // readLocal/writeLocal. (Contrast skillUninstallInputSchema, whose paths come
 // from the driver applying a declarative install.)

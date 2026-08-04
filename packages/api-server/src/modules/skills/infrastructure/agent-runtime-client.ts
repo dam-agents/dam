@@ -2,6 +2,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { PrDisposition } from "../domain/pr-state.js";
 
 export interface PublishSkillCall {
   name: string;
@@ -45,6 +46,12 @@ export interface AgentRuntimeSkillsClient {
   ): Promise<LocalSkill[]>;
   deleteLocal(agentId: string, name: string): Promise<void>;
   readLocal(agentId: string, name: string): Promise<SkillLocalFiles>;
+  /** Raw pull-request disposition, read through the pod so the paired gateway
+   *  can inject the owner's token — the only way a private source resolves. */
+  readPullRequest(
+    agentId: string,
+    coords: { owner: string; repo: string; number: number },
+  ): Promise<PrDisposition>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -213,6 +220,10 @@ export function createAgentRuntimeSkillsClient(
     readLocal: (agentId, name) =>
       runWithUpstreamMapping(`agent-runtime readLocal ${agentId}`, () =>
         makeClient(agentId, namespace).skills.readLocal.query({ name }),
+      ),
+    readPullRequest: (agentId, coords) =>
+      runWithUpstreamMapping(`agent-runtime readPullRequest ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readPullRequest.query(coords),
       ),
   };
 }

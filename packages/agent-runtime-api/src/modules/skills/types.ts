@@ -5,6 +5,7 @@ import type {
   skillInstallInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
+  skillReadPullRequestInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
   skillWriteLocalInputSchema,
@@ -15,6 +16,9 @@ export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
+export type SkillReadPullRequestInput = z.infer<
+  typeof skillReadPullRequestInputSchema
+>;
 export type SkillDeleteLocalInput = z.infer<typeof skillDeleteLocalInputSchema>;
 export type SkillWriteLocalInput = z.infer<typeof skillWriteLocalInputSchema>;
 
@@ -42,6 +46,13 @@ export interface LocalSkillFile {
   relPath: string;
   content: string;
   base64?: true;
+}
+
+/** The three fields GitHub reports about a pull request's disposition. */
+export interface PullRequestDisposition {
+  state: "open" | "closed";
+  draft: boolean;
+  mergedAt: string | null;
 }
 
 export interface SkillReadLocalResult {
@@ -104,6 +115,12 @@ export interface SkillsService {
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
+  /** Raw pull-request disposition. Authenticated through the paired gateway, so
+   *  it resolves private repos the api-server's anonymous read cannot. Returns
+   *  the raw fields — the api-server derives the verdict. */
+  readPullRequest: (
+    input: SkillReadPullRequestInput,
+  ) => Promise<Result<PullRequestDisposition, SkillsDomainError>>;
   deleteLocal: (
     input: SkillDeleteLocalInput,
   ) => Promise<Result<void, SkillsDomainError>>;

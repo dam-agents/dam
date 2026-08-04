@@ -720,11 +720,13 @@ await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
 );
 
 // Re-read the pull requests behind skill publish records so the badge reports
-// their real state. Ten minutes: with conditional requests a tick over
-// unchanged pull requests is nearly free, so the interval trades badge
-// freshness against almost nothing.
+// their real state. Ten minutes is the tick, but each record is re-checked at
+// most hourly (the resolver owns that backoff) — the short tick exists so a
+// freshly published pull request resolves promptly rather than waiting an hour.
 const prStateResolver = composePrStateResolver({
   db,
+  agents: agentsRepo,
+  namespace: config.namespace,
   log: (msg) => process.stderr.write(`[pr-state-resolver] ${msg}\n`),
 });
 await periodicJobs.register("skill-pr-state-resolve", 10 * 60_000, () =>

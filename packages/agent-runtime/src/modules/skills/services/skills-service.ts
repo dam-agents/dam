@@ -3,6 +3,7 @@ import type {
   SkillInstallInput,
   SkillPublishInput,
   SkillReadLocalInput,
+  SkillReadPullRequestInput,
   Result,
   SkillScanInput,
   SkillsDomainError,
@@ -58,6 +59,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
     listLocal: () => doListLocal(deps),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    readPullRequest: (input: SkillReadPullRequestInput) =>
+      deps.github.getPullRequest(
+        { owner: input.owner, repo: input.repo },
+        input.number,
+      ),
     deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
     writeLocal: (input: SkillWriteLocalInput) =>
       runWriteLocal(deps, deps.skillPaths, input),

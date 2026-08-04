@@ -4,6 +4,7 @@ import {
   skillDeleteLocalInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
+  skillReadPullRequestInputSchema,
   skillScanInputSchema,
   skillWriteLocalInputSchema,
 } from "./schemas.js";
@@ -100,6 +101,15 @@ export const skillsRouter = t.router({
     .input(skillReadLocalInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readLocal(input);
+      if (!result.ok) throw toTrpcError(result.error);
+      return result.value;
+    }),
+
+  // A query, not a mutation: it reads.
+  readPullRequest: protectedProcedure
+    .input(skillReadPullRequestInputSchema)
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.skills.readPullRequest(input);
       if (!result.ok) throw toTrpcError(result.error);
       return result.value;
     }),
