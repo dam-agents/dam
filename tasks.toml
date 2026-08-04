@@ -221,7 +221,7 @@ echo "e2e data reset complete."
 '''
 
 ["e2e:loop"]
-description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent --test=<playwright file/title filter, e.g. prompt-delivery>"
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent --test=<playwright file/title filter, e.g. prompt-delivery; smoke specs still run their dependency chain>"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -247,10 +247,14 @@ for arg in "$@"; do
     # The pipeline default is smoke only; this flag is the manual trigger.
     --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
-    # Narrow the run to matching specs (Playwright's positional file/title
-    # filter, substring or regex — e.g. --test=prompt-delivery runs the four
-    # prompt-delivery specs). Full-only specs also need --full, or their
-    # project doesn't exist and the filter matches nothing.
+    # Positional Playwright filter (file/title substring or regex). It fully
+    # narrows the run only for full-only projects, which have no dependencies
+    # — e.g. --full --test=prompt-delivery runs just the four prompt-delivery
+    # specs. A smoke spec still pulls in its whole dependency chain: Playwright
+    # always runs a selected project's dependencies, and here they're needed
+    # anyway because e2e:reset (step 3) wipes the state the chain builds up.
+    # Full-only specs also need --full, or their project doesn't exist and
+    # the filter matches nothing.
     --test=*) TEST_FILTER="${arg#--test=}" ;;
   esac
 done
