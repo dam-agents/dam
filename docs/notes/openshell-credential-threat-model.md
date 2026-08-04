@@ -1,10 +1,10 @@
 # OpenShell credential isolation vs. Platform pod-pair model — threat model
 
-Last verified: 2026-05-13
+Last verified: 2026-08-04
 
 A code-cited comparison of where real credentials live in NVIDIA OpenShell vs. our paired-pod design, and what an agent running untrusted code can actually do to reach them under each model. Written to address a specific claim heard in the wild: that **OpenShell injects credentials at the gateway** and/or that **the agent ends up with the real bearer token in its environment**. Both readings are wrong on the code; the more interesting question is what each model is actually robust against.
 
-The OpenShell sources cited are from a local clone at [`context/OpenShell/`](../../context/OpenShell/) and were read directly, not summarised from upstream docs.
+The OpenShell sources cited are from a local clone at `context/OpenShell/` and were read directly, not summarised from upstream docs.
 
 ## TL;DR
 
@@ -19,8 +19,8 @@ The OpenShell sources cited are from a local clone at [`context/OpenShell/`](../
 ### OpenShell
 
 1. The gateway stores provider credentials (real values) in SQLite or Postgres.
-2. The sandbox supervisor fetches them via gRPC at startup ([`provider.rs:608-644`](../../context/OpenShell/crates/openshell-server/src/grpc/policy.rs#L608-L644), `GetSandboxProviderEnvironment`).
-3. The supervisor immediately wraps them into a `SecretResolver` whose private `by_placeholder: HashMap<String, String>` holds the real values ([`secrets.rs:153-165`](../../context/OpenShell/crates/openshell-sandbox/src/secrets.rs#L153-L165)):
+2. The sandbox supervisor fetches them via gRPC at startup (`crates/openshell-server/src/grpc/policy.rs:1786-1840`, `GetSandboxProviderEnvironment`).
+3. The supervisor immediately wraps them into a `SecretResolver` whose private `by_placeholder: HashMap<String, String>` holds the real values (`crates/openshell-core/src/secrets.rs:179-200`):
 
    ```rust
    for (key, value) in provider_env {
@@ -30,10 +30,10 @@ The OpenShell sources cited are from a local clone at [`context/OpenShell/`](../
    }
    ```
 
-4. The agent process is spawned with `child_env` — placeholders only ([`process.rs:27-30`](../../context/OpenShell/crates/openshell-sandbox/src/process.rs#L27-L30), [`process.rs:822-840`](../../context/OpenShell/crates/openshell-sandbox/src/process.rs#L822-L840) test asserts this for `ANTHROPIC_API_KEY`).
-5. The proxy (same process as the supervisor) consults the resolver and rewrites `Bearer openshell:resolve:env:KEY` to the real token on outbound HTTPS requests ([`secrets.rs:205-245`](../../context/OpenShell/crates/openshell-sandbox/src/secrets.rs#L205-L245)).
+4. The agent process is spawned with `child_env` — placeholders only (`crates/openshell-supervisor-process/src/process.rs:135-150`, `crates/openshell-supervisor-process/src/process.rs:2184-2201` test asserts this for `ANTHROPIC_API_KEY`).
+5. The proxy (same process as the supervisor) consults the resolver and rewrites `Bearer openshell:resolve:env:KEY` to the real token on outbound HTTPS requests (`crates/openshell-core/src/secrets.rs:262-302`).
 
-This is uniform across **all** providers. The gateway-side resolver at [`provider.rs:261-292`](../../context/OpenShell/crates/openshell-server/src/grpc/provider.rs#L261-L292) is category-blind — no inference-vs-non-inference branching. The dispositive test using `GITHUB_TOKEN` specifically is [`provider_credentials.rs:113-150`](../../context/OpenShell/crates/openshell-sandbox/src/provider_credentials.rs#L113-L150).
+This is uniform across **all** providers. The gateway-side resolver at `crates/openshell-server/src/grpc/provider.rs:540-600` is category-blind — no inference-vs-non-inference branching. The dispositive test using `GITHUB_TOKEN` specifically is `crates/openshell-core/src/provider_credentials.rs:318-360`.
 
 **Locality.** The credentials are in the supervisor process. The supervisor is PID 1 in the sandbox container/VM. The agent is its child. They share the kernel, share the `/proc` view, share the filesystem (with Landlock restrictions), share the network namespace (or share its parent), and depending on the driver may share PID namespace.
 
@@ -81,7 +81,7 @@ Variant of T1 — direct debugging of the parent process.
 
 The supervisor exposes attack surfaces to the agent by design.
 
-**OpenShell.** Per [`sandbox.md:79-81`](../../context/OpenShell/architecture/sandbox.md#L79-L81): *"The supervisor runs an SSH server on a Unix socket inside the sandbox."* Plus the proxy CONNECT listener on a loopback port, plus log push, plus file sync, plus relay sockets. **The agent has L4 reach to every supervisor-exposed endpoint by design.** A parsing bug in any one of them is RCE in the credential-holding process. Mitigation is code quality + Rust memory safety; structurally the surface is large.
+**OpenShell.** Per `architecture/sandbox.md:253`: *"The supervisor runs an SSH server on a Unix socket inside the sandbox."* Plus the proxy CONNECT listener on a loopback port, plus log push, plus file sync, plus relay sockets. **The agent has L4 reach to every supervisor-exposed endpoint by design.** A parsing bug in any one of them is RCE in the credential-holding process. Mitigation is code quality + Rust memory safety; structurally the surface is large.
 
 **Platform.** The agent's admitted intra-cluster destinations are exactly two: cluster DNS (`kube-system` UDP/TCP 53 or `openshift-dns` UDP/TCP 5353), and the paired gateway's Envoy proxy port ([`network_policy.go:85-133`](../../packages/controller/pkg/reconciler/network_policy.go#L85-L133)). No SSH, no relay, no file sync, no IPC to the gateway. Everything else (SDS, harness origination, ext-authz origination) is gateway-initiated outbound; the agent cannot reach those code paths from its side.
 
@@ -111,7 +111,7 @@ A host-kernel CVE exploited from inside the agent's container.
 
 The sandbox has two providers attached (e.g., GitHub + Anthropic). Agent puts the wrong provider's placeholder in a header to an attacker-influenced allowed destination.
 
-**OpenShell.** [`secrets.rs:184-203`](../../context/OpenShell/crates/openshell-sandbox/src/secrets.rs#L184-L203) (`resolve_placeholder`) is destination-blind — it looks up the placeholder in the resolver with no awareness of the request's destination. Whether the L7 enforcement layer in `proxy.rs` validates destination-vs-credential before calling `rewrite_header_value` needs verification (see §Open verifications). Provider YAMLs declare `endpoints`, so the policy data exists — but the resolver itself does not enforce.
+**OpenShell.** `crates/openshell-core/src/secrets.rs:225-254` (`resolve_placeholder`) is destination-blind — it looks up the placeholder in the resolver with no awareness of the request's destination. Whether the L7 enforcement layer in `proxy.rs` validates destination-vs-credential before calling `rewrite_header_value` needs verification (see §Open verifications). Provider YAMLs declare `endpoints`, so the policy data exists — but the resolver itself does not enforce.
 
 **Platform.** Closed structurally: credentialed routes bind to resolved upstream cluster + SNI, not to the agent's inner `Host:` header — the platform calls this *route-confusion exfiltration*. The agent's choice of which placeholder to use doesn't influence destination — each credential has its own STRICT_DNS cluster pinned to its host with SAN-bound TLS validation.
 
@@ -133,7 +133,7 @@ The sandbox has two providers attached (e.g., GitHub + Anthropic). Agent puts th
 
 Both architectures admit DNS for the resolver, and CoreDNS (or equivalent) forwards non-cluster queries upstream by default. An agent can encode payloads in DNS labels and exfil over UDP/53 without ever touching the proxy.
 
-**OpenShell.** Depends on the driver's network setup — whether DNS goes through the sandbox proxy or hits the host stack directly. The doc on [`sandbox.md:41`](../../context/OpenShell/architecture/sandbox.md#L41) says *"Network namespace forces ordinary agent egress through the local CONNECT proxy"* — but DNS is not HTTP and is typically resolved via the namespace's `/etc/resolv.conf`, which points at a resolver outside the proxy. Same gap class as Platform's.
+**OpenShell.** Depends on the driver's network setup — whether DNS goes through the sandbox proxy or hits the host stack directly. The doc on `architecture/sandbox.md:46` says *"Network namespace forces ordinary agent egress through the local CONNECT proxy"* — but DNS is not HTTP and is typically resolved via the namespace's `/etc/resolv.conf`, which points at a resolver outside the proxy. Same gap class as Platform's.
 
 **Platform.** Acknowledged, explicitly accepted residual: DNS tunneling via CoreDNS's upstream forwarder remains a residual, low-bandwidth exfil channel. Closing it requires per-pod DNS policy or a DNS-aware egress filter, neither of which is in scope.
 
@@ -176,8 +176,8 @@ This memo is not a "OpenShell is insecure" memo. The points worth crediting:
 
 - **The placeholder grammar is sound.** Agents really do not see the real bearer token. The README is misleading; the code is fine.
 - **The model is uniform.** GitHub, Anthropic, GitLab, Copilot — same path, same isolation properties, no special-casing of inference (the inference-rerouting layer is *additional*, not the only credential-hiding mechanism).
-- **The provider YAML schema is clean.** Declarative `endpoints` with method/path enforcement is a sensible policy surface ([`github.yaml:15-25`](../../context/OpenShell/providers/github.yaml#L15-L25)).
-- **Per-binary identity (TOFU + binary fingerprinting in the proxy).** Mentioned in [`sandbox.md:42-51`](../../context/OpenShell/architecture/sandbox.md#L42-L51). Platform's Envoy doesn't gate by which agent-side binary made the request — only by route. This is a real OpenShell capability we don't have.
+- **The provider YAML schema is clean.** Declarative `endpoints` with method/path enforcement is a sensible policy surface (`providers/github.yaml:17-31`).
+- **Per-binary identity (TOFU + binary fingerprinting in the proxy).** Mentioned in `architecture/sandbox.md:47-55`. Platform's Envoy doesn't gate by which agent-side binary made the request — only by route. This is a real OpenShell capability we don't have.
 
 The disagreement is not about whether OpenShell's design is reasonable. It is about whether **process-level isolation inside one workload** vs. **pod-level isolation across two workloads (with optional VM isolation per pod)** are equivalent. They are not. Each additional kernel/VM/network boundary degrades a different class of exploit, and Platform's design layers boundaries that OpenShell's design fuses into a single process address space.
 
@@ -190,11 +190,11 @@ Two things to verify in OpenShell before publishing this externally, both flagge
 
 ## What to say when someone claims "OpenShell does credential injection on the gateway"
 
-> No. The gateway stores credentials and serves them over mTLS-protected gRPC to sandbox supervisors. The injection itself happens **inside each sandbox**, in the supervisor process. The README's component table even says so: *"Sandbox: Isolated runtime with container supervision and policy-enforced egress routing."* See [`architecture/gateway.md:19-21`](../../context/OpenShell/architecture/gateway.md#L19-L21) — *"The gateway does not enforce agent network policy at request time. That happens inside each sandbox."*
+> No. The gateway stores credentials and serves them over mTLS-protected gRPC to sandbox supervisors. The injection itself happens **inside each sandbox**, in the supervisor process. The README's component table even says so: *"Sandbox: Isolated runtime with container supervision and policy-enforced egress routing."* See `architecture/gateway.md:19-21` — *"The gateway does not enforce agent network policy at request time. That happens inside each sandbox."*
 
 ## What to say when someone claims "the OpenShell agent ends up with the real bearer token in its environment"
 
-> No. The agent's environment contains placeholder strings of the form `openshell:resolve:env:vN_KEY` for every provider credential, including `GITHUB_TOKEN`. The real values stay in the supervisor process's heap and are substituted into outbound HTTP requests by the sandbox proxy at egress. See [`secrets.rs:153-163`](../../context/OpenShell/crates/openshell-sandbox/src/secrets.rs#L153-L163) for the placeholderisation, [`process.rs:822-840`](../../context/OpenShell/crates/openshell-sandbox/src/process.rs#L822-L840) for the test asserting it on the spawned child, and [`provider_credentials.rs:113-150`](../../context/OpenShell/crates/openshell-sandbox/src/provider_credentials.rs#L113-L150) for the dispositive `GITHUB_TOKEN`-specific test.
+> No. The agent's environment contains placeholder strings of the form `openshell:resolve:env:vN_KEY` for every provider credential, including `GITHUB_TOKEN`. The real values stay in the supervisor process's heap and are substituted into outbound HTTP requests by the sandbox proxy at egress. See `crates/openshell-core/src/secrets.rs:179-200` for the placeholderisation, `crates/openshell-supervisor-process/src/process.rs:2184-2201` for the test asserting it on the spawned child, and `crates/openshell-core/src/provider_credentials.rs:318-360` for the dispositive `GITHUB_TOKEN`-specific test.
 
 ## What to say when someone claims "Kata makes OpenShell as secure as Platform"
 
