@@ -6,7 +6,8 @@
   "dependencies": {
     "@playwright/test": "^1.50.0",
     "@trpc/client": "^11.16.0",
-    "api-server-api": "workspace:*"
+    "api-server-api": "workspace:*",
+    "platform-ui": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

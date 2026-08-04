@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { DELIVERY_TIMEOUT_MS } from "platform-ui/use-prompt-delivery";
 
 import {
   agentCardStatus,
@@ -19,12 +20,11 @@ import { harnessName } from "./fixtures.js";
  *  creating (or even touching) the shared agent breaks that precondition. */
 const agentName = "e2e-delivery";
 
-/** The UI's own delivery deadline (`DELIVERY_TIMEOUT_MS` in
- *  use-prompt-delivery.ts). Not restated as a bare literal at the call sites:
- *  every assertion below is positioned relative to this boundary, so if the
- *  timeout ever moves the assertions have to move with it rather than quietly
- *  stop testing anything. */
-export const DELIVERY_TIMEOUT_MS = 60_000;
+/** The UI's own delivery deadline, imported from use-prompt-delivery.ts (not
+ *  restated as a literal): every assertion below is positioned relative to
+ *  this boundary, so if the timeout ever moves the assertions move with it
+ *  rather than quietly stop testing anything. */
+export { DELIVERY_TIMEOUT_MS };
 
 /** A scripted turn long enough to outlive the deadline with room on both
  *  sides. Crossing it is the whole #829 regression: waiting is not failing, no

@@ -2,6 +2,9 @@
   "name": "platform-ui",
   "version": "1.0.0",
   "type": "module",
+  "exports": {
+    "./use-prompt-delivery": "./src/modules/sessions/hooks/use-prompt-delivery.ts"
+  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@carbon/icons-react": "^11.80.0",
