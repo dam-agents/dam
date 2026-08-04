@@ -69,6 +69,10 @@ export const localSkillSchema = z.object({
    *  but diverged, or created at runtime. Absent on pre-provenance pods —
    *  treat as `user`. */
   origin: z.enum(["system", "system-modified", "user"]).optional(),
+  /** Deterministic SHA-256 of the skill directory, comparable with a scanned
+   *  skill's `contentHash`. Present only for skills the server asked the pod to
+   *  hash, and absent on pods predating this field (#3019). */
+  contentHash: z.string().optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful

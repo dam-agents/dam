@@ -636,7 +636,21 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         return { installed, standalone: [], instancePublishes };
       }
 
-      const local = await deps.runtimeClient.listLocal(agentId);
+      // Publishes are read before the listing, not alongside it, because they
+      // decide which skills need a contentHash and the listing is where the
+      // hashing happens. Every published name needs one, not just the `merged`
+      // ones: the UI de-duplicates on the hash matching the source's copy, and
+      // gating that on our own knowledge of the pull request's state would leave
+      // the duplicate on screen for as long as the resolver takes to notice a
+      // merge — up to the re-check interval. A sandbox that never published
+      // still asks for none.
+      const instancePublishes =
+        await deps.agentSkillsRepo.listPublishes(agentId);
+      const publishedNames = [
+        ...new Set(instancePublishes.map((p) => p.skillName)),
+      ];
+
+      const local = await deps.runtimeClient.listLocal(agentId, publishedNames);
 
       const onDisk = new Set(local.map((s) => s.name));
 
@@ -644,10 +658,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // performs a write when something needs evicting.
       await deps.agentSkillsRepo.reconcile(agentId, onDisk);
 
-      const [installed, instancePublishes] = await Promise.all([
-        deps.agentSkillsRepo.listSkills(agentId),
-        deps.agentSkillsRepo.listPublishes(agentId),
-      ]);
+      const installed = await deps.agentSkillsRepo.listSkills(agentId);
 
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));

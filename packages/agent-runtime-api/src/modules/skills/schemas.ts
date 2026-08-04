@@ -30,6 +30,13 @@ export const skillPublishInputSchema = z.object({
   path: z.string().optional(),
 });
 
+export const skillListLocalInputSchema = z.object({
+  /** Names to compute `contentHash` for. Hashing walks the whole skill dir on
+   *  an NFS-backed PVC and this runs on every state poll, so the caller asks
+   *  only for the few skills it needs it for (#3019). */
+  hashNames: z.array(z.string()).optional(),
+});
+
 export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
 });

@@ -29,6 +29,10 @@ export interface LocalSkillRepository {
   listLocal: (
     skillPaths: SkillPath[],
     pristinePaths?: SkillPath[],
+    /** Names to also stamp with `contentHash`. Hashing walks the whole skill
+     *  directory on an NFS-backed PVC and this listing runs on every state
+     *  poll, so the caller asks only for the few it needs (#3019). */
+    hashNames?: ReadonlySet<string>,
   ) => Promise<LocalSkill[]>;
   /** Read every file in a skill's directory, enforcing the per-file and
    *  per-skill caps. Returns the resolved directory basename alongside the
@@ -115,8 +119,8 @@ export function createLocalSkillRepository(): LocalSkillRepository {
   // Image is immutable in-process: pristine hashes memoize once per dir.
   const pristineHashes = new Map<string, Promise<string | null>>();
   return {
-    listLocal: (skillPaths, pristinePaths) =>
-      list(skillPaths, pristinePaths, pristineHashes),
+    listLocal: (skillPaths, pristinePaths, hashNames) =>
+      list(skillPaths, pristinePaths, pristineHashes, hashNames),
     readLocal: read,
     resolveLocalSkillDir,
     writeFromDir: write,
@@ -194,11 +198,17 @@ async function list(
   skillPaths: SkillPath[],
   pristinePaths: SkillPath[] | undefined,
   pristineHashes: Map<string, Promise<string | null>>,
+  hashNames?: ReadonlySet<string>,
 ): Promise<LocalSkill[]> {
   const out: LocalSkill[] = [];
   for (const { dir, name, description, skillPath } of await listEntries(
     skillPaths,
   )) {
+    // Keyed on the wire name, which is what the caller asked by; the hash is
+    // taken over the resolved directory, which may differ from it.
+    const contentHash = hashNames?.has(name)
+      ? await hashSkillDirIfPresent(path.join(skillPath, dir))
+      : null;
     out.push({
       name,
       description,
@@ -213,6 +223,7 @@ async function list(
             ),
           }
         : {}),
+      ...(contentHash !== null ? { contentHash } : {}),
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -517,8 +528,14 @@ async function readSkillManifest(
  * Deterministic SHA-256 of a skill directory's contents — hashes every file
  * under the dir in sorted-path order, mixing the relative path and body
  * bytes. Used as the drift signal: changes iff the skill's files change,
- * completely independent of git commit history. Matches api-server's
- * computeContentHash.
+ * completely independent of git commit history.
+ *
+ * Algorithmically identical to api-server's `computeContentHash`
+ * (public-archive-scanner.ts), and values from the two are compared directly.
+ * They are duplicate implementations on purpose — do not "improve" one alone,
+ * and do not tidy either: stored `agent_skills.contentHash` values were
+ * produced by them, so any change mass-triggers phantom drift on every
+ * installed skill everywhere.
  */
 async function hashSkillDir(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();

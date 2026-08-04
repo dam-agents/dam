@@ -4,6 +4,7 @@ import type {
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
+  skillListLocalInputSchema,
   skillReadLocalInputSchema,
   skillReadPullRequestInputSchema,
   skillScanInputSchema,
@@ -15,6 +16,7 @@ export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
+export type SkillListLocalInput = z.infer<typeof skillListLocalInputSchema>;
 export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
 export type SkillReadPullRequestInput = z.infer<
   typeof skillReadPullRequestInputSchema
@@ -40,6 +42,10 @@ export interface LocalSkill {
   skillPath: string;
   /** Absent on pre-provenance agent-runtimes — readers treat as `user`. */
   origin?: SkillOrigin;
+  /** Deterministic SHA-256 of the skill directory. Present only for names the
+   *  caller asked for via `hashNames` — hashing is real I/O on an NFS-backed
+   *  PVC and this listing runs on every state poll (#3019). */
+  contentHash?: string;
 }
 
 export interface LocalSkillFile {
@@ -111,7 +117,9 @@ export interface SkillsService {
   uninstall: (
     input: SkillUninstallInput,
   ) => Promise<Result<void, SkillsDomainError>>;
-  listLocal: () => Promise<Result<LocalSkill[], SkillsDomainError>>;
+  listLocal: (
+    input?: SkillListLocalInput,
+  ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;

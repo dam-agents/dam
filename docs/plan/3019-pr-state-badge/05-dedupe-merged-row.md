@@ -53,9 +53,10 @@ export const skillListLocalInputSchema = z.object({
 });
 ```
 
-Add `contentHash: z.string().optional()` to `localSkillSchema` in **both** contract packages
-(`api-server-api` and `agent-runtime-api`) — optional, because it is present only for requested
-names and absent on pods predating this change.
+Add an optional `contentHash` to the Local Skill shape in **both** contract packages — optional,
+because it is present only for requested names and absent on pods predating this change. Note
+`agent-runtime-api` has no `localSkillSchema`: its outputs are TypeScript interfaces, so the field
+goes on the `LocalSkill` interface in `types.ts`. Only `api-server-api` gets the Zod field.
 
 Keep the input optional so existing callers are untouched.
 
@@ -99,7 +100,9 @@ Derive it as a `useMemo`'d predicate beside the existing `createdHere` / `builtI
 than filtering inside JSX.
 
 Leave the source's `N of M on` count reflecting what it actually scanned — the count describes the
-source, not what this page chose to render.
+source, not what this page chose to render. That rules out filtering the `skills` prop, since
+`SkillSourceCard` derives the count from it: pass the suppressed names as a separate prop and apply
+them to the rendered rows only, after the count and the collapse decision.
 
 ### 4. Fix and check
 

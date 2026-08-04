@@ -102,6 +102,12 @@ async function walkFiles(root: string): Promise<string[]> {
  * under the dir in sorted-path order, mixing the relative path and body
  * bytes so both path-level and content-level changes flip the hash. No
  * external git data needed — purely a function of what's on disk.
+ *
+ * Algorithmically identical to agent-runtime's `hashSkillDir`
+ * (local-skill-repository.ts), and values from the two are compared directly —
+ * the merged-row de-dupe (#3019) relies on it. They are duplicate
+ * implementations on purpose: stored `agent_skills.contentHash` values were
+ * produced by them, so changing either mass-triggers phantom drift.
  */
 export async function computeContentHash(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();

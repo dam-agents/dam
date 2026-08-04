@@ -37,7 +37,10 @@ export interface UpstreamGatewayError {
 }
 
 export interface AgentRuntimeSkillsClient {
-  listLocal(agentId: string): Promise<LocalSkill[]>;
+  /** `hashNames` asks the pod to also stamp `contentHash` on those skills.
+   *  Hashing is real I/O on an NFS-backed PVC and this runs on every state
+   *  poll, so pass only the few that need it. */
+  listLocal(agentId: string, hashNames?: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
   writeLocal(
@@ -182,10 +185,13 @@ export function createAgentRuntimeSkillsClient(
   namespace: string,
 ): AgentRuntimeSkillsClient {
   return {
-    listLocal: async (agentId) => {
+    listLocal: async (agentId, hashNames) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${agentId}`,
-        () => makeClient(agentId, namespace).skills.listLocal.query(),
+        () =>
+          makeClient(agentId, namespace).skills.listLocal.query(
+            hashNames && hashNames.length > 0 ? { hashNames } : undefined,
+          ),
       );
       return skills;
     },
