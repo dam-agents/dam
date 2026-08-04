@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useCopy } from "@/hooks/use-copy";
+import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
 
@@ -30,14 +31,17 @@ interface Props {
   onClose: () => void;
 }
 
-/** Sharing controls: public link on/off and expiry. Saved in one mutation;
- *  the fresh share URL comes back on the mutation result. */
+/** Sharing controls: public link on/off and expiry. Saved in one mutation,
+ *  which closes the dialog and confirms through a toast — a save that only
+ *  flipped the button back to "Save" read as a no-op. A failure keeps the
+ *  dialog open and surfaces through the mutation's `errorToast`, so the user
+ *  can retry without re-entering anything. */
 export function ShareDialog({ artifact, onClose }: Props) {
   const [isPublic, setIsPublic] = useState(artifact.visibility === "public");
   const [expiry, setExpiry] = useState<string>(
     artifact.expiresAt === null ? "never" : "keep",
   );
-  const [shareUrl, setShareUrl] = useState(artifact.shareUrl);
+  const shareUrl = artifact.shareUrl;
   const { copy, copied } = useCopy();
   const sharing = useSetArtifactSharing();
 
@@ -51,9 +55,25 @@ export function ShareDialog({ artifact, onClose }: Props) {
           : { expiresInHours: expiry === "never" ? null : Number(expiry) }),
       },
       {
-        onSuccess: (updated) => {
-          setShareUrl(updated.shareUrl);
-          if (!updated.shareUrl) onClose();
+        onSuccess: ({ shareUrl: savedUrl }) => {
+          // Closing takes the link field away with it, so the toast carries the
+          // copy affordance for the one flow that just produced a fresh URL.
+          emitToast(
+            savedUrl
+              ? {
+                  kind: "success",
+                  message: "Sharing updated — the public link is live.",
+                  action: {
+                    label: "Copy link",
+                    onClick: () => void copy(savedUrl),
+                  },
+                }
+              : {
+                  kind: "success",
+                  message: "Sharing updated — the artifact is now private.",
+                },
+          );
+          onClose();
         },
       },
     );
