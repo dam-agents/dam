@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { Db } from "db";
 import type { ConnectionAuthConfig } from "api-server-api";
@@ -163,7 +164,11 @@ function makeLoop(opts?: {
 
   const loop = createOAuthRefreshLoop({
     db,
-    engine: createOAuthEngine({ now: () => clock, fetchImpl }),
+    engine: createOAuthEngine({
+      pendingStore: createMemoryTtlStore(600_000),
+      now: () => clock,
+      fetchImpl,
+    }),
     githubAppEngine: createGitHubAppEngine({ now: () => clock, fetchImpl }),
     templates: {
       get: () => undefined,

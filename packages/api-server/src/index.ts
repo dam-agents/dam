@@ -251,9 +251,18 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
+// Redis-backed handoff stores: the browser callback leg may land on any replica.
+const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
 const connectionsBoot = composeConnectionsAtBoot({
   db,
   secretStore: secretStores.default(),
+  // Same Redis namespace as the app-side engine — flows are one namespace
+  // regardless of which composition minted them.
+  pendingFlowStore: createRedisTtlStore(
+    sharedRedis,
+    "oauth:connections",
+    OAUTH_FLOW_TTL_MS,
+  ),
 });
 const connectionsServiceFor = (ownerId: string) =>
   composeConnectionsForOwner({
@@ -374,8 +383,6 @@ const identityLinkService = createIdentityLinkService({
   delete: deleteIdentityLink(db),
 });
 
-// Redis-backed so the browser callback leg may land on any replica.
-const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
 const pendingSlackOAuthFlows = createRedisTtlStore<SlackOAuthPending>(
   sharedRedis,
   "oauth:slack",

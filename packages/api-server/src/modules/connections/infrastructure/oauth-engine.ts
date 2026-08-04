@@ -1,8 +1,5 @@
 import crypto from "node:crypto";
-import {
-  createMemoryTtlStore,
-  type TtlStore,
-} from "../../../core/ttl-store.js";
+import type { TtlStore } from "../../../core/ttl-store.js";
 
 export interface OAuthProvider {
   id: string;
@@ -114,20 +111,16 @@ interface TokenEndpointResponse {
 export interface CreateOAuthEngineOptions {
   now?: () => number;
   fetchImpl?: typeof fetch;
-  pendingFlowTtlMs?: number;
   /** Cross-replica store for in-flight flows — the callback may land on a
-   *  different replica than the start. Defaults to in-memory (tests). */
-  pendingStore?: TtlStore<PendingFlow>;
+   *  different replica than the start. Redis-backed in production,
+   *  `createMemoryTtlStore` in tests. */
+  pendingStore: TtlStore<PendingFlow>;
 }
 
-export function createOAuthEngine(
-  opts?: CreateOAuthEngineOptions,
-): OAuthEngine {
-  const now = opts?.now ?? (() => Date.now());
-  const fetchImpl = opts?.fetchImpl ?? fetch;
-  const ttlMs = opts?.pendingFlowTtlMs ?? 10 * 60 * 1000;
-  const pendingFlows =
-    opts?.pendingStore ?? createMemoryTtlStore<PendingFlow>(ttlMs, now);
+export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
+  const now = opts.now ?? (() => Date.now());
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const pendingFlows = opts.pendingStore;
 
   async function postTokenEndpoint(
     provider: OAuthProvider,
@@ -217,8 +210,11 @@ export function createOAuthEngine(
         .update(codeVerifier)
         .digest("base64url");
       const state = crypto.randomBytes(16).toString("hex");
+      // clientSecret never rests in the store (Redis in production) — the
+      // callback leg re-resolves the provider before exchange().
+      const { clientSecret: _omitted, ...storedProvider } = provider;
       await pendingFlows.set(state, {
-        provider,
+        provider: storedProvider,
         ctx,
         codeVerifier,
         redirectUri,

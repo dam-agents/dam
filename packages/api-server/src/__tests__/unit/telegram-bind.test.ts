@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -24,6 +25,7 @@ async function harness(opts?: {
 }) {
   const store: TelegramBindFlowStore = createTelegramBindFlowStore({
     now: () => 1_000,
+    store: createMemoryTtlStore(600_000, () => 1_000),
   });
   const flowId = await store.create({
     conversationId: "chat-42",

@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { Db } from "db";
 import {
@@ -70,6 +71,7 @@ function makeDeps(opts: { clientSecret: string | null }) {
 
   const tokenCalls: URLSearchParams[] = [];
   const engine = createOAuthEngine({
+    pendingStore: createMemoryTtlStore(600_000),
     now: () => NOW_MS,
     fetchImpl: (async (_url: RequestInfo | URL, init?: RequestInit) => {
       tokenCalls.push(new URLSearchParams(String(init?.body)));

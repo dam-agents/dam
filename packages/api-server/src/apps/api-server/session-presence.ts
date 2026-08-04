@@ -77,6 +77,10 @@ export function createSessionPresence(
       redis
         .set(replicaKey(agentId), "1", "EX", KEY_TTL_SECONDS)
         .catch(() => {});
+      // Re-assert the annotation too: acquire()'s single patch is
+      // best-effort, and a dropped write would otherwise leave a live
+      // session unpinned for its whole duration (reconcile only clears).
+      set(agentId, true);
     }
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
@@ -117,12 +121,23 @@ export function createSessionPresence(
 
     async reconcile() {
       const active = await scanAgentIds(`${KEY_PREFIX}*`);
+      // Don't trust an empty scan while this replica itself holds sessions —
+      // that shape means Redis lost the keys (restart, failover), not that
+      // every session everywhere closed. Skip the tick; heartbeats rewrite
+      // the keys within 30s and the next tick sweeps for real. A stale pin
+      // lingering one more minute beats hibernating a live agent fleet-wide.
+      if (active.size === 0 && open.size > 0) return;
       const annotated = await repo.listAgentIdsWithAnnotation(
         ACTIVE_SESSION_KEY,
         "true",
       );
       for (const agentId of annotated) {
-        if (!active.has(agentId)) await set(agentId, false);
+        if (active.has(agentId)) continue;
+        // Per-agent re-check before the destructive write: bounds the risk
+        // of a partial SCAN (cursor walk racing key churn) to agents that
+        // read as unheld twice in a row.
+        if (await anyReplicaHolds(agentId)) continue;
+        await set(agentId, false);
       }
     },
 

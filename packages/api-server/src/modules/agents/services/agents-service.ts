@@ -475,23 +475,6 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
-// In-process fallback for compositions that don't wire the cross-replica
-// resize lock (they never wire a resizeGate either, so nothing budget-
-// sensitive races). Serializes per key within this process only.
-const inProcessResizeLocks = new Map<string, Promise<unknown>>();
-async function inProcessResizeLock<T>(
-  key: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  const prev = inProcessResizeLocks.get(key) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  inProcessResizeLocks.set(
-    key,
-    run.catch(() => {}),
-  );
-  return run;
-}
-
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   /** Postgres store for user-typed env. */
@@ -519,10 +502,9 @@ export function createAgentsService(deps: {
    *  never resize) — a live resize without it is rejected. */
   resizeGate?: ResizeGatePort;
   /** Cross-replica critical section serializing resize check+patch per
-   *  owner (Postgres advisory lock). Required whenever `resizeGate` is
-   *  wired — the courtesy ceiling check is read+check+patch and must not
-   *  race across replicas. */
-  resizeLock?: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
+   *  owner (Postgres advisory lock) — the courtesy ceiling check is
+   *  read+check+patch and must not race across replicas. */
+  resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   /** Single-shot create: seeds spec grant fields before first render, then
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
@@ -979,13 +961,8 @@ export function createAgentsService(deps: {
         // lock: the shrink shortcut and the up/sleeping split must
         // classify against the same state the ceiling check runs on, or
         // two rapid resizes could classify an increase as a shrink.
-        // Cross-replica per-owner serialization (Postgres advisory lock).
-        // Compositions without the lock (system paths that never wire a
-        // resizeGate) fall back to in-process serialization — no worse
-        // than before, and the gate path always has the real lock.
-        const resizeLock = deps.resizeLock ?? inProcessResizeLock;
         gateLiveResize = (apply) =>
-          resizeLock(`resize:${deps.owner ?? ""}`, async () => {
+          deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
             if (!current) return null;
             if (!current.hibernated && !current.overBudget) {

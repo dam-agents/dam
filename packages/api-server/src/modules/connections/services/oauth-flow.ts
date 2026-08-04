@@ -85,8 +85,6 @@ export function createOAuthFlowService(deps: {
       const pending = await deps.engine.consume<OAuthFlowPendingCtx>(state);
       if (!pending) throw new Error("invalid or expired OAuth state");
 
-      const tokens = await deps.engine.exchange(pending, code);
-
       const conn = await deps.repo.get(
         pending.ctx.connectionId,
         pending.ctx.ownerId,
@@ -94,6 +92,18 @@ export function createOAuthFlowService(deps: {
       if (!conn) {
         throw new Error(`connection ${pending.ctx.connectionId} not found`);
       }
+      if (conn.auth.kind !== "oauth") {
+        throw new Error(
+          `connection ${conn.id} auth kind is ${conn.auth.kind}; not OAuth`,
+        );
+      }
+
+      // Re-resolve the provider instead of trusting the stored copy: the
+      // pending record travels through Redis with the clientSecret stripped
+      // (see engine.start), and this also picks up a secret rotated
+      // mid-flow.
+      const provider = await buildProvider(conn, conn.auth, deps);
+      const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
       const sdsFields = buildConnectionSdsFields(
         conn.contributions,

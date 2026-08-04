@@ -15,10 +15,9 @@ export interface SlackPendingBind {
 
 export type SlackBindFlowStore = FlowStore<SlackPendingBind>;
 
-export function createSlackBindFlowStore(opts?: {
+export function createSlackBindFlowStore(opts: {
   now?: () => number;
-  ttlMs?: number;
-  store?: TtlStore<SlackPendingBind>;
+  store: TtlStore<SlackPendingBind>;
 }): SlackBindFlowStore {
   return createFlowStore<SlackPendingBind>(opts);
 }

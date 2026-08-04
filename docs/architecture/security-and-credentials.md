@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-03
+Last verified: 2026-08-04
 
 ## Overview
 

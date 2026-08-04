@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
@@ -41,7 +42,9 @@ function makeHarness(opts: {
     createdAt: opts.pendingCreatedAt ?? Date.now(),
   });
 
-  const bindFlows = createSlackBindFlowStore();
+  const bindFlows = createSlackBindFlowStore({
+    store: createMemoryTtlStore(600_000),
+  });
   const link = vi.fn(async () => {});
   const identityLinks = { link } as unknown as IdentityLinkService;
 

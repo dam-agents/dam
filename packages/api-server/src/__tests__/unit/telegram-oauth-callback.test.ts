@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
@@ -36,7 +37,9 @@ function makeHarness(opts?: { pendingCreatedAt?: number }) {
     createdAt: opts?.pendingCreatedAt ?? Date.now(),
   });
 
-  const bindFlows = createTelegramBindFlowStore();
+  const bindFlows = createTelegramBindFlowStore({
+    store: createMemoryTtlStore(600_000),
+  });
   const routes = createTelegramOAuthRoutes({
     pendingFlows,
     bindFlows,

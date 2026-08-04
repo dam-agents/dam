@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  createMemoryTtlStore,
-  type TtlStore,
-} from "../../../core/ttl-store.js";
+import type { TtlStore } from "../../../core/ttl-store.js";
 
 /** A bind begun in a Telegram chat, waiting for the Keycloak callback.
  *  Carries no agent — the owner picks one in the UI after authenticating. */
@@ -37,19 +34,15 @@ export interface FlowStore<T> {
 
 export type TelegramBindFlowStore = FlowStore<TelegramPendingBind>;
 
-const DEFAULT_TTL_MS = 10 * 60 * 1000;
-
 /** Cross-replica flow store: the browser leg of a bind handoff may land on a
  *  different api-server replica than the chat leg that started it. Backed by
  *  a shared TtlStore (Redis in production, in-memory in tests). */
-export function createFlowStore<T extends { createdAt: number }>(opts?: {
+export function createFlowStore<T extends { createdAt: number }>(opts: {
   now?: () => number;
-  ttlMs?: number;
-  store?: TtlStore<T>;
+  store: TtlStore<T>;
 }): FlowStore<T> {
-  const now = opts?.now ?? (() => Date.now());
-  const store =
-    opts?.store ?? createMemoryTtlStore<T>(opts?.ttlMs ?? DEFAULT_TTL_MS, now);
+  const now = opts.now ?? (() => Date.now());
+  const store = opts.store;
 
   return {
     async create(record) {
@@ -68,10 +61,9 @@ export function createFlowStore<T extends { createdAt: number }>(opts?: {
   };
 }
 
-export function createTelegramBindFlowStore(opts?: {
+export function createTelegramBindFlowStore(opts: {
   now?: () => number;
-  ttlMs?: number;
-  store?: TtlStore<TelegramPendingBind>;
+  store: TtlStore<TelegramPendingBind>;
 }): TelegramBindFlowStore {
   return createFlowStore<TelegramPendingBind>(opts);
 }

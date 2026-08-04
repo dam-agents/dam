@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import type { ConnectSlackResult } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
@@ -18,7 +19,10 @@ async function harness(opts?: {
   connectOk?: boolean;
   postError?: string;
 }) {
-  const store = createSlackBindFlowStore({ now: () => 1_000 });
+  const store = createSlackBindFlowStore({
+    now: () => 1_000,
+    store: createMemoryTtlStore(600_000, () => 1_000),
+  });
   const flowId = await store.create({
     slackChannelId: "C-1",
     slackUserId: "U-7",

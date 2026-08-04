@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-07-30
+Last verified: 2026-08-04
 
 ## Overview
 

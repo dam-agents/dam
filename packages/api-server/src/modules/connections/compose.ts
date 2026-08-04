@@ -38,9 +38,9 @@ export interface ConnectionsBootCompose {
 export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
-  /** Cross-replica store for in-flight OAuth flows (Redis in production) —
-   *  the provider callback may land on any replica. */
-  pendingFlowStore?: TtlStore<PendingFlow>;
+  /** Cross-replica store for in-flight OAuth flows (Redis in production,
+   *  in-memory in tests) — the provider callback may land on any replica. */
+  pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
 }
 

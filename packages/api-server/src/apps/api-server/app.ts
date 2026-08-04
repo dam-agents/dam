@@ -22,6 +22,7 @@ import {
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "../../core/logger.js";
+import { formatError } from "../../core/format-error.js";
 import {
   composeAgentsModule,
   createAgentsRepository,
@@ -259,9 +260,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
   // OAuth refresh runs on the shared periodic-jobs queue: one refresh pass
   // per minute across replicas — refresh-token rotation must never race.
-  void deps.periodicJobs.register("oauth-refresh", 60_000, () =>
-    connectionsBoot.refreshLoop.tickOnce(),
-  );
+  deps.periodicJobs
+    .register("oauth-refresh", 60_000, () =>
+      connectionsBoot.refreshLoop.tickOnce(),
+    )
+    .catch((err) => {
+      // A failed registration means the job silently never runs — tokens
+      // would stop renewing. Fail loud instead of continuing degraded.
+      getLogger().error(
+        `periodic job oauth-refresh registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -1014,9 +1024,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const sessionPresence = createSessionPresence(agentsRepo, deps.sharedRedis);
   // Sweep active-session pins orphaned by a crashed replica (its presence
   // keys expire by TTL); one pass per minute across replicas.
-  void deps.periodicJobs.register("session-presence-reconcile", 60_000, () =>
-    sessionPresence.reconcile(),
-  );
+  deps.periodicJobs
+    .register("session-presence-reconcile", 60_000, () =>
+      sessionPresence.reconcile(),
+    )
+    .catch((err) => {
+      getLogger().error(
+        `periodic job session-presence-reconcile registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
 
   const acpRelay = createAcpRelay(
     config.namespace,
