@@ -2511,4 +2511,57 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       scheduleId: "sch-1",
     });
   });
+
+  it("a deferred env refresh (force: false) outlives the force bound and recycles at the turn boundary", () => {
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        envForceRecycleMs: 100,
+      });
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+      c.pushMessage(promptRequest(2));
+      const promptOutbound = outboundId(fa.sent.at(-1));
+
+      runtime.refreshEnv({ force: false });
+      vi.advanceTimersByTime(1_000);
+      expect(fa.killed()).toBe(false);
+
+      // Turn boundary: the deferred recycle applies now.
+      fa.pushLine(agentPromptResponse(promptOutbound));
+      expect(fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a forced env refresh still recycles mid-turn after the bound", () => {
+    vi.useFakeTimers();
+    try {
+      const fa = makeFakeAgent();
+      const runtime = createAcpRuntime({
+        spawnAgent: () => fa.agent,
+        workingDir: "/tmp",
+        envForceRecycleMs: 100,
+      });
+      const c = makeFakeChannel();
+      runtime.attach(c.channel);
+      c.pushMessage(newSessionRequest(1));
+      fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+      c.pushMessage(promptRequest(2));
+
+      runtime.refreshEnv({ force: true });
+      vi.advanceTimersByTime(99);
+      expect(fa.killed()).toBe(false);
+      vi.advanceTimersByTime(2);
+      expect(fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

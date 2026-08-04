@@ -166,10 +166,10 @@ const runtimeChannel = await composeRuntimeChannel({
     createEnvPlugin({
       store: envStore,
       onChange: ({ namesChanged }) => {
-        // A value-only change (e.g. a rotated credential) applies at the next
-        // harness spawn; recycling for it would force-kill an in-flight turn.
-        // Only a changed variable set is worth interrupting the harness for.
-        if (namesChanged) acpRuntime.refreshEnv();
+        // A value-only change (e.g. a rotated credential) recycles only at an
+        // idle turn boundary — force-killing an in-flight turn is reserved
+        // for changes to the variable set itself.
+        acpRuntime.refreshEnv({ force: namesChanged });
         podService?.refreshEnv();
         configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),

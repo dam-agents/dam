@@ -12,8 +12,8 @@ const KUBECONFIG_ENV = "KUBECONFIG";
 export interface EnvChange {
   /**
    * True when a variable was added, removed, or renamed. False for a pure
-   * value change (e.g. a rotated credential), which the caller should apply
-   * at the next harness spawn rather than recycling an in-flight run.
+   * value change (e.g. a rotated credential), which the caller should defer
+   * to an idle turn boundary rather than force-recycling an in-flight run.
    */
   namesChanged: boolean;
 }
