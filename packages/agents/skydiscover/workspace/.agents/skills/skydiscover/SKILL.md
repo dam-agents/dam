@@ -88,14 +88,17 @@ Then wire the run with three rules:
   below before using it for the loop).
 
 **Known quirk — sampling params:** SkyDiscover's LLM client sends both
-`temperature` and `top_p` on every call, and some proxied backends reject
-that combination — Bedrock-hosted Claude models (`aws/claude-*` on IBM
-LiteLLM) return 400 "temperature and top_p cannot both be specified". The
-retry loop cannot fix a deterministic 400: if every proposal call fails this
-way, kill the run and relaunch with a model whose backend accepts both (on
-IBM LiteLLM the `rits/…` models do). Only reuse `--checkpoint` state if some
-iterations actually completed; a run that never got past the first proposal
-is cleaner started fresh.
+`temperature` and `top_p` on every call, and **some** proxied backends
+reject that combination with a deterministic 400 ("temperature and top_p
+cannot both be specified"). It is per-model, not per-vendor — observed on
+IBM LiteLLM: `aws/claude-sonnet-4-6` and `azure/gpt-5.5` reject it,
+`aws/claude-opus-5` and the `rits/…` models accept it. So don't trust a
+list: **probe the chosen model with a cheap completion passing both
+`temperature` and `top_p`** before launching. The retry loop cannot fix a
+deterministic 400: if every proposal call fails this way, kill the run and
+relaunch on a model that passed the probe. Only reuse `--checkpoint` state
+if some iterations actually completed; a run that never got past the first
+proposal is cleaner started fresh.
 
 **Known quirk — EvoX's auxiliary models bypass `-m`:** EvoX's label
 generation (`gpt-5-mini`) and search-strategy evolution (`gpt-5`) read their
@@ -155,6 +158,13 @@ def evaluate(program_path):
 
 Extra metrics are fine for visibility, but only `combined_score` drives
 selection — every evaluator must return it.
+
+**Keep the score discriminating across the whole range you care about.**
+`1/(1+MSE)` saturates once MSE ≪ 1 — every good candidate rounds to 1.0000,
+late iterations have no gradient, and the search stops searching while still
+spending. For convergent numerical objectives prefer a log-scaled error
+(e.g. a clamped `-log10(MSE)` mapped to (0, 1]) or minimax error, which stay
+discriminating down to machine precision.
 
 **Constrain the candidate space, or the search will cheat.** The search
 optimizes the score you wrote, not the task you meant: an evaluator that
