@@ -42,7 +42,7 @@ pod* layer.
 
 At the **start of every new conversation**, before anything else, enumerate
 existing runs and offer to act on them. Scan `$OPENEVOLVE_OUTPUT_ROOT`
-(`~/openevolve-runs`) for run directories (each has a `config.yaml` and an
+(`~/work/openevolve-runs`) for run directories (each has a `config.yaml` and an
 output dir) and classify each as:
 
 - **running** — its `run.pid` names a live process (`kill -0 "$(cat run.pid)"`).
@@ -75,8 +75,9 @@ an informed user may pre-authorize it (see below).
    catches the silent failure mode where the evaluator runs but scores the wrong
    thing.
 4. **You've presented an iteration/cost estimate.** State the rough call count
-   (≈ iterations × models-per-iteration), that it runs autonomously, and the
-   keep-awake tradeoff (below). Then **wait for an explicit go-ahead — unless the
+   (≈ iterations × models-per-iteration), that it runs autonomously, and that
+   the running work holds the pod awake (no scale-to-zero) until it
+   finishes. Then **wait for an explicit go-ahead — unless the
    user already pre-authorized this run** ("just launch it," "don't ask"):
    pre-authorization waives the *wait*, never the estimate — show the numbers,
    then launch. (Resuming an already-approved run after hibernation needs no new
@@ -84,16 +85,35 @@ an informed user may pre-authorize it (see below).
 
 ## Run discipline
 
-- **Launch backgrounded** so you stay conversational and can poll while it runs.
-  Keep the PID and log in the run directory:
+- **First run in this pod:** create the runs root lazily —
+  `mkdir -p "$OPENEVOLVE_OUTPUT_ROOT"`. It is deliberately never baked into
+  the image: a pre-seeded folder would make the work dir non-empty and block
+  the platform's repo seed (which clones into the work-dir root and refuses a
+  non-empty dir). If `~/work` is a seeded git repo, also append
+  `openevolve-runs/` to `.git/info/exclude` (a local ignore — never touch
+  tracked files) so the checkout stays clean; the run's own target clone
+  lives inside the run directory, so outputs never touch it either way.
+- **Launch as a harness background task** (your backgrounded-Bash facility),
+  never a bare detached `nohup … &`. The platform's background-work contract
+  reports harness-registered tasks to the runtime: the pod is held awake for
+  as long as the run lives, and the finishing task wakes you for a follow-up
+  turn — **report the result to the user then** (best `combined_score` and
+  the `output/best/` path), don't wait to be asked. A detached `nohup`
+  process is invisible to that contract, so the pod can hibernate mid-run.
+  Still keep the PID and log in the run directory for monitoring and crash
+  recovery:
 
   ```sh
+  # run this script AS a backgrounded harness task (your Bash tool's
+  # run_in_background) — NEVER as a foreground command: the tool's timeout
+  # would SIGTERM the whole process group, run included, mid-flight
   dir="$OPENEVOLVE_OUTPUT_ROOT/<run-id>"
   cd "$dir"
-  nohup openevolve-run program.py evaluator.py -c config.yaml \
+  openevolve-run program.py evaluator.py -c config.yaml \
     -o "$dir/output" -i <N> -l INFO \
     > run.log 2>&1 &
   echo $! > run.pid
+  wait
   ```
 
 - **Always pass an explicit `--output`** on the **persisted** workspace
@@ -119,10 +139,12 @@ install up front rather than chasing failures.
 
 ## Surviving hibernation (resume-on-wake)
 
-The pod **scales to zero when the session goes idle** — no active turn, no
-queued prompt, no open terminal/SSH session. That kills any background
-`openevolve-run`. The output dir lives on persistent `$HOME`, so the run is
-recoverable but **does not progress while you're not engaged**.
+With the launch discipline above, a running evolution **holds the pod awake**
+(reported background work) and hibernation mid-run is the exception, not the
+rule. It can still happen — a pod restart or eviction, a crash, or a run
+launched the legacy detached way — and then the pod scales to zero once the
+session goes idle. The output dir lives on persistent `$HOME`, so the run is
+recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its `run.pid`
 is dead and it hasn't reached its budget, reinstall the run's deps (the venv
@@ -134,11 +156,11 @@ that checkpoint), not the original `-i`, or it overshoots. A run that's reached
 its budget is done; going further is a new, re-gated decision, not a resume.
 (Lower `checkpoint_interval` if a short run needs to leave a resumable checkpoint.)
 
-**Keep-awake escape hatch:** for a long evolution that must progress
-continuously (e.g. overnight), tell the user to keep a **terminal or SSH session
-open** to this agent — that pins the pod awake, so a backgrounded run completes
-without hibernation gaps. Genuinely unattended overnight progress is a future
-capability; today a run advances only while you're engaged or a session is open.
+**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
+the background-work contract (launched detached, or the report was refused),
+an open **terminal or SSH session** pins the pod awake until it finishes —
+but the primary mechanism is launching as a reported harness task in the
+first place.
 
 ## Hard guardrails
 
@@ -176,9 +198,12 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
 
 ## Where things live
 
-- **Per-run directory** = `$OPENEVOLVE_OUTPUT_ROOT/<run-id>/` (`~/openevolve-runs`,
-  on persistent `$HOME`). Holds `program.py`, `evaluator.py`, `config.yaml`, the
-  `repo/` clone, `run.pid`, `run.log`, and OpenEvolve's `output/`.
+- **Per-run directory** = `$OPENEVOLVE_OUTPUT_ROOT/<run-id>/`
+  (`~/work/openevolve-runs`, in the work dir — where the UI file browser and
+  the terminal land — on persistent `$HOME`; created lazily, see Run
+  discipline). Holds `program.py`, `evaluator.py`, `config.yaml`, the
+  `repo/` clone, `run.pid`, `run.log`, and OpenEvolve's `output/`. Always
+  give the user the full path when reporting.
 - **OpenEvolve output** under `output/`: `best/best_program.*` +
   `best/best_program_info.json` (the winner + its metrics), `checkpoints/checkpoint_<N>/`
   (resumable state), `logs/`.

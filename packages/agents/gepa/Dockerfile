@@ -34,10 +34,11 @@ ENV PATH="/opt/gepa-venv/bin:${PATH}"
 # behavioral policy; claude-code symlinks /etc/claude-code/CLAUDE.md here
 COPY AGENTS.md /etc/AGENTS.md
 
-# /app/working-dir is seeded onto persistent $HOME on first boot
-ENV GEPA_OUTPUT_ROOT=/home/agent/gepa-runs
-RUN mkdir -p /app/working-dir/gepa-runs &&\
-    chown -R 65532:0 /app/working-dir/gepa-runs
+# Runs live in the work dir (where the UI and terminal look), created lazily
+# by the agent at first run — NEVER pre-baked here: the first-boot seed would
+# make the work dir non-empty and the platform's repo seed (which clones into
+# the work-dir root and refuses a non-empty dir) would fail.
+ENV GEPA_OUTPUT_ROOT=/home/agent/work/gepa-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
