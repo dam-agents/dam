@@ -3,6 +3,7 @@
  * imports with browser side effects so node-environment unit tests (and any
  * non-DOM caller) can use it directly.
  */
+import { SessionLoadTimeoutError } from "./deadline.js";
 
 /**
  * Read a human-readable message off any error shape we may see here. The
@@ -114,6 +115,7 @@ export function classifyResumeError(
     if (anyE.code === -32002) return "not-found";
     if (anyE.data?.code === "NOT_FOUND") return "not-found";
     if (e instanceof DOMException) return "connection";
+    if (e instanceof SessionLoadTimeoutError) return "connection";
   }
   const msg = extractErrorMessage(e);
   if (/not\s*found/i.test(msg)) return "not-found";

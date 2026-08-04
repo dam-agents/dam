@@ -3,6 +3,7 @@ import { useCallback } from "react";
 
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
+import { SESSION_LOAD_TIMEOUT_MS, withDeadline } from "../../acp/deadline.js";
 import {
   applyUpdate,
   finalizeAllStreaming,
@@ -41,17 +42,26 @@ export function useAcpHistory(selectedAgent: string | null): {
           replayed = applyUpdate(replayed, update);
         });
         ws = conn.ws;
-        await conn.connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-          },
-        });
-        await conn.connection.loadSession({
-          sessionId: sid,
-          cwd: ".",
-          mcpServers: [],
-        });
+        // Deadline over the whole replay: nothing downstream of us enforces
+        // one (relay proxies indefinitely, the runtime's cold bootstrap waits
+        // on the harness forever), so a wedged harness would otherwise pin
+        // the caller's loading state for good.
+        await withDeadline(
+          (async () => {
+            await conn.connection.initialize({
+              protocolVersion: PROTOCOL_VERSION,
+              clientCapabilities: {
+                fs: { readTextFile: true, writeTextFile: true },
+              },
+            });
+            await conn.connection.loadSession({
+              sessionId: sid,
+              cwd: ".",
+              mcpServers: [],
+            });
+          })(),
+          SESSION_LOAD_TIMEOUT_MS,
+        );
       } finally {
         ws?.close();
       }
