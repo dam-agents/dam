@@ -10,7 +10,14 @@ import {
 } from "./agents.js";
 import type { ApiClient } from "./api-client.js";
 import { acceptTerms, loginViaUi } from "./auth.js";
-import { agentName, harnessName } from "./fixtures.js";
+import { harnessName } from "./fixtures.js";
+
+/** This project's own mock agent. Deliberately NOT the smoke chain's shared
+ *  `e2e-agent`: full-tier projects carry no dependency edges, so Playwright
+ *  can schedule them BEFORE the smoke chain — and 03-agent asserts the shared
+ *  agent does not exist yet before creating it through the UI. A full spec
+ *  creating (or even touching) the shared agent breaks that precondition. */
+const agentName = "e2e-delivery";
 
 /** The UI's own delivery deadline (`DELIVERY_TIMEOUT_MS` in
  *  use-prompt-delivery.ts). Not restated as a bare literal at the call sites:
@@ -24,10 +31,9 @@ export const DELIVERY_TIMEOUT_MS = 60_000;
  *  matter how long the prior turn runs. */
 export const LONG_TURN_MS = DELIVERY_TIMEOUT_MS + 15_000;
 
-/** The mock's out-of-the-box reply. The shared `e2e-agent` is also driven by
- *  the smoke chain (08/10-slack, 12-experiments rely on this text verbatim),
- *  and full-tier projects carry no dependency edges that would order them
- *  after it — so every spec here restores the script it overwrote. */
+/** The mock's out-of-the-box reply. The four specs in this project share one
+ *  agent and each overwrites its script, so every spec restores the default
+ *  afterwards to stay order-independent. */
 const MOCK_DEFAULT_REPLY = "Hello from the mock agent.";
 
 /** "Waiting for previous prompt…" — server truth now
