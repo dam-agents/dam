@@ -31,7 +31,7 @@ export { DELIVERY_TIMEOUT_MS };
  *  matter how long the prior turn runs. */
 export const LONG_TURN_MS = DELIVERY_TIMEOUT_MS + 15_000;
 
-/** The mock's out-of-the-box reply. The four specs in this project share one
+/** The mock's out-of-the-box reply. The specs in this project share one
  *  agent and each overwrites its script, so every spec restores the default
  *  afterwards to stay order-independent. */
 const MOCK_DEFAULT_REPLY = "Hello from the mock agent.";

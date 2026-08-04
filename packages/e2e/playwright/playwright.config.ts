@@ -185,7 +185,7 @@ export default defineConfig({
             use: { ...devices["Desktop Chrome"] },
           },
           {
-            // Prompt delivery feedback (#829): three of the four specs wait
+            // Prompt delivery feedback (#829): most of the specs wait
             // out the UI's 60s delivery deadline on purpose, so this is the
             // slowest project in the suite (~5 minutes) and never belongs in
             // the always-on smoke tier. Each spec drives the shared mock agent
