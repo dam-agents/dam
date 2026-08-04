@@ -28,6 +28,9 @@ export type WakeFailureCause =
    *  retriable class (slow image pull, volume attach, probes). */
   | { kind: "agent-pod-not-ready" }
   | { kind: "gateway-not-ready" }
+  /** The controller named a gateway cause waiting cannot fix — superseded
+   *  revision, OOM, unpullable image. Hard, not "still starting" (#2817). */
+  | { kind: "gateway-pod-failed"; gatewayReason: string }
   | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }
   | { kind: "unknown" };
 
@@ -51,6 +54,8 @@ export interface WakeConditionsSnapshot {
   agentPodNotReadyReason?: string;
   /** GatewayPodReady condition is True. */
   gatewayPodReady?: boolean;
+  /** GatewayPodReady condition reason token when False. */
+  gatewayPodNotReadyReason?: string;
 }
 
 /** AgentPodReady reason tokens the controller stamps for abnormal
@@ -60,6 +65,13 @@ const POD_FAILURE_REASONS = new Set([
   "ImagePullFailure",
   "InvalidImageName",
   "ContainerTerminated",
+]);
+
+/** GatewayPodReady reasons waiting cannot fix. Anything else (PodNotReady) is
+ *  a pod still on its way up. */
+const GATEWAY_FAILURE_REASONS = new Set([
+  ...POD_FAILURE_REASONS,
+  "StuckOnSupersededRevision",
 ]);
 
 export function classifyWakeFailure(
@@ -88,7 +100,18 @@ export function classifyWakeFailure(
   if (s.agentPodNotReadyReason !== undefined) {
     return { kind: "agent-pod-not-ready" };
   }
-  if (s.gatewayPodReady === false) return { kind: "gateway-not-ready" };
+  if (s.gatewayPodReady === false) {
+    if (
+      s.gatewayPodNotReadyReason !== undefined &&
+      GATEWAY_FAILURE_REASONS.has(s.gatewayPodNotReadyReason)
+    ) {
+      return {
+        kind: "gateway-pod-failed",
+        gatewayReason: s.gatewayPodNotReadyReason,
+      };
+    }
+    return { kind: "gateway-not-ready" };
+  }
   return { kind: "unknown" };
 }
 
@@ -97,6 +120,8 @@ export function wakeFailureReasonToken(c: WakeFailureCause): string {
   switch (c.kind) {
     case "agent-pod-failed":
       return `wake-timeout:agent-pod-failed:${c.terminationReason}`;
+    case "gateway-pod-failed":
+      return `wake-timeout:gateway-pod-failed:${c.gatewayReason}`;
     // Not a timeout — the controller rejected the start outright.
     case "over-budget":
       return "wake-rejected:over-budget";
@@ -146,6 +171,18 @@ export function describeWakeFailure(c: WakeFailureCause): string {
       return "the agent is still starting";
     case "gateway-not-ready":
       return "the agent's gateway is still starting";
+    case "gateway-pod-failed":
+      switch (c.gatewayReason) {
+        case "StuckOnSupersededRevision":
+          return "the agent's gateway is stuck on an outdated configuration and is being replaced";
+        case "OutOfMemory":
+          return "the agent's gateway ran out of memory";
+        case "ImagePullFailure":
+        case "InvalidImageName":
+          return "the agent's gateway image cannot be pulled";
+        default:
+          return "the agent's gateway crashed while starting";
+      }
     case "reconcile-error":
       return "the agent's configuration could not be applied";
     case "unknown":

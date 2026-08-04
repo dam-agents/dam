@@ -170,6 +170,14 @@ export default defineConfig({
             testMatch: /full\/slack-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
+          {
+            // Gateway rollout recovery (#2817). Full-only on two counts: it
+            // waits out a wedge and a heal, and it parks the controller
+            // cluster-wide, so it must never overlap another spec.
+            name: "gateway-full",
+            testMatch: /full\/gateway-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
         ]
       : []),
   ],

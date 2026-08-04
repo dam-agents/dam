@@ -425,6 +425,21 @@ Requests to the host then go out uncredentialed — failing upstream auth
 for that host only — instead of crash-looping the whole gateway. Stale
 Secrets written by since-replaced code paths are the known trigger.
 
+That check covers a credential already known to be bad when the gateway is
+rendered. A credential can also be revoked *after* it — disconnecting a
+connection deletes its Secret, and a gateway roll already in flight can
+carry the reference past the deletion. A Secret mount is mandatory, so
+that pod never starts, and Kubernetes will not replace a pod that is not
+ready with the corrected configuration that follows seconds later: the
+gateway would keep its Service and lose all egress until an operator
+deleted the pod. The controller therefore evicts gateway pods left
+running a configuration it has already superseded, whatever wedged them,
+and names that state on the gateway's readiness condition so it reads as
+a failure being repaired rather than a slow start. Recovery costs a
+normal gateway restart. The race itself is not closed — deletion is not
+atomic with the roll — so the eviction, not the ordering, is what bounds
+the harm.
+
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 

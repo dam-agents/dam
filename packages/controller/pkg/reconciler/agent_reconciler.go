@@ -399,9 +399,16 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 
+	// Same for the gateway, so a permanently wedged one is distinguishable
+	// from one still booting (#2817).
+	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
+	if !gatewayReady {
+		gatewayFailReason, gatewayFailMsg = r.gatewayNotReadyCause(ctx, GatewayName(name))
+	}
+
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", agentFailReason, agentFailMsg, gen)
-		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", "PodNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
 		s.ObservedGeneration = gen
@@ -417,6 +424,29 @@ func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Ag
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
 		s.ObservedGeneration = gen
 	})
+}
+
+// gatewayNotReadyCause names why the gateway pod isn't ready, so callers can
+// tell "still starting" from "will never start" (#2817). Falls back to
+// PodNotReady, read errors included — a diagnosis must never fail the publish.
+func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
+	pod := r.getPod(ctx, ssName)
+	if pod == nil {
+		return "PodNotReady", ""
+	}
+	if reason, msg, ok := terminationReason(pod); ok {
+		return reason, msg
+	}
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
+	if err != nil || ss.Status.UpdateRevision == "" {
+		return "PodNotReady", ""
+	}
+	if podRev := pod.Labels["controller-revision-hash"]; podRev != ss.Status.UpdateRevision {
+		return apiv1.ReasonStuckOnSupersededRevision, fmt.Sprintf(
+			"gateway pod is on superseded revision %s (target %s) and cannot become ready; replacing it",
+			podRev, ss.Status.UpdateRevision)
+	}
+	return "PodNotReady", ""
 }
 
 // podCurrentAndReady reports whether the StatefulSet's single pod is Ready AND
@@ -855,15 +885,16 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 	})
 }
 
-// forceRollStuckPod evicts any pod owned by the named StatefulSet that's
-// stuck on the old revision while the StatefulSet has a newer
-// updateRevision pending. Only acts when the existing pod is NotReady — a
-// healthy old-revision pod is left alone so normal rolling-update
-// semantics still apply on clusters where the MaxUnavailableStatefulSet
-// feature gate is enabled.
+// forceRollStuckPod evicts pods that are NotReady on a superseded revision.
+// K8s won't: a non-Ready pod trips the OrderedReady monotonic invariant before
+// the loop that replaces off-revision pods (all maxUnavailable governs).
 //
-// Best-effort: returns the first error encountered but does not roll
-// back. The caller logs the error; the next reconcile will retry.
+// The predicate is "not on updateRevision", not "on currentRevision" (#2817):
+// currentRevision is frozen at the last completed rollout, and a correction
+// reverting to an earlier template reuses its revision, so a wedged pod
+// usually matches neither — hence no early return on matching revisions.
+// Pods on updateRevision are always left alone, so an unbootable spec fails in
+// place instead of hot-looping. Best-effort; the next reconcile retries.
 func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
 	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -872,12 +903,10 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("getting statefulset: %w", err)
 	}
-	if ss.Status.UpdateRevision == "" || ss.Status.UpdateRevision == ss.Status.CurrentRevision {
+	// No target revision observed yet — nothing to judge against.
+	if ss.Status.UpdateRevision == "" {
 		return nil
 	}
-	// Selector restricts to pods this SS actually manages; combined with
-	// the controller-revision-hash label that pins to the OLD revision,
-	// we never touch a pod that's already on the new spec.
 	sel, err := metav1.LabelSelectorAsSelector(ss.Spec.Selector)
 	if err != nil {
 		return fmt.Errorf("building selector: %w", err)
@@ -887,19 +916,19 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 		return fmt.Errorf("listing pods: %w", err)
 	}
 	for _, p := range pods.Items {
-		if p.Labels["controller-revision-hash"] != ss.Status.CurrentRevision {
+		if p.Labels["controller-revision-hash"] == ss.Status.UpdateRevision {
 			continue
 		}
 		if isPodReady(p) {
 			continue
 		}
 		if p.DeletionTimestamp != nil {
-			// Already being deleted by something else; let it complete.
-			continue
+			continue // already terminating
 		}
-		slog.Info("force-rolling stuck StatefulSet pod past CrashLoop deadlock",
+		slog.Info("force-rolling StatefulSet pod stuck on a superseded revision",
 			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,
-			"oldRev", ss.Status.CurrentRevision, "newRev", ss.Status.UpdateRevision)
+			"podRev", p.Labels["controller-revision-hash"],
+			"currentRev", ss.Status.CurrentRevision, "targetRev", ss.Status.UpdateRevision)
 		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 			return fmt.Errorf("deleting stuck pod %s: %w", p.Name, err)
 		}

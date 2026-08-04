@@ -507,6 +507,116 @@ func TestForceRollStuckPod_NoopWhenRevisionsMatch(t *testing.T) {
 	assert.NoError(t, err, "no-op required when SS revisions match")
 }
 
+// gatewayRevFixture states a wedged rollout's revision topology in one line.
+func gatewayRevFixture(currentRev, updateRev, podRev string, ready bool) (*appsv1.StatefulSet, *corev1.Pod) {
+	labels := map[string]string{"agent-platform.ai/role": "gateway", "agent-platform.ai/pair": "my-agent"}
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents", UID: "ss-uid"},
+		Spec:       appsv1.StatefulSetSpec{Selector: &metav1.LabelSelector{MatchLabels: labels}},
+		Status:     appsv1.StatefulSetStatus{CurrentRevision: currentRev, UpdateRevision: updateRev},
+	}
+	podLabels := map[string]string{"controller-revision-hash": podRev}
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	readyStatus := corev1.ConditionFalse
+	if ready {
+		readyStatus = corev1.ConditionTrue
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway-0", Namespace: "test-agents", Labels: podLabels},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: readyStatus}},
+		},
+	}
+	return ss, pod
+}
+
+// #2817: the pod wedged on a deleted credential Secret is on an intermediate
+// revision — currentRevision is frozen at the last completed rollout, and the
+// correction (carrying the recreated connection's Secret) hashes to a newer
+// one. Matches neither, so the old currentRevision-only predicate skipped it.
+func TestForceRollStuckPod_DeletesNotReadyPodAtIntermediateRev(t *testing.T) {
+	ss, stuckPod := gatewayRevFixture("rev-1", "rev-3", "rev-2", false)
+	r, client := setupReconciler(t, nil, ss, stuckPod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-agent-gateway-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err),
+		"pod wedged on an intermediate revision must be evicted; got err=%v", err)
+}
+
+// #2817, and the observed shape on a real cluster: with no replacement
+// connection the correction reverts to an earlier template, so K8s reuses its
+// revision and update == current while the pod sits on a third. Matching
+// revisions therefore do not mean "nothing to unstick".
+func TestForceRollStuckPod_DeletesStuckPodWhenCorrectionReusedPriorRevision(t *testing.T) {
+	ss, stuckPod := gatewayRevFixture("rev-1", "rev-1", "rev-2", false)
+	r, client := setupReconciler(t, nil, ss, stuckPod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-agent-gateway-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err),
+		"pod off the update revision must be evicted even when current==update; got err=%v", err)
+}
+
+// #2817: name the wedge without mislabelling a pod that is merely starting.
+func TestGatewayNotReadyCause(t *testing.T) {
+	oomPod := podAtRev("my-agent-gateway-0", "rev-2", false)
+	oomPod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "envoy",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", ExitCode: 137,
+		}},
+	}}
+
+	cases := []struct {
+		name       string
+		objects    []runtime.Object
+		wantReason string
+	}{
+		{
+			name:       "no pod yet",
+			objects:    []runtime.Object{rolloutSS("my-agent-gateway", 1, 1, "rev-2")},
+			wantReason: "PodNotReady",
+		},
+		{
+			name: "on the target revision, still starting",
+			objects: []runtime.Object{
+				rolloutSS("my-agent-gateway", 1, 1, "rev-2"),
+				podAtRev("my-agent-gateway-0", "rev-2", false),
+			},
+			wantReason: "PodNotReady",
+		},
+		{
+			name: "wedged on a superseded revision",
+			objects: []runtime.Object{
+				rolloutSS("my-agent-gateway", 1, 1, "rev-3"),
+				podAtRev("my-agent-gateway-0", "rev-2", false),
+			},
+			wantReason: apiv1.ReasonStuckOnSupersededRevision,
+		},
+		{
+			// More actionable than the revision mismatch, so it wins.
+			name: "abnormal termination outranks the revision mismatch",
+			objects: []runtime.Object{
+				rolloutSS("my-agent-gateway", 1, 1, "rev-3"),
+				oomPod,
+			},
+			wantReason: "OutOfMemory",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _ := setupReconciler(t, nil, tc.objects...)
+			reason, _ := r.gatewayNotReadyCause(context.Background(), "my-agent-gateway")
+			assert.Equal(t, tc.wantReason, reason)
+		})
+	}
+}
+
 func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.T) {
 	// applyStatefulSet must propagate UpdateStrategy to existing StatefulSets,
 	// not just newly-created ones. Without this, updating the controller

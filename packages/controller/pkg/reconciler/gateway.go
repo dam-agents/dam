@@ -92,14 +92,11 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 			Replicas:    &replicas,
 			ServiceName: gatewayName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
-			// Single-replica pair: there is no "graceful rolling"
-			// to preserve. Default StatefulSet rollouts wait for the existing
-			// pod to be Ready before replacing it, which deadlocks if the
-			// pod is in CrashLoopBackOff (e.g. when the bootstrap CM was
-			// updated to reference TLS chains while pod-0 still has the
-			// rev-without-leaf-TLS-volume mounts). maxUnavailable: 1 lets
-			// K8s evict the broken pod immediately so the new template can
-			// roll out instead of getting stuck behind a NotReady pod.
+			// Single-replica pair: nothing to roll gracefully. Near a no-op
+			// in practice — alpha-gated (MaxUnavailableStatefulSet, off on
+			// k3s) and 1 is the default — and it does NOT unstick a wedged
+			// rollout: the OrderedReady monotonic invariant blocks before
+			// the loop this governs. forceRollStuckPod owns that (#2817).
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
