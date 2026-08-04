@@ -73,7 +73,7 @@ export function IconRail({
     navigate: () => setView("artifacts"),
   };
   const inbox: Destination = {
-    label: "Email",
+    label: "Inbox",
     icon: Email,
     active: view === "inbox",
     badge: pendingCount,
