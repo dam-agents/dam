@@ -165,7 +165,9 @@ session goes idle. The results dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its
-`run.pid` is dead and it hasn't reached its budget, reinstall the run's deps
+`run.pid` no longer names the live run (the same cmdline-validated check as the
+start-of-conversation scan — a recycled PID after a pod restart must not
+skip the resume) and it hasn't reached its budget, reinstall the run's deps
 (the venv reset) and relaunch the **identical** `shinka_run` command — same
 `--task-dir`, same `--results_dir`, same `--num_generations`. ShinkaEvolve
 detects the existing `results/programs.sqlite`, restores the population, and

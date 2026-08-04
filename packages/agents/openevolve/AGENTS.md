@@ -158,7 +158,9 @@ session goes idle. The output dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its `run.pid`
-is dead and it hasn't reached its budget, reinstall the run's deps (the venv
+no longer names the live run (the same cmdline-validated check as the
+start-of-conversation scan — a recycled PID after a pod restart must not
+skip the resume) and it hasn't reached its budget, reinstall the run's deps (the venv
 reset) and resume from the latest checkpoint with `--checkpoint`. One non-obvious
 catch — `-i` counts the iterations *this invocation* runs, not an absolute cap, so
 on a resume it runs that many **more**: pass the **remaining** budget

@@ -183,7 +183,9 @@ the session goes idle. The run directory lives on persistent `$HOME`, so the
 run is recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its
-`run.pid` is dead and it hasn't exhausted its budget, reinstall any extra deps
+`run.pid` no longer names the live run (the same cmdline-validated check as the
+start-of-conversation scan — a recycled PID after a pod restart must not
+skip the resume) and it hasn't exhausted its budget, reinstall any extra deps
 (the venv reset) and relaunch the **identical** driver — same `run_dir`, same
 `max_metric_calls`. GEPA detects the existing state in `run_dir`, restores it,
 and continues only up to the original budget — the budget is a **total**, not
