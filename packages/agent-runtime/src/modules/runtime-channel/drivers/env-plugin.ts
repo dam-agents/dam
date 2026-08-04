@@ -43,12 +43,14 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
               env[c.name],
               expandHome(c.placeholder, ctx.agentHome),
             );
-          } else if (!(c.name in env)) {
+          } else if (!Object.hasOwn(env, c.name)) {
             env[c.name] = c.placeholder;
           }
         }
         // Flag the harness wrapper scripts read for GitHub auth availability.
-        env[GH_AVAILABLE_ENV] = GH_TOKEN_ENV in env ? "true" : "false";
+        env[GH_AVAILABLE_ENV] = Object.hasOwn(env, GH_TOKEN_ENV)
+          ? "true"
+          : "false";
 
         // Only rewrite + notify when env actually changed (dispatcher fires on any snapshot change).
         const current = deps.store.current();
@@ -96,5 +98,5 @@ function sameNames(
 ): boolean {
   const ak = Object.keys(a);
   if (ak.length !== Object.keys(b).length) return false;
-  return ak.every((k) => k in b);
+  return ak.every((k) => Object.hasOwn(b, k));
 }

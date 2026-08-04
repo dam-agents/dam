@@ -61,4 +61,14 @@ describe("env driver change classification (#3143)", () => {
     await h.apply([env("GH_TOKEN", "v")]);
     expect(h.changes).toEqual([]);
   });
+
+  it("removing a variable named after an Object.prototype member is a set change", async () => {
+    const h = harness({
+      toString: "x",
+      NEW_VAR: "y",
+      PLATFORM_GH_TOKEN_AVAILABLE: "false",
+    });
+    await h.apply([env("NEW_VAR", "y"), env("OTHER", "z")]);
+    expect(h.changes).toEqual([{ namesChanged: true }]);
+  });
 });
