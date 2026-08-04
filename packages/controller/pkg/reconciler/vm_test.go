@@ -151,6 +151,10 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 		"mount -t virtiofs 'scratchpad'",
 		"ephemeral mounts have no virtiofs device to mount",
 	)
+	// The ~/.cache swap must be pre-created by root: on unprivileged virtiofs
+	// a non-root guest cannot create symlinks (virtiofsd lacks CAP_CHOWN), so
+	// the entrypoint's own `ln` would fail with EPERM.
+	assert.Contains(t, userdata, "ln -sfn /tmp/agent-cache")
 }
 
 func TestVMSpecSurvivesUnstructuredDeepCopy(t *testing.T) {

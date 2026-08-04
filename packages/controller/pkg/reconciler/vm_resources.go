@@ -166,6 +166,16 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 			shellQuote(m.Path), shellQuote(tag),
 		)})
 	}
+	// agent-entrypoint swaps ~/.cache for pod-local disk, but on unprivileged
+	// virtiofs a non-root caller cannot create symlinks (virtiofsd lacks
+	// CAP_CHOWN; the guest kernel returns EPERM) — so root pre-creates the
+	// link here and the entrypoint's `[ ! -L ]` check skips its own attempt.
+	// Runs after the mount bootcmds above so the workspace share is in place.
+	cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
+		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
+		vmAgentUID, shellQuote(agentHome),
+	)})
+
 	body, err := yaml.Marshal(cc)
 	if err != nil {
 		return nil, fmt.Errorf("encoding cloud-init userdata: %w", err)
