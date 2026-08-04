@@ -14,7 +14,7 @@ import {
   SpendByDayChart,
 } from "../components/spend-by-day-chart.js";
 import { useSettledMonth } from "../hooks/use-settled-month.js";
-import { formatUsdCents } from "../lib/format.js";
+import { formatUsdCents, totalCostUsd } from "../lib/format.js";
 import {
   fillMonthDays,
   monthLabel,
@@ -39,7 +39,7 @@ export function UsageView() {
     month,
     !isPlaceholderData && data !== undefined,
   );
-  const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
+  const total = totalCostUsd(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
     shownMonth,
     monthRange(shownMonth).isCurrentMonth,

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { useSettledMonth } from "../hooks/use-settled-month.js";
+import { totalCostUsd } from "../lib/format.js";
 import {
   fillMonthDays,
   monthLabel,
@@ -20,23 +21,25 @@ import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
 import { SpendStatCards } from "./spend-stat-cards.js";
 
 // Cache reads dominate agent traffic, so folding them into "in" is what makes
-// the figure reflect what actually entered the context — the same sum the model
-// table's In column shows.
+// the figure reflect what actually entered the context — the same sum the
+// per-model bars' caption shows.
 function totals(rows: TokenSpendByModel[]) {
-  return rows.reduce(
-    (acc, row) => ({
-      costUsd: acc.costUsd + row.costUsd,
-      calls: acc.calls + row.calls,
-      tokensIn:
-        acc.tokensIn +
-        row.inputTokens +
-        row.cacheReadTokens +
-        row.cacheCreationTokens,
-      tokensOut: acc.tokensOut + row.outputTokens,
-      durationMs: acc.durationMs + row.durationMs,
-    }),
-    { costUsd: 0, calls: 0, tokensIn: 0, tokensOut: 0, durationMs: 0 },
-  );
+  return {
+    costUsd: totalCostUsd(rows),
+    ...rows.reduce(
+      (acc, row) => ({
+        calls: acc.calls + row.calls,
+        tokensIn:
+          acc.tokensIn +
+          row.inputTokens +
+          row.cacheReadTokens +
+          row.cacheCreationTokens,
+        tokensOut: acc.tokensOut + row.outputTokens,
+        durationMs: acc.durationMs + row.durationMs,
+      }),
+      { calls: 0, tokensIn: 0, tokensOut: 0, durationMs: 0 },
+    ),
+  };
 }
 
 function Notice({ children }: { children: string }) {
@@ -50,7 +53,7 @@ function Notice({ children }: { children: string }) {
 }
 
 /** Sandbox-home "Usage" section: this sandbox's LLM spend for one calendar
- *  month, headline figures above the same per-model table and per-day chart the
+ *  month, headline figures above the same per-model bars and per-day chart the
  *  global Usage tab shows. */
 export function SandboxUsageSection({ agentId }: { agentId: string }) {
   const [month, setMonth] = useState(() => monthStart(new Date(), 0));

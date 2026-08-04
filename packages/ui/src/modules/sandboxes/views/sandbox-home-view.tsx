@@ -81,7 +81,11 @@ export function SandboxHomeView() {
       ) : section === "artifacts" ? (
         <SandboxArtifactsSection agentId={agent.id} />
       ) : section === "usage" ? (
-        <SandboxUsageSection agentId={agent.id} />
+        // Keyed per sandbox: the spend query keeps the previous month's rows to
+        // smooth paging, and the agents list is cached so switching sandboxes
+        // never unmounts this — an unkeyed section would serve the previous
+        // sandbox's figures under this one's name.
+        <SandboxUsageSection key={agent.id} agentId={agent.id} />
       ) : (
         <ConnectionsSection
           agentId={agent.id}

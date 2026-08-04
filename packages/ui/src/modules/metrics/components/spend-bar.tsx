@@ -28,7 +28,13 @@ export function SpendBar({ label, value, pct, color, caption }: Props) {
           {label}
         </span>
       </span>
-      <div className="h-5 min-w-0 flex-1 overflow-hidden rounded bg-muted">
+      <div
+        className="h-5 min-w-0 flex-1 overflow-hidden rounded bg-muted"
+        // Width is the only visual encoding, so state it for anything that
+        // can't see it — matching how the day chart labels each column.
+        role="img"
+        aria-label={`${Math.round(pct)}% of the largest`}
+      >
         {/* 8px floor so any nonzero spend stays visible; zero stays empty. */}
         <div
           className="h-full rounded"

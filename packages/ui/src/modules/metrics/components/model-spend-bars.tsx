@@ -25,7 +25,8 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
               {formatTokens(
                 row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens,
               )}
-              <ArrowRight size={12} className="shrink-0" />
+              <ArrowRight size={12} className="shrink-0" aria-hidden="true" />
+              <span className="sr-only">to</span>
               {formatTokens(row.outputTokens)}
             </>
           }

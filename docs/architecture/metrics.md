@@ -49,7 +49,7 @@ It reads the per-LLM-call log records Claude Code exports — one record per API
 
 ## Disabled backend
 
-The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. The Usage tab treats that error as *metrics unavailable on this deployment* and shows an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window.
+The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window. Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-sandbox nav summary degrades to its neutral placeholder.
 
 ## Trust story
 

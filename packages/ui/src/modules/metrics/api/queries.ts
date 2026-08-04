@@ -1,6 +1,7 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
+import { totalCostUsd } from "../lib/format.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend over
@@ -49,7 +50,7 @@ export function useAgentMonthSpend(agentId: string | null) {
     ),
     staleTime: 60_000,
     retry: false,
-    select: (data) => data.byModel.reduce((sum, row) => sum + row.costUsd, 0),
+    select: (data) => totalCostUsd(data.byModel),
   });
 }
 
