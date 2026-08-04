@@ -1,4 +1,5 @@
 import {
+  asc,
   eq,
   type Db,
   agentEnv,
@@ -78,7 +79,8 @@ async function readUserEnvContributions(
   const rows = await db
     .select({ name: agentEnv.name, value: agentEnv.value })
     .from(agentEnv)
-    .where(eq(agentEnv.agentId, agentId));
+    .where(eq(agentEnv.agentId, agentId))
+    .orderBy(asc(agentEnv.name));
   return rows.map(
     (r): Contribution => ({
       kind: "env",
@@ -92,6 +94,13 @@ async function readGrantedContributions(
   db: Db,
   agentId: string,
 ): Promise<Contribution[]> {
+  // Without the ORDER BY the join's row order is unspecified and can shift
+  // whenever a connection row is updated (e.g. the refresh loop's token
+  // re-mint). Downstream is order-sensitive — the agent's env driver is
+  // first-occurrence-wins on name collisions and the state hash keeps input
+  // order for same-key contributions — so an order flip would read as a
+  // state change (#3143). Oldest connection first: stable across rotations
+  // and re-grants.
   const rows = (await db
     .select({
       contributions: connectionsTable.contributions,
@@ -101,7 +110,8 @@ async function readGrantedContributions(
       connectionsTable,
       eq(connectionGrants.connectionId, connectionsTable.id),
     )
-    .where(eq(connectionGrants.agentId, agentId))) as {
+    .where(eq(connectionGrants.agentId, agentId))
+    .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id))) as {
     contributions: unknown;
   }[];
 
@@ -128,7 +138,8 @@ async function readSkillRefContributions(
       path: agentSkills.path,
     })
     .from(agentSkills)
-    .where(eq(agentSkills.agentId, agentId));
+    .where(eq(agentSkills.agentId, agentId))
+    .orderBy(asc(agentSkills.source), asc(agentSkills.name));
   return rows.map(
     (r): Contribution => ({
       kind: "skill-ref",
