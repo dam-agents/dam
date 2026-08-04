@@ -179,6 +179,25 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		vmAgentUID, shellQuote(agentHome),
 	)})
 
+	// The init script — on the container backend an init container (see
+	// resources.go). It is what seeds $HOME from /app/working-dir on first
+	// boot (Claude Code onboarding state, settings, the work dir), so
+	// skipping it leaves the harness with a first-run wizard and no
+	// permission config. Same every-start semantics as the init container:
+	// bootcmd runs each boot and the script is idempotent by contract.
+	// Runs as root (matching agent-runtime here); HOME is set explicitly
+	// since cloud-init's env carries none.
+	initScript := agentSpec.Init
+	if initScript == "" {
+		initScript = defaults.Init
+	}
+	// Inline argv, not a write_files script: bootcmd can run before
+	// write_files within cloud-init's module order, so a file dependency
+	// would race. `env` sets HOME without shell-quoting the script.
+	if initScript != "" {
+		cc.BootCmd = append(cc.BootCmd, []string{"env", "HOME=" + agentHome, "bash", "-c", initScript})
+	}
+
 	body, err := yaml.Marshal(cc)
 	if err != nil {
 		return nil, fmt.Errorf("encoding cloud-init userdata: %w", err)
@@ -202,8 +221,9 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 // unchanged. runStrategy is owned by applyVirtualMachine (the replicas
 // analogue); the value rendered here is a create-time default only.
 //
-// Non-persisted mounts, the user init script, and warm-pool claims are
-// container-backend concepts and deliberately don't render here.
+// Warm-pool claims are a container-backend concept and deliberately don't
+// render here. Non-persisted mount dirs and the init script ride the
+// cloud-init userdata instead (BuildVMCloudInitSecret).
 func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) (*unstructured.Unstructured, error) {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
