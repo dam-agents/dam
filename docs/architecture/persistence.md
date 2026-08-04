@@ -109,7 +109,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
 
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint symlinks it to pod-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. Tools and dependencies the agent relies on must be baked into the image at build time.
+What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. The redirect is best-effort in both directions — on the VM backend the guest pre-creates the link from cloud-init, since the workspace share there refuses a non-root symlink, and a swap that fails anywhere is a performance regression rather than a boot failure, leaving that agent's cache on the workspace volume where it does survive. Tools and dependencies the agent relies on must be baked into the image at build time.
 
 ### Warm PVC pool
 

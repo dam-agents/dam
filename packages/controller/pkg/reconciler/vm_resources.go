@@ -166,6 +166,19 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 			shellQuote(m.Path), shellQuote(tag),
 		)})
 	}
+	// agent-entrypoint swaps ~/.cache for pod-local disk, but on unprivileged
+	// virtiofs a non-root caller cannot create symlinks (virtiofsd lacks
+	// CAP_CHOWN; the guest kernel returns EPERM) — so root pre-creates the
+	// link here and the entrypoint's `[ ! -L ]` check skips its own attempt.
+	// Runs after the mount bootcmds above so the workspace share is in place.
+	// `ln -sfn` into an existing real directory nests the link instead of
+	// swapping — clear a non-symlink first so the pre-create is authoritative
+	// on volumes that already carry a real ~/.cache.
+	cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
+		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && { [ -L %[2]s/.cache ] || rm -rf %[2]s/.cache; } && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
+		vmAgentUID, shellQuote(agentHome),
+	)})
+
 	body, err := yaml.Marshal(cc)
 	if err != nil {
 		return nil, fmt.Errorf("encoding cloud-init userdata: %w", err)
@@ -244,7 +257,13 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	// else the first chart-wide default. (The pod path lists all defaults as
 	// fallbacks; KubeVirt's API takes one — a multi-secret install needs the
 	// matching secret first.)
-	bootDisk := map[string]any{"image": agentSpec.Image, "imagePullPolicy": pullPolicy}
+	// Unlike a pod's container, containerDisk validates imagePullPolicy as a
+	// strict enum — the chart's default "" (tag-based K8s behavior) must be
+	// omitted, not passed through, or admission rejects the VM.
+	bootDisk := map[string]any{"image": agentSpec.Image}
+	if pullPolicy != "" {
+		bootDisk["imagePullPolicy"] = pullPolicy
+	}
 	if ref := agentSpec.ImagePullSecretRef; ref != "" {
 		bootDisk["imagePullSecret"] = ref
 	} else if len(base.ImagePullSecrets) > 0 {
