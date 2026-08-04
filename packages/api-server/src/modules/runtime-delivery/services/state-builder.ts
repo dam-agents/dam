@@ -94,13 +94,8 @@ async function readGrantedContributions(
   db: Db,
   agentId: string,
 ): Promise<Contribution[]> {
-  // Without the ORDER BY the join's row order is unspecified and can shift
-  // whenever a connection row is updated (e.g. the refresh loop's token
-  // re-mint). Downstream is order-sensitive — the agent's env driver is
-  // first-occurrence-wins on name collisions and the state hash keeps input
-  // order for same-key contributions — so an order flip would read as a
-  // state change (#3143). Oldest connection first: stable across rotations
-  // and re-grants.
+  // Ordered oldest-first: downstream is order-sensitive and unordered rows
+  // shift on any connection update, reading as a spurious state change (#3143).
   const rows = (await db
     .select({
       contributions: connectionsTable.contributions,

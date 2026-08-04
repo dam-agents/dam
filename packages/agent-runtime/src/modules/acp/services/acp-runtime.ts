@@ -89,13 +89,9 @@ export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   resetSession(sessionId: string): void;
-  /**
-   * Env on disk changed: recycle a running harness so it respawns with the
-   * new env. Recycles immediately when no turn is in flight, otherwise at the
-   * next turn boundary — force-killed after a bound unless `force: false`,
-   * which waits for the boundary indefinitely (a value-only change is never
-   * worth killing an in-flight turn).
-   */
+  /** Env on disk changed: recycle a running harness so it respawns with the
+   * new env. `force: false` never kills an in-flight turn — it waits for the
+   * next turn boundary instead of forcing after the bound. */
   refreshEnv(opts?: { force?: boolean }): void;
   shutdown(): void;
 }
@@ -1439,9 +1435,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         recycleAgentForEnv();
         return;
       }
-      // A turn is in flight: recycle at the next turn boundary. The force
-      // bound applies only when asked — a deferrable (value-only) change is
-      // never worth killing an in-flight turn (#3143).
+      // A turn is in flight: recycle at the next turn boundary; force after a bound only when asked.
       if ((opts?.force ?? true) && !envForceTimer)
         envForceTimer = setTimeout(recycleAgentForEnv, envForceRecycleMs);
     },

@@ -10,11 +10,7 @@ const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 const KUBECONFIG_ENV = "KUBECONFIG";
 
 export interface EnvChange {
-  /**
-   * True when a variable was added, removed, or renamed. False for a pure
-   * value change (e.g. a rotated credential), which the caller should defer
-   * to an idle turn boundary rather than force-recycling an in-flight run.
-   */
+  /** True when a variable was added, removed, or renamed — not a pure value change. */
   namesChanged: boolean;
 }
 
