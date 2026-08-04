@@ -13,7 +13,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
-import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -607,11 +606,14 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
         label={row.sourceBadge}
         hint={`Preview — ${row.sourceBadge} (saved on commit)`}
       />
-      <HintTooltip label="preview" content="This rule will be saved on commit">
-        <Badge size="sm" variant="accent" className="uppercase tracking-wider">
-          preview
-        </Badge>
-      </HintTooltip>
+      <Badge
+        size="sm"
+        variant="accent"
+        className="uppercase tracking-wider"
+        title="This rule will be saved on commit"
+      >
+        preview
+      </Badge>
       <span className="ml-auto" />
       {/* No per-row actions in preview mode: the rules don't exist yet, so
           there's nothing to revoke. The user can change the dropdown

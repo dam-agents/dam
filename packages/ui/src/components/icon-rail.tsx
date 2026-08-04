@@ -25,7 +25,6 @@ interface Destination {
   active: boolean;
   badge: number;
   navigate: () => void;
-  hoverLabel?: boolean;
 }
 
 export function IconRail({
@@ -55,7 +54,6 @@ export function IconRail({
     active: view === "experiments",
     badge: 0,
     navigate: navigateToExperiments,
-    hoverLabel: true,
   };
   const knowledgeBases: Destination = {
     label: "Knowledge bases",
@@ -66,7 +64,6 @@ export function IconRail({
       view === "knowledge-base-config",
     badge: 0,
     navigate: navigateToKnowledgeBases,
-    hoverLabel: true,
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -74,7 +71,6 @@ export function IconRail({
     active: view === "artifacts",
     badge: 0,
     navigate: () => setView("artifacts"),
-    hoverLabel: true,
   };
   const inbox: Destination = {
     label: "Email",
@@ -139,35 +135,23 @@ export function IconRail({
   );
 }
 
-function RailItem({
-  label,
-  icon: Icon,
-  active,
-  badge,
-  navigate,
-  hoverLabel,
-}: Destination) {
-  const button = (
-    <button
-      type="button"
-      onClick={navigate}
-      aria-label={label}
-      className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-        active
-          ? "text-primary bg-muted"
-          : "text-foreground/80 hover:text-foreground hover:bg-muted",
-      )}
-    >
-      <IconWithBadge icon={Icon} badge={badge} />
-    </button>
-  );
-  return hoverLabel ? (
+function RailItem({ label, icon: Icon, active, badge, navigate }: Destination) {
+  return (
     <Tooltip content={label} side="right">
-      {button}
+      <button
+        type="button"
+        onClick={navigate}
+        aria-label={label}
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+          active
+            ? "text-primary bg-muted"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        )}
+      >
+        <IconWithBadge icon={Icon} badge={badge} />
+      </button>
     </Tooltip>
-  ) : (
-    button
   );
 }
 

@@ -17,7 +17,7 @@ export const CARD_HOVER = "transition-colors hover:bg-muted/40";
 export const cardSelectionVariants = cva(`${CARD_SURFACE} transition-colors`, {
   variants: {
     selected: {
-      true: "border-foreground",
+      true: "border-foreground bg-muted/60",
       false: `border-border ${CARD_HOVER}`,
     },
   },

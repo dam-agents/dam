@@ -8,7 +8,10 @@ import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
-import { DisclosureToggle } from "@/components/ui/disclosure";
+import {
+  DisclosureChevron,
+  DisclosureToggle,
+} from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
@@ -119,27 +122,42 @@ export function ExperimentsSection({
   );
   if (searching && visible.length === 0) return null;
 
+  const header = (
+    <>
+      <Chemistry size={16} className="shrink-0 text-muted-foreground" />
+      <span className="text-sm font-semibold text-muted-foreground">
+        Experiments
+      </span>
+      <span className="text-xs text-muted-foreground">
+        {folders.length} experiment{folders.length === 1 ? "" : "s"} · {total}{" "}
+        artifact{total === 1 ? "" : "s"}
+      </span>
+      <span className="ml-auto hidden text-xs text-muted-foreground/70 sm:block">
+        scripts, dashboards and run results published by your agents
+      </span>
+    </>
+  );
+
   return (
     <Card className="mt-2 overflow-hidden border-dashed bg-muted/30 anim-in">
-      <DisclosureToggle
-        open={expanded}
-        onToggle={() => setOpen((o) => !o)}
-        disabled={searching}
-        chevronClassName="text-muted-foreground"
-        className="w-full cursor-pointer select-none gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
-      >
-        <Chemistry size={16} className="shrink-0 text-muted-foreground" />
-        <span className="text-sm font-semibold text-muted-foreground">
-          Experiments
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {folders.length} experiment{folders.length === 1 ? "" : "s"} · {total}{" "}
-          artifact{total === 1 ? "" : "s"}
-        </span>
-        <span className="ml-auto hidden text-xs text-muted-foreground/70 sm:block">
-          scripts, dashboards and run results published by your agents
-        </span>
-      </DisclosureToggle>
+      {searching ? (
+        // A search pins the section open, so render a static header rather than
+        // a toggle that keeps a pointer cursor and hover but does nothing — and
+        // would drop keyboard focus the moment the filter turns it inert.
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+          <DisclosureChevron open className="text-muted-foreground" />
+          {header}
+        </div>
+      ) : (
+        <DisclosureToggle
+          open={open}
+          onToggle={() => setOpen((o) => !o)}
+          chevronClassName="text-muted-foreground"
+          className="w-full cursor-pointer select-none gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
+        >
+          {header}
+        </DisclosureToggle>
+      )}
       {expanded &&
         visible.map((folder) => {
           const artifacts = byFolder.get(folder.id) ?? [];

@@ -26,7 +26,10 @@ function TooltipContent({
   );
 }
 
-interface TooltipProps {
+interface TooltipProps extends Omit<
+  React.ComponentPropsWithoutRef<"button">,
+  "content"
+> {
   children: ReactNode;
   content: ReactNode;
   side?: React.ComponentPropsWithoutRef<
@@ -36,37 +39,47 @@ interface TooltipProps {
 }
 
 /** Announced as a description, not a name — an icon-only trigger still needs
- *  its own `aria-label`. */
-function Tooltip({
-  children,
-  content,
-  side = "bottom",
-  className,
-}: TooltipProps) {
-  return (
-    <TooltipPrimitive.Root>
-      {/* Radix opens on any focus, so restoring focus to a trigger — what a
-          menu or dialog does when it closes — would leave a tooltip stuck open
-          away from the pointer. preventDefault here suppresses only Radix's
-          own handler. */}
-      <TooltipPrimitive.Trigger
-        asChild
-        onFocus={(event) => {
-          if (!event.currentTarget.matches(":focus-visible"))
-            event.preventDefault();
-        }}
-      >
-        {children}
-      </TooltipPrimitive.Trigger>
-      <TooltipContent
-        side={side}
-        className={cn("max-w-xs text-xs leading-relaxed", className)}
-      >
-        {content}
-      </TooltipContent>
-    </TooltipPrimitive.Root>
-  );
-}
+ *  its own `aria-label`.
+ *
+ *  Transparent to props and ref: when this wraps a `Button` that is itself the
+ *  child of an outer `*Trigger asChild`, the outer trigger clones *this*
+ *  element, so we forward its ref/handlers/aria onto the wrapped child (via the
+ *  Radix trigger's own `asChild` merge). Without it a slotted Button loses its
+ *  Popper anchor and its trigger a11y. */
+const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
+  function Tooltip(
+    { children, content, side = "bottom", className, ...rest },
+    ref,
+  ) {
+    const { onFocus, ...triggerProps } = rest;
+    return (
+      <TooltipPrimitive.Root>
+        {/* Radix opens on any focus, so restoring focus to a trigger — what a
+            menu or dialog does when it closes — would leave a tooltip stuck
+            open away from the pointer. preventDefault here suppresses only
+            Radix's own handler. */}
+        <TooltipPrimitive.Trigger
+          asChild
+          ref={ref}
+          {...triggerProps}
+          onFocus={(event) => {
+            onFocus?.(event);
+            if (!event.currentTarget.matches(":focus-visible"))
+              event.preventDefault();
+          }}
+        >
+          {children}
+        </TooltipPrimitive.Trigger>
+        <TooltipContent
+          side={side}
+          className={cn("max-w-xs text-xs leading-relaxed", className)}
+        >
+          {content}
+        </TooltipContent>
+      </TooltipPrimitive.Root>
+    );
+  },
+);
 
 interface HintTooltipProps extends Omit<TooltipProps, "className"> {
   label: string;
