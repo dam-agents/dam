@@ -97,17 +97,23 @@ IBM LiteLLM the `rits/…` models do). Only reuse `--checkpoint` state if some
 iterations actually completed; a run that never got past the first proposal
 is cleaner started fresh.
 
-**Known quirk — EvoX's hardcoded auxiliary models:** two of EvoX's internal
-roles ignore `-m`/the config and call hardcoded OpenAI models: label
-generation (`gpt-5-mini`) and search-strategy evolution (`gpt-5`). When the
-endpoint doesn't serve those ids you'll see 403/auth retry warnings ending
-in "setting labels to empty strings" and "Failed to generate search
-algorithm". Both are non-fatal — the proposal/evaluation loop still routes
-through `--api-base` — but the second one matters for preset choice: with
-strategy evolution blocked, EvoX can't self-evolve and effectively runs its
-base strategy, eroding its long-horizon advantage over AdaEvolve. Mention
-this when a user picks evox against an endpoint without those models; never
-kill a run over these warnings.
+**Known quirk — EvoX's auxiliary models bypass `-m`:** EvoX's label
+generation (`gpt-5-mini`) and search-strategy evolution (`gpt-5`) read their
+model ids from EvoX's **shipped strategy yaml**
+(`site-packages/skydiscover/search/evox/config/search.yaml`), not from
+`-m`/`--api-base`. Against an endpoint that doesn't serve those ids you'll
+see 403 retry warnings ("setting labels to empty strings", "Failed to
+generate search algorithm") — the solution loop keeps going, but the
+self-evolving strategy layer is dead, eroding EvoX's long-horizon advantage
+over AdaEvolve. **Workaround:** copy the shipped yaml into the task dir,
+replace its model ids with endpoint-served ones, and point
+`search.database.config_path` at the copy via a run config (`-c
+task/config.yaml`). Even then the strategy layer's LLM-generated code can
+crash on upstream bugs (`name 'EvolveProgram' is not defined`-class errors)
+— still non-fatal for the solution loop, but if the run wedges, apply the
+stall guardrail (kill + resume from the latest checkpoint). Mention the
+degradation when a user picks evox; never kill a run over the warnings
+alone.
 
 **Model ensemble** (optional): a weighted mix goes in a config YAML instead of
 `-m` — `--api-base` still applies to all of them, so every name must be served
