@@ -9,8 +9,9 @@ import {
 } from "./schemas.js";
 
 // Ownership is enforced in the service (it resolves the caller's owned agent
-// IDs and filters on them). When a specific agentId is requested we also apply
-// the API-key binding check, matching the rest of the agent-read surface.
+// IDs and filters on them). Whenever a procedure is narrowed to a specific
+// agentId we also apply the API-key binding check, matching the rest of the
+// agent-read surface.
 export const metricsRouter = t.router({
   overview: readAgentProcedure
     .input(metricsOverviewInputSchema)
@@ -24,5 +25,8 @@ export const metricsRouter = t.router({
   // a single loading/error state.
   spendBreakdown: readAgentProcedure
     .input(metricsSpendBreakdownInputSchema)
-    .query(({ ctx, input }) => ctx.metrics.spendBreakdown(input)),
+    .query(({ ctx, input }) => {
+      if (input.agentId) checkAgentBinding(ctx, input.agentId);
+      return ctx.metrics.spendBreakdown(input);
+    }),
 });

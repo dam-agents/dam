@@ -88,7 +88,7 @@ export function createMetricsService(deps: {
       // Resolve ownership once, then fan the three rollups out over the same
       // allowlist and range. Collapsed from three procedures so a Usage page
       // load does one agent-list + scope resolution rather than three.
-      const ids = await ownedScope(deps.listOwnedAgentIds, undefined);
+      const ids = await ownedScope(deps.listOwnedAgentIds, query.agentId);
       if (ids.length === 0) return { byModel: [], byAgent: [], byDay: [] };
       const window = { fromIso: query.from, toIso: query.to };
       const [byModel, byAgent, byDay] = await Promise.all([
