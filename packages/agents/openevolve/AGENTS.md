@@ -45,7 +45,18 @@ existing runs and offer to act on them. Scan `$OPENEVOLVE_OUTPUT_ROOT`
 (`~/work/openevolve-runs`) for run directories (each has a `config.yaml` and an
 output dir) and classify each as:
 
-- **running** — its `run.pid` names a live process (`kill -0 "$(cat run.pid)"`).
+- **running** — its `run.pid` names a live process **that is actually the
+  run**:
+
+  ```sh
+  pid=$(cat run.pid) && kill -0 "$pid" 2>/dev/null \
+    && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q openevolve-run
+  ```
+
+  The cmdline check is not optional: a pod restart resets the PID namespace,
+  so a stale `run.pid` on persistent `$HOME` can name an unrelated live
+  process — bare `kill -0` would misclassify a dead run as running and
+  silently skip its resume.
 - **not running** — finished, stopped, or paused by a pod hibernation (below).
 
 Present the grouped list, then offer a status pull (tail the log, read
@@ -112,8 +123,8 @@ an informed user may pre-authorize it (see below).
   openevolve-run program.py evaluator.py -c config.yaml \
     -o "$dir/output" -i <N> -l INFO \
     > run.log 2>&1 &
-  echo $! > run.pid
-  wait
+  pid=$!; echo "$pid" > run.pid
+  wait "$pid"
   ```
 
 - **Always pass an explicit `--output`** on the **persisted** workspace

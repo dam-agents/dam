@@ -141,8 +141,8 @@ estimate, but an informed user may pre-authorize it (see below).
   dir="$GEPA_OUTPUT_ROOT/<run-id>"
   cd "$dir"
   python driver.py > run.log 2>&1 &
-  echo $! > run.pid
-  wait
+  pid=$!; echo "$pid" > run.pid
+  wait "$pid"
   ```
 
 - **Always pass `run_dir`** in the driver, pointing inside the run's directory
