@@ -51,10 +51,10 @@ export interface SessionsSlice {
   deleteSession: (sessionId: string) => Promise<void>;
 
   /**
-   * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, queued prompt). Callers like `selectInstance`,
-   * `goBack`, and the popstate handler invoke this so every entry point
-   * leaves chat state in the same clean shape.
+   * Wipe all per-chat-session state (active session, messages, the docked
+   * file/artifact panel, session config, queued prompt). Callers like
+   * `selectInstance`, `goBack`, and the popstate handler invoke this so every
+   * entry point leaves chat state in the same clean shape.
    */
   resetChatContext: () => void;
 }
@@ -103,6 +103,9 @@ export const createSessionsSlice: StateCreator<
       sessionError: null,
       terminalPaused: false,
       openFilePath: null,
+      openFileDirty: false,
+      openFileEdit: false,
+      openArtifactId: null,
       pendingPermissions: [],
       queuedMessage: null,
       pendingResumeSessionId: null,

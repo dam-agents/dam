@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-30
+Last verified: 2026-08-04
 
 ## Overview
 
@@ -149,6 +149,9 @@ flowchart LR
   per-artifact actions, and a **docked preview** beside the conversation that
   renders the selected artifact and follows new versions as they are
   published. Deleting the artifact a preview is showing closes that preview.
+  The preview is part of the chat context rather than a persistent preference:
+  entering a sandbox's chat starts with it closed, so nothing stays docked from
+  a previously viewed sandbox.
 
 ## Lifecycle and cleanup
 
