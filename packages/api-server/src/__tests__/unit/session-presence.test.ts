@@ -17,8 +17,13 @@ function fakeRedis(keys = new Map<string, string>()) {
       return 1;
     },
     async scan(_cursor: string, _m: string, pattern: string) {
+      // Escape all regex metacharacters, then translate the glob "*".
       const re = new RegExp(
-        "^" + pattern.replace(/[.:]/g, "\\$&").replace(/\*/g, ".*") + "$",
+        "^" +
+          pattern
+            .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            .replace(/\\\*/g, ".*") +
+          "$",
       );
       return ["0", [...keys.keys()].filter((k) => re.test(k))] as [
         string,
@@ -42,8 +47,6 @@ function fakeRepo(annotated = new Set<string>()) {
     },
   };
 }
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("session presence", () => {
   beforeEach(() => vi.useFakeTimers());
