@@ -1,3 +1,4 @@
+import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
 import {
@@ -27,7 +28,8 @@ function harness(opts: {
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
-  const pending = new Map<string, SlackOAuthPending>();
+  const { store: pending, map: pendingMap } =
+    createInspectableTtlStore<SlackOAuthPending>();
   const unbindCalls: string[] = [];
   const acp = {
     listSessions: async () => [],
@@ -67,6 +69,7 @@ function harness(opts: {
     gw,
     events,
     pending,
+    pendingMap,
     unbindCalls,
     async command(text: string, userId = "U-1", channelId = "C-1") {
       await worker.start("agent-1", {} as StoredChannelConfig);
@@ -85,7 +88,7 @@ describe("slack /bind command", () => {
     const h = harness({ binding: null });
     const ack = await h.command("bind", "U-7", "C-9");
     expect(ack).toContain("Connect an agent");
-    const entries = [...h.pending.values()];
+    const entries = [...h.pendingMap.values()];
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       intent: "bind",
@@ -98,7 +101,7 @@ describe("slack /bind command", () => {
     const h = harness({ binding: bound });
     const ack = await h.command("bind");
     expect(ack).toContain("already connected");
-    expect(h.pending.size).toBe(0);
+    expect(h.pendingMap.size).toBe(0);
   });
 });
 

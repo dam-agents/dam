@@ -74,7 +74,6 @@ export interface ComposeApprovalsSystemDeps {
   platformAllowedHosts: readonly string[];
   /** Sweep cadence and freshness window for the outbox retry. */
   sweep?: {
-    intervalMs?: number;
     staleMs?: number;
     batchSize?: number;
   };
@@ -98,7 +97,6 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   const sweeper = createDeliverySweeper({
     repo,
     wrapperFrameSender: deps.wrapperFrameSender,
-    intervalMs: deps.sweep?.intervalMs ?? 30_000,
     staleMs: deps.sweep?.staleMs ?? 30_000,
     batchSize: deps.sweep?.batchSize ?? 50,
   });

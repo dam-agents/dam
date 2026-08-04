@@ -31,7 +31,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
     const providerError = c.req.query("error");
 
     const peeked = state
-      ? deps.engine.peek<OAuthFlowPendingCtx>(state)
+      ? await deps.engine.peek<OAuthFlowPendingCtx>(state)
       : undefined;
     const returnTo = sanitizeReturnTo(peeked?.ctx.returnTo);
     const popup = Boolean(peeked?.ctx.popup);

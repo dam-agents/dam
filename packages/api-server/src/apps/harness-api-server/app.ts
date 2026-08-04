@@ -22,8 +22,6 @@ import { createTemplatesRepository } from "../../modules/templates/infrastructur
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
-import { createRunRelay } from "./harness-run-relay.js";
-import { createRunsService } from "../../modules/runs/services/runs-service.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
@@ -125,18 +123,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     templates,
   });
 
-  // `dam-run` executor streams: the agent dials /api/agents/<id>/run over the
-  // harness port; we materialise an ephemeral Run pod and relay its /api/exec
-  // stdio. WebSocket upgrades on the harness port are wired manually (the Hono
-  // node server doesn't handle them). Disabled while the executor's
-  // shared-workspace model is reworked for RWO storage (#2989) — the relay
-  // refuses every dial with a clear close reason; the machinery stays dormant.
-  const runs = createRunsService(k8sClient);
-  const runRelay = createRunRelay({
-    k8s: k8sClient,
-    runs,
-    enabled: false,
-  });
   const server = serve(
     { fetch: app.fetch, port: config.harnessServerPort },
     () => {
@@ -146,38 +132,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     },
   );
 
-  server.on("upgrade", (req, socket, head) => {
-    const url = new URL(
-      req.url ?? "/",
-      `http://${req.headers.host ?? "localhost"}`,
-    );
-    const m = url.pathname.match(/^\/api\/agents\/([^/]+)\/run$/);
-    if (!m) {
-      socket.destroy();
-      return;
-    }
-    runRelay.handleUpgrade(req, socket, head, decodeURIComponent(m[1]!));
+  // No WebSocket routes remain on the harness port; refuse upgrades.
+  server.on("upgrade", (_req, socket) => {
+    socket.destroy();
   });
-
-  // A fresh harness process holds no live relays, so any Run CR that survived a
-  // crash is leaked — its executor pod would run untethered. Sweep them. Two
-  // accepted imperfections: during a RollingUpdate the outgoing replica may
-  // still hold live relays this sweep kills early (those streams die seconds
-  // later with the old pod anyway), and the sweep is one-shot best-effort —
-  // the controller's over-age reaper covers anything it misses.
-  void runs
-    .listRunIds()
-    .then(async (ids) => {
-      await Promise.all(ids.map((id) => runs.delete(id)));
-      if (ids.length > 0) {
-        process.stderr.write(
-          `harness-api swept ${ids.length} orphaned run(s)\n`,
-        );
-      }
-    })
-    .catch((err) => {
-      process.stderr.write(`harness-api run sweep failed: ${err}\n`);
-    });
 
   return { server };
 }

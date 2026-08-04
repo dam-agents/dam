@@ -1,10 +1,10 @@
 # Platform topology
 
-Last verified: 2026-07-30
+Last verified: 2026-08-04
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent and Run custom resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. Agent pods are stateless and ephemeral — durable state lives on per-agent persistent volumes, which is what makes the hibernate/wake cycle (scale to zero, scale back up) safe. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent custom resource, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. Agent pods are stateless and ephemeral — durable state lives on per-agent persistent volumes, which is what makes the hibernate/wake cycle (scale to zero, scale back up) safe. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
 ## Diagram
 
@@ -34,7 +34,7 @@ flowchart LR
 
 ### controller
 
-A stateless Go reconciler built on client-go. It watches the `Agent` and `Run` custom resources (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
+A stateless Go reconciler built on client-go. It watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
 
 ### api-server
 
@@ -47,7 +47,7 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); several older per-replica interval sweepers are still migrating onto this.
+Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, agent/invocation/experiment reapers) run this way. Other cross-replica state also lives in shared stores: session-presence pins and OAuth/bind handoff flows in Redis, per-owner resize serialization as a Postgres advisory lock, and the harness Service pins each agent gateway to one replica (ClientIP affinity) for in-process MCP sessions.
 
 A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this.
 
@@ -86,7 +86,6 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
-| agent (`dam-run`) → api-server (harness, via paired gateway → waypoint) | WebSocket (exec frames) | Ephemeral-executor stdio relay — the api-server stands up a `Run` executor pod and relays to it. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
@@ -104,7 +103,6 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 | Kind | Purpose |
 |---|---|
 | `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
-| `Run` | Ephemeral single-command executor backing the in-pod `dam-run` CLI: parent agent ref only. One per invocation, reconciled to a bare executor pod. See [agent-lifecycle](agent-lifecycle.md#run-executors-dam-run) |
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
 

@@ -1,5 +1,6 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
+import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
@@ -93,6 +94,9 @@ export function composeAgentsModule(deps: {
       agentDefaultLimits: deps.agentDefaultLimits,
       virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
+      // Cross-replica per-owner resize serialization (Postgres advisory
+      // lock) — see budgets.md.
+      resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,

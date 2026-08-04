@@ -1,3 +1,4 @@
+import type { TtlStore } from "../../../core/ttl-store.js";
 import { createFlowStore, type FlowStore } from "./telegram-flows.js";
 
 /** A completed Keycloak login for an in-chat Slack bind, waiting for the owner
@@ -14,9 +15,9 @@ export interface SlackPendingBind {
 
 export type SlackBindFlowStore = FlowStore<SlackPendingBind>;
 
-export function createSlackBindFlowStore(opts?: {
+export function createSlackBindFlowStore(opts: {
   now?: () => number;
-  ttlMs?: number;
+  store: TtlStore<SlackPendingBind>;
 }): SlackBindFlowStore {
   return createFlowStore<SlackPendingBind>(opts);
 }

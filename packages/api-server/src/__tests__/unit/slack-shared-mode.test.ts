@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -52,7 +53,7 @@ function harness(opts: {
     () => agents,
     { resolve: async () => null } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
-    new Map(),
+    createMemoryTtlStore(600_000),
     async () => OWNER,
     { resolveSlackBinding: async () => opts.binding } as never,
     async () => {},

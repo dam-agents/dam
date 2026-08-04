@@ -25,7 +25,8 @@ import (
 // One-time RWX -> RWO workspace-volume migration (#2988).
 //
 // Shared-writable storage existed for exactly one reason: a second pod
-// (Slack fork, dam-run executor) writing into a live agent's workspace.
+// (e.g. the since-removed Slack fork and dam-run executor) writing into a
+// live agent's workspace.
 // Both writers are gone, so every workspace volume becomes ReadWriteOnce —
 // but a PVC's access mode cannot change in place. This manager drains the
 // old volumes: for every agent whose workspace PVC is still ReadWriteMany

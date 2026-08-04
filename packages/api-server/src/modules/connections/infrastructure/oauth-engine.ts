@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { TtlStore } from "../../../core/ttl-store.js";
 
 export interface OAuthProvider {
   id: string;
@@ -83,9 +84,9 @@ export interface OAuthEngine {
     provider: OAuthProvider;
     redirectUri: string;
     ctx: Ctx;
-  }): { authUrl: string; state: string };
-  peek<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
-  consume<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
+  }): Promise<{ authUrl: string; state: string }>;
+  peek<Ctx = unknown>(state: string): Promise<PendingFlow<Ctx> | null>;
+  consume<Ctx = unknown>(state: string): Promise<PendingFlow<Ctx> | null>;
   exchange(pending: PendingFlow, code: string): Promise<TokenSet>;
   refresh(opts: {
     provider: OAuthProvider;
@@ -110,28 +111,16 @@ interface TokenEndpointResponse {
 export interface CreateOAuthEngineOptions {
   now?: () => number;
   fetchImpl?: typeof fetch;
-  pendingFlowTtlMs?: number;
+  /** Cross-replica store for in-flight flows — the callback may land on a
+   *  different replica than the start. Redis-backed in production,
+   *  `createMemoryTtlStore` in tests. */
+  pendingStore: TtlStore<PendingFlow>;
 }
 
-export function createOAuthEngine(
-  opts?: CreateOAuthEngineOptions,
-): OAuthEngine {
-  const now = opts?.now ?? (() => Date.now());
-  const fetchImpl = opts?.fetchImpl ?? fetch;
-  const ttlMs = opts?.pendingFlowTtlMs ?? 10 * 60 * 1000;
-  const pendingFlows = new Map<string, PendingFlow<unknown>>();
-
-  let janitor: ReturnType<typeof setInterval> | null = null;
-  function ensureJanitor() {
-    if (janitor != null) return;
-    janitor = setInterval(() => {
-      const cutoff = now() - ttlMs;
-      for (const [k, v] of pendingFlows) {
-        if (v.createdAt < cutoff) pendingFlows.delete(k);
-      }
-    }, 60_000);
-    janitor.unref?.();
-  }
+export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
+  const now = opts.now ?? (() => Date.now());
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const pendingFlows = opts.pendingStore;
 
   async function postTokenEndpoint(
     provider: OAuthProvider,
@@ -209,21 +198,23 @@ export function createOAuthEngine(
   }
 
   return {
-    start({ provider, redirectUri, ctx }) {
+    async start({ provider, redirectUri, ctx }) {
       if (!provider.authorizationUrl) {
         throw new Error(
           `OAuth provider ${provider.id} has no authorizationUrl`,
         );
       }
-      ensureJanitor();
       const codeVerifier = crypto.randomBytes(32).toString("base64url");
       const codeChallenge = crypto
         .createHash("sha256")
         .update(codeVerifier)
         .digest("base64url");
       const state = crypto.randomBytes(16).toString("hex");
-      pendingFlows.set(state, {
-        provider,
+      // clientSecret never rests in the store (Redis in production) — the
+      // callback leg re-resolves the provider before exchange().
+      const { clientSecret: _omitted, ...storedProvider } = provider;
+      await pendingFlows.set(state, {
+        provider: storedProvider,
         ctx,
         codeVerifier,
         redirectUri,
@@ -247,15 +238,14 @@ export function createOAuthEngine(
       return { authUrl: authUrl.toString(), state };
     },
 
-    peek<Ctx = unknown>(state: string): PendingFlow<Ctx> | null {
-      return (pendingFlows.get(state) as PendingFlow<Ctx>) ?? null;
+    async peek<Ctx = unknown>(state: string): Promise<PendingFlow<Ctx> | null> {
+      return (await pendingFlows.peek(state)) as PendingFlow<Ctx> | null;
     },
 
-    consume<Ctx = unknown>(state: string): PendingFlow<Ctx> | null {
-      const pending = pendingFlows.get(state);
-      if (!pending) return null;
-      pendingFlows.delete(state);
-      return pending as PendingFlow<Ctx>;
+    async consume<Ctx = unknown>(
+      state: string,
+    ): Promise<PendingFlow<Ctx> | null> {
+      return (await pendingFlows.consume(state)) as PendingFlow<Ctx> | null;
     },
 
     async exchange(pending, code) {

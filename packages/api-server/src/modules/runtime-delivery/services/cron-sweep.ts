@@ -5,24 +5,22 @@ import {
 import type { StateQueue } from "../infrastructure/state-queue.js";
 
 export interface CronSweep {
-  start(): void;
-  stop(): Promise<void>;
+  /** One idempotent reconciliation pass — scheduled via the shared
+   *  periodic-jobs queue (one execution per period across replicas). */
+  tick(): Promise<void>;
 }
 
 export interface CronSweepDeps {
   outboxRepo: OutboxRepo;
   queue: StateQueue;
   log: (msg: string) => void;
-  intervalMs?: number;
   maxApplyAttempts?: number;
   batchSize?: number;
 }
 
 export function createCronSweep(deps: CronSweepDeps): CronSweep {
-  const intervalMs = deps.intervalMs ?? 60_000;
   const maxApplyAttempts = deps.maxApplyAttempts ?? DEFAULT_MAX_APPLY_ATTEMPTS;
   const batchSize = deps.batchSize ?? 100;
-  let timer: ReturnType<typeof setInterval> | null = null;
   let running = false;
 
   async function tick(): Promise<void> {
@@ -56,17 +54,5 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     }
   }
 
-  return {
-    start(): void {
-      const initial = Math.floor(Math.random() * intervalMs);
-      setTimeout(() => {
-        void tick();
-        timer = setInterval(() => void tick(), intervalMs);
-      }, initial);
-    },
-    async stop(): Promise<void> {
-      if (timer) clearInterval(timer);
-      while (running) await new Promise((r) => setTimeout(r, 50));
-    },
-  };
+  return { tick };
 }

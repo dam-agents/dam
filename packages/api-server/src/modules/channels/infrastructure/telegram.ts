@@ -1,3 +1,4 @@
+import type { TtlStore } from "../../../core/ttl-store.js";
 import {
   Actions,
   Card,
@@ -167,7 +168,7 @@ export function createTelegramMessageHandler(deps: {
   decodeChatId: (threadId: string) => string;
   fetchChatTitle: (chatId: string) => Promise<string>;
   oauthConfig: KeycloakOAuthConfig;
-  pendingOAuthFlows: Map<string, TelegramOAuthPending>;
+  pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
   /** The install's lowercase slash-command name (e.g. "dam" → `/dam bind`),
@@ -223,7 +224,7 @@ export function createTelegramMessageHandler(deps: {
 
     const chatTitle = await deps.fetchChatTitle(deps.decodeChatId(thread.id));
     const { state: oauthState, codeVerifier, codeChallenge } = generatePkce();
-    deps.pendingOAuthFlows.set(oauthState, {
+    await deps.pendingOAuthFlows.set(oauthState, {
       telegramUserId,
       threadId: thread.id,
       codeVerifier,
@@ -361,7 +362,7 @@ export function createTelegramWorker(deps: {
   agents: () => AgentsService;
   conversations: TelegramConversationsPort;
   oauthConfig: KeycloakOAuthConfig;
-  pendingOAuthFlows: Map<string, TelegramOAuthPending>;
+  pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
   /** Lowercase slash-command name for the unified `/dam bind` / `/dam unbind`

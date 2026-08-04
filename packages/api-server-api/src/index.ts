@@ -102,7 +102,7 @@ export type {
   BudgetReserved,
   BudgetsService,
 } from "./modules/budgets/types.js";
-export type { AgentSpecCR, RunSpecCR } from "./crd-types.gen.js";
+export type { AgentSpecCR } from "./crd-types.gen.js";
 
 export {
   scheduleSpecSchema,

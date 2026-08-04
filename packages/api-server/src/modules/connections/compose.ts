@@ -4,7 +4,9 @@ import { createConnectionsRepository } from "./infrastructure/connections-reposi
 import {
   createOAuthEngine,
   type OAuthEngine,
+  type PendingFlow,
 } from "./infrastructure/oauth-engine.js";
+import type { TtlStore } from "../../core/ttl-store.js";
 import {
   createGitHubAppEngine,
   type GitHubAppEngine,
@@ -36,6 +38,9 @@ export interface ConnectionsBootCompose {
 export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
+  /** Cross-replica store for in-flight OAuth flows (Redis in production,
+   *  in-memory in tests) — the provider callback may land on any replica. */
+  pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
 }
 
@@ -46,7 +51,9 @@ export function composeConnectionsAtBoot(
     buildCatalog(opts.operatorCredentials),
   );
 
-  const oauthEngine = createOAuthEngine();
+  const oauthEngine = createOAuthEngine({
+    pendingStore: opts.pendingFlowStore,
+  });
   const githubAppEngine = createGitHubAppEngine();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
