@@ -41,3 +41,14 @@ export function formatDurationMs(ms: number): string {
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
+
+/** `formatDurationMs` split into number and unit runs, so a headline figure can
+ *  subordinate the units and keep the digits the thing you read. */
+export function durationSegments(
+  ms: number,
+): { text: string; unit: boolean }[] {
+  return formatDurationMs(ms)
+    .split(/(\d+(?:\.\d+)?)/)
+    .filter((part) => part !== "")
+    .map((part) => ({ text: part, unit: !/^\d/.test(part) }));
+}

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
-import { ModelSpendTable } from "../components/model-spend-table.js";
+import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
 import {
   CHART_HEIGHT_CLASS,
@@ -108,8 +108,8 @@ export function UsageView() {
               </section>
               <section>
                 <SectionLabel spaced>Spend by model</SectionLabel>
-                <Card className="p-0">
-                  <ModelSpendTable rows={data.byModel} />
+                <Card className="p-5">
+                  <ModelSpendBars rows={data.byModel} />
                 </Card>
               </section>
             </>
@@ -143,23 +143,24 @@ function UsageSkeleton() {
       </section>
       <section>
         <SectionLabel spaced>Spend by model</SectionLabel>
-        <Card className="animate-pulse p-0">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-[50px] border-b border-border-hairline last:border-b-0"
-            />
-          ))}
-        </Card>
+        <BarsSkeleton />
       </section>
       <section>
         <SectionLabel spaced>Spend by agent</SectionLabel>
-        <div className="flex flex-col gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-9 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
+        <BarsSkeleton />
       </section>
     </div>
+  );
+}
+
+/** Matches a `SpendBar` stack: four rows at the bar's own height, inside the
+ *  same padded card. */
+function BarsSkeleton() {
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="h-5 animate-pulse rounded bg-muted" />
+      ))}
+    </Card>
   );
 }

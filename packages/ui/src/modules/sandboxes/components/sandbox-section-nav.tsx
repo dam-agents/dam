@@ -14,6 +14,7 @@ const SECTIONS: SectionEntry[] = [
   { section: "skills", title: "Skills" },
   { section: "schedules", title: "Schedules" },
   { section: "artifacts", title: "Artifacts" },
+  { section: "usage", title: "Usage" },
 ];
 
 interface Props {

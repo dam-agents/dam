@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
+import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
@@ -79,6 +80,8 @@ export function SandboxHomeView() {
         <SandboxSchedulesSection agentId={agent.id} />
       ) : section === "artifacts" ? (
         <SandboxArtifactsSection agentId={agent.id} />
+      ) : section === "usage" ? (
+        <SandboxUsageSection agentId={agent.id} />
       ) : (
         <ConnectionsSection
           agentId={agent.id}
