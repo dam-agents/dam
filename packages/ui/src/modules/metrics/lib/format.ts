@@ -39,7 +39,11 @@ export function formatDurationMs(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  // A month of summed per-call latency runs to hours; minutes in the thousands
+  // read as noise, and the trailing seconds carry nothing at that scale.
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 /** `formatDurationMs` split into number and unit runs, so a headline figure can

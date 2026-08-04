@@ -35,7 +35,10 @@ export function UsageView() {
   const { data, isPending, isError, isPlaceholderData, error } =
     useSpendBreakdown(from, to, timeZone);
   const unavailable = isMetricsUnavailable(error);
-  const shownMonth = useSettledMonth(month, isPlaceholderData);
+  const shownMonth = useSettledMonth(
+    month,
+    !isPlaceholderData && data !== undefined,
+  );
   const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
   const dailyDays = fillMonthDays(
     shownMonth,
@@ -64,21 +67,25 @@ export function UsageView() {
         }
       />
 
-      {isError && (
+      {/* Only when there is nothing to show: a failed refetch keeps the loaded
+          month, and a transient failure isn't a verdict on the deployment. */}
+      {isError && !data && (
         <Card
           className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
         >
           <p className="text-sm text-muted-foreground">
-            Usage metrics are unavailable on this deployment.
+            {unavailable
+              ? "Usage metrics are unavailable on this deployment."
+              : "Couldn't load usage right now."}
           </p>
         </Card>
       )}
       {isPending && !isError && <UsageSkeleton />}
-      {data && !isError && (
+      {data && (
         <div
           className={cn(
             "space-y-10 transition-opacity",
-            isPlaceholderData && "opacity-40",
+            (isPlaceholderData || isError) && "opacity-40",
           )}
         >
           <section>

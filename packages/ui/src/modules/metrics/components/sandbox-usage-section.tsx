@@ -59,7 +59,10 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
   const { data, isPending, isError, isPlaceholderData, error } =
     useSpendBreakdown(from, to, timeZone, agentId);
   const unavailable = isMetricsUnavailable(error);
-  const shownMonth = useSettledMonth(month, isPlaceholderData);
+  const shownMonth = useSettledMonth(
+    month,
+    !isPlaceholderData && data !== undefined,
+  );
   const sums = totals(data?.byModel ?? []);
 
   return (
@@ -78,15 +81,21 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
         LLM spend for this sandbox, including work it delegated to other agents.
       </p>
 
-      {isError && (
-        <Notice>Usage metrics are unavailable on this deployment.</Notice>
+      {/* Only when there is nothing to show: a failed refetch keeps the loaded
+          month, and a transient failure isn't a verdict on the deployment. */}
+      {isError && !data && (
+        <Notice>
+          {unavailable
+            ? "Usage metrics are unavailable on this deployment."
+            : "Couldn't load usage right now."}
+        </Notice>
       )}
       {isPending && !isError && <UsageSkeleton />}
-      {data && !isError && (
+      {data && (
         <div
           className={cn(
             "space-y-6 transition-opacity",
-            isPlaceholderData && "opacity-40",
+            (isPlaceholderData || isError) && "opacity-40",
           )}
         >
           <SpendStatCards {...sums} />
